@@ -34,7 +34,9 @@ func TestSubscribeCatchUpThenLive(t *testing.T) {
 	if got := recv(t, ch); got.EventId != "e2" {
 		t.Fatalf("catch-up: got %s, want e2", got.EventId)
 	}
-	s.Append(newEnv("e3"))
+	e3 := newEnv("e3")
+	s.Append(e3)
+	s.Notify(e3)
 	if got := recv(t, ch); got.EventId != "e3" {
 		t.Fatalf("live: got %s, want e3", got.EventId)
 	}
@@ -48,7 +50,9 @@ func TestSubscribeOverflowClosesThatSubscriberOnly(t *testing.T) {
 	defer cancelBig()
 
 	for i := 0; i < 4; i++ {
-		s.Append(newEnv(string(rune('a' + i))))
+		env := newEnv(string(rune('a' + i)))
+		s.Append(env)
+		s.Notify(env)
 	}
 	// small (cap 1, never drained) must end CLOSED; drain to find closure.
 	deadline := time.After(2 * time.Second)
@@ -76,11 +80,76 @@ func TestSubscribeRejectsNegativeBuffer(t *testing.T) {
 	}
 }
 
+// TestAppendDoesNotNotify covers the decoupling itself: Append persists but
+// no longer notifies. A subscriber established before Append must see
+// nothing until the caller explicitly calls Notify.
+func TestAppendDoesNotNotify(t *testing.T) {
+	s := openTemp(t)
+	ch, cancel, err := s.Subscribe(0, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	env := newEnv("e1")
+	if _, err := s.Append(env); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-ch:
+		t.Fatalf("want no delivery from Append alone, got %v", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	s.Notify(env)
+	if got := recv(t, ch); got.EventId != "e1" {
+		t.Fatalf("after explicit Notify: got %s, want e1", got.EventId)
+	}
+}
+
+// TestNotifyAfterApplyOrdering_NoDuplicateOnRace covers the subscribe-
+// between-persist-and-notify race that per-subscriber sequence dedupe
+// closes: a subscriber that catches up on an event via Subscribe's history
+// preload must not receive that same event again when the caller's
+// subsequent explicit Notify call for it lands.
+func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
+	s := openTemp(t)
+	env := newEnv("e1")
+	if _, err := s.Append(env); err != nil {
+		t.Fatal(err)
+	}
+
+	// Subscribe catches up to seq 1 (the appended-but-not-yet-notified
+	// event) via history preload.
+	ch, cancel, err := s.Subscribe(0, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	if got := recv(t, ch); got.EventId != "e1" {
+		t.Fatalf("catch-up: got %s, want e1", got.EventId)
+	}
+
+	// The caller now runs the deferred Notify for the same envelope (the
+	// race: subscribe landed between persist and notify). Dedupe must skip
+	// it since the subscriber's lastSeq already covers it.
+	s.Notify(env)
+
+	select {
+	case got := <-ch:
+		t.Fatalf("want no duplicate delivery on raced Notify, got %v", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestUnsubscribeStopsDelivery(t *testing.T) {
 	s := openTemp(t)
 	ch, cancel, _ := s.Subscribe(0, 4)
 	cancel()
-	s.Append(newEnv("after"))
+	after := newEnv("after")
+	s.Append(after)
+	s.Notify(after)
 	select {
 	case _, ok := <-ch:
 		if ok {

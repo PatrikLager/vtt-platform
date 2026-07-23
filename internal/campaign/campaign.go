@@ -132,7 +132,7 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	if err := engine.Apply(c.state.Snapshot(), env); err != nil {
 		return 0, err
 	}
-	seq, err := c.log.Append(env) // persists AND notifies subscribers
+	seq, err := c.log.Append(env) // persists; does not notify
 	if err != nil {
 		return 0, err
 	}
@@ -141,10 +141,15 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 		// The event is already persisted (commit point above) but the live
 		// projection could not be advanced to match — poison the Campaign
 		// rather than serve a projection that has silently fallen behind
-		// the log.
+		// the log. Do not notify: a poisoned campaign must not advertise an
+		// event its own projection couldn't fold.
 		c.poisoned = true
 		return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
 	}
+	// Notify only after the live projection reflects env, so a subscriber
+	// that observes this event can always read state >= it (see
+	// store.Store.Notify's doc comment).
+	c.log.Notify(env)
 	return seq, nil
 }
 
@@ -221,10 +226,14 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string
 		// The marker is already persisted (commit point above) but the
 		// projection could not be rebuilt to match — poison the Campaign
 		// rather than serve a projection that has silently fallen behind
-		// the log.
+		// the log. Do not notify: a poisoned campaign must not advertise an
+		// event its own projection couldn't fold.
 		c.poisoned = true
 		return err
 	}
+	// Notify only after the rebuilt projection reflects marker, mirroring
+	// Append's post-apply notify ordering.
+	c.log.Notify(marker)
 	return nil
 }
 

@@ -7,8 +7,9 @@ import (
 )
 
 type subscriber struct {
-	ch     chan *vttv1.Envelope
-	closed bool
+	ch      chan *vttv1.Envelope
+	closed  bool
+	lastSeq int64
 }
 
 // Subscribe delivers every event with seq > afterSeq: history first (loaded
@@ -33,19 +34,20 @@ func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, f
 	if err != nil {
 		return nil, nil, err
 	}
-	sub := &subscriber{ch: make(chan *vttv1.Envelope, len(history)+buffer)}
+	sub := &subscriber{ch: make(chan *vttv1.Envelope, len(history)+buffer), lastSeq: afterSeq}
 	for _, env := range history {
 		sub.ch <- env // fits by construction
+		sub.lastSeq = env.Sequence
 	}
 	s.subs = append(s.subs, sub)
 
 	// cancel marks sub closed but does not remove it from s.subs itself —
 	// dropLocked only flips the closed flag and closes the channel. The
-	// closed subscriber stays in s.subs until the next Append's
+	// closed subscriber stays in s.subs until the next Notify's
 	// notifyLocked compaction pass sweeps it out. Deliberate lazy
 	// reclamation: cancel doesn't need to touch the slice under lock beyond
 	// the single dropLocked call, and the compaction it defers to already
-	// runs on every Append regardless.
+	// runs on every Notify regardless.
 	cancel := func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -55,13 +57,23 @@ func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, f
 }
 
 // notifyLocked delivers env to all live subscribers; callers hold s.mu.
+// Skips any subscriber whose lastSeq already covers env.Sequence — either
+// because its catch-up preload already included it, or a prior notifyLocked
+// call already delivered it. This makes Notify idempotent per subscriber
+// and closes the race where Subscribe lands between an event's persist and
+// its caller's later Notify call: the catch-up preload already delivered
+// the event, so the raced Notify is a no-op for that subscriber.
 func (s *Store) notifyLocked(env *vttv1.Envelope) {
 	for _, sub := range s.subs {
 		if sub.closed {
 			continue
 		}
+		if env.Sequence <= sub.lastSeq {
+			continue
+		}
 		select {
 		case sub.ch <- env:
+			sub.lastSeq = env.Sequence
 		default: // overflow: close, drop
 			s.dropLocked(sub)
 		}

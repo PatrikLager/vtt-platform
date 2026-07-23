@@ -86,8 +86,18 @@ func (s *Store) Append(env *vttv1.Envelope) (int64, error) {
 		env.Sequence = 0
 		return 0, err
 	}
-	s.notifyLocked(env)
 	return next, nil
+}
+
+// Notify fans env out to subscribers. Callers invoke it AFTER the event's
+// effects are observable (campaign: after live apply) so a subscriber that
+// sees event N can always read state >= N. Idempotent per subscriber via
+// sequence dedupe, which also closes the subscribe-between-persist-and-notify
+// race.
+func (s *Store) Notify(env *vttv1.Envelope) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notifyLocked(env)
 }
 
 // ReadAfter returns all events with seq > afterSeq, in order.
