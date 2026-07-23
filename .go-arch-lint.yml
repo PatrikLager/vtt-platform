@@ -10,14 +10,21 @@ exclude:
   - contract-spike
 excludeFiles:
   - contract/roundtrip_test\.go$
+  # identity is self-only in production code (mayDependOn: [identity]), but
+  # its test file legitimately proves coexistence with store.Store on the
+  # same campaign file (task-3-brief.md Step 1) — that one behavioral case
+  # requires importing store + contract, same precedent as the entry above.
+  - internal/identity/identity_test\.go$
 components:
   contract: { in: contract/gen/go/** }
   store:    { in: internal/store }
   engine:   { in: internal/engine }
   campaign: { in: internal/campaign }
   toolgen:  { in: tools/toolgen }
+  identity: { in: internal/identity }
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
+  identity: { mayDependOn: [identity] }
