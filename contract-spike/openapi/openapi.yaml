@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: vtt-platform contract spike
+  version: 0.0.1
+paths:
+  /sessions/{sessionId}/tokens/{tokenId}/move:
+    post:
+      operationId: moveToken
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: tokenId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveTokenRequest' }
+      responses:
+        '200':
+          description: Token moved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenMoved' }
+components:
+  schemas:
+    GridPosition:
+      type: object
+      properties:
+        x: { type: integer }
+        y: { type: integer }
+      required: [x, y]
+    MoveTokenRequest:
+      type: object
+      properties:
+        tokenId: { type: string }
+        to: { $ref: '#/components/schemas/GridPosition' }
+      required: [tokenId, to]
+    TokenMoved:
+      type: object
+      properties:
+        tokenId: { type: string }
+        sceneId: { type: string }
+        from: { $ref: '#/components/schemas/GridPosition' }
+        to: { $ref: '#/components/schemas/GridPosition' }
+      required: [tokenId, sceneId, from, to]
+    AttackRolled:
+      type: object
+      properties:
+        attackerId: { type: string }
+        targetId: { type: string }
+        expression: { type: string }
+        rolls:
+          type: array
+          items:
+            type: object
+            properties:
+              die: { type: integer }
+              result: { type: integer }
+            required: [die, result]
+        modifiers:
+          type: array
+          items:
+            type: object
+            properties:
+              source: { type: string }
+              value: { type: integer }
+            required: [source, value]
+        total: { type: integer }
+        versus: { type: string }
+        outcome: { type: string }
+      required: [attackerId, targetId, expression, rolls, modifiers, total, versus, outcome]
+    Actor:
+      type: object
+      properties:
+        actorId: { type: string }
+        name: { type: string }
+        moduleId: { type: string }
+        attributes:
+          type: object
+          additionalProperties: { type: integer }
+        resources:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              current: { type: integer }
+              max: { type: integer }
+            required: [current, max]
+        moduleData: { type: object }
+      required: [actorId, name, moduleId, attributes, resources]

@@ -19,3 +19,9 @@ tasks:
     cmds:
       - bunx quicktype --src-lang schema --lang go --package jsgen -o gen/go/types.go schemas/*.schema.json
       - bunx quicktype --src-lang schema --lang typescript --just-types -o gen/ts/types.ts schemas/*.schema.json
+
+  generate:openapi:
+    dir: contract-spike/openapi
+    cmds:
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -generate types,skip-prune -package oagen -o gen/go/types.gen.go openapi.yaml
+      - bunx openapi-typescript openapi.yaml -o gen/ts/types.ts
