@@ -402,13 +402,15 @@ func (x *Resource) GetMax() int32 {
 // Engine-generic actor: named stats and pools are open maps; module_data is an
 // opaque module-owned blob the contract never inspects (see README: Struct rules).
 type Actor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	ModuleId      string                 `protobuf:"bytes,3,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
-	Attributes    map[string]int32       `protobuf:"bytes,4,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	Resources     map[string]*Resource   `protobuf:"bytes,5,rep,name=resources,proto3" json:"resources,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ModuleData    *structpb.Struct       `protobuf:"bytes,6,opt,name=module_data,json=moduleData,proto3" json:"module_data,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ActorId    string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Name       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ModuleId   string                 `protobuf:"bytes,3,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	Attributes map[string]int32       `protobuf:"bytes,4,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Resources  map[string]*Resource   `protobuf:"bytes,5,rep,name=resources,proto3" json:"resources,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ModuleData *structpb.Struct       `protobuf:"bytes,6,opt,name=module_data,json=moduleData,proto3" json:"module_data,omitempty"`
+	// Participant who may act as this actor; empty = DM/agent only.
+	ControllerId  string `protobuf:"bytes,7,opt,name=controller_id,json=controllerId,proto3" json:"controller_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -483,6 +485,13 @@ func (x *Actor) GetModuleData() *structpb.Struct {
 		return x.ModuleData
 	}
 	return nil
+}
+
+func (x *Actor) GetControllerId() string {
+	if x != nil {
+		return x.ControllerId
+	}
+	return ""
 }
 
 type SceneCreated struct {
@@ -814,6 +823,8 @@ type Envelope struct {
 	OccurredAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
 	SessionId  string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	ActorRole  string                 `protobuf:"bytes,5,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"`
+	// Who caused this event; stamped by the gateway.
+	ParticipantId string `protobuf:"bytes,6,opt,name=participant_id,json=participantId,proto3" json:"participant_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*Envelope_TokenMoved
@@ -890,6 +901,13 @@ func (x *Envelope) GetSessionId() string {
 func (x *Envelope) GetActorRole() string {
 	if x != nil {
 		return x.ActorRole
+	}
+	return ""
+}
+
+func (x *Envelope) GetParticipantId() string {
+	if x != nil {
+		return x.ParticipantId
 	}
 	return ""
 }
@@ -1059,7 +1077,7 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\aoutcome\x18\b \x01(\tR\aoutcome\"6\n" +
 	"\bResource\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\x05R\acurrent\x12\x10\n" +
-	"\x03max\x18\x02 \x01(\x05R\x03max\"\x97\x03\n" +
+	"\x03max\x18\x02 \x01(\x05R\x03max\"\xbc\x03\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -1069,7 +1087,8 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"attributes\x12:\n" +
 	"\tresources\x18\x05 \x03(\v2\x1c.vtt.v1.Actor.ResourcesEntryR\tresources\x128\n" +
 	"\vmodule_data\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"moduleData\x1a=\n" +
+	"moduleData\x12#\n" +
+	"\rcontroller_id\x18\a \x01(\tR\fcontrollerId\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1aN\n" +
@@ -1098,7 +1117,7 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\rfrom_sequence\x18\x01 \x01(\x03R\ffromSequence\x12\x1f\n" +
 	"\vto_sequence\x18\x02 \x01(\x03R\n" +
 	"toSequence\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xaf\x05\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xd6\x05\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12;\n" +
@@ -1107,7 +1126,8 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x04 \x01(\tR\tsessionId\x12\x1d\n" +
 	"\n" +
-	"actor_role\x18\x05 \x01(\tR\tactorRole\x125\n" +
+	"actor_role\x18\x05 \x01(\tR\tactorRole\x12%\n" +
+	"\x0eparticipant_id\x18\x06 \x01(\tR\rparticipantId\x125\n" +
 	"\vtoken_moved\x18\n" +
 	" \x01(\v2\x12.vtt.v1.TokenMovedH\x00R\n" +
 	"tokenMoved\x12;\n" +

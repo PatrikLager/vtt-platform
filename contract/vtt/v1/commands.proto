@@ -19,3 +19,62 @@ message MoveTokenResponse {
   string error = 2;
   TokenMoved event = 3;
 }
+
+// Commands are imperative; the events they become are past-tense.
+message CreateScene {
+  string scene_id = 1;
+  string name = 2;
+  int32 grid_width = 3;
+  int32 grid_height = 4;
+}
+
+message AddActor {
+  Actor actor = 1;
+}
+
+message PlaceToken {
+  string token_id = 1;
+  string scene_id = 2;
+  string actor_id = 3;
+  GridPosition position = 4;
+}
+
+message StartSession {
+  string name = 1;
+}
+
+message EndSession {}
+
+message RetractEvents {
+  int64 from_sequence = 1;
+  int64 to_sequence = 2;
+  string reason = 3;
+}
+
+message ClientCommand {
+  string request_id = 1;
+  oneof command {
+    MoveTokenRequest move_token = 10;
+    CreateScene create_scene = 11;
+    AddActor add_actor = 12;
+    PlaceToken place_token = 13;
+    StartSession start_session = 14;
+    EndSession end_session = 15;
+    RetractEvents retract_events = 16;
+  }
+}
+
+message CommandResult {
+  string request_id = 1;
+  bool ok = 2;
+  string error = 3;
+  int64 sequence = 4;
+}
+
+// The server->client frame; the oneof key is the frame discriminator.
+message ServerFrame {
+  oneof frame {
+    CommandResult result = 1;
+    Envelope event = 2;
+  }
+}

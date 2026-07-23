@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { GridPosition, TokenMoved } from "./events_pb";
+import type { Actor, Envelope, GridPosition, TokenMoved } from "./events_pb";
 import { file_vtt_v1_events } from "./events_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLoAgoNQ2xpZW50Q29tbWFuZBISCgpyZXF1ZXN0X2lkGAEgASgJEi4KCm1vdmVfdG9rZW4YCiABKAsyGC52dHQudjEuTW92ZVRva2VuUmVxdWVzdEgAEisKDGNyZWF0ZV9zY2VuZRgLIAEoCzITLnZ0dC52MS5DcmVhdGVTY2VuZUgAEiUKCWFkZF9hY3RvchgMIAEoCzIQLnZ0dC52MS5BZGRBY3RvckgAEikKC3BsYWNlX3Rva2VuGA0gASgLMhIudnR0LnYxLlBsYWNlVG9rZW5IABItCg1zdGFydF9zZXNzaW9uGA4gASgLMhQudnR0LnYxLlN0YXJ0U2Vzc2lvbkgAEikKC2VuZF9zZXNzaW9uGA8gASgLMhIudnR0LnYxLkVuZFNlc3Npb25IABIvCg5yZXRyYWN0X2V2ZW50cxgQIAEoCzIVLnZ0dC52MS5SZXRyYWN0RXZlbnRzSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiYgoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAQgcKBWZyYW1lQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -70,4 +70,271 @@ export type MoveTokenResponse = Message<"vtt.v1.MoveTokenResponse"> & {
  */
 export const MoveTokenResponseSchema: GenMessage<MoveTokenResponse> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 1);
+
+/**
+ * Commands are imperative; the events they become are past-tense.
+ *
+ * @generated from message vtt.v1.CreateScene
+ */
+export type CreateScene = Message<"vtt.v1.CreateScene"> & {
+  /**
+   * @generated from field: string scene_id = 1;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: int32 grid_width = 3;
+   */
+  gridWidth: number;
+
+  /**
+   * @generated from field: int32 grid_height = 4;
+   */
+  gridHeight: number;
+};
+
+/**
+ * Describes the message vtt.v1.CreateScene.
+ * Use `create(CreateSceneSchema)` to create a new message.
+ */
+export const CreateSceneSchema: GenMessage<CreateScene> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 2);
+
+/**
+ * @generated from message vtt.v1.AddActor
+ */
+export type AddActor = Message<"vtt.v1.AddActor"> & {
+  /**
+   * @generated from field: vtt.v1.Actor actor = 1;
+   */
+  actor?: Actor | undefined;
+};
+
+/**
+ * Describes the message vtt.v1.AddActor.
+ * Use `create(AddActorSchema)` to create a new message.
+ */
+export const AddActorSchema: GenMessage<AddActor> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 3);
+
+/**
+ * @generated from message vtt.v1.PlaceToken
+ */
+export type PlaceToken = Message<"vtt.v1.PlaceToken"> & {
+  /**
+   * @generated from field: string token_id = 1;
+   */
+  tokenId: string;
+
+  /**
+   * @generated from field: string scene_id = 2;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: string actor_id = 3;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: vtt.v1.GridPosition position = 4;
+   */
+  position?: GridPosition | undefined;
+};
+
+/**
+ * Describes the message vtt.v1.PlaceToken.
+ * Use `create(PlaceTokenSchema)` to create a new message.
+ */
+export const PlaceTokenSchema: GenMessage<PlaceToken> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 4);
+
+/**
+ * @generated from message vtt.v1.StartSession
+ */
+export type StartSession = Message<"vtt.v1.StartSession"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message vtt.v1.StartSession.
+ * Use `create(StartSessionSchema)` to create a new message.
+ */
+export const StartSessionSchema: GenMessage<StartSession> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 5);
+
+/**
+ * @generated from message vtt.v1.EndSession
+ */
+export type EndSession = Message<"vtt.v1.EndSession"> & {
+};
+
+/**
+ * Describes the message vtt.v1.EndSession.
+ * Use `create(EndSessionSchema)` to create a new message.
+ */
+export const EndSessionSchema: GenMessage<EndSession> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 6);
+
+/**
+ * @generated from message vtt.v1.RetractEvents
+ */
+export type RetractEvents = Message<"vtt.v1.RetractEvents"> & {
+  /**
+   * @generated from field: int64 from_sequence = 1;
+   */
+  fromSequence: bigint;
+
+  /**
+   * @generated from field: int64 to_sequence = 2;
+   */
+  toSequence: bigint;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message vtt.v1.RetractEvents.
+ * Use `create(RetractEventsSchema)` to create a new message.
+ */
+export const RetractEventsSchema: GenMessage<RetractEvents> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 7);
+
+/**
+ * @generated from message vtt.v1.ClientCommand
+ */
+export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from oneof vtt.v1.ClientCommand.command
+   */
+  command: {
+    /**
+     * @generated from field: vtt.v1.MoveTokenRequest move_token = 10;
+     */
+    value: MoveTokenRequest;
+    case: "moveToken";
+  } | {
+    /**
+     * @generated from field: vtt.v1.CreateScene create_scene = 11;
+     */
+    value: CreateScene;
+    case: "createScene";
+  } | {
+    /**
+     * @generated from field: vtt.v1.AddActor add_actor = 12;
+     */
+    value: AddActor;
+    case: "addActor";
+  } | {
+    /**
+     * @generated from field: vtt.v1.PlaceToken place_token = 13;
+     */
+    value: PlaceToken;
+    case: "placeToken";
+  } | {
+    /**
+     * @generated from field: vtt.v1.StartSession start_session = 14;
+     */
+    value: StartSession;
+    case: "startSession";
+  } | {
+    /**
+     * @generated from field: vtt.v1.EndSession end_session = 15;
+     */
+    value: EndSession;
+    case: "endSession";
+  } | {
+    /**
+     * @generated from field: vtt.v1.RetractEvents retract_events = 16;
+     */
+    value: RetractEvents;
+    case: "retractEvents";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message vtt.v1.ClientCommand.
+ * Use `create(ClientCommandSchema)` to create a new message.
+ */
+export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 8);
+
+/**
+ * @generated from message vtt.v1.CommandResult
+ */
+export type CommandResult = Message<"vtt.v1.CommandResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool ok = 2;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string error = 3;
+   */
+  error: string;
+
+  /**
+   * @generated from field: int64 sequence = 4;
+   */
+  sequence: bigint;
+};
+
+/**
+ * Describes the message vtt.v1.CommandResult.
+ * Use `create(CommandResultSchema)` to create a new message.
+ */
+export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 9);
+
+/**
+ * The server->client frame; the oneof key is the frame discriminator.
+ *
+ * @generated from message vtt.v1.ServerFrame
+ */
+export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
+  /**
+   * @generated from oneof vtt.v1.ServerFrame.frame
+   */
+  frame: {
+    /**
+     * @generated from field: vtt.v1.CommandResult result = 1;
+     */
+    value: CommandResult;
+    case: "result";
+  } | {
+    /**
+     * @generated from field: vtt.v1.Envelope event = 2;
+     */
+    value: Envelope;
+    case: "event";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message vtt.v1.ServerFrame.
+ * Use `create(ServerFrameSchema)` to create a new message.
+ */
+export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 10);
 

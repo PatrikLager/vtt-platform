@@ -6,7 +6,11 @@ import {
   AttackRolledSchema,
   ActorSchema,
 } from "./gen/ts/vtt/v1/events_pb";
-import { MoveTokenRequestSchema } from "./gen/ts/vtt/v1/commands_pb";
+import {
+  MoveTokenRequestSchema,
+  ClientCommandSchema,
+  ServerFrameSchema,
+} from "./gen/ts/vtt/v1/commands_pb";
 
 const cases = [
   ["token_moved.json", TokenMovedSchema],
@@ -16,6 +20,8 @@ const cases = [
   ["envelope.json", EnvelopeSchema],
   ["scene_envelope.json", EnvelopeSchema],
   ["retraction_envelope.json", EnvelopeSchema],
+  ["client_command.json", ClientCommandSchema],
+  ["server_frame_result.json", ServerFrameSchema],
 ] as const;
 
 for (const [fixture, schema] of cases) {

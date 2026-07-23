@@ -1,0 +1,8 @@
+{
+  "requestId": "req-01J9ZK8A1B2C3D4E5F6G7H8J9K",
+  "moveToken": {
+    "tokenId": "tok-ursus",
+    "to": { "x": 5, "y": 8 },
+    "reason": "charging the goblin line"
+  }
+}

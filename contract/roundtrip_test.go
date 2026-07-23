@@ -49,6 +49,12 @@ func TestSceneEnvelopeRoundTrip(t *testing.T) { roundTrip(t, "scene_envelope.jso
 func TestRetractionEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "retraction_envelope.json", &vttv1.Envelope{})
 }
+func TestClientCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "client_command.json", &vttv1.ClientCommand{})
+}
+func TestServerFrameResultRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_result.json", &vttv1.ServerFrame{})
+}
 
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")

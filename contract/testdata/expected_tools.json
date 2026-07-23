@@ -18,5 +18,117 @@
       },
       "required": ["tokenId", "to"]
     }
+  },
+  {
+    "name": "create_scene",
+    "description": "Create a new scene with a grid.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sceneId": { "type": "string" },
+        "name": { "type": "string" },
+        "gridWidth": { "type": "integer" },
+        "gridHeight": { "type": "integer" }
+      },
+      "required": ["sceneId", "name", "gridWidth", "gridHeight"]
+    }
+  },
+  {
+    "name": "add_actor",
+    "description": "Add an actor to the campaign.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "object",
+          "properties": {
+            "actorId": { "type": "string" },
+            "name": { "type": "string" },
+            "moduleId": { "type": "string" },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": { "type": "integer" }
+            },
+            "resources": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "current": { "type": "integer" },
+                  "max": { "type": "integer" }
+                },
+                "required": ["current", "max"]
+              }
+            },
+            "moduleData": { "type": "object" },
+            "controllerId": { "type": "string" }
+          },
+          "required": [
+            "actorId",
+            "name",
+            "moduleId",
+            "attributes",
+            "resources",
+            "moduleData",
+            "controllerId"
+          ]
+        }
+      },
+      "required": ["actor"]
+    }
+  },
+  {
+    "name": "place_token",
+    "description": "Place an actor's token on a scene's grid.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tokenId": { "type": "string" },
+        "sceneId": { "type": "string" },
+        "actorId": { "type": "string" },
+        "position": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "integer" },
+            "y": { "type": "integer" }
+          },
+          "required": ["x", "y"]
+        }
+      },
+      "required": ["tokenId", "sceneId", "actorId", "position"]
+    }
+  },
+  {
+    "name": "start_session",
+    "description": "Start a new play session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    }
+  },
+  {
+    "name": "end_session",
+    "description": "End the current play session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "retract_events",
+    "description": "Retract a range of events from the record with a stated reason.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fromSequence": { "type": "integer" },
+        "toSequence": { "type": "integer" },
+        "reason": { "type": "string" }
+      },
+      "required": ["fromSequence", "toSequence", "reason"]
+    }
   }
 ]

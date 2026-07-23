@@ -54,6 +54,8 @@ message Actor {
   map<string, int32> attributes = 4;
   map<string, Resource> resources = 5;
   google.protobuf.Struct module_data = 6;
+  // Participant who may act as this actor; empty = DM/agent only.
+  string controller_id = 7;
 }
 
 message SceneCreated {
@@ -94,6 +96,8 @@ message Envelope {
   google.protobuf.Timestamp occurred_at = 3;
   string session_id = 4;
   string actor_role = 5;
+  // Who caused this event; stamped by the gateway.
+  string participant_id = 6;
   oneof payload {
     TokenMoved token_moved = 10;
     AttackRolled attack_rolled = 11;

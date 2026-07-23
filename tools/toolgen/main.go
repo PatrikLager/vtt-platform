@@ -30,6 +30,42 @@ var manifest = []toolSpec{
 		description: "Move a token to a new grid position on its scene.",
 		descriptor:  (&vttv1.MoveTokenRequest{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.CreateScene",
+		name:        "create_scene",
+		description: "Create a new scene with a grid.",
+		descriptor:  (&vttv1.CreateScene{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.AddActor",
+		name:        "add_actor",
+		description: "Add an actor to the campaign.",
+		descriptor:  (&vttv1.AddActor{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.PlaceToken",
+		name:        "place_token",
+		description: "Place an actor's token on a scene's grid.",
+		descriptor:  (&vttv1.PlaceToken{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.StartSession",
+		name:        "start_session",
+		description: "Start a new play session.",
+		descriptor:  (&vttv1.StartSession{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.EndSession",
+		name:        "end_session",
+		description: "End the current play session.",
+		descriptor:  (&vttv1.EndSession{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.RetractEvents",
+		name:        "retract_events",
+		description: "Retract a range of events from the record with a stated reason.",
+		descriptor:  (&vttv1.RetractEvents{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {
@@ -44,26 +80,51 @@ func schemaFor(md protoreflect.MessageDescriptor) map[string]any {
 	for i := 0; i < fields.Len(); i++ {
 		f := fields.Get(i)
 		name := f.JSONName()
-		if f.IsList() || f.IsMap() {
-			panic(fmt.Sprintf("toolgen: repeated/map field %s not yet supported", f.FullName()))
+		if f.IsMap() {
+			props[name] = map[string]any{
+				"type":                 "object",
+				"additionalProperties": valueSchema(f.MapValue()),
+			}
+			if !isOptional(f) {
+				required = append(required, name)
+			}
+			continue
 		}
-		switch f.Kind() {
-		case protoreflect.StringKind:
-			props[name] = map[string]any{"type": "string"}
-		case protoreflect.BoolKind:
-			props[name] = map[string]any{"type": "boolean"}
-		case protoreflect.Int32Kind, protoreflect.Int64Kind:
-			props[name] = map[string]any{"type": "integer"}
-		case protoreflect.MessageKind:
-			props[name] = schemaFor(f.Message())
-		default:
-			panic(fmt.Sprintf("toolgen: unhandled kind %v on %s", f.Kind(), f.FullName()))
+		if f.IsList() {
+			props[name] = map[string]any{"type": "array", "items": valueSchema(f)}
+			if !isOptional(f) {
+				required = append(required, name)
+			}
+			continue
 		}
+		props[name] = valueSchema(f)
 		if !isOptional(f) {
 			required = append(required, name)
 		}
 	}
 	return map[string]any{"type": "object", "properties": props, "required": required}
+}
+
+// valueSchema derives the JSON Schema for a single scalar/message value —
+// shared by plain fields, map values, and list items. google.protobuf.Struct
+// is emitted as a bare open object since the contract never inspects
+// module-owned data (see README: Struct rules).
+func valueSchema(f protoreflect.FieldDescriptor) map[string]any {
+	switch f.Kind() {
+	case protoreflect.StringKind:
+		return map[string]any{"type": "string"}
+	case protoreflect.BoolKind:
+		return map[string]any{"type": "boolean"}
+	case protoreflect.Int32Kind, protoreflect.Int64Kind:
+		return map[string]any{"type": "integer"}
+	case protoreflect.MessageKind:
+		if f.Message().FullName() == "google.protobuf.Struct" {
+			return map[string]any{"type": "object"}
+		}
+		return schemaFor(f.Message())
+	default:
+		panic(fmt.Sprintf("toolgen: unhandled kind %v on %s", f.Kind(), f.FullName()))
+	}
 }
 
 func buildTools() []map[string]any {

@@ -32,8 +32,12 @@ func TestToolsMatchGolden(t *testing.T) {
 	}
 }
 
-// Every command message (name ending in "Request") must have a manifest entry —
-// forgetting one means the LLM silently loses a capability.
+// Every command message must have a manifest entry — forgetting one means the
+// LLM silently loses a capability. Two registries are checked: legacy
+// "Request"-suffixed messages (pre-ClientCommand convention), and every
+// message that appears as a ClientCommand oneof variant — the latter IS the
+// command registry now that commands are imperative-named (CreateScene, not
+// CreateSceneRequest) and dispatched through ClientCommand's oneof.
 func TestManifestCoversAllCommandMessages(t *testing.T) {
 	msgs := vttv1.File_vtt_v1_commands_proto.Messages()
 	for i := 0; i < msgs.Len(); i++ {
@@ -41,14 +45,27 @@ func TestManifestCoversAllCommandMessages(t *testing.T) {
 		if !strings.HasSuffix(name, "Request") {
 			continue
 		}
-		found := false
-		for _, spec := range manifest {
-			if spec.message == name {
-				found = true
-			}
+		requireManifestEntry(t, name)
+	}
+
+	cc := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor()
+	fields := cc.Fields()
+	for i := 0; i < fields.Len(); i++ {
+		f := fields.Get(i)
+		oo := f.ContainingOneof()
+		if oo == nil || oo.IsSynthetic() {
+			continue // not a command oneof variant (e.g. request_id)
 		}
-		if !found {
-			t.Fatalf("command message %s has no toolgen manifest entry", name)
+		requireManifestEntry(t, string(f.Message().FullName()))
+	}
+}
+
+func requireManifestEntry(t *testing.T, message string) {
+	t.Helper()
+	for _, spec := range manifest {
+		if spec.message == message {
+			return
 		}
 	}
+	t.Fatalf("command message %s has no toolgen manifest entry", message)
 }
