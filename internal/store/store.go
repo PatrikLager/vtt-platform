@@ -25,8 +25,9 @@ CREATE TABLE IF NOT EXISTS events (
 );`
 
 type Store struct {
-	mu sync.Mutex
-	db *sql.DB
+	mu   sync.Mutex
+	db   *sql.DB
+	subs []*subscriber
 }
 
 func Open(path string) (*Store, error) {
@@ -85,6 +86,7 @@ func (s *Store) Append(env *vttv1.Envelope) (int64, error) {
 		env.Sequence = 0
 		return 0, err
 	}
+	s.notifyLocked(env)
 	return next, nil
 }
 
@@ -119,5 +121,9 @@ func (s *Store) readAfterLocked(afterSeq int64) ([]*vttv1.Envelope, error) {
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, sub := range s.subs {
+		s.dropLocked(sub)
+	}
+	s.subs = nil
 	return s.db.Close()
 }
