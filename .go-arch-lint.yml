@@ -22,9 +22,11 @@ components:
   campaign: { in: internal/campaign }
   toolgen:  { in: tools/toolgen }
   identity: { in: internal/identity }
+  gateway:  { in: internal/gateway }
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway] }
