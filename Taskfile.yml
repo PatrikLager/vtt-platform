@@ -7,6 +7,24 @@ tasks:
       - go vet ./...
       - go test ./...
       - bun test
+      - task: check:drift
+      - task: check:breaking
+
+  check:drift:
+    desc: Regenerate contract artifacts and fail if committed output drifted
+    cmds:
+      - task: generate:contract
+      - git diff --exit-code -- contract/gen
+
+  check:breaking:
+    desc: Fail on breaking changes to contract/ vs main
+    cmds:
+      - |
+        if git ls-tree -d main:contract >/dev/null 2>&1; then
+          cd contract && go tool buf breaking --against '../.git#branch=main,subdir=contract'
+        else
+          echo "check:breaking: contract/ not on main yet; gate activates after first merge"
+        fi
 
   generate:contract:
     dir: contract
