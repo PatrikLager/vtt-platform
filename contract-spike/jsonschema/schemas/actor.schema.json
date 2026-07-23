@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vtt-platform.dev/schemas/actor.schema.json",
+  "title": "Actor",
+  "type": "object",
+  "properties": {
+    "actorId": { "type": "string" },
+    "name": { "type": "string" },
+    "moduleId": { "type": "string" },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": { "type": "integer" }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Resource" }
+    },
+    "moduleData": { "type": "object" }
+  },
+  "required": ["actorId", "name", "moduleId", "attributes", "resources", "moduleData"],
+  "additionalProperties": false,
+  "$defs": {
+    "Resource": {
+      "type": "object",
+      "properties": {
+        "current": { "type": "integer" },
+        "max": { "type": "integer" }
+      },
+      "required": ["current", "max"],
+      "additionalProperties": false
+    }
+  }
+}

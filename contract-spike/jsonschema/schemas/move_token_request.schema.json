@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vtt-platform.dev/schemas/move_token_request.schema.json",
+  "title": "MoveTokenRequest",
+  "type": "object",
+  "properties": {
+    "tokenId": { "type": "string" },
+    "to": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      },
+      "required": ["x", "y"]
+    }
+  },
+  "required": ["tokenId", "to"]
+}

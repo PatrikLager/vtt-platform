@@ -13,3 +13,9 @@ tasks:
     cmds:
       - buf lint
       - buf generate
+
+  generate:jsonschema:
+    dir: contract-spike/jsonschema
+    cmds:
+      - bunx quicktype --src-lang schema --lang go --package jsgen -o gen/go/types.go schemas/*.schema.json
+      - bunx quicktype --src-lang schema --lang typescript --just-types -o gen/ts/types.ts schemas/*.schema.json

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vtt-platform.dev/schemas/attack_rolled.schema.json",
+  "title": "AttackRolled",
+  "type": "object",
+  "properties": {
+    "attackerId": { "type": "string" },
+    "targetId": { "type": "string" },
+    "expression": { "type": "string" },
+    "rolls": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DieRoll" }
+    },
+    "modifiers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Modifier" }
+    },
+    "total": { "type": "integer" },
+    "versus": { "type": "string" },
+    "outcome": { "type": "string" }
+  },
+  "required": [
+    "attackerId",
+    "targetId",
+    "expression",
+    "rolls",
+    "modifiers",
+    "total",
+    "versus",
+    "outcome"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "DieRoll": {
+      "type": "object",
+      "properties": {
+        "die": { "type": "integer" },
+        "result": { "type": "integer" }
+      },
+      "required": ["die", "result"],
+      "additionalProperties": false
+    },
+    "Modifier": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "value": { "type": "integer" }
+      },
+      "required": ["source", "value"],
+      "additionalProperties": false
+    }
+  }
+}

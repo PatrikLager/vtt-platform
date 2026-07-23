@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vtt-platform.dev/schemas/token_moved.schema.json",
+  "title": "TokenMoved",
+  "type": "object",
+  "properties": {
+    "tokenId": { "type": "string" },
+    "sceneId": { "type": "string" },
+    "from": { "$ref": "#/$defs/GridPosition" },
+    "to": { "$ref": "#/$defs/GridPosition" }
+  },
+  "required": ["tokenId", "sceneId", "from", "to"],
+  "additionalProperties": false,
+  "$defs": {
+    "GridPosition": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      },
+      "required": ["x", "y"],
+      "additionalProperties": false
+    }
+  }
+}
