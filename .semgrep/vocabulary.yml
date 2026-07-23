@@ -1,0 +1,11 @@
+rules:
+  - id: no-game-system-vocabulary-in-engine
+    message: >
+      Game-system vocabulary is forbidden in platform code (pillars P2/P4,
+      ADR-002/004). Rules concepts live in rule-module DATA, never engine code.
+    severity: ERROR
+    languages: [go]
+    paths:
+      include: [internal/]
+    patterns:
+      - pattern-regex: (?i)(healing_?surge|daily_?power|encounter_?power|at_?will_?power|fortitude|bloodied|saving_?throw|action_?point|hit_?points)

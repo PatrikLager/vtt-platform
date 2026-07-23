@@ -1,0 +1,19 @@
+version: 3
+workdir: .
+allow:
+  depOnAnyVendor: true
+exclude:
+  - contract-spike
+excludeFiles:
+  - contract/roundtrip_test\.go$
+components:
+  contract: { in: contract/gen/go/** }
+  store:    { in: internal/store }
+  engine:   { in: internal/engine }
+  campaign: { in: internal/campaign }
+  toolgen:  { in: tools/toolgen }
+deps:
+  store:    { mayDependOn: [contract, store] }
+  engine:   { mayDependOn: [contract, engine] }
+  campaign: { mayDependOn: [contract, store, engine, campaign] }
+  toolgen:  { mayDependOn: [contract] }

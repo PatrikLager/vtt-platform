@@ -9,6 +9,18 @@ tasks:
       - bun test
       - task: check:drift
       - task: check:breaking
+      - task: check:vocabulary
+      - task: check:arch
+
+  check:vocabulary:
+    desc: Fail on game-system vocabulary in platform code (P2/P4)
+    cmds:
+      - semgrep scan --config .semgrep/vocabulary.yml --error --quiet internal/
+
+  check:arch:
+    desc: Enforce package layering (store/engine/campaign)
+    cmds:
+      - go-arch-lint check
 
   check:drift:
     desc: Regenerate contract artifacts and fail if committed output drifted
