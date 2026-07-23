@@ -1,0 +1,13 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V0W",
+  "sequence": "42",
+  "occurredAt": "2026-07-23T19:04:05Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "agent",
+  "tokenMoved": {
+    "tokenId": "tok-ursus",
+    "sceneId": "scn-goblin-warrens",
+    "from": { "x": 3, "y": 7 },
+    "to": { "x": 5, "y": 8 }
+  }
+}

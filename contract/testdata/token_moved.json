@@ -1,0 +1,6 @@
+{
+  "tokenId": "tok-ursus",
+  "sceneId": "scn-goblin-warrens",
+  "from": { "x": 3, "y": 7 },
+  "to": { "x": 5, "y": 8 }
+}

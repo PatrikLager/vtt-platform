@@ -1,0 +1,14 @@
+{
+  "attackerId": "tok-ursus",
+  "targetId": "tok-goblin-3",
+  "expression": "1d20+9",
+  "rolls": [ { "die": 20, "result": 14 } ],
+  "modifiers": [
+    { "source": "STR", "value": 5 },
+    { "source": "proficiency", "value": 3 },
+    { "source": "combatAdvantage", "value": 2 }
+  ],
+  "total": 24,
+  "versus": "AC",
+  "outcome": "hit"
+}
