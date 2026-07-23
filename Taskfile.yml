@@ -4,9 +4,9 @@ tasks:
   check:
     desc: Single quality gateway — every task must leave this green
     cmds:
-      - 'test -z "$(go list ./... 2>/dev/null)" && echo "go vet: no packages yet, skipping" || go vet ./...'
-      - 'test -z "$(go list ./... 2>/dev/null)" && echo "go test: no packages yet, skipping" || go test ./...'
-      - 'test -z "$(find . \( -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.tsx" -o -name "*.spec.tsx" -o -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.jsx" -o -name "*.spec.jsx" \) -not -path "./node_modules/*" -print -quit)" && echo "bun test: no test files yet, skipping" || bun test'
+      - go vet ./...
+      - go test ./...
+      - bun test
 
   generate:proto:
     dir: contract-spike/proto
