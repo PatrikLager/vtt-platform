@@ -34,15 +34,28 @@ func Open(path string) (*Campaign, error) {
 }
 
 // rebuildLocked derives state from the full log: pass 1 collects retracted
-// ranges, pass 2 folds the non-retracted events. Unknown variants in an
-// existing log are skipped with a warning (forward compatibility, spec §7);
-// any other apply error is a corrupt log and fails loudly.
+// ranges, pass 2 folds the non-retracted events via foldEvents.
 func (c *Campaign) rebuildLocked() error {
 	events, err := c.log.ReadAfter(0)
 	if err != nil {
 		return err
 	}
-	retracted := retractedSet(events)
+	st, err := foldEvents(events, retractedSet(events))
+	if err != nil {
+		return err
+	}
+	c.state = st
+	return nil
+}
+
+// foldEvents folds events into a fresh engine.State, skipping any sequence
+// present in retracted and every EventsRetracted marker itself. Unknown
+// variants are skipped with a warning (forward compatibility, spec §7); any
+// other apply error means the resulting fold does not replay cleanly. This
+// is the single fold shared by rebuildLocked (the live/on-open rebuild) and
+// Undo's dry-run viability check — the codebase's core principle is one
+// fold, not two copies of the same loop.
+func foldEvents(events []*vttv1.Envelope, retracted map[int64]bool) (*engine.State, error) {
 	st := engine.NewState()
 	for _, env := range events {
 		if retracted[env.Sequence] {
@@ -57,11 +70,10 @@ func (c *Campaign) rebuildLocked() error {
 					"sequence", env.Sequence, "event_id", env.EventId)
 				continue
 			}
-			return fmt.Errorf("campaign: corrupt log at seq %d: %w", env.Sequence, err)
+			return nil, fmt.Errorf("campaign: corrupt log at seq %d: %w", env.Sequence, err)
 		}
 	}
-	c.state = st
-	return nil
+	return st, nil
 }
 
 func retractedSet(events []*vttv1.Envelope) map[int64]bool {
@@ -134,6 +146,24 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string
 			return fmt.Errorf("campaign: seq %d is already retracted", env.Sequence)
 		}
 	}
+
+	// Dry-run the filtered fold before persisting anything: the range shape
+	// checks above (bounds, no-nesting, no-double-retraction) don't tell us
+	// whether the log still replays once this range is retracted too. Build
+	// the would-be retracted set (already-retracted ∪ this range) and fold
+	// the full log against it through a scratch state. If that fold fails,
+	// this retraction would corrupt replay — reject it and persist nothing.
+	wouldBeRetracted := make(map[int64]bool, len(already)+int(to-from)+1)
+	for seq, v := range already {
+		wouldBeRetracted[seq] = v
+	}
+	for seq := from; seq <= to; seq++ {
+		wouldBeRetracted[seq] = true
+	}
+	if _, err := foldEvents(events, wouldBeRetracted); err != nil {
+		return fmt.Errorf("campaign: retraction would corrupt replay: %w", err)
+	}
+
 	marker := &vttv1.Envelope{
 		EventId:   eventID,
 		SessionId: sessionID,
