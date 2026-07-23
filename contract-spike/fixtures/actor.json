@@ -1,0 +1,11 @@
+{
+  "actorId": "act-ursus",
+  "name": "Ursus",
+  "moduleId": "dnd45e",
+  "attributes": { "strength": 21, "constitution": 16 },
+  "resources": {
+    "hp": { "current": 88, "max": 102 },
+    "surges": { "current": 9, "max": 11 }
+  },
+  "moduleData": { "rageStance": "BerserkerFury", "feralRejuvenation": true }
+}
