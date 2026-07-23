@@ -14,6 +14,8 @@ const cases = [
   ["actor.json", ActorSchema],
   ["move_token_request.json", MoveTokenRequestSchema],
   ["envelope.json", EnvelopeSchema],
+  ["scene_envelope.json", EnvelopeSchema],
+  ["retraction_envelope.json", EnvelopeSchema],
 ] as const;
 
 for (const [fixture, schema] of cases) {

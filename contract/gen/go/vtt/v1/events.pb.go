@@ -485,6 +485,328 @@ func (x *Actor) GetModuleData() *structpb.Struct {
 	return nil
 }
 
+type SceneCreated struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	GridWidth     int32                  `protobuf:"varint,3,opt,name=grid_width,json=gridWidth,proto3" json:"grid_width,omitempty"`
+	GridHeight    int32                  `protobuf:"varint,4,opt,name=grid_height,json=gridHeight,proto3" json:"grid_height,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SceneCreated) Reset() {
+	*x = SceneCreated{}
+	mi := &file_vtt_v1_events_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SceneCreated) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SceneCreated) ProtoMessage() {}
+
+func (x *SceneCreated) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SceneCreated.ProtoReflect.Descriptor instead.
+func (*SceneCreated) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SceneCreated) GetSceneId() string {
+	if x != nil {
+		return x.SceneId
+	}
+	return ""
+}
+
+func (x *SceneCreated) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SceneCreated) GetGridWidth() int32 {
+	if x != nil {
+		return x.GridWidth
+	}
+	return 0
+}
+
+func (x *SceneCreated) GetGridHeight() int32 {
+	if x != nil {
+		return x.GridHeight
+	}
+	return 0
+}
+
+type ActorAdded struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Actor         *Actor                 `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActorAdded) Reset() {
+	*x = ActorAdded{}
+	mi := &file_vtt_v1_events_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorAdded) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorAdded) ProtoMessage() {}
+
+func (x *ActorAdded) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorAdded.ProtoReflect.Descriptor instead.
+func (*ActorAdded) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ActorAdded) GetActor() *Actor {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+type TokenPlaced struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TokenId       string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	SceneId       string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	ActorId       string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Position      *GridPosition          `protobuf:"bytes,4,opt,name=position,proto3" json:"position,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenPlaced) Reset() {
+	*x = TokenPlaced{}
+	mi := &file_vtt_v1_events_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenPlaced) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenPlaced) ProtoMessage() {}
+
+func (x *TokenPlaced) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenPlaced.ProtoReflect.Descriptor instead.
+func (*TokenPlaced) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TokenPlaced) GetTokenId() string {
+	if x != nil {
+		return x.TokenId
+	}
+	return ""
+}
+
+func (x *TokenPlaced) GetSceneId() string {
+	if x != nil {
+		return x.SceneId
+	}
+	return ""
+}
+
+func (x *TokenPlaced) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *TokenPlaced) GetPosition() *GridPosition {
+	if x != nil {
+		return x.Position
+	}
+	return nil
+}
+
+type SessionStarted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionStarted) Reset() {
+	*x = SessionStarted{}
+	mi := &file_vtt_v1_events_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionStarted) ProtoMessage() {}
+
+func (x *SessionStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionStarted.ProtoReflect.Descriptor instead.
+func (*SessionStarted) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SessionStarted) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type SessionEnded struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionEnded) Reset() {
+	*x = SessionEnded{}
+	mi := &file_vtt_v1_events_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionEnded) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionEnded) ProtoMessage() {}
+
+func (x *SessionEnded) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionEnded.ProtoReflect.Descriptor instead.
+func (*SessionEnded) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{11}
+}
+
+// Compensating undo marker (spec §6). Retraction events cannot themselves
+// be retracted. Sequences follow wire convention 1 (int64 → JSON string).
+type EventsRetracted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromSequence  int64                  `protobuf:"varint,1,opt,name=from_sequence,json=fromSequence,proto3" json:"from_sequence,omitempty"`
+	ToSequence    int64                  `protobuf:"varint,2,opt,name=to_sequence,json=toSequence,proto3" json:"to_sequence,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventsRetracted) Reset() {
+	*x = EventsRetracted{}
+	mi := &file_vtt_v1_events_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventsRetracted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventsRetracted) ProtoMessage() {}
+
+func (x *EventsRetracted) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventsRetracted.ProtoReflect.Descriptor instead.
+func (*EventsRetracted) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *EventsRetracted) GetFromSequence() int64 {
+	if x != nil {
+		return x.FromSequence
+	}
+	return 0
+}
+
+func (x *EventsRetracted) GetToSequence() int64 {
+	if x != nil {
+		return x.ToSequence
+	}
+	return 0
+}
+
+func (x *EventsRetracted) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type Envelope struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	EventId    string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -496,6 +818,12 @@ type Envelope struct {
 	//
 	//	*Envelope_TokenMoved
 	//	*Envelope_AttackRolled
+	//	*Envelope_SceneCreated
+	//	*Envelope_ActorAdded
+	//	*Envelope_TokenPlaced
+	//	*Envelope_SessionStarted
+	//	*Envelope_SessionEnded
+	//	*Envelope_EventsRetracted
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -503,7 +831,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_vtt_v1_events_proto_msgTypes[7]
+	mi := &file_vtt_v1_events_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -515,7 +843,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[7]
+	mi := &file_vtt_v1_events_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -528,7 +856,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{7}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Envelope) GetEventId() string {
@@ -591,6 +919,60 @@ func (x *Envelope) GetAttackRolled() *AttackRolled {
 	return nil
 }
 
+func (x *Envelope) GetSceneCreated() *SceneCreated {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_SceneCreated); ok {
+			return x.SceneCreated
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetActorAdded() *ActorAdded {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ActorAdded); ok {
+			return x.ActorAdded
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetTokenPlaced() *TokenPlaced {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_TokenPlaced); ok {
+			return x.TokenPlaced
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetSessionStarted() *SessionStarted {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_SessionStarted); ok {
+			return x.SessionStarted
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetSessionEnded() *SessionEnded {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_SessionEnded); ok {
+			return x.SessionEnded
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetEventsRetracted() *EventsRetracted {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_EventsRetracted); ok {
+			return x.EventsRetracted
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -603,9 +985,45 @@ type Envelope_AttackRolled struct {
 	AttackRolled *AttackRolled `protobuf:"bytes,11,opt,name=attack_rolled,json=attackRolled,proto3,oneof"`
 }
 
+type Envelope_SceneCreated struct {
+	SceneCreated *SceneCreated `protobuf:"bytes,12,opt,name=scene_created,json=sceneCreated,proto3,oneof"`
+}
+
+type Envelope_ActorAdded struct {
+	ActorAdded *ActorAdded `protobuf:"bytes,13,opt,name=actor_added,json=actorAdded,proto3,oneof"`
+}
+
+type Envelope_TokenPlaced struct {
+	TokenPlaced *TokenPlaced `protobuf:"bytes,14,opt,name=token_placed,json=tokenPlaced,proto3,oneof"`
+}
+
+type Envelope_SessionStarted struct {
+	SessionStarted *SessionStarted `protobuf:"bytes,15,opt,name=session_started,json=sessionStarted,proto3,oneof"`
+}
+
+type Envelope_SessionEnded struct {
+	SessionEnded *SessionEnded `protobuf:"bytes,16,opt,name=session_ended,json=sessionEnded,proto3,oneof"`
+}
+
+type Envelope_EventsRetracted struct {
+	EventsRetracted *EventsRetracted `protobuf:"bytes,17,opt,name=events_retracted,json=eventsRetracted,proto3,oneof"`
+}
+
 func (*Envelope_TokenMoved) isEnvelope_Payload() {}
 
 func (*Envelope_AttackRolled) isEnvelope_Payload() {}
+
+func (*Envelope_SceneCreated) isEnvelope_Payload() {}
+
+func (*Envelope_ActorAdded) isEnvelope_Payload() {}
+
+func (*Envelope_TokenPlaced) isEnvelope_Payload() {}
+
+func (*Envelope_SessionStarted) isEnvelope_Payload() {}
+
+func (*Envelope_SessionEnded) isEnvelope_Payload() {}
+
+func (*Envelope_EventsRetracted) isEnvelope_Payload() {}
 
 var File_vtt_v1_events_proto protoreflect.FileDescriptor
 
@@ -657,7 +1075,30 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1aN\n" +
 	"\x0eResourcesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12&\n" +
-	"\x05value\x18\x02 \x01(\v2\x10.vtt.v1.ResourceR\x05value:\x028\x01\"\xbb\x02\n" +
+	"\x05value\x18\x02 \x01(\v2\x10.vtt.v1.ResourceR\x05value:\x028\x01\"}\n" +
+	"\fSceneCreated\x12\x19\n" +
+	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"grid_width\x18\x03 \x01(\x05R\tgridWidth\x12\x1f\n" +
+	"\vgrid_height\x18\x04 \x01(\x05R\n" +
+	"gridHeight\"1\n" +
+	"\n" +
+	"ActorAdded\x12#\n" +
+	"\x05actor\x18\x01 \x01(\v2\r.vtt.v1.ActorR\x05actor\"\x90\x01\n" +
+	"\vTokenPlaced\x12\x19\n" +
+	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x19\n" +
+	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\x120\n" +
+	"\bposition\x18\x04 \x01(\v2\x14.vtt.v1.GridPositionR\bposition\"$\n" +
+	"\x0eSessionStarted\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x0e\n" +
+	"\fSessionEnded\"o\n" +
+	"\x0fEventsRetracted\x12#\n" +
+	"\rfrom_sequence\x18\x01 \x01(\x03R\ffromSequence\x12\x1f\n" +
+	"\vto_sequence\x18\x02 \x01(\x03R\n" +
+	"toSequence\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xaf\x05\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12;\n" +
@@ -670,7 +1111,14 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\vtoken_moved\x18\n" +
 	" \x01(\v2\x12.vtt.v1.TokenMovedH\x00R\n" +
 	"tokenMoved\x12;\n" +
-	"\rattack_rolled\x18\v \x01(\v2\x14.vtt.v1.AttackRolledH\x00R\fattackRolledB\t\n" +
+	"\rattack_rolled\x18\v \x01(\v2\x14.vtt.v1.AttackRolledH\x00R\fattackRolled\x12;\n" +
+	"\rscene_created\x18\f \x01(\v2\x14.vtt.v1.SceneCreatedH\x00R\fsceneCreated\x125\n" +
+	"\vactor_added\x18\r \x01(\v2\x12.vtt.v1.ActorAddedH\x00R\n" +
+	"actorAdded\x128\n" +
+	"\ftoken_placed\x18\x0e \x01(\v2\x13.vtt.v1.TokenPlacedH\x00R\vtokenPlaced\x12A\n" +
+	"\x0fsession_started\x18\x0f \x01(\v2\x16.vtt.v1.SessionStartedH\x00R\x0esessionStarted\x12;\n" +
+	"\rsession_ended\x18\x10 \x01(\v2\x14.vtt.v1.SessionEndedH\x00R\fsessionEnded\x12D\n" +
+	"\x10events_retracted\x18\x11 \x01(\v2\x17.vtt.v1.EventsRetractedH\x00R\x0feventsRetractedB\t\n" +
 	"\apayloadBBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
@@ -685,7 +1133,7 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_events_proto_rawDescData
 }
 
-var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_vtt_v1_events_proto_goTypes = []any{
 	(*GridPosition)(nil),          // 0: vtt.v1.GridPosition
 	(*TokenMoved)(nil),            // 1: vtt.v1.TokenMoved
@@ -694,29 +1142,43 @@ var file_vtt_v1_events_proto_goTypes = []any{
 	(*AttackRolled)(nil),          // 4: vtt.v1.AttackRolled
 	(*Resource)(nil),              // 5: vtt.v1.Resource
 	(*Actor)(nil),                 // 6: vtt.v1.Actor
-	(*Envelope)(nil),              // 7: vtt.v1.Envelope
-	nil,                           // 8: vtt.v1.Actor.AttributesEntry
-	nil,                           // 9: vtt.v1.Actor.ResourcesEntry
-	(*structpb.Struct)(nil),       // 10: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
+	(*SceneCreated)(nil),          // 7: vtt.v1.SceneCreated
+	(*ActorAdded)(nil),            // 8: vtt.v1.ActorAdded
+	(*TokenPlaced)(nil),           // 9: vtt.v1.TokenPlaced
+	(*SessionStarted)(nil),        // 10: vtt.v1.SessionStarted
+	(*SessionEnded)(nil),          // 11: vtt.v1.SessionEnded
+	(*EventsRetracted)(nil),       // 12: vtt.v1.EventsRetracted
+	(*Envelope)(nil),              // 13: vtt.v1.Envelope
+	nil,                           // 14: vtt.v1.Actor.AttributesEntry
+	nil,                           // 15: vtt.v1.Actor.ResourcesEntry
+	(*structpb.Struct)(nil),       // 16: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
 	0,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
 	0,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
 	2,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
 	3,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	8,  // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	9,  // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	10, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
-	11, // 7: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
-	1,  // 8: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
-	4,  // 9: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
-	5,  // 10: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	14, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	15, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	16, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	6,  // 7: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
+	0,  // 8: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
+	17, // 9: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	1,  // 10: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
+	4,  // 11: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
+	7,  // 12: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
+	8,  // 13: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
+	9,  // 14: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
+	10, // 15: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
+	11, // 16: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
+	12, // 17: vtt.v1.Envelope.events_retracted:type_name -> vtt.v1.EventsRetracted
+	5,  // 18: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -724,9 +1186,15 @@ func file_vtt_v1_events_proto_init() {
 	if File_vtt_v1_events_proto != nil {
 		return
 	}
-	file_vtt_v1_events_proto_msgTypes[7].OneofWrappers = []any{
+	file_vtt_v1_events_proto_msgTypes[13].OneofWrappers = []any{
 		(*Envelope_TokenMoved)(nil),
 		(*Envelope_AttackRolled)(nil),
+		(*Envelope_SceneCreated)(nil),
+		(*Envelope_ActorAdded)(nil),
+		(*Envelope_TokenPlaced)(nil),
+		(*Envelope_SessionStarted)(nil),
+		(*Envelope_SessionEnded)(nil),
+		(*Envelope_EventsRetracted)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -734,7 +1202,7 @@ func file_vtt_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

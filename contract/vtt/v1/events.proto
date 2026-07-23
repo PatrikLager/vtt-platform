@@ -56,6 +56,38 @@ message Actor {
   google.protobuf.Struct module_data = 6;
 }
 
+message SceneCreated {
+  string scene_id = 1;
+  string name = 2;
+  int32 grid_width = 3;
+  int32 grid_height = 4;
+}
+
+message ActorAdded {
+  Actor actor = 1;
+}
+
+message TokenPlaced {
+  string token_id = 1;
+  string scene_id = 2;
+  string actor_id = 3;
+  GridPosition position = 4;
+}
+
+message SessionStarted {
+  string name = 1;
+}
+
+message SessionEnded {}
+
+// Compensating undo marker (spec §6). Retraction events cannot themselves
+// be retracted. Sequences follow wire convention 1 (int64 → JSON string).
+message EventsRetracted {
+  int64 from_sequence = 1;
+  int64 to_sequence = 2;
+  string reason = 3;
+}
+
 message Envelope {
   string event_id = 1;
   int64 sequence = 2;
@@ -65,5 +97,11 @@ message Envelope {
   oneof payload {
     TokenMoved token_moved = 10;
     AttackRolled attack_rolled = 11;
+    SceneCreated scene_created = 12;
+    ActorAdded actor_added = 13;
+    TokenPlaced token_placed = 14;
+    SessionStarted session_started = 15;
+    SessionEnded session_ended = 16;
+    EventsRetracted events_retracted = 17;
   }
 }

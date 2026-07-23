@@ -1,0 +1,13 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V10",
+  "sequence": "7",
+  "occurredAt": "2026-07-23T20:00:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "agent",
+  "sceneCreated": {
+    "sceneId": "scn-goblin-warrens",
+    "name": "Goblin Warrens",
+    "gridWidth": 30,
+    "gridHeight": 20
+  }
+}

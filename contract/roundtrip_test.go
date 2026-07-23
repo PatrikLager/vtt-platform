@@ -45,6 +45,11 @@ func TestMoveTokenRequestRoundTrip(t *testing.T) {
 }
 func TestEnvelopeRoundTrip(t *testing.T) { roundTrip(t, "envelope.json", &vttv1.Envelope{}) }
 
+func TestSceneEnvelopeRoundTrip(t *testing.T) { roundTrip(t, "scene_envelope.json", &vttv1.Envelope{}) }
+func TestRetractionEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "retraction_envelope.json", &vttv1.Envelope{})
+}
+
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")
 	var env vttv1.Envelope
