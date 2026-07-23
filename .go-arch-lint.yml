@@ -2,6 +2,10 @@ version: 3
 workdir: .
 allow:
   depOnAnyVendor: true
+# Prefix-match semantics: go-arch-lint matches exclude entries as path
+# prefixes, not exact directory names. A future sibling directory whose name
+# starts with "contract-spike" (e.g. "contract-spike-v2") would silently
+# match this entry too and go unchecked.
 exclude:
   - contract-spike
 excludeFiles:

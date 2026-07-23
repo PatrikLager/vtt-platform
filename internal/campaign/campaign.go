@@ -9,15 +9,39 @@ import (
 	"log/slog"
 	"sync"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
+// errPoisoned is returned by every Campaign method once poisoned is set.
+// The two paths that set it are both post-persist: the log already holds an
+// event or marker that the live projection failed to fold. At that point
+// c.state no longer reliably reflects the log, and continuing to serve
+// reads/writes from it risks compounding the divergence. Both trigger paths
+// are defensively unreachable by design (Append validates on a snapshot
+// before persisting; Undo dry-runs the full fold before persisting the
+// marker) — poisoning exists as a fail-loud backstop, not an expected state.
+var errPoisoned = errors.New("campaign: poisoned by post-persist failure; reopen required")
+
+// Campaign composes a store.Store (the log) with an engine.State (the live
+// projection). If a post-persist step ever fails — the log was written but
+// the in-memory projection could not be advanced to match — the Campaign
+// marks itself poisoned: every subsequent Append, Undo, State, and Subscribe
+// call fails (State returns nil) rather than serve state that may no longer
+// match the log. There is no in-process recovery from a poisoned Campaign;
+// the caller must Close and Open it again, which rebuilds the projection
+// from the log from scratch.
 type Campaign struct {
 	mu    sync.Mutex
 	log   *store.Store
 	state *engine.State
+
+	// poisoned is set when a post-persist step fails (see errPoisoned). Once
+	// true, every method fails until the Campaign is reopened.
+	poisoned bool
 }
 
 func Open(path string) (*Campaign, error) {
@@ -90,9 +114,14 @@ func retractedSet(events []*vttv1.Envelope) map[int64]bool {
 
 // Append validates against the projection, persists (the commit point), then
 // advances the live projection. Any validation error writes nothing (spec §7).
+// Returns errPoisoned without touching the log if the Campaign is poisoned
+// (see the Campaign doc comment) — reopen the Campaign to recover.
 func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.poisoned {
+		return 0, errPoisoned
+	}
 	if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
 		return 0, errors.New("campaign: EventsRetracted must be appended via Undo")
 	}
@@ -109,6 +138,11 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	}
 	if err := engine.Apply(c.state, env); err != nil {
 		// Snapshot-validated, so this is unreachable; fail loudly if not.
+		// The event is already persisted (commit point above) but the live
+		// projection could not be advanced to match — poison the Campaign
+		// rather than serve a projection that has silently fallen behind
+		// the log.
+		c.poisoned = true
 		return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
 	}
 	return seq, nil
@@ -117,9 +151,14 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 // Undo appends an EventsRetracted marker and rebuilds the projection.
 // The range must exist, contain no retraction markers (no nesting), and not
 // overlap an already-retracted span (spec §6).
+// Returns errPoisoned without touching the log if the Campaign is poisoned
+// (see the Campaign doc comment) — reopen the Campaign to recover.
 func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.poisoned {
+		return errPoisoned
+	}
 	if from < 1 || to < from {
 		return fmt.Errorf("campaign: invalid retraction range [%d,%d]", from, to)
 	}
@@ -165,9 +204,10 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string
 	}
 
 	marker := &vttv1.Envelope{
-		EventId:   eventID,
-		SessionId: sessionID,
-		ActorRole: "dm",
+		EventId:    eventID,
+		SessionId:  sessionID,
+		ActorRole:  "dm",
+		OccurredAt: timestamppb.Now(),
 		Payload: &vttv1.Envelope_EventsRetracted{
 			EventsRetracted: &vttv1.EventsRetracted{
 				FromSequence: from, ToSequence: to, Reason: reason,
@@ -177,16 +217,40 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string
 	if _, err := c.log.Append(marker); err != nil {
 		return err
 	}
-	return c.rebuildLocked()
+	if err := c.rebuildLocked(); err != nil {
+		// The marker is already persisted (commit point above) but the
+		// projection could not be rebuilt to match — poison the Campaign
+		// rather than serve a projection that has silently fallen behind
+		// the log.
+		c.poisoned = true
+		return err
+	}
+	return nil
 }
 
+// State returns a snapshot of the live projection, or nil if the Campaign is
+// poisoned (see the Campaign doc comment) — reopen the Campaign to recover.
 func (c *Campaign) State() *engine.State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.poisoned {
+		return nil
+	}
 	return c.state.Snapshot()
 }
 
+// Subscribe delegates to the underlying store.Store. Returns errPoisoned if
+// the Campaign is poisoned (see the Campaign doc comment) — reopen the
+// Campaign to recover. The log itself remains intact and readable through a
+// fresh Campaign even while poisoned; only this in-process projection is
+// suspect.
 func (c *Campaign) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), error) {
+	c.mu.Lock()
+	poisoned := c.poisoned
+	c.mu.Unlock()
+	if poisoned {
+		return nil, nil, errPoisoned
+	}
 	return c.log.Subscribe(afterSeq, buffer)
 }
 

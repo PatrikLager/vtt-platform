@@ -136,6 +136,9 @@ func TestUndoSubscriberReceivesRetractionMarker(t *testing.T) {
 		if _, ok := got.Payload.(*vttv1.Envelope_EventsRetracted); !ok {
 			t.Fatalf("want EventsRetracted payload, got %T", got.Payload)
 		}
+		if got.OccurredAt == nil {
+			t.Fatal("want non-nil OccurredAt on retraction marker")
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for subscriber to receive retraction marker")
 	}

@@ -3,7 +3,6 @@ package campaign_test
 import (
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -210,7 +209,7 @@ func TestCloseReopenStateDeepEquals(t *testing.T) {
 	t.Cleanup(func() { c2.Close() })
 
 	after := c2.State()
-	if !reflect.DeepEqual(before, after) {
+	if !statesEqual(before, after) {
 		t.Fatalf("state mismatch after close/reopen\nbefore: %+v\nafter:  %+v", before, after)
 	}
 }

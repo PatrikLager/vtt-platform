@@ -69,6 +69,13 @@ func TestSubscribeOverflowClosesThatSubscriberOnly(t *testing.T) {
 	}
 }
 
+func TestSubscribeRejectsNegativeBuffer(t *testing.T) {
+	s := openTemp(t)
+	if _, _, err := s.Subscribe(0, -1); err == nil {
+		t.Fatal("want error for negative subscribe buffer")
+	}
+}
+
 func TestUnsubscribeStopsDelivery(t *testing.T) {
 	s := openTemp(t)
 	ch, cancel, _ := s.Subscribe(0, 4)
