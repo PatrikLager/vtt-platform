@@ -125,7 +125,17 @@ schemas as everything else. The event stream is the LLM's context feed. Voice ne
 special foundations: STT produces ordinary chat/intent events; the AI DM's narration
 events feed TTS in the client — "events carry narration" is the only requirement.
 
-### 4.5 Rule modules
+### 4.5 Server binary and CLI
+
+The server ships as a single binary that is itself a CLI: `vtt serve` plus
+subcommands (`vtt version`, `vtt module validate`, `vtt campaign export`, …).
+The ckeletin-go CLI scaffold (ultra-thin commands, Viper config precedence) is
+a candidate for this command shell — decided in sub-project 3. **Guardrail:**
+every subcommand that touches game state is an API *client*; only pre-runtime
+operations (`serve`, `migrate`) may bypass the API. The CLI must never become
+a side door past P1.
+
+### 4.6 Rule modules
 
 A module is a data package containing:
 
@@ -156,7 +166,8 @@ Each sub-project gets its own design → plan → implement → review cycle:
 3. **API gateway & permissions** — WebSocket/HTTP surface, session auth, four roles
    (agent role designed on day one).
 4. **Simulation harness** — built alongside 2–3: scripted headless players driving the
-   real API.
+   real API, realized as a CLI API client (`vtt client --script`, `vtt events tail`,
+   `vtt state dump`) that doubles as debug tooling and the first working proof of P1.
 5. **Module loader & rules interpreter** — module package format, minimal 4.5e module,
    toy module + conformance suite.
 6. **MCP/LLM gateway** — tools from schemas, event-stream context feed, agent-role
