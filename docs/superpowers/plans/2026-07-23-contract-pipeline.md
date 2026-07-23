@@ -674,13 +674,16 @@ And `check` becomes:
       - task: check:breaking
 ```
 
-- [ ] **Step 2: Prove the drift gate bites** — induce drift, watch it fail, restore:
+- [ ] **Step 2: Prove the drift gate bites** — induce drift, watch it fail, restore. Appending to a generated file cannot demonstrate this: `check:drift` regenerates before diffing, so a hand-edit under `contract/gen/**` is overwritten before the comparison ever runs and the gate reports exit 0 regardless — the gate's semantic is committed-vs-regenerated output, not "the generated tree hasn't been poked." Drift has to be induced at the source (the `.proto`) instead:
 
 ```bash
-echo "// drift" >> contract/gen/tools/tools.json && task check:drift; echo "exit: $?"
-git checkout -- contract/gen/tools/tools.json
+# Temporarily add a field to MoveTokenRequest in contract/vtt/v1/commands.proto:
+#   optional string test_drift_field = 4;
+task check:drift; echo "exit: $?"
+git checkout -- contract/vtt/v1/commands.proto
+task check:drift; echo "exit: $?"
 ```
-Expected: first command exits non-zero with `contract/gen/tools/tools.json` in the diff; after restore, `task check:drift` exits 0. Paste both outcomes into the task report. (The breaking gate cannot bite until `contract/` exists on main — the skip branch will run; verify its message appears and note that post-merge activation was the spike's own evidence-verified behavior.)
+Expected: first `task check:drift` exits non-zero with `contract/gen` files (regenerated from the tampered schema) showing up in the diff; after `git checkout` restores the proto, the second `task check:drift` regenerates from the committed schema and exits 0. Paste both outcomes into the task report. (The breaking gate cannot bite until `contract/` exists on main — the skip branch will run; verify its message appears and note that post-merge activation was the spike's own evidence-verified behavior.)
 
 - [ ] **Step 3: Write `contract/README.md`** — the wire-convention doc ADR-007 mandates. Full content:
 

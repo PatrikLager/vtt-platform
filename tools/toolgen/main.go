@@ -39,11 +39,14 @@ func isOptional(f protoreflect.FieldDescriptor) bool {
 
 func schemaFor(md protoreflect.MessageDescriptor) map[string]any {
 	props := map[string]any{}
-	var required []any
+	required := []any{}
 	fields := md.Fields()
 	for i := 0; i < fields.Len(); i++ {
 		f := fields.Get(i)
 		name := f.JSONName()
+		if f.IsList() || f.IsMap() {
+			panic(fmt.Sprintf("toolgen: repeated/map field %s not yet supported", f.FullName()))
+		}
 		switch f.Kind() {
 		case protoreflect.StringKind:
 			props[name] = map[string]any{"type": "string"}

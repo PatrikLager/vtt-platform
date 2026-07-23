@@ -38,3 +38,13 @@ Files live under `contract/vtt/v1/` (package `vtt.v1`) rather than ADR-007's
 literal `contract/v1/` — buf's PACKAGE_DIRECTORY_MATCH lint rule requires the
 package path in the directory path, and disabling lint rules in this module
 was judged worse than the path refinement.
+
+## Pinning note
+
+Generation uses LOCAL plugins, not remote ones: `go tool protoc-gen-go`
+(pinned in `go.mod`) and `bunx protoc-gen-es` (pinned in `bun.lock`). This is
+a deliberate refinement of ADR-007's remote-plugin `revision:` pinning —
+lockfile-enforced local plugins are offline and close the same gate-soundness
+hole (an unpinned or drifting plugin silently changing generated output)
+without depending on a registry being reachable or honest. `buf` itself is a
+`go.mod` tool dependency pinned at v1.72.0.
