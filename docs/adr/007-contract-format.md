@@ -180,7 +180,7 @@ format's weaknesses here are structural, not longevity-related
 
 ## Decision
 
-**Protobuf (buf), authored as `.proto` under `contract/`, is the proposed
+**Protobuf (buf), authored as `.proto` under `contract/`, is the adopted
 contract format.**
 
 OpenAPI is eliminated first, and cleanly: the primary wire surface of this

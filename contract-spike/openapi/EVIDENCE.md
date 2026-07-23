@@ -55,7 +55,7 @@ is `-generate`'s default pruning, not naming — see below.
   types — because the spec author (this brief) inlined those shapes instead of extracting
   them to `components/schemas` the way `GridPosition` was. No `$ref` was used for those, so
   no separate named type exists to generate.
-- `gen/ts/types.ts` — 116 lines. **No flat top-level type exports at all** by default — every
+- `gen/ts/types.ts` — 108 lines. **No flat top-level type exports at all** by default — every
   schema is nested inside one big `export interface components { schemas: { TokenMoved: {
   ... }, ... } }`, referenced internally via `components["schemas"]["TokenMoved"]`. This is a
   structurally different generation model from both sibling prototypes: `quicktype`
