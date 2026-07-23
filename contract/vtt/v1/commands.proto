@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package vtt.v1;
+
+import "vtt/v1/events.proto";
+
+option go_package = "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1";
+
+message MoveTokenRequest {
+  string token_id = 1;
+  GridPosition to = 2;
+  // Optional DM/agent annotation shown in the log. proto3 `optional` is the
+  // contract's optionality annotation: toolgen omits such fields from `required`.
+  optional string reason = 3;
+}
+
+message MoveTokenResponse {
+  bool ok = 1;
+  string error = 2;
+  TokenMoved event = 3;
+}

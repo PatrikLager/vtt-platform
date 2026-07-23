@@ -1,0 +1,8 @@
+version: v2
+plugins:
+  - local: [go, tool, protoc-gen-go]
+    out: gen/go
+    opt: paths=source_relative
+  - local: [bunx, protoc-gen-es]
+    out: gen/ts
+    opt: target=ts

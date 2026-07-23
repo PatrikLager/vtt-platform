@@ -8,6 +8,12 @@ tasks:
       - go test ./...
       - bun test
 
+  generate:contract:
+    dir: contract
+    cmds:
+      - go tool buf lint
+      - go tool buf generate
+
   generate:proto:
     dir: contract-spike/proto
     cmds:
