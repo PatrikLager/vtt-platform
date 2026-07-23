@@ -13,6 +13,8 @@ tasks:
     cmds:
       - go tool buf lint
       - go tool buf generate
+      - mkdir -p gen/tools
+      - go run ../tools/toolgen -o gen/tools/tools.json
 
   generate:proto:
     dir: contract-spike/proto

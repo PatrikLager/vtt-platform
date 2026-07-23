@@ -1,0 +1,36 @@
+[
+  {
+    "description": "Move a token to a new grid position on its scene.",
+    "inputSchema": {
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "to": {
+          "properties": {
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "tokenId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId",
+        "to"
+      ],
+      "type": "object"
+    },
+    "name": "move_token"
+  }
+]
