@@ -52,7 +52,9 @@ internal/campaign   Composition root. Open(path) → replay log through apply �
 
 **Machine-enforced rules (new in this sub-project):**
 - go-arch-lint: `store` ⊄ `engine`, `engine` ⊄ `store`; only `campaign` may
-  import both; nothing outside `internal/engine` mutates `engine.State`.
+  import both. (Import-level layering is what the gate enforces; mutation
+  confinement to `engine.Apply` holds by construction and code review —
+  `State`'s fields are exported.)
 - semgrep: game-system vocabulary (`healingSurge`, `dailyPower`, `fortitude`,
   `encounterPower`, `bloodied`, …; list maintained in the semgrep config)
   forbidden across `internal/` — pillar P2/P4 made mechanical.
@@ -62,10 +64,11 @@ internal/campaign   Composition root. Open(path) → replay log through apply �
 
 - One campaign = one SQLite file. Driver: `modernc.org/sqlite` (pure Go —
   preserves single-binary distribution; version pinned in go.mod).
-- Schema: `events(seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE
-  NOT NULL, session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, payload BLOB
-  NOT NULL)`. `payload` is the protobuf-binary Envelope (post-stamping, so
-  stored bytes contain the true sequence).
+- Schema: `events(seq INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
+  session_id TEXT NOT NULL, occurred_at TEXT NOT NULL, payload BLOB NOT NULL)`.
+  Sequence is assigned transactionally by the store (`MAX(seq)+1` under the
+  write lock), not by SQLite AUTOINCREMENT. `payload` is the protobuf-binary
+  Envelope (post-stamping, so stored bytes contain the true sequence).
 - Sequence is store-assigned and authoritative: callers submit envelopes with
   `sequence=0`; Append stamps the assigned value and returns it. A non-zero
   incoming sequence is an error (protects against replayed/forged ordering).
@@ -73,8 +76,9 @@ internal/campaign   Composition root. Open(path) → replay log through apply �
   idempotency guard against double-append.
 - Subscribe returns a channel receiving every event from a given sequence
   onward (catch-up from log, then live). Slow consumers get a bounded buffer;
-  overflow closes THAT subscriber with an error — the log is the recovery
-  path, so no subscriber can block appends.
+  overflow closes that subscriber's channel (channel close is the only signal —
+  no error value) — the log is the recovery path, so no subscriber can block
+  appends.
 
 ## 5. Engine (projection)
 
@@ -97,8 +101,12 @@ projection (single-writer rule holds at the type level).
 
 `Undo(from, to, reason)` validates the range (exists; contains no
 EventsRetracted event — the no-nesting rule; not already retracted), then
-appends `EventsRetracted` like any event and rebuilds the projection by
-replaying with retracted ranges skipped. Rebuild cost is acceptable at table
+**dry-runs the fold with the would-be-retracted set before persisting: a
+retraction that would leave the log unable to replay is rejected and persists
+nothing** (without this, the rebuild promise below is unfulfillable for exactly
+those ranges). Only on dry-run success does it append `EventsRetracted` like
+any event and rebuild the projection by replaying with retracted ranges
+skipped. Rebuild cost is acceptable at table
 scale (thousands of events); incremental retraction is deliberately deferred.
 Subscribers receive the EventsRetracted event itself — every observer's
 history stays truthful, including the future LLM context feed.
@@ -109,8 +117,14 @@ history stays truthful, including the future LLM context feed.
   already persisted (e.g. TokenMoved for an unknown token), that is a bug in
   validation, so Append VALIDATES against the projection before persisting.
   Validation failures return errors to the caller and write nothing.
-- Store I/O errors propagate; the campaign is unusable after a failed append
-  (fail-loud, no partial state) — caller reopens (replay heals).
+- Store-level append errors (I/O, duplicate event_id) persist nothing,
+  propagate to the caller, and do NOT poison the campaign. A **post-persist**
+  failure (live-apply divergence, post-marker rebuild error — both defensively
+  unreachable by design) **poisons** the Campaign: every subsequent
+  Append/Undo/Subscribe fails and State returns nil until Close + reopen
+  (replay heals). Accepted risk: a commit-stage store error is treated as
+  not-persisted; in the marginal case where the commit was nonetheless durable,
+  divergence is healed on reopen.
 - Malformed envelopes (no payload, unknown variant for this engine version)
   are rejected at Append. Unknown variants found in an EXISTING log during
   replay are skipped with a logged warning (forward compatibility: an older
@@ -150,7 +164,8 @@ scaffold decision).
 
 ## 11. Open questions (deferred, with owners)
 
-- Bounded-buffer size for subscribers: pick a default in implementation
-  (constant, documented); tune when the gateway exists.
+- Bounded-buffer size for subscribers: RESOLVED DIFFERENTLY — caller-supplied
+  `buffer` parameter on Subscribe rather than a package constant; the gateway
+  picks its value in sub-project 3.
 - Whether `campaign` exposes a synchronous or async Append to the future
   gateway — decided in sub-project 3 against real WebSocket flow.
