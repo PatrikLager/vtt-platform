@@ -23,6 +23,7 @@ components:
   toolgen:  { in: tools/toolgen }
   identity: { in: internal/identity }
   gateway:  { in: internal/gateway }
+  cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
@@ -30,3 +31,4 @@ deps:
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
   gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway] }
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd] }

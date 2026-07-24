@@ -15,7 +15,12 @@ tasks:
   check:vocabulary:
     desc: Fail on game-system vocabulary in platform code (P2/P4)
     cmds:
-      - semgrep scan --config .semgrep/vocabulary.yml --error --quiet internal/
+      # Targets must list every directory the rule's paths.include names
+      # (.semgrep/vocabulary.yml) — semgrep's own include/exclude only
+      # filters within whatever target paths are given on the CLI, it does
+      # not widen scanning beyond them. cmd/ added alongside internal/ when
+      # cmd/vtt was introduced (ADR-008).
+      - semgrep scan --config .semgrep/vocabulary.yml --error --quiet internal/ cmd/
 
   check:arch:
     desc: Enforce package layering (store/engine/campaign)

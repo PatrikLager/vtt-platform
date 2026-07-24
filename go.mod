@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/spf13/cobra v1.10.2
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.54.0
 )
@@ -71,7 +72,6 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
