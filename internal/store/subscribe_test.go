@@ -181,6 +181,13 @@ func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 // whether Notify's own guard fired at all. afterSeq=-1 gives the subscriber
 // lastSeq=-1, so 0 <= -1 is false and the dedupe does NOT intercept it —
 // isolating the guard as the only thing that can still stop delivery.
+//
+// This test's teeth therefore depend on Subscribe accepting a NEGATIVE
+// afterSeq unclamped (see Subscribe's doc comment in subscribe.go) — it is
+// deliberately load-bearing for this isolation, not incidental: if Subscribe
+// ever added a floor/clamp on afterSeq (e.g. treating negative values as 0),
+// this test would silently fall back to the masked afterSeq=0 case above and
+// stop proving anything about the guard.
 func TestNotifyIgnoresZeroSequence(t *testing.T) {
 	s := openTemp(t)
 	ch, cancel, err := s.Subscribe(-1, 8)

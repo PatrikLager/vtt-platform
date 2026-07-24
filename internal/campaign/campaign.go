@@ -162,12 +162,17 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 }
 
 // stampSessionID stamps env.SessionId under c.mu, before validation/persist
-// (merge-gate decision, sub-project 4): a SessionStarted event gets a fresh,
+// (merge-gate decision, sub-project 4; corrected to match spec §1.1 during
+// workflow-level final review — see docs/superpowers/specs/
+// 2026-07-24-hardening-design.md): a SessionStarted event gets a fresh,
 // generated id; every other event — and Undo's EventsRetracted marker, which
 // also routes through here — gets the currently open session's id,
 // overwriting any caller-supplied value (the campaign is authoritative, not
-// the caller). With no session open, the incoming value (caller-supplied,
-// possibly empty) is left untouched: there is nothing to stamp it with.
+// the caller). With no session open, the incoming value is CLEARED to ""
+// rather than left as-is: a closed (or never-opened) session must never let
+// a stale or caller-supplied id ride along on an out-of-session event (spec:
+// "no open session → empty" — legitimate, e.g. table setup before the first
+// SessionStarted).
 func (c *Campaign) stampSessionID(env *vttv1.Envelope) error {
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionStarted); ok {
 		id, err := newSessionID()
@@ -179,6 +184,8 @@ func (c *Campaign) stampSessionID(env *vttv1.Envelope) error {
 	}
 	if id, ok := c.openSessionID(); ok {
 		env.SessionId = id
+	} else {
+		env.SessionId = ""
 	}
 	return nil
 }
@@ -221,7 +228,7 @@ func newSessionID() (string, error) {
 // The marker's session_id is NOT caller-supplied (unlike actorRole and
 // participantID): it is stamped the same way Append stamps every other
 // event's, via stampSessionID, right before persisting — the currently open
-// session's id, or left as the marker's zero value ("") if none is open.
+// session's id, or cleared to "" if none is open (spec §1.1).
 func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

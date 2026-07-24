@@ -87,8 +87,13 @@ tasks:
       default parallel workers (see docs/superpowers/reports/
       2026-07-24-mutation-audit.md methodology note); --timeout-coefficient
       10 gives real per-mutant test runs comfortable headroom at workers=1.
+    vars:
+      # go env GOPATH, not a hardcoded $HOME/go: honors GOPATH overrides
+      # (env var or `go env -w`) instead of assuming the Go default layout.
+      GOPATH_DIR:
+        sh: go env GOPATH
     cmds:
-      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/engine/ --workers 1 --timeout-coefficient 10'
-      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/store/ --workers 1 --timeout-coefficient 10'
-      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/campaign/ --workers 1 --timeout-coefficient 10'
-      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/identity/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/engine/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/store/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/campaign/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/identity/ --workers 1 --timeout-coefficient 10'

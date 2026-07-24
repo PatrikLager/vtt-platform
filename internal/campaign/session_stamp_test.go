@@ -147,11 +147,18 @@ func TestSessionStampUsesSecondSessionAfterRestart(t *testing.T) {
 	}
 }
 
-// TestSessionStampLeavesIDVerbatimWithNoOpenSession covers case (d): with no
-// session currently open, an appended event's incoming session id (whatever
-// the caller supplied, including empty) is left untouched — there is no open
-// session to stamp with.
-func TestSessionStampLeavesIDVerbatimWithNoOpenSession(t *testing.T) {
+// TestSessionStampClearsIDWithNoOpenSession covers case (d) per the approved
+// spec (docs/superpowers/specs/2026-07-24-hardening-design.md §1.1: "no open
+// session → empty"): with no session currently open, an appended event's
+// incoming session id — even a non-empty caller-supplied one — is CLEARED to
+// "". A closed/never-opened session must never leak a stale id onto an
+// out-of-session event (e.g. table setup before the first SessionStarted).
+//
+// The plan doc originally read "no open session → left as-is (caller-
+// supplied or empty)", diverging silently from the spec; this test was
+// rewritten to match the spec during workflow-level final review. See
+// plans/2026-07-24-hardening.md Task 1 for the corrected wording.
+func TestSessionStampClearsIDWithNoOpenSession(t *testing.T) {
 	c := openTemp(t)
 
 	env := cenv(nextID(), &vttv1.ActorAdded{
@@ -160,8 +167,64 @@ func TestSessionStampLeavesIDVerbatimWithNoOpenSession(t *testing.T) {
 	env.SessionId = "caller-supplied-value"
 	must(t, c, env)
 
-	if env.SessionId != "caller-supplied-value" {
-		t.Fatalf("session id with no open session: got %q, want unchanged %q", env.SessionId, "caller-supplied-value")
+	if env.SessionId != "" {
+		t.Fatalf("session id with no open session: got %q, want cleared to empty", env.SessionId)
+	}
+}
+
+// TestSessionStampClearsClosedSessionIDOnSubsequentEvent is the sharper
+// sibling of the no-open-session case: it is not enough that a caller-
+// supplied id gets cleared when NO session has ever been open — an event
+// carrying a CLOSED session's own (real, previously valid) id must also be
+// cleared once that session has ended, not just an arbitrary caller string.
+// Without this, a closed session's id could be resupplied by a caller (or
+// echoed by a buggy client) and ride along on every subsequent out-of-
+// session event forever. Asserts both the persisted/returned envelope (env
+// mutated in place by Append) and what a subscriber actually receives over
+// the broadcast channel.
+func TestSessionStampClearsClosedSessionIDOnSubsequentEvent(t *testing.T) {
+	c := openTemp(t)
+
+	start := cenv(nextID(), &vttv1.SessionStarted{Name: "n"})
+	start.SessionId = ""
+	must(t, c, start)
+	closedSID := start.SessionId
+	if closedSID == "" {
+		t.Fatal("want non-empty session id after SessionStarted")
+	}
+
+	must(t, c, cenv(nextID(), &vttv1.SessionEnded{}))
+
+	ch, cancel, err := c.Subscribe(0, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	afterEnd := cenv(nextID(), &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
+	})
+	afterEnd.SessionId = closedSID // carries the now-CLOSED session's own id
+	must(t, c, afterEnd)
+
+	if afterEnd.SessionId != "" {
+		t.Fatalf("persisted session id after session end: got %q, want cleared to empty (was the closed session's own id %q)", afterEnd.SessionId, closedSID)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-ch:
+			if _, ok := got.Payload.(*vttv1.Envelope_ActorAdded); !ok {
+				continue // SessionStarted/SessionEnded catch-up frames
+			}
+			if got.SessionId != "" {
+				t.Fatalf("broadcast session id after session end: got %q, want cleared to empty (was the closed session's own id %q)", got.SessionId, closedSID)
+			}
+			return
+		case <-deadline:
+			t.Fatal("timeout waiting for subscriber to receive the post-close ActorAdded event")
+		}
 	}
 }
 

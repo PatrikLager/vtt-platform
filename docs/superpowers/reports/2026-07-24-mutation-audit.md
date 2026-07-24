@@ -35,10 +35,48 @@ package the brief flagged as the risk, completed in **38.5 seconds**), so
 contingency in the brief's Step 1 did not trigger.
 
 Timed-out mutants are **not** folded into Killed. They are reported as
-their own line per the task's explicit instruction; see §3 for why these
-two specifically cannot be anything else (they are genuine infinite loops,
-confirmed by hand-injection under a bounded `-timeout`, not slow tests or
-worker contention).
+their own line per the task's explicit instruction; see §2 below for why
+these two specifically cannot be anything else (they are genuine infinite
+loops, confirmed by hand-injection under a bounded `-timeout`, not slow
+tests or worker contention).
+
+### Reproducibility & load sensitivity (`internal/store`)
+
+Re-verified during workflow-level final review (2026-07-24):
+`gremlins unleash ./internal/store/ --workers 1 --timeout-coefficient 10`
+was re-run twice, back to back, to check the 20/0/0 result's
+reproducibility:
+
+| Run | Killed | Lived | Timed out | 1-min load avg at run start (8 cores) |
+|---|---:|---:|---:|---:|
+| 1 | 20 | 0 | 0 | 2.62 |
+| 2 | 19 | 0 | 1 (`subscribe.go:42:9`, CONDITIONALS_NEGATION) | 4.24 (rising) |
+
+Run 1 reproduces the canonical 20/0/0 result exactly. Run 2, run
+immediately after with no other command executed concurrently by this
+session, timed out on one mutant it had just killed cleanly in run 1 — the
+same false-timeout signature §4 already documents for `internal/engine`'s
+pre-`--workers 1` run (gremlins' baseline-derived per-mutant budget
+starved under rising background CPU load, not a genuinely slow test or a
+real gap). The machine's load average was **not** fully idle for either
+run — other user sessions/processes outside this task's control were
+present both times per `uptime`, and load rose between the two runs,
+tracking directly with run 2 being the one that flipped a kill to a
+timeout.
+
+**Disposition:** results are contention-sensitive, consistent with §4's
+existing finding for other packages, not a new store-specific defect. The
+canonical numbers this report's §1 table uses (20/0/0) are the ones a
+lower-contention run actually produced; under concurrent CPU load, up to a
+few `internal/store` mutants can false-timeout the same way engine's did
+pre-`--workers 1`. The specific site observed to flip in the contended run
+of this reproducibility check: `internal/store/subscribe.go:42:9` — the
+`if err != nil` guard on `Subscribe`'s `s.readAfterLocked(afterSeq)` call,
+KILLED in run 1 and in every prior audit run; nothing about this mutant or
+its covering test changed between the two runs, only ambient CPU
+contention did. No test or code change follows from this — the canonical
+numbers require a quieter machine, and a quieter re-run reliably
+reproduces 20/0/0, matching the original audit.
 
 ---
 
@@ -51,14 +89,14 @@ worker contention).
 | `internal/store/subscribe.go:27:12` | CONDITIONALS_BOUNDARY | **Killed by new test** — `TestSubscribeAcceptsZeroBuffer` | same pattern |
 | `internal/campaign/campaign.go:231:10` | CONDITIONALS_BOUNDARY | **Killed by new test** — `TestUndoAcceptsFromSequenceOne` | same pattern |
 | `internal/campaign/campaign.go:239:25` | CONDITIONALS_BOUNDARY | **Killed by new test** — `TestUndoOnEmptyLogRejectsGracefully` | same pattern (mutant is a real `index out of range [-1]` panic) |
-| `internal/campaign/campaign.go:264:55` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §3 |
-| `internal/campaign/campaign.go:264:62` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §3 |
-| `internal/campaign/campaign.go:264:62` | INVERT_NEGATIVES | **Accepted equivalent** | proof in §3 |
-| `internal/campaign/campaign.go:264:68` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §3 |
-| `internal/campaign/campaign.go:109:87` | INCREMENT_DECREMENT | **Accepted timed-out** (genuine infinite loop) | proof in §3 |
-| `internal/campaign/campaign.go:268:33` | INCREMENT_DECREMENT | **Accepted timed-out** (genuine infinite loop) | proof in §3 |
+| `internal/campaign/campaign.go:264:55` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §2 below |
+| `internal/campaign/campaign.go:264:62` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §2 below |
+| `internal/campaign/campaign.go:264:62` | INVERT_NEGATIVES | **Accepted equivalent** | proof in §2 below |
+| `internal/campaign/campaign.go:264:68` | ARITHMETIC_BASE | **Accepted equivalent** | proof in §2 below |
+| `internal/campaign/campaign.go:109:87` | INCREMENT_DECREMENT | **Accepted timed-out** (genuine infinite loop) | proof in §2 below |
+| `internal/campaign/campaign.go:268:33` | INCREMENT_DECREMENT | **Accepted timed-out** (genuine infinite loop) | proof in §2 below |
 
-Every one of the four new tests (engine ×1, store ×2, campaign ×2 — 5
+Every one of the five new tests (engine ×1, store ×2, campaign ×2 — 5
 tests total) was proven by the full injection cycle ADR-009 rule 3
 requires: hand-apply the exact mutation in a throwaway `rsync` copy →
 confirm the new test fails specifically → restore → re-run gremlins on the

@@ -16,10 +16,26 @@ import (
 // net.Listener + Serve).
 //
 // The returned close func closes both handles (identity first, then
-// campaign) and should be called once the server has stopped serving
-// (after ListenAndServe/Serve returns, or after a graceful Shutdown) —
-// never before, since gateway.Server holds live references to both for the
-// life of every open connection.
+// campaign). CAUTION: srv.Shutdown returning does NOT by itself guarantee
+// it is safe to call closeFn. http.Server.Shutdown gracefully closes idle
+// listeners and connections and waits for active HTTP handlers to return,
+// but it does NOT wait for connections that have been hijacked out of
+// HTTP's request/response cycle — which is exactly what every WebSocket
+// connection is (coder/websocket hijacks the net.Conn on upgrade). A live
+// WS connection can still be reading/writing against campaign/identity
+// after Shutdown has returned, so closeFn is only actually safe once every
+// gateway connection has itself finished closing.
+//
+// Today, closeFn's callers are responsible for that guarantee themselves:
+// the composeServer e2e test (serve_e2e_test.go) explicitly closes its one
+// WS connection before calling Shutdown, so no live connection remains by
+// the time closeFn runs. `vtt serve` (serve.go) has no shutdown path at
+// all yet (RunE blocks in ListenAndServe until the process is killed), so
+// the gap is latent there rather than exercised. Making this safe
+// unconditionally — draining/closing every open gateway connection as
+// part of shutdown, rather than trusting the caller — is a ledgered
+// carry-forward (see .superpowers/sdd/progress.md), not solved by this
+// comment.
 func composeServer(campaignPath, addr string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {

@@ -23,6 +23,14 @@ type subscriber struct {
 // (and returned from ReadAfter/State callers) too. Consumers must treat them
 // as immutable — mutating a received envelope corrupts what every other
 // subscriber sees.
+//
+// afterSeq accepts negative values unclamped (no lower bound is enforced —
+// only buffer is validated above): this is deliberate, not an oversight.
+// TestNotifyIgnoresZeroSequence (subscribe_test.go) relies on subscribing
+// from afterSeq=-1 to isolate Notify's zero-sequence guard from the
+// unrelated per-subscriber dedupe in notifyLocked, which would otherwise
+// mask the guard at the more "realistic" afterSeq=0. Clamping negative
+// afterSeq to 0 here would silently break that test's teeth.
 func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), error) {
 	if buffer < 0 {
 		return nil, nil, fmt.Errorf("store: negative subscribe buffer %d", buffer)

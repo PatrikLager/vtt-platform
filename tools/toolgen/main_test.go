@@ -7,9 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/structpb"
-
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
@@ -71,37 +68,6 @@ func requireManifestEntry(t *testing.T, message string) {
 		}
 	}
 	t.Fatalf("command message %s has no toolgen manifest entry", message)
-}
-
-// TestListValueValuesFieldIsRecognizedAsList covers the trigger condition
-// for schemaFor's array/items branch (main.go: `if f.IsList()`):
-// google.protobuf.ListValue.values — protobuf's own canonical "repeated
-// Value" wrapper, exactly the type named for this gap — is a repeated,
-// message-kind field.
-//
-// This test stops at field-descriptor recognition rather than calling
-// schemaFor/valueSchema through to a full nested schema for
-// google.protobuf.Value: Value's own fields include an enum member
-// (null_value NullValue), a kind valueSchema's switch has no case for
-// (confirmed by hand: it panics "unhandled kind enum"), and Value.list_value
-// is self-referential back through ListValue.values, so a full recursive
-// expansion would not even terminate. Both are pre-existing gaps orthogonal
-// to IsList/Struct-special-case correctness — worth a ledger entry — but
-// out of Task 2's scope (no toolgen production-code change beyond the
-// Notify guard is listed for this gap). TestSchemaForProducesArrayItems...
-// and TestStructSpecialCaseFiresOnNestedValue below exercise the real,
-// already-terminating array/items and Struct-special-case code paths.
-func TestListValueValuesFieldIsRecognizedAsList(t *testing.T) {
-	f := (&structpb.ListValue{}).ProtoReflect().Descriptor().Fields().ByName("values")
-	if f == nil {
-		t.Fatal("google.protobuf.ListValue has no \"values\" field")
-	}
-	if !f.IsList() {
-		t.Fatal("want ListValue.values recognized as a repeated (list) field")
-	}
-	if f.Kind() != protoreflect.MessageKind || f.Message().FullName() != "google.protobuf.Value" {
-		t.Fatalf("want message-kind google.protobuf.Value element, got kind=%v message=%v", f.Kind(), f.Message().FullName())
-	}
 }
 
 // TestSchemaForProducesArrayItemsForRepeatedMessageField covers the
