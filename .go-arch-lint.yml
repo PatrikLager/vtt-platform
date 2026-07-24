@@ -23,6 +23,7 @@ components:
   toolgen:  { in: tools/toolgen }
   identity: { in: internal/identity }
   gateway:  { in: internal/gateway }
+  harness:  { in: internal/harness }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -31,4 +32,8 @@ deps:
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
   gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway] }
+  # The P1 rule: the harness proves a client can drive a live table using
+  # only the wire constitution — store/campaign/gateway/identity are
+  # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
+  harness:  { mayDependOn: [contract, engine, harness] }
   cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd] }
