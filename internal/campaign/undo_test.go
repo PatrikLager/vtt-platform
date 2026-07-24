@@ -137,6 +137,33 @@ func TestUndoRejectsOutOfRangeSequence(t *testing.T) {
 	}
 }
 
+// TestUndoAcceptsFromSequenceOne pins the boundary of Undo's range guard:
+// from==1 (retracting the very first event in the log) is VALID — only
+// from<1 is rejected. Every other Undo test in this file retracts moveSeq
+// (5), leaving the from==1 boundary itself unexercised. Retracting
+// SessionStarted alone replays cleanly: no other seeded event depends on an
+// open session existing.
+func TestUndoAcceptsFromSequenceOne(t *testing.T) {
+	c, _ := seedMovedToken(t)
+
+	if err := c.Undo(1, 1, "retract session start", nextID(), "dm", "test-participant"); err != nil {
+		t.Fatalf("want from=1 accepted (only from<1 is invalid), got error: %v", err)
+	}
+}
+
+// TestUndoOnEmptyLogRejectsGracefully pins the empty-log edge of the
+// out-of-range check: with zero events ever appended, maxSeq must default to
+// 0 and any requested range (from>=1) is beyond the log head — Undo returns
+// that error rather than indexing the empty events slice. Every other Undo
+// test seeds at least one event first, leaving len(events)==0 unexercised.
+func TestUndoOnEmptyLogRejectsGracefully(t *testing.T) {
+	c := openTemp(t)
+
+	if err := c.Undo(1, 1, "nothing to undo", nextID(), "dm", "test-participant"); err == nil {
+		t.Fatal("want error retracting a range on an empty log")
+	}
+}
+
 // TestUndoSubscriberReceivesRetractionMarker covers
 // subscriber-sees-the-marker: a subscriber caught up to the pre-undo log
 // receives the EventsRetracted envelope itself as a live event.

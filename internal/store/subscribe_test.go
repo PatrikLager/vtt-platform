@@ -73,6 +73,30 @@ func TestSubscribeOverflowClosesThatSubscriberOnly(t *testing.T) {
 	}
 }
 
+// TestSubscribeAcceptsZeroBuffer pins the boundary of Subscribe's guard:
+// only NEGATIVE buffers are invalid. buffer=0 means "no extra live-event
+// slack beyond the catch-up batch" and must be accepted — every other test
+// in this file happens to pass buffer>=1, leaving the buffer==0 boundary
+// itself unexercised.
+func TestSubscribeAcceptsZeroBuffer(t *testing.T) {
+	s := openTemp(t)
+	s.Append(newEnv("e1"))
+	s.Append(newEnv("e2"))
+
+	ch, cancel, err := s.Subscribe(0, 0)
+	if err != nil {
+		t.Fatalf("want buffer=0 accepted (only negative buffers are invalid), got error: %v", err)
+	}
+	defer cancel()
+
+	if got := recv(t, ch); got.EventId != "e1" {
+		t.Fatalf("catch-up: got %s, want e1", got.EventId)
+	}
+	if got := recv(t, ch); got.EventId != "e2" {
+		t.Fatalf("catch-up: got %s, want e2", got.EventId)
+	}
+}
+
 func TestSubscribeRejectsNegativeBuffer(t *testing.T) {
 	s := openTemp(t)
 	if _, _, err := s.Subscribe(0, -1); err == nil {

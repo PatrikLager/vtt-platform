@@ -77,3 +77,18 @@ tasks:
     cmds:
       - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -generate types,skip-prune -package oagen -o gen/go/types.gen.go openapi.yaml
       - bunx openapi-typescript openapi.yaml -o gen/ts/types.ts
+
+  audit:mutation:
+    desc: >
+      Mutation testing audit (gremlins) over the four state-owning packages —
+      minutes-long, deliberately NOT part of `check`. Requires gremlins
+      (go install github.com/go-gremlins/gremlins/cmd/gremlins@latest).
+      --workers 1 avoids CPU-contention false timeouts under gremlins'
+      default parallel workers (see docs/superpowers/reports/
+      2026-07-24-mutation-audit.md methodology note); --timeout-coefficient
+      10 gives real per-mutant test runs comfortable headroom at workers=1.
+    cmds:
+      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/engine/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/store/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/campaign/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print (env "HOME") "/go/bin/gremlins")}} unleash ./internal/identity/ --workers 1 --timeout-coefficient 10'

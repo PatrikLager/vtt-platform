@@ -92,6 +92,25 @@ func TestSceneActorTokenLifecycle(t *testing.T) {
 	}
 }
 
+// TestSessionEndedSuccess pins the success path of SessionEnded: the open
+// session (index 0, the common single-session case) gets its EndSeq stamped
+// and Apply returns nil. Regression target: engine: openSession() >= 0 is
+// used to find the open session by index; an off-by-one on that index
+// comparison (i <= 0 instead of i < 0) would reject ending the very first
+// session even though it is open.
+func TestSessionEndedSuccess(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.SessionEnded{})))
+
+	if len(st.Sessions) != 1 {
+		t.Fatalf("want 1 session, got %d", len(st.Sessions))
+	}
+	if st.Sessions[0].EndSeq != 3 {
+		t.Fatalf("want session EndSeq 3, got %d", st.Sessions[0].EndSeq)
+	}
+}
+
 func TestApplyRejections(t *testing.T) {
 	cases := []struct {
 		name    string

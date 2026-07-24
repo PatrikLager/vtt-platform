@@ -1,10 +1,13 @@
 package store_test
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/store"
@@ -64,6 +67,53 @@ func TestAppendRejectsEmptyAndDuplicateEventID(t *testing.T) {
 	}
 	if _, err := s.Append(newEnv("dup")); err == nil {
 		t.Fatal("want error for duplicate event_id")
+	}
+}
+
+// TestAppendPersistsOccurredAt pins the occurred_at column round-trip:
+// present when the envelope carries an OccurredAt timestamp, empty string
+// when it doesn't. The column is write-only through the public API (Store
+// never selects it back), so the on-disk row is the only place this
+// boundary is observable.
+func TestAppendPersistsOccurredAt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "campaign.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	withTime := newEnv("with-ts")
+	withTime.OccurredAt = timestamppb.New(time.Date(2026, 7, 24, 10, 30, 0, 0, time.UTC))
+	if _, err := s.Append(withTime); err != nil {
+		t.Fatal(err)
+	}
+
+	withoutTime := newEnv("without-ts")
+	if _, err := s.Append(withoutTime); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	var gotWith, gotWithout string
+	if err := db.QueryRow(`SELECT occurred_at FROM events WHERE event_id = ?`, "with-ts").Scan(&gotWith); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT occurred_at FROM events WHERE event_id = ?`, "without-ts").Scan(&gotWithout); err != nil {
+		t.Fatal(err)
+	}
+
+	if want := "2026-07-24T10:30:00Z"; gotWith != want {
+		t.Fatalf("occurred_at for envelope WITH OccurredAt set: got %q, want %q", gotWith, want)
+	}
+	if gotWithout != "" {
+		t.Fatalf("occurred_at for envelope with nil OccurredAt: got %q, want empty string", gotWithout)
 	}
 }
 
