@@ -35,7 +35,7 @@ func TestUndoRejectsRetractionThatBreaksReplay(t *testing.T) {
 		t.Fatalf("want sequences 1,2,3, got %d,%d,%d", seq1, seq2, seq3)
 	}
 
-	err = c.Undo(seq2, seq2, "would corrupt replay", nextID(), "sess-1")
+	err = c.Undo(seq2, seq2, "would corrupt replay", nextID(), "sess-1", "dm", "test-participant")
 	if err == nil {
 		t.Fatal("want error retracting a SessionEnded that a later SessionStarted depends on")
 	}
@@ -94,7 +94,7 @@ func TestUndoRejectsRetractionThatBreaksReplay(t *testing.T) {
 func TestUndoAcceptsValidTokenMovedRetraction(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 
-	if err := c.Undo(moveSeq, moveSeq, "valid undo", nextID(), "sess-1"); err != nil {
+	if err := c.Undo(moveSeq, moveSeq, "valid undo", nextID(), "sess-1", "dm", "test-participant"); err != nil {
 		t.Fatalf("want valid TokenMoved retraction to succeed, got %v", err)
 	}
 

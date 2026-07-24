@@ -158,7 +158,14 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 // overlap an already-retracted span (spec §6).
 // Returns errPoisoned without touching the log if the Campaign is poisoned
 // (see the Campaign doc comment) — reopen the Campaign to recover.
-func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string) error {
+//
+// actorRole and participantID stamp the marker's Envelope.ActorRole and
+// Envelope.ParticipantId (spec §4: "every accepted command stamps
+// actor_role AND ... participant_id"). Campaign has no identity concept of
+// its own — it never sees a token or a *identity.Participant — so
+// attribution is caller-supplied; the gateway is the authority on who
+// issued the retraction and passes those values straight through.
+func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID, actorRole, participantID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.poisoned {
@@ -209,10 +216,11 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID string
 	}
 
 	marker := &vttv1.Envelope{
-		EventId:    eventID,
-		SessionId:  sessionID,
-		ActorRole:  "dm",
-		OccurredAt: timestamppb.Now(),
+		EventId:       eventID,
+		SessionId:     sessionID,
+		ActorRole:     actorRole,
+		ParticipantId: participantID,
+		OccurredAt:    timestamppb.Now(),
 		Payload: &vttv1.Envelope_EventsRetracted{
 			EventsRetracted: &vttv1.EventsRetracted{
 				FromSequence: from, ToSequence: to, Reason: reason,

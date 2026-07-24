@@ -248,6 +248,7 @@ func (sc *scenarioConn) sendCommand(t *testing.T, cmd *vttv1.ClientCommand) {
 type participant struct {
 	name string
 	id   string
+	role string
 	conn *scenarioConn
 }
 
@@ -256,9 +257,12 @@ type participant struct {
 // (issuer's own connection included — the issuer receives its own broadcast
 // too, per TestTwoClientsBothReceiveAcceptedCommandAsEvent's precedent) and
 // requires every one of them to carry the identical (event_id, sequence)
-// pair and the given wantParticipant as participant_id. It returns the
-// envelope read on the connection named "dm", so callers can build the
-// ordered "what DM received live" record the final reconnect check needs.
+// pair, the given wantParticipant as participant_id, and issuer.role as
+// actor_role (spec §4: "every accepted command stamps actor_role AND ...
+// participant_id" — this pins both, for every command including
+// RetractEvents, not just participant_id). It returns the envelope read on
+// the connection named "dm", so callers can build the ordered "what DM
+// received live" record the final reconnect check needs.
 //
 // wantResultSequence: for every command EXCEPT RetractEvents, the
 // CommandResult's Sequence must equal the broadcast Envelope's Sequence
@@ -282,6 +286,9 @@ func issueAndVerify(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, 
 		env := p.conn.readEvent(t)
 		if env.ParticipantId != wantParticipant {
 			t.Fatalf("%s: %s's connection saw ParticipantId=%q, want %q", cmd.GetRequestId(), p.name, env.ParticipantId, wantParticipant)
+		}
+		if env.ActorRole != issuer.role {
+			t.Fatalf("%s: %s's connection saw ActorRole=%q, want %q (issuer %s's role)", cmd.GetRequestId(), p.name, env.ActorRole, issuer.role, issuer.name)
 		}
 		if first == nil {
 			first = env
@@ -360,10 +367,10 @@ func drainEnvelopes(t *testing.T, conn *scenarioConn, n int) []*vttv1.Envelope {
 func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	f := newExitFixture(t)
 
-	dm := participant{name: "dm", id: f.dmID, conn: f.dial(f.dmToken, 0)}
-	player := participant{name: "player", id: f.playerID, conn: f.dial(f.playerToken, 0)}
-	agent := participant{name: "agent", id: f.agentID, conn: f.dial(f.agentToken, 0)}
-	spectator := participant{name: "spectator", id: f.spectatorID, conn: f.dial(f.spectatorToken, 0)}
+	dm := participant{name: "dm", id: f.dmID, role: "dm", conn: f.dial(f.dmToken, 0)}
+	player := participant{name: "player", id: f.playerID, role: "player", conn: f.dial(f.playerToken, 0)}
+	agent := participant{name: "agent", id: f.agentID, role: "agent", conn: f.dial(f.agentToken, 0)}
+	spectator := participant{name: "spectator", id: f.spectatorID, role: "spectator", conn: f.dial(f.spectatorToken, 0)}
 	all := []participant{dm, player, agent, spectator}
 
 	// dmLive is the ordered record of every envelope the DM client received
@@ -485,25 +492,20 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	dmLive = append(dmLive, env)
 	retractSeq := env.Sequence
 
-	// KNOWN GAP, deliberately asserted here rather than hidden: unlike every
-	// other command, RetractEvents does not flow through gateway.ToEvent —
-	// campaign.Undo (internal/campaign/campaign.go) constructs the
-	// EventsRetracted marker itself (task-4-brief.md's carve-out, predating
-	// participant_id, which sub-project 4 added) and neither accepts nor
-	// stamps a participant id, nor does it use the issuing role — it
-	// hardcodes ActorRole "dm" unconditionally. Spec §4 states "every
-	// accepted command stamps actor_role AND ... participant_id", so the
-	// marker's ParticipantId being permanently "" (even though an AGENT, not
-	// the DM, issued this retraction) is a real spec/implementation gap —
-	// out of this task's file-ownership scope to fix (test-file only). This
-	// assertion documents CURRENT behavior so the suite stays green and the
-	// gap stays visible; see p4-task-7-report.md's Concerns section.
+	// Unlike every other command, RetractEvents does not flow through
+	// gateway.ToEvent — campaign.Undo (internal/campaign/campaign.go)
+	// constructs the EventsRetracted marker itself (ToEvent deliberately
+	// never builds one; see ErrIsRetraction's doc comment). Attribution is
+	// still gateway-supplied: handleRetraction passes the issuing
+	// participant's role and id through to Undo's trailing params, so the
+	// marker carries the AGENT's participant_id and ActorRole here, same as
+	// every other command.
 	env = issueAndVerify(t, agent, &vttv1.ClientCommand{
 		RequestId: "agent-retract-move",
 		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
 			FromSequence: retractSeq, ToSequence: retractSeq, Reason: "test retraction",
 		}},
-	}, "", false, all)
+	}, agent.id, false, all)
 	er, ok := env.Payload.(*vttv1.Envelope_EventsRetracted)
 	if !ok {
 		t.Fatalf("agent-retract-move: payload = %T, want EventsRetracted", env.Payload)

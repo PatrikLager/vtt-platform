@@ -108,7 +108,7 @@ func TestExitScenario(t *testing.T) {
 	}))
 
 	markerID := nextID()
-	if err := c.Undo(middleMoveSeq, middleMoveSeq, "mistaken move", markerID, "sess-1"); err != nil {
+	if err := c.Undo(middleMoveSeq, middleMoveSeq, "mistaken move", markerID, "sess-1", "dm", "test-participant"); err != nil {
 		t.Fatalf("undo middle move: %v", err)
 	}
 

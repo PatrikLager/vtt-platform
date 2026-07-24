@@ -240,7 +240,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if err != nil {
 		var rr *RetractionRange
 		if errors.As(err, &rr) {
-			return s.handleRetraction(requestID, rr)
+			return s.handleRetraction(requestID, rr, p)
 		}
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
@@ -271,13 +271,17 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 // handleRetraction persists rr via campaign.Undo, which owns constructing
 // the EventsRetracted marker itself (ToEvent deliberately never builds one
 // — see ErrIsRetraction's doc comment). A fresh marker event id is minted
-// here the same way ToEvent mints one for every other event.
-func (s *Server) handleRetraction(requestID string, rr *RetractionRange) *vttv1.CommandResult {
+// here the same way ToEvent mints one for every other event. p is the
+// issuing participant: campaign has no identity concept of its own (see
+// Undo's doc comment), so the gateway — the one place that has both p and
+// the retraction — supplies actor_role/participant_id attribution the same
+// way ToEvent does for every other command (spec §4).
+func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *identity.Participant) *vttv1.CommandResult {
 	id, err := newEventID()
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, ""); err != nil {
+	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, "", string(p.Role), p.ID); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	// campaign.Undo does not return the marker's sequence (unlike Append),
