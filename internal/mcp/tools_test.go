@@ -29,6 +29,12 @@ var wantCommandToolNames = []string{
 	"start_session", "end_session", "retract_events",
 }
 
+// This test scopes itself to "the 7 command tools are present by name" —
+// it deliberately does NOT assert the total tool count, since P7 Task 2
+// (read_tools.go) registers two more (get_state, get_events_since) into the
+// SAME tool table; TestListToolsReturnsNineToolsIncludingReadTools
+// (read_tools_test.go) owns the total-count-is-9 assertion for the full,
+// current contract.
 func TestListToolsReturnsAllSevenCommandToolsByName(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
@@ -44,9 +50,6 @@ func TestListToolsReturnsAllSevenCommandToolsByName(t *testing.T) {
 	got := make(map[string]bool, len(res.Tools))
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
-	}
-	if len(got) != len(wantCommandToolNames) {
-		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(wantCommandToolNames), got)
 	}
 	for _, name := range wantCommandToolNames {
 		if !got[name] {

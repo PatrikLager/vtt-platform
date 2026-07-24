@@ -6,10 +6,12 @@
 //
 // Deliberate boundary (P1 rule, extended from internal/harness's original):
 // this package may import ONLY contract types (vttv1), internal/harness,
-// internal/engine (arrives with the read tools; today only transitively
-// via harness), the official MCP SDK, and stdlib — never
-// internal/gateway, internal/campaign, internal/identity, or internal/store
-// (.go-arch-lint.yml's mcp component enforces this, test files included).
+// internal/engine (a direct import as of the read tools, read_tools.go —
+// harness.Fold's *engine.State return type is named explicitly there, not
+// just reached transitively through harness), the official MCP SDK, and
+// stdlib — never internal/gateway, internal/campaign, internal/identity, or
+// internal/store (.go-arch-lint.yml's mcp component enforces this, test
+// files included).
 package mcp
 
 import (
@@ -83,6 +85,17 @@ type Server struct {
 	mu      sync.Mutex
 	client  *harness.Client // nil while disconnected
 	lastSeq int64           // highest event sequence seen so far, for redial's after= cursor
+	// history is every envelope recordEvent has accumulated, in ascending
+	// sequence order with no duplicates — the single source read_tools.go's
+	// get_state and get_events_since both read (via historySnapshot) to
+	// fold/paginate, NEVER a second connection (spec §3's binding
+	// consistency rule: state must derive from this server's own live
+	// stream). Unbounded for v1: the platform's target scale is a
+	// table-top campaign's worth of events for one `vtt mcp` process
+	// lifetime, not an unbounded production log, so an in-memory slice was
+	// judged acceptable here; retention/bounding policy is a ledgered
+	// future concern, not this task's (see the task report).
+	history []*vttv1.Envelope
 }
 
 // New validates cfg, parses ToolsJSON, builds the tool-name -> ClientCommand
@@ -125,6 +138,10 @@ func New(cfg Config) (*Server, error) {
 			InputSchema: e.InputSchema,
 		}, s.handlerFor(fd))
 	}
+
+	// get_state / get_events_since (read_tools.go): registered in the same
+	// tool table as the seven generic command tools above (spec §4).
+	s.registerReadTools()
 
 	return s, nil
 }
@@ -176,15 +193,13 @@ func (s *Server) pump(ctx context.Context) {
 		}
 
 		for env := range client.Events() {
-			// Dedupe by sequence (harness client semantics): a redial's
-			// catch-up history plus this connection's live stream are
-			// already deduped server-side per connection (store.Store's
-			// notifyLocked), but a connection drop can leave events
-			// buffered-and-undrained at teardown; only ever advance
-			// forward, never regress or reprocess a sequence already seen.
-			if seq := env.GetSequence(); seq > s.lastSeen() {
-				s.setLastSeen(seq)
-			}
+			// recordEvent is the single accumulation hook: dedupe, history
+			// append, and lastSeq advance all happen there together (see
+			// its doc comment) — this used to be an inline dedupe-and-
+			// advance-lastSeq check only; the read tools (read_tools.go)
+			// need every drained envelope accumulated too, so recordEvent
+			// folds both jobs into one mutex-guarded operation.
+			s.recordEvent(env)
 		}
 
 		// Events() closed: the connection is gone.
@@ -242,10 +257,38 @@ func (s *Server) lastSeen() int64 {
 	return s.lastSeq
 }
 
-func (s *Server) setLastSeen(seq int64) {
+// recordEvent is pump's single hook for turning one drained envelope into
+// accumulated server state: append to history and advance lastSeq, but ONLY
+// if env's sequence is strictly greater than the highest already recorded.
+// That guard is the SAME monotonic-dedupe invariant pump's redial already
+// relies on (redial's after=lastSeq cursor, plus store.Store's own
+// per-connection dedupe — see pump's doc comment) — reused here, not
+// reimplemented, so a redial's catch-up replay can never double-accumulate
+// an envelope this connection (or a prior one) already recorded.
+func (s *Server) recordEvent(env *vttv1.Envelope) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lastSeq = seq
+	if env.GetSequence() <= s.lastSeq {
+		return
+	}
+	s.history = append(s.history, env)
+	s.lastSeq = env.GetSequence()
+}
+
+// historySnapshot returns a defensive copy of the accumulated history
+// (safe for the caller to read after this call returns, without further
+// synchronization — pump may keep appending to the live s.history
+// concurrently) alongside the current lastSeq/headSequence. This is the
+// ONE read path read_tools.go's get_state and get_events_since both
+// fold/paginate from, which is what guarantees they always observe the
+// SAME accumulated stream as each other and as pump itself — never a
+// second connection (spec §3's binding consistency rule).
+func (s *Server) historySnapshot() ([]*vttv1.Envelope, int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*vttv1.Envelope, len(s.history))
+	copy(out, s.history)
+	return out, s.lastSeq
 }
 
 // handlerFor returns the ONE generic tool handler shape used for every
