@@ -162,7 +162,7 @@ func (m *propModel) doUndo(t *testing.T, c *campaign.Campaign, rng *rand.Rand, i
 	t.Helper()
 	eligible := m.eligibleUndoSeqs()
 	seq := eligible[rng.Intn(len(eligible))]
-	if err := c.Undo(seq, seq, "property-test undo", nextID(), "sess-1", "dm", "test-participant"); err != nil {
+	if err := c.Undo(seq, seq, "property-test undo", nextID(), "dm", "test-participant"); err != nil {
 		counts["undoRejected"]++
 		return
 	}

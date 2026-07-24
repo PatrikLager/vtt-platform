@@ -281,7 +281,7 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, "", string(p.Role), p.ID); err != nil {
+	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, string(p.Role), p.ID); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	// campaign.Undo does not return the marker's sequence (unlike Append),

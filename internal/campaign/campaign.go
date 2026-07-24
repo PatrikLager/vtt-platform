@@ -4,6 +4,8 @@
 package campaign
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -128,6 +130,12 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	if env.Payload == nil {
 		return 0, engine.ErrUnknownVariant
 	}
+	// Stamp session_id before validation, so validation (and the live apply
+	// below) always see the final envelope (merge-gate decision, sub-project
+	// 4): the campaign is authoritative over session_id, not the caller.
+	if err := c.stampSessionID(env); err != nil {
+		return 0, err
+	}
 	// Validate on a snapshot so a rejection cannot half-mutate live state.
 	if err := engine.Apply(c.state.Snapshot(), env); err != nil {
 		return 0, err
@@ -153,6 +161,50 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	return seq, nil
 }
 
+// stampSessionID stamps env.SessionId under c.mu, before validation/persist
+// (merge-gate decision, sub-project 4): a SessionStarted event gets a fresh,
+// generated id; every other event — and Undo's EventsRetracted marker, which
+// also routes through here — gets the currently open session's id,
+// overwriting any caller-supplied value (the campaign is authoritative, not
+// the caller). With no session open, the incoming value (caller-supplied,
+// possibly empty) is left untouched: there is nothing to stamp it with.
+func (c *Campaign) stampSessionID(env *vttv1.Envelope) error {
+	if _, ok := env.Payload.(*vttv1.Envelope_SessionStarted); ok {
+		id, err := newSessionID()
+		if err != nil {
+			return err
+		}
+		env.SessionId = id
+		return nil
+	}
+	if id, ok := c.openSessionID(); ok {
+		env.SessionId = id
+	}
+	return nil
+}
+
+// openSessionID returns the id of the currently open session (the one whose
+// EndSeq is still 0), or "", false if none is open.
+func (c *Campaign) openSessionID() (string, bool) {
+	for _, s := range c.state.Sessions {
+		if s.EndSeq == 0 {
+			return s.ID, true
+		}
+	}
+	return "", false
+}
+
+// newSessionID returns a fresh, random "sess-"-prefixed hex session id (16
+// bytes from crypto/rand — collision-negligible, mirroring
+// gateway.newEventID's construction).
+func newSessionID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("campaign: generate session id: %w", err)
+	}
+	return "sess-" + hex.EncodeToString(b), nil
+}
+
 // Undo appends an EventsRetracted marker and rebuilds the projection.
 // The range must exist, contain no retraction markers (no nesting), and not
 // overlap an already-retracted span (spec §6).
@@ -165,7 +217,12 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 // its own — it never sees a token or a *identity.Participant — so
 // attribution is caller-supplied; the gateway is the authority on who
 // issued the retraction and passes those values straight through.
-func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID, actorRole, participantID string) error {
+//
+// The marker's session_id is NOT caller-supplied (unlike actorRole and
+// participantID): it is stamped the same way Append stamps every other
+// event's, via stampSessionID, right before persisting — the currently open
+// session's id, or left as the marker's zero value ("") if none is open.
+func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.poisoned {
@@ -217,7 +274,6 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID, actor
 
 	marker := &vttv1.Envelope{
 		EventId:       eventID,
-		SessionId:     sessionID,
 		ActorRole:     actorRole,
 		ParticipantId: participantID,
 		OccurredAt:    timestamppb.Now(),
@@ -227,6 +283,10 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, sessionID, actor
 			},
 		},
 	}
+	// stampSessionID never errors on a non-SessionStarted payload (the
+	// generation path, which can, is only reachable for SessionStarted) —
+	// the marker's payload is always EventsRetracted.
+	_ = c.stampSessionID(marker)
 	if _, err := c.log.Append(marker); err != nil {
 		return err
 	}
