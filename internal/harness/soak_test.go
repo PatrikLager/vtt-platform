@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -490,5 +491,36 @@ func TestRunSoakCheckpointsRunPeriodicallyAndAtEnd(t *testing.T) {
 	if rep.Checkpoints < 2 {
 		t.Fatalf("Checkpoints = %d, want >= 2 (at least one periodic + the final one) for %d events at CheckEvery=50: log:\n%s",
 			rep.Checkpoints, events, log.String())
+	}
+}
+
+// --- fresh-campaign assumption -----------------------------------------------
+
+// TestRunSoakErrorsOnPreExistingCatchUpEvents mirrors
+// engine_test.go's TestRunScenarioErrorsOnPreExistingCatchUpEvents for
+// RunSoak: seeding w.history with one event BEFORE RunSoak ever dials (so
+// every participant's after=0 catch-up delivers it immediately, exactly
+// like a non-fresh campaign's real replay) must produce the same clear,
+// named framework error — not a confusing failure buried somewhere in the
+// generated run.
+func TestRunSoakErrorsOnPreExistingCatchUpEvents(t *testing.T) {
+	ids := soakTestIDs()
+	w := newSoakWorld(ids)
+	w.seq = 1
+	w.history = []*vttv1.Envelope{
+		{EventId: "ev-1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
+			SessionStarted: &vttv1.SessionStarted{Name: "pre-existing"}}},
+	}
+
+	_, err := harness.RunSoak(context.Background(),
+		harness.SoakConfig{Seed: 1, Events: 10, CheckEvery: 100, IDs: ids}, w.dial, io.Discard)
+	if err == nil {
+		t.Fatal("RunSoak: want a framework error for a non-fresh campaign, got nil")
+	}
+	if !strings.Contains(err.Error(), "fresh campaign") {
+		t.Fatalf("RunSoak error = %q, want it to name the fresh-campaign requirement", err.Error())
+	}
+	if !strings.Contains(err.Error(), "1 pre-existing") {
+		t.Fatalf("RunSoak error = %q, want it to report the count of pre-existing events", err.Error())
 	}
 }

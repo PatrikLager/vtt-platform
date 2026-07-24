@@ -99,8 +99,17 @@ func TestClientRunSelfContainedFailingScenarioReportsFailingStepAndExitsNonZero(
 	if !strings.Contains(step.Detail, "ok=true") {
 		t.Fatalf("report.Steps[0].Detail = %q, want it to explain the mismatch", step.Detail)
 	}
-	if len(rep.Probes) != 0 {
-		t.Fatalf("report.Probes = %+v, want empty (shape check: probes array present even when empty)", rep.Probes)
+	// The prior "len(rep.Probes) != 0" check here was vacuous: this
+	// scenario declares zero probes, so rep.Probes decodes to length 0 for
+	// EVERY implementation, correct or broken alike — no production
+	// behavior could ever fail it. What's actually decidable is whether the
+	// "Probes" key is present in the RAW JSON output at all (Report has no
+	// `omitempty` tag today, so it always is) — checked against out before
+	// json.Unmarshal has already thrown that information away, so this
+	// would catch a future omitempty regression the length check never
+	// could.
+	if !strings.Contains(out, `"Probes"`) {
+		t.Fatalf("client run --json output missing the \"Probes\" key (shape check: the field must always be present, never omitted): %s", out)
 	}
 }
 

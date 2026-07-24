@@ -24,6 +24,21 @@ vtt revoke --campaign campaign.db --id <participant-id>
 
 Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
 
+## Simulation harness: scenarios and soak
+
+`vtt client run <scenario.json>` drives a declarative scenario (see
+`internal/harness/scenario.go` for the format) self-contained by default
+(boots its own throwaway server) or against a live `vtt serve` with
+`--server <ws-url> --tokens <tokens.json>`. `vtt client soak --seed <n>
+--events <n>` runs the wire-level soak generator the same two ways. Every
+scenario assumes a FRESH campaign (absolute sequence numbers from zero) —
+running one against a campaign with prior history fails loudly rather than
+producing confusing assertion mismatches.
+
+`tokens.json` (`{"participants": {"<name>": "<token>"}}`) holds plaintext
+bearer credentials for live-mode runs — `chmod 600` it and never commit it
+(see `.gitignore`).
+
 ## Security note: invite tokens and the connection URL
 
 Invite tokens travel in the WebSocket URL's `token` query parameter. The

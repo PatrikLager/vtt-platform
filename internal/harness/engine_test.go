@@ -360,6 +360,50 @@ func TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder(t *testing.T) {
 	}
 }
 
+// --- fresh-campaign assumption ----------------------------------------------
+
+// TestRunScenarioErrorsOnPreExistingCatchUpEvents proves a non-fresh
+// campaign — one whose after=0 initial catch-up delivers events BEFORE
+// RunScenario ever dispatches a command — is reported as a clear, named
+// framework error, not left to surface as a confusing step-level
+// observe-mismatch. Before the fix, the pre-existing envelope sits ahead of
+// the step's own broadcast in dm's Events() channel, so observeOnAll reads
+// IT first, sees the wrong Sequence, and reports "event (sequence 2) not
+// observed matching by: dm" — a correct-sounding but misleading diagnosis
+// that hides the real problem (the scenario format assumes absolute
+// sequence numbers from a fresh campaign; relative-sequence scenarios are a
+// planned format extension, not implemented).
+func TestRunScenarioErrorsOnPreExistingCatchUpEvents(t *testing.T) {
+	dm := newFakeConn("dm")
+	world := map[string]*fakeConn{"dm": dm}
+	// Simulate a non-fresh campaign: one event already queued on dm's
+	// connection at dial time — exactly what a real gateway's after=0
+	// catch-up replay of prior history would deliver before any command has
+	// been issued.
+	dm.events <- sessionStartedEnv("pre-existing-1")
+	dm.send = okSend(world, 2, sceneCreatedEnv("ev-2"), "dm")
+
+	sc := &harness.Scenario{
+		Participants: []harness.Participant{{Name: "dm"}},
+		Steps: []harness.Step{
+			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+	if err == nil {
+		t.Fatalf("RunScenario: want a framework error for a non-fresh campaign, got nil (report=%+v)", rep)
+	}
+	if !strings.Contains(err.Error(), "fresh campaign") {
+		t.Fatalf("RunScenario error = %q, want it to name the fresh-campaign requirement", err.Error())
+	}
+	if !strings.Contains(err.Error(), "1 pre-existing") {
+		t.Fatalf("RunScenario error = %q, want it to report the count of pre-existing events", err.Error())
+	}
+	if rep != nil {
+		t.Fatalf("RunScenario: want nil report on a framework-level fresh-campaign error, got %+v", rep)
+	}
+}
+
 // --- probes: pass / fail per kind -------------------------------------------
 
 // runMiniScenario drives a single "dm" participant through StartSession,

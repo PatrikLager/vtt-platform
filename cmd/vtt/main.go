@@ -32,9 +32,10 @@ func newRootCmd() *cobra.Command {
 }
 
 // main wires SIGINT/SIGTERM into the root command's context: a command
-// whose RunE watches cmd.Context().Done() (today, only `vtt events tail` —
-// see its doc comment) gets a chance to unwind cleanly (close its
-// WebSocket, run its own deferred cleanup) instead of being torn down by
+// whose RunE watches cmd.Context().Done() (today, `vtt events tail` — see
+// its doc comment — and `vtt serve`, see serve.go's RunE) gets a chance to
+// unwind cleanly (close its WebSocket, gracefully Shutdown its HTTP server)
+// instead of being torn down by
 // the signal's OS-default action. stop() un-registers the handler once
 // Execute returns, so a caller that ignores a first Ctrl-C and sends a
 // second one gets the OS-default (immediate kill) rather than a stuck

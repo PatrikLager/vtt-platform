@@ -73,7 +73,10 @@ type DB struct {
 // file at path. This is an independent handle from store.Open — both may
 // be opened on the same campaign file concurrently.
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	// busy_timeout(5000): see internal/store/store.go's Open — same
+	// intra-/cross-process SQLITE_BUSY hardening, same ledgered
+	// carry-forward (P6 Task 4 review).
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("identity: open %s: %w", path, err)
 	}

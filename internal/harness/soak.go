@@ -184,14 +184,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	participants := SoakParticipants()
 	participantNames := make([]string, 0, len(participants))
 	conns := make(map[string]Conn, len(participants))
-	histories := newSoakHistories()
 	for _, p := range participants {
 		c, err := dial(p.Name, 0)
 		if err != nil {
 			return nil, fmt.Errorf("harness: soak: dial participant %q: %w", p.Name, err)
 		}
 		conns[p.Name] = c
-		histories.start(p.Name, c)
 		participantNames = append(participantNames, p.Name)
 	}
 	defer func() {
@@ -199,6 +197,21 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			_ = c.Close()
 		}
 	}()
+
+	// The fresh-campaign assumption (engine.go's errFreshCampaignRequired
+	// doc comment applies here identically): checked once, on the fixed
+	// observer participant, BEFORE any of the continuous per-participant
+	// drain goroutines below start consuming Events() — every participant's
+	// after=0 catch-up replays the same history, so one representative
+	// check is sufficient.
+	if n := drainPreExisting(conns[soakObserverName], denialAbsenceWindow); n > 0 {
+		return nil, errFreshCampaignRequired(n)
+	}
+
+	histories := newSoakHistories()
+	for _, p := range participants {
+		histories.start(p.Name, conns[p.Name])
+	}
 
 	model := newSoakModel()
 	rng := rand.New(rand.NewSource(cfg.Seed))
@@ -218,7 +231,10 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 		// never issues two commands concurrently, so waiting for exactly
 		// that sequence yields a stable, deterministic snapshot).
 		if lastAcceptedSeq > 0 {
-			histories.waitFor(soakAgent, lastAcceptedSeq, observeTimeout)
+			if !histories.waitFor(soakAgent, lastAcceptedSeq, observeTimeout) {
+				rep.Pass = false
+				fmt.Fprintf(report, "[action %d] FAIL: agent history never caught up to sequence %d within %s (planRetraction's eligibility snapshot may be stale)\n", i, lastAcceptedSeq, observeTimeout)
+			}
 		}
 		agentHistory := histories.snapshot(soakAgent)
 		step := model.planStep(rng, cfg.IDs, agentHistory)
@@ -241,7 +257,10 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			// and be mistaken for a leaked broadcast from THIS denied
 			// command.
 			if lastAcceptedSeq > 0 {
-				histories.waitAllCaughtUp(participantNames, lastAcceptedSeq, observeTimeout)
+				if !histories.waitAllCaughtUp(participantNames, lastAcceptedSeq, observeTimeout) {
+					rep.Pass = false
+					fmt.Fprintf(report, "[action %d] FAIL: not every participant caught up to sequence %d within %s before the denial-attempt snapshot\n", i, lastAcceptedSeq, observeTimeout)
+				}
 			}
 			preLens = histories.lengths()
 		}

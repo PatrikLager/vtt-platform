@@ -31,7 +31,11 @@ type Store struct {
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	// busy_timeout(5000): a concurrent SQLITE_BUSY (another handle on the
+	// same file mid-write — intra-process, e.g. Store+identity.DB both open
+	// on one campaign, or cross-process) retries for up to 5s instead of
+	// failing immediately (ledgered carry-forward, P6 Task 4 review).
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}

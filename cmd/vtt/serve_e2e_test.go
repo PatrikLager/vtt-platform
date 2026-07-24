@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -126,6 +128,64 @@ func TestServeComposeEndToEnd(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Serve goroutine did not exit after Shutdown")
+	}
+}
+
+// TestServeSubprocessExitsCleanlyOnSIGTERM proves `vtt serve` — unlike
+// `vtt events tail` (see events_tail.go's own SIGINT subprocess test in
+// client_e2e_test.go) — actually watches the cancelable context main.go
+// wires SIGINT/SIGTERM into, rather than blocking forever in
+// srv.ListenAndServe() with nothing ever observing cmd.Context().Done().
+// It builds the real binary, runs `vtt serve` as an OS subprocess against a
+// fresh temp campaign, waits for it to be listening (healthz 200), sends
+// SIGTERM, and asserts it exits promptly (bounded wait) with code 0 — a
+// graceful, Shutdown-driven stop, not a hang that only SIGKILL (the
+// subprocess teardown every OTHER `vtt serve` subprocess test in this
+// package uses today, e.g. library_test.go's
+// TestThreeRoleExitScenarioOverLiveServeSubprocess) can end. Before the
+// fix, serve's RunE has no path that ever reads cmd.Context() at all, so
+// the signal is silently swallowed and waitWithTimeout's bounded wait below
+// times out with the subprocess still alive — see this test's own report
+// entry for the captured RED transcript.
+func TestServeSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
+	binPath := buildVTTBinary(t)
+
+	dir := t.TempDir()
+	campaignPath := filepath.Join(dir, "campaign.db")
+	addr := mustFreeAddr(t)
+
+	cmd := exec.Command(binPath, "serve", "--campaign", campaignPath, "--addr", addr)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start vtt serve subprocess: %v", err)
+	}
+	// Safety-net teardown in case the test fails/fatals before the process
+	// has already exited on its own — a Kill on an already-dead process is a
+	// harmless no-op error (same pattern as library_test.go's subprocess
+	// test).
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	base := "http://" + addr
+	if err := waitForHealthz(base, 5*time.Second); err != nil {
+		t.Fatalf("vtt serve subprocess healthz never became ready: %v", err)
+	}
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("send SIGTERM: %v", err)
+	}
+
+	// Bounded well past serve.go's own 5s Shutdown timeout: a correct
+	// implementation exits close to immediately (nothing is holding
+	// Shutdown up in this test — no live WS connection), so this margin is
+	// purely to distinguish "slow but working" from "swallowed entirely"
+	// without flaking on the former.
+	if err := waitWithTimeout(cmd, 7*time.Second); err != nil {
+		t.Fatalf("subprocess did not exit cleanly after SIGTERM: %v", err)
+	}
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("subprocess exit code after SIGTERM = %d, want 0", code)
 	}
 }
 

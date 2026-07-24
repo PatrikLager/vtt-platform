@@ -39,7 +39,11 @@ func newClientSoakCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer teardown()
+			defer func() {
+				if tErr := teardown(); tErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "vtt client soak: teardown: %v\n", tErr)
+				}
+			}()
 
 			progress := cmd.OutOrStdout()
 			if jsonOut {

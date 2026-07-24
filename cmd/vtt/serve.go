@@ -1,12 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 )
+
+// serveShutdownTimeout bounds how long RunE waits for srv.Shutdown to drain
+// active HTTP handlers once cmd.Context() is canceled (SIGINT/SIGTERM — see
+// main.go), before forcing anything still open closed via srv.Close (see
+// RunE's own comment on why Shutdown alone cannot be trusted to finish).
+const serveShutdownTimeout = 5 * time.Second
 
 // newServeCmd runs the gateway over one campaign (spec §6: one campaign per
 // serve invocation — multi-campaign management is a later concern). All
@@ -27,10 +35,35 @@ func newServeCmd() *cobra.Command {
 			defer closeFn()
 
 			fmt.Fprintf(cmd.OutOrStdout(), "vtt serve: listening on %s (campaign %s)\n", addr, campaignPath)
-			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				return err
+
+			serveErrCh := make(chan error, 1)
+			go func() { serveErrCh <- srv.ListenAndServe() }()
+
+			select {
+			case err := <-serveErrCh:
+				if err != nil && !errors.Is(err, http.ErrServerClosed) {
+					return err
+				}
+				return nil
+			case <-cmd.Context().Done():
+				// Ctrl-C / SIGTERM (main.go wires both into cmd.Context() via
+				// signal.NotifyContext): shut down gracefully, bounded by
+				// serveShutdownTimeout, then srv.Close the listener and any
+				// non-hijacked conns. NOTE: neither Shutdown nor Close touches
+				// HIJACKED WebSocket connections (Go stdlib contract; see
+				// composeServer's doc comment) — those die with the process
+				// exit that follows. The exit itself never depends on them:
+				// this RunE returns within serveShutdownTimeout regardless.
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), serveShutdownTimeout)
+				defer cancel()
+				shutdownErr := srv.Shutdown(shutdownCtx)
+				_ = srv.Close()
+				<-serveErrCh // Shutdown/Close close the listener, so ListenAndServe has already returned by now.
+				if shutdownErr != nil && !errors.Is(shutdownErr, context.DeadlineExceeded) {
+					return shutdownErr
+				}
+				return nil
 			}
-			return nil
 		},
 	}
 

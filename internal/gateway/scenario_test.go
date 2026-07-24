@@ -180,13 +180,24 @@ func (sc *scenarioConn) readFrame(t *testing.T, d time.Duration) *vttv1.ServerFr
 	}
 }
 
+// scenarioConnReadBudget bounds readResult/readEvent's per-frame wait.
+// Raised 10s->20s (P6 final review, 4th sighting of
+// TestThreeRoleExitScenarioOverLiveWebSockets flaking under full-suite
+// -race contention — see .superpowers/sdd/progress.md's flake tracker):
+// serializing this package's suite in Taskfile's check task (go test -p 1
+// ./internal/gateway/ ./cmd/vtt/) is the primary fix for the contention
+// itself; this wider budget is the belt, not the buckle — a correct
+// implementation still returns in milliseconds under normal load, so this
+// only ever matters on an already-contended machine.
+const scenarioConnReadBudget = 20 * time.Second
+
 // readResult reads frames until a CommandResult appears, skipping any
 // Envelope frames that race ahead of it (mirrors server_test.go's
 // readResult).
 func (sc *scenarioConn) readResult(t *testing.T) *vttv1.CommandResult {
 	t.Helper()
 	for i := 0; i < 10; i++ {
-		if r := sc.readFrame(t, 10*time.Second).GetResult(); r != nil {
+		if r := sc.readFrame(t, scenarioConnReadBudget).GetResult(); r != nil {
 			return r
 		}
 	}
@@ -200,7 +211,7 @@ func (sc *scenarioConn) readResult(t *testing.T) *vttv1.CommandResult {
 func (sc *scenarioConn) readEvent(t *testing.T) *vttv1.Envelope {
 	t.Helper()
 	for i := 0; i < 10; i++ {
-		if e := sc.readFrame(t, 10*time.Second).GetEvent(); e != nil {
+		if e := sc.readFrame(t, scenarioConnReadBudget).GetEvent(); e != nil {
 			return e
 		}
 	}

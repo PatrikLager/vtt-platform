@@ -16,6 +16,16 @@ import (
 // ordered sequence of steps (each either a command with an expectation, or a
 // reconnect), and final-state probes evaluated once every step has run
 // (docs/superpowers/specs/2026-07-24-simulation-harness-design.md §4).
+//
+// Binding assumption: every step's and reconnect's Sequence-based reasoning
+// (an accepted command's result.Sequence, a reconnect's AfterSequence) is
+// ABSOLUTE, counted from a FRESH campaign with no prior history — the
+// format has no way to express an assertion relative to whatever the
+// catch-up cursor happens to already be. RunScenario enforces this at
+// runtime (returns a clear framework error if the initial catch-up finds
+// any pre-existing events — see engine.go's errFreshCampaignRequired) rather
+// than letting a non-fresh campaign silently misbehave. Relative-sequence
+// scenarios are a planned format extension, not implemented here.
 type Scenario struct {
 	Name         string        `json:"name"`
 	Participants []Participant `json:"participants"`
@@ -88,12 +98,6 @@ type SessionCountProbe struct {
 type ActorExistsProbe struct {
 	ActorId string `json:"actorId"`
 }
-
-// errUnimplemented is the ADR-009 Step-1 stub sentinel (task-2-brief.md):
-// every not-yet-implemented function in this package returns it, so tests
-// written against the stub fail on a real runtime assertion (behavioral
-// RED), never a missing-symbol compile error.
-var errUnimplemented = errors.New("harness: unimplemented")
 
 // LoadScenario reads and strictly parses a scenario file: unknown JSON
 // fields are errors (json.Decoder.DisallowUnknownFields), and every step is
@@ -191,6 +195,16 @@ func validateStep(st Step) error {
 	// the LLM-authorable format.
 	if hasCommand && !st.Expect.OK && st.Expect.DeniedContaining == "" {
 		return errors.New(`expect must be either {"ok": true} or {"deniedContaining": "<substring>"}, got neither`)
+	}
+	// The converse ambiguity (P6 final review): Expect.OK == true WITH a
+	// non-empty DeniedContaining ALSO isn't either valid shape on its own
+	// terms — it sets both at once. engine.go's runCommandStep treats
+	// DeniedContaining != "" as authoritative when present, so this shape
+	// loads fine and silently runs as a denial expectation today, quietly
+	// discarding the author's "ok": true. Reject it at load time for the
+	// same reason as the neither-set case above.
+	if hasCommand && st.Expect.OK && st.Expect.DeniedContaining != "" {
+		return errors.New(`expect must be either {"ok": true} or {"deniedContaining": "<substring>"}, got both`)
 	}
 	return nil
 }

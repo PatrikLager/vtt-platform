@@ -112,6 +112,45 @@ func resolveParticipantIDPlaceholders(steps []Step, ids map[string]string) error
 	return nil
 }
 
+// errFreshCampaignRequired is the framework error RunScenario and RunSoak
+// both return when a participant's initial after=0 catch-up delivers ANY
+// event before the first command is ever dispatched: this library's steps,
+// probes, and reconnect-catch-up assertions all reason in ABSOLUTE sequence
+// numbers starting from a fresh campaign (the scenario format's binding
+// assumption — see Scenario's own doc comment), so pre-existing history
+// from a shared/reused campaign does not fail cleanly — it silently shifts
+// every later sequence comparison, producing a confusing step-level
+// observe-mismatch instead of naming the real problem. Relative-sequence
+// scenarios (expressing assertions relative to the catch-up cursor rather
+// than absolute numbers) are a planned format extension, not implemented
+// here.
+func errFreshCampaignRequired(n int) error {
+	return fmt.Errorf("harness: scenario requires a fresh campaign; found %d pre-existing events (relative-sequence scenarios are a planned format extension)", n)
+}
+
+// drainPreExisting waits up to window for events already queued on conn's
+// Events() channel — the initial catch-up replay a non-fresh campaign
+// delivers immediately on dial, before any command has been issued — and
+// returns how many arrived. A genuinely fresh campaign's after=0 catch-up
+// is empty, so this window elapses in silence and returns 0 (the same
+// "bounded wait proves a negative" reasoning denialAbsenceWindow's own doc
+// comment already relies on for the denial assertion).
+func drainPreExisting(conn Conn, window time.Duration) int {
+	n := 0
+	deadline := time.After(window)
+	for {
+		select {
+		case _, ok := <-conn.Events():
+			if !ok {
+				return n
+			}
+			n++
+		case <-deadline:
+			return n
+		}
+	}
+}
+
 // Report is RunScenario's outcome: one StepResult per scenario step (in
 // order, every step always runs — a failing step does not abort the run,
 // so a single pass surfaces every problem a scenario has, not just the
@@ -167,8 +206,9 @@ type ProbeResult struct {
 // Fold(everything participant 0 has ever observed, live or via catch-up).
 // Human-readable progress is written to report as steps/probes complete;
 // report may be nil (io.Discard). The returned error is reserved for
-// framework failures (e.g. a participant's initial dial failing, or an
-// unresolved id placeholder) — scenario assertion failures are reported
+// framework failures (e.g. a participant's initial dial failing, an
+// unresolved id placeholder, or a non-fresh campaign — see
+// errFreshCampaignRequired) — scenario assertion failures are reported
 // through Report.Pass/StepResult/ProbeResult, never as a non-nil error.
 func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]string, report io.Writer) (*Report, error) {
 	if report == nil {
@@ -196,6 +236,18 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 			}
 		}
 	}()
+
+	// The fresh-campaign assumption (see errFreshCampaignRequired's doc
+	// comment): checked once, on the first participant, right after dialing
+	// and before any step runs — every participant's after=0 catch-up
+	// replays the SAME history, so one representative check is sufficient
+	// (Fold's own probe evaluation below makes the same "participant 0
+	// stands in for the group" choice).
+	if len(sc.Participants) > 0 {
+		if n := drainPreExisting(conns[sc.Participants[0].Name], denialAbsenceWindow); n > 0 {
+			return nil, errFreshCampaignRequired(n)
+		}
+	}
 
 	rep := &Report{Pass: true}
 	for i, st := range sc.Steps {

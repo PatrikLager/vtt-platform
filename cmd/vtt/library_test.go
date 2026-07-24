@@ -117,10 +117,13 @@ func runLibraryScenarioSelfContained(t *testing.T, path string) {
 // three-role-exit.json's {{id:player}} placeholder from that, the same
 // mechanism a real operator would use (tokens.json's ids come from `vtt
 // invite`'s own printed "participant id: ..." line).
-// Process.Kill is the documented teardown (brief, verbatim): `vtt serve`
-// has no graceful-shutdown RunE path yet (see serve.go/serve_compose.go's
-// own doc comments) — the connection-drain carry-forward
-// (docs/superpowers/sdd/progress.md) owns closing that gap, not this test.
+// Process.Kill is this test's own teardown (brief, verbatim, predates
+// serve.go's SIGTERM shutdown path — see serve_e2e_test.go's
+// TestServeSubprocessExitsCleanlyOnSIGTERM for that path's own coverage):
+// Kill remains a valid, simpler teardown choice here since this test
+// doesn't need to observe a graceful stop, just end the subprocess. The
+// connection-drain carry-forward (docs/superpowers/sdd/progress.md) is
+// still open regardless of which teardown a given test uses.
 func TestThreeRoleExitScenarioOverLiveServeSubprocess(t *testing.T) {
 	binPath := buildVTTBinary(t)
 

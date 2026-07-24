@@ -5,7 +5,16 @@ tasks:
     desc: Single quality gateway — every task must leave this green
     cmds:
       - go vet ./...
-      - go test ./...
+      # internal/gateway and cmd/vtt are the two socket-heavy suites (real
+      # WebSocket/subprocess tests): run everything else in parallel, then
+      # run those two serialized (-p 1) — the 4th-sighting
+      # TestThreeRoleExitScenarioOverLiveWebSockets flake under full-suite
+      # -race contention (tracked in .superpowers/sdd/progress.md) is a
+      # resource-contention flake, not a logic bug, and serializing the
+      # heavy suites is the primary fix (scenario_test.go's read-budget
+      # raise is the belt, not the primary fix).
+      - go test $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt')
+      - go test -p 1 ./internal/gateway/... ./cmd/vtt/...
       - bun test
       - task: check:drift
       - task: check:breaking
@@ -80,13 +89,22 @@ tasks:
 
   audit:mutation:
     desc: >
-      Mutation testing audit (gremlins) over the four state-owning packages —
+      Mutation testing audit (gremlins) over the five state-owning packages —
       minutes-long, deliberately NOT part of `check`. Requires gremlins
       (go install github.com/go-gremlins/gremlins/cmd/gremlins@latest).
       --workers 1 avoids CPU-contention false timeouts under gremlins'
       default parallel workers (see docs/superpowers/reports/
       2026-07-24-mutation-audit.md methodology note); --timeout-coefficient
       10 gives real per-mutant test runs comfortable headroom at workers=1.
+      CAVEAT (internal/harness, added P6 final review): this suite's
+      fixed-sleep cost (denialAbsenceWindow/observeTimeout waits repeated
+      across dozens of tests, plus soak's checkpoint drains) totals ~70s of
+      real wall-clock PER MUTANT — gremlins reruns the whole package's test
+      suite once per surviving/candidate mutant, so a full run here is
+      impractical (hours, not minutes) until the ledgered fake-clock work
+      lands (.superpowers/sdd/progress.md). The spec-§7 mutation-audit
+      wording adjustment this implies is bundled into the merge-gate, not
+      done here.
     vars:
       # go env GOPATH, not a hardcoded $HOME/go: honors GOPATH overrides
       # (env var or `go env -w`) instead of assuming the Go default layout.
@@ -97,3 +115,4 @@ tasks:
       - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/store/ --workers 1 --timeout-coefficient 10'
       - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/campaign/ --workers 1 --timeout-coefficient 10'
       - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/identity/ --workers 1 --timeout-coefficient 10'
+      - '{{.GREMLINS_BIN | default (print .GOPATH_DIR "/bin/gremlins")}} unleash ./internal/harness/ --workers 1 --timeout-coefficient 10'

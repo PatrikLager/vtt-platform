@@ -130,6 +130,27 @@ func TestLoadScenarioRejectsAmbiguousExpect(t *testing.T) {
 	}
 }
 
+// TestLoadScenarioRejectsBothOKAndDeniedContaining loads a scenario whose
+// one command step sets BOTH Expect.OK=true AND a non-empty
+// DeniedContaining — the OTHER ambiguous Expect shape (engine.go's
+// runCommandStep treats DeniedContaining != "" as authoritative when
+// present, so this shape loads fine today and silently runs as a denial
+// expectation, discarding the author's "ok": true entirely). Load must
+// fail, naming step 0 and both valid expect shapes — mirroring
+// TestLoadScenarioRejectsAmbiguousExpect's neither-set converse.
+func TestLoadScenarioRejectsBothOKAndDeniedContaining(t *testing.T) {
+	_, err := harness.LoadScenario("testdata/both_ok_and_denied.json")
+	if err == nil {
+		t.Fatal("LoadScenario: want error for an expect with both ok=true and deniedContaining set, got nil")
+	}
+	if !strings.Contains(err.Error(), "step 0") {
+		t.Fatalf("error = %q, want it to name step 0", err.Error())
+	}
+	if !strings.Contains(err.Error(), `"ok": true`) || !strings.Contains(err.Error(), "deniedContaining") {
+		t.Fatalf("error = %q, want it to name both valid expect shapes", err.Error())
+	}
+}
+
 // TestLoadScenarioRejectsAmbiguousProbe constructs a scenario whose one
 // probe sets BOTH tokenAt and actorExists — the exactly-one-of-three-kinds
 // rule Probe shares with Step's Command/Reconnect exclusivity.
