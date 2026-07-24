@@ -1,0 +1,15 @@
+{
+  "name": "unknown-field",
+  "participants": [
+    {"name": "dm", "role": "dm"}
+  ],
+  "steps": [
+    {
+      "by": "dm",
+      "command": {"startSession": {"name": "s1"}},
+      "expect": {"ok": true},
+      "bogus": true
+    }
+  ],
+  "probes": []
+}

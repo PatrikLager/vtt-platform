@@ -1,0 +1,15 @@
+{
+  "name": "both-command-and-reconnect",
+  "participants": [
+    {"name": "dm", "role": "dm"}
+  ],
+  "steps": [
+    {
+      "by": "dm",
+      "command": {"startSession": {"name": "s1"}},
+      "expect": {"ok": true},
+      "reconnect": {"afterSequence": 0}
+    }
+  ],
+  "probes": []
+}
