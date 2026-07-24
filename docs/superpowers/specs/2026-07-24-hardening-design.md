@@ -44,7 +44,9 @@ revoked-vs-unknown timing distinction (previously adjudicated out of scope).
 
 - Mutation runs on the four fast packages report ZERO surviving mutants, or
   each survivor is documented in the final report as an accepted equivalent
-  mutant with reasoning.
+  mutant with reasoning, or as a proven-infinite-loop timeout (mutant makes a
+  loop non-terminating; timeout = legitimate kill, verified by bounded-timeout
+  hand-injection). (Category added at merge: the audit legitimately used it.)
 - The gateway hand-injection list: all ten proven (injection transcript each).
 - All ledgered gaps closed; session_id stamped per decision with behavioral-
   RED TDD (ADR-009 now binding).
