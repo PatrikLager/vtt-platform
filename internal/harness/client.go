@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -49,6 +50,29 @@ var ErrEventsOverflow = errors.New("harness: events buffer overflow — caller t
 // errClientClosed is the fallback teardown error, used when a connection
 // ends locally (Close) or the underlying error is otherwise unavailable.
 var errClientClosed = errors.New("harness: client closed")
+
+// tokenQueryParamPattern matches a "token=<value>" query parameter
+// anywhere in a string — not just when the whole string is itself a bare,
+// parseable URL. That's deliberate: the errors this pattern is applied to
+// (see redactURL) are net/http *url.Error values wrapped several layers
+// deep by coder/websocket's Dial, which format as `Get "<url>": <cause>`
+// (net/http's own convention) — the secret token shows up EMBEDDED inside
+// a larger message, not as a standalone URL a second url.Parse could
+// re-extract cleanly.
+var tokenQueryParamPattern = regexp.MustCompile(`token=[^&"'\s]*`)
+
+// redactURL returns s with every "token=<value>" query parameter's value
+// replaced by "[redacted]", leaving everything else (including the rest of
+// the URL and any surrounding error text) untouched. Every Dial error path
+// that could carry the connection URL — which always carries this
+// client's invite token as its "token" query param — must be routed
+// through this before it becomes part of an error's message: `vtt mcp`
+// (and tail/dump/run) print Dial failures straight to stderr, and an MCP
+// host persists stderr, so an unredacted token there is a credential leak
+// into whatever log captures it.
+func redactURL(s string) string {
+	return tokenQueryParamPattern.ReplaceAllString(s, "token=[redacted]")
+}
 
 // Client is a connected wire client: one WebSocket to the gateway, demuxing
 // ServerFrame results (correlated to SendCommand callers by request_id) from
@@ -90,7 +114,14 @@ type Client struct {
 func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error) {
 	u, err := url.Parse(wsURL)
 	if err != nil {
-		return nil, fmt.Errorf("harness: parse wsURL: %w", err)
+		// wsURL itself carries no token yet (added below), but this is
+		// still routed through redactURL rather than %w-wrapped verbatim:
+		// url.Parse's own *url.Error formats as `parse "<wsURL>": <cause>`,
+		// echoing the caller-supplied string back unmodified, and a
+		// malformed wsURL could itself already contain a "token=" fragment
+		// (e.g. a caller mistakenly concatenating query params into the
+		// base URL) — defense in depth costs nothing here.
+		return nil, fmt.Errorf("harness: parse wsURL: %s", redactURL(err.Error()))
 	}
 	q := u.Query()
 	q.Set("token", token)
@@ -99,7 +130,15 @@ func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error
 
 	conn, _, err := websocket.Dial(ctx, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("harness: dial: %w", err)
+		// NOT %w-wrapped: coder/websocket's own dial error embeds the
+		// full request URL — including our token= query param — verbatim
+		// (net/http's *url.Error: `Get "<url>": <cause>`), several layers
+		// deep inside its "failed to WebSocket dial: ..." wrapping. %w
+		// would preserve that unredacted text forever (Error() always
+		// calls through to it); reconstructing the message via redactURL
+		// is the only way to guarantee the token never surfaces here —
+		// see TestDialErrorNeverIncludesTheRawToken.
+		return nil, fmt.Errorf("harness: dial: %s", redactURL(err.Error()))
 	}
 
 	readCtx, cancel := context.WithCancel(context.Background())

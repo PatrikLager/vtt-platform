@@ -276,3 +276,25 @@ func TestCallToolWhileDisconnectedReturnsCleanError(t *testing.T) {
 	}
 	t.Fatalf("want CallTool to eventually return an error while permanently disconnected, got nil (lastErr=%v)", lastErr)
 }
+
+// TestServerInstructionsScopeTheInt64AsStringRuleToNotGetState covers the
+// honest-conventions fix (final review Fix 3a): before this fix, the
+// server-level Instructions' int64-as-string bullet read as a blanket
+// claim over every tool's output, which is false for get_state (its body
+// follows the state dump's own Go-JSON conventions, not protojson — see
+// read_tools_test.go's TestGetStateSessionSequenceFieldsAreGoJSONNumbers
+// NotProtojsonStrings for the behavioral proof). Instructions must now
+// name get_state as the documented exception, not just assert the rule.
+func TestServerInstructionsScopeTheInt64AsStringRuleToNotGetState(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	instr := cs.InitializeResult().Instructions
+	if !strings.Contains(instr, "get_state") {
+		t.Fatalf("server Instructions never mentions get_state's exception to the int64-as-string rule:\n%s", instr)
+	}
+	if !strings.Contains(instr, "exception") {
+		t.Fatalf("server Instructions does not scope the int64-as-string rule as having an exception:\n%s", instr)
+	}
+}

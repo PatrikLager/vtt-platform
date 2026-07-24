@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -53,7 +54,21 @@ func newMCPCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("vtt mcp: %w", err)
 			}
-			return srv.Run(cmd.Context(), &mcpsdk.StdioTransport{})
+			runErr := srv.Run(cmd.Context(), &mcpsdk.StdioTransport{})
+			if errors.Is(runErr, context.Canceled) {
+				// SIGINT/SIGTERM (main.go wires both into cmd.Context() via
+				// signal.NotifyContext): the SDK's own Server.Run returns
+				// ctx.Err() verbatim on cancellation (context.Canceled),
+				// which is a clean, expected stop here — not a failure —
+				// exactly the exit-code parity `vtt serve` (serve.go's
+				// RunE) and `vtt events tail` (events_tail.go's
+				// tailUntilDone) already give every other cancelable
+				// command. Propagating it unfiltered would exit 1 on an
+				// ordinary Ctrl-C, which main.go's os.Exit(1) path treats
+				// as a real error.
+				return nil
+			}
+			return runErr
 		},
 	}
 

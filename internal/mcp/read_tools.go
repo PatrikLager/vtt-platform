@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -35,19 +38,36 @@ const getStateDescription = `Return the campaign's current derived state, ` +
 	`headSequence is a plain JSON number (ordinary MCP convention), the ` +
 	`same as get_events_since's afterSequence/limit/headSequence — see ` +
 	`that tool's description for how this differs from the protojson ` +
-	`"sequence" field inside individual event envelopes.`
+	`"sequence" field inside individual event envelopes. The REST of the ` +
+	`body (everything but headSequence and wireConnected) is NOT ` +
+	`protojson: it follows the state dump's own Go-JSON conventions ` +
+	`instead — top-level keys and the plain Go types under them (Scenes/` +
+	`Tokens/Sessions and their own fields) serialize as their exact Go ` +
+	`struct field names, e.g. a session's "StartSeq"/"EndSeq", both plain ` +
+	`JSON numbers, never strings — while nested Actor values use their ` +
+	`protobuf-generated snake_case tags instead (e.g. "actor_id"). ` +
+	`Neither matches protojson's camelCase; headSequence and wireConnected ` +
+	`are the two deliberately camelCase keys added on top of this body. ` +
+	`wireConnected is a plain JSON boolean: when false, this entire body ` +
+	`is a frozen snapshot (the last state received before the underlying ` +
+	`wire connection dropped) — commands will fail until reconnect, but ` +
+	`this tool keeps working off accumulated history either way.`
 
 const getEventsSinceDescription = `Return event envelopes recorded after ` +
 	`afterSequence, oldest first, up to limit at a time (default 50, max ` +
 	`200 — values above 200 are clamped, not rejected), plus the current ` +
-	`headSequence and a "more" flag (true if additional events remain ` +
-	`beyond this page). afterSequence, limit, headSequence, and more are ` +
-	`plain JSON numbers/booleans, ordinary MCP tool convention. This is ` +
-	`DIFFERENT from the "sequence" field INSIDE each returned event ` +
-	`envelope: that one is protojson and serializes as a JSON STRING ` +
-	`(e.g. "sequence": "42"), per contract/README.md's wire conventions — ` +
-	`do not compare a numeric afterSequence against a string envelope ` +
-	`sequence without converting one first.`
+	`headSequence, a "more" flag (true if additional events remain beyond ` +
+	`this page), and a "wireConnected" flag. afterSequence, limit, ` +
+	`headSequence, more, and wireConnected are plain JSON numbers/` +
+	`booleans, ordinary MCP tool convention. This is DIFFERENT from the ` +
+	`"sequence" field INSIDE each returned event envelope: that one is ` +
+	`protojson and serializes as a JSON STRING (e.g. "sequence": "42"), ` +
+	`per contract/README.md's wire conventions — do not compare a numeric ` +
+	`afterSequence against a string envelope sequence without converting ` +
+	`one first. wireConnected: when false, data is a frozen snapshot (the ` +
+	`accumulated history up to the last live connection) — commands will ` +
+	`fail until reconnect, but this tool keeps paginating that history ` +
+	`either way.`
 
 var getStateInputSchema = map[string]any{
 	"type":       "object",
@@ -106,7 +126,7 @@ func (s *Server) handleGetState(ctx context.Context, req *mcpsdk.CallToolRequest
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_state: fold: %w", err)
 	}
-	raw, err := marshalStateWithHead(st, head)
+	raw, err := marshalStateWithHead(st, head, s.currentClient() != nil)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_state: %w", err)
 	}
@@ -123,6 +143,46 @@ type getEventsSinceArgs struct {
 	Limit         int64 `json:"limit"`
 }
 
+// unknownFieldPattern extracts the offending key from encoding/json's own
+// DisallowUnknownFields error text (`json: unknown field "<key>"` — there
+// is no typed error for this case, only that fixed message shape).
+var unknownFieldPattern = regexp.MustCompile(`unknown field "([^"]+)"`)
+
+// decodeStrictGetEventsSinceArgs decodes raw into getEventsSinceArgs,
+// rejecting any key the struct doesn't declare (DisallowUnknownFields) and
+// any value of the wrong JSON type, both surfaced as a single clean,
+// caller-facing message naming the offending JSON argument (final review
+// Fix 6b) — never encoding/json's own frequently internals-leaking text
+// (a wrong-type error, left as-is, names the Go struct field PATH —
+// "getEventsSinceArgs.afterSequence" — not the plain "afterSequence" the
+// caller actually sent and the tool's own inputSchema documents).
+func decodeStrictGetEventsSinceArgs(raw []byte) (getEventsSinceArgs, error) {
+	var args getEventsSinceArgs
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&args); err != nil {
+		return getEventsSinceArgs{}, describeArgsDecodeError(err)
+	}
+	return args, nil
+}
+
+// describeArgsDecodeError turns a decodeStrictGetEventsSinceArgs failure
+// into a message naming the field by its JSON argument name: a wrong-type
+// error is a *json.UnmarshalTypeError (whose Field is already the JSON tag
+// name, not the Go field name, since getEventsSinceArgs' fields ARE
+// tagged); an unknown-key error is untyped, so unknownFieldPattern pulls
+// the key back out of encoding/json's fixed message text instead.
+func describeArgsDecodeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf("argument %q must be a %s, got a %s", typeErr.Field, typeErr.Type, typeErr.Value)
+	}
+	if m := unknownFieldPattern.FindStringSubmatch(err.Error()); m != nil {
+		return fmt.Errorf("unknown argument %q", m[1])
+	}
+	return err
+}
+
 // handleGetEventsSince paginates Server's accumulated history (the SAME
 // historySnapshot get_state folds — single source, spec §3) strictly after
 // args.AfterSequence, clamps/defaults the limit, and returns each
@@ -135,9 +195,18 @@ func (s *Server) handleGetEventsSince(ctx context.Context, req *mcpsdk.CallToolR
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	var args getEventsSinceArgs
-	if err := json.Unmarshal(raw, &args); err != nil {
-		return nil, fmt.Errorf("mcp: get_events_since: invalid arguments: %w", err)
+	args, err := decodeStrictGetEventsSinceArgs(raw)
+	if err != nil {
+		// Tool-level isError, NOT a returned Go error: an unknown key or
+		// wrong-typed value is a caller mistake the LLM can see and
+		// correct on its next call, not an MCP protocol failure (a
+		// returned error here would surface as the SDK's own dispatch
+		// error instead — see handleGetEventsSince's doc comment / final
+		// review Fix 6b).
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: fmt.Sprintf("mcp: get_events_since: invalid arguments: %s", err)}},
+			IsError: true,
+		}, nil
 	}
 
 	limit := args.Limit
@@ -151,7 +220,7 @@ func (s *Server) handleGetEventsSince(ctx context.Context, req *mcpsdk.CallToolR
 	events, head := s.historySnapshot()
 	page, more := paginateSince(events, args.AfterSequence, int(limit))
 
-	out, err := marshalEventsSinceResult(page, head, more)
+	out, err := marshalEventsSinceResult(page, head, more, s.currentClient() != nil)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_events_since: %w", err)
 	}
@@ -181,10 +250,14 @@ func paginateSince(history []*vttv1.Envelope, after int64, limit int) (page []*v
 
 // marshalStateWithHead is get_state's "dump contract verbatim" shaping:
 // marshal st with encoding/json, re-decode into a generic field map, add
-// "headSequence" as a sibling top-level key, re-marshal. Deliberately
-// mirrors cmd/vtt/state_dump.go's writeDump in approach byte-for-byte (not
-// shared code — see handleGetState's doc comment on why).
-func marshalStateWithHead(st *engine.State, head int64) ([]byte, error) {
+// "headSequence" and "wireConnected" as sibling top-level keys, re-marshal.
+// Deliberately mirrors cmd/vtt/state_dump.go's writeDump in approach byte-
+// for-byte (not shared code — see handleGetState's doc comment on why);
+// wireConnected is this package's own addition on top of that shared
+// shape (final review Fix 6a) — state_dump.go has no such notion since
+// `vtt state dump` is a one-shot process with no persistent connection to
+// report on.
+func marshalStateWithHead(st *engine.State, head int64, wireConnected bool) ([]byte, error) {
 	raw, err := json.Marshal(st)
 	if err != nil {
 		return nil, fmt.Errorf("marshal state: %w", err)
@@ -198,22 +271,34 @@ func marshalStateWithHead(st *engine.State, head int64) ([]byte, error) {
 		return nil, fmt.Errorf("marshal headSequence: %w", err)
 	}
 	fields["headSequence"] = headRaw
+	wireConnectedRaw, err := json.Marshal(wireConnected)
+	if err != nil {
+		return nil, fmt.Errorf("marshal wireConnected: %w", err)
+	}
+	fields["wireConnected"] = wireConnectedRaw
 	return json.Marshal(fields)
 }
 
-// eventsSinceResult is get_events_since's response shape (spec §4): Events
-// holds each envelope's own protojson encoding verbatim (json.RawMessage
-// so encoding/json never re-interprets it), HeadSequence/More are plain Go
-// values encoding/json marshals as an ordinary number/bool — the exact
-// convention split the tool's Description documents.
+// eventsSinceResult is get_events_since's response shape (spec §4 plus
+// final review Fix 6a's wireConnected addition): Events holds each
+// envelope's own protojson encoding verbatim (json.RawMessage so
+// encoding/json never re-interprets it), HeadSequence/More/WireConnected
+// are plain Go values encoding/json marshals as an ordinary number/bool —
+// the exact convention split the tool's Description documents.
 type eventsSinceResult struct {
-	Events       []json.RawMessage `json:"events"`
-	HeadSequence int64             `json:"headSequence"`
-	More         bool              `json:"more"`
+	Events        []json.RawMessage `json:"events"`
+	HeadSequence  int64             `json:"headSequence"`
+	More          bool              `json:"more"`
+	WireConnected bool              `json:"wireConnected"`
 }
 
-func marshalEventsSinceResult(events []*vttv1.Envelope, head int64, more bool) ([]byte, error) {
-	out := eventsSinceResult{Events: make([]json.RawMessage, len(events)), HeadSequence: head, More: more}
+func marshalEventsSinceResult(events []*vttv1.Envelope, head int64, more, wireConnected bool) ([]byte, error) {
+	out := eventsSinceResult{
+		Events:        make([]json.RawMessage, len(events)),
+		HeadSequence:  head,
+		More:          more,
+		WireConnected: wireConnected,
+	}
 	for i, env := range events {
 		raw, err := protojson.Marshal(env)
 		if err != nil {

@@ -73,18 +73,23 @@
               "additionalProperties": {
                 "type": "integer"
               },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
               "type": "object"
             },
             "controllerId": {
+              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player.",
               "type": "string"
             },
             "moduleData": {
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
               "type": "object"
             },
             "moduleId": {
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
               "type": "string"
             },
             "name": {
+              "description": "Optional display label for the actor.",
               "type": "string"
             },
             "resources": {
@@ -103,17 +108,12 @@
                 ],
                 "type": "object"
               },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
               "type": "object"
             }
           },
           "required": [
-            "actorId",
-            "name",
-            "moduleId",
-            "attributes",
-            "resources",
-            "moduleData",
-            "controllerId"
+            "actorId"
           ],
           "type": "object"
         }

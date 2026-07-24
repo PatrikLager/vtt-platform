@@ -114,6 +114,87 @@ func TestSchemaForProducesArrayItemsForRepeatedMessageField(t *testing.T) {
 // own `fields` map (which would recurse into google.protobuf.Value and hit
 // the same unrelated gap TestListValueValuesFieldIsRecognizedAsList's
 // comment documents).
+// findTool returns the buildTools() entry named name, or fails the test —
+// shared lookup for the requiredOverride/fieldDocs tests below, which check
+// specific nested schema nodes rather than a whole-output golden diff.
+func findTool(t *testing.T, name string) map[string]any {
+	t.Helper()
+	for _, tl := range buildTools() {
+		if tl["name"] == name {
+			return tl
+		}
+	}
+	t.Fatalf("buildTools: no tool named %q", name)
+	return nil
+}
+
+// TestAddActorRequiredOverrideReplacesDerivedList covers the add_actor
+// fabrication-trap fix (final review Fix 2): proto3 marks none of Actor's
+// fields `optional` (ADR-007's synthetic-oneof annotation), so schemaFor's
+// derived required list would otherwise force every one of them —
+// including controllerId/moduleId/attributes/resources/moduleData, fields
+// an LLM caller should almost always OMIT rather than invent a value for.
+// The manifest's requiredOverride on add_actor must replace that derived
+// list entirely, down to exactly actorId.
+func TestAddActorRequiredOverrideReplacesDerivedList(t *testing.T) {
+	tool := findTool(t, "add_actor")
+	schema, ok := tool["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor: inputSchema missing or not an object: %#v", tool["inputSchema"])
+	}
+	actorSchema, ok := schema["properties"].(map[string]any)["actor"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor: properties.actor missing or not an object: %#v", schema["properties"])
+	}
+	got := actorSchema["required"]
+	want := []any{"actorId"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("add_actor actor.required = %v, want %v", got, want)
+	}
+}
+
+// TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication covers the
+// per-field guidance half of the same fix: every field the required
+// override demoted to optional must carry a "description" steering the LLM
+// away from fabricating a value, and the one field that stayed required
+// (actorId) must carry none (nothing to steer it away from).
+func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
+	tool := findTool(t, "add_actor")
+	schema := tool["inputSchema"].(map[string]any)
+	actorSchema := schema["properties"].(map[string]any)["actor"].(map[string]any)
+	props, ok := actorSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor: actor.properties missing or not an object: %#v", actorSchema["properties"])
+	}
+
+	wantSubstr := map[string]string{
+		"name":         "Optional",
+		"controllerId": "DM/agent-controlled",
+		"moduleId":     "opaque",
+		"attributes":   "opaque",
+		"resources":    "opaque",
+		"moduleData":   "opaque",
+	}
+	for field, substr := range wantSubstr {
+		prop, ok := props[field].(map[string]any)
+		if !ok {
+			t.Fatalf("add_actor actor.properties[%q] missing or not an object: %#v", field, props[field])
+		}
+		desc, _ := prop["description"].(string)
+		if !strings.Contains(desc, substr) {
+			t.Fatalf("add_actor actor.properties[%q].description = %q, want it to contain %q", field, desc, substr)
+		}
+	}
+
+	actorIDProp, ok := props["actorId"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor actor.properties[\"actorId\"] missing or not an object: %#v", props["actorId"])
+	}
+	if _, hasDoc := actorIDProp["description"]; hasDoc {
+		t.Fatalf("add_actor actor.properties[\"actorId\"] has a description, want none (it's the one field that stayed required)")
+	}
+}
+
 func TestStructSpecialCaseFiresOnNestedValue(t *testing.T) {
 	got := schemaFor((&vttv1.AddActor{}).ProtoReflect().Descriptor())
 	props, ok := got["properties"].(map[string]any)

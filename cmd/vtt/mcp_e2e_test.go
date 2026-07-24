@@ -38,6 +38,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -170,7 +171,85 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.
-	_ = waitWithTimeout(cmd, 5*time.Second)
+	if err := waitWithTimeout(cmd, 5*time.Second); err != nil {
+		t.Fatalf("subprocess did not exit cleanly after stdin EOF: %v (stderr: %s)", err, stderr.String())
+	}
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("subprocess exit code after stdin EOF = %d, want 0 (stderr: %s)", code, stderr.String())
+	}
+}
+
+// --- TestMCPSubprocessExitsCleanlyOnSIGTERM: SIGTERM exit-code parity ------
+
+// TestMCPSubprocessExitsCleanlyOnSIGTERM proves `vtt mcp` filters
+// context.Canceled from its RunE into a clean nil return, exiting 0 on
+// SIGTERM exactly like `vtt serve` does (serve_e2e_test.go's
+// TestServeSubprocessExitsCleanlyOnSIGTERM is this test's direct template
+// — the ledgered Minor from P7 Task 3's report) and `vtt events tail`
+// (client_e2e_test.go's TestEventsTailBinaryExitsCleanlyOnSIGINT), rather
+// than propagating the SDK's own ctx.Err() (context.Canceled) straight out
+// to main.go's `os.Exit(1)` path. Stdin is a live pipe kept open for the
+// whole test (never closed) so the ONLY way this subprocess can exit is
+// the signal — proving SIGTERM handling specifically, independent of
+// TestMCPCommandServesRealStdioTransport's stdin-EOF exit path. Readiness
+// (past initial dial, blocked serving) is proven the same way that test
+// proves it: a real MCP handshake + ListTools over the subprocess's own
+// stdio pipes, not a fixed sleep.
+func TestMCPSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
+	binPath := buildVTTBinary(t)
+	fx := startMCPFixture(t)
+
+	cmd := exec.Command(binPath, "mcp", "--server", fx.wsURL, "--token", fx.agentToken)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("StdinPipe: %v", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe: %v", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start vtt mcp subprocess: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	clientTransport := &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	cl := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "mcp-sigterm-client", Version: "0.0.1"}, nil)
+	cs, err := cl.Connect(connectCtx, clientTransport, nil)
+	connectCancel()
+	if err != nil {
+		t.Fatalf("stdio client Connect: %v (stderr: %s)", err, stderr.String())
+	}
+	listCtx, listCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := cs.ListTools(listCtx, nil); err != nil {
+		listCancel()
+		t.Fatalf("ListTools over real stdio: %v (stderr: %s)", err, stderr.String())
+	}
+	listCancel()
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("send SIGTERM: %v", err)
+	}
+
+	// Bounded well past anything this subprocess needs to unwind (no live
+	// Shutdown-style drain here, just ctx cancellation propagating through
+	// internal/mcp.Server.Run) — a correct implementation exits close to
+	// immediately, so this margin is purely to distinguish "slow but
+	// working" from "swallowed entirely" without flaking on the former
+	// (same reasoning as TestServeSubprocessExitsCleanlyOnSIGTERM's own
+	// margin).
+	if err := waitWithTimeout(cmd, 7*time.Second); err != nil {
+		t.Fatalf("subprocess did not exit cleanly after SIGTERM: %v (stderr: %s)", err, stderr.String())
+	}
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("subprocess exit code after SIGTERM = %d, want 0 (stderr: %s)", code, stderr.String())
+	}
 }
 
 // --- TestMCPSpecSevenExitCriteria: the spec §7 exit test -------------------
@@ -478,6 +557,21 @@ func TestMCPSpecSevenExitCriteria(t *testing.T) {
 	// --- get_state == harness.Fold of a separate wire observation ---
 
 	gotState := waitForMCPHeadSequence(t, cs, lastSeq)
+
+	// wireConnected (final review Fix 6a) is get_state's OWN addition on
+	// top of the shared dump-contract shape — `vtt state dump`'s
+	// writeDump (what observeStateIndependently below reuses) has no
+	// such key, since a one-shot dump process has no persistent
+	// connection to report on (see read_tools.go's marshalStateWithHead
+	// doc comment). Assert it here on its own terms — true, since this
+	// scenario's wire never drops — then exclude it before the DeepEqual
+	// against that independent observation.
+	wireConnected, ok := gotState["wireConnected"].(bool)
+	if !ok || !wireConnected {
+		t.Fatalf(`get_state: "wireConnected" = %#v, want true (the wire never drops in this scenario)`, gotState["wireConnected"])
+	}
+	delete(gotState, "wireConnected")
+
 	wantState := observeStateIndependently(t, fx.wsURL, fx.agentToken)
 	if !reflect.DeepEqual(gotState, wantState) {
 		t.Fatalf("get_state != independent Fold observation:\n got:  %#v\n want: %#v", gotState, wantState)

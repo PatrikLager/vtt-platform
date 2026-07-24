@@ -7,3 +7,10 @@ coverage/
 # never commit these (see README.md's harness section).
 tokens.json
 *.tokens.json
+
+# Claude Code's MCP server config, local to whoever sets up `vtt mcp` (see
+# README.md's "Claude Code: seating an LLM as the agent participant") —
+# the README's snippet carries no token value by design (env passthrough),
+# but a local .mcp.json is still a personal machine-specific file, not
+# something this repo should track.
+.mcp.json

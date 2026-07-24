@@ -56,24 +56,32 @@ Add this to Claude Code's `.mcp.json` to seat it at a running table:
   "mcpServers": {
     "vtt": {
       "command": "vtt",
-      "args": ["mcp", "--server", "ws://localhost:8443/ws"],
-      "env": { "VTT_TOKEN": "<agent-invite-token>" }
+      "args": ["mcp", "--server", "ws://localhost:8443/ws"]
     }
   }
 }
 ```
 
-The token grants everything the `agent` role is authorized for at this
-table — treat it as a credential, never commit it or paste it into a
-tracked file. The env form above (rather than a literal `--token` in
-`args`) keeps it out of `.mcp.json` and shell history alike.
+Note what is deliberately absent: no `env` block, no token value anywhere
+in this file. `vtt mcp` reads `VTT_TOKEN` from its own process environment
+(`resolveMCPToken`'s env fallback) — and a subprocess Claude Code launches
+inherits whatever environment the shell it was started from had. So
+`export VTT_TOKEN=<token>` in the shell you launch `claude` from, *before*
+opening it, and `vtt mcp` picks it up with nothing token-shaped ever
+written to `.mcp.json` (a file that may well be tracked and shared). The
+token grants everything the `agent` role is authorized for at this table —
+treat it as a credential.
 
 Demo runbook:
 
 1. `vtt serve --campaign campaign.db --addr :8443`
-2. `vtt invite --campaign campaign.db --name "Claude" --role agent` — copy the printed token.
-3. `export VTT_TOKEN=<the printed token>` (or set it in `.mcp.json`'s `env`, as above).
-4. Open Claude Code with this repo's `.mcp.json` in scope.
+2. `vtt invite --campaign campaign.db --name "Claude" --role agent` — it prints the token once.
+3. In that same shell, capture it without it ever landing in shell history:
+   `read -s VTT_TOKEN && export VTT_TOKEN` (prompts silently, nothing echoed,
+   nothing to scroll back through — or set `HISTIGNORE='export VTT_TOKEN=*'`
+   first if you'd rather type it directly).
+4. Open Claude Code from that SAME shell (so the subprocess inherits
+   `VTT_TOKEN`) with this repo's `.mcp.json` in scope.
 5. Suggested opening prompt: "Check get_state, then start a session, create a scene, and place a token on it."
 
 ## Security note: invite tokens and the connection URL

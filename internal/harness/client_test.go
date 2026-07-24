@@ -409,3 +409,34 @@ func TestMalformedFrameFromServerErrorsLoudly(t *testing.T) {
 		t.Fatal("want Events() closed after a malformed server frame")
 	}
 }
+
+// TestDialErrorNeverIncludesTheRawToken covers the token-redaction
+// requirement (final review Fix 1): dialing a dead port (nothing listening,
+// so the underlying HTTP handshake fails and coder/websocket's own dial
+// error embeds the full request URL verbatim — net/http's *url.Error
+// formats as `Get "<url>": <cause>`, and that URL is exactly the one Dial
+// built with token= in its query string) must produce an error whose
+// message never contains the raw invite token, but DOES carry a visible
+// redaction marker in its place. This matters because every `vtt mcp`
+// (and tail/dump/run) caller prints Dial's error straight to stderr, and
+// an MCP host persists stderr — an unredacted token there is a credential
+// leak into whatever log captures it.
+func TestDialErrorNeverIncludesTheRawToken(t *testing.T) {
+	const secretToken = "super-secret-invite-token-xyz"
+
+	// 127.0.0.1:1 is a reserved/unassigned port nothing is listening on:
+	// a fast, deterministic connection-refused failure with no real
+	// network dependency.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := harness.Dial(ctx, "ws://127.0.0.1:1/ws", secretToken, 0)
+	if err == nil {
+		t.Fatal("Dial: want an error dialing a dead port, got nil")
+	}
+	if strings.Contains(err.Error(), secretToken) {
+		t.Fatalf("Dial error contains the raw token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("Dial error does not show a redaction marker: %v", err)
+	}
+}

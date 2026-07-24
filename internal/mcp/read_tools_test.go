@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,9 +96,10 @@ type getStateShape struct {
 }
 
 type eventsSinceShape struct {
-	Events       []json.RawMessage `json:"events"`
-	HeadSequence int64             `json:"headSequence"`
-	More         bool              `json:"more"`
+	Events        []json.RawMessage `json:"events"`
+	HeadSequence  int64             `json:"headSequence"`
+	More          bool              `json:"more"`
+	WireConnected bool              `json:"wireConnected"`
 }
 
 // --- call helpers ------------------------------------------------------------
@@ -407,6 +409,262 @@ func TestGetEventsSinceDefaultLimitAppliesWhenOmitted(t *testing.T) {
 	}
 	if !page.More {
 		t.Fatal("omitted limit: want more=true (10 events remain beyond the default-50 page)")
+	}
+}
+
+// TestGetStateDescriptionDocumentsBodyShape covers final review Fix 3b:
+// get_state's own tool description must explicitly state the body's Go-
+// JSON casing convention and name a concrete numeric field (Session's
+// StartSeq/EndSeq) plus headSequence's camelCase exception, not just point
+// generically at the server Instructions' rule.
+func TestGetStateDescriptionDocumentsBodyShape(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var desc string
+	for _, tl := range res.Tools {
+		if tl.Name == "get_state" {
+			desc = tl.Description
+		}
+	}
+	if desc == "" {
+		t.Fatal("ListTools: get_state not found")
+	}
+	for _, want := range []string{"StartSeq", "EndSeq", "camelCase"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("get_state description does not mention %q:\n%s", want, desc)
+		}
+	}
+}
+
+// TestGetStateSessionSequenceFieldsAreGoJSONNumbersNotProtojsonStrings
+// behaviorally proves the claim TestGetStateDescriptionDocumentsBodyShape
+// pins in the tool's own text (final review Fix 3): unlike CommandResult
+// and event envelopes' protojson int64-as-string convention, get_state's
+// body follows the state dump's Go-JSON conventions instead — a session's
+// StartSeq must decode as a JSON NUMBER, never a protojson-style string,
+// under its exact Go struct field name ("StartSeq", "Sessions" — not
+// camelCase).
+func TestGetStateSessionSequenceFieldsAreGoJSONNumbersNotProtojsonStrings(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	conn := fs.firstConn(t)
+	seedEvents(t, conn, canned(1, "ev-session", &vttv1.SessionStarted{Name: "s1"}))
+
+	deadline := time.Now().Add(5 * time.Second)
+	var generic map[string]any
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_state", Arguments: map[string]any{}})
+		cancel()
+		if err != nil {
+			t.Fatalf("get_state: CallTool: %v", err)
+		}
+		text, ok := res.Content[0].(*mcpsdk.TextContent)
+		if !ok {
+			t.Fatalf("get_state: want text content, got %T", res.Content[0])
+		}
+		generic = nil
+		if err := json.Unmarshal([]byte(text.Text), &generic); err != nil {
+			t.Fatalf("get_state: decode generic JSON: %v", err)
+		}
+		if hs, ok := generic["headSequence"].(float64); ok && hs >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if generic == nil {
+		t.Fatal("get_state: headSequence never reached 1 within deadline")
+	}
+
+	sessions, ok := generic["Sessions"].([]any)
+	if !ok || len(sessions) != 1 {
+		t.Fatalf(`get_state: "Sessions" missing or not a 1-element array: %#v`, generic["Sessions"])
+	}
+	session, ok := sessions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("get_state: Sessions[0] not an object: %#v", sessions[0])
+	}
+	startSeq, isNumber := session["StartSeq"].(float64)
+	if !isNumber {
+		t.Fatalf(`get_state: Sessions[0]["StartSeq"] = %#v, want a JSON number`, session["StartSeq"])
+	}
+	if startSeq != 1 {
+		t.Fatalf("get_state: Sessions[0].StartSeq = %v, want 1", startSeq)
+	}
+}
+
+// TestReadToolsReportWireConnectedTrueWhileConnected covers final review
+// Fix 6a's additive key on the connected-happy-path side: both get_state
+// and get_events_since must report "wireConnected": true while the
+// underlying harness.Client is live.
+func TestReadToolsReportWireConnectedTrueWhileConnected(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	conn := fs.firstConn(t)
+	seedEvents(t, conn, canned(1, "ev-session", &vttv1.SessionStarted{Name: "s1"}))
+	waitForHeadSequence(t, cs, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_state", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatalf("get_state: CallTool: %v", err)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_state: want text content, got %T", res.Content[0])
+	}
+	var generic map[string]any
+	if err := json.Unmarshal([]byte(text.Text), &generic); err != nil {
+		t.Fatalf("get_state: decode generic JSON: %v", err)
+	}
+	if wc, ok := generic["wireConnected"].(bool); !ok || !wc {
+		t.Fatalf(`get_state: "wireConnected" = %#v, want true while connected`, generic["wireConnected"])
+	}
+
+	page := callGetEventsSince(t, cs, map[string]any{"afterSequence": int64(0)})
+	if !page.WireConnected {
+		t.Fatal("get_events_since: want wireConnected=true while connected")
+	}
+}
+
+// TestReadToolsReportWireConnectedFalseAfterConnectionLoss covers Fix 6a's
+// actual payoff: once the underlying wire connection is lost and redial is
+// permanently refused (maxConns=1, the same deterministic drop pattern
+// server_test.go's TestCallToolWhileDisconnectedReturnsCleanError uses),
+// both read tools must still SUCCEED (their accumulated history survives
+// the drop — that's the whole point of read tools staying usable while
+// disconnected) but report "wireConnected": false — the caller's signal
+// that this is a frozen snapshot, not a live view, and that command tools
+// will fail until reconnect.
+func TestReadToolsReportWireConnectedFalseAfterConnectionLoss(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	fs.maxConns = 1
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	conn := fs.firstConn(t)
+	seedEvents(t, conn, canned(1, "ev-session", &vttv1.SessionStarted{Name: "s1"}))
+	waitForHeadSequence(t, cs, 1)
+
+	if err := conn.Close(websocket.StatusNormalClosure, "test: forcing a wire drop"); err != nil {
+		t.Fatalf("forcing connection close: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var gotState map[string]any
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_state", Arguments: map[string]any{}})
+		cancel()
+		if err != nil {
+			t.Fatalf("get_state: CallTool: %v", err)
+		}
+		text, ok := res.Content[0].(*mcpsdk.TextContent)
+		if !ok {
+			t.Fatalf("get_state: want text content, got %T", res.Content[0])
+		}
+		var generic map[string]any
+		if err := json.Unmarshal([]byte(text.Text), &generic); err != nil {
+			t.Fatalf("get_state: decode generic JSON: %v", err)
+		}
+		if wc, ok := generic["wireConnected"].(bool); ok && !wc {
+			gotState = generic
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if gotState == nil {
+		t.Fatal("get_state: wireConnected never became false within deadline")
+	}
+	if hs, ok := gotState["headSequence"].(float64); !ok || int64(hs) != 1 {
+		t.Fatalf("get_state: headSequence = %v, want 1 (accumulated history must survive the drop)", gotState["headSequence"])
+	}
+
+	page := callGetEventsSince(t, cs, map[string]any{"afterSequence": int64(0)})
+	if page.WireConnected {
+		t.Fatal("get_events_since: want wireConnected=false after permanent connection loss")
+	}
+	if len(page.Events) != 1 {
+		t.Fatalf("get_events_since: got %d events, want 1 (accumulated history must survive the drop)", len(page.Events))
+	}
+}
+
+// TestGetEventsSinceUnknownArgumentIsCleanIsErrorNamingField covers final
+// review Fix 6b: an unrecognized argument key must come back as a TOOL-
+// LEVEL isError (res.IsError=true, err=nil from CallTool — the LLM can see
+// and course-correct on it) naming the offending key, not a raw protocol-
+// level error from the SDK's own dispatch (today's behavior: the plain
+// json.Unmarshal decode silently accepts and ignores unknown keys, so this
+// exact case doesn't even fail today — DisallowUnknownFields is what makes
+// it fail at all).
+func TestGetEventsSinceUnknownArgumentIsCleanIsErrorNamingField(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "get_events_since",
+		Arguments: map[string]any{"afterSequence": 0, "bogusKey": 1},
+	})
+	if err != nil {
+		t.Fatalf("get_events_since: want a tool-level result (err=nil), got protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("get_events_since: want IsError=true for an unknown argument, got %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
+	}
+	if !strings.Contains(text.Text, "bogusKey") {
+		t.Fatalf("get_events_since: error text does not name the offending field %q: %q", "bogusKey", text.Text)
+	}
+}
+
+// TestGetEventsSinceWrongArgumentTypeIsCleanIsErrorNamingField covers the
+// wrong-JSON-type half of Fix 6b: afterSequence sent as a string (an easy
+// LLM mistake given get_events_since's own Description warns about the
+// protojson int64-as-string convention elsewhere on the wire) must also
+// come back as a clean tool-level isError naming "afterSequence", not a
+// protocol-level error or (worse) a silent zero-value coercion.
+func TestGetEventsSinceWrongArgumentTypeIsCleanIsErrorNamingField(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "get_events_since",
+		Arguments: map[string]any{"afterSequence": "not-a-number"},
+	})
+	if err != nil {
+		t.Fatalf("get_events_since: want a tool-level result (err=nil), got protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("get_events_since: want IsError=true for a wrong-typed argument, got %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
+	}
+	if !strings.Contains(text.Text, "afterSequence") {
+		t.Fatalf("get_events_since: error text does not name the offending field %q: %q", "afterSequence", text.Text)
 	}
 }
 

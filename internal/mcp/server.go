@@ -46,7 +46,10 @@ acting again. There are no push notifications here; you must poll.
 
 Wire conventions (contract/README.md is the full constitution):
  - int64 fields serialize as JSON STRINGS in results and event envelopes
-   (e.g. "sequence": "42"), never bare JSON numbers.
+   (e.g. "sequence": "42"), never bare JSON numbers. get_state's body is
+   the one exception: it follows the state dump's own conventions instead
+   (Go-JSON field casing, numeric sequence fields) — see get_state's own
+   tool description for the specifics.
  - An event envelope has no "type" field: its payload is one oneof key per
    event kind, e.g. {"tokenMoved": {...}}.
  - Actor.moduleData is an opaque object — do not interpret its shape.
@@ -63,6 +66,15 @@ const (
 	redialInitialBackoff = 100 * time.Millisecond
 	redialMaxBackoff     = 2 * time.Second
 )
+
+// harnessDial is Run's and redial's sole hook for harness.Dial — a
+// package-level var rather than a hardcoded call, purely so an internal
+// test (server_internal_test.go, package mcp) can substitute a fake that
+// deterministically reproduces the TOCTOU race redial's post-Dial
+// cancellation check exists to close: a real network race between "Dial's
+// handshake completes" and "the caller's ctx gets canceled" cannot be
+// timed reliably from a test.
+var harnessDial = harness.Dial
 
 // Config configures a Server. ToolsJSON is the raw committed contract/gen/
 // tools/tools.json bytes — Server never reads the filesystem itself (Task 3
@@ -154,7 +166,7 @@ func New(cfg Config) (*Server, error) {
 // until the client disconnects or ctx is canceled, mirroring
 // mcpsdk.Server.Run's own contract.
 func (s *Server) Run(ctx context.Context, transport mcpsdk.Transport) error {
-	client, err := harness.Dial(ctx, s.cfg.WSURL, s.cfg.Token, 0)
+	client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, 0)
 	if err != nil {
 		return fmt.Errorf("mcp: initial dial: %w", err)
 	}
@@ -220,8 +232,23 @@ func (s *Server) redial(ctx context.Context) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		client, err := harness.Dial(ctx, s.cfg.WSURL, s.cfg.Token, s.lastSeen())
+		client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, s.lastSeen())
 		if err == nil {
+			// TOCTOU guard (final review Fix 6c): harnessDial's ctx bounds
+			// only the handshake (harness.Dial's own doc comment — the
+			// returned Client's lifetime is independent of it), so a Dial
+			// that succeeds in the same instant ctx gets canceled would
+			// otherwise still get installed via setClient below, even
+			// though nothing is left running that will ever Close it —
+			// Run's own shutdown defer already read s.currentClient() as
+			// nil (this connection was down, that's why redial is
+			// running at all) before this goroutine could reach
+			// setClient. Close the orphan ourselves and bail out exactly
+			// like any other canceled-before-connecting case.
+			if ctx.Err() != nil {
+				client.Close()
+				return false
+			}
 			s.setClient(client)
 			return true
 		}

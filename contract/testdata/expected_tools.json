@@ -43,11 +43,18 @@
           "type": "object",
           "properties": {
             "actorId": { "type": "string" },
-            "name": { "type": "string" },
-            "moduleId": { "type": "string" },
+            "name": {
+              "type": "string",
+              "description": "Optional display label for the actor."
+            },
+            "moduleId": {
+              "type": "string",
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
+            },
             "attributes": {
               "type": "object",
-              "additionalProperties": { "type": "integer" }
+              "additionalProperties": { "type": "integer" },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
             },
             "resources": {
               "type": "object",
@@ -58,20 +65,19 @@
                   "max": { "type": "integer" }
                 },
                 "required": ["current", "max"]
-              }
+              },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
             },
-            "moduleData": { "type": "object" },
-            "controllerId": { "type": "string" }
+            "moduleData": {
+              "type": "object",
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
+            },
+            "controllerId": {
+              "type": "string",
+              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player."
+            }
           },
-          "required": [
-            "actorId",
-            "name",
-            "moduleId",
-            "attributes",
-            "resources",
-            "moduleData",
-            "controllerId"
-          ]
+          "required": ["actorId"]
         }
       },
       "required": ["actor"]
