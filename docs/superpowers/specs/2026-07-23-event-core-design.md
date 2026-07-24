@@ -99,8 +99,11 @@ projection (single-writer rule holds at the type level).
 
 ## 6. Undo
 
-`Undo(from, to, reason)` validates the range (exists; contains no
-EventsRetracted event — the no-nesting rule; not already retracted), then
+`Undo(from, to, reason, eventID, sessionID, actorRole, participantID)`
+validates the range (exists; contains no EventsRetracted event — the
+no-nesting rule; not already retracted), then (attribution params are
+caller-supplied — campaign has no identity concept; the gateway is the
+attribution authority per gateway-spec §4)
 **dry-runs the fold with the would-be-retracted set before persisting: a
 retraction that would leave the log unable to replay is rejected and persists
 nothing** (without this, the rebuild promise below is unfulfillable for exactly

@@ -20,9 +20,10 @@ LLM's MCP tools all drive a live table through the same wire API.
    role + controlled actors; revocable; no accounts. The agent joins with a
    token whose role is `agent`.
 3. **ckeletin verdict (ADR-008): adopt the pattern, not the framework layer.**
-   cobra + viper with ultra-thin commands (run functions ≤30 lines delegating
-   to `internal/`); no updateable `.ckeletin/` layer (our Taskfile/gates/ADRs
-   already exist — a second framework-owned copy would duel with them).
+   cobra with ultra-thin commands (run functions ≤30 lines delegating to
+   `internal/`; viper DEFERRED until a config file exists — see ADR-008); no
+   updateable `.ckeletin/` layer (our Taskfile/gates/ADRs already exist — a
+   second framework-owned copy would duel with them).
 4. **Append stays synchronous** (carried question resolved): `CommandResult`
    returns the assigned sequence; sync gives the LLM read-your-writes.
 
@@ -41,11 +42,14 @@ LLM's MCP tools all drive a live table through the same wire API.
 - Commands v1 (mirror the lifecycle 1:1): `MoveToken` (existing message) +
   new `CreateScene`, `AddActor`, `PlaceToken`, `StartSession`, `EndSession`,
   `RetractEvents`. Each is validated, role-gated, converted to its event,
-  appended synchronously; result carries the sequence.
+  appended synchronously; result carries the sequence (EXCEPTION, as built:
+  RetractEvents' result carries no sequence — the marker's sequence is
+  visible on the broadcast Envelope; carry-forward: Undo may return it).
 - Catch-up: client sends `after_sequence` at connect; server streams history
   then live (store.Subscribe semantics, buffer 256 — a named constant;
   overflow = WebSocket close, client reconnects and catches up).
-- HTTP: `GET /healthz` only, plus a static-file stub for the future client.
+- HTTP: `GET /healthz` only. (The static-file stub originally sketched here
+  was dropped as YAGNI at build time; the browser client is sub-project 7's.)
 
 ## 4. Roles & authorization
 
@@ -70,7 +74,8 @@ this is what makes the agent auditable.
 ## 5. Identity & invites
 
 - Campaign DB gains a `participants` table (managed by `internal/identity`):
-  id, display_name, role, controlled_actor_ids, token_hash, revoked.
+  id, display_name, role, controls (JSON array of controlled actor ids),
+  token_hash, revoked.
 - **Deliberately NOT event-sourced:** identity is infrastructure, not game
   history — revocation must not be undoable via game-log mechanics.
 - `vtt invite --campaign f.db --name Lera --role player --controls act-lera`
@@ -91,9 +96,11 @@ later concern). Recorded as ADR-008.
    append-without-notify + explicit `Notify`; campaign calls Notify AFTER
    advancing the live projection. A subscriber that sees event N can always
    read State ≥ N. Store/campaign tests updated accordingly.
-2. **Shared-envelope immutability:** the gateway marshals each envelope to
-   its protojson frame ONCE and fans out bytes; consumers never see the
-   shared pointer.
+2. **Shared-envelope immutability:** each connection's pump marshals its own
+   protojson frame from the envelope (per-connection marshal — adjudicated at
+   build time over a shared marshal-once cache, which leaked unboundedly;
+   stateless and table-scale cheap, revisit with a broadcast hub only if
+   client count grows); consumers never mutate the shared pointer.
 3. **Subscribe buffer:** gateway uses 256 (named constant, commented).
 4. **Sync-vs-async Append:** sync (see §2.4).
 
@@ -113,7 +120,8 @@ later concern). Recorded as ADR-008.
 - New deps (pinned exact at implementation, recorded): cobra, viper,
   a WebSocket library (coder/websocket or gorilla — chosen at plan time by
   maintenance status), golang.org/x/crypto only if needed.
-- Arch-lint: `gateway → {campaign, identity, contract}`; `identity → {}`
+- Arch-lint: `gateway → {campaign, identity, engine, contract}` (engine for
+  the ownership check's State type); `identity → {}`
   (own DB access); `cmd → {gateway, identity, campaign, contract}`; nothing
   imports `cmd`. Vocabulary gate unchanged (scans the new packages
   automatically).
@@ -141,6 +149,11 @@ now). No browser client (sub-project 7). No password auth, no accounts.
 
 ## 12. Open questions (deferred, with owners)
 
-- WebSocket library choice: decided at plan time (maintenance check).
+- WebSocket library choice: RESOLVED — `github.com/coder/websocket` v1.8.15.
 - Whether `RetractEvents` needs a player-visible confirmation flow — a UX
   question for sub-project 7; the API just executes.
+- `Envelope.session_id` stamping: RESOLVED (Patrik, 2026-07-24) — the
+  CAMPAIGN stamps it under its lock at Append from the currently-open
+  session (single authority, no race window, same pattern as sequence
+  stamping). Implemented as a small fix task on the next branch; wire events
+  logged before that fix keep an empty session_id (no real campaigns yet).
