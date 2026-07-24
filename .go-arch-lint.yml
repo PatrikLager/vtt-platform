@@ -36,4 +36,4 @@ deps:
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
   harness:  { mayDependOn: [contract, engine, harness] }
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd] }
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness] }

@@ -7,8 +7,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -23,12 +26,24 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newServeCmd(), newInviteCmd(), newRevokeCmd(), newVersionCmd())
+	root.AddCommand(newServeCmd(), newInviteCmd(), newRevokeCmd(), newVersionCmd(),
+		newClientCmd(), newEventsCmd(), newStateCmd())
 	return root
 }
 
+// main wires SIGINT/SIGTERM into the root command's context: a command
+// whose RunE watches cmd.Context().Done() (today, only `vtt events tail` —
+// see its doc comment) gets a chance to unwind cleanly (close its
+// WebSocket, run its own deferred cleanup) instead of being torn down by
+// the signal's OS-default action. stop() un-registers the handler once
+// Execute returns, so a caller that ignores a first Ctrl-C and sends a
+// second one gets the OS-default (immediate kill) rather than a stuck
+// process — signal.NotifyContext's own documented behavior.
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
