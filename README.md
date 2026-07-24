@@ -39,6 +39,43 @@ producing confusing assertion mismatches.
 bearer credentials for live-mode runs — `chmod 600` it and never commit it
 (see `.gitignore`).
 
+## Claude Code: seating an LLM as the agent participant
+
+`vtt mcp --server <ws-url> [--token <token>]` serves an MCP server over
+stdio: nine tools (seven generic command tools plus `get_state`/
+`get_events_since`) that let an MCP host play at the table as the agent
+participant, judged by the exact same authz table any other client is (see
+`docs/superpowers/specs/2026-07-24-mcp-gateway-design.md`). `--token` and
+the `VTT_TOKEN` environment variable are both honored; `--token` wins if
+both are given.
+
+Add this to Claude Code's `.mcp.json` to seat it at a running table:
+
+```json
+{
+  "mcpServers": {
+    "vtt": {
+      "command": "vtt",
+      "args": ["mcp", "--server", "ws://localhost:8443/ws"],
+      "env": { "VTT_TOKEN": "<agent-invite-token>" }
+    }
+  }
+}
+```
+
+The token grants everything the `agent` role is authorized for at this
+table — treat it as a credential, never commit it or paste it into a
+tracked file. The env form above (rather than a literal `--token` in
+`args`) keeps it out of `.mcp.json` and shell history alike.
+
+Demo runbook:
+
+1. `vtt serve --campaign campaign.db --addr :8443`
+2. `vtt invite --campaign campaign.db --name "Claude" --role agent` — copy the printed token.
+3. `export VTT_TOKEN=<the printed token>` (or set it in `.mcp.json`'s `env`, as above).
+4. Open Claude Code with this repo's `.mcp.json` in scope.
+5. Suggested opening prompt: "Check get_state, then start a session, create a scene, and place a token on it."
+
 ## Security note: invite tokens and the connection URL
 
 Invite tokens travel in the WebSocket URL's `token` query parameter. The

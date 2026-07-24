@@ -44,10 +44,17 @@ tasks:
     desc: Regenerate contract artifacts and fail if committed output drifted
     cmds:
       - task: generate:contract
+      # cmd/vtt/tools.json is included alongside contract/gen (P7 task-3-
+      # brief.md's binding decision): it's a committed copy generate:
+      # contract's own `cp` line refreshes, so a hand-edit or staleness
+      # there must fail this gate exactly like drift in contract/gen itself
+      # — without this, the `cp` line would silently repair a divergence
+      # instead of this check ever seeing it (git status scoped to
+      # contract/gen alone never inspects cmd/vtt/tools.json).
       - |
-        if [ -n "$(git status --porcelain -- contract/gen)" ]; then
-          git status --porcelain -- contract/gen
-          echo "check:drift: committed contract/gen does not match regenerated output" >&2
+        if [ -n "$(git status --porcelain -- contract/gen cmd/vtt/tools.json)" ]; then
+          git status --porcelain -- contract/gen cmd/vtt/tools.json
+          echo "check:drift: committed contract/gen or cmd/vtt/tools.json does not match regenerated output" >&2
           exit 1
         fi
 
@@ -72,6 +79,14 @@ tasks:
       - go tool buf generate
       - mkdir -p gen/tools
       - go run ../tools/toolgen -o gen/tools/tools.json
+      # cmd/vtt/tools.json is a COMMITTED COPY (go:embed cannot cross
+      # package directories, and cmd/vtt must stay a single binary with no
+      # sidecar file — see cmd/vtt/mcp.go's doc comment). This line is what
+      # binds that copy to check:drift: any hand-edit or staleness in
+      # cmd/vtt/tools.json is overwritten here, so `task check:drift`'s
+      # regenerate-and-diff catches divergence exactly like every other
+      # generated artifact (P7 task-3-brief.md's binding decision).
+      - cp gen/tools/tools.json ../cmd/vtt/tools.json
 
   generate:proto:
     dir: contract-spike/proto
