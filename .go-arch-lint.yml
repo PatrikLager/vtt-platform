@@ -24,6 +24,7 @@ components:
   identity: { in: internal/identity }
   gateway:  { in: internal/gateway }
   harness:  { in: internal/harness }
+  mcp:      { in: internal/mcp }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -36,4 +37,9 @@ deps:
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
   harness:  { mayDependOn: [contract, engine, harness] }
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness] }
+  # P1 extended to the MCP gateway (docs/superpowers/plans/2026-07-24-mcp-
+  # gateway.md Global Constraints): the MCP server is also a wire client —
+  # store/campaign/gateway/identity forbidden here too, tests included. The
+  # official Go MCP SDK is vendor (depOnAnyVendor: true above), unlisted.
+  mcp:      { mayDependOn: [harness, engine, contract, mcp] }
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp] }

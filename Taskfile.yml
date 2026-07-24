@@ -5,16 +5,20 @@ tasks:
     desc: Single quality gateway — every task must leave this green
     cmds:
       - go vet ./...
-      # internal/gateway and cmd/vtt are the two socket-heavy suites (real
-      # WebSocket/subprocess tests): run everything else in parallel, then
-      # run those two serialized (-p 1) — the 4th-sighting
-      # TestThreeRoleExitScenarioOverLiveWebSockets flake under full-suite
-      # -race contention (tracked in .superpowers/sdd/progress.md) is a
-      # resource-contention flake, not a logic bug, and serializing the
-      # heavy suites is the primary fix (scenario_test.go's read-budget
-      # raise is the belt, not the primary fix).
-      - go test $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt')
-      - go test -p 1 ./internal/gateway/... ./cmd/vtt/...
+      # internal/gateway, cmd/vtt, and internal/mcp are the socket-heavy
+      # suites (real WebSocket/subprocess tests, or in-process MCP sessions
+      # fronting a fake WebSocket wire per P7 task-1-brief.md): run
+      # everything else in parallel, then run those three serialized (-p 1)
+      # — the 4th-sighting TestThreeRoleExitScenarioOverLiveWebSockets flake
+      # under full-suite -race contention (tracked in
+      # .superpowers/sdd/progress.md) is a resource-contention flake, not a
+      # logic bug, and serializing the heavy suites is the primary fix
+      # (scenario_test.go's read-budget raise is the belt, not the primary
+      # fix). internal/mcp joins this group from its introduction (P7 Task
+      # 1) for the same determinism reason, decided up front rather than
+      # waited on for a flake sighting of its own.
+      - go test $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt' -e '^.*internal/mcp')
+      - go test -p 1 ./internal/gateway/... ./cmd/vtt/... ./internal/mcp/...
       - bun test
       - task: check:drift
       - task: check:breaking
