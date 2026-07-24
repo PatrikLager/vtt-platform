@@ -1,0 +1,35 @@
+{
+  "name": "denials",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "player", "role": "player"},
+    {"name": "spectator", "role": "spectator"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Denials"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "scn-deny", "name": "Deny Hall", "gridWidth": 5, "gridHeight": 5}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-npc", "name": "NPC"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-npc", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
+
+    {"by": "player", "command": {"createScene": {"sceneId": "scn-player-deny", "name": "nope", "gridWidth": 1, "gridHeight": 1}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"addActor": {"actor": {"actorId": "act-player-deny", "name": "nope"}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"placeToken": {"tokenId": "tok-player-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 1, "y": 1}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"retractEvents": {"fromSequence": 1, "toSequence": 1, "reason": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 2, "y": 2}}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "spectator", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 3, "y": 3}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"createScene": {"sceneId": "scn-spectator-deny", "name": "nope", "gridWidth": 1, "gridHeight": 1}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"addActor": {"actor": {"actorId": "act-spectator-deny", "name": "nope"}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"placeToken": {"tokenId": "tok-spectator-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 4, "y": 4}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"retractEvents": {"fromSequence": 1, "toSequence": 1, "reason": "nope"}}, "expect": {"deniedContaining": "not authorized"}}
+  ],
+  "probes": [
+    {"tokenAt": {"tokenId": "tok-npc", "x": 0, "y": 0}},
+    {"sessionCount": {"open": 1, "total": 1}},
+    {"actorExists": {"actorId": "act-npc"}}
+  ]
+}

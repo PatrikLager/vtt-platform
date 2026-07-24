@@ -113,6 +113,36 @@ func TestClientRunMissingScenarioArgErrors(t *testing.T) {
 	}
 }
 
+// TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario is the P6
+// Task 4 fix-round proof: a completely BARE `vtt client run
+// scenarios/three-role-exit.json`, self-contained (no --server/--tokens, no
+// test-side substitution of any kind — this is exactly what a human running
+// the committed file straight from a shell would type) must pass on its
+// own. scenarios/three-role-exit.json's "act-lera" AddActor step embeds
+// {{id:player}} in its controllerId; before this fix round nothing supplied
+// an ids map to harness.RunScenario at all (the parameter didn't exist),
+// and mintInvites (harness_boot.go) discarded the minted participant id via
+// `token, _, err` — so this scenario's "player moves own token" step always
+// came back denied (ControllerId stayed the literal, never-matching string
+// "{{id:player}}"). This is genuine behavioral RED against the pre-fix
+// code, captured in the P6 Task 4 report's fix-round section (the assertion
+// below is exactly what failed, at the exact step the report names), not a
+// hypothetical: `vtt client run`'s self-contained boot glue now threads
+// bootSelfContained's IDs field through to RunScenario's ids parameter, so
+// this resolves automatically.
+func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) {
+	out, err := runCLI(t, "client", "run", filepath.Join("..", "..", "scenarios", "three-role-exit.json"))
+	if err != nil {
+		t.Fatalf("client run (bare, self-contained, committed scenario): unexpected error: %v (output: %s)", err, out)
+	}
+	if !strings.Contains(out, "pass=true") {
+		t.Fatalf("client run output missing passing steps: %q", out)
+	}
+	if strings.Contains(out, "pass=false") {
+		t.Fatalf("client run output contains a failing step: %q", out)
+	}
+}
+
 // --- vtt client run --server/--tokens (live mode), events tail, state dump ---
 
 // liveFixture is one composeServer instance this test starts and tears
@@ -191,7 +221,7 @@ const liveModeScenario = `{
 func TestClientRunLiveModeAgainstComposeServer(t *testing.T) {
 	fx := startLiveFixture(t)
 	scenarioPath := writeScenarioFile(t, liveModeScenario)
-	tokensPath := writeTokensFile(t, map[string]string{"dm": fx.dmToken})
+	tokensPath := writeTokensFile(t, map[string]string{"dm": fx.dmToken}, nil)
 
 	out, err := runCLI(t, "client", "run", scenarioPath, "--server", fx.wsURL, "--tokens", tokensPath)
 	if err != nil {
@@ -448,11 +478,16 @@ func writeScenarioFile(t *testing.T, body string) string {
 	return path
 }
 
-func writeTokensFile(t *testing.T, participants map[string]string) string {
+// writeTokensFile writes tokens.json in the binding shape
+// ({"participants": {name: token}, "ids": {name: id}}) — ids is ADDITIVE
+// (P6 Task 4 fix round: internal/harness's RunScenario now resolves a
+// scenario's {{id:<name>}} placeholders from it) and may be nil, which
+// `omitempty` drops from the written JSON entirely, keeping every
+// pre-existing caller's tokens.json byte-for-byte identical to before this
+// field existed.
+func writeTokensFile(t *testing.T, participants, ids map[string]string) string {
 	t.Helper()
-	body, err := json.Marshal(struct {
-		Participants map[string]string `json:"participants"`
-	}{Participants: participants})
+	body, err := json.Marshal(tokensFile{Participants: participants, IDs: ids})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -229,25 +229,34 @@ func newSessionID() (string, error) {
 // participantID): it is stamped the same way Append stamps every other
 // event's, via stampSessionID, right before persisting — the currently open
 // session's id, or cleared to "" if none is open (spec §1.1).
-func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) error {
+//
+// Returns the marker's own assigned sequence on success (P6 Task 4 pre-step,
+// controller decision: closes the P4 carry-forward "Undo may return it" —
+// see gateway.handleRetraction, which now threads this straight into
+// CommandResult.Sequence the same way Append's sequence does for every other
+// command; spec §3's EXCEPTION note is updated accordingly). The returned
+// sequence is 0 on every error path (poisoned, invalid range, rebuild
+// failure) — callers must check the error, not assume a zero sequence means
+// success.
+func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.poisoned {
-		return errPoisoned
+		return 0, errPoisoned
 	}
 	if from < 1 || to < from {
-		return fmt.Errorf("campaign: invalid retraction range [%d,%d]", from, to)
+		return 0, fmt.Errorf("campaign: invalid retraction range [%d,%d]", from, to)
 	}
 	events, err := c.log.ReadAfter(0)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var maxSeq int64
 	if n := len(events); n > 0 {
 		maxSeq = events[n-1].Sequence
 	}
 	if to > maxSeq {
-		return fmt.Errorf("campaign: retraction range end %d beyond log head %d", to, maxSeq)
+		return 0, fmt.Errorf("campaign: retraction range end %d beyond log head %d", to, maxSeq)
 	}
 	already := retractedSet(events)
 	for _, env := range events {
@@ -255,10 +264,10 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, parti
 			continue
 		}
 		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			return fmt.Errorf("campaign: cannot retract a retraction (seq %d)", env.Sequence)
+			return 0, fmt.Errorf("campaign: cannot retract a retraction (seq %d)", env.Sequence)
 		}
 		if already[env.Sequence] {
-			return fmt.Errorf("campaign: seq %d is already retracted", env.Sequence)
+			return 0, fmt.Errorf("campaign: seq %d is already retracted", env.Sequence)
 		}
 	}
 
@@ -276,7 +285,7 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, parti
 		wouldBeRetracted[seq] = true
 	}
 	if _, err := foldEvents(events, wouldBeRetracted); err != nil {
-		return fmt.Errorf("campaign: retraction would corrupt replay: %w", err)
+		return 0, fmt.Errorf("campaign: retraction would corrupt replay: %w", err)
 	}
 
 	marker := &vttv1.Envelope{
@@ -294,8 +303,9 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, parti
 	// generation path, which can, is only reachable for SessionStarted) —
 	// the marker's payload is always EventsRetracted.
 	_ = c.stampSessionID(marker)
-	if _, err := c.log.Append(marker); err != nil {
-		return err
+	seq, err := c.log.Append(marker)
+	if err != nil {
+		return 0, err
 	}
 	if err := c.rebuildLocked(); err != nil {
 		// The marker is already persisted (commit point above) but the
@@ -304,12 +314,12 @@ func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, parti
 		// the log. Do not notify: a poisoned campaign must not advertise an
 		// event its own projection couldn't fold.
 		c.poisoned = true
-		return err
+		return 0, err
 	}
 	// Notify only after the rebuilt projection reflects marker, mirroring
 	// Append's post-apply notify ordering.
 	c.log.Notify(marker)
-	return nil
+	return seq, nil
 }
 
 // State returns a snapshot of the live projection, or nil if the Campaign is

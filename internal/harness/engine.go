@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -53,6 +54,64 @@ const denialAbsenceWindow = 300 * time.Millisecond
 // failing a genuinely-broken case in a few seconds under test.
 const observeTimeout = 2 * time.Second
 
+// participantIDPlaceholderPrefix/Suffix delimit this library's one
+// templating convention: `{{id:<participantName>}}` inside a command
+// step's raw JSON, resolved by resolveParticipantIDPlaceholders. This
+// exists because some commands need to reference a participant's
+// SERVER-ASSIGNED identity — e.g. AddActor's Actor.controller_id, which
+// gateway authz checks with a strict equality against the real
+// identity.Participant.ID behind an invite token — a value a static,
+// committed scenario file cannot embed directly: the id is minted fresh,
+// randomly, per invite, and is unknowable at scenario-authoring time (P6
+// Task 4 report, reviewer-adjudicated fix round: this resolution
+// originally lived in test-side helpers outside the engine; moved here so
+// EVERY caller — self-contained boot glue, live-mode `--tokens` files, the
+// scenario library runner — gets it for free via one parameter, rather
+// than each caller reimplementing its own substitution pass).
+const (
+	participantIDPlaceholderPrefix = "{{id:"
+	participantIDPlaceholderSuffix = "}}"
+)
+
+// resolveParticipantIDPlaceholders substitutes every `{{id:<name>}}`
+// occurrence across every step's Command bytes with ids[<name>], in place,
+// exactly once, before RunScenario dials any participant or dispatches any
+// command. Resolution stays a plain byte substitution — no protojson or
+// other payload parsing — matching scenario.go's own doc comment that
+// Command bytes are opaque data at this layer until execution; identifying
+// a placeholder's name is a byte scan, not a JSON decode.
+//
+// A scenario with no placeholders at all (the overwhelmingly common case)
+// is a no-op regardless of what ids contains, or whether ids is nil. A step
+// that DOES reference a name missing from ids is a hard, named error —
+// naming both the step index and the unresolved participant name — raised
+// as a framework failure (RunScenario returns it as-is, before dialing
+// anything) rather than silently dispatching the literal placeholder text
+// as if it were real command data.
+func resolveParticipantIDPlaceholders(steps []Step, ids map[string]string) error {
+	for i := range steps {
+		if len(steps[i].Command) == 0 {
+			continue
+		}
+		raw := steps[i].Command
+		for name, id := range ids {
+			raw = bytes.ReplaceAll(raw,
+				[]byte(participantIDPlaceholderPrefix+name+participantIDPlaceholderSuffix),
+				[]byte(id))
+		}
+		if idx := bytes.Index(raw, []byte(participantIDPlaceholderPrefix)); idx >= 0 {
+			rest := raw[idx+len(participantIDPlaceholderPrefix):]
+			name := string(rest)
+			if end := bytes.Index(rest, []byte(participantIDPlaceholderSuffix)); end >= 0 {
+				name = string(rest[:end])
+			}
+			return fmt.Errorf("harness: scenario step %d command references {{id:%s}} but no id was supplied for participant %q", i, name, name)
+		}
+		steps[i].Command = raw
+	}
+	return nil
+}
+
 // Report is RunScenario's outcome: one StepResult per scenario step (in
 // order, every step always runs — a failing step does not abort the run,
 // so a single pass surfaces every problem a scenario has, not just the
@@ -97,16 +156,27 @@ type ProbeResult struct {
 //     replay equals — in event_id order — the subset of that participant's
 //     own previously-observed live events with Sequence > afterSequence.
 //
+// ids is this library's participant-id-placeholder resolution map (P6 Task
+// 4 fix round): every `{{id:<name>}}` occurrence across sc.Steps' Command
+// bytes is resolved to ids[<name>] ONCE, before any participant is dialed
+// or any command dispatched — see resolveParticipantIDPlaceholders' doc
+// comment for why this exists and stays a plain byte substitution. ids may
+// be nil for a scenario that uses no placeholders at all (the common case).
+//
 // Once every step has run, each probe is evaluated against
 // Fold(everything participant 0 has ever observed, live or via catch-up).
 // Human-readable progress is written to report as steps/probes complete;
 // report may be nil (io.Discard). The returned error is reserved for
-// framework failures (e.g. a participant's initial dial failing) — scenario
-// assertion failures are reported through Report.Pass/StepResult/ProbeResult,
-// never as a non-nil error.
-func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, report io.Writer) (*Report, error) {
+// framework failures (e.g. a participant's initial dial failing, or an
+// unresolved id placeholder) — scenario assertion failures are reported
+// through Report.Pass/StepResult/ProbeResult, never as a non-nil error.
+func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]string, report io.Writer) (*Report, error) {
 	if report == nil {
 		report = io.Discard
+	}
+
+	if err := resolveParticipantIDPlaceholders(sc.Steps, ids); err != nil {
+		return nil, err
 	}
 
 	conns := make(map[string]Conn, len(sc.Participants))

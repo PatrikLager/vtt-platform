@@ -49,7 +49,7 @@ func newClientRunCmd() *cobra.Command {
 				return err
 			}
 
-			dial, teardown, err := buildDialer(sc, serverURL, tokensPath)
+			dial, ids, teardown, err := buildDialer(sc, serverURL, tokensPath)
 			if err != nil {
 				return err
 			}
@@ -59,7 +59,7 @@ func newClientRunCmd() *cobra.Command {
 			if jsonOut {
 				progress = io.Discard
 			}
-			rep, err := harness.RunScenario(cmd.Context(), sc, dial, progress)
+			rep, err := harness.RunScenario(cmd.Context(), sc, dial, ids, progress)
 			if err != nil {
 				return fmt.Errorf("vtt client run: %w", err)
 			}
@@ -84,36 +84,47 @@ func newClientRunCmd() *cobra.Command {
 }
 
 // tokensFile is tokens.json's shape (spec §10, decided at plan time):
-// {"participants": {"<name>": "<token>"}}.
+// {"participants": {"<name>": "<token>"}}. Ids is ADDITIVE (P6 Task 4 fix
+// round): {"<name>": "<participant-id>"}, optional — a live-mode operator
+// supplies it only when the scenario being run actually references a
+// {{id:<name>}} placeholder (see internal/harness/engine.go's
+// resolveParticipantIDPlaceholders). The value is not secret and not new
+// information the operator has to go find: `vtt invite`'s own output
+// already prints "participant id: <id>" alongside the token line, for
+// exactly this reuse.
 type tokensFile struct {
 	Participants map[string]string `json:"participants"`
+	IDs          map[string]string `json:"ids,omitempty"`
 }
 
 // buildDialer picks self-contained or live mode from which flags were
-// given, and returns a harness.Dialer plus a teardown func the caller must
-// always call exactly once (a no-op in live mode, where this process
-// didn't start the server it's dialing).
-func buildDialer(sc *harness.Scenario, serverURL, tokensPath string) (harness.Dialer, func() error, error) {
+// given, and returns a harness.Dialer, the participant-id map
+// harness.RunScenario needs for {{id:<name>}} resolution (nil in live mode
+// when tokens.json carries no "ids" — a scenario using no placeholder
+// tolerates that fine; one that does gets RunScenario's own named error),
+// and a teardown func the caller must always call exactly once (a no-op in
+// live mode, where this process didn't start the server it's dialing).
+func buildDialer(sc *harness.Scenario, serverURL, tokensPath string) (harness.Dialer, map[string]string, func() error, error) {
 	if serverURL == "" && tokensPath == "" {
 		boot, err := bootSelfContained(sc)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return dialerFor(boot.WSURL, boot.Tokens), boot.close, nil
+		return dialerFor(boot.WSURL, boot.Tokens), boot.IDs, boot.close, nil
 	}
 	if serverURL == "" || tokensPath == "" {
-		return nil, nil, errors.New("vtt client run: --server and --tokens must be given together")
+		return nil, nil, nil, errors.New("vtt client run: --server and --tokens must be given together")
 	}
 
 	data, err := os.ReadFile(tokensPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("vtt client run: read tokens file: %w", err)
+		return nil, nil, nil, fmt.Errorf("vtt client run: read tokens file: %w", err)
 	}
 	var tf tokensFile
 	if err := json.Unmarshal(data, &tf); err != nil {
-		return nil, nil, fmt.Errorf("vtt client run: parse tokens file %s: %w", tokensPath, err)
+		return nil, nil, nil, fmt.Errorf("vtt client run: parse tokens file %s: %w", tokensPath, err)
 	}
-	return dialerFor(serverURL, tf.Participants), func() error { return nil }, nil
+	return dialerFor(serverURL, tf.Participants), tf.IDs, func() error { return nil }, nil
 }
 
 // dialerFor adapts a fixed ws URL and a name->token map into a

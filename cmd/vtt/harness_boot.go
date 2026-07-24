@@ -24,12 +24,20 @@ import (
 
 // bootResult is bootSelfContained's output: everything `vtt client run`
 // needs to drive the scenario, expressed only as strings plus a teardown
-// func — the strings (WSURL, Tokens) are exactly what a live `--server`/
-// `--tokens` invocation would have supplied instead, so the two modes
-// converge on the same harness.Dialer shape (client_run.go's dialerFor).
+// func — the strings (WSURL, Tokens, IDs) are exactly what a live
+// `--server`/`--tokens` invocation would have supplied instead (IDs via
+// tokens.json's additive "ids" field), so the two modes converge on the
+// same harness.Dialer + ids shape (client_run.go's dialerFor + RunScenario
+// call).
 type bootResult struct {
 	WSURL  string
 	Tokens map[string]string // participant name -> invite token
+	// IDs is participant name -> the real, server-assigned
+	// identity.Participant.ID behind that invite (P6 Task 4 fix round) —
+	// harness.RunScenario's ids parameter, resolving a scenario's
+	// {{id:<name>}} placeholder (e.g. an AddActor's controller_id that must
+	// equal a player's own identity) automatically in self-contained mode.
+	IDs map[string]string
 	// close stops the server, closes the campaign/identity handles, and
 	// removes the temp campaign dir. Always non-nil on a successful
 	// bootSelfContained; the caller must call it exactly once, after the
@@ -65,7 +73,7 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	serveErrCh := make(chan error, 1)
 	go func() { serveErrCh <- srv.Serve(ln) }()
 
-	tokens, err := mintInvites(campaignPath, sc)
+	tokens, ids, err := mintInvites(campaignPath, sc)
 	if err != nil {
 		srv.Close()
 		closeCompose()
@@ -81,7 +89,7 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		removeErr := os.RemoveAll(dir)
 		return firstNonNil(shutdownErr, composeErr, removeErr)
 	}
-	return &bootResult{WSURL: wsURL, Tokens: tokens, close: closeFn}, nil
+	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, close: closeFn}, nil
 }
 
 // mintInvites opens its own identity.DB handle on campaignPath (a second,
@@ -89,23 +97,29 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 // the same pattern serve_e2e_test.go and internal/gateway's exit fixture
 // both use to mint invites against a server they didn't mint them through)
 // and mints one invite per participant, closing the handle before
-// returning either way.
-func mintInvites(campaignPath string, sc *harness.Scenario) (map[string]string, error) {
-	ids, err := identity.Open(campaignPath)
+// returning either way. Returns BOTH the token (what a Dialer needs to
+// connect) and the real, server-assigned participant id (P6 Task 4 fix
+// round — previously discarded via `token, _, err`; now every caller that
+// needs participant-id resolution, in-process or test-side, can reuse this
+// one function instead of hand-rolling its own minting loop).
+func mintInvites(campaignPath string, sc *harness.Scenario) (tokens, ids map[string]string, err error) {
+	idb, err := identity.Open(campaignPath)
 	if err != nil {
-		return nil, fmt.Errorf("vtt client run: open identity for minting: %w", err)
+		return nil, nil, fmt.Errorf("vtt client run: open identity for minting: %w", err)
 	}
-	defer ids.Close()
+	defer idb.Close()
 
-	tokens := make(map[string]string, len(sc.Participants))
+	tokens = make(map[string]string, len(sc.Participants))
+	ids = make(map[string]string, len(sc.Participants))
 	for _, p := range sc.Participants {
-		token, _, err := ids.CreateInvite(p.Name, identity.Role(p.Role), p.Controls)
+		token, id, err := idb.CreateInvite(p.Name, identity.Role(p.Role), p.Controls)
 		if err != nil {
-			return nil, fmt.Errorf("vtt client run: mint invite for %q: %w", p.Name, err)
+			return nil, nil, fmt.Errorf("vtt client run: mint invite for %q: %w", p.Name, err)
 		}
 		tokens[p.Name] = token
+		ids[p.Name] = id
 	}
-	return tokens, nil
+	return tokens, ids, nil
 }
 
 // firstNonNil returns the first non-nil error in errs, or nil if every one

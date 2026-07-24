@@ -281,12 +281,14 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, string(p.Role), p.ID); err != nil {
+	seq, err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, string(p.Role), p.ID)
+	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	// campaign.Undo does not return the marker's sequence (unlike Append),
-	// so Sequence is left unset here; the marker's own sequence is still
-	// visible to every connection, this one included, on the broadcast
-	// Envelope frame itself.
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+	// campaign.Undo now returns the marker's own sequence (P6 Task 4
+	// pre-step, controller decision — closes the P4 carry-forward), so the
+	// result carries it the same way Append's sequence does for every other
+	// command; it also remains visible on the broadcast Envelope frame
+	// itself, to every connection including this one.
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }

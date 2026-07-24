@@ -39,7 +39,7 @@ func seedMovedToken(t *testing.T) (*campaign.Campaign, int64) {
 func TestUndoRetractsMoveTokenBackToPriorPosition(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 
-	if err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +59,7 @@ func TestUndoRetractsMoveTokenBackToPriorPosition(t *testing.T) {
 func TestUndoRejectsRangeContainingRetractionMarker(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 
-	if err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
 	markerSeq := moveSeq + 1 // sequence of the EventsRetracted marker just appended
@@ -71,7 +71,7 @@ func TestUndoRejectsRangeContainingRetractionMarker(t *testing.T) {
 		To:   &vttv1.GridPosition{X: 9, Y: 9},
 	}))
 
-	if err := c.Undo(markerSeq, nextSeq, "nested", nextID(), "dm", "test-participant"); err == nil {
+	if _, err := c.Undo(markerSeq, nextSeq, "nested", nextID(), "dm", "test-participant"); err == nil {
 		t.Fatal("want error retracting a range that contains a retraction marker (no nesting)")
 	}
 }
@@ -81,10 +81,10 @@ func TestUndoRejectsRangeContainingRetractionMarker(t *testing.T) {
 func TestUndoRejectsAlreadyRetractedRange(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 
-	if err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Undo(moveSeq, moveSeq, "double undo", nextID(), "dm", "test-participant"); err == nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "double undo", nextID(), "dm", "test-participant"); err == nil {
 		t.Fatal("want error retracting an already-retracted range")
 	}
 }
@@ -107,10 +107,10 @@ func TestUndoRejectsPartialOverlapRetraction(t *testing.T) {
 		To:   &vttv1.GridPosition{X: 6, Y: 9},
 	}))
 
-	if err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Undo(moveSeq-1, moveSeq+1, "partial overlap", nextID(), "dm", "test-participant"); err == nil {
+	if _, err := c.Undo(moveSeq-1, moveSeq+1, "partial overlap", nextID(), "dm", "test-participant"); err == nil {
 		t.Fatal("want error retracting a range that partially overlaps an already-retracted sequence")
 	}
 }
@@ -130,7 +130,7 @@ func TestUndoRejectsOutOfRangeSequence(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := c.Undo(tc.from, tc.to, "oob", nextID(), "dm", "test-participant"); err == nil {
+			if _, err := c.Undo(tc.from, tc.to, "oob", nextID(), "dm", "test-participant"); err == nil {
 				t.Fatalf("want error for out-of-range retraction [%d,%d]", tc.from, tc.to)
 			}
 		})
@@ -146,7 +146,7 @@ func TestUndoRejectsOutOfRangeSequence(t *testing.T) {
 func TestUndoAcceptsFromSequenceOne(t *testing.T) {
 	c, _ := seedMovedToken(t)
 
-	if err := c.Undo(1, 1, "retract session start", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(1, 1, "retract session start", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatalf("want from=1 accepted (only from<1 is invalid), got error: %v", err)
 	}
 }
@@ -159,7 +159,7 @@ func TestUndoAcceptsFromSequenceOne(t *testing.T) {
 func TestUndoOnEmptyLogRejectsGracefully(t *testing.T) {
 	c := openTemp(t)
 
-	if err := c.Undo(1, 1, "nothing to undo", nextID(), "dm", "test-participant"); err == nil {
+	if _, err := c.Undo(1, 1, "nothing to undo", nextID(), "dm", "test-participant"); err == nil {
 		t.Fatal("want error retracting a range on an empty log")
 	}
 }
@@ -177,7 +177,7 @@ func TestUndoSubscriberReceivesRetractionMarker(t *testing.T) {
 	defer cancel()
 
 	markerID := nextID()
-	if err := c.Undo(moveSeq, moveSeq, "mistake", markerID, "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "mistake", markerID, "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
 

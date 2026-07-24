@@ -107,7 +107,7 @@ func TestRunScenarioOKStepPassesWhenAllParticipantsObserveBroadcast(t *testing.T
 			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestRunScenarioOKStepFailsWhenBroadcastOmittedForOneParticipant(t *testing.
 			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestRunScenarioDenialStepPassesWithNoBroadcast(t *testing.T) {
 				Expect: &harness.Expect{DeniedContaining: "not authorized"}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestRunScenarioDenialStepFailsWhenBroadcastLeaksAnyway(t *testing.T) {
 				Expect: &harness.Expect{DeniedContaining: "not authorized"}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 			{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, dial, io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 			{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 		},
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, dial, io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}
@@ -287,6 +287,76 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 	}
 	if rep.Steps[2].Pass {
 		t.Fatalf("reconnect step = %+v, want Pass=false", rep.Steps[2])
+	}
+}
+
+// --- participant-id placeholder resolution (P6 Task 4 fix round) -----------
+
+// TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch proves
+// {{id:<name>}} inside a command step's JSON is resolved to ids[<name>]
+// BEFORE the command ever reaches Conn.SendCommand — the fake Conn's
+// scripted send captures the actually-dispatched command and asserts its
+// controllerId field is the real, resolved id, never the literal
+// placeholder text.
+func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T) {
+	dm := newFakeConn("dm")
+	world := map[string]*fakeConn{"dm": dm}
+
+	const wantID = "real-participant-id-abc123"
+	var gotControllerID string
+	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+		gotControllerID = cmd.GetAddActor().GetActor().GetControllerId()
+		env := &vttv1.Envelope{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_ActorAdded{
+			ActorAdded: &vttv1.ActorAdded{Actor: cmd.GetAddActor().GetActor()},
+		}}
+		broadcast(world, env, "dm")
+		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+	}
+
+	sc := &harness.Scenario{
+		Participants: []harness.Participant{{Name: "dm"}},
+		Steps: []harness.Step{
+			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:lera}}"}}}`), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	ids := map[string]string{"lera": wantID}
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), ids, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScenario: %v", err)
+	}
+	if !rep.Pass {
+		t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
+	}
+	if gotControllerID != wantID {
+		t.Fatalf("dispatched command's controllerId = %q, want the resolved id %q (placeholder must resolve before dispatch, not be sent literally)", gotControllerID, wantID)
+	}
+}
+
+// TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder proves a
+// {{id:<name>}} referencing a name missing from ids is a framework-level
+// error (RunScenario returns it directly, nil report) raised BEFORE any
+// participant is dialed or any command dispatched — dm.send is left
+// unscripted (nil), so a call would panic/error immediately if resolution
+// let the run proceed that far.
+func TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder(t *testing.T) {
+	dm := newFakeConn("dm")
+	world := map[string]*fakeConn{"dm": dm}
+
+	sc := &harness.Scenario{
+		Participants: []harness.Participant{{Name: "dm"}},
+		Steps: []harness.Step{
+			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:nobody}}"}}}`), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+	if err == nil {
+		t.Fatalf("RunScenario: want a non-nil framework error for an unresolved {{id:nobody}} placeholder, got nil (report=%+v)", rep)
+	}
+	if !strings.Contains(err.Error(), "nobody") {
+		t.Fatalf("RunScenario error = %q, want it to name the unresolved participant %q", err.Error(), "nobody")
+	}
+	if rep != nil {
+		t.Fatalf("RunScenario: want nil report on a framework-level resolution error, got %+v", rep)
 	}
 }
 
@@ -323,7 +393,7 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 		},
 		Probes: probes,
 	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), io.Discard)
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)
 	}

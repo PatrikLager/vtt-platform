@@ -39,7 +39,7 @@ func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 		t.Fatalf("Append on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 
-	if err := c.Undo(1, 1, "reason", "e2", "dm", "test-participant"); !errors.Is(err, errPoisoned) {
+	if _, err := c.Undo(1, 1, "reason", "e2", "dm", "test-participant"); !errors.Is(err, errPoisoned) {
 		t.Fatalf("Undo on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 

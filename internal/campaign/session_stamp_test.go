@@ -269,7 +269,7 @@ func TestSessionStampUndoMarkerCarriesOpenSessionID(t *testing.T) {
 	}
 	defer cancel()
 
-	if err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
+	if _, err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)
 	}
 

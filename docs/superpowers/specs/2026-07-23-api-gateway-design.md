@@ -42,9 +42,8 @@ LLM's MCP tools all drive a live table through the same wire API.
 - Commands v1 (mirror the lifecycle 1:1): `MoveToken` (existing message) +
   new `CreateScene`, `AddActor`, `PlaceToken`, `StartSession`, `EndSession`,
   `RetractEvents`. Each is validated, role-gated, converted to its event,
-  appended synchronously; result carries the sequence (EXCEPTION, as built:
-  RetractEvents' result carries no sequence — the marker's sequence is
-  visible on the broadcast Envelope; carry-forward: Undo may return it).
+  appended synchronously; result carries the sequence (RetractEvents
+  included, as of a P6 pre-step; was a carry-forward).
 - Catch-up: client sends `after_sequence` at connect; server streams history
   then live (store.Subscribe semantics, buffer 256 — a named constant;
   overflow = WebSocket close, client reconnects and catches up).

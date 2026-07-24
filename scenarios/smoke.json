@@ -1,0 +1,19 @@
+{
+  "name": "smoke",
+  "participants": [
+    {"name": "dm", "role": "dm"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Smoke Session"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "scn-smoke", "name": "Smoke Scene", "gridWidth": 5, "gridHeight": 5}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-smoke", "name": "Smoke Actor"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-smoke", "sceneId": "scn-smoke", "actorId": "act-smoke", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"moveToken": {"tokenId": "tok-smoke", "to": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"endSession": {}}, "expect": {"ok": true}}
+  ],
+  "probes": [
+    {"tokenAt": {"tokenId": "tok-smoke", "x": 1, "y": 1}},
+    {"sessionCount": {"open": 0, "total": 1}},
+    {"actorExists": {"actorId": "act-smoke"}}
+  ]
+}
