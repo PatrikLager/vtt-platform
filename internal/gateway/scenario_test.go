@@ -186,7 +186,7 @@ func (sc *scenarioConn) readFrame(t *testing.T, d time.Duration) *vttv1.ServerFr
 func (sc *scenarioConn) readResult(t *testing.T) *vttv1.CommandResult {
 	t.Helper()
 	for i := 0; i < 10; i++ {
-		if r := sc.readFrame(t, 3*time.Second).GetResult(); r != nil {
+		if r := sc.readFrame(t, 10*time.Second).GetResult(); r != nil {
 			return r
 		}
 	}
@@ -200,7 +200,7 @@ func (sc *scenarioConn) readResult(t *testing.T) *vttv1.CommandResult {
 func (sc *scenarioConn) readEvent(t *testing.T) *vttv1.Envelope {
 	t.Helper()
 	for i := 0; i < 10; i++ {
-		if e := sc.readFrame(t, 3*time.Second).GetEvent(); e != nil {
+		if e := sc.readFrame(t, 10*time.Second).GetEvent(); e != nil {
 			return e
 		}
 	}

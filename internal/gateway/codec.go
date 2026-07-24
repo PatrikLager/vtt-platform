@@ -9,9 +9,9 @@ import (
 )
 
 // EncodeFrame marshals frame to its protojson wire representation (spec §3:
-// one WebSocket endpoint, protojson TEXT frames). Task 5 calls this once per
-// outbound envelope/result and fans the resulting bytes out to every
-// connected socket (the shared-envelope-immutability carry-forward).
+// one WebSocket endpoint, protojson TEXT frames). Frames are marshaled per
+// connection, by each connection's own pump — not once and fanned out — see
+// server.go for the rationale.
 func EncodeFrame(frame *vttv1.ServerFrame) ([]byte, error) {
 	b, err := protojson.Marshal(frame)
 	if err != nil {

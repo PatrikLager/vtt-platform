@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -241,6 +242,9 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 		_, _, err := victimConn.Read(ctx)
 		cancel()
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("victim connection not closed — read timed out instead of observing close")
+			}
 			closed = true
 			break
 		}
