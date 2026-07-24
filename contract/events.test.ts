@@ -22,6 +22,7 @@ const cases = [
   ["retraction_envelope.json", EnvelopeSchema],
   ["client_command.json", ClientCommandSchema],
   ["server_frame_result.json", ServerFrameSchema],
+  ["server_frame_error.json", ServerFrameSchema],
 ] as const;
 
 for (const [fixture, schema] of cases) {

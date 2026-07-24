@@ -89,6 +89,32 @@ func TestUndoRejectsAlreadyRetractedRange(t *testing.T) {
 	}
 }
 
+// TestUndoRejectsPartialOverlapRetraction covers PARTIAL overlap, distinct
+// from TestUndoRejectsAlreadyRetractedRange's exact-range repeat: retracting
+// [moveSeq,moveSeq] then attempting a WIDER range [moveSeq-1,moveSeq+1] —
+// which only partially overlaps the already-retracted span, with in-bounds
+// sequences on both sides that were never retracted — must still be
+// rejected. This exercises Undo's per-sequence already[env.Sequence] check
+// (campaign.go) across every sequence in the requested range, not just an
+// identical repeat of a prior range.
+func TestUndoRejectsPartialOverlapRetraction(t *testing.T) {
+	c, moveSeq := seedMovedToken(t)
+	// A second move gives a sequence after moveSeq, so the wider range
+	// [moveSeq-1, moveSeq+1] is in-bounds (moveSeq+1 must exist in the log).
+	must(t, c, cenv(nextID(), &vttv1.TokenMoved{
+		TokenId: "t1", SceneId: "scn",
+		From: &vttv1.GridPosition{X: 5, Y: 8},
+		To:   &vttv1.GridPosition{X: 6, Y: 9},
+	}))
+
+	if err := c.Undo(moveSeq, moveSeq, "first undo", nextID(), "dm", "test-participant"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Undo(moveSeq-1, moveSeq+1, "partial overlap", nextID(), "dm", "test-participant"); err == nil {
+		t.Fatal("want error retracting a range that partially overlaps an already-retracted sequence")
+	}
+}
+
 // TestUndoRejectsOutOfRangeSequence covers out-of-range: the range must be
 // well-formed (from >= 1, to >= from) and not extend past the log head.
 func TestUndoRejectsOutOfRangeSequence(t *testing.T) {

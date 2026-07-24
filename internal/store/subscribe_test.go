@@ -143,6 +143,55 @@ func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 	}
 }
 
+// TestNotifyIgnoresZeroSequence covers defensive hardening on the public
+// Notify method: an envelope whose Sequence is the proto3 zero value (0) —
+// never a value Append assigns, since Append's next-sequence query is
+// COALESCE(MAX(seq),0)+1, minimum 1 — is silently dropped rather than fanned
+// out, protecting against a caller that invokes Notify without ever having
+// persisted the event via Append.
+//
+// The subscriber below is caught up from afterSeq=-1, not the realistic
+// afterSeq=0: with afterSeq=0 the pre-existing per-subscriber dedupe
+// (notifyLocked's env.Sequence <= sub.lastSeq check) already happens to
+// swallow a zero-sequence envelope on its own (0 <= 0), which would mask
+// whether Notify's own guard fired at all. afterSeq=-1 gives the subscriber
+// lastSeq=-1, so 0 <= -1 is false and the dedupe does NOT intercept it —
+// isolating the guard as the only thing that can still stop delivery.
+func TestNotifyIgnoresZeroSequence(t *testing.T) {
+	s := openTemp(t)
+	ch, cancel, err := s.Subscribe(-1, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	s.Notify(&vttv1.Envelope{
+		EventId:   "zero-seq",
+		SessionId: "sess-1",
+		ActorRole: "dm",
+		Sequence:  0,
+		Payload: &vttv1.Envelope_SessionStarted{
+			SessionStarted: &vttv1.SessionStarted{Name: "zero"},
+		},
+	})
+	select {
+	case got := <-ch:
+		t.Fatalf("want zero-sequence envelope silently dropped, got delivered: %v", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// A normal, correctly-stamped envelope still delivers afterward — the
+	// guard must not disable the subscriber or the store.
+	real := newEnv("e-real")
+	if _, err := s.Append(real); err != nil {
+		t.Fatal(err)
+	}
+	s.Notify(real)
+	if got := recv(t, ch); got.EventId != "e-real" {
+		t.Fatalf("live delivery after guard: got %s, want e-real", got.EventId)
+	}
+}
+
 func TestUnsubscribeStopsDelivery(t *testing.T) {
 	s := openTemp(t)
 	ch, cancel, _ := s.Subscribe(0, 4)

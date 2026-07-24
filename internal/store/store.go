@@ -94,7 +94,17 @@ func (s *Store) Append(env *vttv1.Envelope) (int64, error) {
 // sees event N can always read state >= N. Idempotent per subscriber via
 // sequence dedupe, which also closes the subscribe-between-persist-and-notify
 // race.
+//
+// Envelopes with Sequence == 0 are silently ignored (no-op, no error — the
+// signature stays stable): 0 is never a sequence Append assigns
+// (COALESCE(MAX(seq),0)+1 starts at 1), so a zero-sequence envelope reaching
+// Notify means a caller invoked it without the event ever having been
+// persisted. Public-method hardening against that misuse; not a path any
+// current caller exercises.
 func (s *Store) Notify(env *vttv1.Envelope) {
+	if env.Sequence == 0 {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.notifyLocked(env)

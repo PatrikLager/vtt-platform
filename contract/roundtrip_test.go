@@ -56,6 +56,16 @@ func TestServerFrameResultRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_result.json", &vttv1.ServerFrame{})
 }
 
+// TestServerFrameErrorRoundTrip covers the non-empty error path, distinct
+// from server_frame_result.json's ok=true/sequence-set success shape: ok and
+// sequence are both proto3 zero values (false, 0) on a rejected command, so
+// protojson omits them from the wire form entirely — the fixture has no
+// "ok" or "sequence" key at all. A consumer must treat an absent "ok" as
+// false and an absent "sequence" as unset/0, not fail to parse.
+func TestServerFrameErrorRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_error.json", &vttv1.ServerFrame{})
+}
+
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")
 	var env vttv1.Envelope
