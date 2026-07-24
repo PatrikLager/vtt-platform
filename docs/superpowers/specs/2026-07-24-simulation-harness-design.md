@@ -65,7 +65,13 @@ practice loop both follow.
 ```
 
 - `command` bodies are protojson of the contract's `ClientCommand` oneof —
-  parsed with the contract types, no bespoke command grammar.
+  parsed with the contract types, no bespoke command grammar. ONE
+  pre-dispatch substitution feature exists (added in build, documented here):
+  `{{id:<name>}}` resolves to that participant's server-assigned id
+  (engine-side, opaque string substitution — needed because `controller_id`
+  requires real ids the author cannot know). Self-contained runs supply ids
+  automatically; live mode reads them from `tokens.json`'s additive optional
+  `"ids": {"<name>": "<participant-id>"}` map (`vtt invite` prints the id).
 - `expect`: `{"ok": true}` or `{"deniedContaining": "<substring>"}` (denied
   steps also assert NO event broadcast reaches any participant).
 - `reconnect` step: drop and re-dial that participant with `after=<seq>`;
@@ -93,7 +99,13 @@ practice loop both follow.
 - **`vtt events tail --server --token [--after N]`** — stream envelopes as
   protojson lines until interrupted.
 - **`vtt state dump --server --token`** — catch-up from 0, fold, print
-  state as JSON, exit.
+  state as JSON with a top-level `headSequence` (highest folded sequence;
+  the caller's staleness check — the dump is a point-in-time snapshot),
+  exit. This is the contract sub-project 6's LLM tools inherit.
+- **Fresh-campaign requirement (documented post-build, fail-loud):** `run`
+  and `soak` require a campaign with no pre-existing events; catch-up
+  backlog aborts with a clear error. Relative-sequence scenario references
+  (running against live history) are a planned format-v2 extension.
 
 ## 6. Committed scenario library
 
@@ -101,8 +113,10 @@ practice loop both follow.
 gateway exit scenario ported to data (all denials, retraction, reconnect
 equality); (2) `denials.json` — every authz-table deny cell exercised once;
 (3) `smoke.json` — minimal session for quick checks. A Go test in
-`internal/harness` executes every library scenario self-contained — the
-library runs inside `task check` on every commit.
+`cmd/vtt` (NOT internal/harness — the runner needs the composeServer boot
+glue that the P1 rule forbids harness from importing; corrected at build)
+executes every library scenario self-contained — the library runs inside
+`task check` on every commit.
 
 ## 7. ADR-009 posture
 
@@ -110,7 +124,11 @@ Runner built behavioral-RED (fixture scenarios with known outcomes against
 a stubbed wire); scenario-library tests are after-the-fact → injection
 proofs (break a gateway behavior in a throwaway copy, watch the
 corresponding library scenario fail); soak determinism pinned; post-merge
-mutation audit extends to `internal/harness`.
+mutation audit extends to `internal/harness` ONCE the suite's fixed-sleep
+cost is reduced (fake-clock carry-forward — full mutation runs are
+impractical at ~70s/run; the branch's seven injection proofs stand as the
+interim teeth evidence; the `audit:mutation` target already lists harness
+with this caveat).
 
 ## 8. Exit criteria
 

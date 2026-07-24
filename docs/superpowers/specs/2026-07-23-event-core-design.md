@@ -99,11 +99,13 @@ projection (single-writer rule holds at the type level).
 
 ## 6. Undo
 
-`Undo(from, to, reason, eventID, sessionID, actorRole, participantID)`
+`Undo(from, to, reason, eventID, actorRole, participantID) (markerSeq, err)`
 validates the range (exists; contains no EventsRetracted event — the
 no-nesting rule; not already retracted), then (attribution params are
 caller-supplied — campaign has no identity concept; the gateway is the
-attribution authority per gateway-spec §4)
+attribution authority per gateway-spec §4. The sessionID param was removed
+when campaign became the session-stamping authority; the marker-sequence
+return landed as a P6 pre-step so CommandResult can carry it)
 **dry-runs the fold with the would-be-retracted set before persisting: a
 retraction that would leave the log unable to replay is rejected and persists
 nothing** (without this, the rebuild promise below is unfulfillable for exactly
