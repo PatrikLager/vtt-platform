@@ -1,0 +1,288 @@
+package gateway
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"sync/atomic"
+
+	"github.com/coder/websocket"
+
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/identity"
+)
+
+// gatewayBuffer is Server.buffer's default (New sets it; see that field's
+// doc comment for the test-only override seam). It bounds the live portion
+// of every connection's campaign.Subscribe channel, beyond whatever
+// catch-up backlog that connection's `after` cursor requires
+// (store.Store.Subscribe sizes the channel to len(history)+buffer). It also
+// sizes the per-connection outbound byte channel in serve, for the same
+// reason. A connection that falls more than buffer live events behind has
+// ONLY ITS OWN channel closed by the store (internal/store/subscribe.go's
+// notifyLocked overflow branch) — no other connection is affected — and
+// serve force-closes that connection's socket in turn (see the pump
+// goroutine below) so the client observes the disconnect and can reconnect
+// with a fresh `after` cursor; the log is always the source of truth for
+// whatever was missed. 256 is generous headroom for one connection's
+// fan-out lag under normal load.
+const gatewayBuffer = 256
+
+// Server is the WebSocket/HTTP gateway (spec §3, §7.9): it wires the pure
+// core in this package (Authorize, ToEvent, EncodeFrame, DecodeCommand) to
+// a real transport over one already-open Campaign and identity DB.
+type Server struct {
+	campaign *campaign.Campaign
+	ids      *identity.DB
+
+	// buffer defaults to gatewayBuffer; New sets it. It is unexported and
+	// only overridden by this package's own internal tests (see
+	// server_internal_test.go, precedent: campaign's poison_internal_test.go)
+	// to make the overflow-closes-the-socket behavior deterministically
+	// testable without appending gatewayBuffer+ events.
+	buffer int
+}
+
+// New constructs a Server over an already-open campaign and identity DB.
+// The caller owns both handles' lifecycle (Close them after the Server is
+// done serving).
+func New(c *campaign.Campaign, ids *identity.DB) *Server {
+	return &Server{campaign: c, ids: ids, buffer: gatewayBuffer}
+}
+
+// Handler returns the http.Handler routing /healthz and /ws (spec §3).
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", handleHealthz)
+	mux.HandleFunc("/ws", s.handleWS)
+	return mux
+}
+
+func handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleWS resolves both connection parameters from the URL — `token` and
+// `after` — BEFORE ever calling websocket.Accept (binding design decision):
+// identity.Verify runs against the plain HTTP request, so a bad or revoked
+// token gets an ordinary HTTP 401 response and the connection is never
+// upgraded. Only a verified request reaches Accept.
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	after, err := parseAfter(r.URL.Query().Get("after"))
+	if err != nil {
+		http.Error(w, "gateway: invalid after parameter", http.StatusBadRequest)
+		return
+	}
+
+	p, err := s.ids.Verify(r.URL.Query().Get("token"))
+	if err != nil {
+		http.Error(w, "gateway: unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return // Accept already wrote the HTTP error response.
+	}
+
+	s.serve(r.Context(), conn, p, after)
+}
+
+func parseAfter(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(raw, 10, 64)
+}
+
+// serve runs one connection's full lifecycle: catch-up + live subscription,
+// the inbound command loop, and a single writer goroutine that owns every
+// write to conn.
+//
+// Writer choice (documented per the binding constraint): writes are
+// serialized through outCh and ONE writer goroutine below, rather than a
+// per-connection mutex. Both the command loop (CommandResult replies) and
+// the broadcast pump goroutine (live/catch-up Envelopes from `events`) only
+// ever hand byte slices to outCh — neither goroutine calls conn.Write
+// itself — so two writes can never race on the wire, and the ordering of
+// interleaved results/events is whatever order they arrive at outCh.
+func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
+	defer conn.CloseNow()
+
+	events, cancel, err := s.campaign.Subscribe(after, s.buffer)
+	if err != nil {
+		conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
+		return
+	}
+
+	outCh := make(chan []byte, s.buffer)
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for b := range outCh {
+			if conn.Write(ctx, websocket.MessageText, b) != nil {
+				return
+			}
+		}
+	}()
+
+	// closing is set (by shutdown, below) immediately before it cancels the
+	// subscription as part of a normal, intentional teardown. The pump
+	// goroutine checks it once `events` closes so it can tell that apart
+	// from the store closing `events` UNILATERALLY on overflow
+	// (internal/store/subscribe.go's notifyLocked overflow branch, when
+	// this connection's own subscriber channel fills because the pump
+	// couldn't keep pumping — e.g. it was itself blocked sending to a full
+	// outCh). See the force-close below the loop.
+	var closing atomic.Bool
+
+	pumpDone := make(chan struct{})
+	go func() {
+		defer close(pumpDone)
+		for env := range events {
+			// Marshaled per connection, deliberately: each pump encodes
+			// straight off its own subscription channel with no shared
+			// cache. At table scale (a handful of participants, not
+			// thousands of fan-out sockets) a few extra protojson.Marshal
+			// calls per event is cheap, and it keeps this goroutine
+			// entirely stateless — no retained pointers, nothing to evict,
+			// nothing that can leak. Revisit with a real broadcast hub
+			// (marshal once, shared bytes) only if client count per
+			// campaign ever grows past table scale (say, >10).
+			b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: env}})
+			if err != nil {
+				continue // a marshal failure here is a server bug, not this client's fault
+			}
+			select {
+			case outCh <- b:
+			case <-writerDone:
+				return
+			}
+		}
+		// `events` is closed. If shutdown() didn't do it, the store closed
+		// it unilaterally on overflow — this connection fell behind and
+		// will never receive another broadcast, but the command loop below
+		// is still blocked in conn.Read, unaware anything happened, and
+		// would otherwise sit there looking alive while broadcasts are
+		// silently dead forever. Force the connection closed so that Read
+		// errors out and drives the normal shutdown() path.
+		if !closing.Load() {
+			conn.CloseNow()
+		}
+	}()
+
+	// shutdown tears the connection's helper goroutines down in dependency
+	// order: mark this as an intentional close (so the pump's post-loop
+	// check above is a no-op), stop the subscription (closes `events`),
+	// wait for the pump to drain it, THEN close outCh (safe — the pump is
+	// guaranteed done, so nothing sends to outCh after this point), and
+	// wait for the writer to drain outCh and exit. Safe to call after the
+	// pump has already force-closed the connection on overflow: cancel,
+	// CloseNow, and channel-close are all idempotent here.
+	shutdown := func() {
+		closing.Store(true)
+		cancel()
+		<-pumpDone
+		close(outCh)
+		<-writerDone
+	}
+
+	for {
+		_, raw, err := conn.Read(ctx)
+		if err != nil {
+			shutdown()
+			return
+		}
+
+		cmd, err := DecodeCommand(raw)
+		if err != nil {
+			// Malformed frame: close only THIS connection (binding
+			// contract) — every other connection is untouched.
+			shutdown()
+			conn.Close(websocket.StatusPolicyViolation, "gateway: malformed frame")
+			return
+		}
+
+		result := s.handleCommand(p, cmd)
+		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
+		if err != nil {
+			continue
+		}
+		select {
+		case outCh <- b:
+		case <-writerDone:
+			shutdown()
+			return
+		}
+	}
+}
+
+// handleCommand runs the authorize → convert → persist pipeline for one
+// inbound ClientCommand (spec §3): authz/validation failures produce an
+// ok=false CommandResult and leave the connection open; only a persisted
+// event/marker produces ok=true. It never itself closes the connection or
+// writes to the wire — the caller (serve) owns transport.
+func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
+	requestID := cmd.GetRequestId()
+
+	st := s.campaign.State()
+	if st == nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
+	}
+
+	if err := Authorize(p, cmd, st); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+
+	env, err := ToEvent(cmd, p)
+	if err != nil {
+		var rr *RetractionRange
+		if errors.As(err, &rr) {
+			return s.handleRetraction(requestID, rr)
+		}
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+
+	// Controller decision (binding, Task 4 flagged concern): backfill
+	// TokenMoved.SceneId/From from the state already fetched for Authorize
+	// above — the token's CURRENT scene/position, i.e. where it is moving
+	// FROM — so the permanent log records that, not just the destination.
+	// engine.Apply never reads these fields for TokenMoved (it only reads
+	// To — see internal/engine/apply.go), so nothing downstream of Append
+	// would supply them; this is the one place in the pipeline that still
+	// has both the pre-move state snapshot and the about-to-be-appended
+	// envelope in hand.
+	if tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved); ok {
+		if tok, ok := st.Tokens[tm.TokenMoved.GetTokenId()]; ok {
+			tm.TokenMoved.SceneId = tok.SceneID
+			tm.TokenMoved.From = &vttv1.GridPosition{X: tok.X, Y: tok.Y}
+		}
+	}
+
+	seq, err := s.campaign.Append(env)
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
+}
+
+// handleRetraction persists rr via campaign.Undo, which owns constructing
+// the EventsRetracted marker itself (ToEvent deliberately never builds one
+// — see ErrIsRetraction's doc comment). A fresh marker event id is minted
+// here the same way ToEvent mints one for every other event.
+func (s *Server) handleRetraction(requestID string, rr *RetractionRange) *vttv1.CommandResult {
+	id, err := newEventID()
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	if err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, ""); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	// campaign.Undo does not return the marker's sequence (unlike Append),
+	// so Sequence is left unset here; the marker's own sequence is still
+	// visible to every connection, this one included, on the broadcast
+	// Envelope frame itself.
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}

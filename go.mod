@@ -3,6 +3,7 @@ module github.com/PatrikLager/vtt-platform
 go 1.26
 
 require (
+	github.com/coder/websocket v1.8.15
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.54.0
 )
