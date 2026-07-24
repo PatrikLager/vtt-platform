@@ -20,14 +20,14 @@ import (
 // string itself.
 var errScenarioFailed = errors.New("vtt client run: scenario failed")
 
-// newClientCmd is the `vtt client` command group: `run` today, `soak`
-// joins it in a later task (task-3-brief.md / plan Task 5).
+// newClientCmd is the `vtt client` command group: `run` (declarative
+// scenarios) and `soak` (the wire-level keystone, plan Task 5).
 func newClientCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: "Drive declarative scenarios against a gateway",
 	}
-	cmd.AddCommand(newClientRunCmd())
+	cmd.AddCommand(newClientRunCmd(), newClientSoakCmd())
 	return cmd
 }
 

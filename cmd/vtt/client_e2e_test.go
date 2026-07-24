@@ -143,6 +143,76 @@ func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) 
 	}
 }
 
+// --- vtt client soak: the real, self-contained soak e2e (plan Task 5) ------
+
+// TestClientSoakSelfContainedSeed1Events500PassesWithPinnedCounts is
+// task-5-brief.md's Step 2: a completely bare, self-contained `vtt client
+// soak --seed 1 --events 500` (no --server/--tokens — boots its own
+// throwaway server via harness_boot.go's bootSelfContained, exactly like a
+// human running this straight from a shell would) must Pass, exercising the
+// checkpoint fold-equality machinery at least once (Checkpoints > 0). The
+// seed-1 accepted/denied/checkpoint counts are DETERMINISTIC (the
+// generator-determinism proof in internal/harness/soak_test.go covers WHY)
+// and are pinned here verbatim, recorded by running the exact same command
+// against the real self-contained boot path
+// (.superpowers/sdd/p6-task-5-report.md's transcript): Events=500,
+// Accepted=480, Denied=20, Checkpoints=5.
+func TestClientSoakSelfContainedSeed1Events500PassesWithPinnedCounts(t *testing.T) {
+	out, err := runCLI(t, "client", "soak", "--seed", "1", "--events", "500", "--json")
+	if err != nil {
+		t.Fatalf("client soak (bare, self-contained, seed=1, events=500): unexpected error: %v (output: %s)", err, out)
+	}
+
+	var rep harness.SoakReport
+	if jsonErr := json.Unmarshal([]byte(out), &rep); jsonErr != nil {
+		t.Fatalf("client soak --json: output did not decode as harness.SoakReport: %v (output: %s)", jsonErr, out)
+	}
+
+	if !rep.Pass {
+		t.Fatalf("Report.Pass = false, want true: %+v", rep)
+	}
+	if rep.Checkpoints <= 0 {
+		t.Fatalf("Report.Checkpoints = %d, want > 0 (the checkpoint fold-equality machinery must actually run)", rep.Checkpoints)
+	}
+
+	const (
+		wantEvents      = 500
+		wantAccepted    = 480
+		wantDenied      = 20
+		wantCheckpoints = 5
+	)
+	if rep.Events != wantEvents {
+		t.Errorf("Report.Events = %d, want %d (pinned, seed=1)", rep.Events, wantEvents)
+	}
+	if rep.Accepted != wantAccepted {
+		t.Errorf("Report.Accepted = %d, want %d (pinned, seed=1)", rep.Accepted, wantAccepted)
+	}
+	if rep.Denied != wantDenied {
+		t.Errorf("Report.Denied = %d, want %d (pinned, seed=1)", rep.Denied, wantDenied)
+	}
+	if rep.Checkpoints != wantCheckpoints {
+		t.Errorf("Report.Checkpoints = %d, want %d (pinned, seed=1)", rep.Checkpoints, wantCheckpoints)
+	}
+	if rep.Denied != rep.Counts["deniedAttempt"] {
+		t.Errorf("Report.Denied = %d, Counts[deniedAttempt] = %d, want equal (players-only-move-own invariant: nothing outside the deliberate bucket should ever be denied)",
+			rep.Denied, rep.Counts["deniedAttempt"])
+	}
+}
+
+// TestClientSoakMissingRequiredFlagsErrors covers --seed/--events' required-
+// flag validation, the same shape cli_test.go's TestServeMissingCampaignErrors
+// covers for serve and client_e2e_test.go's TestEventsTailMissingFlagsErrors
+// covers for events tail.
+func TestClientSoakMissingRequiredFlagsErrors(t *testing.T) {
+	_, err := runCLI(t, "client", "soak")
+	if err == nil {
+		t.Fatal("client soak: want error for missing --seed/--events flags")
+	}
+	if !strings.Contains(err.Error(), "required flag") {
+		t.Fatalf("client soak: error = %q, want it to name the missing required flag(s)", err.Error())
+	}
+}
+
 // --- vtt client run --server/--tokens (live mode), events tail, state dump ---
 
 // liveFixture is one composeServer instance this test starts and tears
