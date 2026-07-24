@@ -5,8 +5,9 @@
 // its ordinary authz table, stamped with the agent's participant_id.
 //
 // Deliberate boundary (P1 rule, extended from internal/harness's original):
-// this package imports ONLY contract types (vttv1), internal/harness,
-// internal/engine, the official MCP SDK, and stdlib — never
+// this package may import ONLY contract types (vttv1), internal/harness,
+// internal/engine (arrives with the read tools; today only transitively
+// via harness), the official MCP SDK, and stdlib — never
 // internal/gateway, internal/campaign, internal/identity, or internal/store
 // (.go-arch-lint.yml's mcp component enforces this, test files included).
 package mcp
@@ -60,12 +61,6 @@ const (
 	redialInitialBackoff = 100 * time.Millisecond
 	redialMaxBackoff     = 2 * time.Second
 )
-
-// errUnimplemented is Step 1's compiling-stub sentinel (ADR-009: every
-// method must return a real zero value/error, not panic, so the behavioral
-// RED in server_test.go/tools_test.go exercises real assertions instead of
-// a compile failure).
-var errUnimplemented = errors.New("mcp: unimplemented")
 
 // Config configures a Server. ToolsJSON is the raw committed contract/gen/
 // tools/tools.json bytes — Server never reads the filesystem itself (Task 3
@@ -148,15 +143,19 @@ func (s *Server) Run(ctx context.Context, transport mcpsdk.Transport) error {
 	}
 	s.setClient(client)
 
-	pumpCtx, cancelPump := context.WithCancel(ctx)
-	defer cancelPump()
-	go s.pump(pumpCtx)
-
+	// Registered BEFORE the pump so LIFO runs cancelPump first on return —
+	// deterministic shutdown: the pump is cancelled before its client
+	// closes (review finding: close-first allowed one spurious redial
+	// attempt on the stdio-EOF path).
 	defer func() {
 		if c := s.currentClient(); c != nil {
 			c.Close()
 		}
 	}()
+
+	pumpCtx, cancelPump := context.WithCancel(ctx)
+	defer cancelPump()
+	go s.pump(pumpCtx)
 
 	return s.mcp.Run(ctx, transport)
 }
