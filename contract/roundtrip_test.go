@@ -52,6 +52,12 @@ func TestRetractionEnvelopeRoundTrip(t *testing.T) {
 func TestClientCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "client_command.json", &vttv1.ClientCommand{})
 }
+func TestAbilityUsedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "ability_used_envelope.json", &vttv1.Envelope{})
+}
+func TestUseAbilityCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "use_ability_command.json", &vttv1.ClientCommand{})
+}
 func TestServerFrameResultRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_result.json", &vttv1.ServerFrame{})
 }

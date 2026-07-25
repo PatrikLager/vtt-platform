@@ -72,13 +72,20 @@ func requireManifestEntry(t *testing.T, message string) {
 
 // TestSchemaForProducesArrayItemsForRepeatedMessageField covers the
 // array/items shape itself (main.go's schemaFor, IsList branch):
-// AttackRolled.rolls ([]DieRoll) — the contract's only production repeated-
-// message field to date — must produce {"type":"array","items": <element
-// message schema>}, not a bare object or scalar. AttackRolled is an event,
-// not a command, so it has no toolgen manifest entry: this path is
-// otherwise entirely unexercised by TestToolsMatchGolden.
+// AbilityUsed.rolls ([]AbilityUsed.Roll) is the ruleset-interpreter
+// contract's repeated-message field this path exercises — a NESTED message
+// type (declared inside AbilityUsed itself) whose own fields include a
+// repeated SCALAR (results, []int32), so this single assertion covers both
+// "repeated message produces array/items of a full nested object schema"
+// and "that nested object schema itself correctly renders a repeated
+// scalar field" in one recursive pass. AbilityUsed is an event, not a
+// command, so it has no toolgen manifest entry: this path is otherwise
+// entirely unexercised by TestToolsMatchGolden. (Formerly exercised via
+// AttackRolled.rolls — swapped to AbilityUsed.rolls now that it exists, so
+// the newest production repeated-message field is the one load-bearing
+// here; AttackRolled.rolls remains structurally identical and untouched.)
 func TestSchemaForProducesArrayItemsForRepeatedMessageField(t *testing.T) {
-	got := schemaFor((&vttv1.AttackRolled{}).ProtoReflect().Descriptor())
+	got := schemaFor((&vttv1.AbilityUsed{}).ProtoReflect().Descriptor())
 	props, ok := got["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("want a properties map, got %#v", got["properties"])
@@ -92,10 +99,11 @@ func TestSchemaForProducesArrayItemsForRepeatedMessageField(t *testing.T) {
 		"items": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"die":    map[string]any{"type": "integer"},
-				"result": map[string]any{"type": "integer"},
+				"expression": map[string]any{"type": "string"},
+				"results":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}},
+				"total":      map[string]any{"type": "integer"},
 			},
-			"required": []any{"die", "result"},
+			"required": []any{"expression", "results", "total"},
 		},
 	}
 	if !reflect.DeepEqual(rolls, want) {

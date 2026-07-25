@@ -136,5 +136,30 @@
       },
       "required": ["fromSequence", "toSequence", "reason"]
     }
+  },
+  {
+    "name": "use_ability",
+    "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string" },
+        "abilityId": { "type": "string" },
+        "targetIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["actorId", "abilityId", "targetIds"]
+    }
+  },
+  {
+    "name": "remove_condition",
+    "description": "Remove a named condition from an actor (DM-ended durations).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string" },
+        "conditionId": { "type": "string" }
+      },
+      "required": ["actorId", "conditionId"]
+    }
   }
 ]

@@ -90,6 +90,36 @@ message EventsRetracted {
   string reason = 3;
 }
 
+message AbilityUsed {
+  string actor_id = 1;
+  string ability_id = 2;
+  repeated string target_ids = 3;
+  message Roll {
+    string expression = 1;
+    repeated int32 results = 2;
+    int32 total = 3;
+  }
+  repeated Roll rolls = 4;
+  string outcome_summary = 5;
+}
+message ResourceChanged {
+  string actor_id = 1;
+  string resource = 2;
+  int32 delta = 3;
+  int32 new_value = 4;
+  string reason = 5;
+}
+message ConditionApplied {
+  string actor_id = 1;
+  string condition_id = 2;
+  string source = 3;
+}
+message ConditionRemoved {
+  string actor_id = 1;
+  string condition_id = 2;
+  string reason = 3;
+}
+
 message Envelope {
   string event_id = 1;
   int64 sequence = 2;
@@ -107,5 +137,9 @@ message Envelope {
     SessionStarted session_started = 15;
     SessionEnded session_ended = 16;
     EventsRetracted events_retracted = 17;
+    AbilityUsed ability_used = 18;
+    ResourceChanged resource_changed = 19;
+    ConditionApplied condition_applied = 20;
+    ConditionRemoved condition_removed = 21;
   }
 }

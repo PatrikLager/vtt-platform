@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLoAgoNQ2xpZW50Q29tbWFuZBISCgpyZXF1ZXN0X2lkGAEgASgJEi4KCm1vdmVfdG9rZW4YCiABKAsyGC52dHQudjEuTW92ZVRva2VuUmVxdWVzdEgAEisKDGNyZWF0ZV9zY2VuZRgLIAEoCzITLnZ0dC52MS5DcmVhdGVTY2VuZUgAEiUKCWFkZF9hY3RvchgMIAEoCzIQLnZ0dC52MS5BZGRBY3RvckgAEikKC3BsYWNlX3Rva2VuGA0gASgLMhIudnR0LnYxLlBsYWNlVG9rZW5IABItCg1zdGFydF9zZXNzaW9uGA4gASgLMhQudnR0LnYxLlN0YXJ0U2Vzc2lvbkgAEikKC2VuZF9zZXNzaW9uGA8gASgLMhIudnR0LnYxLkVuZFNlc3Npb25IABIvCg5yZXRyYWN0X2V2ZW50cxgQIAEoCzIVLnZ0dC52MS5SZXRyYWN0RXZlbnRzSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiYgoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAQgcKBWZyYW1lQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIsgDCg1DbGllbnRDb21tYW5kEhIKCnJlcXVlc3RfaWQYASABKAkSLgoKbW92ZV90b2tlbhgKIAEoCzIYLnZ0dC52MS5Nb3ZlVG9rZW5SZXF1ZXN0SAASKwoMY3JlYXRlX3NjZW5lGAsgASgLMhMudnR0LnYxLkNyZWF0ZVNjZW5lSAASJQoJYWRkX2FjdG9yGAwgASgLMhAudnR0LnYxLkFkZEFjdG9ySAASKQoLcGxhY2VfdG9rZW4YDSABKAsyEi52dHQudjEuUGxhY2VUb2tlbkgAEi0KDXN0YXJ0X3Nlc3Npb24YDiABKAsyFC52dHQudjEuU3RhcnRTZXNzaW9uSAASKQoLZW5kX3Nlc3Npb24YDyABKAsyEi52dHQudjEuRW5kU2Vzc2lvbkgAEi8KDnJldHJhY3RfZXZlbnRzGBAgASgLMhUudnR0LnYxLlJldHJhY3RFdmVudHNIABIpCgt1c2VfYWJpbGl0eRgRIAEoCzISLnZ0dC52MS5Vc2VBYmlsaXR5SAASMwoQcmVtb3ZlX2NvbmRpdGlvbhgSIAEoCzIXLnZ0dC52MS5SZW1vdmVDb25kaXRpb25IAEIJCgdjb21tYW5kIlAKDUNvbW1hbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcnJvchgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoAyJiCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSABCBwoFZnJhbWVCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -212,6 +212,55 @@ export const RetractEventsSchema: GenMessage<RetractEvents> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 7);
 
 /**
+ * @generated from message vtt.v1.UseAbility
+ */
+export type UseAbility = Message<"vtt.v1.UseAbility"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string ability_id = 2;
+   */
+  abilityId: string;
+
+  /**
+   * @generated from field: repeated string target_ids = 3;
+   */
+  targetIds: string[];
+};
+
+/**
+ * Describes the message vtt.v1.UseAbility.
+ * Use `create(UseAbilitySchema)` to create a new message.
+ */
+export const UseAbilitySchema: GenMessage<UseAbility> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 8);
+
+/**
+ * @generated from message vtt.v1.RemoveCondition
+ */
+export type RemoveCondition = Message<"vtt.v1.RemoveCondition"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string condition_id = 2;
+   */
+  conditionId: string;
+};
+
+/**
+ * Describes the message vtt.v1.RemoveCondition.
+ * Use `create(RemoveConditionSchema)` to create a new message.
+ */
+export const RemoveConditionSchema: GenMessage<RemoveCondition> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 9);
+
+/**
  * @generated from message vtt.v1.ClientCommand
  */
 export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
@@ -265,6 +314,18 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
      */
     value: RetractEvents;
     case: "retractEvents";
+  } | {
+    /**
+     * @generated from field: vtt.v1.UseAbility use_ability = 17;
+     */
+    value: UseAbility;
+    case: "useAbility";
+  } | {
+    /**
+     * @generated from field: vtt.v1.RemoveCondition remove_condition = 18;
+     */
+    value: RemoveCondition;
+    case: "removeCondition";
   } | { case: undefined; value?: undefined };
 };
 
@@ -273,7 +334,7 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
  * Use `create(ClientCommandSchema)` to create a new message.
  */
 export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 8);
+  messageDesc(file_vtt_v1_commands, 10);
 
 /**
  * @generated from message vtt.v1.CommandResult
@@ -305,7 +366,7 @@ export type CommandResult = Message<"vtt.v1.CommandResult"> & {
  * Use `create(CommandResultSchema)` to create a new message.
  */
 export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 9);
+  messageDesc(file_vtt_v1_commands, 11);
 
 /**
  * The server->client frame; the oneof key is the frame discriminator.
@@ -336,5 +397,5 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 10);
+  messageDesc(file_vtt_v1_commands, 12);
 

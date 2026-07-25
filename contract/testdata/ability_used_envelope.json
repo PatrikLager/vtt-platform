@@ -1,0 +1,17 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V12",
+  "sequence": "44",
+  "occurredAt": "2026-07-25T10:15:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "agent",
+  "abilityUsed": {
+    "actorId": "tok-ursus",
+    "abilityId": "reckless-strike",
+    "targetIds": ["tok-goblin-2", "tok-goblin-3"],
+    "rolls": [
+      { "expression": "1d20+9", "results": [16], "total": 25 },
+      { "expression": "2d8+5", "results": [5, 7], "total": 17 }
+    ],
+    "outcomeSummary": "hit tok-goblin-3 for 17 damage; tok-goblin-2 unaffected"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "requestId": "req-01J9ZK8B2C3D4E5F6G7H8J9K0M",
+  "useAbility": {
+    "actorId": "tok-ursus",
+    "abilityId": "reckless-strike",
+    "targetIds": ["tok-goblin-2", "tok-goblin-3"]
+  }
+}
