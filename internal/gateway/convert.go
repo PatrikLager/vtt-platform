@@ -84,6 +84,24 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		}}
 	case *vttv1.ClientCommand_EndSession:
 		env.Payload = &vttv1.Envelope_SessionEnded{SessionEnded: &vttv1.SessionEnded{}}
+	case *vttv1.ClientCommand_RemoveCondition:
+		// use_ability does NOT flow through ToEvent (server.go's
+		// handleUseAbility routes it to rules.Resolve + campaign.AppendBatch
+		// instead, ruleset-interpreter Task 6) — it produces a whole ordered
+		// batch of events, not the single Envelope this function returns.
+		// remove_condition has no such batch: it is a single, direct
+		// ConditionRemoved, going through the SAME Authorize -> ToEvent ->
+		// campaign.Append path every other one-event command uses.
+		// engine.Apply's ConditionRemoved case (internal/engine/apply.go)
+		// already rejects an absent condition, and campaign.Append validates
+		// against a snapshot BEFORE persisting (internal/campaign/
+		// campaign.go) — so an absent condition surfaces as an ordinary
+		// ok=false CommandResult here, never a poisoned Campaign.
+		env.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{
+			ActorId:     c.RemoveCondition.GetActorId(),
+			ConditionId: c.RemoveCondition.GetConditionId(),
+			Reason:      "manual",
+		}}
 	default:
 		return nil, ErrUnknownCommand
 	}

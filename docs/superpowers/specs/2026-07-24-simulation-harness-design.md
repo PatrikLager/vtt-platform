@@ -153,3 +153,18 @@ No parallel scenario execution.
   mix component — decided during implementation, documented in the plan.
 - tokens.json format for live-mode runs — decided at plan time (trivial:
   name→token map).
+
+## 11. Amendment (2026-07-25, sub-project 5a merge)
+
+Scenario format gains:
+
+- **`"ruleset": "<id>"`** — optional top-level field. Self-contained
+  (`run`/`soak` without `--server`) boots and loads `rulesets/<id>`. Live
+  mode does NOT consult it — the operator starts the server itself with
+  `vtt serve --ruleset <dir>`.
+- **`use_ability` ok-steps are batch-aware:** `{"expect": {"ok": true}}`
+  against a `useAbility` command asserts the result is ok AND that ALL of
+  the ability's batch events are observed as a contiguous run starting at
+  the result's first sequence (5a's `AppendBatch` contract).
+- **Two new probe kinds:** `resourceAt` and `hasCondition` — growth of the
+  v1 probe list per §4's "growth is a spec amendment" clause.

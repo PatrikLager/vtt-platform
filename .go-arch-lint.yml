@@ -25,6 +25,12 @@ components:
   gateway:  { in: internal/gateway }
   harness:  { in: internal/harness }
   mcp:      { in: internal/mcp }
+  rules:    { in: internal/rules }
+  # internal/rules/conformance is its own component: go-arch-lint's `in:`
+  # match is non-recursive (a subdirectory isn't automatically covered by
+  # its parent's entry), and this subpackage's dependency shape genuinely
+  # differs from rules' own (it imports rules itself, which rules cannot).
+  conformance: { in: internal/rules/conformance }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -32,7 +38,11 @@ deps:
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway] }
+  # rules added Task 6 (ruleset-interpreter wiring): the gateway's
+  # use_ability handler calls rules.Resolve directly over an OPTIONAL
+  # server-config *rules.Ruleset (nil keeps every pre-Task-6 behavior
+  # unchanged — see gateway.Server.WithRuleset's doc comment).
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -42,4 +52,35 @@ deps:
   # store/campaign/gateway/identity forbidden here too, tests included. The
   # official Go MCP SDK is vendor (depOnAnyVendor: true above), unlisted.
   mcp:      { mayDependOn: [harness, engine, contract, mcp] }
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp] }
+  # internal/rules is the ruleset format/loader/expression-grammar package
+  # (ruleset-interpreter spec §5, task-4-brief.md): reads no other package's
+  # code yet — the engine/contract entries are pre-registered for Task 5's
+  # Resolve (pure function over engine.State + contract types); nothing else
+  # may import rules until Task 6 wires it into the gateway.
+  # deepScan: false — rules.Roller is a DELIBERATE extension-point
+  # interface (expr.go's doc comment: "production code gets a crypto-
+  # seeded implementation; tests use fixed/deterministic ones"): Eval and
+  # Resolve accept it and call .Roll() on it specifically so that ANY
+  # caller (conformance's fixture/table rollers today; a future gateway-
+  # side crypto-seeded implementation once Task 6 wires Resolve in) can
+  # supply a concrete implementation without rules importing them back.
+  # go-arch-lint's deep-scan heuristic treats "component X calls a method
+  # on an interface value whose concrete type is defined in component Y"
+  # as an implicit X-depends-on-Y edge — correct for accidental leakage,
+  # but a false positive for intentional dependency inversion via a
+  # narrow, purpose-built interface. The plain import graph (mayDependOn
+  # above) is untouched and still forbids rules from importing conformance
+  # or anything else — this override only silences the reverse-inference
+  # heuristic for rules' own files.
+  rules:    { mayDependOn: [engine, contract, rules], deepScan: false }
+  # internal/rules/conformance (Task 5, ruleset-interpreter spec §8) is the
+  # P4 proof harness: it drives rules.Load and rules.Resolve against any
+  # ruleset directory and needs engine.State to build the fixture actors
+  # Resolve reads — the same shape as rules' own pre-registered deps, plus
+  # rules itself (which rules cannot depend on).
+  conformance: { mayDependOn: [rules, engine, contract, conformance] }
+  # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
+  # call rules.Load directly (cmd composes; internal/mcp itself still may
+  # NOT import rules — its Config carries only the already-loaded guide
+  # string, so the P1 wire-client boundary above is untouched).
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules] }

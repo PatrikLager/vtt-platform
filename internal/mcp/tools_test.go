@@ -1,7 +1,7 @@
 package mcp_test
 
 // Generic-dispatch behavioral RED (task-1-brief.md Step 2): list_tools
-// exposes the 7 command tools from the committed tools.json by name; a
+// exposes the command tools from the committed tools.json by name; a
 // valid call wraps its JSON arguments as the protojson body of the matching
 // ClientCommand oneof field and reaches the fake wire with a fresh
 // request_id; an ok=false CommandResult surfaces as an MCP isError result
@@ -20,22 +20,26 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// wantCommandToolNames are the 7 oneof-field names in vttv1.ClientCommand's
+// wantCommandToolNames are the 9 oneof-field names in vttv1.ClientCommand's
 // "command" oneof, restated here (not derived from the SDK under test) so
 // this test pins the actual expected set rather than trivially re-deriving
-// whatever tools.go happened to register.
+// whatever tools.go happened to register. Grew from 7 to 9 with
+// use_ability/remove_condition (ruleset-interpreter sub-project 5a, Task 1
+// — contract's rules vocabulary).
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",
+	"use_ability", "remove_condition",
 }
 
-// This test scopes itself to "the 7 command tools are present by name" —
-// it deliberately does NOT assert the total tool count, since P7 Task 2
-// (read_tools.go) registers two more (get_state, get_events_since) into the
-// SAME tool table; TestListToolsReturnsNineToolsIncludingReadTools
-// (read_tools_test.go) owns the total-count-is-9 assertion for the full,
+// This test scopes itself to "the command tools are present by name" — it
+// deliberately does NOT assert the total tool count, since P7 Task 2
+// (read_tools.go) and Task 6 register three more (get_state,
+// get_events_since, get_ruleset_guide) into the SAME tool table;
+// TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools
+// (read_tools_test.go) owns the total-count assertion for the full,
 // current contract.
-func TestListToolsReturnsAllSevenCommandToolsByName(t *testing.T) {
+func TestListToolsReturnsAllCommandToolsByName(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
 	defer cleanup()

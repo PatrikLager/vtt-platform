@@ -1,0 +1,23 @@
+{
+  "name": "sober-up-removes-dazed",
+  "ability_id": "sober-up",
+  "scene": "tavern",
+  "actors": [
+    { "id": "brawler", "x": 0, "y": 0, "attributes": { "brawn": 3, "grit": 1 }, "resources": { "drink": { "current": 2, "max": 5 } } }
+  ],
+  "conditions": [{ "actor_id": "brawler", "condition_id": "dazed-by-ale" }],
+  "actor_id": "brawler",
+  "target_ids": ["brawler"],
+  "rolls": [],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "brawler",
+      "ability_id": "sober-up",
+      "target_ids": ["brawler"],
+      "outcome_summary": "Sober Up on brawler"
+    },
+    { "type": "ResourceChanged", "actor_id": "brawler", "resource": "drink", "delta": -2, "new_value": 0, "reason": "ability:sober-up:effect" },
+    { "type": "ConditionRemoved", "actor_id": "brawler", "condition_id": "dazed-by-ale", "reason": "threshold:drink" }
+  ]
+}

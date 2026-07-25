@@ -51,6 +51,17 @@ message RetractEvents {
   string reason = 3;
 }
 
+message UseAbility {
+  string actor_id = 1;
+  string ability_id = 2;
+  repeated string target_ids = 3;
+}
+
+message RemoveCondition {
+  string actor_id = 1;
+  string condition_id = 2;
+}
+
 message ClientCommand {
   string request_id = 1;
   oneof command {
@@ -61,6 +72,8 @@ message ClientCommand {
     StartSession start_session = 14;
     EndSession end_session = 15;
     RetractEvents retract_events = 16;
+    UseAbility use_ability = 17;
+    RemoveCondition remove_condition = 18;
   }
 }
 

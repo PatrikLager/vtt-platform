@@ -1,0 +1,11 @@
+{
+  "name": "poke-out-of-range",
+  "ability_id": "poke",
+  "actors": [
+    { "id": "caster", "x": 0, "y": 0, "attributes": { "str": 3 } },
+    { "id": "target", "x": 5, "y": 0, "attributes": { "def": 10 } }
+  ],
+  "actor_id": "caster",
+  "target_ids": ["target"],
+  "want_error": "out of range"
+}

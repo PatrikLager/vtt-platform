@@ -210,5 +210,50 @@
       "type": "object"
     },
     "name": "retract_events"
+  },
+  {
+    "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
+    "inputSchema": {
+      "properties": {
+        "abilityId": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "targetIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "actorId",
+        "abilityId",
+        "targetIds"
+      ],
+      "type": "object"
+    },
+    "name": "use_ability"
+  },
+  {
+    "description": "Remove a named condition from an actor (DM-ended durations).",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "conditionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "conditionId"
+      ],
+      "type": "object"
+    },
+    "name": "remove_condition"
   }
 ]

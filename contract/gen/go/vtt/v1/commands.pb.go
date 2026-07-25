@@ -464,6 +464,118 @@ func (x *RetractEvents) GetReason() string {
 	return ""
 }
 
+type UseAbility struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	AbilityId     string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
+	TargetIds     []string               `protobuf:"bytes,3,rep,name=target_ids,json=targetIds,proto3" json:"target_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UseAbility) Reset() {
+	*x = UseAbility{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UseAbility) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UseAbility) ProtoMessage() {}
+
+func (x *UseAbility) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UseAbility.ProtoReflect.Descriptor instead.
+func (*UseAbility) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UseAbility) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *UseAbility) GetAbilityId() string {
+	if x != nil {
+		return x.AbilityId
+	}
+	return ""
+}
+
+func (x *UseAbility) GetTargetIds() []string {
+	if x != nil {
+		return x.TargetIds
+	}
+	return nil
+}
+
+type RemoveCondition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ConditionId   string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveCondition) Reset() {
+	*x = RemoveCondition{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveCondition) ProtoMessage() {}
+
+func (x *RemoveCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveCondition.ProtoReflect.Descriptor instead.
+func (*RemoveCondition) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RemoveCondition) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *RemoveCondition) GetConditionId() string {
+	if x != nil {
+		return x.ConditionId
+	}
+	return ""
+}
+
 type ClientCommand struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -476,6 +588,8 @@ type ClientCommand struct {
 	//	*ClientCommand_StartSession
 	//	*ClientCommand_EndSession
 	//	*ClientCommand_RetractEvents
+	//	*ClientCommand_UseAbility
+	//	*ClientCommand_RemoveCondition
 	Command       isClientCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -483,7 +597,7 @@ type ClientCommand struct {
 
 func (x *ClientCommand) Reset() {
 	*x = ClientCommand{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[8]
+	mi := &file_vtt_v1_commands_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +609,7 @@ func (x *ClientCommand) String() string {
 func (*ClientCommand) ProtoMessage() {}
 
 func (x *ClientCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[8]
+	mi := &file_vtt_v1_commands_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +622,7 @@ func (x *ClientCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCommand.ProtoReflect.Descriptor instead.
 func (*ClientCommand) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{8}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ClientCommand) GetRequestId() string {
@@ -588,6 +702,24 @@ func (x *ClientCommand) GetRetractEvents() *RetractEvents {
 	return nil
 }
 
+func (x *ClientCommand) GetUseAbility() *UseAbility {
+	if x != nil {
+		if x, ok := x.Command.(*ClientCommand_UseAbility); ok {
+			return x.UseAbility
+		}
+	}
+	return nil
+}
+
+func (x *ClientCommand) GetRemoveCondition() *RemoveCondition {
+	if x != nil {
+		if x, ok := x.Command.(*ClientCommand_RemoveCondition); ok {
+			return x.RemoveCondition
+		}
+	}
+	return nil
+}
+
 type isClientCommand_Command interface {
 	isClientCommand_Command()
 }
@@ -620,6 +752,14 @@ type ClientCommand_RetractEvents struct {
 	RetractEvents *RetractEvents `protobuf:"bytes,16,opt,name=retract_events,json=retractEvents,proto3,oneof"`
 }
 
+type ClientCommand_UseAbility struct {
+	UseAbility *UseAbility `protobuf:"bytes,17,opt,name=use_ability,json=useAbility,proto3,oneof"`
+}
+
+type ClientCommand_RemoveCondition struct {
+	RemoveCondition *RemoveCondition `protobuf:"bytes,18,opt,name=remove_condition,json=removeCondition,proto3,oneof"`
+}
+
 func (*ClientCommand_MoveToken) isClientCommand_Command() {}
 
 func (*ClientCommand_CreateScene) isClientCommand_Command() {}
@@ -634,6 +774,10 @@ func (*ClientCommand_EndSession) isClientCommand_Command() {}
 
 func (*ClientCommand_RetractEvents) isClientCommand_Command() {}
 
+func (*ClientCommand_UseAbility) isClientCommand_Command() {}
+
+func (*ClientCommand_RemoveCondition) isClientCommand_Command() {}
+
 type CommandResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -646,7 +790,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[9]
+	mi := &file_vtt_v1_commands_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +802,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[9]
+	mi := &file_vtt_v1_commands_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +815,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{9}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CommandResult) GetRequestId() string {
@@ -716,7 +860,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[10]
+	mi := &file_vtt_v1_commands_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +872,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[10]
+	mi := &file_vtt_v1_commands_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +885,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{10}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ServerFrame) GetFrame() isServerFrame_Frame {
@@ -822,7 +966,17 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\rfrom_sequence\x18\x01 \x01(\x03R\ffromSequence\x12\x1f\n" +
 	"\vto_sequence\x18\x02 \x01(\x03R\n" +
 	"toSequence\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xca\x03\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"e\n" +
+	"\n" +
+	"UseAbility\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1d\n" +
+	"\n" +
+	"ability_id\x18\x02 \x01(\tR\tabilityId\x12\x1d\n" +
+	"\n" +
+	"target_ids\x18\x03 \x03(\tR\ttargetIds\"O\n" +
+	"\x0fRemoveCondition\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
+	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\"\xc7\x04\n" +
 	"\rClientCommand\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x129\n" +
@@ -836,7 +990,10 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\rstart_session\x18\x0e \x01(\v2\x14.vtt.v1.StartSessionH\x00R\fstartSession\x125\n" +
 	"\vend_session\x18\x0f \x01(\v2\x12.vtt.v1.EndSessionH\x00R\n" +
 	"endSession\x12>\n" +
-	"\x0eretract_events\x18\x10 \x01(\v2\x15.vtt.v1.RetractEventsH\x00R\rretractEventsB\t\n" +
+	"\x0eretract_events\x18\x10 \x01(\v2\x15.vtt.v1.RetractEventsH\x00R\rretractEvents\x125\n" +
+	"\vuse_ability\x18\x11 \x01(\v2\x12.vtt.v1.UseAbilityH\x00R\n" +
+	"useAbility\x12D\n" +
+	"\x10remove_condition\x18\x12 \x01(\v2\x17.vtt.v1.RemoveConditionH\x00R\x0fremoveConditionB\t\n" +
 	"\acommand\"p\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
@@ -861,7 +1018,7 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_commands_proto_rawDescData
 }
 
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_vtt_v1_commands_proto_goTypes = []any{
 	(*MoveTokenRequest)(nil),  // 0: vtt.v1.MoveTokenRequest
 	(*MoveTokenResponse)(nil), // 1: vtt.v1.MoveTokenResponse
@@ -871,19 +1028,21 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*StartSession)(nil),      // 5: vtt.v1.StartSession
 	(*EndSession)(nil),        // 6: vtt.v1.EndSession
 	(*RetractEvents)(nil),     // 7: vtt.v1.RetractEvents
-	(*ClientCommand)(nil),     // 8: vtt.v1.ClientCommand
-	(*CommandResult)(nil),     // 9: vtt.v1.CommandResult
-	(*ServerFrame)(nil),       // 10: vtt.v1.ServerFrame
-	(*GridPosition)(nil),      // 11: vtt.v1.GridPosition
-	(*TokenMoved)(nil),        // 12: vtt.v1.TokenMoved
-	(*Actor)(nil),             // 13: vtt.v1.Actor
-	(*Envelope)(nil),          // 14: vtt.v1.Envelope
+	(*UseAbility)(nil),        // 8: vtt.v1.UseAbility
+	(*RemoveCondition)(nil),   // 9: vtt.v1.RemoveCondition
+	(*ClientCommand)(nil),     // 10: vtt.v1.ClientCommand
+	(*CommandResult)(nil),     // 11: vtt.v1.CommandResult
+	(*ServerFrame)(nil),       // 12: vtt.v1.ServerFrame
+	(*GridPosition)(nil),      // 13: vtt.v1.GridPosition
+	(*TokenMoved)(nil),        // 14: vtt.v1.TokenMoved
+	(*Actor)(nil),             // 15: vtt.v1.Actor
+	(*Envelope)(nil),          // 16: vtt.v1.Envelope
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	11, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	12, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	13, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	11, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	13, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	14, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	15, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	13, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
 	0,  // 4: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
 	2,  // 5: vtt.v1.ClientCommand.create_scene:type_name -> vtt.v1.CreateScene
 	3,  // 6: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
@@ -891,13 +1050,15 @@ var file_vtt_v1_commands_proto_depIdxs = []int32{
 	5,  // 8: vtt.v1.ClientCommand.start_session:type_name -> vtt.v1.StartSession
 	6,  // 9: vtt.v1.ClientCommand.end_session:type_name -> vtt.v1.EndSession
 	7,  // 10: vtt.v1.ClientCommand.retract_events:type_name -> vtt.v1.RetractEvents
-	9,  // 11: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	14, // 12: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	8,  // 11: vtt.v1.ClientCommand.use_ability:type_name -> vtt.v1.UseAbility
+	9,  // 12: vtt.v1.ClientCommand.remove_condition:type_name -> vtt.v1.RemoveCondition
+	11, // 13: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	16, // 14: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -907,7 +1068,7 @@ func file_vtt_v1_commands_proto_init() {
 	}
 	file_vtt_v1_events_proto_init()
 	file_vtt_v1_commands_proto_msgTypes[0].OneofWrappers = []any{}
-	file_vtt_v1_commands_proto_msgTypes[8].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[10].OneofWrappers = []any{
 		(*ClientCommand_MoveToken)(nil),
 		(*ClientCommand_CreateScene)(nil),
 		(*ClientCommand_AddActor)(nil),
@@ -915,8 +1076,10 @@ func file_vtt_v1_commands_proto_init() {
 		(*ClientCommand_StartSession)(nil),
 		(*ClientCommand_EndSession)(nil),
 		(*ClientCommand_RetractEvents)(nil),
+		(*ClientCommand_UseAbility)(nil),
+		(*ClientCommand_RemoveCondition)(nil),
 	}
-	file_vtt_v1_commands_proto_msgTypes[10].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[12].OneofWrappers = []any{
 		(*ServerFrame_Result)(nil),
 		(*ServerFrame_Event)(nil),
 	}
@@ -926,7 +1089,7 @@ func file_vtt_v1_commands_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

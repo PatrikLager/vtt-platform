@@ -14,8 +14,8 @@ porting target. The defining feature: **an LLM is a first-class participant at t
 up to and including acting as the Dungeon Master — interacting through the same APIs as every
 human client.
 
-Game systems are pluggable **rule modules**: D&D 4.5e is the first, but the engine is built
-so a RuneScape-flavored or Middle-earth module can be added without engine changes.
+Game systems are pluggable **rulesets**: D&D 4.5e is the first, but the engine is built
+so a RuneScape-flavored or Middle-earth ruleset can be added without engine changes.
 
 Must-have modern features beyond the LLM DM:
 
@@ -27,14 +27,14 @@ Must-have modern features beyond the LLM DM:
 
 **Audience (assumption):** self-hosted for the owner's own table first. A future public
 release is not planned for, but nothing in the design forecloses it (no hardcoded campaign
-data, clean module boundary).
+data, clean ruleset boundary).
 
 ## 2. Non-Goals
 
 - **No feature parity race with Foundry VTT.** Its canvas polish, dynamic lighting engine,
   and content ecosystem are a decade of work; we compete on architecture, not breadth.
 - **No embedded macro language.** MTScript-class limitations (nesting caps, CSV state,
-  untestability) must not be recreated. Extensibility comes from rule-module data and the
+  untestability) must not be recreated. Extensibility comes from ruleset data and the
   public API, never from an in-app scripting layer.
 - **No porting of rule-framework code.** The TypeScript rule-framework validated ideas
   (declarative templates, conditions, testing discipline) under MTScript's constraints; the
@@ -49,16 +49,16 @@ reason this platform exists.
   condition, reveal fog, narrate) is a structured, permission-checked API operation with a
   subscribeable event stream. The human UI is just another API client. The LLM gateway falls
   out of the API; it is never a side channel.
-- **P2 — Rules as declarative data.** Game logic lives in rule-module data interpreted by
+- **P2 — Rules as declarative data.** Game logic lives in ruleset data interpreted by
   one engine. No game-system concept appears in engine code. Rules are testable, diffable,
   hot-reloadable, and LLM-legible in both directions (the AI DM can read a power to
   understand it and write a new one as data mid-session).
 - **P3 — Event-sourced state.** The append-only game log is the source of truth; current
   state is derived. This yields undo, session replay, spectator catch-up, auditability
   ("why is my HP 12?"), and a perfect LLM context feed.
-- **P4 — Engine ↔ rule-module boundary.** The engine knows actors, scenes, turns, effects,
+- **P4 — Engine ↔ ruleset boundary.** The engine knows actors, scenes, turns, effects,
   dice — never healing surges. The boundary is proven by a deliberately tiny second "toy"
-  module that must pass the same conformance suite as 4.5e without any engine change.
+  ruleset that must pass the same conformance suite as 4.5e without any engine change.
 
 **Meta-pillar (from ckeletin-go): enforcement by automation.** Every pillar has a
 machine-checkable guard (Section 8). Unenforced rules erode.
@@ -72,8 +72,8 @@ schema-generated contract.
 ┌────────────────────────── Go Server (auditable core) ──────────────────────────┐
 │  Event Store (SQLite)   append-only event log; state derived, never mutated    │
 │  Game Engine            state derivation, scene/turn lifecycle                 │
-│  Rules Interpreter      executes rule-module DATA (no game logic in Go)        │
-│  Module Loader          loads rule modules: schemas + content + LLM context    │
+│  Rules Interpreter      executes ruleset DATA (no game logic in Go)            │
+│  Ruleset Loader         loads rulesets: schemas + content + LLM context        │
 │  World Store            journals, NPCs, locations, plots — structured,         │
 │                         versioned, LLM-read/writable                           │
 │  Asset Service          maps/portraits/audio, incl. AI-generated media         │
@@ -100,8 +100,8 @@ CI regenerates from schemas and fails on drift.
   state. Subscriptions fan out events to connected clients (human and LLM alike).
 - **Game engine:** derives current state from the log; owns generic concepts only —
   actors, tokens, scenes, grids, turn framework, effects framework, dice, chat.
-- **Rules interpreter:** the single execution point for rule-module data. Turn *structure*
-  is module-defined (a module may schedule real-time ticks instead of rounds; the engine
+- **Rules interpreter:** the single execution point for ruleset data. Turn *structure*
+  is ruleset-defined (a ruleset may schedule real-time ticks instead of rounds; the engine
   just processes events).
 - **Permissions:** four roles — DM, player, spectator, **agent**. The agent role makes
   "LLM as full DM" a permissions question, not an integration hack: an agent can hold DM
@@ -113,7 +113,7 @@ CI regenerates from schemas and fails on drift.
 
 Deliberately thin: renders state, submits intents. No rules execution client-side; the
 code the owner cannot audit is also the code that cannot corrupt a campaign. PixiJS for
-map/token rendering; character sheets generated from module schemas; responsive,
+map/token rendering; character sheets generated from ruleset schemas; responsive,
 touch-first layout (tablet/phone play is a launch requirement, not a retrofit).
 Optimistic-UI is out of scope initially — round-trips to a LAN/VPS server are fine for
 turn-based play.
@@ -128,26 +128,29 @@ events feed TTS in the client — "events carry narration" is the only requireme
 ### 4.5 Server binary and CLI
 
 The server ships as a single binary that is itself a CLI: `vtt serve` plus
-subcommands (`vtt version`, `vtt module validate`, `vtt campaign export`, …).
+subcommands (`vtt version`, `vtt ruleset validate`, `vtt campaign export`, …).
 The ckeletin-go CLI scaffold (ultra-thin commands, Viper config precedence) is
 a candidate for this command shell — decided in sub-project 3. **Guardrail:**
 every subcommand that touches game state is an API *client*; only pre-runtime
 operations (`serve`, `migrate`) may bypass the API. The CLI must never become
 a side door past P1.
 
-### 4.6 Rule modules
+### 4.6 Rulesets
 
-A module is a data package containing:
+*(Amendment 2026-07-25, sub-project 5a merge: renamed from "rule modules" per the
+binding three-layer terminology — see `2026-07-25-ruleset-interpreter-design.md` §2.4.)*
+
+A ruleset is a data package containing:
 
 - **Schemas** — character sheet shape, power/item/spell definitions
 - **Rules logic as data** — how attacks resolve, action economy, defenses
 - **Content** — conditions, powers, monsters, equipment
 - **Sheet UI descriptors** — how humans view/edit system data
 - **LLM affordances** — tool descriptions and rules context that teach the AI DM to run
-  this system (install the 4.5e module and the LLM knows "1d20 + STR vs. AC" and what
+  this system (install the 4.5e ruleset and the LLM knows "1d20 + STR vs. AC" and what
   Dazed does)
 
-First real module: minimal D&D 4.5e. Boundary proof: a toy skirmish module (a weekend's
+First real ruleset: minimal D&D 4.5e. Boundary proof: a toy skirmish ruleset (a weekend's
 work) passing the same conformance suite with zero engine changes.
 
 ## 5. Build Order (Section B) — Foundations First
@@ -168,8 +171,8 @@ Each sub-project gets its own design → plan → implement → review cycle:
 4. **Simulation harness** — built alongside 2–3: scripted headless players driving the
    real API, realized as a CLI API client (`vtt client --script`, `vtt events tail`,
    `vtt state dump`) that doubles as debug tooling and the first working proof of P1.
-5. **Module loader & rules interpreter** — module package format, minimal 4.5e module,
-   toy module + conformance suite.
+5. **Ruleset loader & rules interpreter** — ruleset package format, minimal 4.5e ruleset,
+   toy ruleset + conformance suite.
 6. **MCP/LLM gateway** — tools from schemas, event-stream context feed, agent-role
    enforcement.
 7. **Client foundations** — thin shell: map rendering, tokens, chat, schema-driven
@@ -177,10 +180,10 @@ Each sub-project gets its own design → plan → implement → review cycle:
 8. **World layer** — campaign wiki as structured, LLM-read/writable data.
 9. **Asset service & AI content generation** — media storage, generation hooks.
 
-Then feature buildout, each its own cycle: full 4.5e module, voice pipeline, polish.
+Then feature buildout, each its own cycle: full 4.5e ruleset, voice pipeline, polish.
 
 **Foundations exit criteria:** a full simulated combat encounter runs headlessly through
-the real API (harness as both DM-agent and players); the toy module passes conformance;
+the real API (harness as both DM-agent and players); the toy ruleset passes conformance;
 `task check` is green with all Section 8 gates active.
 
 ## 6. Working Model (Section C)
@@ -218,17 +221,17 @@ Adopted from ckeletin-go's discipline layer (its CLI scaffold is not used):
   no layer skipping; only the event-application package writes state.
 - **semgrep pillar guards:**
   - P2/P4: game-system vocabulary (`healingSurge`, `dailyPower`, `fortitude`, …) is
-    forbidden in engine packages — banned-word list maintained alongside the 4.5e module.
+    forbidden in engine packages — banned-word list maintained alongside the 4.5e ruleset.
   - P3: direct state writes outside the event-application package are forbidden.
 - **Contract drift gate:** CI regenerates all code from schemas and fails on diff.
-- **Module conformance gate:** 4.5e and the toy module pass the same suite in CI, forever.
+- **Ruleset conformance gate:** 4.5e and the toy ruleset pass the same suite in CI, forever.
 - **Coverage gate:** ≥85% on the Go core, race detector on.
 - **ADR discipline:** decisions live in `docs/adr/`, machine-checkable where possible.
   Founding ADRs, recorded on repo creation:
   - ADR-001: API-first headless core (P1)
   - ADR-002: Rules as declarative data (P2)
   - ADR-003: Event-sourced state (P3)
-  - ADR-004: Engine ↔ rule-module boundary (P4)
+  - ADR-004: Engine ↔ ruleset boundary (P4)
   - ADR-005: Two-layer stack — Go server, thin TS client, schema-generated contract
   - ADR-006: Foundations-first build order with simulation harness
 - **AI configuration stack:** AGENTS.md + CLAUDE.md rules cascade + hooks, so the

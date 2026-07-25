@@ -164,6 +164,81 @@ func TestUndoOnEmptyLogRejectsGracefully(t *testing.T) {
 	}
 }
 
+// TestUndoRetractsWholeAppendBatchRange proves the existing Undo range
+// machinery retracts a batch's contiguous sequence run WITHOUT any
+// modification: append a 3-event batch, capture the pre-batch state, undo
+// the batch's whole [firstSeq, firstSeq+2] range in one call, and assert
+// the resulting state equals the pre-batch snapshot and the marker's own
+// FromSequence/ToSequence cover exactly the batch's range.
+func TestUndoRetractsWholeAppendBatchRange(t *testing.T) {
+	c := openTemp(t)
+	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "n"}))
+	must(t, c, cenv(nextID(), &vttv1.SceneCreated{
+		SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10,
+	}))
+
+	before := c.State()
+
+	// The batch spans the rules event family too (ResourceChanged +
+	// ConditionApplied), so undoing the whole range and rebuilding must
+	// restore Resources AND Conditions to their pre-batch state — pinned by
+	// statesEqual, which now compares Conditions (F9).
+	envs := []*vttv1.Envelope{
+		cenv(nextID(), &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: "a1", Name: "Hero", ModuleId: "m",
+			Resources: map[string]*vttv1.Resource{"vigor": {Current: 3, Max: 10}},
+		}}),
+		cenv(nextID(), &vttv1.TokenPlaced{
+			TokenId: "t1", SceneId: "scn", ActorId: "a1",
+			Position: &vttv1.GridPosition{X: 3, Y: 7},
+		}),
+		cenv(nextID(), &vttv1.ResourceChanged{
+			ActorId: "a1", Resource: "vigor", Delta: 2, NewValue: 5, Reason: "ability:x:hit",
+		}),
+		cenv(nextID(), &vttv1.ConditionApplied{
+			ActorId: "a1", ConditionId: "marked", Source: "threshold:vigor",
+		}),
+	}
+	firstSeq, err := c.AppendBatch(envs)
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	lastSeq := envs[len(envs)-1].Sequence
+
+	ch, cancel, err := c.Subscribe(lastSeq, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+
+	markerID := nextID()
+	if _, err := c.Undo(firstSeq, lastSeq, "retract whole batch", markerID, "dm", "test-participant"); err != nil {
+		t.Fatalf("Undo(batch range): %v", err)
+	}
+
+	after := c.State()
+	if !statesEqual(before, after) {
+		t.Fatalf("state after undoing the whole batch != pre-batch state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+
+	select {
+	case got := <-ch:
+		if got.EventId != markerID {
+			t.Fatalf("marker event id: got %s, want %s", got.EventId, markerID)
+		}
+		marker, ok := got.Payload.(*vttv1.Envelope_EventsRetracted)
+		if !ok {
+			t.Fatalf("want EventsRetracted payload, got %T", got.Payload)
+		}
+		if marker.EventsRetracted.FromSequence != firstSeq || marker.EventsRetracted.ToSequence != lastSeq {
+			t.Fatalf("marker range: got [%d,%d], want [%d,%d] (exactly the batch's range)",
+				marker.EventsRetracted.FromSequence, marker.EventsRetracted.ToSequence, firstSeq, lastSeq)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for subscriber to receive retraction marker")
+	}
+}
+
 // TestUndoSubscriberReceivesRetractionMarker covers
 // subscriber-sees-the-marker: a subscriber caught up to the pre-undo log
 // receives the EventsRetracted envelope itself as a live event.

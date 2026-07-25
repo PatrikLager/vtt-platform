@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi2gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIlcKDFNjZW5lQ3JlYXRlZBIQCghzY2VuZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCmdyaWRfd2lkdGgYAyABKAUSEwoLZ3JpZF9oZWlnaHQYBCABKAUiKgoKQWN0b3JBZGRlZBIcCgVhY3RvchgBIAEoCzINLnZ0dC52MS5BY3RvciJrCgtUb2tlblBsYWNlZBIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHgoOU2Vzc2lvblN0YXJ0ZWQSDAoEbmFtZRgBIAEoCSIOCgxTZXNzaW9uRW5kZWQiTQoPRXZlbnRzUmV0cmFjdGVkEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIqIECghFbnZlbG9wZRIQCghldmVudF9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoAxIvCgtvY2N1cnJlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKc2Vzc2lvbl9pZBgEIAEoCRISCgphY3Rvcl9yb2xlGAUgASgJEhYKDnBhcnRpY2lwYW50X2lkGAYgASgJEikKC3Rva2VuX21vdmVkGAogASgLMhIudnR0LnYxLlRva2VuTW92ZWRIABItCg1hdHRhY2tfcm9sbGVkGAsgASgLMhQudnR0LnYxLkF0dGFja1JvbGxlZEgAEi0KDXNjZW5lX2NyZWF0ZWQYDCABKAsyFC52dHQudjEuU2NlbmVDcmVhdGVkSAASKQoLYWN0b3JfYWRkZWQYDSABKAsyEi52dHQudjEuQWN0b3JBZGRlZEgAEisKDHRva2VuX3BsYWNlZBgOIAEoCzITLnZ0dC52MS5Ub2tlblBsYWNlZEgAEjEKD3Nlc3Npb25fc3RhcnRlZBgPIAEoCzIWLnZ0dC52MS5TZXNzaW9uU3RhcnRlZEgAEi0KDXNlc3Npb25fZW5kZWQYECABKAsyFC52dHQudjEuU2Vzc2lvbkVuZGVkSAASMwoQZXZlbnRzX3JldHJhY3RlZBgRIAEoCzIXLnZ0dC52MS5FdmVudHNSZXRyYWN0ZWRIAEIJCgdwYXlsb2FkQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi2gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIlcKDFNjZW5lQ3JlYXRlZBIQCghzY2VuZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCmdyaWRfd2lkdGgYAyABKAUSEwoLZ3JpZF9oZWlnaHQYBCABKAUiKgoKQWN0b3JBZGRlZBIcCgVhY3RvchgBIAEoCzINLnZ0dC52MS5BY3RvciJrCgtUb2tlblBsYWNlZBIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHgoOU2Vzc2lvblN0YXJ0ZWQSDAoEbmFtZRgBIAEoCSIOCgxTZXNzaW9uRW5kZWQiTQoPRXZlbnRzUmV0cmFjdGVkEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIsUBCgtBYmlsaXR5VXNlZBIQCghhY3Rvcl9pZBgBIAEoCRISCgphYmlsaXR5X2lkGAIgASgJEhIKCnRhcmdldF9pZHMYAyADKAkSJwoFcm9sbHMYBCADKAsyGC52dHQudjEuQWJpbGl0eVVzZWQuUm9sbBIXCg9vdXRjb21lX3N1bW1hcnkYBSABKAkaOgoEUm9sbBISCgpleHByZXNzaW9uGAEgASgJEg8KB3Jlc3VsdHMYAiADKAUSDQoFdG90YWwYAyABKAUiZwoPUmVzb3VyY2VDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg0KBWRlbHRhGAMgASgFEhEKCW5ld192YWx1ZRgEIAEoBRIOCgZyZWFzb24YBSABKAkiSgoQQ29uZGl0aW9uQXBwbGllZBIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkSDgoGc291cmNlGAMgASgJIkoKEENvbmRpdGlvblJlbW92ZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSLyBQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -380,6 +380,161 @@ export const EventsRetractedSchema: GenMessage<EventsRetracted> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 12);
 
 /**
+ * @generated from message vtt.v1.AbilityUsed
+ */
+export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string ability_id = 2;
+   */
+  abilityId: string;
+
+  /**
+   * @generated from field: repeated string target_ids = 3;
+   */
+  targetIds: string[];
+
+  /**
+   * @generated from field: repeated vtt.v1.AbilityUsed.Roll rolls = 4;
+   */
+  rolls: AbilityUsed_Roll[];
+
+  /**
+   * @generated from field: string outcome_summary = 5;
+   */
+  outcomeSummary: string;
+};
+
+/**
+ * Describes the message vtt.v1.AbilityUsed.
+ * Use `create(AbilityUsedSchema)` to create a new message.
+ */
+export const AbilityUsedSchema: GenMessage<AbilityUsed> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 13);
+
+/**
+ * @generated from message vtt.v1.AbilityUsed.Roll
+ */
+export type AbilityUsed_Roll = Message<"vtt.v1.AbilityUsed.Roll"> & {
+  /**
+   * @generated from field: string expression = 1;
+   */
+  expression: string;
+
+  /**
+   * @generated from field: repeated int32 results = 2;
+   */
+  results: number[];
+
+  /**
+   * @generated from field: int32 total = 3;
+   */
+  total: number;
+};
+
+/**
+ * Describes the message vtt.v1.AbilityUsed.Roll.
+ * Use `create(AbilityUsed_RollSchema)` to create a new message.
+ */
+export const AbilityUsed_RollSchema: GenMessage<AbilityUsed_Roll> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 13, 0);
+
+/**
+ * @generated from message vtt.v1.ResourceChanged
+ */
+export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string resource = 2;
+   */
+  resource: string;
+
+  /**
+   * @generated from field: int32 delta = 3;
+   */
+  delta: number;
+
+  /**
+   * @generated from field: int32 new_value = 4;
+   */
+  newValue: number;
+
+  /**
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message vtt.v1.ResourceChanged.
+ * Use `create(ResourceChangedSchema)` to create a new message.
+ */
+export const ResourceChangedSchema: GenMessage<ResourceChanged> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 14);
+
+/**
+ * @generated from message vtt.v1.ConditionApplied
+ */
+export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string condition_id = 2;
+   */
+  conditionId: string;
+
+  /**
+   * @generated from field: string source = 3;
+   */
+  source: string;
+};
+
+/**
+ * Describes the message vtt.v1.ConditionApplied.
+ * Use `create(ConditionAppliedSchema)` to create a new message.
+ */
+export const ConditionAppliedSchema: GenMessage<ConditionApplied> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 15);
+
+/**
+ * @generated from message vtt.v1.ConditionRemoved
+ */
+export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string condition_id = 2;
+   */
+  conditionId: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message vtt.v1.ConditionRemoved.
+ * Use `create(ConditionRemovedSchema)` to create a new message.
+ */
+export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 16);
+
+/**
  * @generated from message vtt.v1.Envelope
  */
 export type Envelope = Message<"vtt.v1.Envelope"> & {
@@ -466,6 +621,30 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: EventsRetracted;
     case: "eventsRetracted";
+  } | {
+    /**
+     * @generated from field: vtt.v1.AbilityUsed ability_used = 18;
+     */
+    value: AbilityUsed;
+    case: "abilityUsed";
+  } | {
+    /**
+     * @generated from field: vtt.v1.ResourceChanged resource_changed = 19;
+     */
+    value: ResourceChanged;
+    case: "resourceChanged";
+  } | {
+    /**
+     * @generated from field: vtt.v1.ConditionApplied condition_applied = 20;
+     */
+    value: ConditionApplied;
+    case: "conditionApplied";
+  } | {
+    /**
+     * @generated from field: vtt.v1.ConditionRemoved condition_removed = 21;
+     */
+    value: ConditionRemoved;
+    case: "conditionRemoved";
   } | { case: undefined; value?: undefined };
 };
 
@@ -474,5 +653,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13);
+  messageDesc(file_vtt_v1_events, 17);
 

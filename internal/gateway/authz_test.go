@@ -48,13 +48,36 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
 			RetractEvents: &vttv1.RetractEvents{FromSequence: 1, ToSequence: 1, Reason: "r"},
 		}}
+	case "use_ability":
+		return useAbilityCmd("a1")
+	case "remove_condition":
+		return removeConditionCmd("a1")
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
 	}
 }
 
-// authzCase is one cell of the 7 commands x 4 roles authorization matrix.
+// useAbilityCmd builds a UseAbility ClientCommand acting AS actorID,
+// self-targeting (a trivially valid target list for authz purposes —
+// Authorize never checks ability/target validity, only role and actor
+// ownership; that deeper validation is rules.Resolve's job, ruleset-
+// interpreter Task 6).
+func useAbilityCmd(actorID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UseAbility{
+		UseAbility: &vttv1.UseAbility{ActorId: actorID, AbilityId: "jab", TargetIds: []string{actorID}},
+	}}
+}
+
+// removeConditionCmd builds a RemoveCondition ClientCommand acting AS
+// actorID.
+func removeConditionCmd(actorID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveCondition{
+		RemoveCondition: &vttv1.RemoveCondition{ActorId: actorID, ConditionId: "dazed"},
+	}}
+}
+
+// authzCase is one cell of the 9 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -64,11 +87,14 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 28-cell matrix (spec §4): every command against
-// every one of the four roles. move_token/player is TRUE here because the
-// shared fixture in TestAuthorizeTableAllCommandsAllRoles gives participant
-// "p-1" ownership of token "t1" — the table alone allows it, and the
-// dedicated ownership tests below independently prove the additional check.
+// authzCases is the full 36-cell matrix (spec §4, grown from 28 by
+// ruleset-interpreter Task 6's use_ability/remove_condition rows): every
+// command against every one of the four roles. move_token/player,
+// use_ability/player, and remove_condition/player are all TRUE here
+// because the shared fixture in TestAuthorizeTableAllCommandsAllRoles gives
+// participant "p-1" ownership of actor "a1" (and its token "t1") — the
+// table alone allows it, and the dedicated ownership tests below
+// independently prove each additional check.
 var authzCases = []authzCase{
 	{"move_token", identity.RoleDM, true},
 	{"move_token", identity.RoleAgent, true},
@@ -104,11 +130,22 @@ var authzCases = []authzCase{
 	{"retract_events", identity.RoleAgent, true},
 	{"retract_events", identity.RolePlayer, false},
 	{"retract_events", identity.RoleSpectator, false},
+
+	{"use_ability", identity.RoleDM, true},
+	{"use_ability", identity.RoleAgent, true},
+	{"use_ability", identity.RolePlayer, true},
+	{"use_ability", identity.RoleSpectator, false},
+
+	{"remove_condition", identity.RoleDM, true},
+	{"remove_condition", identity.RoleAgent, true},
+	{"remove_condition", identity.RolePlayer, true},
+	{"remove_condition", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
 // participant "p-1" and owns token "t1" — the shape the table-driven test's
-// move_token/player cell needs to legitimately come out true.
+// move_token/use_ability/remove_condition player cells need to legitimately
+// come out true.
 func ownershipFixture() *engine.State {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "p-1"}
@@ -117,8 +154,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 28 {
-		t.Fatalf("authzCases has %d entries, want 28 (7 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 36 {
+		t.Fatalf("authzCases has %d entries, want 36 (9 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -168,6 +205,62 @@ func TestAuthorizePlayerUnknownTokenDenied(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("no-such-token"), st); err == nil {
 		t.Fatal("want error moving an unknown token")
+	}
+}
+
+// --- use_ability / remove_condition actor ownership (Task 6) --------------
+// Same shape as the move_token ownership tests above, checked against
+// Actor.controller_id directly (no token indirection) — see
+// authorizeActorOwnership's doc comment.
+
+func TestAuthorizePlayerUseAbilityOwnActorOK(t *testing.T) {
+	st := ownershipFixture()
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err != nil {
+		t.Fatalf("want nil error using an ability as one's own controlled actor, got %v", err)
+	}
+}
+
+func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "someone-else"}
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err == nil {
+		t.Fatal("want error using an ability as an actor controlled by another participant")
+	}
+}
+
+func TestAuthorizePlayerUseAbilityControllerlessActorDenied(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero"} // ControllerId empty = DM/agent only
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err == nil {
+		t.Fatal("want error using an ability as a controllerless actor")
+	}
+}
+
+func TestAuthorizePlayerUseAbilityUnknownActorDenied(t *testing.T) {
+	st := engine.NewState()
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, useAbilityCmd("no-such-actor"), st); err == nil {
+		t.Fatal("want error using an ability as an unknown actor")
+	}
+}
+
+func TestAuthorizePlayerRemoveConditionOwnActorOK(t *testing.T) {
+	st := ownershipFixture()
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, removeConditionCmd("a1"), st); err != nil {
+		t.Fatalf("want nil error removing a condition from one's own controlled actor, got %v", err)
+	}
+}
+
+func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "someone-else"}
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, removeConditionCmd("a1"), st); err == nil {
+		t.Fatal("want error removing a condition from an actor controlled by another participant")
 	}
 }
 

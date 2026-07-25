@@ -107,6 +107,18 @@ var manifest = []toolSpec{
 		description: "Retract a range of events from the record with a stated reason.",
 		descriptor:  (&vttv1.RetractEvents{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.UseAbility",
+		name:        "use_ability",
+		description: "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
+		descriptor:  (&vttv1.UseAbility{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.RemoveCondition",
+		name:        "remove_condition",
+		description: "Remove a named condition from an actor (DM-ended durations).",
+		descriptor:  (&vttv1.RemoveCondition{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

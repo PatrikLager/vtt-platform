@@ -80,10 +80,24 @@ var harnessDial = harness.Dial
 // tools/tools.json bytes — Server never reads the filesystem itself (Task 3
 // supplies it via go:embed from cmd/vtt so a single binary needs no sidecar
 // file).
+//
+// RulesetGuide is OPTIONAL (ruleset-interpreter Task 6): the ALREADY-LOADED
+// contents of a ruleset's guide.md, or "" if no --ruleset flag was given to
+// `vtt mcp`. This package never imports internal/rules itself — the P1 wire-
+// client boundary (this file's own package doc comment) forbids it, and
+// the wire contract has no server-side "fetch the guide" command/frame to
+// dial instead (server-authoritative guide delivery is a later-plan
+// candidate — see the task report). cmd/vtt is the one place already
+// wired to call rules.Load (mirroring `vtt serve --ruleset`'s own boot-time
+// load, mcp.go), so it validates the directory at boot (a bad --ruleset
+// fails loud immediately, exactly like `vtt serve`) and hands this package
+// only the guide TEXT — never a directory path, never the loaded Ruleset
+// struct itself.
 type Config struct {
-	WSURL     string
-	Token     string
-	ToolsJSON []byte
+	WSURL        string
+	Token        string
+	ToolsJSON    []byte
+	RulesetGuide string
 }
 
 // Server is the MCP server core: session lifecycle plus generic command
@@ -154,6 +168,11 @@ func New(cfg Config) (*Server, error) {
 	// get_state / get_events_since (read_tools.go): registered in the same
 	// tool table as the seven generic command tools above (spec §4).
 	s.registerReadTools()
+
+	// get_ruleset_guide (ruleset-interpreter Task 6, guide_tool.go):
+	// registered in the SAME tool table, bringing the count to 12 (9
+	// generic command tools + get_state + get_events_since + this one).
+	s.registerGuideTool()
 
 	return s, nil
 }

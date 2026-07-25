@@ -248,10 +248,13 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 	}
 }
 
-// TestListToolsReturnsNineToolsIncludingReadTools covers the top-level
-// contract: get_state and get_events_since land in the SAME tool table as
-// the seven generic command tools, bringing list_tools to exactly 9.
-func TestListToolsReturnsNineToolsIncludingReadTools(t *testing.T) {
+// TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools covers the
+// top-level contract: get_state, get_events_since, and get_ruleset_guide
+// land in the SAME tool table as the nine generic command tools
+// (wantCommandToolNames — grew from 7 to 9 with use_ability/
+// remove_condition, ruleset-interpreter sub-project 5a Task 1),
+// bringing list_tools to exactly 12 (Task 6 adds get_ruleset_guide).
+func TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
 	defer cleanup()
@@ -267,7 +270,7 @@ func TestListToolsReturnsNineToolsIncludingReadTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since")
+	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
 	}

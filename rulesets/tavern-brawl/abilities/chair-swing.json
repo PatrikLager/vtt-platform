@@ -1,0 +1,13 @@
+{
+  "id": "chair-swing",
+  "name": "Chair Swing",
+  "usage": { "limited": { "resource": "stamina", "cost": 1 } },
+  "targeting": { "range": 1, "max_targets": 1 },
+  "attack": { "roll": "1d20 + @brawn", "vs": "footing" },
+  "hit": [
+    { "resource_change": { "resource": "drink", "delta_expr": "1 + 1d4" } },
+    { "apply_condition": { "id": "dazed-by-ale" } }
+  ],
+  "miss": [],
+  "effect": []
+}

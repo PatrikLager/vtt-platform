@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ability.schema.json",
+  "title": "Ability (abilities/*.json)",
+  "description": "One usable ability. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "type": "object",
+  "required": ["id", "name", "usage", "targeting"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "usage": {
+      "description": "Either the bare string \"at_will\", or an object spending a declared resource.",
+      "oneOf": [
+        { "type": "string", "enum": ["at_will"] },
+        {
+          "type": "object",
+          "required": ["limited"],
+          "additionalProperties": false,
+          "properties": {
+            "limited": {
+              "type": "object",
+              "required": ["resource", "cost"],
+              "additionalProperties": false,
+              "properties": {
+                "resource": { "type": "string", "minLength": 1 },
+                "cost": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "targeting": {
+      "type": "object",
+      "required": ["range", "max_targets"],
+      "additionalProperties": false,
+      "properties": {
+        "range": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Grid cells, Chebyshev distance."
+        },
+        "max_targets": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "attack": {
+      "description": "Omitted entirely on non-attack abilities. When omitted, hit and miss must both be empty or absent.",
+      "type": "object",
+      "required": ["roll", "vs"],
+      "additionalProperties": false,
+      "properties": {
+        "roll": { "type": "string", "minLength": 1 },
+        "vs": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A defense name declared in ruleset.json's defenses list."
+        }
+      }
+    },
+    "hit": { "type": "array", "items": { "$ref": "#/$defs/outcome" } },
+    "miss": { "type": "array", "items": { "$ref": "#/$defs/outcome" } },
+    "effect": { "type": "array", "items": { "$ref": "#/$defs/outcome" } }
+  },
+  "$defs": {
+    "outcome": {
+      "type": "object",
+      "description": "Exactly one of the three keys below.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["resource_change"],
+          "additionalProperties": false,
+          "properties": { "resource_change": { "$ref": "#/$defs/resourceChange" } }
+        },
+        {
+          "type": "object",
+          "required": ["apply_condition"],
+          "additionalProperties": false,
+          "properties": { "apply_condition": { "$ref": "#/$defs/conditionRef" } }
+        },
+        {
+          "type": "object",
+          "required": ["remove_condition"],
+          "additionalProperties": false,
+          "properties": { "remove_condition": { "$ref": "#/$defs/conditionRef" } }
+        }
+      ]
+    },
+    "resourceChange": {
+      "type": "object",
+      "required": ["resource", "delta_expr"],
+      "additionalProperties": false,
+      "properties": {
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A resource name declared in ruleset.json."
+        },
+        "delta_expr": { "type": "string", "minLength": 1 }
+      }
+    },
+    "conditionRef": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A condition id declared under conditions/."
+        }
+      }
+    }
+  }
+}

@@ -8,4 +8,8 @@ rules:
     paths:
       include: [internal/, cmd/]
     patterns:
-      - pattern-regex: (?i)(healing_?surge|daily_?power|encounter_?power|at_?will_?power|fortitude|bloodied|saving_?throw|action_?point|hit_?points)
+      # \bhp\b catches the bare "hp" abbreviation (any case) that the
+      # multi-word terms below miss — the most likely game-vocabulary leak
+      # once 5b's dnd45e work begins. Word boundaries keep it from matching
+      # substrings (php, https, graph, etc.).
+      - pattern-regex: (?i)(healing_?surge|daily_?power|encounter_?power|at_?will_?power|fortitude|bloodied|saving_?throw|action_?point|hit_?points|\bhp\b)

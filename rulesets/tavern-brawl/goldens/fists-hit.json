@@ -1,0 +1,24 @@
+{
+  "name": "fists-hit",
+  "ability_id": "fists",
+  "scene": "tavern",
+  "actors": [
+    { "id": "brawler", "x": 0, "y": 0, "attributes": { "brawn": 3, "grit": 1 } },
+    { "id": "patron", "x": 1, "y": 0, "attributes": { "footing": 10 }, "resources": { "drink": { "current": 0, "max": 5 } } }
+  ],
+  "actor_id": "brawler",
+  "target_ids": ["patron"],
+  "rolls": [{ "results": [12] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "brawler",
+      "ability_id": "fists",
+      "target_ids": ["patron"],
+      "rolls": [{ "expression": "1d20 + @brawn", "results": [12], "total": 15 }],
+      "outcome_summary": "Fists on patron: hit (15 vs 10)"
+    },
+    { "type": "ResourceChanged", "actor_id": "patron", "resource": "drink", "delta": 1, "new_value": 1, "reason": "ability:fists:hit" },
+    { "type": "ConditionApplied", "actor_id": "patron", "condition_id": "dazed-by-ale", "source": "threshold:drink" }
+  ]
+}

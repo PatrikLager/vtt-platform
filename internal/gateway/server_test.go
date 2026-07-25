@@ -309,7 +309,7 @@ func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 	// Now a live event: DM starts a new command after catch-up.
 	sendCommand(t, conn, &vttv1.ClientCommand{
 		RequestId: "r-live",
-		Command: &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
+		Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
 	})
 	live := readEvent(t, conn)
 	if live.Sequence != 5 {

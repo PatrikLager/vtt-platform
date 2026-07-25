@@ -228,6 +228,65 @@ func TestSessionStampClearsClosedSessionIDOnSubsequentEvent(t *testing.T) {
 	}
 }
 
+// TestSessionStampAppendBatchPropagatesIntraBatchSessionStart covers
+// AppendBatch's session-stamping rule: with no session open before the
+// batch, a SessionStarted as the FIRST envelope of the batch gets a fresh
+// generated id — and a LATER envelope in the SAME batch sees that session
+// as already open, exactly as it would if the two events had gone through
+// two sequential Append calls instead of one AppendBatch call.
+func TestSessionStampAppendBatchPropagatesIntraBatchSessionStart(t *testing.T) {
+	c := openTemp(t)
+
+	start := cenv(nextID(), &vttv1.SessionStarted{Name: "n"})
+	start.SessionId = ""
+	sceneEnv := cenv(nextID(), &vttv1.SceneCreated{
+		SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10,
+	})
+	sceneEnv.SessionId = "caller-supplied-wrong-id"
+
+	if _, err := c.AppendBatch([]*vttv1.Envelope{start, sceneEnv}); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+
+	if start.SessionId == "" {
+		t.Fatal("want non-empty session id stamped onto SessionStarted")
+	}
+	if !strings.HasPrefix(start.SessionId, "sess-") {
+		t.Fatalf(`want "sess-"-prefixed session id on SessionStarted, got %q`, start.SessionId)
+	}
+	if sceneEnv.SessionId != start.SessionId {
+		t.Fatalf("SceneCreated session id (later in same batch) = %q, want %q (the just-started session's id, not left empty or caller-supplied)", sceneEnv.SessionId, start.SessionId)
+	}
+}
+
+// TestSessionStampAppendBatchClearsIDWithNoOpenSession mirrors
+// TestSessionStampClearsIDWithNoOpenSession for the batch path: with no
+// session open, every envelope in the batch gets its (possibly
+// caller-supplied) session id cleared to "".
+func TestSessionStampAppendBatchClearsIDWithNoOpenSession(t *testing.T) {
+	c := openTemp(t)
+
+	sceneEnv := cenv(nextID(), &vttv1.SceneCreated{
+		SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10,
+	})
+	sceneEnv.SessionId = "caller-supplied-value"
+	actorEnv := cenv(nextID(), &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
+	})
+	actorEnv.SessionId = "another-caller-value"
+
+	if _, err := c.AppendBatch([]*vttv1.Envelope{sceneEnv, actorEnv}); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+
+	if sceneEnv.SessionId != "" {
+		t.Fatalf("SceneCreated session id with no open session: got %q, want cleared to empty", sceneEnv.SessionId)
+	}
+	if actorEnv.SessionId != "" {
+		t.Fatalf("ActorAdded session id with no open session: got %q, want cleared to empty", actorEnv.SessionId)
+	}
+}
+
 // TestSessionStampOverwritesWrongIncomingID covers case (e): a
 // non-SessionStarted event submitted with a WRONG non-empty session id (not
 // merely a missing one) is overwritten to the open session's id — the

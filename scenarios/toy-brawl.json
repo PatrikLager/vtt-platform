@@ -1,0 +1,50 @@
+{
+  "name": "toy-brawl",
+  "ruleset": "tavern-brawl",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "brawler", "role": "player", "controls": ["act-brawler"]},
+    {"name": "patron", "role": "player", "controls": ["act-patron"]},
+    {"name": "spectator", "role": "spectator"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Toy Brawl"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "scn-tavern", "name": "The Rusty Flagon", "gridWidth": 5, "gridHeight": 5}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"addActor": {"actor": {
+      "actorId": "act-brawler", "name": "Brawler", "controllerId": "{{id:brawler}}",
+      "attributes": {"brawn": 3, "grit": 1},
+      "resources": {"drink": {"current": 0, "max": 4}, "stamina": {"current": 2, "max": 2}}
+    }}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"addActor": {"actor": {
+      "actorId": "act-patron", "name": "Patron", "controllerId": "{{id:patron}}",
+      "attributes": {"brawn": 1, "grit": 0, "footing": 0},
+      "resources": {"drink": {"current": 0, "max": 3}, "stamina": {"current": 2, "max": 2}}
+    }}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-brawler", "sceneId": "scn-tavern", "actorId": "act-brawler", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-patron", "sceneId": "scn-tavern", "actorId": "act-patron", "position": {"x": 1, "y": 0}}}, "expect": {"ok": true}},
+
+    {"by": "brawler", "command": {"useAbility": {"actorId": "act-brawler", "abilityId": "fists", "targetIds": ["act-patron"]}}, "expect": {"ok": true}},
+
+    {"by": "patron", "command": {"useAbility": {"actorId": "act-brawler", "abilityId": "fists", "targetIds": ["act-patron"]}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"useAbility": {"actorId": "act-brawler", "abilityId": "fists", "targetIds": ["act-patron"]}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "dm", "command": {"removeCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale"}}, "expect": {"ok": true}},
+
+    {"by": "patron", "command": {"removeCondition": {"actorId": "act-brawler", "conditionId": "dazed-by-ale"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"removeCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale"}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "dm", "command": {"endSession": {}}, "expect": {"ok": true}}
+  ],
+  "probes": [
+    {"actorExists": {"actorId": "act-brawler"}},
+    {"actorExists": {"actorId": "act-patron"}},
+    {"tokenAt": {"tokenId": "tok-brawler", "x": 0, "y": 0}},
+    {"tokenAt": {"tokenId": "tok-patron", "x": 1, "y": 0}},
+    {"sessionCount": {"open": 0, "total": 1}},
+    {"resourceAt": {"actorId": "act-patron", "resource": "drink", "value": 1}},
+    {"hasCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale", "present": false}}
+  ]
+}

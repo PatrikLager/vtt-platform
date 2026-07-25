@@ -123,7 +123,7 @@ func TestMCPCommandMissingTokenErrorsViaRunCLI(t *testing.T) {
 // Stdin/Stdout pipes (mcpsdk.IOTransport) — proving cmd/vtt/mcp.go's real
 // RunE(ctx, &mcpsdk.StdioTransport{}) path actually works end to end, not
 // just the in-memory-transport substitute TestMCPSpecSevenExitCriteria
-// uses below. list_tools must report all 9 tools; closing the client
+// uses below. list_tools must report all 12 tools; closing the client
 // session then closes the subprocess's stdin, which is enough to let the
 // process exit on its own (asserted via a bounded Wait, Kill as the
 // fallback safety net matching this package's established subprocess-test
@@ -166,8 +166,8 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools over real stdio: %v (stderr: %s)", err, stderr.String())
 	}
-	if len(res.Tools) != 9 {
-		t.Fatalf("ListTools over real stdio: got %d tools, want 9: %v", len(res.Tools), res.Tools)
+	if len(res.Tools) != 12 {
+		t.Fatalf("ListTools over real stdio: got %d tools, want 12: %v", len(res.Tools), res.Tools)
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.
@@ -269,7 +269,7 @@ func startMCPFixture(t *testing.T) mcpFixture {
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}

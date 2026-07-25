@@ -93,6 +93,88 @@ func (s *Store) Append(env *vttv1.Envelope) (int64, error) {
 	return next, nil
 }
 
+// AppendBatch stamps contiguous sequences into every envelope in envs
+// (first = MAX(seq)+1, then +1 each) and persists all of them in ONE
+// transaction: all-or-nothing, exactly like Append but for N envelopes at
+// once (spec §6). Callers must submit sequence=0 and a non-empty, unique
+// event_id for every envelope — the same per-envelope contract Append
+// enforces for one, checked up front before the transaction opens. envs
+// must be non-empty: a zero-length batch is a caller bug, rejected with a
+// clean error rather than silently persisting nothing and returning
+// firstSeq=0 as if it had succeeded.
+//
+// On EVERY failure path — bad input, marshal, insert, commit — every
+// envelope's Sequence is reset to 0, including ones already stamped
+// earlier in the loop: a half-stamped batch must never look persisted to a
+// caller that only checks env.Sequence != 0 (mirrors Append's own
+// reset-on-failure contract, extended across the whole batch).
+//
+// Like Append, AppendBatch does not notify (see Notify's doc comment):
+// callers call Notify once persistence AND any live-apply step have
+// completed for the whole batch, in order — see campaign.AppendBatch.
+func (s *Store) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
+	if len(envs) == 0 {
+		return 0, errors.New("store: append batch must not be empty")
+	}
+	for _, env := range envs {
+		if env.Sequence != 0 {
+			return 0, errors.New("store: envelope sequence must be 0 on append")
+		}
+		if env.EventId == "" {
+			return 0, errors.New("store: envelope event_id must not be empty")
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var next int64
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM events`).Scan(&next); err != nil {
+		return 0, err
+	}
+	first := next
+	for _, env := range envs {
+		env.Sequence = next
+		blob, err := proto.Marshal(env)
+		if err != nil {
+			resetBatchSequences(envs)
+			return 0, fmt.Errorf("store: marshal: %w", err)
+		}
+		occurredAt := ""
+		if ts := env.OccurredAt; ts != nil {
+			occurredAt = ts.AsTime().UTC().Format("2006-01-02T15:04:05Z07:00")
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO events (seq, event_id, session_id, occurred_at, payload) VALUES (?, ?, ?, ?, ?)`,
+			next, env.EventId, env.SessionId, occurredAt, blob,
+		); err != nil {
+			resetBatchSequences(envs)
+			return 0, fmt.Errorf("store: insert: %w", err)
+		}
+		next++
+	}
+	if err := tx.Commit(); err != nil {
+		resetBatchSequences(envs)
+		return 0, err
+	}
+	return first, nil
+}
+
+// resetBatchSequences zeroes every envelope's Sequence. Called on every
+// AppendBatch failure path so a caller checking env.Sequence != 0 can never
+// mistake a partially-stamped batch for a persisted one.
+func resetBatchSequences(envs []*vttv1.Envelope) {
+	for _, env := range envs {
+		env.Sequence = 0
+	}
+}
+
 // Notify fans env out to subscribers. Callers invoke it AFTER the event's
 // effects are observable (campaign: after live apply) so a subscriber that
 // sees event N can always read state >= N. Idempotent per subscriber via

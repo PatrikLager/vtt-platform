@@ -816,6 +816,278 @@ func (x *EventsRetracted) GetReason() string {
 	return ""
 }
 
+type AbilityUsed struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	AbilityId      string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
+	TargetIds      []string               `protobuf:"bytes,3,rep,name=target_ids,json=targetIds,proto3" json:"target_ids,omitempty"`
+	Rolls          []*AbilityUsed_Roll    `protobuf:"bytes,4,rep,name=rolls,proto3" json:"rolls,omitempty"`
+	OutcomeSummary string                 `protobuf:"bytes,5,opt,name=outcome_summary,json=outcomeSummary,proto3" json:"outcome_summary,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AbilityUsed) Reset() {
+	*x = AbilityUsed{}
+	mi := &file_vtt_v1_events_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AbilityUsed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AbilityUsed) ProtoMessage() {}
+
+func (x *AbilityUsed) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AbilityUsed.ProtoReflect.Descriptor instead.
+func (*AbilityUsed) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AbilityUsed) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *AbilityUsed) GetAbilityId() string {
+	if x != nil {
+		return x.AbilityId
+	}
+	return ""
+}
+
+func (x *AbilityUsed) GetTargetIds() []string {
+	if x != nil {
+		return x.TargetIds
+	}
+	return nil
+}
+
+func (x *AbilityUsed) GetRolls() []*AbilityUsed_Roll {
+	if x != nil {
+		return x.Rolls
+	}
+	return nil
+}
+
+func (x *AbilityUsed) GetOutcomeSummary() string {
+	if x != nil {
+		return x.OutcomeSummary
+	}
+	return ""
+}
+
+type ResourceChanged struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Resource      string                 `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
+	Delta         int32                  `protobuf:"varint,3,opt,name=delta,proto3" json:"delta,omitempty"`
+	NewValue      int32                  `protobuf:"varint,4,opt,name=new_value,json=newValue,proto3" json:"new_value,omitempty"`
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceChanged) Reset() {
+	*x = ResourceChanged{}
+	mi := &file_vtt_v1_events_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceChanged) ProtoMessage() {}
+
+func (x *ResourceChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceChanged.ProtoReflect.Descriptor instead.
+func (*ResourceChanged) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ResourceChanged) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ResourceChanged) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *ResourceChanged) GetDelta() int32 {
+	if x != nil {
+		return x.Delta
+	}
+	return 0
+}
+
+func (x *ResourceChanged) GetNewValue() int32 {
+	if x != nil {
+		return x.NewValue
+	}
+	return 0
+}
+
+func (x *ResourceChanged) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ConditionApplied struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ConditionId   string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConditionApplied) Reset() {
+	*x = ConditionApplied{}
+	mi := &file_vtt_v1_events_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConditionApplied) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConditionApplied) ProtoMessage() {}
+
+func (x *ConditionApplied) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConditionApplied.ProtoReflect.Descriptor instead.
+func (*ConditionApplied) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ConditionApplied) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ConditionApplied) GetConditionId() string {
+	if x != nil {
+		return x.ConditionId
+	}
+	return ""
+}
+
+func (x *ConditionApplied) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+type ConditionRemoved struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ConditionId   string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConditionRemoved) Reset() {
+	*x = ConditionRemoved{}
+	mi := &file_vtt_v1_events_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConditionRemoved) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConditionRemoved) ProtoMessage() {}
+
+func (x *ConditionRemoved) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConditionRemoved.ProtoReflect.Descriptor instead.
+func (*ConditionRemoved) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ConditionRemoved) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *ConditionRemoved) GetConditionId() string {
+	if x != nil {
+		return x.ConditionId
+	}
+	return ""
+}
+
+func (x *ConditionRemoved) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type Envelope struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	EventId    string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -835,6 +1107,10 @@ type Envelope struct {
 	//	*Envelope_SessionStarted
 	//	*Envelope_SessionEnded
 	//	*Envelope_EventsRetracted
+	//	*Envelope_AbilityUsed
+	//	*Envelope_ResourceChanged
+	//	*Envelope_ConditionApplied
+	//	*Envelope_ConditionRemoved
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -842,7 +1118,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_vtt_v1_events_proto_msgTypes[13]
+	mi := &file_vtt_v1_events_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -854,7 +1130,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[13]
+	mi := &file_vtt_v1_events_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -867,7 +1143,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{13}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Envelope) GetEventId() string {
@@ -991,6 +1267,42 @@ func (x *Envelope) GetEventsRetracted() *EventsRetracted {
 	return nil
 }
 
+func (x *Envelope) GetAbilityUsed() *AbilityUsed {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_AbilityUsed); ok {
+			return x.AbilityUsed
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetResourceChanged() *ResourceChanged {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ResourceChanged); ok {
+			return x.ResourceChanged
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetConditionApplied() *ConditionApplied {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ConditionApplied); ok {
+			return x.ConditionApplied
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetConditionRemoved() *ConditionRemoved {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_ConditionRemoved); ok {
+			return x.ConditionRemoved
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -1027,6 +1339,22 @@ type Envelope_EventsRetracted struct {
 	EventsRetracted *EventsRetracted `protobuf:"bytes,17,opt,name=events_retracted,json=eventsRetracted,proto3,oneof"`
 }
 
+type Envelope_AbilityUsed struct {
+	AbilityUsed *AbilityUsed `protobuf:"bytes,18,opt,name=ability_used,json=abilityUsed,proto3,oneof"`
+}
+
+type Envelope_ResourceChanged struct {
+	ResourceChanged *ResourceChanged `protobuf:"bytes,19,opt,name=resource_changed,json=resourceChanged,proto3,oneof"`
+}
+
+type Envelope_ConditionApplied struct {
+	ConditionApplied *ConditionApplied `protobuf:"bytes,20,opt,name=condition_applied,json=conditionApplied,proto3,oneof"`
+}
+
+type Envelope_ConditionRemoved struct {
+	ConditionRemoved *ConditionRemoved `protobuf:"bytes,21,opt,name=condition_removed,json=conditionRemoved,proto3,oneof"`
+}
+
 func (*Envelope_TokenMoved) isEnvelope_Payload() {}
 
 func (*Envelope_AttackRolled) isEnvelope_Payload() {}
@@ -1042,6 +1370,74 @@ func (*Envelope_SessionStarted) isEnvelope_Payload() {}
 func (*Envelope_SessionEnded) isEnvelope_Payload() {}
 
 func (*Envelope_EventsRetracted) isEnvelope_Payload() {}
+
+func (*Envelope_AbilityUsed) isEnvelope_Payload() {}
+
+func (*Envelope_ResourceChanged) isEnvelope_Payload() {}
+
+func (*Envelope_ConditionApplied) isEnvelope_Payload() {}
+
+func (*Envelope_ConditionRemoved) isEnvelope_Payload() {}
+
+type AbilityUsed_Roll struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Expression    string                 `protobuf:"bytes,1,opt,name=expression,proto3" json:"expression,omitempty"`
+	Results       []int32                `protobuf:"varint,2,rep,packed,name=results,proto3" json:"results,omitempty"`
+	Total         int32                  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AbilityUsed_Roll) Reset() {
+	*x = AbilityUsed_Roll{}
+	mi := &file_vtt_v1_events_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AbilityUsed_Roll) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AbilityUsed_Roll) ProtoMessage() {}
+
+func (x *AbilityUsed_Roll) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AbilityUsed_Roll.ProtoReflect.Descriptor instead.
+func (*AbilityUsed_Roll) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{13, 0}
+}
+
+func (x *AbilityUsed_Roll) GetExpression() string {
+	if x != nil {
+		return x.Expression
+	}
+	return ""
+}
+
+func (x *AbilityUsed_Roll) GetResults() []int32 {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *AbilityUsed_Roll) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
 
 var File_vtt_v1_events_proto protoreflect.FileDescriptor
 
@@ -1117,7 +1513,35 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\rfrom_sequence\x18\x01 \x01(\x03R\ffromSequence\x12\x1f\n" +
 	"\vto_sequence\x18\x02 \x01(\x03R\n" +
 	"toSequence\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xd6\x05\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x97\x02\n" +
+	"\vAbilityUsed\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1d\n" +
+	"\n" +
+	"ability_id\x18\x02 \x01(\tR\tabilityId\x12\x1d\n" +
+	"\n" +
+	"target_ids\x18\x03 \x03(\tR\ttargetIds\x12.\n" +
+	"\x05rolls\x18\x04 \x03(\v2\x18.vtt.v1.AbilityUsed.RollR\x05rolls\x12'\n" +
+	"\x0foutcome_summary\x18\x05 \x01(\tR\x0eoutcomeSummary\x1aV\n" +
+	"\x04Roll\x12\x1e\n" +
+	"\n" +
+	"expression\x18\x01 \x01(\tR\n" +
+	"expression\x12\x18\n" +
+	"\aresults\x18\x02 \x03(\x05R\aresults\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"\x93\x01\n" +
+	"\x0fResourceChanged\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
+	"\bresource\x18\x02 \x01(\tR\bresource\x12\x14\n" +
+	"\x05delta\x18\x03 \x01(\x05R\x05delta\x12\x1b\n" +
+	"\tnew_value\x18\x04 \x01(\x05R\bnewValue\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"h\n" +
+	"\x10ConditionApplied\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
+	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\x12\x16\n" +
+	"\x06source\x18\x03 \x01(\tR\x06source\"h\n" +
+	"\x10ConditionRemoved\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
+	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xe8\a\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12;\n" +
@@ -1138,7 +1562,11 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\ftoken_placed\x18\x0e \x01(\v2\x13.vtt.v1.TokenPlacedH\x00R\vtokenPlaced\x12A\n" +
 	"\x0fsession_started\x18\x0f \x01(\v2\x16.vtt.v1.SessionStartedH\x00R\x0esessionStarted\x12;\n" +
 	"\rsession_ended\x18\x10 \x01(\v2\x14.vtt.v1.SessionEndedH\x00R\fsessionEnded\x12D\n" +
-	"\x10events_retracted\x18\x11 \x01(\v2\x17.vtt.v1.EventsRetractedH\x00R\x0feventsRetractedB\t\n" +
+	"\x10events_retracted\x18\x11 \x01(\v2\x17.vtt.v1.EventsRetractedH\x00R\x0feventsRetracted\x128\n" +
+	"\fability_used\x18\x12 \x01(\v2\x13.vtt.v1.AbilityUsedH\x00R\vabilityUsed\x12D\n" +
+	"\x10resource_changed\x18\x13 \x01(\v2\x17.vtt.v1.ResourceChangedH\x00R\x0fresourceChanged\x12G\n" +
+	"\x11condition_applied\x18\x14 \x01(\v2\x18.vtt.v1.ConditionAppliedH\x00R\x10conditionApplied\x12G\n" +
+	"\x11condition_removed\x18\x15 \x01(\v2\x18.vtt.v1.ConditionRemovedH\x00R\x10conditionRemovedB\t\n" +
 	"\apayloadBBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
@@ -1153,7 +1581,7 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_events_proto_rawDescData
 }
 
-var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_vtt_v1_events_proto_goTypes = []any{
 	(*GridPosition)(nil),          // 0: vtt.v1.GridPosition
 	(*TokenMoved)(nil),            // 1: vtt.v1.TokenMoved
@@ -1168,37 +1596,47 @@ var file_vtt_v1_events_proto_goTypes = []any{
 	(*SessionStarted)(nil),        // 10: vtt.v1.SessionStarted
 	(*SessionEnded)(nil),          // 11: vtt.v1.SessionEnded
 	(*EventsRetracted)(nil),       // 12: vtt.v1.EventsRetracted
-	(*Envelope)(nil),              // 13: vtt.v1.Envelope
-	nil,                           // 14: vtt.v1.Actor.AttributesEntry
-	nil,                           // 15: vtt.v1.Actor.ResourcesEntry
-	(*structpb.Struct)(nil),       // 16: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
+	(*AbilityUsed)(nil),           // 13: vtt.v1.AbilityUsed
+	(*ResourceChanged)(nil),       // 14: vtt.v1.ResourceChanged
+	(*ConditionApplied)(nil),      // 15: vtt.v1.ConditionApplied
+	(*ConditionRemoved)(nil),      // 16: vtt.v1.ConditionRemoved
+	(*Envelope)(nil),              // 17: vtt.v1.Envelope
+	nil,                           // 18: vtt.v1.Actor.AttributesEntry
+	nil,                           // 19: vtt.v1.Actor.ResourcesEntry
+	(*AbilityUsed_Roll)(nil),      // 20: vtt.v1.AbilityUsed.Roll
+	(*structpb.Struct)(nil),       // 21: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 22: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
 	0,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
 	0,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
 	2,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
 	3,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	14, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	15, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	16, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	18, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	19, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	21, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
 	6,  // 7: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
 	0,  // 8: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
-	17, // 9: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
-	1,  // 10: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
-	4,  // 11: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
-	7,  // 12: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
-	8,  // 13: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
-	9,  // 14: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
-	10, // 15: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
-	11, // 16: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
-	12, // 17: vtt.v1.Envelope.events_retracted:type_name -> vtt.v1.EventsRetracted
-	5,  // 18: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	20, // 9: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
+	22, // 10: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	1,  // 11: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
+	4,  // 12: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
+	7,  // 13: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
+	8,  // 14: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
+	9,  // 15: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
+	10, // 16: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
+	11, // 17: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
+	12, // 18: vtt.v1.Envelope.events_retracted:type_name -> vtt.v1.EventsRetracted
+	13, // 19: vtt.v1.Envelope.ability_used:type_name -> vtt.v1.AbilityUsed
+	14, // 20: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
+	15, // 21: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
+	16, // 22: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
+	5,  // 23: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -1206,7 +1644,7 @@ func file_vtt_v1_events_proto_init() {
 	if File_vtt_v1_events_proto != nil {
 		return
 	}
-	file_vtt_v1_events_proto_msgTypes[13].OneofWrappers = []any{
+	file_vtt_v1_events_proto_msgTypes[17].OneofWrappers = []any{
 		(*Envelope_TokenMoved)(nil),
 		(*Envelope_AttackRolled)(nil),
 		(*Envelope_SceneCreated)(nil),
@@ -1215,6 +1653,10 @@ func file_vtt_v1_events_proto_init() {
 		(*Envelope_SessionStarted)(nil),
 		(*Envelope_SessionEnded)(nil),
 		(*Envelope_EventsRetracted)(nil),
+		(*Envelope_AbilityUsed)(nil),
+		(*Envelope_ResourceChanged)(nil),
+		(*Envelope_ConditionApplied)(nil),
+		(*Envelope_ConditionRemoved)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1222,7 +1664,7 @@ func file_vtt_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

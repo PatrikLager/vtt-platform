@@ -197,6 +197,32 @@ func TestToEventRetractEventsReturnsSentinel(t *testing.T) {
 	}
 }
 
+// TestToEventRemoveConditionProducesConditionRemoved covers the ONE Task 6
+// command that DOES flow through ToEvent (use_ability does not — see
+// server.go's handleCommand): a plain single-Envelope conversion, exactly
+// like every pre-Task-6 command above.
+func TestToEventRemoveConditionProducesConditionRemoved(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveCondition{
+		RemoveCondition: &vttv1.RemoveCondition{ActorId: "a1", ConditionId: "dazed"},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr, ok := env.Payload.(*vttv1.Envelope_ConditionRemoved)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_ConditionRemoved", env.Payload)
+	}
+	if cr.ConditionRemoved.ActorId != "a1" || cr.ConditionRemoved.ConditionId != "dazed" {
+		t.Fatalf("ConditionRemoved = %+v, want actor_id=a1 condition_id=dazed", cr.ConditionRemoved)
+	}
+	if cr.ConditionRemoved.Reason == "" {
+		t.Fatal("want a non-empty Reason on a gateway-converted ConditionRemoved")
+	}
+}
+
 func TestToEventUnknownCommandErrors(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	if env, err := gateway.ToEvent(&vttv1.ClientCommand{}, p); err == nil {

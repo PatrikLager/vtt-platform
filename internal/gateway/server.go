@@ -12,6 +12,7 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // gatewayBuffer is Server.buffer's default (New sets it; see that field's
@@ -43,13 +44,40 @@ type Server struct {
 	// to make the overflow-closes-the-socket behavior deterministically
 	// testable without appending gatewayBuffer+ events.
 	buffer int
+
+	// ruleset/roller are OPTIONAL server config (ruleset-interpreter Task
+	// 6): nil ruleset is today's behavior, unchanged — every command this
+	// package handled before Task 6 keeps working exactly as before, and a
+	// use_ability command gets a clean "no ruleset loaded" CommandResult
+	// (ok=false) rather than a connection drop or a crash. Set together via
+	// WithRuleset — see that method's doc comment for why roller is always
+	// the production crypto.Roller when ruleset is non-nil (never
+	// separately configurable at this layer).
+	ruleset *rules.Ruleset
+	roller  rules.Roller
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
 // The caller owns both handles' lifecycle (Close them after the Server is
-// done serving).
+// done serving). No ruleset is loaded — use_ability commands are rejected
+// with a clean "no ruleset loaded" error until WithRuleset is called.
 func New(c *campaign.Campaign, ids *identity.DB) *Server {
 	return &Server{campaign: c, ids: ids, buffer: gatewayBuffer}
+}
+
+// WithRuleset configures s to resolve use_ability commands against rs,
+// using the production crypto-seeded Roller (rules.NewCryptoRoller — dice
+// are rolled ONCE at Resolve time and recorded onto the resulting
+// AbilityUsed event; replay never re-rolls, ruleset-interpreter spec §5
+// decision 3). Returns s for call-site chaining (e.g.
+// gateway.New(c, ids).WithRuleset(rs)); mutates s in place rather than
+// copying, so it is not safe to call concurrently with s already serving
+// traffic — callers configure a Server fully before handing it to a
+// listener, exactly like New itself.
+func (s *Server) WithRuleset(rs *rules.Ruleset) *Server {
+	s.ruleset = rs
+	s.roller = rules.NewCryptoRoller()
+	return s
 }
 
 // Handler returns the http.Handler routing /healthz and /ws (spec §3).
@@ -234,6 +262,14 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	if err := Authorize(p, cmd, st); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+
+	// use_ability does not become a single Envelope via ToEvent (it
+	// produces rules.Resolve's whole ordered batch instead — ruleset.go);
+	// every other command, including remove_condition, still flows through
+	// the plain ToEvent -> campaign.Append path below.
+	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
+		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
 
 	env, err := ToEvent(cmd, p)
