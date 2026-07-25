@@ -12,50 +12,61 @@ import (
 // of a legal, loadable expression.
 func int32Ruleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
+	abilities := int32FixtureAbilities(t)
 	return &rules.Ruleset{
 		ID: "int32-fixture", Name: "Int32 Fixture",
 		Attributes: []string{"brawn"},
 		Defenses:   []string{"guard"},
 		Resources:  []rules.ResourceDef{{Name: "vigor"}},
 		Conditions: map[string]*rules.Condition{},
-		Abilities: map[string]*rules.Ability{
-			// overload: self-effect whose delta_expr evaluates to 4e9, past
-			// int32 — the review's '2000000 * 2000' repro.
-			"overload": {
-				ID: "overload", Name: "Overload",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
-				Effect: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "2000000 * 2000"), DeltaExprSrc: "2000000 * 2000",
-					}},
-				},
+		Abilities:  abilities,
+		// Resolve executes CompiledPower exclusively (Task 3) — this
+		// hand-built fixture bypasses Load, so it must adapt itself via
+		// the SAME AdaptV1Ability logic Load uses (compileFixtureAbilities,
+		// resolve_test.go).
+		Compiled: compileFixtureAbilities(t, abilities),
+	}
+}
+
+func int32FixtureAbilities(t *testing.T) map[string]*rules.Ability {
+	t.Helper()
+	return map[string]*rules.Ability{
+		// overload: self-effect whose delta_expr evaluates to 4e9, past
+		// int32 — the review's '2000000 * 2000' repro.
+		"overload": {
+			ID: "overload", Name: "Overload",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			Effect: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "2000000 * 2000"), DeltaExprSrc: "2000000 * 2000",
+				}},
 			},
-			// bigswing: an attack whose roll total overflows int32 when the
-			// caster's brawn attribute (an int32) sits near its max.
-			"bigswing": {
-				ID: "bigswing", Name: "Big Swing",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
-				Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
-				Hit: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
-					}},
-				},
+		},
+		// bigswing: an attack whose roll total overflows int32 when the
+		// caster's brawn attribute (an int32) sits near its max.
+		"bigswing": {
+			ID: "bigswing", Name: "Big Swing",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
+			Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
+			Hit: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
+				}},
 			},
-			// creep: a self-effect whose delta itself fits int32 (2e9) but
-			// whose new_value (current 2e9 + 2e9) does not, on an uncapped
-			// resource — isolates the new_value bound from the delta bound.
-			"creep": {
-				ID: "creep", Name: "Creep",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
-				Effect: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "2000000000"), DeltaExprSrc: "2000000000",
-					}},
-				},
+		},
+		// creep: a self-effect whose delta itself fits int32 (2e9) but
+		// whose new_value (current 2e9 + 2e9) does not, on an uncapped
+		// resource — isolates the new_value bound from the delta bound.
+		"creep": {
+			ID: "creep", Name: "Creep",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			Effect: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "2000000000"), DeltaExprSrc: "2000000000",
+				}},
 			},
 		},
 	}

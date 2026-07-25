@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // supportedFormatVersions is the set of format_version values Load
@@ -23,13 +24,18 @@ var supportedFormatVersions = map[string]bool{"1": true, "2": true}
 // format_version "1": strict JSON decoding of ruleset.json,
 // abilities/*.json, and conditions/*.json (no unknown fields tolerated),
 // the grammar of every expression (parsed once, here, so a loaded Ruleset
-// never fails to parse an expression at runtime), and every cross-
-// reference an ability, resource, or threshold makes (attributes,
-// resources, defenses, and condition ids must all be declared — spec §5).
-// For format_version "2": the same manifest/conditions handling, plus
-// atoms/*.json and abilities/*.json-as-compositions, compiled at load into
-// Ruleset.Compiled (see loadV2, compile.go — spec §6). Every error names
-// the offending file and field.
+// never fails to parse an expression at runtime), every cross-reference an
+// ability, resource, or threshold makes (attributes, resources, defenses,
+// and condition ids must all be declared — spec §5), and — Task 3 —
+// adaptV1Abilities flattens every loaded Ability into Ruleset.Compiled via
+// AdaptV1Ability, byte-identically to how it already executed (see that
+// function's doc comment). For format_version "2": the same
+// manifest/conditions handling, plus atoms/*.json and
+// abilities/*.json-as-compositions, compiled at load into Ruleset.Compiled
+// (see loadV2, compile.go — spec §6). Either way, Ruleset.Compiled is
+// always populated on a successful Load, and Resolve (Task 5, rewired
+// Task 3) reads Compiled exclusively — spec 5c pillar "ONE execution
+// path". Every error names the offending file and field.
 func Load(dir string) (*Ruleset, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -78,6 +84,12 @@ func Load(dir string) (*Ruleset, error) {
 	if err := crossValidate(rs); err != nil {
 		return nil, err
 	}
+
+	compiled, err := adaptV1Abilities(rs.Abilities)
+	if err != nil {
+		return nil, err
+	}
+	rs.Compiled = compiled
 	return rs, nil
 }
 
@@ -567,6 +579,207 @@ func convertOutcomes(path, field string, raw []outcomeJSON) ([]Outcome, error) {
 			}
 			out = append(out, Outcome{Kind: OutcomeRemoveCondition, RemoveCondition: &RemoveConditionOutcome{ID: o.RemoveCondition.ID}})
 		}
+	}
+	return out, nil
+}
+
+// --- v1-to-CompiledPower adapter (Task 3, spec 5c pillar: "Resolve
+// executes CompiledPower through ONE code path") ---
+
+// v1RefRe matches one v1-shaped ref occurrence: a sigil ('@' or '#'),
+// optional whitespace (the grammar's tokenizer allows whitespace between
+// the sigil and its identifier — they lex as two separate tokens, and
+// skipSpace runs before every token), then an IDENT. '@'/'#' have no other
+// grammatical meaning in this expression language, and v1-authored
+// expression source never contains scope syntax (the '.'-scope grammar
+// postdates v1 content, and scopeV1Source only ever runs on text that has
+// ALREADY Parse()d successfully under v1's bare-ref-only usage at
+// ability-decode time — loadAbilities/convertOutcomes, above) — so
+// rewriting every occurrence this regex finds is safe unconditionally, not
+// just for the fixtures this task happens to exercise.
+var v1RefRe = regexp.MustCompile(`[@#][ \t\r\n]*[A-Za-z_][A-Za-z0-9_]*`)
+
+// scopeV1Source rewrites every bare ref occurrence in src into its
+// explicitly-scoped v2 equivalent under scope ("caster" or "target"), e.g.
+// scopeV1Source("1d20 + @vim", "caster") == "1d20 + @caster.vim". Used by
+// AdaptV1Ability to translate v1's IMPLICIT positional scoping — an attack
+// roll evaluates against the CASTER; a hit/miss/effect outcome expression
+// evaluates against the TARGET (resolve.go's Resolve doc comment
+// documents this as v1's contract, preserved verbatim as the exact
+// behavior this adapter must keep observably true) — into the EXPLICIT
+// scoping EvalScoped requires (Task 1), since Resolve now executes every
+// ability, v1 and v2 alike, through EvalScoped only.
+//
+// The scope word this function inserts is always one of the two
+// compile-time constants "caster"/"target", and it is always inserted
+// FIRST, immediately after the sigil — so the rewritten text is
+// guaranteed Parse-able regardless of what identifier follows, even an
+// attribute coincidentally NAMED "caster" or "target" (that identifier
+// becomes the ref's NAME segment, after the dot, exactly like any other
+// name; parseRef only ever treats the FIRST identifier after a sigil as a
+// candidate scope word, and this function's output always has the real
+// scope word occupying that position, never the original identifier).
+func scopeV1Source(src, scope string) string {
+	return v1RefRe.ReplaceAllStringFunc(src, func(m string) string {
+		ident := strings.TrimLeft(m[1:], " \t\r\n")
+		return string(m[0]) + scope + "." + ident
+	})
+}
+
+// scopedParse re-parses src (an expression source string that has ALREADY
+// Parse()d successfully once, as plain v1 source) after scoping every bare
+// ref in it to scope. Returns an error rather than panicking if the
+// rewritten text somehow fails to parse — provably unreachable given the
+// invariants scopeV1Source's own doc comment establishes (src already
+// parses under v1's grammar, a strict subset of v2's; the inserted scope
+// word is always one of the two legal words) — but the adapter surfaces
+// this as a clean, named load error rather than trusting that invariant
+// silently, matching this file's "no silent multi-version guessing"
+// convention throughout.
+func scopedParse(src, scope string) (*Expr, error) {
+	e, err := Parse(scopeV1Source(src, scope))
+	if err != nil {
+		return nil, fmt.Errorf("rules: adapt: scoping %q to %s: %w", src, scope, err)
+	}
+	return e, nil
+}
+
+// AdaptV1Ability flattens one format-v1 Ability into a CompiledPower — the
+// v1-to-CompiledPower adapter itself. Exported (unlike the rest of this
+// file's v1 machinery) so a caller that builds a *Ruleset by hand,
+// bypassing Load entirely (internal/rules/resolve_test.go's
+// fixtureRuleset — a deliberate, pre-existing test pattern for exercising
+// Resolve without depending on Load's cross-validation), can populate
+// Ruleset.Compiled with the EXACT same logic adaptV1Abilities uses for
+// every real format-v1 Load. This keeps "Resolve executes CompiledPower
+// through ONE code path" true for hand-built test rulesets too, rather
+// than requiring Resolve to special-case a Ruleset with a populated
+// Abilities map but no Compiled entries.
+//
+// v1's attack {roll, vs-defense-name} becomes a CompiledResolution{Roll,
+// Vs}, with Branches fixed at ["hit", "miss"] — v1's own words, verbatim —
+// so a v1 ability's AbilityUsed.outcome_summary is byte-identical through
+// the new path (rulesets/tavern-brawl's committed goldens, and
+// resolve_test.go's envelope-shaped tests, are the proof this must hold).
+//
+// # The SourceText decision
+//
+// v1's implicit positional scoping (see scopeV1Source's doc comment) is
+// made EXPLICIT here via scopedParse — but the EXECUTED expression and the
+// DISPLAYED (testimony) text must diverge for a v1-adapted ability:
+// CompiledResolution.Roll must be the CASTER-scoped parse (so EvalScoped
+// can run it), while CompiledResolution.RollSrc must stay v1's ORIGINAL,
+// UNSCOPED Attack.RollSrc text — Resolve records RollSrc onto
+// AbilityUsed.rolls[].expression, and a v1 golden's recorded expression
+// string (e.g. "1d20 + @brawn") must never change to "1d20 + @caster.brawn"
+// through this adapter, or every existing v1 batch golden would break.
+// The same split applies to every hit/miss/effect resource_change's
+// DeltaExpr/DeltaExprSrc (adaptV1Outcomes, below): DeltaExpr becomes the
+// TARGET-scoped executable parse; DeltaExprSrc is left exactly as
+// loadAbilities/convertOutcomes already set it at v1-decode time (v1's
+// original, unscoped source), never touched by this function. VsSrc is
+// the one field with no true v1 "original" to preserve — v1's Attack.Vs
+// was a bare defense NAME, never an expression at all — so it is set to
+// the synthesized "@target.<defense>" text; this is only ever OBSERVABLE
+// (recorded onto AbilityUsed.rolls) if evaluating it actually rolls dice,
+// and a bare attribute ref never does (see resolve.go's Vs-recording
+// contract), so no v1 golden ever displays it regardless.
+func AdaptV1Ability(a *Ability) (*CompiledPower, error) {
+	cp := &CompiledPower{
+		ID:        a.ID,
+		Name:      a.Name,
+		Usage:     a.Usage,
+		Targeting: a.Targeting,
+	}
+
+	if a.Attack != nil {
+		rollExpr, err := scopedParse(a.Attack.RollSrc, "caster")
+		if err != nil {
+			return nil, fmt.Errorf("rules: adapt: ability %q: attack.roll: %w", a.ID, err)
+		}
+		vsSrc := "@target." + a.Attack.Vs
+		vsExpr, err := Parse(vsSrc)
+		if err != nil {
+			return nil, fmt.Errorf("rules: adapt: ability %q: attack.vs: %w", a.ID, err)
+		}
+		cp.Resolution = &CompiledResolution{
+			Roll: rollExpr, RollSrc: a.Attack.RollSrc,
+			Vs: vsExpr, VsSrc: vsSrc,
+			Branches: [2]string{"hit", "miss"},
+		}
+
+		hitOutcomes, err := adaptV1Outcomes(a.Hit)
+		if err != nil {
+			return nil, fmt.Errorf("rules: adapt: ability %q: hit: %w", a.ID, err)
+		}
+		missOutcomes, err := adaptV1Outcomes(a.Miss)
+		if err != nil {
+			return nil, fmt.Errorf("rules: adapt: ability %q: miss: %w", a.ID, err)
+		}
+		cp.BranchOutcomes[0] = hitOutcomes
+		cp.BranchOutcomes[1] = missOutcomes
+	}
+
+	effects, err := adaptV1Outcomes(a.Effect)
+	if err != nil {
+		return nil, fmt.Errorf("rules: adapt: ability %q: effect: %w", a.ID, err)
+	}
+	cp.Effects = effects
+	return cp, nil
+}
+
+// adaptV1Outcomes scopes every resource_change outcome's DeltaExpr to
+// "target" (v1's implicit outcome-evaluation actor — AdaptV1Ability's doc
+// comment), leaving DeltaExprSrc, Resource, and every apply_condition/
+// remove_condition outcome exactly as v1 decoded it. Never mutates the
+// Outcome/ResourceChangeOutcome values reachable from the ORIGINAL
+// Ability — outcomes is a.Hit/a.Miss/a.Effect, still owned by
+// Ruleset.Abilities after this returns (Task 2's decision: Abilities stays
+// populated for a v1-loaded Ruleset), so this copies before writing a new
+// DeltaExpr.
+func adaptV1Outcomes(outcomes []Outcome) ([]Outcome, error) {
+	if len(outcomes) == 0 {
+		return nil, nil
+	}
+	out := make([]Outcome, len(outcomes))
+	for i, o := range outcomes {
+		out[i] = o
+		if o.Kind == OutcomeResourceChange {
+			rc := *o.ResourceChange // copy: never mutate the original v1 Outcome tree
+			scoped, err := scopedParse(rc.DeltaExprSrc, "target")
+			if err != nil {
+				return nil, fmt.Errorf("resource_change on %q: %w", rc.Resource, err)
+			}
+			rc.DeltaExpr = scoped
+			out[i].ResourceChange = &rc
+		}
+	}
+	return out, nil
+}
+
+// adaptV1Abilities runs AdaptV1Ability over every ability in abilities,
+// building the Ruleset.Compiled map for a format-v1 Load (Load's v1 path,
+// above). Iterates in sorted-id order — not for output determinism (the
+// result is a map; map equality does not depend on build order) but so
+// that IF AdaptV1Ability ever failed (provably unreachable per its own doc
+// comment, for any Ability that already passed crossValidate), the
+// reported error would name the same ability on every run, matching this
+// file's and compile.go's shared determinism convention for error
+// reporting.
+func adaptV1Abilities(abilities map[string]*Ability) (map[string]*CompiledPower, error) {
+	ids := make([]string, 0, len(abilities))
+	for id := range abilities {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	out := make(map[string]*CompiledPower, len(abilities))
+	for _, id := range ids {
+		cp, err := AdaptV1Ability(abilities[id])
+		if err != nil {
+			return nil, err
+		}
+		out[id] = cp
 	}
 	return out, nil
 }

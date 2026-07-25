@@ -151,13 +151,28 @@ func TestLoadMissingDirectory(t *testing.T) {
 }
 
 // TestLoadV1DispatchUnaffectedByV2 pins Load's format_version dispatch
-// (P10 task-2): a format_version "1" ruleset takes the EXACT same v1 path
-// it always has — Compiled/Atoms are nil (v2-only fields), Abilities is
-// v1-Ability-shaped and non-empty, exactly like TestLoadValidFixture
-// already established before this task existed. This is the thin
-// regression pin for "v1 loading stays fully intact" at the Load()
-// entry-point level; TestLoadValidFixture and the rest of this file cover
-// v1's actual decode/validation behavior in depth and are unchanged.
+// (P10 task-2, UPDATED P10 task-3 — see below): a format_version "1"
+// ruleset takes the EXACT same v1 decode/cross-validate path it always
+// has — Atoms stays nil (v2-only field), Abilities is v1-Ability-shaped
+// and non-empty, exactly like TestLoadValidFixture already established
+// before this task existed. This is the thin regression pin for "v1
+// loading stays fully intact" at the Load() entry-point level;
+// TestLoadValidFixture and the rest of this file cover v1's actual
+// decode/validation behavior in depth and are unchanged.
+//
+// Compiled's assertion FLIPPED in Task 3 (spec 5c pillar: "Resolve
+// executes CompiledPower through ONE code path"): Load's v1 path now ALSO
+// adapts every loaded Ability into Ruleset.Compiled (load.go's
+// AdaptV1Ability/adaptV1Abilities), so Compiled is non-nil and holds one
+// entry per ability, matching Abilities' key set exactly — Resolve
+// (resolve.go) reads Compiled exclusively, regardless of format_version,
+// and never branches on FormatVersion. This supersedes P10 task-2's
+// design decision #5 ("nil for a format-v1-loaded Ruleset... Task 3's
+// Resolve should branch on FormatVersion/read Compiled for v2"), which
+// that report itself flagged as provisional, subject to Task 3's ruling —
+// seeing the adapter through to Load-time population, rather than a
+// per-call Resolve-side branch, is the ruling this task made (see
+// AdaptV1Ability's doc comment, load.go, for the full rationale).
 func TestLoadV1DispatchUnaffectedByV2(t *testing.T) {
 	rs, err := rules.Load(fixture(t, "valid"))
 	if err != nil {
@@ -166,14 +181,22 @@ func TestLoadV1DispatchUnaffectedByV2(t *testing.T) {
 	if rs.FormatVersion != "1" {
 		t.Fatalf("FormatVersion = %q, want %q", rs.FormatVersion, "1")
 	}
-	if rs.Compiled != nil {
-		t.Errorf("Compiled = %v, want nil for a format_version \"1\" Ruleset", rs.Compiled)
-	}
-	if rs.Atoms != nil {
-		t.Errorf("Atoms = %v, want nil for a format_version \"1\" Ruleset", rs.Atoms)
+	if rs.Compiled == nil {
+		t.Fatal("Compiled: want a non-nil map for a format_version \"1\" Ruleset (Task 3: Load adapts every v1 Ability into Compiled)")
 	}
 	if len(rs.Abilities) == 0 {
 		t.Error("Abilities: want the usual non-empty v1 ability set, unaffected by v2's addition")
+	}
+	if len(rs.Compiled) != len(rs.Abilities) {
+		t.Errorf("len(Compiled) = %d, want %d (one adapted CompiledPower per v1 Ability, same key set)", len(rs.Compiled), len(rs.Abilities))
+	}
+	for id := range rs.Abilities {
+		if _, ok := rs.Compiled[id]; !ok {
+			t.Errorf("Compiled[%q]: not present, want an adapted CompiledPower for every ability in Abilities", id)
+		}
+	}
+	if rs.Atoms != nil {
+		t.Errorf("Atoms = %v, want nil for a format_version \"1\" Ruleset", rs.Atoms)
 	}
 }
 

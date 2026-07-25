@@ -1,6 +1,7 @@
 package conformance_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,6 +65,75 @@ func TestRunGoldenMismatch(t *testing.T) {
 func TestRunUnknownDirectory(t *testing.T) {
 	if err := conformance.Run(fixture("does-not-exist")); err == nil {
 		t.Fatal("Run(does-not-exist): want error, got nil")
+	}
+}
+
+// TestRunValidV2Ruleset is TestRunValidRuleset's format-v2 counterpart
+// (Task 3): a single composed ability ("poke", minimal-v2/) whose batch
+// golden (goldens/poke-hit.json) AND compiled-form golden
+// (goldens/compiled/poke.json) both reproduce exactly — proving the smoke
+// pass, the batch-golden pass, and the NEW compiled-form-golden pass
+// (spec §8) all actually run for a v2 ruleset, not just a v1 one (a v2
+// ruleset's Abilities map is deliberately empty — Task 2's design
+// decision — so before Task 3 rewired smokeTest/runGoldens to iterate
+// rs.Compiled instead, both passes silently covered ZERO abilities for
+// any v2 ruleset; this test would have passed vacuously against that gap).
+func TestRunValidV2Ruleset(t *testing.T) {
+	if err := conformance.Run(fixture("minimal-v2")); err != nil {
+		t.Fatalf("Run(minimal-v2): unexpected error: %v", err)
+	}
+}
+
+// TestRunCompiledGoldenMissing proves the compiled-form golden pass is
+// actually enforced for a v2 ruleset (spec §8, Task 3): a ruleset
+// otherwise identical to minimal-v2 but shipping no goldens/compiled/
+// directory at all must fail Run, naming the ability with no compiled
+// golden.
+func TestRunCompiledGoldenMissing(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-missing-compiled-golden"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-missing-compiled-golden): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "poke") {
+		t.Errorf("Run(minimal-v2-missing-compiled-golden) error = %q, want it to name the ability %q", err.Error(), "poke")
+	}
+	if !strings.Contains(err.Error(), "missing compiled golden") {
+		t.Errorf("Run(minimal-v2-missing-compiled-golden) error = %q, want it to say the golden is missing", err.Error())
+	}
+}
+
+// TestRunCompiledGoldenMismatch proves compiled-golden comparison is exact,
+// not vacuous: a goldens/compiled/poke.json that deliberately disagrees
+// with what the ruleset actually compiles to (targeting.range: 99 instead
+// of 1 — a drifted/hand-edited golden) must fail Run, naming the ability
+// and the drift.
+func TestRunCompiledGoldenMismatch(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-compiled-golden-mismatch"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-compiled-golden-mismatch): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "poke") {
+		t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to name the ability %q", err.Error(), "poke")
+	}
+	if !strings.Contains(err.Error(), "drift") {
+		t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to call out the drift", err.Error())
+	}
+}
+
+// TestRunCompiledGoldenExemptForV1 proves the exemption half of spec §8's
+// rule ("v1 rulesets exempt until none exist" — the task brief's own
+// words): the pre-existing v1 "minimal" fixture ships no goldens/compiled/
+// directory at all and must still pass Run cleanly — TestRunValidRuleset
+// already proves this incidentally, but this test names the invariant
+// explicitly so a future change to runCompiledGoldens's format_version
+// gate is caught by an assertion that SAYS what it's protecting, not just
+// a side effect of an unrelated test staying green.
+func TestRunCompiledGoldenExemptForV1(t *testing.T) {
+	if _, err := os.Stat(fixture("minimal", "goldens", "compiled")); !os.IsNotExist(err) {
+		t.Fatalf("fixture precondition: testdata/minimal/goldens/compiled must NOT exist (this test proves v1 needs none), stat error = %v", err)
+	}
+	if err := conformance.Run(fixture("minimal")); err != nil {
+		t.Fatalf("Run(minimal): unexpected error (v1 rulesets must be exempt from the compiled-golden requirement): %v", err)
 	}
 }
 

@@ -397,7 +397,10 @@ func resolveIntField(src string, intBindings map[string]int) (int, error) {
 
 // compileResolution finds the composition's resolution contribution, if
 // any (spec §4: at most one), splices bindings into its roll/vs templates,
-// and parses + position-validates the result.
+// and parses + position-validates the result. RollSrc/VsSrc (Task 3) are
+// set to the same fully-substituted text (rollSub/vsSub) Roll/Vs are
+// parsed from — v2's testimony text is its post-splice source, unlike a
+// v1-adapted ability's (see CompiledResolution's doc comment).
 func compileResolution(path string, atomInstances []*AtomDef, textBindings []map[string]string, attrOrDefSet, resSet map[string]bool) (resolution *CompiledResolution, key string, err error) {
 	found := -1
 	var contrib Contribution
@@ -429,7 +432,11 @@ func compileResolution(path string, atomInstances []*AtomDef, textBindings []map
 		return nil, "", verr
 	}
 
-	return &CompiledResolution{Roll: rollExpr, Vs: vsExpr, Branches: contrib.Branches}, contrib.Key, nil
+	return &CompiledResolution{
+		Roll: rollExpr, RollSrc: rollSub,
+		Vs: vsExpr, VsSrc: vsSub,
+		Branches: contrib.Branches,
+	}, contrib.Key, nil
 }
 
 // compileEffects splices bindings into and validates one outcome

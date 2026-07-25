@@ -25,6 +25,12 @@ type Ruleset struct {
 	// Abilities and Conditions are keyed by their declared id. Load
 	// rejects duplicate ids (within and across files) before either map
 	// is populated, so every entry here is unique by construction.
+	// Abilities is non-empty for a format-v1-loaded Ruleset (v1's
+	// abilities/*.json decode directly into this shape) and a non-nil,
+	// EMPTY map for a format-v2-loaded Ruleset (v2's abilities/*.json are
+	// compositions, not v1 Ability-shaped — see Compiled). Resolve (Task
+	// 5, rewired Task 3) never reads Abilities: it executes Compiled
+	// exclusively, for every format version — see Compiled's doc comment.
 	Abilities  map[string]*Ability
 	Conditions map[string]*Condition
 
@@ -41,13 +47,18 @@ type Ruleset struct {
 	// flattened form itself in Compiled.
 	Atoms map[string]*AtomDef
 
-	// Compiled holds every format-v2 composition ability's flattened
-	// execution form, keyed by ability id (spec §6, compile-at-load).
-	// Populated by Load itself — a v2 ability compiles once, here, so
-	// Resolve never re-derives it and never walks an atom graph. nil for
-	// a format-v1-loaded Ruleset (v1 abilities are Resolve-ready as-is,
-	// via Abilities, unchanged from 5a; the sunset flip to v2-only is
-	// Task 4).
+	// Compiled holds every ability's flattened execution form, keyed by
+	// ability id — populated by Load itself, for EVERY format version
+	// (Task 3, spec pillar "Resolve executes CompiledPower through ONE
+	// code path"): a v2 composition compiles via compile.go's atom-graph
+	// flattening (spec §6); a v1 ability adapts via load.go's
+	// AdaptV1Ability, a byte-identical-behavior translation of v1's
+	// {attack roll+vs-defense-name, hit/miss/effect lists} into the exact
+	// same CompiledPower shape. Either way, Resolve (Task 5, rewired Task
+	// 3) reads Compiled ONLY — it never branches on FormatVersion and
+	// never sees an Ability or an atom graph directly. Always non-nil
+	// after a successful Load; the sunset removal of Abilities/the v1
+	// code path entirely is Task 4.
 	Compiled map[string]*CompiledPower
 }
 
@@ -206,9 +217,31 @@ type CompiledPower struct {
 // expressions (spec §7: evaluated via EvalScoped); Branches carries the
 // [ge-label, lt-label] pair verbatim into testimony (AbilityUsed.
 // outcome_summary speaks the ruleset's own words).
+//
+// RollSrc/VsSrc are the DISPLAY text Resolve records onto
+// AbilityUsed.rolls[].expression when Roll/Vs actually rolls dice (Task 3,
+// spec pillar "ONE execution path" — the v1-to-CompiledPower adapter and
+// the v2 compiler both populate a CompiledPower, but from different
+// "source of truth" text): for a v2 composition (compile.go), RollSrc/
+// VsSrc are the fully-substituted, POST-SPLICE source text Roll/Vs were
+// parsed from — exactly what Roll.String()/Vs.String() would already
+// return, kept as an explicit field so testimony code never has to know
+// whether it's holding a v1-adapted or v2-compiled power. For a v1-adapted
+// ability (load.go's AdaptV1Ability), RollSrc is v1's ORIGINAL, UNSCOPED
+// Attack.RollSrc text — Roll itself is a DIFFERENT (caster-scoped) parse
+// of a scoped rewrite of that same text, needed to execute through
+// EvalScoped, but the adapter must never let that rewritten text leak into
+// a v1 ability's already-committed golden testimony. VsSrc has no true v1
+// "original" (v1's Attack.Vs was a bare defense NAME, never an
+// expression) — it is set to the synthesized "@target.<defense>" text,
+// which is only ever OBSERVABLE if evaluating it rolls dice; a bare
+// attribute ref never does, so no v1 golden ever displays it. See
+// AdaptV1Ability's doc comment for the full "SourceText decision"
+// rationale.
 type CompiledResolution struct {
-	Roll, Vs *Expr
-	Branches [2]string
+	Roll, Vs       *Expr
+	RollSrc, VsSrc string
+	Branches       [2]string
 }
 
 // ResourceDef declares one named resource pool a ruleset's actors may

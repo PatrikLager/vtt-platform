@@ -28,8 +28,34 @@ import (
 // (limited-use self-effect, applies braced) / unbrace (at-will self-effect,
 // removes braced) / sweep (attack, max_targets 2, hit raises vigor by 1 —
 // the multi-target ordering case).
+
+// compileFixtureAbilities adapts every hand-built v1 Ability in abilities
+// into a Ruleset.Compiled map via the EXACT SAME adapter Load uses for a
+// real format-v1 ruleset (rules.AdaptV1Ability — load.go, Task 3). Resolve
+// now executes CompiledPower exclusively, through ONE code path, for
+// every format version (spec 5c pillar) — so every fixture in this
+// package that builds a *rules.Ruleset by hand, bypassing Load entirely
+// (this file's own doc comment: "Resolve takes an already-loaded
+// *rules.Ruleset, so these tests exercise it directly without depending
+// on load.go's cross-validation having run"), must populate Compiled
+// itself, with the identical logic a real Load would have used. Shared by
+// every resolve_*_test.go fixture in this package.
+func compileFixtureAbilities(t *testing.T, abilities map[string]*rules.Ability) map[string]*rules.CompiledPower {
+	t.Helper()
+	out := make(map[string]*rules.CompiledPower, len(abilities))
+	for id, a := range abilities {
+		cp, err := rules.AdaptV1Ability(a)
+		if err != nil {
+			t.Fatalf("AdaptV1Ability(%q): unexpected error: %v", id, err)
+		}
+		out[id] = cp
+	}
+	return out
+}
+
 func fixtureRuleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
+	abilities := fixtureAbilities(t)
 	return &rules.Ruleset{
 		ID:         "resolve-fixture",
 		Name:       "Resolve Fixture",
@@ -55,66 +81,72 @@ func fixtureRuleset(t *testing.T) *rules.Ruleset {
 			"braced": {ID: "braced", Name: "Braced"},
 			"heated": {ID: "heated", Name: "Heated"},
 		},
-		Abilities: map[string]*rules.Ability{
-			"jab": {
-				ID: "jab", Name: "Jab",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
-				Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
-				Hit: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
-					}},
-				},
+		Abilities: abilities,
+		Compiled:  compileFixtureAbilities(t, abilities),
+	}
+}
+
+func fixtureAbilities(t *testing.T) map[string]*rules.Ability {
+	t.Helper()
+	return map[string]*rules.Ability{
+		"jab": {
+			ID: "jab", Name: "Jab",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
+			Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
+			Hit: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
+				}},
 			},
-			"haymaker": {
-				ID: "haymaker", Name: "Haymaker",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
-				Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
-				Hit: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "0 - 1d6"), DeltaExprSrc: "0 - 1d6",
-					}},
-				},
+		},
+		"haymaker": {
+			ID: "haymaker", Name: "Haymaker",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
+			Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
+			Hit: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "0 - 1d6"), DeltaExprSrc: "0 - 1d6",
+				}},
 			},
-			"vent": {
-				ID: "vent", Name: "Vent",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
-				Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
-				Hit: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "steam", DeltaExpr: mustParse(t, "0 - 2"), DeltaExprSrc: "0 - 2",
-					}},
-				},
+		},
+		"vent": {
+			ID: "vent", Name: "Vent",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
+			Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
+			Hit: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "steam", DeltaExpr: mustParse(t, "0 - 2"), DeltaExprSrc: "0 - 2",
+				}},
 			},
-			"brace": {
-				ID: "brace", Name: "Brace",
-				Usage:     rules.Usage{Limited: &rules.LimitedUsage{Resource: "focus", Cost: 1}},
-				Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
-				Effect: []rules.Outcome{
-					{Kind: rules.OutcomeApplyCondition, ApplyCondition: &rules.ApplyConditionOutcome{ID: "braced"}},
-				},
+		},
+		"brace": {
+			ID: "brace", Name: "Brace",
+			Usage:     rules.Usage{Limited: &rules.LimitedUsage{Resource: "focus", Cost: 1}},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			Effect: []rules.Outcome{
+				{Kind: rules.OutcomeApplyCondition, ApplyCondition: &rules.ApplyConditionOutcome{ID: "braced"}},
 			},
-			"unbrace": {
-				ID: "unbrace", Name: "Unbrace",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
-				Effect: []rules.Outcome{
-					{Kind: rules.OutcomeRemoveCondition, RemoveCondition: &rules.RemoveConditionOutcome{ID: "braced"}},
-				},
+		},
+		"unbrace": {
+			ID: "unbrace", Name: "Unbrace",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			Effect: []rules.Outcome{
+				{Kind: rules.OutcomeRemoveCondition, RemoveCondition: &rules.RemoveConditionOutcome{ID: "braced"}},
 			},
-			"sweep": {
-				ID: "sweep", Name: "Sweep",
-				Usage:     rules.Usage{AtWill: true},
-				Targeting: rules.Targeting{Range: 1, MaxTargets: 2},
-				Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
-				Hit: []rules.Outcome{
-					{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
-						Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
-					}},
-				},
+		},
+		"sweep": {
+			ID: "sweep", Name: "Sweep",
+			Usage:     rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 1, MaxTargets: 2},
+			Attack:    &rules.Attack{Roll: mustParse(t, "1d20 + @brawn"), RollSrc: "1d20 + @brawn", Vs: "guard"},
+			Hit: []rules.Outcome{
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "vigor", DeltaExpr: mustParse(t, "1"), DeltaExprSrc: "1",
+				}},
 			},
 		},
 	}

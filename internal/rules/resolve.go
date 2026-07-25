@@ -22,18 +22,39 @@ import (
 // gateway) to stamp — matching gateway.ToEvent's convention for every other
 // command-to-event conversion in this codebase.
 //
+// # ONE execution path (Task 3, spec 5c §6-7)
+//
+// Resolve executes rs.Compiled ONLY — never rs.Abilities, never an atom
+// graph — regardless of the ruleset's format_version. A format-v2
+// composition compiles to its CompiledPower at Load via compile.go's
+// atom-graph flattening; a format-v1 Ability adapts to the EXACT same
+// CompiledPower shape at Load via load.go's AdaptV1Ability, translating
+// v1's implicit positional scoping (attack rolls evaluate against the
+// CASTER, hit/miss/effect outcome expressions evaluate against the TARGET
+// — v1's actual historical contract, restated here as what the adapter
+// must keep observably true) into the explicit @caster./@target. scoping
+// EvalScoped requires. This is why every rule below is phrased in terms of
+// a CompiledPower's Resolution/BranchOutcomes/Effects rather than an
+// Ability's Attack/Hit/Miss: they are the same fields, under new names, for
+// both format versions alike.
+//
 // # Validation (in order; each failure is a clean error — nothing returned)
 //
-//  1. actor: cmd's ability_id must be declared in rs; cmd's actor_id must
-//     name an actor present in st.
+//  1. actor: cmd's ability_id must be a key of rs.Compiled; cmd's actor_id
+//     must name an actor present in st.
 //  2. targets: cmd must name at least one target and no more than the
 //     ability's targeting.max_targets; every named target must be an actor
 //     present in st.
-//  3. stats: if the ability has an attack, the caster must have every
-//     attribute the attack roll expression references, and every target
-//     must carry the ability's declared defense stat (defenses live in the
-//     same generic Actor.Attributes map as attributes — the wire format has
-//     no separate defenses map).
+//  3. stats: if the ability has a resolution, every '@' (attribute) ref its
+//     Roll or Vs expression carries is checked upfront (resource ('#')
+//     refs are NOT — see the outcome-list paragraph below, the same lazy
+//     treatment applies to any resource ref inside Roll/Vs too): a
+//     caster-scoped ref requires the caster to carry that attribute; a
+//     target-scoped ref requires EVERY named target to carry it (defenses
+//     live in the same generic Actor.Attributes map as attributes — the
+//     wire format has no separate defenses map, matching v1's Vs-as-
+//     defense-name convention exactly for a v1-adapted ability, whose Vs
+//     is always exactly one target-scoped ref).
 //  4. usage: if the ability is limited-use, the caster must already carry
 //     the named resource (resources are never created by Resolve — spec
 //     binding: "resource must already exist on the actor") and its current
@@ -48,14 +69,15 @@ import (
 //     An actor with no token anywhere, or a target with no token in the
 //     caster's scene, is the same "no-token/no-scene" clean error family.
 //
-// Outcome-list expression validity (an @/# reference an ability's hit/
-// miss/effect list uses that the ACTING actor happens not to carry, or a
-// resource_change naming a resource the actor doesn't have) is deliberately
-// NOT part of the upfront validation pass above: hit and miss are mutually
-// exclusive per target (decided by the attack roll, which is itself
-// deterministic given rng), so checking only the branch that actually runs
-// keeps Resolve's error behavior exactly as deterministic as its event
-// output — Eval's own "unknown attribute/resource" errors (expr.go) surface
+// Outcome-list expression validity (an @/# reference a branch's outcome
+// list uses that the relevant actor happens not to carry, or a
+// resource_change naming a resource the target doesn't have) is
+// deliberately NOT part of the upfront validation pass above: a
+// resolution's two branches are mutually exclusive per target (decided by
+// comparing Roll's total against Vs's, both themselves deterministic given
+// rng), so checking only the branch that actually runs keeps Resolve's
+// error behavior exactly as deterministic as its event output —
+// EvalScoped's own "unknown attribute/resource" errors (expr.go) surface
 // these lazily, at the point of use, and Resolve aborts (returns nil, err)
 // the instant any such error occurs, so no partial batch is ever returned.
 //
@@ -63,19 +85,28 @@ import (
 //
 // Once validation passes: a limited-use ability's cost is spent first,
 // emitted as the leading ResourceChanged (before any per-target event).
-// Then, for each target in cmd order: if the ability has an attack, roll it
-// fresh for that target (attack roll total >= the target's defense value is
-// a hit, ties included) and apply the resulting hit or miss outcome list;
-// then apply the effect list unconditionally (effect always runs, with or
-// without an attack). Outcomes apply against the TARGET named in that slot
-// — there is no separate "which actor" field on an outcome; a self-cast
-// ability names the caster as its own target. apply_condition/
-// remove_condition outcomes are idempotent: applying an already-present
-// condition or removing an absent one emits nothing (a no-op), rather than
-// risking the engine reject the whole atomic batch over a duplicate/absent
-// condition event — this mirrors the presence guard the spec mandates for
-// threshold-driven condition events (below), generalized to ability-outcome
-// condition events for the same reason.
+// Then, for each target in cmd order: if the ability has a resolution,
+// evaluate Roll (via EvalScoped, caster and target contexts both live),
+// THEN Vs (same two contexts) fresh for that target — a resolution total
+// >= its Vs total selects Branches[0], else Branches[1] (v1-adapted:
+// "hit"/"miss", ties included in Branches[0]/"hit", exactly v1's own
+// >= comparison) — and apply the winning branch's outcome list; then apply
+// the effect list unconditionally (effects always run, with or without a
+// resolution). Branch labels flow into AbilityUsed.outcome_summary
+// verbatim — testimony speaks the ruleset's own words, and a v1-adapted
+// ability's words are always "hit"/"miss". Outcomes apply against the
+// TARGET named in that slot — there is no separate "which actor" field on
+// an outcome; a self-cast ability names the caster as its own target, and
+// an outcome's expression may still reference the CASTER's state via an
+// explicit @caster./#caster. ref (v2 only — a v1-adapted outcome
+// expression is always target-scoped, matching v1's historical single-
+// actor evaluation). apply_condition/remove_condition outcomes are
+// idempotent: applying an already-present condition or removing an absent
+// one emits nothing (a no-op), rather than risking the engine reject the
+// whole atomic batch over a duplicate/absent condition event — this
+// mirrors the presence guard the spec mandates for threshold-driven
+// condition events (below), generalized to ability-outcome condition
+// events for the same reason.
 //
 // Finally, every (actor, resource) pair that changed value during this
 // resolution (usage spend, and/or any hit/miss/effect resource_change) has
@@ -83,20 +114,28 @@ import (
 // resource) pairs FIRST CHANGED this resolution, then threshold declaration
 // order (matching evalThresholds' own doc — change-order, not resource
 // declaration order), against the actor's final
-// (post-every-change-in-this-batch) attributes/resources: a threshold whose
-// "when" expression evaluates non-zero applies its condition if not already
-// present; one with remove_when_false set removes its condition, if
-// present, once "when" evaluates zero. Every attack roll and every
-// resource_change delta_expr that actually invoked rng is recorded as a
-// Roll entry on the single AbilityUsed event (attack rolls are always
-// recorded, even if their expression happens not to contain dice; a
-// resource_change is recorded only when it actually rolled — see
-// resolve.go's evalRecording); AbilityUsed is always the first event of the
+// (post-every-change-in-this-batch) attributes/resources via single-context
+// Eval (thresholds are a single-actor position — spec §5 — unchanged by
+// Task 3): a threshold whose "when" expression evaluates non-zero applies
+// its condition if not already present; one with remove_when_false set
+// removes its condition, if present, once "when" evaluates zero.
+//
+// Every Roll/Vs/resource_change expression that actually invoked rng is
+// recorded as a Roll entry on the single AbilityUsed event, in evaluation
+// order (Roll, then Vs, then each hit/miss/effect resource_change that
+// rolls, all per target, in target order): Roll is ALWAYS recorded, even
+// when its expression happens not to contain dice (matching v1's original
+// attack-roll contract exactly); Vs and every resource_change are recorded
+// ONLY when they actually rolled (see resolve.go's evalRecordingScoped) —
+// this is precisely why a v1-adapted ability's Vs
+// ("@target.<defense>", never containing dice) never appears in
+// AbilityUsed.rolls, keeping every existing v1 golden byte-identical
+// through this path. AbilityUsed is always the first event of the
 // returned batch, followed by the usage-spend ResourceChanged (if any),
 // then every per-target outcome event in target order, then every
 // threshold-driven condition event.
 func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) ([]*vttv1.Envelope, error) {
-	ability, ok := rs.Abilities[cmd.GetAbilityId()]
+	ability, ok := rs.Compiled[cmd.GetAbilityId()]
 	if !ok {
 		return nil, fmt.Errorf("rules: resolve: unknown ability %q", cmd.GetAbilityId())
 	}
@@ -132,21 +171,42 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 		targets[tid] = a
 	}
 
-	// Stats: only what's UNCONDITIONALLY required (the attack roll and the
-	// defense check happen for every target whenever the ability attacks at
-	// all) is validated upfront; hit/miss/effect outcome expressions are
-	// validated lazily as they execute (see the doc comment above).
-	if ability.Attack != nil {
-		attrRefs, _ := ability.Attack.Roll.Refs()
-		for _, name := range attrRefs {
-			if _, ok := caster.GetAttributes()[name]; !ok {
-				return nil, fmt.Errorf("rules: resolve: actor %q missing attribute %q required by ability %q's attack roll", casterID, name, ability.ID)
+	// Stats: only what's UNCONDITIONALLY required (every '@' ref Roll/Vs
+	// carries, checked against whichever actor its scope names — the
+	// defense check for a v1-adapted ability is exactly this, since its Vs
+	// is always the single target-scoped ref "@target.<defense>") is
+	// validated upfront; hit/miss/effect outcome expressions are validated
+	// lazily as they execute (see the doc comment above). '#' (resource)
+	// refs are never checked here, matching v1's original attrRefs-only
+	// check — a resource ref inside Roll/Vs surfaces lazily too, via
+	// EvalScoped's own error, exactly like an outcome's resource ref
+	// always has.
+	checkAttrScopedRefs := func(refs []ScopedRef) error {
+		for _, ref := range refs {
+			if ref.Sigil != '@' {
+				continue
+			}
+			switch ref.Scope {
+			case ScopeCaster:
+				if _, ok := caster.GetAttributes()[ref.Name]; !ok {
+					return fmt.Errorf("rules: resolve: actor %q missing attribute %q required by ability %q's attack roll", casterID, ref.Name, ability.ID)
+				}
+			case ScopeTarget:
+				for _, tid := range targetIDs {
+					if _, ok := targets[tid].GetAttributes()[ref.Name]; !ok {
+						return fmt.Errorf("rules: resolve: target actor %q missing defense %q required by ability %q", tid, ref.Name, ability.ID)
+					}
+				}
 			}
 		}
-		for _, tid := range targetIDs {
-			if _, ok := targets[tid].GetAttributes()[ability.Attack.Vs]; !ok {
-				return nil, fmt.Errorf("rules: resolve: target actor %q missing defense %q required by ability %q", tid, ability.Attack.Vs, ability.ID)
-			}
+		return nil
+	}
+	if ability.Resolution != nil {
+		if err := checkAttrScopedRefs(ability.Resolution.Roll.ScopedRefs()); err != nil {
+			return nil, err
+		}
+		if err := checkAttrScopedRefs(ability.Resolution.Vs.ScopedRefs()); err != nil {
+			return nil, err
 		}
 	}
 
@@ -195,32 +255,56 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 	}
 
 	for _, tid := range targetIDs {
-		if ability.Attack != nil {
-			attrs := rst.attributesOf(casterID)
-			resources := rst.resourcesOf(casterID)
-			total, dice, err := evalRecording(ability.Attack.Roll, attrs, resources, rng)
+		if ability.Resolution != nil {
+			casterCtx := EvalContext{Attrs: rst.attributesOf(casterID), Resources: rst.resourcesOf(casterID)}
+			targetCtx := EvalContext{Attrs: rst.attributesOf(tid), Resources: rst.resourcesOf(tid)}
+
+			total, dice, err := evalRecordingScoped(ability.Resolution.Roll, casterCtx, targetCtx, rng)
 			if err != nil {
-				return nil, fmt.Errorf("rules: resolve: ability %q attack roll: %w", ability.ID, err)
+				return nil, fmt.Errorf("rules: resolve: ability %q resolution roll: %w", ability.ID, err)
 			}
-			total32, err := int32Checked(total, fmt.Sprintf("ability %q attack roll total", ability.ID))
+			total32, err := int32Checked(total, fmt.Sprintf("ability %q resolution roll total", ability.ID))
 			if err != nil {
 				return nil, err
 			}
 			rolls = append(rolls, &vttv1.AbilityUsed_Roll{
-				Expression: ability.Attack.RollSrc,
+				Expression: ability.Resolution.RollSrc,
 				Results:    toInt32Slice(dice),
 				Total:      total32,
 			})
 
-			defenseVal := int(targets[tid].GetAttributes()[ability.Attack.Vs])
-			hit := total >= defenseVal
-			outcomeList, phase, word := ability.Miss, "miss", "miss"
+			// Vs is evaluated the SAME way (EvalScoped, fresh per target) but
+			// recorded onto AbilityUsed.rolls ONLY when it actually rolled —
+			// exactly resource_change's own recording rule (below), NOT the
+			// roll's always-recorded rule. This is what keeps a v1-adapted
+			// ability's Vs ("@target.<defense>", never containing dice)
+			// invisible to testimony, preserving every existing v1 golden.
+			vsTotal, vsDice, err := evalRecordingScoped(ability.Resolution.Vs, casterCtx, targetCtx, rng)
+			if err != nil {
+				return nil, fmt.Errorf("rules: resolve: ability %q resolution vs: %w", ability.ID, err)
+			}
+			vsTotal32, err := int32Checked(vsTotal, fmt.Sprintf("ability %q resolution vs total", ability.ID))
+			if err != nil {
+				return nil, err
+			}
+			if len(vsDice) > 0 {
+				rolls = append(rolls, &vttv1.AbilityUsed_Roll{
+					Expression: ability.Resolution.VsSrc,
+					Results:    toInt32Slice(vsDice),
+					Total:      vsTotal32,
+				})
+			}
+
+			hit := total >= vsTotal
+			branchIdx := 1
 			if hit {
-				outcomeList, phase, word = ability.Hit, "hit", "hit"
+				branchIdx = 0
 			}
-			summaryParts = append(summaryParts, fmt.Sprintf("%s on %s: %s (%d vs %d)", ability.Name, tid, word, total, defenseVal))
+			outcomeList := ability.BranchOutcomes[branchIdx]
+			word := ability.Resolution.Branches[branchIdx]
+			summaryParts = append(summaryParts, fmt.Sprintf("%s on %s: %s (%d vs %d)", ability.Name, tid, word, total, vsTotal))
 
-			evs, evRolls, err := rst.applyOutcomes(tid, outcomeList, ability.ID, phase)
+			evs, evRolls, err := rst.applyOutcomes(casterID, tid, outcomeList, ability.ID, word)
 			if err != nil {
 				return nil, err
 			}
@@ -228,15 +312,15 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 			rolls = append(rolls, evRolls...)
 		}
 
-		if len(ability.Effect) > 0 {
-			evs, evRolls, err := rst.applyOutcomes(tid, ability.Effect, ability.ID, "effect")
+		if len(ability.Effects) > 0 {
+			evs, evRolls, err := rst.applyOutcomes(casterID, tid, ability.Effects, ability.ID, "effect")
 			if err != nil {
 				return nil, err
 			}
 			events = append(events, evs...)
 			rolls = append(rolls, evRolls...)
 		}
-		if ability.Attack == nil {
+		if ability.Resolution == nil {
 			summaryParts = append(summaryParts, fmt.Sprintf("%s on %s", ability.Name, tid))
 		}
 	}
@@ -362,15 +446,22 @@ func (r *resolveState) setCondition(actorID, condID string, present bool) {
 	r.condOverride[actorID][condID] = present
 }
 
-// applyOutcomes runs one outcome list (an ability's hit, miss, or effect
-// list) against actorID — the TARGET named in the per-target slot Resolve
-// is currently processing; outcomes have no actor-selection field of their
-// own (format.go), so the acting actor for every outcome in the list is
-// whichever target Resolve is looping over when it calls this. Returns the
-// ordered events the list produced (possibly none — apply/remove on an
+// applyOutcomes runs one outcome list (a compiled power's hit/connect/
+// pass-branch, miss/graze/fail-branch, or effect list) against actorID —
+// the TARGET named in the per-target slot Resolve is currently processing;
+// outcomes have no actor-selection field of their own (format.go), so the
+// TARGET of every outcome in the list is whichever target Resolve is
+// looping over when it calls this. casterID is threaded through
+// separately (Task 3): a resource_change's DeltaExpr is a two-actor
+// expression (EvalScoped) — a v1-adapted outcome is always target-scoped
+// (v1's historical single-actor evaluation, preserved), but a v2 outcome
+// may legitimately reference the CASTER's state too (e.g.
+// "0 - (@caster.vigor + 3)", proving_grounds' clash-damage atom), so both
+// contexts must be live regardless of format version. Returns the ordered
+// events the list produced (possibly none — apply/remove on an
 // already-in-that-state condition is a deliberate no-op, see Resolve's doc
 // comment) and any Roll entries recorded along the way.
-func (r *resolveState) applyOutcomes(actorID string, outcomes []Outcome, abilityID, phase string) ([]*vttv1.Envelope, []*vttv1.AbilityUsed_Roll, error) {
+func (r *resolveState) applyOutcomes(casterID, actorID string, outcomes []Outcome, abilityID, phase string) ([]*vttv1.Envelope, []*vttv1.AbilityUsed_Roll, error) {
 	var events []*vttv1.Envelope
 	var rolls []*vttv1.AbilityUsed_Roll
 	reason := fmt.Sprintf("ability:%s:%s", abilityID, phase)
@@ -382,9 +473,9 @@ func (r *resolveState) applyOutcomes(actorID string, outcomes []Outcome, ability
 			if _, ok := r.st.Actors[actorID].GetResources()[rc.Resource]; !ok {
 				return nil, nil, fmt.Errorf("rules: resolve: actor %q has no resource %q required by ability %q", actorID, rc.Resource, abilityID)
 			}
-			attrs := r.attributesOf(actorID)
-			resources := r.resourcesOf(actorID)
-			delta, dice, err := evalRecording(rc.DeltaExpr, attrs, resources, r.rng)
+			casterCtx := EvalContext{Attrs: r.attributesOf(casterID), Resources: r.resourcesOf(casterID)}
+			targetCtx := EvalContext{Attrs: r.attributesOf(actorID), Resources: r.resourcesOf(actorID)}
+			delta, dice, err := evalRecordingScoped(rc.DeltaExpr, casterCtx, targetCtx, r.rng)
 			if err != nil {
 				return nil, nil, fmt.Errorf("rules: resolve: ability %q resource_change on %q: %w", abilityID, rc.Resource, err)
 			}
@@ -484,18 +575,24 @@ func (rr *recordingRoller) Roll(n, sides int) ([]int, int) {
 	return res, total
 }
 
-// evalRecording evaluates e and also returns every individual die result
-// rolled while doing so (nil if e contains no DICE node, or roller is nil —
-// a nil roller is passed straight to Eval unwrapped, so Eval's own "dice
-// requires a non-nil Roller" error still fires cleanly instead of a nil-
-// pointer panic inside recordingRoller).
-func evalRecording(e *Expr, attrs, resources map[string]int, roller Roller) (int, []int, error) {
+// evalRecordingScoped evaluates e (via EvalScoped — Task 3: Resolve
+// executes every ability, v1-adapted or v2-native, through EvalScoped
+// exclusively, so this is the ONLY dice-recording eval wrapper Resolve
+// uses now) and also returns every individual die result rolled while
+// doing so (nil if e contains no DICE node, or roller is nil — a nil
+// roller is passed straight to EvalScoped unwrapped, so EvalScoped's own
+// "dice requires a non-nil Roller" error still fires cleanly instead of a
+// nil-pointer panic inside recordingRoller). Used for every expression a
+// CompiledPower carries: Resolution.Roll (always recorded), Resolution.Vs
+// and every resource_change DeltaExpr (recorded only when dice actually
+// rolled — see Resolve's doc comment).
+func evalRecordingScoped(e *Expr, caster, target EvalContext, roller Roller) (int, []int, error) {
 	if roller == nil {
-		total, err := Eval(e, attrs, resources, nil)
+		total, err := EvalScoped(e, caster, target, nil)
 		return total, nil, err
 	}
 	rr := &recordingRoller{inner: roller}
-	total, err := Eval(e, attrs, resources, rr)
+	total, err := EvalScoped(e, caster, target, rr)
 	if err != nil {
 		return 0, nil, err
 	}
