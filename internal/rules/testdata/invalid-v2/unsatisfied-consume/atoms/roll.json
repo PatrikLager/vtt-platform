@@ -1,0 +1,17 @@
+{
+  "id": "roll",
+  "params": [
+    { "name": "stat", "kind": "attribute" }
+  ],
+  "provides": ["clash"],
+  "consumes": ["delivery"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + @caster.{stat}",
+      "vs": "@target.brace",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

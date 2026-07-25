@@ -6,21 +6,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 )
 
-// supportedFormatVersion is the only format_version value Load accepts.
-// The ruleset format is v1 (spec §4); a future v2 gets its own constant and
-// an explicit migration story, not silent multi-version support.
-const supportedFormatVersion = "1"
+// supportedFormatVersions is the set of format_version values Load
+// accepts: "1" (spec §4, the original interpreter format — loaded exactly
+// as before, unchanged by this file's v2 additions) and "2" (spec
+// 2026-07-25-format-v2-composition-design.md §3 — atoms/compositions,
+// compiled at load into the same execution shape v1 abilities already
+// have; see loadV2 and compile.go). Any other value is rejected with a
+// clear error naming format_version — no silent multi-version guessing.
+var supportedFormatVersions = map[string]bool{"1": true, "2": true}
 
-// Load reads and fully validates the ruleset directory at dir: strict JSON
-// decoding of ruleset.json, abilities/*.json, and conditions/*.json (no
-// unknown fields tolerated), the grammar of every expression (parsed once,
-// here, so a loaded Ruleset never fails to parse an expression at runtime),
-// and every cross-reference an ability, resource, or threshold makes
-// (attributes, resources, defenses, and condition ids must all be declared
-// — spec §5). Every error names the offending file and field.
+// Load reads and fully validates the ruleset directory at dir. For
+// format_version "1": strict JSON decoding of ruleset.json,
+// abilities/*.json, and conditions/*.json (no unknown fields tolerated),
+// the grammar of every expression (parsed once, here, so a loaded Ruleset
+// never fails to parse an expression at runtime), and every cross-
+// reference an ability, resource, or threshold makes (attributes,
+// resources, defenses, and condition ids must all be declared — spec §5).
+// For format_version "2": the same manifest/conditions handling, plus
+// atoms/*.json and abilities/*.json-as-compositions, compiled at load into
+// Ruleset.Compiled (see loadV2, compile.go — spec §6). Every error names
+// the offending file and field.
 func Load(dir string) (*Ruleset, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -33,6 +42,10 @@ func Load(dir string) (*Ruleset, error) {
 	manifest, err := loadManifest(filepath.Join(dir, "ruleset.json"))
 	if err != nil {
 		return nil, err
+	}
+
+	if manifest.FormatVersion == "2" {
+		return loadV2(dir, manifest)
 	}
 
 	conditions, err := loadConditions(filepath.Join(dir, "conditions"))
@@ -65,6 +78,59 @@ func Load(dir string) (*Ruleset, error) {
 	if err := crossValidate(rs); err != nil {
 		return nil, err
 	}
+	return rs, nil
+}
+
+// loadV2 is format_version "2"'s Load path (spec §3, §6): manifest (shared
+// with v1 via loadManifest) plus conditions/ (shared, unchanged shape),
+// atoms/, and abilities/-as-compositions, compiled into Ruleset.Compiled.
+// Resolve (Task 5) reads Compiled only; Abilities is left as an empty,
+// non-nil map for a v2-loaded Ruleset (v2's abilities/*.json files are not
+// v1 Ability-shaped — they are compositions, decoded into a distinct
+// internal type by loadCompositions and consumed only by compile.go).
+func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
+	conditions, err := loadConditions(filepath.Join(dir, "conditions"))
+	if err != nil {
+		return nil, err
+	}
+
+	atoms, err := loadAtoms(filepath.Join(dir, "atoms"))
+	if err != nil {
+		return nil, err
+	}
+
+	compositions, err := loadCompositions(filepath.Join(dir, "abilities"))
+	if err != nil {
+		return nil, err
+	}
+
+	guide, err := os.ReadFile(filepath.Join(dir, "guide.md"))
+	if err != nil {
+		return nil, fmt.Errorf("rules: load %s: guide.md: %w", dir, err)
+	}
+
+	rs := &Ruleset{
+		ID:            manifest.ID,
+		Name:          manifest.Name,
+		FormatVersion: manifest.FormatVersion,
+		Resources:     manifest.resources,
+		Defenses:      manifest.Defenses,
+		Attributes:    manifest.Attributes,
+		Abilities:     map[string]*Ability{},
+		Conditions:    conditions,
+		Atoms:         atoms,
+		Guide:         string(guide),
+	}
+
+	if err := crossValidateResources(rs); err != nil {
+		return nil, err
+	}
+
+	compiled, err := compileCompositions(rs, atoms, compositions)
+	if err != nil {
+		return nil, err
+	}
+	rs.Compiled = compiled
 	return rs, nil
 }
 
@@ -120,8 +186,8 @@ func loadManifest(path string) (*loadedManifest, error) {
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
 	}
-	if raw.FormatVersion != supportedFormatVersion {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q (only %q is supported)", raw.FormatVersion, supportedFormatVersion))
+	if !supportedFormatVersions[raw.FormatVersion] {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q (supported: \"1\", \"2\")", raw.FormatVersion))
 	}
 
 	seenAttr := map[string]bool{}
@@ -147,6 +213,20 @@ func loadManifest(path string) (*loadedManifest, error) {
 		}
 		if seenDef[d] {
 			return nil, fieldErr(path, "defenses", fmt.Sprintf("duplicate defense name %q", d))
+		}
+		// A name declared as BOTH an attribute and a defense is rejected
+		// here rather than left to cause trouble later: format v2's
+		// two-actor expressions expose defense values through the SAME
+		// '@' ref namespace attributes use (compile.go's attrOrDefSet —
+		// forced by Task 1's EvalContext having only Attrs/Resources, no
+		// separate defense map), so a collision would make "@caster.x" (or
+		// "@target.x") genuinely ambiguous — which value does it read?
+		// Checked here (loadManifest, shared by both format versions) so
+		// it also protects a v1 ruleset from authoring the same latent
+		// ambiguity, even though v1 has no union namespace of its own to
+		// immediately misbehave from.
+		if seenAttr[d] {
+			return nil, fieldErr(path, "defenses", fmt.Sprintf("name %q is declared as both an attribute and a defense — a two-actor expression's \"@caster.%s\"/\"@target.%s\" would be ambiguous (format v2 exposes defenses through the same '@' ref namespace as attributes); use distinct names", d, d, d))
 		}
 		seenDef[d] = true
 	}
@@ -175,6 +255,16 @@ func loadManifest(path string) (*loadedManifest, error) {
 			if e.HasDice() {
 				return nil, fieldErr(path, field+".default_max_expr", "must not contain dice (v1: default_max_expr is evaluated without recording its rolls — see internal/rules/expr.go)")
 			}
+			// default_max_expr is a single-actor position (spec v2 §5): a
+			// scoped ref ('@caster.x'/'@target.x') has no second context to
+			// resolve against here and must be rejected at load time, not
+			// left to Eval's defense-in-depth runtime error. Grammar v2
+			// (Task 1) parses scopes anywhere syntactically — this loader
+			// enforces where they're actually legal. A no-op for every v1
+			// fixture (none uses scope syntax), so v1 loading is unaffected.
+			if hasScopedRef(e) {
+				return nil, fieldErr(path, field+".default_max_expr", "must not contain a scoped reference (@caster.x / @target.x): default_max_expr is a single-actor position, write a bare reference instead")
+			}
 			def.DefaultMaxExpr = e
 			def.DefaultMaxExprSrc = *r.DefaultMaxExpr
 		}
@@ -196,6 +286,11 @@ func loadManifest(path string) (*loadedManifest, error) {
 			}
 			if whenExpr.HasDice() {
 				return nil, fieldErr(path, thField+".when", "must not contain dice (v1: a threshold 'when' is evaluated without recording its rolls, which would break the rolled-once-recorded-forever testimony contract — see internal/rules/expr.go)")
+			}
+			// See the identical default_max_expr comment above: threshold
+			// 'when' is also a single-actor position.
+			if hasScopedRef(whenExpr) {
+				return nil, fieldErr(path, thField+".when", "must not contain a scoped reference (@caster.x / @target.x): threshold when is a single-actor position, write a bare reference instead")
 			}
 			def.Thresholds = append(def.Thresholds, Threshold{
 				When:            whenExpr,
@@ -478,6 +573,62 @@ func convertOutcomes(path, field string, raw []outcomeJSON) ([]Outcome, error) {
 
 // --- cross-reference validation (spec §5) ---
 
+// checkExprRefs validates every attribute/resource ref e.Refs() finds
+// against attrSet/resSet, naming path/field on the first miss. Shared by
+// crossValidate (v1) and compile.go's v2 cross-reference checks (spec §5's
+// "v1-style cross-ref rules carried over" requirement) so both versions
+// report undeclared names identically.
+func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool) error {
+	if e == nil {
+		return nil
+	}
+	attrs, resources := e.Refs()
+	for _, a := range attrs {
+		if !attrSet[a] {
+			return fieldErr(path, field, fmt.Sprintf("references undeclared attribute %q", a))
+		}
+	}
+	for _, r := range resources {
+		if !resSet[r] {
+			return fieldErr(path, field, fmt.Sprintf("references undeclared resource %q", r))
+		}
+	}
+	return nil
+}
+
+// crossValidateResources checks every resource's default_max_expr and
+// threshold 'when' ref, and every threshold's apply_condition id, against
+// the manifest's declared attribute/resource set and declared conditions.
+// Split out of crossValidate (review: v2 sub-project 5c) because
+// resources+thresholds are declared identically in ruleset.json for both
+// format versions (spec §3) — loadV2 needs exactly this check, with none
+// of crossValidate's v1-Ability-specific logic below.
+func crossValidateResources(rs *Ruleset) error {
+	attrSet := toSet(rs.Attributes)
+	resSet := map[string]bool{}
+	for _, r := range rs.Resources {
+		resSet[r.Name] = true
+	}
+
+	rulesetPath := "ruleset.json"
+	for i, r := range rs.Resources {
+		field := fmt.Sprintf("resources[%d]", i)
+		if err := checkExprRefs(rulesetPath, field+".default_max_expr", r.DefaultMaxExpr, attrSet, resSet); err != nil {
+			return err
+		}
+		for j, th := range r.Thresholds {
+			thField := fmt.Sprintf("%s.thresholds[%d]", field, j)
+			if err := checkExprRefs(rulesetPath, thField+".when", th.When, attrSet, resSet); err != nil {
+				return err
+			}
+			if _, ok := rs.Conditions[th.ApplyCondition]; !ok {
+				return fieldErr(rulesetPath, thField+".apply_condition", fmt.Sprintf("references undeclared condition %q", th.ApplyCondition))
+			}
+		}
+	}
+	return nil
+}
+
 // crossValidate checks every attribute/resource ref, every declared
 // resource/condition/defense name an ability or threshold points at,
 // against the sets manifest.json/conditions/abilities actually declared.
@@ -491,40 +642,12 @@ func crossValidate(rs *Ruleset) error {
 	for _, r := range rs.Resources {
 		resSet[r.Name] = true
 	}
-
 	checkExpr := func(path, field string, e *Expr) error {
-		if e == nil {
-			return nil
-		}
-		attrs, resources := e.Refs()
-		for _, a := range attrs {
-			if !attrSet[a] {
-				return fieldErr(path, field, fmt.Sprintf("references undeclared attribute %q", a))
-			}
-		}
-		for _, r := range resources {
-			if !resSet[r] {
-				return fieldErr(path, field, fmt.Sprintf("references undeclared resource %q", r))
-			}
-		}
-		return nil
+		return checkExprRefs(path, field, e, attrSet, resSet)
 	}
 
-	rulesetPath := "ruleset.json"
-	for i, r := range rs.Resources {
-		field := fmt.Sprintf("resources[%d]", i)
-		if err := checkExpr(rulesetPath, field+".default_max_expr", r.DefaultMaxExpr); err != nil {
-			return err
-		}
-		for j, th := range r.Thresholds {
-			thField := fmt.Sprintf("%s.thresholds[%d]", field, j)
-			if err := checkExpr(rulesetPath, thField+".when", th.When); err != nil {
-				return err
-			}
-			if _, ok := rs.Conditions[th.ApplyCondition]; !ok {
-				return fieldErr(rulesetPath, thField+".apply_condition", fmt.Sprintf("references undeclared condition %q", th.ApplyCondition))
-			}
-		}
+	if err := crossValidateResources(rs); err != nil {
+		return err
 	}
 
 	// Stable iteration order for deterministic error messages across runs.
@@ -591,6 +714,470 @@ func toSet(items []string) map[string]bool {
 		out[it] = true
 	}
 	return out
+}
+
+// hasScopedRef reports whether e contains any scoped ref (@caster.x /
+// @target.x, either sigil) — used to reject scopes in v2's single-actor
+// positions (default_max_expr, threshold when; spec v2 §5).
+func hasScopedRef(e *Expr) bool {
+	for _, s := range e.Scopes() {
+		if s != ScopeNone {
+			return true
+		}
+	}
+	return false
+}
+
+// --- atoms/*.json (format v2, spec §4) ---
+
+// placeholderRe matches one "{name}" template placeholder occurrence.
+// IDENT charset matches expr.go's (^[A-Za-z_][A-Za-z0-9_]*$) so a
+// placeholder name is always a legal param name.
+var placeholderRe = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// placeholderWholeFieldRe matches a JSON string value that is EXACTLY one
+// placeholder and nothing else — the shape targeting's range/max_targets
+// fields require (spec §4: targeting is a compile-time constant, never an
+// expression, so no arithmetic/parenthesization applies there).
+var placeholderWholeFieldRe = regexp.MustCompile(`^\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+
+// validParamKinds is the six closed param kinds (spec §4).
+var validParamKinds = map[string]bool{
+	"int": true, "expr": true,
+	"attribute": true, "resource": true, "defense": true, "condition": true,
+}
+
+type atomJSON struct {
+	ID          string            `json:"id"`
+	Params      []paramJSON       `json:"params"`
+	Provides    []string          `json:"provides"`
+	Consumes    []string          `json:"consumes"`
+	Contributes []json.RawMessage `json:"contributes"`
+}
+
+type paramJSON struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+// loadAtoms decodes and statically validates every atoms/*.json file:
+// strict JSON shape, the six closed param kinds (unknown param kind — spec
+// §4 / validation catalogue), and every "{name}" placeholder appearing in
+// any contribution template naming a param the atom actually declares
+// (unknown param placeholder). It does NOT validate bindings, the
+// provides/consumes graph, or produce any parsed *Expr — those need a
+// specific composition's concrete bindings and are compile.go's job
+// (compileCompositions), since the SAME atom is reused, differently bound,
+// by many abilities.
+func loadAtoms(dir string) (map[string]*AtomDef, error) {
+	out := map[string]*AtomDef{}
+	paths, err := jsonFilesIn(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		var raw atomJSON
+		if err := decodeStrict(path, &raw); err != nil {
+			return nil, err
+		}
+		if raw.ID == "" {
+			return nil, fieldErr(path, "id", "must not be empty")
+		}
+		if _, dup := out[raw.ID]; dup {
+			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate atom id %q", raw.ID))
+		}
+		if len(raw.Contributes) == 0 {
+			return nil, fieldErr(path, "contributes", "must not be empty")
+		}
+
+		paramNames := map[string]bool{}
+		paramKinds := map[string]string{}
+		params := make([]ParamDef, 0, len(raw.Params))
+		for i, p := range raw.Params {
+			field := fmt.Sprintf("params[%d]", i)
+			if p.Name == "" {
+				return nil, fieldErr(path, field+".name", "must not be empty")
+			}
+			if !isValidIdentName(p.Name) {
+				return nil, fieldErr(path, field+".name", fmt.Sprintf("param name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is substituted into \"{name}\" placeholders)", p.Name))
+			}
+			if paramNames[p.Name] {
+				return nil, fieldErr(path, field+".name", fmt.Sprintf("duplicate param name %q", p.Name))
+			}
+			if !validParamKinds[p.Kind] {
+				return nil, fieldErr(path, field+".kind", fmt.Sprintf("unknown param kind %q (want one of: int, expr, attribute, resource, defense, condition)", p.Kind))
+			}
+			paramNames[p.Name] = true
+			paramKinds[p.Name] = p.Kind
+			params = append(params, ParamDef{Name: p.Name, Kind: p.Kind})
+		}
+
+		contributes := make([]Contribution, 0, len(raw.Contributes))
+		for i, c := range raw.Contributes {
+			contrib, err := decodeContribution(path, i, c, paramNames)
+			if err != nil {
+				return nil, err
+			}
+			contributes = append(contributes, contrib)
+		}
+
+		out[raw.ID] = &AtomDef{
+			ID: raw.ID, Params: params, Provides: raw.Provides, Consumes: raw.Consumes,
+			Contributes: contributes, sourcePath: path,
+		}
+	}
+	return out, nil
+}
+
+// checkPlaceholders scans raw for every "{name}" occurrence and confirms
+// each name is a declared param — the "unknown param placeholder"
+// validation rule, applied uniformly to every template string an atom's
+// contributions carry.
+func checkPlaceholders(path, field, raw string, paramNames map[string]bool) error {
+	for _, m := range placeholderRe.FindAllStringSubmatch(raw, -1) {
+		name := m[1]
+		if !paramNames[name] {
+			return fieldErr(path, field, fmt.Sprintf("placeholder {%s} does not name a declared param", name))
+		}
+	}
+	return nil
+}
+
+// checkIntOrPlaceholderField validates a targeting range/max_targets raw
+// field: either a JSON integer, or a JSON string holding EXACTLY one
+// "{param}" placeholder (spec §4: targeting is a compile-time constant).
+// Returns the field's normalized source text (decimal digits, or the bare
+// placeholder text) for compile.go's resolveIntField to resolve per
+// composition.
+func checkIntOrPlaceholderField(path, field string, raw json.RawMessage, paramNames map[string]bool) (string, error) {
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return fmt.Sprintf("%d", n), nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if !placeholderWholeFieldRe.MatchString(s) {
+			return "", fieldErr(path, field, fmt.Sprintf("string value %q must be exactly one \"{param}\" placeholder (targeting fields take a literal integer or a whole-field param reference, never a partial-text template)", s))
+		}
+		if err := checkPlaceholders(path, field, s, paramNames); err != nil {
+			return "", err
+		}
+		return s, nil
+	}
+	return "", fieldErr(path, field, "must be an integer or a \"{param}\" placeholder string")
+}
+
+// contributionKeys enumerates the JSON keys decodeContribution recognizes
+// for each contribution kind — used to reject a field that belongs to a
+// DIFFERENT kind's shape (e.g. a "roll" key on a "targeting" contribution)
+// even though the Go decode type below declares all of them (so
+// DisallowUnknownFields alone can't catch a cross-kind field).
+var contributionKeys = map[string]map[string]bool{
+	"targeting":  {"kind": true, "range": true, "max_targets": true},
+	"resolution": {"kind": true, "key": true, "roll": true, "vs": true, "branches": true},
+	"outcome":    {"kind": true, "key": true, "branch": true, "effects": true},
+}
+
+func decodeContribution(path string, idx int, raw json.RawMessage, paramNames map[string]bool) (Contribution, error) {
+	field := fmt.Sprintf("contributes[%d]", idx)
+
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return Contribution{}, fieldErr(path, field, fmt.Sprintf("invalid JSON object: %v", err))
+	}
+	kindRaw, ok := probe["kind"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".kind", "must be set")
+	}
+	var kind string
+	if err := json.Unmarshal(kindRaw, &kind); err != nil {
+		return Contribution{}, fieldErr(path, field+".kind", "must be a string")
+	}
+
+	allowed, ok := contributionKeys[kind]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".kind", fmt.Sprintf("unknown contribution kind %q (want one of: targeting, resolution, outcome)", kind))
+	}
+	for k := range probe {
+		if !allowed[k] {
+			return Contribution{}, fieldErr(path, field, fmt.Sprintf("field %q is not valid on a %q contribution", k, kind))
+		}
+	}
+
+	switch kind {
+	case "targeting":
+		return decodeTargetingContribution(path, field, probe, paramNames)
+	case "resolution":
+		return decodeResolutionContribution(path, field, probe, paramNames)
+	default: // "outcome"
+		return decodeOutcomeContribution(path, field, probe, paramNames)
+	}
+}
+
+func decodeTargetingContribution(path, field string, probe map[string]json.RawMessage, paramNames map[string]bool) (Contribution, error) {
+	rangeRaw, ok := probe["range"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".range", "must be set")
+	}
+	maxRaw, ok := probe["max_targets"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".max_targets", "must be set")
+	}
+	rangeSrc, err := checkIntOrPlaceholderField(path, field+".range", rangeRaw, paramNames)
+	if err != nil {
+		return Contribution{}, err
+	}
+	maxSrc, err := checkIntOrPlaceholderField(path, field+".max_targets", maxRaw, paramNames)
+	if err != nil {
+		return Contribution{}, err
+	}
+	return Contribution{Kind: "targeting", RangeSrc: rangeSrc, MaxTargetsSrc: maxSrc}, nil
+}
+
+func decodeResolutionContribution(path, field string, probe map[string]json.RawMessage, paramNames map[string]bool) (Contribution, error) {
+	var key, roll, vs string
+	var branches []string
+	for name, dst := range map[string]*string{"key": &key, "roll": &roll, "vs": &vs} {
+		raw, ok := probe[name]
+		if !ok {
+			return Contribution{}, fieldErr(path, field+"."+name, "must be set")
+		}
+		if err := json.Unmarshal(raw, dst); err != nil {
+			return Contribution{}, fieldErr(path, field+"."+name, "must be a string")
+		}
+		if *dst == "" {
+			return Contribution{}, fieldErr(path, field+"."+name, "must not be empty")
+		}
+	}
+	branchesRaw, ok := probe["branches"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".branches", "must be set")
+	}
+	if err := json.Unmarshal(branchesRaw, &branches); err != nil {
+		return Contribution{}, fieldErr(path, field+".branches", "must be an array of strings")
+	}
+	if len(branches) != 2 {
+		return Contribution{}, fieldErr(path, field+".branches", fmt.Sprintf("must have exactly 2 entries ([ge-label, lt-label]), got %d", len(branches)))
+	}
+	for i, b := range branches {
+		if b == "" {
+			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), "must not be empty")
+		}
+		if b == "always" {
+			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), `"always" is reserved (it marks an unconditional outcome contribution's branch) and cannot be a resolution branch label`)
+		}
+	}
+	if branches[0] == branches[1] {
+		return Contribution{}, fieldErr(path, field+".branches", fmt.Sprintf("both branch labels are %q — labels must be distinct", branches[0]))
+	}
+
+	if err := checkPlaceholders(path, field+".roll", roll, paramNames); err != nil {
+		return Contribution{}, err
+	}
+	if err := checkPlaceholders(path, field+".vs", vs, paramNames); err != nil {
+		return Contribution{}, err
+	}
+
+	return Contribution{
+		Kind: "resolution", Key: key, RollSrc: roll, VsSrc: vs,
+		Branches: [2]string{branches[0], branches[1]},
+	}, nil
+}
+
+func decodeOutcomeContribution(path, field string, probe map[string]json.RawMessage, paramNames map[string]bool) (Contribution, error) {
+	keyRaw, ok := probe["key"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".key", `must be set (a string, or explicit null for an "always" outcome)`)
+	}
+	var key *string
+	if string(keyRaw) != "null" {
+		var k string
+		if err := json.Unmarshal(keyRaw, &k); err != nil {
+			return Contribution{}, fieldErr(path, field+".key", "must be a string or null")
+		}
+		if k == "" {
+			return Contribution{}, fieldErr(path, field+".key", "must not be empty (use null for an unconditional outcome)")
+		}
+		key = &k
+	}
+
+	branchRaw, ok := probe["branch"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".branch", "must be set")
+	}
+	var branch string
+	if err := json.Unmarshal(branchRaw, &branch); err != nil {
+		return Contribution{}, fieldErr(path, field+".branch", "must be a string")
+	}
+	if branch == "" {
+		return Contribution{}, fieldErr(path, field+".branch", "must not be empty")
+	}
+
+	if branch == "always" && key != nil {
+		return Contribution{}, fieldErr(path, field+".key", `must be null when branch is "always" (an unconditional outcome names no resolution)`)
+	}
+	if branch != "always" && key == nil {
+		return Contribution{}, fieldErr(path, field+".key", `must be set (non-null) when branch is not "always" — it names which resolution's branch this outcome is conditioned on`)
+	}
+
+	effectsRaw, ok := probe["effects"]
+	if !ok {
+		return Contribution{}, fieldErr(path, field+".effects", "must be set")
+	}
+	var rawEffects []outcomeJSON
+	if err := json.Unmarshal(effectsRaw, &rawEffects); err != nil {
+		return Contribution{}, fieldErr(path, field+".effects", fmt.Sprintf("invalid JSON: %v", err))
+	}
+
+	effects := make([]EffectTemplate, 0, len(rawEffects))
+	for i, o := range rawEffects {
+		itemField := fmt.Sprintf("%s.effects[%d]", field, i)
+		set := 0
+		if o.ResourceChange != nil {
+			set++
+		}
+		if o.ApplyCondition != nil {
+			set++
+		}
+		if o.RemoveCondition != nil {
+			set++
+		}
+		if set != 1 {
+			return Contribution{}, fieldErr(path, itemField, "must set exactly one of resource_change, apply_condition, or remove_condition")
+		}
+		switch {
+		case o.ResourceChange != nil:
+			if o.ResourceChange.Resource == "" {
+				return Contribution{}, fieldErr(path, itemField+".resource_change.resource", "must not be empty")
+			}
+			if o.ResourceChange.DeltaExpr == "" {
+				return Contribution{}, fieldErr(path, itemField+".resource_change.delta_expr", "must not be empty")
+			}
+			if err := checkPlaceholders(path, itemField+".resource_change.resource", o.ResourceChange.Resource, paramNames); err != nil {
+				return Contribution{}, err
+			}
+			if err := checkPlaceholders(path, itemField+".resource_change.delta_expr", o.ResourceChange.DeltaExpr, paramNames); err != nil {
+				return Contribution{}, err
+			}
+			effects = append(effects, EffectTemplate{
+				Kind: OutcomeResourceChange, ResourceSrc: o.ResourceChange.Resource, DeltaExprSrc: o.ResourceChange.DeltaExpr,
+			})
+		case o.ApplyCondition != nil:
+			if o.ApplyCondition.ID == "" {
+				return Contribution{}, fieldErr(path, itemField+".apply_condition.id", "must not be empty")
+			}
+			if err := checkPlaceholders(path, itemField+".apply_condition.id", o.ApplyCondition.ID, paramNames); err != nil {
+				return Contribution{}, err
+			}
+			effects = append(effects, EffectTemplate{Kind: OutcomeApplyCondition, ApplyConditionSrc: o.ApplyCondition.ID})
+		case o.RemoveCondition != nil:
+			if o.RemoveCondition.ID == "" {
+				return Contribution{}, fieldErr(path, itemField+".remove_condition.id", "must not be empty")
+			}
+			if err := checkPlaceholders(path, itemField+".remove_condition.id", o.RemoveCondition.ID, paramNames); err != nil {
+				return Contribution{}, err
+			}
+			effects = append(effects, EffectTemplate{Kind: OutcomeRemoveCondition, RemoveConditionSrc: o.RemoveCondition.ID})
+		}
+	}
+
+	return Contribution{Kind: "outcome", OutcomeKey: key, Branch: branch, Effects: effects}, nil
+}
+
+// --- abilities/*.json as compositions (format v2, spec §4) ---
+
+// compositionAbility is a v2 ability decoded but not yet compiled: id,
+// name, and usage are plain fields identical to v1 (spec §3 — "usage
+// stays a plain ability field"); Compose is the atom-ref+binding list
+// compile.go's compileCompositions flattens into a CompiledPower.
+type compositionAbility struct {
+	ID      string
+	Name    string
+	Usage   Usage
+	Compose []composeEntry
+
+	sourcePath string
+}
+
+// composeEntry is one "{atom, bind}" element of a composition's "compose"
+// list. Bind values are kept as raw JSON (validated against the atom's
+// declared param kinds in compile.go, which is the first point a
+// composeEntry's atom reference has been resolved to an actual AtomDef).
+type composeEntry struct {
+	Atom string
+	Bind map[string]json.RawMessage
+}
+
+type compositionJSON struct {
+	ID      string             `json:"id"`
+	Name    string             `json:"name"`
+	Usage   Usage              `json:"usage"`
+	Compose []composeEntryJSON `json:"compose"`
+}
+
+// composeEntryJSON's Bind is json.RawMessage, not map[string]json.RawMessage
+// directly: a plain map can't distinguish "the \"bind\" key is absent" from
+// "the \"bind\" key is present as {}" — both decode to a nil Go map. The
+// schema requires "bind" (composeEntry.required = ["atom","bind"]), and for
+// a PARAM-LESS atom omitting it entirely would otherwise go undetected (an
+// atom WITH params already fails indirectly, via bindAtom's per-param
+// "missing binding" check finding nothing in a nil map — but that
+// consequential catch doesn't fire when there's nothing to bind).
+type composeEntryJSON struct {
+	Atom string          `json:"atom"`
+	Bind json.RawMessage `json:"bind"`
+}
+
+func loadCompositions(dir string) (map[string]*compositionAbility, error) {
+	out := map[string]*compositionAbility{}
+	paths, err := jsonFilesIn(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		var raw compositionJSON
+		if err := decodeStrict(path, &raw); err != nil {
+			return nil, err
+		}
+		if raw.ID == "" {
+			return nil, fieldErr(path, "id", "must not be empty")
+		}
+		if raw.Name == "" {
+			return nil, fieldErr(path, "name", "must not be empty")
+		}
+		if _, dup := out[raw.ID]; dup {
+			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate ability id %q", raw.ID))
+		}
+		// Same rationale as v1's loadAbilities: a JSON document with no
+		// "usage" key at all decodes Usage to its zero value without
+		// UnmarshalJSON ever running.
+		if !raw.Usage.AtWill && raw.Usage.Limited == nil {
+			return nil, fieldErr(path, "usage", `must be set (either "at_will" or {"limited": {...}})`)
+		}
+		if len(raw.Compose) == 0 {
+			return nil, fieldErr(path, "compose", "must not be empty")
+		}
+		compose := make([]composeEntry, 0, len(raw.Compose))
+		for i, c := range raw.Compose {
+			field := fmt.Sprintf("compose[%d]", i)
+			if c.Atom == "" {
+				return nil, fieldErr(path, field+".atom", "must not be empty")
+			}
+			if c.Bind == nil {
+				return nil, fieldErr(path, field+".bind", `must be set (use {} for an atom with no params)`)
+			}
+			var bind map[string]json.RawMessage
+			if err := json.Unmarshal(c.Bind, &bind); err != nil {
+				return nil, fieldErr(path, field+".bind", fmt.Sprintf("must be an object: %v", err))
+			}
+			compose = append(compose, composeEntry{Atom: c.Atom, Bind: bind})
+		}
+
+		out[raw.ID] = &compositionAbility{
+			ID: raw.ID, Name: raw.Name, Usage: raw.Usage, Compose: compose, sourcePath: path,
+		}
+	}
+	return out, nil
 }
 
 // --- shared decode/error helpers ---

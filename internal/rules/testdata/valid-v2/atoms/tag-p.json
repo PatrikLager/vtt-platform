@@ -1,0 +1,16 @@
+{
+  "id": "tag-p",
+  "params": [],
+  "provides": [],
+  "consumes": ["clash"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "clash",
+      "branch": "connect",
+      "effects": [
+        { "resource_change": { "resource": "focus", "delta_expr": "2" } }
+      ]
+    }
+  ]
+}

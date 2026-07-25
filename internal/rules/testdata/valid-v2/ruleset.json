@@ -1,0 +1,20 @@
+{
+  "id": "proving-grounds",
+  "name": "Proving Grounds",
+  "format_version": "2",
+  "attributes": ["vim", "vigor"],
+  "defenses": ["brace"],
+  "resources": [
+    {
+      "name": "focus",
+      "default_max_expr": "10 + @vim",
+      "thresholds": [
+        {
+          "when": "#focus",
+          "apply_condition": "winded",
+          "remove_when_false": true
+        }
+      ]
+    }
+  ]
+}

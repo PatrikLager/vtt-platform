@@ -1,0 +1,11 @@
+{
+  "id": "ward-shift",
+  "name": "Ward Shift",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "wide-delivery", "bind": { "max": 2 } },
+    { "atom": "guard-check", "bind": { "guard_stat": "brace" } },
+    { "atom": "ward-mark", "bind": { "mark": "winded" } },
+    { "atom": "ward-clear", "bind": {} }
+  ]
+}

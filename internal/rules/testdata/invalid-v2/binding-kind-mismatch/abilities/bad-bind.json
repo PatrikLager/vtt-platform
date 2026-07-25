@@ -1,0 +1,9 @@
+{
+  "id": "bad-bind",
+  "name": "Bad Bind",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "reach", "bind": { "reach": 1 } },
+    { "atom": "roll", "bind": { "stat": "nope" } }
+  ]
+}

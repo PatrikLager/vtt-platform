@@ -150,6 +150,33 @@ func TestLoadMissingDirectory(t *testing.T) {
 	}
 }
 
+// TestLoadV1DispatchUnaffectedByV2 pins Load's format_version dispatch
+// (P10 task-2): a format_version "1" ruleset takes the EXACT same v1 path
+// it always has — Compiled/Atoms are nil (v2-only fields), Abilities is
+// v1-Ability-shaped and non-empty, exactly like TestLoadValidFixture
+// already established before this task existed. This is the thin
+// regression pin for "v1 loading stays fully intact" at the Load()
+// entry-point level; TestLoadValidFixture and the rest of this file cover
+// v1's actual decode/validation behavior in depth and are unchanged.
+func TestLoadV1DispatchUnaffectedByV2(t *testing.T) {
+	rs, err := rules.Load(fixture(t, "valid"))
+	if err != nil {
+		t.Fatalf("Load(valid): unexpected error: %v", err)
+	}
+	if rs.FormatVersion != "1" {
+		t.Fatalf("FormatVersion = %q, want %q", rs.FormatVersion, "1")
+	}
+	if rs.Compiled != nil {
+		t.Errorf("Compiled = %v, want nil for a format_version \"1\" Ruleset", rs.Compiled)
+	}
+	if rs.Atoms != nil {
+		t.Errorf("Atoms = %v, want nil for a format_version \"1\" Ruleset", rs.Atoms)
+	}
+	if len(rs.Abilities) == 0 {
+		t.Error("Abilities: want the usual non-empty v1 ability set, unaffected by v2's addition")
+	}
+}
+
 // TestLoadInvalidFixtures is the exhaustive cross-reference / strict-decode
 // validation table: one fixture directory per validation rule (task brief:
 // "one per validation rule"), each asserting the returned error names both

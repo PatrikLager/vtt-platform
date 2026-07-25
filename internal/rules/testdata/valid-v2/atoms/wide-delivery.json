@@ -1,0 +1,11 @@
+{
+  "id": "wide-delivery",
+  "params": [
+    { "name": "max", "kind": "int" }
+  ],
+  "provides": ["delivery3"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 2, "max_targets": "{max}" }
+  ]
+}

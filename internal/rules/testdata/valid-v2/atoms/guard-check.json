@@ -1,0 +1,17 @@
+{
+  "id": "guard-check",
+  "params": [
+    { "name": "guard_stat", "kind": "defense" }
+  ],
+  "provides": ["check"],
+  "consumes": ["delivery3"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "check",
+      "roll": "1d20 + @caster.vim",
+      "vs": "@target.{guard_stat}",
+      "branches": ["pass", "fail"]
+    }
+  ]
+}

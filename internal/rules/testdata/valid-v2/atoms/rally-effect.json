@@ -1,0 +1,18 @@
+{
+  "id": "rally-effect",
+  "params": [
+    { "name": "gain", "kind": "int" }
+  ],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": null,
+      "branch": "always",
+      "effects": [
+        { "resource_change": { "resource": "focus", "delta_expr": "{gain}" } }
+      ]
+    }
+  ]
+}

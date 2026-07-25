@@ -1,0 +1,18 @@
+{
+  "id": "roll",
+  "params": [
+    { "name": "edge", "kind": "int" }
+  ],
+  "provides": ["clash"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 1, "max_targets": 1 },
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + @caster.vim + {edge}",
+      "vs": "@target.brace",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

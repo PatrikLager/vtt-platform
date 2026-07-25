@@ -1,0 +1,11 @@
+{
+  "id": "reach-delivery",
+  "params": [
+    { "name": "reach", "kind": "int" }
+  ],
+  "provides": ["delivery"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": "{reach}", "max_targets": 1 }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "roll",
+  "params": [],
+  "provides": ["clash"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 1, "max_targets": 1 },
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + @caster.vim",
+      "vs": "@target.brace",
+      "branches": ["connect", "graze"]
+    }
+  ]
+}

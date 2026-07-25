@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/atom.schema.json",
+  "title": "Atom (atoms/*.json, format v2)",
+  "description": "One ruleset-authored atomic statement (format v2, sub-project 5c): a named, parameterized fragment of an ability's execution, contributing targeting/resolution/outcome pieces to whatever composition(s) include it. Only present under format_version \"2\" rulesets. See internal/rules/load.go (loadAtoms/decodeContribution) for the authoritative loader and internal/rules/compile.go for how a composition's param bindings flatten an atom's templates into a CompiledPower; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "type": "object",
+  "required": ["id", "contributes"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "params": {
+      "type": "array",
+      "description": "Parameters a composition's \"bind\" object supplies concrete values for. A \"{name}\" placeholder anywhere in this atom's contributes templates must name one of these. Optional — omitted or [] both mean \"no params\" (same convention as ruleset.schema.json's optional attributes/defenses/resources arrays).",
+      "items": { "$ref": "#/$defs/param" }
+    },
+    "provides": {
+      "type": "array",
+      "description": "Graph keys this atom makes available to other atoms in the same composition (execution-order dependency, spec §4) — plain, ruleset-chosen strings. Optional — omitted or [] both mean \"provides nothing\".",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "consumes": {
+      "type": "array",
+      "description": "Graph keys this atom depends on. A composition is valid only if every consumed key is provided by exactly one atom in it and the resulting graph is acyclic; execution order is that graph's topological order. Optional — omitted or [] both mean \"consumes nothing\".",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "contributes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/contribution" }
+    }
+  },
+  "$defs": {
+    "param": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "description": "Matches the expression grammar's IDENT charset — substituted into \"{name}\" placeholders."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["int", "expr", "attribute", "resource", "defense", "condition"],
+          "description": "int/expr are VALUE kinds: a binding splices into a contribution expression as a parenthesized parsed subtree — hygienic, the binding can never change the surrounding expression's precedence. attribute/resource/defense/condition are NAME kinds: a binding substitutes as a bare identifier into a ref position (e.g. \"@caster.{attack_stat}\") or a plain name field (e.g. a resource_change's \"resource\"), validated against the ruleset's declared vocabulary of that kind."
+        }
+      }
+    },
+    "contribution": {
+      "type": "object",
+      "description": "Exactly one of the three shapes below, selected by \"kind\".",
+      "oneOf": [
+        { "$ref": "#/$defs/targetingContribution" },
+        { "$ref": "#/$defs/resolutionContribution" },
+        { "$ref": "#/$defs/outcomeContribution" }
+      ]
+    },
+    "intOrParam": {
+      "description": "A literal integer, or a JSON string holding EXACTLY one \"{param}\" placeholder naming an int-kind param — never a partial-text template or an arithmetic expression: targeting is a compile-time constant (CompiledPower.Targeting is v1's plain Targeting{Range,MaxTargets int}), not a runtime expression.",
+      "oneOf": [
+        { "type": "integer" },
+        { "type": "string", "pattern": "^\\{[A-Za-z_][A-Za-z0-9_]*\\}$" }
+      ]
+    },
+    "targetingContribution": {
+      "type": "object",
+      "description": "Exactly one required per composition (across ALL its atoms combined).",
+      "required": ["kind", "range", "max_targets"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "targeting" },
+        "range": { "$ref": "#/$defs/intOrParam" },
+        "max_targets": { "$ref": "#/$defs/intOrParam" }
+      }
+    },
+    "resolutionContribution": {
+      "type": "object",
+      "description": "At most one per composition (format v2.0). roll is compared to the vs threshold expression: roll total >= vs selects branches[0] (the ge-label), else branches[1] (the lt-label) — both flow into AbilityUsed.outcome_summary verbatim.",
+      "required": ["kind", "key", "roll", "vs", "branches"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "resolution" },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The provides/consumes graph key this resolution is filed under — an outcome contribution's \"key\" names this to condition itself on one of \"branches\"."
+        },
+        "roll": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Two-actor-position expression template (every ref must be scoped: @caster.x / #target.y). May contain \"{param}\" placeholders."
+        },
+        "vs": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Two-actor-position expression template, the threshold roll is compared against."
+        },
+        "branches": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "string", "minLength": 1, "not": { "const": "always" } },
+          "description": "[ge-label, lt-label] — exactly 2 distinct, ruleset-chosen words; \"always\" is reserved for an unconditional outcome contribution's branch and cannot be used here."
+        }
+      }
+    },
+    "outcomeContribution": {
+      "type": "object",
+      "required": ["kind", "key", "branch", "effects"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "outcome" },
+        "key": {
+          "description": "Names the resolution (by its own \"key\") this outcome is conditioned on. MUST be null when branch is \"always\" (an unconditional effect-phase outcome needs no resolution); MUST be a non-null string otherwise.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "\"always\" (unconditional — runs regardless of any attack roll), or one of the referenced resolution's two \"branches\" labels."
+        },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/effect" }
+        }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "description": "Exactly one of the three keys below — identical shape to ability.schema.json's v1 outcome, except string fields may contain \"{param}\" placeholders (name-kind substitution for resource/id, two-actor-position expression templates for delta_expr).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["resource_change"],
+          "additionalProperties": false,
+          "properties": { "resource_change": { "$ref": "#/$defs/resourceChangeTemplate" } }
+        },
+        {
+          "type": "object",
+          "required": ["apply_condition"],
+          "additionalProperties": false,
+          "properties": { "apply_condition": { "$ref": "#/$defs/conditionRefTemplate" } }
+        },
+        {
+          "type": "object",
+          "required": ["remove_condition"],
+          "additionalProperties": false,
+          "properties": { "remove_condition": { "$ref": "#/$defs/conditionRefTemplate" } }
+        }
+      ]
+    },
+    "resourceChangeTemplate": {
+      "type": "object",
+      "required": ["resource", "delta_expr"],
+      "additionalProperties": false,
+      "properties": {
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A resource name declared in ruleset.json, or a \"{param}\" placeholder naming a resource-kind param."
+        },
+        "delta_expr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Two-actor-position expression template. Applies to the ability's target's resource (spec-carried-over v1 semantic), even when the amount references @caster.*."
+        }
+      }
+    },
+    "conditionRefTemplate": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A condition id declared under conditions/, or a \"{param}\" placeholder naming a condition-kind param."
+        }
+      }
+    }
+  }
+}

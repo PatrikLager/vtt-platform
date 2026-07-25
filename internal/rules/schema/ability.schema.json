@@ -1,11 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ability.schema.json",
-  "title": "Ability (abilities/*.json)",
-  "description": "One usable ability. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "title": "Ability (abilities/*.json, format v1 or v2)",
+  "description": "One usable ability, in EITHER of two shapes selected by \"oneOf\" below (versioning note, sub-project 5c: kept as one file with a oneOf split rather than a second ability-v2.schema.json file, so id/name/usage stay documented in exactly one place instead of two documents drifting independently): format v1's direct targeting/attack/hit/miss/effect shape (internal/rules/load.go's loadAbilities), or format v2's composition shape — atom refs + param bindings, flattened into a CompiledPower at load (internal/rules/load.go's loadCompositions + internal/rules/compile.go). id/name/usage are identical, plain fields in both (spec 2026-07-25-format-v2-composition-design.md §3: \"usage stays a plain ability field\"). This document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
-  "required": ["id", "name", "usage", "targeting"],
+  "required": ["id", "name", "usage"],
   "additionalProperties": false,
+  "oneOf": [
+    { "$ref": "#/$defs/v1Shape" },
+    { "$ref": "#/$defs/v2Shape" }
+  ],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
@@ -32,6 +36,7 @@
       ]
     },
     "targeting": {
+      "description": "Format v1 only — format v2's targeting comes from a composed atom's targeting contribution (atom.schema.json) instead.",
       "type": "object",
       "required": ["range", "max_targets"],
       "additionalProperties": false,
@@ -45,7 +50,7 @@
       }
     },
     "attack": {
-      "description": "Omitted entirely on non-attack abilities. When omitted, hit and miss must both be empty or absent.",
+      "description": "Format v1 only. Omitted entirely on non-attack abilities. When omitted, hit and miss must both be empty or absent.",
       "type": "object",
       "required": ["roll", "vs"],
       "additionalProperties": false,
@@ -58,11 +63,41 @@
         }
       }
     },
-    "hit": { "type": "array", "items": { "$ref": "#/$defs/outcome" } },
-    "miss": { "type": "array", "items": { "$ref": "#/$defs/outcome" } },
-    "effect": { "type": "array", "items": { "$ref": "#/$defs/outcome" } }
+    "hit": { "description": "Format v1 only.", "type": "array", "items": { "$ref": "#/$defs/outcome" } },
+    "miss": { "description": "Format v1 only.", "type": "array", "items": { "$ref": "#/$defs/outcome" } },
+    "effect": { "description": "Format v1 only.", "type": "array", "items": { "$ref": "#/$defs/outcome" } },
+    "compose": {
+      "description": "Format v2 only: the ordered list of atom refs + param bindings this ability composes (spec §4). Execution order is derived from the atoms' declared provides/consumes graph, NOT this list's order (spec §4 guarantee 4: a hand-ordered list is never load-bearing for correctness) — list order is used only to break ties deterministically.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/composeEntry" }
+    }
   },
   "$defs": {
+    "v1Shape": {
+      "type": "object",
+      "required": ["targeting"]
+    },
+    "v2Shape": {
+      "type": "object",
+      "required": ["compose"]
+    },
+    "composeEntry": {
+      "type": "object",
+      "required": ["atom", "bind"],
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "type": "string",
+          "minLength": 1,
+          "description": "An atom id declared under atoms/."
+        },
+        "bind": {
+          "type": "object",
+          "description": "param name -> bound value: an integer for an int-kind param, a string (an expression) for an expr-kind param, or a string (a declared name) for an attribute/resource/defense/condition-kind param. Must bind every param the referenced atom declares, and no others (atom.schema.json's params list)."
+        }
+      }
+    },
     "outcome": {
       "type": "object",
       "description": "Exactly one of the three keys below.",

@@ -1,0 +1,9 @@
+{
+  "id": "b",
+  "params": [],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 2, "max_targets": 1 }
+  ]
+}

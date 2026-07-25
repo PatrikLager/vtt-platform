@@ -1,0 +1,15 @@
+{
+  "id": "roll",
+  "params": [],
+  "provides": ["clash"],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + @caster.vim",
+      "vs": "@target.brace",
+      "branches": ["only-one"]
+    }
+  ]
+}
