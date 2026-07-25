@@ -1,0 +1,17 @@
+{
+  "id": "bad",
+  "params": [
+    { "name": "who", "kind": "attribute" }
+  ],
+  "provides": ["strike"],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "strike",
+      "roll": "1d20 + @{who}.vim",
+      "vs": "@target.brace",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

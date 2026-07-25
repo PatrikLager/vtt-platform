@@ -56,12 +56,6 @@ func TestLoadValidV2Fixture(t *testing.T) {
 	if len(rs.Compiled) != 4 {
 		t.Fatalf("len(Compiled) = %d, want 4 (quick-jab, rally, tag-team, ward-shift)", len(rs.Compiled))
 	}
-	// v2's abilities/*.json are compositions, not v1 Ability-shaped — the
-	// v1-shaped map stays present but empty (spec: Resolve reads Compiled
-	// only for a v2 ruleset).
-	if rs.Abilities == nil || len(rs.Abilities) != 0 {
-		t.Errorf("Abilities = %v, want a non-nil, empty map for a v2-loaded Ruleset", rs.Abilities)
-	}
 	if len(rs.Atoms) != 10 {
 		t.Fatalf("len(Atoms) = %d, want 10 (reach-delivery, clash-roll, clash-damage, rally-effect, tag-q, tag-p, wide-delivery, guard-check, ward-mark, ward-clear)", len(rs.Atoms))
 	}
@@ -508,6 +502,14 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"resolution-branch-count", []string{"roll.json", "exactly 2"}},
 		{"outcome-branch-not-in-labels", []string{"bad.json", "miss", "not among"}},
 		{"always-outcome-nonnull-key", []string{"dmg.json", "always"}},
+		{"resolution-key-not-provided", []string{"roll.json", "clash", "provides"}},
+		{"outcome-key-not-consumed", []string{"dmg.json", "clash", "consumes"}},
+		{"cross-phase-edge-inverted", []string{"bad.json", "primer", "effects", "branch-outcome"}},
+		{"scope-position-placeholder", []string{"bad.json", "scope position"}},
+		{"reserved-scope-word-attribute", []string{"ruleset.json", "caster", "reserved"}},
+		{"reserved-scope-word-condition", []string{"bad.json", "target", "reserved"}},
+		{"usage-undeclared-resource", []string{"bad.json", "no_such_pool"}},
+		{"reserved-branch-label-effect", []string{"roll.json", "effect", "reserved"}},
 		{"bare-ref-two-actor-position", []string{"bad.json", "bare reference"}},
 		{"scoped-ref-single-actor-position", []string{"ruleset.json", "scoped reference"}},
 		{"undeclared-resource-in-contribution", []string{"bad.json", "no_such_pool"}},

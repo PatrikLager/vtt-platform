@@ -1,7 +1,7 @@
 {
-  "id": "phantom-strike-provider",
+  "id": "primer",
   "params": [],
-  "provides": ["strike"],
+  "provides": ["primer"],
   "consumes": [],
   "contributes": [
     {
@@ -9,7 +9,7 @@
       "key": null,
       "branch": "always",
       "effects": [
-        { "apply_condition": { "id": "guarded" } }
+        { "resource_change": { "resource": "pool", "delta_expr": "5" } }
       ]
     }
   ]

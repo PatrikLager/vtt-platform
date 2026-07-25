@@ -83,10 +83,6 @@ func TestLoadValidFixture(t *testing.T) {
 		t.Fatal("Thresholds[0].When: want non-nil")
 	}
 
-	if rs.Abilities == nil || len(rs.Abilities) != 0 {
-		t.Errorf("Abilities = %v, want a non-nil, EMPTY map (format_version \"2\": abilities are compositions, not v1 Ability-shaped)", rs.Abilities)
-	}
-
 	if len(rs.Compiled) != 3 {
 		t.Fatalf("len(Compiled) = %d, want 3 (strike, guard-stance, stand-down)", len(rs.Compiled))
 	}

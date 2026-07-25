@@ -31,9 +31,13 @@
 //	  "rolls": [{"results": [15]}],        // one entry per expression that
 //	                                       // actually rolls dice, in the
 //	                                       // exact order Resolve evaluates
-//	                                       // them (attack roll first, then
-//	                                       // each hit/miss/effect
-//	                                       // resource_change that rolls)
+//	                                       // them, per target: the
+//	                                       // resolution roll first, then —
+//	                                       // for a v2 vs-with-dice
+//	                                       // resolution — the Vs roll
+//	                                       // (recorded only when it rolls),
+//	                                       // then each hit/miss/effect
+//	                                       // resource_change that rolls
 //	  "want_error": "",                    // set XOR want_events, never both
 //	  "want_events": [
 //	    {"type": "AbilityUsed", "actor_id": "...", "ability_id": "...",
@@ -487,11 +491,10 @@ func compareOneEvent(env *vttv1.Envelope, w goldenEvent) error {
 // §6's "inspectable artifact... conformance can dump it" — so a refactor
 // of a v2 ruleset's atoms that changes what an ability compiles TO (not
 // just how it's authored) is a visible, reviewed drift, not a silent
-// behavior change. REQUIRED per declared ability for a format_version "2"
-// ruleset; a format-v1 ruleset ships none and is not asked to ("v1
-// rulesets exempt until none exist" — the task brief's own words;
-// tavern-brawl, still v1 as of this task, is the reason the exemption
-// exists at all). The canonical serialization is compiledPowerDump below:
+// behavior change. REQUIRED per declared ability: every ruleset loads as
+// format_version "2" (format v1 is retired — load.go), so every ability a
+// ruleset declares ships a compiled-form golden. The canonical
+// serialization is compiledPowerDump below:
 // stable field order (a struct, not CompiledPower's own map-shaped
 // internals — it has none, but the DTO shape is what's actually
 // marshaled, independent of Go's zero-value/field-order quirks), and
@@ -602,19 +605,16 @@ func toOutcomeDumps(outcomes []rules.Outcome) []outcomeDump {
 	return out
 }
 
-// runCompiledGoldens enforces spec §8's per-ability compiled-form golden
-// for a format-v2 ruleset (a format-v1 ruleset is exempt — see this
-// section's package doc above): goldens/compiled/<id>.json must exist and
-// deep-equal (via compiledPowerDump, so JSON formatting/key-order
-// differences never cause a false failure — only real content drift does)
-// the ruleset's actual rs.Compiled[id]. A missing file or a content
-// mismatch is a named failure, naming both the ability and the golden
-// path, with a got/want dump on mismatch (mirroring compareEvents'
-// diagnostic style below for the batch-golden pass).
+// runCompiledGoldens enforces spec §8's per-ability compiled-form golden:
+// goldens/compiled/<id>.json must exist and deep-equal (via
+// compiledPowerDump, so JSON formatting/key-order differences never cause a
+// false failure — only real content drift does) the ruleset's actual
+// rs.Compiled[id]. A missing file or a content mismatch is a named failure,
+// naming both the ability and the golden path, with a got/want dump on
+// mismatch (mirroring compareEvents' diagnostic style below for the
+// batch-golden pass). Every ruleset loads as format_version "2" (v1 is
+// retired), so there is no exemption.
 func runCompiledGoldens(dir string, rs *rules.Ruleset) error {
-	if rs.FormatVersion != "2" {
-		return nil
-	}
 	ids := make([]string, 0, len(rs.Compiled))
 	for id := range rs.Compiled {
 		ids = append(ids, id)
@@ -640,6 +640,33 @@ func runCompiledGoldens(dir string, rs *rules.Ruleset) error {
 				return fmt.Errorf("ability %q: compiled golden %s does not match the compiled power (drift), and re-dumping for diagnostics failed: %w", id, path, dumpErr)
 			}
 			return fmt.Errorf("ability %q: compiled golden %s does not match the compiled power (drift)\ngot:\n%s\nwant:\n%s", id, path, gotBytes, wantBytes)
+		}
+	}
+
+	// Reverse direction (finding R1): a goldens/compiled/*.json file whose
+	// name matches no compiled ability is a stale pin (a rename or deletion
+	// left it behind) — the forward loop above never reads it, so without
+	// this check it sits in the repo as an authoritative-looking artifact
+	// forever. Reject it, naming the orphan. The golden filename = ability id
+	// convention is thus validated in BOTH directions.
+	compiledDir := filepath.Join(dir, "goldens", "compiled")
+	entries, err := os.ReadDir(compiledDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No compiled-golden directory at all: the forward loop already
+			// failed above for any declared ability, and a ruleset with zero
+			// abilities has nothing to orphan.
+			return nil
+		}
+		return fmt.Errorf("reading compiled goldens directory %s: %w", compiledDir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".json")
+		if _, ok := rs.Compiled[id]; !ok {
+			return fmt.Errorf("orphan compiled golden %s: names ability %q, which this ruleset does not declare (a stale pin left by a rename or deletion)", filepath.Join(compiledDir, e.Name()), id)
 		}
 	}
 	return nil

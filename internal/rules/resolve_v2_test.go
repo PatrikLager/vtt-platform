@@ -285,6 +285,80 @@ func TestResolveV2WardShiftMultiTarget(t *testing.T) {
 	}
 }
 
+// --- second two-actor outcome-context pin (finding R5) ---
+
+// drainCasterCtxRuleset hand-builds a Ruleset with one CompiledPower whose
+// HIT outcome delta references @caster.<attr> where BOTH actors carry that
+// attr under DISTINCT values — the asymmetric-statblock shape that makes the
+// caster<->target swap in applyOutcomes' EvalContext pair (resolve.go)
+// observable. TestResolveV2QuickJabConnect is the only OTHER pin of that
+// pair; this is the independent second pin R5 asks for (its outcome
+// references @caster, not a self-targeted or ref-free delta), so the swap
+// mutation is caught by >= 2 tests.
+func drainCasterCtxRuleset(t *testing.T) *rules.Ruleset {
+	t.Helper()
+	drain := &rules.CompiledPower{
+		ID: "drain", Name: "Drain",
+		Usage:     rules.Usage{AtWill: true},
+		Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
+		Resolution: &rules.CompiledResolution{
+			Roll: mustParse(t, "1d20 + @caster.might"), RollSrc: "1d20 + @caster.might",
+			Vs: mustParse(t, "@target.guard"), VsSrc: "@target.guard",
+			Branches: [2]string{"hit", "miss"},
+		},
+		BranchOutcomes: [2][]rules.Outcome{
+			{
+				// delta = 0 - @caster.might: reads the CASTER's might, applied
+				// to the TARGET's pool. caster might=7, target might=1, so the
+				// swap changes the delta from -7 to -1 — caught by the exact
+				// batch below.
+				{Kind: rules.OutcomeResourceChange, ResourceChange: &rules.ResourceChangeOutcome{
+					Resource: "pool", DeltaExpr: mustParse(t, "0 - @caster.might"), DeltaExprSrc: "0 - @caster.might",
+				}},
+			},
+			nil,
+		},
+	}
+	return &rules.Ruleset{
+		ID: "drain-fixture", Name: "Drain Fixture",
+		Attributes: []string{"might"},
+		Defenses:   []string{"guard"},
+		Resources:  []rules.ResourceDef{{Name: "pool"}},
+		Conditions: map[string]*rules.Condition{},
+		Compiled:   map[string]*rules.CompiledPower{"drain": drain},
+	}
+}
+
+// TestResolveV2OutcomeCasterContextAsymmetric pins that a v2 outcome
+// delta_expr's @caster ref resolves against the CASTER (not the target),
+// using distinct caster/target values for the SAME attribute name so the
+// two-actor swap mutation is observable here independently of
+// TestResolveV2QuickJabConnect.
+func TestResolveV2OutcomeCasterContextAsymmetric(t *testing.T) {
+	rs := drainCasterCtxRuleset(t)
+	st := newTestState()
+	putActor(st, "a", map[string]int32{"might": 7}, nil)
+	putActor(st, "b", map[string]int32{"might": 1, "guard": 5}, map[string]*vttv1.Resource{"pool": res(10, 10)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	putToken(st, "tb", "s1", "b", 1, 0)
+
+	// roll: 1d20 -> 10, + caster might(7) = 17 >= guard(5) -> hit.
+	// hit delta = 0 - caster.might(7) = -7; target pool 10 -> 3.
+	envs, err := rules.Resolve(rs, st, useAbility("a", "drain", "b"), &queueRoller{queue: []int{10}})
+	if err != nil {
+		t.Fatalf("Resolve: unexpected error: %v", err)
+	}
+	want := []*vttv1.Envelope{
+		envAbilityUsed(&vttv1.AbilityUsed{
+			ActorId: "a", AbilityId: "drain", TargetIds: []string{"b"},
+			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.might", Results: []int32{10}, Total: 17}},
+			OutcomeSummary: "Drain on b: hit (17 vs 5)",
+		}),
+		envResourceChanged("b", "pool", -7, 3, "ability:drain:hit"),
+	}
+	assertEnvelopes(t, envs, want)
+}
+
 // --- vs-expression-with-dice (hand-built CompiledPower — see this file's
 // top doc comment for why this is not added to testdata/valid-v2) ---
 
@@ -321,7 +395,6 @@ func vsDiceFixtureRuleset(t *testing.T) *rules.Ruleset {
 		Defenses:   []string{"brace"},
 		Resources:  []rules.ResourceDef{{Name: "focus"}},
 		Conditions: map[string]*rules.Condition{},
-		Abilities:  map[string]*rules.Ability{},
 		Compiled:   map[string]*rules.CompiledPower{"feint": feint},
 	}
 }

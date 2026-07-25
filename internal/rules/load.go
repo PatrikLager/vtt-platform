@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 )
 
 // supportedFormatVersions is the set of format_version values Load
@@ -49,18 +48,11 @@ const formatVersion1RejectedMsg = "format v1 is retired (clean break, no externa
 // FormatVersion is always "2" by the time control reaches here. Both
 // rulesets that ever shipped as v1 (rulesets/tavern-brawl,
 // internal/rules/testdata/valid) migrated to v2 atoms/compositions in this
-// task; the v1 file-decode/cross-validate/adapt machinery that used to run
-// here (loadAbilities, crossValidate, adaptV1Abilities) had no other
-// caller and was removed as dead code (git-grep-verified — see the task-4
-// report). AdaptV1Ability itself (the ability-to-CompiledPower flattening
-// function, as opposed to the FILE-loading machinery around it) is kept:
-// it has one remaining, out-of-this-task's-file-scope caller —
-// resolve_test.go's fixtureRuleset — which builds hand-written *Ability
-// Go literals (never through Load) purely as Resolve-behavior test
-// fixtures, independent of whether any ruleset directory can still load as
-// v1. That caller does not "load v1" in the sense this sunset retires;
-// removing AdaptV1Ability would just break an unrelated, out-of-scope test
-// file for no behavioral gain.
+// task; the entire v1 file-decode/cross-validate/adapt machinery that used
+// to run here (loadAbilities, crossValidate, adaptV1Abilities, and the
+// AdaptV1Ability adapter itself) had no caller left and was removed as dead
+// code. Resolve executes the compiled form for every ability; hand-built
+// test fixtures construct CompiledPower values directly.
 func Load(dir string) (*Ruleset, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -78,13 +70,12 @@ func Load(dir string) (*Ruleset, error) {
 	return loadV2(dir, manifest)
 }
 
-// loadV2 is format_version "2"'s Load path (spec §3, §6): manifest (shared
-// with v1 via loadManifest) plus conditions/ (shared, unchanged shape),
-// atoms/, and abilities/-as-compositions, compiled into Ruleset.Compiled.
-// Resolve (Task 5) reads Compiled only; Abilities is left as an empty,
-// non-nil map for a v2-loaded Ruleset (v2's abilities/*.json files are not
-// v1 Ability-shaped — they are compositions, decoded into a distinct
-// internal type by loadCompositions and consumed only by compile.go).
+// loadV2 is the Load path (spec §3, §6): manifest plus conditions/
+// (unchanged shape), atoms/, and abilities/-as-compositions, compiled into
+// Ruleset.Compiled. Resolve reads Compiled only; v2's abilities/*.json files
+// are compositions (decoded into a distinct internal type by
+// loadCompositions and consumed only by compile.go), never a standalone
+// ability shape.
 func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 	conditions, err := loadConditions(filepath.Join(dir, "conditions"))
 	if err != nil {
@@ -113,7 +104,6 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		Resources:     manifest.resources,
 		Defenses:      manifest.Defenses,
 		Attributes:    manifest.Attributes,
-		Abilities:     map[string]*Ability{},
 		Conditions:    conditions,
 		Atoms:         atoms,
 		Guide:         string(guide),
@@ -195,6 +185,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 		if !isValidIdentName(a) {
 			return nil, fieldErr(path, "attributes", fmt.Sprintf("attribute name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is referenced as '@'+name inside expressions)", a))
 		}
+		if reservedScopeWords[a] {
+			return nil, fieldErr(path, "attributes", fmt.Sprintf("attribute name %q is a reserved actor scope word (caster/target): format v2 refs it as \"@caster.%s\"/\"@target.%s\", so declaring it as a name would be ambiguous (finding F2)", a, a, a))
+		}
 		if seenAttr[a] {
 			return nil, fieldErr(path, "attributes", fmt.Sprintf("duplicate attribute name %q", a))
 		}
@@ -207,6 +200,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 		}
 		if !isValidIdentName(d) {
 			return nil, fieldErr(path, "defenses", fmt.Sprintf("defense name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (kept consistent with attributes/resources)", d))
+		}
+		if reservedScopeWords[d] {
+			return nil, fieldErr(path, "defenses", fmt.Sprintf("defense name %q is a reserved actor scope word (caster/target): format v2 refs it through the same '@'-scope namespace as attributes, so declaring it as a name would be ambiguous (finding F2)", d))
 		}
 		if seenDef[d] {
 			return nil, fieldErr(path, "defenses", fmt.Sprintf("duplicate defense name %q", d))
@@ -237,6 +233,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 		}
 		if !isValidIdentName(r.Name) {
 			return nil, fieldErr(path, field+".name", fmt.Sprintf("resource name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is referenced as '#'+name inside expressions)", r.Name))
+		}
+		if reservedScopeWords[r.Name] {
+			return nil, fieldErr(path, field+".name", fmt.Sprintf("resource name %q is a reserved actor scope word (caster/target): format v2 refs it as \"#caster.%s\"/\"#target.%s\", so declaring it as a name would be ambiguous (finding F2)", r.Name, r.Name, r.Name))
 		}
 		if seenRes[r.Name] {
 			return nil, fieldErr(path, "resources", fmt.Sprintf("duplicate resource name %q", r.Name))
@@ -330,6 +329,9 @@ func loadConditions(dir string) (map[string]*Condition, error) {
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")
 		}
+		if reservedScopeWords[raw.ID] {
+			return nil, fieldErr(path, "id", fmt.Sprintf("condition id %q is a reserved actor scope word (caster/target): reserved against condition ids too so a condition-kind param binding cannot occupy a ref scope position (finding F2)", raw.ID))
+		}
 		if _, dup := out[raw.ID]; dup {
 			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate condition id %q", raw.ID))
 		}
@@ -340,13 +342,9 @@ func loadConditions(dir string) (map[string]*Condition, error) {
 
 // --- outcome/effect JSON shapes ---
 //
-// These three types (outcomeJSON + its two field types) are format-v2
-// vocabulary now: format v1's abilities/*.json (which used to decode
-// directly into outcomeJSON via its own now-removed loadAbilities/
-// convertOutcomes) is gone (Task 4 sunset), but the SAME shape is still
-// exactly what an atom's outcome contribution's "effects" array is made
-// of (decodeOutcomeContribution, below, via its own rawEffects
-// []outcomeJSON) — so these stay, just under new ownership.
+// These three types (outcomeJSON + its two field types) are the shape an
+// atom's outcome contribution's "effects" array is made of
+// (decodeOutcomeContribution, below, via its own rawEffects []outcomeJSON).
 
 type outcomeJSON struct {
 	ResourceChange  *resourceChangeJSON  `json:"resource_change,omitempty"`
@@ -417,200 +415,6 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// --- v1-to-CompiledPower adapter (Task 3, spec 5c pillar: "Resolve
-// executes CompiledPower through ONE code path") ---
-//
-// Task 4 update: Load itself no longer has a v1 file-loading branch to
-// call this from (format_version "1" is rejected before any of
-// conditions/atoms/abilities is even read — see Load's doc comment) — the
-// FILE-decoding half of v1 support (loadAbilities, convertOutcomes, and
-// the abilityJSON/targetingJSON/attackJSON shapes they used) had no other
-// caller and was removed as dead code. AdaptV1Ability itself (below) is
-// kept: internal/rules/resolve_test.go's fixtureRuleset still calls it
-// directly, as a convenient way to flatten hand-built *Ability Go values
-// (never decoded from any file) into the CompiledPower shape Resolve
-// executes — see AdaptV1Ability's own doc comment for why that is a
-// distinct thing from "loading a v1 ruleset directory" and therefore
-// outside this sunset's removal.
-
-// v1RefRe matches one v1-shaped ref occurrence: a sigil ('@' or '#'),
-// optional whitespace (the grammar's tokenizer allows whitespace between
-// the sigil and its identifier — they lex as two separate tokens, and
-// skipSpace runs before every token), then an IDENT. '@'/'#' have no other
-// grammatical meaning in this expression language, and v1-authored
-// expression source never contains scope syntax (the '.'-scope grammar
-// postdates v1 content, and scopeV1Source only ever runs on text that has
-// ALREADY Parse()d successfully under v1's bare-ref-only usage (v1's own
-// ability-file decoding is gone — Task 4 sunset — but AdaptV1Ability's
-// remaining caller, resolve_test.go's fixtureRuleset, only ever passes it
-// *Ability values built from literal v1-style expression source, which
-// hits this same invariant) — so rewriting every occurrence this regex
-// finds is safe unconditionally, not just for the fixtures this task
-// happens to exercise.
-var v1RefRe = regexp.MustCompile(`[@#][ \t\r\n]*[A-Za-z_][A-Za-z0-9_]*`)
-
-// scopeV1Source rewrites every bare ref occurrence in src into its
-// explicitly-scoped v2 equivalent under scope ("caster" or "target"), e.g.
-// scopeV1Source("1d20 + @vim", "caster") == "1d20 + @caster.vim". Used by
-// AdaptV1Ability to translate v1's IMPLICIT positional scoping — an attack
-// roll evaluates against the CASTER; a hit/miss/effect outcome expression
-// evaluates against the TARGET (resolve.go's Resolve doc comment
-// documents this as v1's contract, preserved verbatim as the exact
-// behavior this adapter must keep observably true) — into the EXPLICIT
-// scoping EvalScoped requires (Task 1), since Resolve now executes every
-// ability, v1 and v2 alike, through EvalScoped only.
-//
-// The scope word this function inserts is always one of the two
-// compile-time constants "caster"/"target", and it is always inserted
-// FIRST, immediately after the sigil — so the rewritten text is
-// guaranteed Parse-able regardless of what identifier follows, even an
-// attribute coincidentally NAMED "caster" or "target" (that identifier
-// becomes the ref's NAME segment, after the dot, exactly like any other
-// name; parseRef only ever treats the FIRST identifier after a sigil as a
-// candidate scope word, and this function's output always has the real
-// scope word occupying that position, never the original identifier).
-func scopeV1Source(src, scope string) string {
-	return v1RefRe.ReplaceAllStringFunc(src, func(m string) string {
-		ident := strings.TrimLeft(m[1:], " \t\r\n")
-		return string(m[0]) + scope + "." + ident
-	})
-}
-
-// scopedParse re-parses src (an expression source string that has ALREADY
-// Parse()d successfully once, as plain v1 source) after scoping every bare
-// ref in it to scope. Returns an error rather than panicking if the
-// rewritten text somehow fails to parse — provably unreachable given the
-// invariants scopeV1Source's own doc comment establishes (src already
-// parses under v1's grammar, a strict subset of v2's; the inserted scope
-// word is always one of the two legal words) — but the adapter surfaces
-// this as a clean, named load error rather than trusting that invariant
-// silently, matching this file's "no silent multi-version guessing"
-// convention throughout.
-func scopedParse(src, scope string) (*Expr, error) {
-	e, err := Parse(scopeV1Source(src, scope))
-	if err != nil {
-		return nil, fmt.Errorf("rules: adapt: scoping %q to %s: %w", src, scope, err)
-	}
-	return e, nil
-}
-
-// AdaptV1Ability flattens one format-v1-shaped Ability into a CompiledPower
-// — the v1-to-CompiledPower adapter itself. Exported (unlike the rest of
-// this file's former v1 machinery, now removed — Task 4 sunset) so a
-// caller that builds a *Ruleset by hand, bypassing Load entirely
-// (internal/rules/resolve_test.go's fixtureRuleset — a deliberate,
-// pre-existing test pattern for exercising Resolve without depending on
-// Load's cross-validation), can populate Ruleset.Compiled without hand-
-// writing a CompiledPower literal for every fixture ability. This keeps
-// "Resolve executes CompiledPower through ONE code path" true for that
-// hand-built test ruleset too, rather than requiring Resolve to special-
-// case a Ruleset with a populated Abilities map but no Compiled entries.
-// No ruleset DIRECTORY can load as format_version "1" anymore (Load
-// rejects it before reading a single ability file — see Load's doc
-// comment); this function's remaining relevance is exactly that one
-// out-of-this-task's-file-scope test fixture, not real ruleset loading.
-//
-// v1's attack {roll, vs-defense-name} becomes a CompiledResolution{Roll,
-// Vs}, with Branches fixed at ["hit", "miss"] — v1's own words, verbatim —
-// so a v1 ability's AbilityUsed.outcome_summary is byte-identical through
-// the new path (rulesets/tavern-brawl's committed goldens, and
-// resolve_test.go's envelope-shaped tests, are the proof this must hold).
-//
-// # The SourceText decision
-//
-// v1's implicit positional scoping (see scopeV1Source's doc comment) is
-// made EXPLICIT here via scopedParse — but the EXECUTED expression and the
-// DISPLAYED (testimony) text must diverge for a v1-adapted ability:
-// CompiledResolution.Roll must be the CASTER-scoped parse (so EvalScoped
-// can run it), while CompiledResolution.RollSrc must stay v1's ORIGINAL,
-// UNSCOPED Attack.RollSrc text — Resolve records RollSrc onto
-// AbilityUsed.rolls[].expression, and a v1 golden's recorded expression
-// string (e.g. "1d20 + @brawn") must never change to "1d20 + @caster.brawn"
-// through this adapter, or every existing v1 batch golden would break.
-// The same split applies to every hit/miss/effect resource_change's
-// DeltaExpr/DeltaExprSrc (adaptV1Outcomes, below): DeltaExpr becomes the
-// TARGET-scoped executable parse; DeltaExprSrc is left exactly as the
-// caller's *Ability value already carries it (v1's original, unscoped
-// source), never touched by this function. VsSrc is
-// the one field with no true v1 "original" to preserve — v1's Attack.Vs
-// was a bare defense NAME, never an expression at all — so it is set to
-// the synthesized "@target.<defense>" text; this is only ever OBSERVABLE
-// (recorded onto AbilityUsed.rolls) if evaluating it actually rolls dice,
-// and a bare attribute ref never does (see resolve.go's Vs-recording
-// contract), so no v1 golden ever displays it regardless.
-func AdaptV1Ability(a *Ability) (*CompiledPower, error) {
-	cp := &CompiledPower{
-		ID:        a.ID,
-		Name:      a.Name,
-		Usage:     a.Usage,
-		Targeting: a.Targeting,
-	}
-
-	if a.Attack != nil {
-		rollExpr, err := scopedParse(a.Attack.RollSrc, "caster")
-		if err != nil {
-			return nil, fmt.Errorf("rules: adapt: ability %q: attack.roll: %w", a.ID, err)
-		}
-		vsSrc := "@target." + a.Attack.Vs
-		vsExpr, err := Parse(vsSrc)
-		if err != nil {
-			return nil, fmt.Errorf("rules: adapt: ability %q: attack.vs: %w", a.ID, err)
-		}
-		cp.Resolution = &CompiledResolution{
-			Roll: rollExpr, RollSrc: a.Attack.RollSrc,
-			Vs: vsExpr, VsSrc: vsSrc,
-			Branches: [2]string{"hit", "miss"},
-		}
-
-		hitOutcomes, err := adaptV1Outcomes(a.Hit)
-		if err != nil {
-			return nil, fmt.Errorf("rules: adapt: ability %q: hit: %w", a.ID, err)
-		}
-		missOutcomes, err := adaptV1Outcomes(a.Miss)
-		if err != nil {
-			return nil, fmt.Errorf("rules: adapt: ability %q: miss: %w", a.ID, err)
-		}
-		cp.BranchOutcomes[0] = hitOutcomes
-		cp.BranchOutcomes[1] = missOutcomes
-	}
-
-	effects, err := adaptV1Outcomes(a.Effect)
-	if err != nil {
-		return nil, fmt.Errorf("rules: adapt: ability %q: effect: %w", a.ID, err)
-	}
-	cp.Effects = effects
-	return cp, nil
-}
-
-// adaptV1Outcomes scopes every resource_change outcome's DeltaExpr to
-// "target" (v1's implicit outcome-evaluation actor — AdaptV1Ability's doc
-// comment), leaving DeltaExprSrc, Resource, and every apply_condition/
-// remove_condition outcome exactly as v1 decoded it. Never mutates the
-// Outcome/ResourceChangeOutcome values reachable from the ORIGINAL
-// Ability — outcomes is a.Hit/a.Miss/a.Effect, still owned by
-// Ruleset.Abilities after this returns (Task 2's decision: Abilities stays
-// populated for a v1-loaded Ruleset), so this copies before writing a new
-// DeltaExpr.
-func adaptV1Outcomes(outcomes []Outcome) ([]Outcome, error) {
-	if len(outcomes) == 0 {
-		return nil, nil
-	}
-	out := make([]Outcome, len(outcomes))
-	for i, o := range outcomes {
-		out[i] = o
-		if o.Kind == OutcomeResourceChange {
-			rc := *o.ResourceChange // copy: never mutate the original v1 Outcome tree
-			scoped, err := scopedParse(rc.DeltaExprSrc, "target")
-			if err != nil {
-				return nil, fmt.Errorf("resource_change on %q: %w", rc.Resource, err)
-			}
-			rc.DeltaExpr = scoped
-			out[i].ResourceChange = &rc
-		}
-	}
-	return out, nil
-}
-
 // --- cross-reference validation (spec §5) ---
 
 // checkExprRefs validates every attribute/resource ref e.Refs() finds
@@ -640,10 +444,9 @@ func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool)
 // threshold 'when' ref, and every threshold's apply_condition id, against
 // the manifest's declared attribute/resource set and declared conditions.
 // resources+thresholds are declared identically in ruleset.json regardless
-// of format version (spec §3) — loadV2 (the only Load path left, Task 4)
-// calls this directly; the v1-Ability-specific cross-reference checks that
-// used to wrap this call (crossValidate) had no caller left once Load's v1
-// branch was removed and were removed as dead code alongside it.
+// of format version (spec §3); loadV2 calls this directly. (An ability's
+// own cross-references are validated in compile.go against the compiled
+// composition, not here.)
 func crossValidateResources(rs *Ruleset) error {
 	attrSet := toSet(rs.Attributes)
 	resSet := map[string]bool{}
@@ -702,6 +505,50 @@ var placeholderRe = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // fields require (spec §4: targeting is a compile-time constant, never an
 // expression, so no arithmetic/parenthesization applies there).
 var placeholderWholeFieldRe = regexp.MustCompile(`^\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+
+// scopePositionPlaceholderRe matches a "{param}" placeholder occupying a
+// ref's SCOPE position — directly between a sigil ('@'/'#') and the '.'
+// that introduces the ref name, e.g. "@{who}.vim". See
+// checkNoScopePositionPlaceholder (finding F2).
+var scopePositionPlaceholderRe = regexp.MustCompile(`[@#]\{[A-Za-z_][A-Za-z0-9_]*\}\.`)
+
+// reservedScopeWords are the two actor scope words (expr.go's
+// parseScopeName). They may not be declared as an attribute, defense,
+// resource, or condition id (finding F2, direction b): format v2 exposes
+// attribute/defense values through the '@'-scope namespace ("@caster.x"),
+// so a name colliding with a scope word makes such a ref ambiguous — and
+// lets a name-kind param binding of "caster"/"target" silently occupy a
+// ref's scope position (substTemplate relies on the words being reserved,
+// alongside the scope-position-placeholder rejection below).
+var reservedScopeWords = map[string]bool{"caster": true, "target": true}
+
+// reservedBranchLabels are the branch-label words a resolution may NOT use
+// because Resolve stamps them as fixed reason phases (finding R3): "always"
+// marks an unconditional outcome contribution's branch, "usage" is the
+// usage-spend event's reason phase, and "effect" is unconditional effect-
+// phase outcomes' reason phase. Each maps to the reason it would forge.
+var reservedBranchLabels = map[string]string{
+	"always": "it marks an unconditional outcome contribution's branch",
+	"usage":  "it is the fixed reason phase for the usage-spend event",
+	"effect": "it is the fixed reason phase for unconditional effect-phase outcomes",
+}
+
+// checkNoScopePositionPlaceholder rejects a contribution expression
+// template in which a "{param}" placeholder occupies a ref's SCOPE position
+// — directly between a sigil and the '.' introducing the ref name (e.g.
+// "@{who}.vim"). Such a placeholder is NOT substituted as the ref's name:
+// its bound VALUE becomes the scope word, so a binding of "caster"/"target"
+// changes the parse SHAPE of the surrounding expression (a scoped ref to a
+// different name) while any other binding is a parse/scope error — the
+// hygiene hole finding F2 documents. Name-kind params belong in the ref's
+// NAME segment ("@caster.{stat}") or a plain name field, never its scope
+// position.
+func checkNoScopePositionPlaceholder(path, field, raw string) error {
+	if m := scopePositionPlaceholderRe.FindString(raw); m != "" {
+		return fieldErr(path, field, fmt.Sprintf("placeholder in %q occupies a reference's scope position (between the sigil and '.'): a name-kind param's bound value would become the actor scope, changing the expression's parse shape — put the placeholder in the ref's NAME segment instead (e.g. \"@caster.{name}\"), never its scope position", m))
+	}
+	return nil
+}
 
 // validParamKinds is the six closed param kinds (spec §4).
 var validParamKinds = map[string]bool{
@@ -781,6 +628,15 @@ func loadAtoms(dir string) (map[string]*AtomDef, error) {
 				return nil, err
 			}
 			contributes = append(contributes, contrib)
+		}
+
+		// Key-validity (F1, spec §4's third composition-validity clause):
+		// a resolution contribution's key must be among this atom's
+		// provides; a non-"always" outcome contribution's key must be among
+		// its consumes. Atom-local, so checked here per atom — see the
+		// composition validity matrix in compile.go.
+		if err := checkAtomContributionKeys(path, raw.Provides, raw.Consumes, contributes); err != nil {
+			return nil, err
 		}
 
 		out[raw.ID] = &AtomDef{
@@ -899,16 +755,24 @@ func decodeTargetingContribution(path, field string, probe map[string]json.RawMe
 func decodeResolutionContribution(path, field string, probe map[string]json.RawMessage, paramNames map[string]bool) (Contribution, error) {
 	var key, roll, vs string
 	var branches []string
-	for name, dst := range map[string]*string{"key": &key, "roll": &roll, "vs": &vs} {
-		raw, ok := probe[name]
+	// Fixed key/roll/vs order (not a map range): when more than one of these
+	// is missing/mistyped/empty, the reported field must be deterministic
+	// across process runs — Go's randomized map iteration would otherwise
+	// flake a CI/log-diff pinned on the error text (finding R2; matches this
+	// package's determinism discipline — see compile.go's doc).
+	for _, f := range []struct {
+		name string
+		dst  *string
+	}{{"key", &key}, {"roll", &roll}, {"vs", &vs}} {
+		raw, ok := probe[f.name]
 		if !ok {
-			return Contribution{}, fieldErr(path, field+"."+name, "must be set")
+			return Contribution{}, fieldErr(path, field+"."+f.name, "must be set")
 		}
-		if err := json.Unmarshal(raw, dst); err != nil {
-			return Contribution{}, fieldErr(path, field+"."+name, "must be a string")
+		if err := json.Unmarshal(raw, f.dst); err != nil {
+			return Contribution{}, fieldErr(path, field+"."+f.name, "must be a string")
 		}
-		if *dst == "" {
-			return Contribution{}, fieldErr(path, field+"."+name, "must not be empty")
+		if *f.dst == "" {
+			return Contribution{}, fieldErr(path, field+"."+f.name, "must not be empty")
 		}
 	}
 	branchesRaw, ok := probe["branches"]
@@ -925,8 +789,17 @@ func decodeResolutionContribution(path, field string, probe map[string]json.RawM
 		if b == "" {
 			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), "must not be empty")
 		}
-		if b == "always" {
-			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), `"always" is reserved (it marks an unconditional outcome contribution's branch) and cannot be a resolution branch label`)
+		// Reserve "always"/"usage"/"effect" as branch labels (finding R3):
+		// Resolve stamps each outcome event's reason as
+		// "ability:<id>:<phase>", where phase is the branch label for branch
+		// outcomes but the FIXED words "usage" (the usage-spend event) and
+		// "effect" (unconditional effect-phase outcomes). A resolution branch
+		// sharing one of those words would forge that fixed reason shape,
+		// making the append-only log's testimony unable to distinguish a
+		// conditional branch outcome from a usage-spend or an unconditional
+		// effect — so they are rejected here, like "always".
+		if why, ok := reservedBranchLabels[b]; ok {
+			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), fmt.Sprintf("%q is reserved (%s) and cannot be a resolution branch label", b, why))
 		}
 	}
 	if branches[0] == branches[1] {
@@ -937,6 +810,12 @@ func decodeResolutionContribution(path, field string, probe map[string]json.RawM
 		return Contribution{}, err
 	}
 	if err := checkPlaceholders(path, field+".vs", vs, paramNames); err != nil {
+		return Contribution{}, err
+	}
+	if err := checkNoScopePositionPlaceholder(path, field+".roll", roll); err != nil {
+		return Contribution{}, err
+	}
+	if err := checkNoScopePositionPlaceholder(path, field+".vs", vs); err != nil {
 		return Contribution{}, err
 	}
 
@@ -1019,6 +898,9 @@ func decodeOutcomeContribution(path, field string, probe map[string]json.RawMess
 				return Contribution{}, err
 			}
 			if err := checkPlaceholders(path, itemField+".resource_change.delta_expr", o.ResourceChange.DeltaExpr, paramNames); err != nil {
+				return Contribution{}, err
+			}
+			if err := checkNoScopePositionPlaceholder(path, itemField+".resource_change.delta_expr", o.ResourceChange.DeltaExpr); err != nil {
 				return Contribution{}, err
 			}
 			effects = append(effects, EffectTemplate{

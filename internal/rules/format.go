@@ -22,16 +22,9 @@ type Ruleset struct {
 	Defenses   []string
 	Attributes []string
 
-	// Abilities and Conditions are keyed by their declared id. Load
-	// rejects duplicate ids (within and across files) before either map
-	// is populated, so every entry here is unique by construction.
-	// Abilities is non-empty for a format-v1-loaded Ruleset (v1's
-	// abilities/*.json decode directly into this shape) and a non-nil,
-	// EMPTY map for a format-v2-loaded Ruleset (v2's abilities/*.json are
-	// compositions, not v1 Ability-shaped — see Compiled). Resolve (Task
-	// 5, rewired Task 3) never reads Abilities: it executes Compiled
-	// exclusively, for every format version — see Compiled's doc comment.
-	Abilities  map[string]*Ability
+	// Conditions is keyed by its declared id. Load rejects duplicate ids
+	// (within and across files) before the map is populated, so every
+	// entry here is unique by construction.
 	Conditions map[string]*Condition
 
 	// Guide is the raw contents of guide.md — LLM affordances served
@@ -41,24 +34,19 @@ type Ruleset struct {
 	// Atoms holds every format-v2 ruleset-authored atom, keyed by its
 	// declared id (spec §4, sub-project 5c). Compile-time input only —
 	// Resolve (Task 5) never sees atoms, it executes Compiled powers
-	// exclusively (spec §6). nil for a format-v1-loaded Ruleset. Exposed
+	// exclusively (spec §6). Exposed
 	// for conformance/debug introspection (spec §6's "/power-debug"
 	// lesson): the atoms a power was flattened FROM, alongside the
 	// flattened form itself in Compiled.
 	Atoms map[string]*AtomDef
 
 	// Compiled holds every ability's flattened execution form, keyed by
-	// ability id — populated by Load itself, for EVERY format version
-	// (Task 3, spec pillar "Resolve executes CompiledPower through ONE
-	// code path"): a v2 composition compiles via compile.go's atom-graph
-	// flattening (spec §6); a v1 ability adapts via load.go's
-	// AdaptV1Ability, a byte-identical-behavior translation of v1's
-	// {attack roll+vs-defense-name, hit/miss/effect lists} into the exact
-	// same CompiledPower shape. Either way, Resolve (Task 5, rewired Task
-	// 3) reads Compiled ONLY — it never branches on FormatVersion and
-	// never sees an Ability or an atom graph directly. Always non-nil
-	// after a successful Load; the sunset removal of Abilities/the v1
-	// code path entirely is Task 4.
+	// ability id — populated by Load itself: a composition compiles via
+	// compile.go's atom-graph flattening (spec §6) into the small
+	// declarative execution shape Resolve runs (spec pillar "Resolve
+	// executes CompiledPower through ONE code path"). Resolve reads Compiled
+	// ONLY — it never sees an atom graph directly. Always non-nil after a
+	// successful Load.
 	Compiled map[string]*CompiledPower
 }
 
@@ -77,9 +65,9 @@ type AtomDef struct {
 	Consumes    []string
 	Contributes []Contribution
 
-	// sourcePath is the atoms/*.json file this atom was decoded from, kept
-	// for the same reason Ability.sourcePath is: cross-reference and
-	// compile errors discovered after decoding name the real file.
+	// sourcePath is the atoms/*.json file this atom was decoded from, so
+	// cross-reference and compile errors discovered after decoding name the
+	// real file rather than guessing one from the atom id.
 	sourcePath string
 }
 
@@ -122,7 +110,7 @@ type Contribution struct {
 	//
 	// RangeSrc/MaxTargetsSrc are each either the decimal text of a
 	// literal integer, or a whole-field "{param}" placeholder naming an
-	// int-kind param — targeting is compiled into v1's plain
+	// int-kind param — targeting is compiled into the plain
 	// Targeting{Range,MaxTargets int}, a compile-time constant, never a
 	// runtime expression.
 	RangeSrc      string
@@ -146,14 +134,14 @@ type Contribution struct {
 	// conditioned on; nil exactly when Branch == "always" (an
 	// unconditional effect-phase outcome — spec §4). Branch is either
 	// "always" or one of that resolution's two Branches labels. Effects
-	// is v1's outcome-list shape, as raw templates.
+	// is the outcome-list shape, as raw templates.
 	OutcomeKey *string
 	Branch     string
 	Effects    []EffectTemplate
 }
 
 // EffectTemplate is one atom-contributed outcome effect, in raw
-// (unsubstituted) template form — the atom-composition analogue of v1's
+// (unsubstituted) template form — the raw-template analogue of
 // Outcome/ResourceChangeOutcome/ApplyConditionOutcome/
 // RemoveConditionOutcome, before a composition's concrete param bindings
 // turn it into a real Outcome. Exactly one of the three template groups is
@@ -180,8 +168,8 @@ type EffectTemplate struct {
 type CompiledPower struct {
 	ID, Name string
 
-	Usage     Usage     // v1 type, unchanged
-	Targeting Targeting // v1 type, unchanged
+	Usage     Usage
+	Targeting Targeting
 
 	// Resolution is nil for a non-attack composition (no resolution
 	// contribution at all — a composition needs no resolution atom to be
@@ -200,11 +188,22 @@ type CompiledPower struct {
 	// in this composition runs in. Two atoms that are mutual non-
 	// dependents (neither provides a key the other consumes — an
 	// in-degree-0 TIE at the point both become ready) are ordered by their
-	// position in the composition's own "compose" list, lower index
-	// first — deterministic, but per spec §4 guarantee 4 never load-
-	// bearing for CORRECTNESS, only for reproducibility (goldens, replay).
-	// TestLoadValidV2Fixture's "tag-team" case and TestCompileDeterministic
-	// (compile_test.go) both exercise this exact tie shape.
+	// position in the composition's own "compose" list, lower index first.
+	//
+	// This tie order is deterministic AND, when the tied outcomes touch the
+	// SAME clamped resource, semantically MEANINGFUL — not merely a
+	// reproducibility detail (finding F4 corrected the earlier "never
+	// load-bearing for correctness" claim). Resource changes clamp at floor
+	// 0 / cap max (applyDelta, resolve.go), which makes same-resource
+	// deltas NON-commutative: a [drain, gain] order and a [gain, drain]
+	// order over one resource can yield different final values (the review's
+	// probe: final 5 vs 0). The compose-list order among DAG-independent
+	// same-branch, same-resource outcomes is therefore an authoring choice
+	// the author makes deliberately, and goldens pin it. (Spec §2 guarantee
+	// 4 / §4's "never load-bearing" wording is corrected in the merge-gate
+	// amendment bundle; see the fix-wave report.) TestLoadValidV2Fixture's
+	// "tag-team" case and TestCompileDeterministic (compile_test.go) both
+	// exercise this exact tie shape.
 	BranchOutcomes [2][]Outcome
 
 	// Effects are the composition's unconditional ("always") outcomes —
@@ -219,25 +218,11 @@ type CompiledPower struct {
 // outcome_summary speaks the ruleset's own words).
 //
 // RollSrc/VsSrc are the DISPLAY text Resolve records onto
-// AbilityUsed.rolls[].expression when Roll/Vs actually rolls dice (Task 3,
-// spec pillar "ONE execution path" — the v1-to-CompiledPower adapter and
-// the v2 compiler both populate a CompiledPower, but from different
-// "source of truth" text): for a v2 composition (compile.go), RollSrc/
-// VsSrc are the fully-substituted, POST-SPLICE source text Roll/Vs were
-// parsed from — exactly what Roll.String()/Vs.String() would already
-// return, kept as an explicit field so testimony code never has to know
-// whether it's holding a v1-adapted or v2-compiled power. For a v1-adapted
-// ability (load.go's AdaptV1Ability), RollSrc is v1's ORIGINAL, UNSCOPED
-// Attack.RollSrc text — Roll itself is a DIFFERENT (caster-scoped) parse
-// of a scoped rewrite of that same text, needed to execute through
-// EvalScoped, but the adapter must never let that rewritten text leak into
-// a v1 ability's already-committed golden testimony. VsSrc has no true v1
-// "original" (v1's Attack.Vs was a bare defense NAME, never an
-// expression) — it is set to the synthesized "@target.<defense>" text,
-// which is only ever OBSERVABLE if evaluating it rolls dice; a bare
-// attribute ref never does, so no v1 golden ever displays it. See
-// AdaptV1Ability's doc comment for the full "SourceText decision"
-// rationale.
+// AbilityUsed.rolls[].expression when Roll/Vs actually rolls dice: the
+// fully-substituted, POST-SPLICE source text Roll/Vs were parsed from —
+// exactly what Roll.String()/Vs.String() would return — kept as an explicit
+// field so testimony code reads the recorded expression without re-
+// stringifying the AST.
 type CompiledResolution struct {
 	Roll, Vs       *Expr
 	RollSrc, VsSrc string
@@ -291,15 +276,6 @@ type Targeting struct {
 	MaxTargets int
 }
 
-// Attack is present only on abilities that roll against a defense. Roll
-// produces the attack roll total; Vs names which of the ruleset's declared
-// defenses it's checked against.
-type Attack struct {
-	Roll    *Expr
-	RollSrc string
-	Vs      string
-}
-
 // OutcomeKind tags which of Outcome's three fields is populated.
 type OutcomeKind int
 
@@ -337,29 +313,8 @@ type RemoveConditionOutcome struct {
 	ID string
 }
 
-// Ability is one usable ability: a targeting envelope, an optional attack
-// roll, and up to three outcome lists. Attack == nil marks a non-attack
-// ability — Hit and Miss must then both be empty (Load rejects otherwise);
-// Effect always runs unconditionally.
-type Ability struct {
-	ID        string
-	Name      string
-	Usage     Usage
-	Targeting Targeting
-	Attack    *Attack
-	Hit       []Outcome
-	Miss      []Outcome
-	Effect    []Outcome
-
-	// sourcePath is the abilities/*.json file this ability was decoded
-	// from, kept so cross-reference errors discovered after decoding (in
-	// crossValidate) name the real file rather than guessing one from the
-	// ability id.
-	sourcePath string
-}
-
 // Condition is a named marker a ruleset's abilities can apply or remove.
-// v1 conditions carry no mechanical effect of their own (engine.
+// Conditions carry no mechanical effect of their own (engine.
 // ActorCondition doc, ruleset-interpreter spec §4) — they are DM-narrated
 // bookkeeping the platform tracks structurally only.
 type Condition struct {

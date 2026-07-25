@@ -4,8 +4,10 @@ package rules
 // Ruleset.Compiled (spec §6, compile-at-load): resolve each composition's
 // atom refs, validate param bindings against the atoms' declared param
 // kinds, validate the provides/consumes dependency graph (topological
-// execution order, ties broken by composition list order — never
-// load-bearing for correctness, only for determinism), validate exactly
+// execution order, ties broken by composition list order — deterministic,
+// and semantically meaningful where tied same-branch outcomes touch the
+// same clamped resource, so authors order such ties deliberately; finding
+// F4 and format.go's BranchOutcomes MERGE ORDER doc), validate exactly
 // one targeting and at most one resolution contribution, validate every
 // outcome's branch/key against its resolution, splice params into
 // contribution expression templates HYGIENICALLY (int/expr params as
@@ -51,7 +53,7 @@ func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions ma
 	// Individual param BINDINGS are still checked against their precise
 	// declared kind (attribute vs defense) in bindAtom — this union only
 	// covers the permissive final-expression check, which also has to
-	// accept refs an atom author wrote directly (e.g. "@target.ac"),
+	// accept refs an atom author wrote directly (e.g. "@target.guard"),
 	// never having gone through a param placeholder at all.
 	attrOrDefSet := make(map[string]bool, len(attrSet)+len(defSet))
 	for k := range attrSet {
@@ -61,8 +63,8 @@ func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions ma
 		attrOrDefSet[k] = true
 	}
 
-	// Stable iteration order, matching v1's crossValidate — determinism of
-	// which composition fails first on an invalid ruleset, and (mostly for
+	// Stable iteration order — determinism of which composition fails first
+	// on an invalid ruleset, and (mostly for
 	// hygiene, since map equality ignores insertion order) predictable
 	// build order for the compiled map's contents.
 	ids := make([]string, 0, len(compositions))
@@ -86,6 +88,16 @@ func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions ma
 func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility, attrSet, defSet, resSet, attrOrDefSet map[string]bool) (*CompiledPower, error) {
 	path := ca.sourcePath
 	n := len(ca.Compose)
+
+	// usage.limited.resource cross-reference (pre-authorized item 1): a
+	// limited-use ability's named resource must be one the manifest
+	// declares — Resolve never creates resource entries, so an undeclared
+	// resource here would only surface as a runtime rejection. v1's loader
+	// checked this; the v2 compile path must too. Named a load error on the
+	// ability file/field.
+	if ca.Usage.Limited != nil && !resSet[ca.Usage.Limited.Resource] {
+		return nil, fieldErr(path, "usage.limited.resource", fmt.Sprintf("references undeclared resource %q", ca.Usage.Limited.Resource))
+	}
 
 	atomInstances := make([]*AtomDef, n)
 	names := make([]string, n)
@@ -286,12 +298,156 @@ func bindName(path, field string, raw json.RawMessage) (string, error) {
 	return s, nil
 }
 
+// --- Composition validity matrix (spec §4; findings F1 + F3) -------------
+//
+// This block is the SINGLE definition of two interacting composition-
+// validity rules. loadAtoms' key-validity check (F1,
+// checkAtomContributionKeys) and buildAndSortDAG's edge-honor check (F3,
+// below) both derive from it — do not duplicate the reasoning elsewhere.
+//
+// (a) KEY VALIDITY (F1 — spec §4's third composition-validity clause,
+//
+//	"every contribution's key refers to a key the atom provides or
+//	consumes"):
+//
+//	   contribution kind             key field         must be in
+//	   -----------------             ---------         ----------
+//	   resolution                    Key               atom's provides
+//	   outcome (branch != "always")  OutcomeKey        atom's consumes
+//	   outcome (branch == "always")  OutcomeKey == nil — (exempt)
+//	   targeting                     (none)            —
+//
+//	Enforcing this fuses the provides/consumes graph and the key strings
+//	that route outcomes into ONE namespace: an outcome conditioned on a
+//	resolution key now MUST list that key in `consumes`, which
+//	guarantees the DAG carries the ordering edge from the resolution
+//	atom — the silent degradation to compose-list position (an outcome
+//	that routes correctly by name but has no dependency edge) is gone.
+//
+// (b) EDGE HONOR (F3 — spec §4, "execution order is the topological order
+//
+//	of the graph"). Resolve executes, per target, in a FIXED phase
+//	order: the resolution roll/vs (phaseResolution), then the winning
+//	branch's outcomes (phaseBranch), then the unconditional "always"
+//	outcomes (phaseEffects) — resolve.go. Targeting is a compile-time
+//	constant, produced before any runtime phase (phaseTargeting). A
+//	provides->consumes edge from provider P to consumer C is honorable
+//	iff the phase at which P makes the provided key's state available is
+//	no later than the phase at which C first needs it. buildAndSortDAG
+//	rejects any edge that inverts this — e.g. an "always"-outcome atom
+//	(phaseEffects) providing a key a branch-outcome atom (phaseBranch)
+//	consumes: the topo sort would place the provider first, but the
+//	fixed execution order runs the branch outcome earlier, so the
+//	declared dependency is unenforceable — rejected like a cycle.
+const (
+	phaseTargeting  = 0
+	phaseResolution = 1
+	phaseBranch     = 2
+	phaseEffects    = 3
+)
+
+// contributionPhase maps a contribution to its runtime execution phase
+// (composition validity matrix (b)).
+func contributionPhase(c Contribution) int {
+	switch c.Kind {
+	case "targeting":
+		return phaseTargeting
+	case "resolution":
+		return phaseResolution
+	default: // "outcome"
+		if c.Branch == "always" {
+			return phaseEffects
+		}
+		return phaseBranch
+	}
+}
+
+func phaseName(p int) string {
+	switch p {
+	case phaseTargeting:
+		return "targeting"
+	case phaseResolution:
+		return "resolution"
+	case phaseBranch:
+		return "branch-outcome"
+	default:
+		return "effects"
+	}
+}
+
+// producePhaseForKey returns the phase at which atom makes the provided key
+// `key` available (composition validity matrix (b)): a resolution
+// contribution whose Key == key makes it available at phaseResolution;
+// otherwise the key stands for state the atom's outcome contribution(s)
+// produce and is not available until the LATEST of them (conservative — an
+// atom-level provides list ties no specific outcome to the key); a
+// targeting-only provider produces no runtime state and is available from
+// the start (phaseTargeting).
+func producePhaseForKey(atom *AtomDef, key string) int {
+	for _, c := range atom.Contributes {
+		if c.Kind == "resolution" && c.Key == key {
+			return phaseResolution
+		}
+	}
+	phase := phaseTargeting
+	for _, c := range atom.Contributes {
+		if c.Kind == "outcome" {
+			if p := contributionPhase(c); p > phase {
+				phase = p
+			}
+		}
+	}
+	return phase
+}
+
+// consumePhaseForAtom returns the earliest phase at which atom could read a
+// consumed key — the minimum phase over its contributions (composition
+// validity matrix (b)). atom.Contributes is never empty (loadAtoms).
+func consumePhaseForAtom(atom *AtomDef) int {
+	phase := phaseEffects
+	for _, c := range atom.Contributes {
+		if p := contributionPhase(c); p < phase {
+			phase = p
+		}
+	}
+	return phase
+}
+
+// checkAtomContributionKeys enforces the composition validity matrix's
+// KEY-VALIDITY rule (a) for one atom: a resolution contribution's key must
+// be among the atom's provides; a non-"always" outcome contribution's key
+// must be among the atom's consumes. Atom-local (no composition context
+// needed), so loadAtoms runs it per atom at decode time. Errors name the
+// atom file and the offending contribution's key field.
+func checkAtomContributionKeys(path string, provides, consumes []string, contributes []Contribution) error {
+	provSet := toSet(provides)
+	consSet := toSet(consumes)
+	for i, c := range contributes {
+		field := fmt.Sprintf("contributes[%d].key", i)
+		switch c.Kind {
+		case "resolution":
+			if !provSet[c.Key] {
+				return fieldErr(path, field, fmt.Sprintf("resolution key %q must be among the atom's provides %v (spec §4: every contribution's key refers to a key the atom provides or consumes)", c.Key, provides))
+			}
+		case "outcome":
+			if c.Branch != "always" && c.OutcomeKey != nil && !consSet[*c.OutcomeKey] {
+				return fieldErr(path, field, fmt.Sprintf("outcome key %q must be among the atom's consumes %v (spec §4: every contribution's key refers to a key the atom provides or consumes; without it the provides/consumes graph gains no ordering edge and this outcome silently degrades to compose-list position)", *c.OutcomeKey, consumes))
+			}
+		}
+	}
+	return nil
+}
+
 // buildAndSortDAG validates the composition's provides/consumes graph
-// (spec §4: every consumed key provided by exactly one atom, acyclic) and
+// (spec §4: every consumed key provided by exactly one atom, acyclic, and
+// every cross-phase edge honorable — composition validity matrix (b)) and
 // returns its execution order — Kahn's algorithm, always picking the
 // LOWEST not-yet-placed index with zero remaining in-degree, so ties break
-// by composition list order deterministically (never load-bearing for
-// correctness, only for output determinism — spec §4 guarantee).
+// by composition list order deterministically (spec §4: tie order among
+// DAG-independent outcomes is deterministic; where those outcomes touch the
+// SAME clamped resource it is also semantically meaningful — see
+// CompiledPower.BranchOutcomes' MERGE ORDER doc in format.go — so authors
+// order such ties deliberately).
 func buildAndSortDAG(path string, atomInstances []*AtomDef, names []string) ([]int, error) {
 	n := len(atomInstances)
 
@@ -312,6 +468,20 @@ func buildAndSortDAG(path string, atomInstances []*AtomDef, names []string) ([]i
 			p, ok := providerOf[k]
 			if !ok {
 				return nil, fieldErr(path, "compose", fmt.Sprintf("atom %q at compose[%d] consumes key %q, but no atom in this composition provides it", names[i], i, k))
+			}
+			// Edge-honor (F3, composition validity matrix (b)): reject an
+			// edge the fixed branch-then-effects execution order cannot
+			// honor — one whose provider makes the key available only in a
+			// LATER phase than the consumer needs it (an "always"-outcome
+			// provider feeding a branch-outcome consumer, say). The topo
+			// sort below would dutifully place the provider first, but
+			// Resolve runs the phases in a fixed order regardless, silently
+			// inverting the declared dependency — so it is rejected here,
+			// like a cycle.
+			pp := producePhaseForKey(atomInstances[p], k)
+			cp := consumePhaseForAtom(a)
+			if pp > cp {
+				return nil, fieldErr(path, "compose", fmt.Sprintf("atom %q at compose[%d] provides key %q in the %s phase, but atom %q at compose[%d] consumes it in the earlier %s phase — the fixed execution order (resolution, then branch outcomes, then unconditional effects) runs the consumer before the provider, so this declared dependency cannot be honored (spec §4)", names[p], p, k, phaseName(pp), names[i], i, phaseName(cp)))
 			}
 			adj[p] = append(adj[p], i)
 			inDeg[i]++
@@ -495,18 +665,34 @@ func compileEffects(path string, atomIdx, contribIdx int, templates []EffectTemp
 // field ("resource": "{pool}") is correct precisely because it is NEVER
 // itself a sub-expression.
 //
-// Injection is impossible by construction, not just by convention: every
-// value-kind binding was independently validated to Parse() as a complete
-// standalone expression BEFORE this substitution runs (bindAtom's "expr"
-// case; "int" bindings are decoded straight from a JSON number, never
-// free text) — a string with unbalanced parens or trailing garbage fails
-// that check and never reaches here, so wrapping it in "(" ")" can never
-// let it "escape" into the surrounding template text. Every name-kind
-// binding was independently validated to match the IDENT charset
-// (bindName) — no delimiter characters, all sigil/scope-position meaning
-// stays exactly where the template placed it. There is no scenario in
-// which a crafted param value changes the shape of the surrounding
-// expression beyond substituting its own value.
+// Injection is impossible given the load-time preconditions THIS PACKAGE
+// enforces before substitution ever runs — not by construction alone
+// (finding F2 corrected the earlier over-claim). Two hazards, two enforced
+// preconditions:
+//
+//   - VALUE-kind escape: every value-kind binding was independently
+//     validated to Parse() as a complete standalone expression BEFORE this
+//     substitution (bindAtom's "expr" case; "int" bindings decode straight
+//     from a JSON number, never free text) — a string with unbalanced
+//     parens or trailing garbage fails that check and never reaches here,
+//     so wrapping it in "(" ")" can never let it "escape" into the
+//     surrounding template text.
+//   - NAME-kind SCOPE-position hijack: a name-kind binding matches the
+//     IDENT charset (bindName), so it carries no delimiter characters — but
+//     a bound value of "caster"/"target" spliced into a ref's SCOPE
+//     position ("@{who}.vim") would still change the parse SHAPE (scope vs
+//     name) rather than substitute as a name. That is prevented by TWO
+//     load-time rules, WITHOUT which this function's output is NOT
+//     injection-safe: loadAtoms rejects a placeholder occupying scope
+//     position (checkNoScopePositionPlaceholder), and loadManifest/
+//     loadConditions reserve the words "caster"/"target" against
+//     attribute/defense/resource/condition names (reservedScopeWords), so
+//     no name-kind binding can ever equal a scope word in the first place.
+//
+// With both preconditions enforced, a placeholder only ever occupies a
+// ref's NAME segment or a plain name field, and its bound value is always a
+// non-scope IDENT — so a crafted param value cannot change the shape of the
+// surrounding expression beyond substituting its own value.
 func substTemplate(raw string, bindings map[string]string) string {
 	return placeholderRe.ReplaceAllStringFunc(raw, func(m string) string {
 		name := m[1 : len(m)-1]

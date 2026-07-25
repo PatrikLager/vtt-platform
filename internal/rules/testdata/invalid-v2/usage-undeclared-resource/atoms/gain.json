@@ -1,0 +1,16 @@
+{
+  "id": "gain",
+  "params": [],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": null,
+      "branch": "always",
+      "effects": [
+        { "resource_change": { "resource": "focus", "delta_expr": "1" } }
+      ]
+    }
+  ]
+}

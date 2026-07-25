@@ -1,0 +1,16 @@
+{
+  "id": "spender",
+  "params": [],
+  "provides": [],
+  "consumes": ["strike", "primer"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "hit",
+      "effects": [
+        { "resource_change": { "resource": "pool", "delta_expr": "0 - #target.pool" } }
+      ]
+    }
+  ]
+}

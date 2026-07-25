@@ -61,6 +61,24 @@ func TestRunGoldenMismatch(t *testing.T) {
 	}
 }
 
+// TestRunOrphanCompiledGolden pins finding R1: a goldens/compiled/*.json
+// file whose name matches no compiled ability (a stale pin left behind by a
+// rename or deletion) must fail Run, naming the orphan — the reverse of the
+// missing-golden check, closing the one load-bearing filename convention the
+// suite previously validated in only one direction.
+func TestRunOrphanCompiledGolden(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-orphan-compiled-golden"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-orphan-compiled-golden): want error for the orphan compiled golden, got nil")
+	}
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("Run(minimal-v2-orphan-compiled-golden) error = %q, want it to name the orphan %q", err.Error(), "ghost")
+	}
+	if !strings.Contains(err.Error(), "orphan") {
+		t.Errorf("Run(minimal-v2-orphan-compiled-golden) error = %q, want it to call out the orphan", err.Error())
+	}
+}
+
 func TestRunUnknownDirectory(t *testing.T) {
 	if err := conformance.Run(fixture("does-not-exist")); err == nil {
 		t.Fatal("Run(does-not-exist): want error, got nil")
@@ -128,12 +146,10 @@ func TestRunCompiledGoldenMismatch(t *testing.T) {
 // loadable" anymore, and this test's premise is unreproducible by
 // construction, not merely stale. "minimal" itself migrated to v2 (Task
 // 4 report) and now ships goldens/compiled/poke.json like every other v2
-// fixture; runCompiledGoldens's own `if rs.FormatVersion != "2" { return
-// nil }` exemption clause (conformance.go, untouched platform behavior —
-// out of this task's file scope) is consequently dead code in practice
-// now, since Load never again returns a Ruleset with any other
-// FormatVersion — flagged here for a future cleanup pass rather than
-// touched by this task.
+// fixture; runCompiledGoldens's former `if rs.FormatVersion != "2" { return
+// nil }` exemption clause was consequently dead code (Load never returns a
+// Ruleset with any other FormatVersion) and has been removed in the fix
+// wave.
 
 // TestRunMissingPerAbilityGolden pins F7: spec §8 mandates a golden scenario
 // per ability, so a ruleset that loads and smoke-passes but ships no golden

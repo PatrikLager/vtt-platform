@@ -24,19 +24,10 @@ import (
 //
 // # ONE execution path (Task 3, spec 5c §6-7)
 //
-// Resolve executes rs.Compiled ONLY — never rs.Abilities, never an atom
-// graph — regardless of the ruleset's format_version. A format-v2
-// composition compiles to its CompiledPower at Load via compile.go's
-// atom-graph flattening; a format-v1 Ability adapts to the EXACT same
-// CompiledPower shape at Load via load.go's AdaptV1Ability, translating
-// v1's implicit positional scoping (attack rolls evaluate against the
-// CASTER, hit/miss/effect outcome expressions evaluate against the TARGET
-// — v1's actual historical contract, restated here as what the adapter
-// must keep observably true) into the explicit @caster./@target. scoping
-// EvalScoped requires. This is why every rule below is phrased in terms of
-// a CompiledPower's Resolution/BranchOutcomes/Effects rather than an
-// Ability's Attack/Hit/Miss: they are the same fields, under new names, for
-// both format versions alike.
+// Resolve executes rs.Compiled ONLY — never an atom graph. A composition
+// compiles to its CompiledPower at Load via compile.go's atom-graph
+// flattening; Resolve then reads Compiled exclusively. Every rule below is
+// phrased in terms of a CompiledPower's Resolution/BranchOutcomes/Effects.
 //
 // # Validation (in order; each failure is a clean error — nothing returned)
 //
@@ -189,7 +180,7 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 			switch ref.Scope {
 			case ScopeCaster:
 				if _, ok := caster.GetAttributes()[ref.Name]; !ok {
-					return fmt.Errorf("rules: resolve: actor %q missing attribute %q required by ability %q's attack roll", casterID, ref.Name, ability.ID)
+					return fmt.Errorf("rules: resolve: actor %q missing attribute %q required by ability %q's resolution roll", casterID, ref.Name, ability.ID)
 				}
 			case ScopeTarget:
 				for _, tid := range targetIDs {

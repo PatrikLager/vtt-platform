@@ -22,8 +22,8 @@ import (
 // factor's optional trailing "'d' primary" is DICE's expression-sized form
 // (spec §5): count (the left primary) and sides (the right primary) may be
 // ANY primary — a ref, a parenthesized expr, a func call, or another dice —
-// not just an integer literal, e.g. '(@caster.weapon_count)d(@caster.weapon_die)'
-// or '1d(@caster.weapon_die)'. 'd' binds at the factor level — tighter than
+// not just an integer literal, e.g. '(@caster.dice_count)d(@caster.dice_faces)'
+// or '1d(@caster.dice_faces)'. 'd' binds at the factor level — tighter than
 // '*'/'/' and '+'/'-' — so '1d6+2' parses as '(1d6)+2', and '2*3d6' parses
 // as '2*(3d6)' (see TestEvalDicePrecedence, TestEvalDicePrecedenceDiscriminates).
 //
@@ -1043,7 +1043,7 @@ func (p *parser) parseFactor() (*Node, error) {
 		// Bare "d": consume it, then parse the sides operand as a SINGLE
 		// primary — never a recursive parseFactor call (that recursion,
 		// unguarded, was the CRITICAL stack-overflow hazard; see the
-		// grammar doc). This is what permits '1d(@caster.weapon_die)'
+		// grammar doc). This is what permits '1d(@caster.dice_faces)'
 		// (the parens route through parsePrimary's tokLParen branch,
 		// which is fine — parseExpr guards that recursion independently)
 		// while refusing to silently chain a further bare 'd'.

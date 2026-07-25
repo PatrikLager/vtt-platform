@@ -4,7 +4,6 @@
   "usage": "at_will",
   "compose": [
     { "atom": "self-delivery", "bind": {} },
-    { "atom": "phantom-strike-provider", "bind": {} },
     { "atom": "premature-hit-outcome", "bind": {} }
   ]
 }
