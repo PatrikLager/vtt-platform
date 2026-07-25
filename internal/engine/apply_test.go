@@ -28,8 +28,24 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
 	case *vttv1.EventsRetracted:
 		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
+	case *vttv1.AbilityUsed:
+		e.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
+	case *vttv1.ResourceChanged:
+		e.Payload = &vttv1.Envelope_ResourceChanged{ResourceChanged: p}
+	case *vttv1.ConditionApplied:
+		e.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
+	case *vttv1.ConditionRemoved:
+		e.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
 	}
 	return e
+}
+
+// actorAddedEnv builds an ActorAdded envelope with optional resources, for
+// ResourceChanged test setup.
+func actorAddedEnv(seq int64, actorID string, resources map[string]*vttv1.Resource) *vttv1.Envelope {
+	return env(seq, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: actorID, Name: "Hero", ModuleId: "m", Resources: resources},
+	})
 }
 
 // seedScene applies SessionStarted + SceneCreated and returns the state.
@@ -209,6 +225,91 @@ func TestApplyRejections(t *testing.T) {
 				return env(3, &vttv1.SessionStarted{Name: "n2"})
 			},
 		},
+		{
+			name:  "ResourceChanged for unknown actor",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.ResourceChanged{
+					ActorId: "missing-actor", Resource: "pool-a", Delta: 1, NewValue: 1,
+				})
+			},
+		},
+		{
+			name: "ResourceChanged for unknown resource",
+			setup: func(t *testing.T) *engine.State {
+				st := seedScene(t)
+				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
+				return st
+			},
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(4, &vttv1.ResourceChanged{
+					ActorId: "a1", Resource: "pool-a", Delta: 1, NewValue: 1,
+				})
+			},
+		},
+		{
+			name: "ResourceChanged new_value mismatch",
+			setup: func(t *testing.T) *engine.State {
+				st := seedScene(t)
+				must(t, engine.Apply(st, actorAddedEnv(3, "a1", map[string]*vttv1.Resource{
+					"pool-a": {Current: 5, Max: 10},
+				})))
+				return st
+			},
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				// Correct post-clamp value is 3 (5-2); assert a wrong one.
+				return env(4, &vttv1.ResourceChanged{
+					ActorId: "a1", Resource: "pool-a", Delta: -2, NewValue: 999,
+				})
+			},
+		},
+		{
+			name: "duplicate condition (actor,id)",
+			setup: func(t *testing.T) *engine.State {
+				st := seedScene(t)
+				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
+				st.Conditions["a1"] = []engine.ActorCondition{
+					{ID: "cond1", Source: "spell", AppliedSeq: 3},
+				}
+				return st
+			},
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(4, &vttv1.ConditionApplied{
+					ActorId: "a1", ConditionId: "cond1", Source: "other",
+				})
+			},
+		},
+		{
+			name: "ConditionRemoved for absent condition",
+			setup: func(t *testing.T) *engine.State {
+				st := seedScene(t)
+				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
+				return st
+			},
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(4, &vttv1.ConditionRemoved{
+					ActorId: "a1", ConditionId: "cond1", Reason: "cured",
+				})
+			},
+		},
+		{
+			name:  "ConditionApplied for unknown actor",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.ConditionApplied{
+					ActorId: "missing-actor", ConditionId: "cond1", Source: "spell",
+				})
+			},
+		},
+		{
+			name:  "ConditionRemoved for unknown actor",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.ConditionRemoved{
+					ActorId: "missing-actor", ConditionId: "cond1", Reason: "cured",
+				})
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -252,6 +353,96 @@ func TestAttackRolledIsDeliberateNoOp(t *testing.T) {
 	}
 }
 
+// TestAbilityUsedIsDeliberateNoOp pins AbilityUsed as testimony-only (spec
+// §3): rules meaning arrives via the ResourceChanged/ConditionApplied/
+// ConditionRemoved events in the same AppendBatch (sub-project 5), not via
+// this event's own fold.
+func TestAbilityUsedIsDeliberateNoOp(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(3, &vttv1.AbilityUsed{
+		ActorId: "a1", AbilityId: "fireball", TargetIds: []string{"a2"},
+		OutcomeSummary: "hit",
+	})))
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("AbilityUsed must not mutate state")
+	}
+}
+
+// TestResourceChangedAccept covers the three accept sub-variants from the
+// task-2 brief: clamp at 0, clamp at max, and an in-range change where
+// new_value is asserted exactly (no clamping engaged).
+func TestResourceChangedAccept(t *testing.T) {
+	cases := []struct {
+		name                string
+		current, max, delta int32
+		wantNewValue        int32
+	}{
+		{"clamp at 0", 2, 10, -10, 0},
+		{"clamp at max", 8, 10, 10, 10},
+		{"exact new_value, no clamp engaged", 5, 10, -2, 3},
+		{"max == 0 means unlimited: large positive delta does not clamp", 5, 0, 500, 505},
+		{"delta == 0 is accepted: new_value unchanged", 7, 10, 0, 7},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := seedScene(t)
+			must(t, engine.Apply(st, actorAddedEnv(3, "a1", map[string]*vttv1.Resource{
+				"pool-a": {Current: c.current, Max: c.max},
+			})))
+
+			must(t, engine.Apply(st, env(4, &vttv1.ResourceChanged{
+				ActorId: "a1", Resource: "pool-a", Delta: c.delta, NewValue: c.wantNewValue,
+			})))
+
+			got := st.Actors["a1"].Resources["pool-a"]
+			if got.Current != c.wantNewValue {
+				t.Fatalf("want current %d, got %d", c.wantNewValue, got.Current)
+			}
+			if got.Max != c.max {
+				t.Fatalf("want max unchanged %d, got %d", c.max, got.Max)
+			}
+		})
+	}
+}
+
+func TestConditionAppliedAccept(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
+
+	must(t, engine.Apply(st, env(4, &vttv1.ConditionApplied{
+		ActorId: "a1", ConditionId: "cond1", Source: "spell",
+	})))
+
+	got := st.Conditions["a1"]
+	want := []engine.ActorCondition{{ID: "cond1", Source: "spell", AppliedSeq: 4}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
+func TestConditionRemovedAccept(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
+	st.Conditions["a1"] = []engine.ActorCondition{
+		{ID: "cond1", Source: "spell", AppliedSeq: 3},
+		{ID: "cond2", Source: "trap", AppliedSeq: 4},
+	}
+
+	must(t, engine.Apply(st, env(5, &vttv1.ConditionRemoved{
+		ActorId: "a1", ConditionId: "cond1", Reason: "cured",
+	})))
+
+	got := st.Conditions["a1"]
+	want := []engine.ActorCondition{{ID: "cond2", Source: "trap", AppliedSeq: 4}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
 func TestEventsRetractedIsNoOpInline(t *testing.T) {
 	st := seedScene(t)
 	before := st.Snapshot()
@@ -289,11 +480,14 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 		TokenId: "t1", SceneId: "scn", ActorId: "a1",
 		Position: &vttv1.GridPosition{X: 1, Y: 1},
 	})))
+	must(t, engine.Apply(st, env(5, &vttv1.ConditionApplied{
+		ActorId: "a1", ConditionId: "cond1", Source: "spell",
+	})))
 
 	snap := st.Snapshot()
 
 	// Mutate the ORIGINAL after taking the snapshot.
-	must(t, engine.Apply(st, env(5, &vttv1.TokenMoved{
+	must(t, engine.Apply(st, env(6, &vttv1.TokenMoved{
 		TokenId: "t1", SceneId: "scn",
 		From: &vttv1.GridPosition{X: 1, Y: 1},
 		To:   &vttv1.GridPosition{X: 9, Y: 9},
@@ -302,6 +496,9 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 		st.Actors["a1"].Attributes = map[string]int32{}
 	}
 	st.Actors["a1"].Attributes["x"] = 1
+	must(t, engine.Apply(st, env(7, &vttv1.ConditionApplied{
+		ActorId: "a1", ConditionId: "cond2", Source: "trap",
+	})))
 
 	snapTok := snap.Tokens["t1"]
 	if snapTok.X != 1 || snapTok.Y != 1 {
@@ -310,5 +507,11 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 
 	if _, ok := snap.Actors["a1"].Attributes["x"]; ok {
 		t.Fatal("snapshot actor attributes mutated: want \"x\" absent")
+	}
+
+	snapConds := snap.Conditions["a1"]
+	wantConds := []engine.ActorCondition{{ID: "cond1", Source: "spell", AppliedSeq: 5}}
+	if !reflect.DeepEqual(snapConds, wantConds) {
+		t.Fatalf("snapshot conditions mutated: got %+v, want %+v", snapConds, wantConds)
 	}
 }
