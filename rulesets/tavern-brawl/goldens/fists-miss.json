@@ -1,0 +1,22 @@
+{
+  "name": "fists-miss",
+  "ability_id": "fists",
+  "scene": "tavern",
+  "actors": [
+    { "id": "brawler", "x": 0, "y": 0, "attributes": { "brawn": 3, "grit": 1 } },
+    { "id": "patron", "x": 1, "y": 0, "attributes": { "footing": 30 }, "resources": { "drink": { "current": 0, "max": 5 } } }
+  ],
+  "actor_id": "brawler",
+  "target_ids": ["patron"],
+  "rolls": [{ "results": [2] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "brawler",
+      "ability_id": "fists",
+      "target_ids": ["patron"],
+      "rolls": [{ "expression": "1d20 + @brawn", "results": [2], "total": 5 }],
+      "outcome_summary": "Fists on patron: miss (5 vs 30)"
+    }
+  ]
+}

@@ -26,6 +26,11 @@ components:
   harness:  { in: internal/harness }
   mcp:      { in: internal/mcp }
   rules:    { in: internal/rules }
+  # internal/rules/conformance is its own component: go-arch-lint's `in:`
+  # match is non-recursive (a subdirectory isn't automatically covered by
+  # its parent's entry), and this subpackage's dependency shape genuinely
+  # differs from rules' own (it imports rules itself, which rules cannot).
+  conformance: { in: internal/rules/conformance }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -48,5 +53,26 @@ deps:
   # code yet — the engine/contract entries are pre-registered for Task 5's
   # Resolve (pure function over engine.State + contract types); nothing else
   # may import rules until Task 6 wires it into the gateway.
-  rules:    { mayDependOn: [engine, contract, rules] }
+  # deepScan: false — rules.Roller is a DELIBERATE extension-point
+  # interface (expr.go's doc comment: "production code gets a crypto-
+  # seeded implementation; tests use fixed/deterministic ones"): Eval and
+  # Resolve accept it and call .Roll() on it specifically so that ANY
+  # caller (conformance's fixture/table rollers today; a future gateway-
+  # side crypto-seeded implementation once Task 6 wires Resolve in) can
+  # supply a concrete implementation without rules importing them back.
+  # go-arch-lint's deep-scan heuristic treats "component X calls a method
+  # on an interface value whose concrete type is defined in component Y"
+  # as an implicit X-depends-on-Y edge — correct for accidental leakage,
+  # but a false positive for intentional dependency inversion via a
+  # narrow, purpose-built interface. The plain import graph (mayDependOn
+  # above) is untouched and still forbids rules from importing conformance
+  # or anything else — this override only silences the reverse-inference
+  # heuristic for rules' own files.
+  rules:    { mayDependOn: [engine, contract, rules], deepScan: false }
+  # internal/rules/conformance (Task 5, ruleset-interpreter spec §8) is the
+  # P4 proof harness: it drives rules.Load and rules.Resolve against any
+  # ruleset directory and needs engine.State to build the fixture actors
+  # Resolve reads — the same shape as rules' own pre-registered deps, plus
+  # rules itself (which rules cannot depend on).
+  conformance: { mayDependOn: [rules, engine, contract, conformance] }
   cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp] }

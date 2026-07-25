@@ -1,0 +1,10 @@
+{
+  "id": "smoke-fail",
+  "name": "Smoke Fail",
+  "format_version": "1",
+  "attributes": [],
+  "defenses": [],
+  "resources": [
+    { "name": "focus", "default_max_expr": "1", "thresholds": [] }
+  ]
+}

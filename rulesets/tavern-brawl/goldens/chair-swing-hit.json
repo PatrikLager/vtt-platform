@@ -1,0 +1,28 @@
+{
+  "name": "chair-swing-hit",
+  "ability_id": "chair-swing",
+  "scene": "tavern",
+  "actors": [
+    { "id": "brawler", "x": 0, "y": 0, "attributes": { "brawn": 3, "grit": 1 }, "resources": { "stamina": { "current": 2, "max": 2 } } },
+    { "id": "patron", "x": 1, "y": 0, "attributes": { "footing": 10 }, "resources": { "drink": { "current": 0, "max": 10 } } }
+  ],
+  "actor_id": "brawler",
+  "target_ids": ["patron"],
+  "rolls": [{ "results": [16] }, { "results": [2] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "brawler",
+      "ability_id": "chair-swing",
+      "target_ids": ["patron"],
+      "rolls": [
+        { "expression": "1d20 + @brawn", "results": [16], "total": 19 },
+        { "expression": "1 + 1d4", "results": [2], "total": 3 }
+      ],
+      "outcome_summary": "Chair Swing on patron: hit (19 vs 10)"
+    },
+    { "type": "ResourceChanged", "actor_id": "brawler", "resource": "stamina", "delta": -1, "new_value": 1, "reason": "ability:chair-swing:usage" },
+    { "type": "ResourceChanged", "actor_id": "patron", "resource": "drink", "delta": 3, "new_value": 3, "reason": "ability:chair-swing:hit" },
+    { "type": "ConditionApplied", "actor_id": "patron", "condition_id": "dazed-by-ale", "source": "ability:chair-swing:hit" }
+  ]
+}

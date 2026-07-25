@@ -1,0 +1,25 @@
+{
+  "id": "tavern-brawl",
+  "name": "Tavern Brawl",
+  "format_version": "1",
+  "attributes": ["brawn", "grit"],
+  "defenses": ["footing"],
+  "resources": [
+    {
+      "name": "drink",
+      "default_max_expr": "3 + @grit",
+      "thresholds": [
+        {
+          "when": "#drink",
+          "apply_condition": "dazed-by-ale",
+          "remove_when_false": true
+        }
+      ]
+    },
+    {
+      "name": "stamina",
+      "default_max_expr": "2",
+      "thresholds": []
+    }
+  ]
+}

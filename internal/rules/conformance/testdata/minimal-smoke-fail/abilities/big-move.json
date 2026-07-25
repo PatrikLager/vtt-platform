@@ -1,0 +1,7 @@
+{
+  "id": "big-move",
+  "name": "Big Move",
+  "usage": { "limited": { "resource": "focus", "cost": 5 } },
+  "targeting": { "range": 0, "max_targets": 1 },
+  "effect": []
+}
