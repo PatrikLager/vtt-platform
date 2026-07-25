@@ -12,30 +12,55 @@ import (
 )
 
 // supportedFormatVersions is the set of format_version values Load
-// accepts: "1" (spec §4, the original interpreter format — loaded exactly
-// as before, unchanged by this file's v2 additions) and "2" (spec
-// 2026-07-25-format-v2-composition-design.md §3 — atoms/compositions,
-// compiled at load into the same execution shape v1 abilities already
-// have; see loadV2 and compile.go). Any other value is rejected with a
-// clear error naming format_version — no silent multi-version guessing.
-var supportedFormatVersions = map[string]bool{"1": true, "2": true}
+// accepts. Task 4 (v1 sunset, spec §9's migration): format v1 is retired —
+// "2" (spec 2026-07-25-format-v2-composition-design.md §3 — atoms/
+// compositions, compiled at load into the small declarative execution
+// shape 5a proved; see loadV2 and compile.go) is the only value Load will
+// ever load. "1" is a clean break, not a silent guess: both rulesets that
+// existed under it (rulesets/tavern-brawl, internal/rules/testdata/valid)
+// migrated to v2 in this task, and spec §3 states plainly there are no
+// external v1 authors yet to protect.
+var supportedFormatVersions = map[string]bool{"2": true}
 
-// Load reads and fully validates the ruleset directory at dir. For
-// format_version "1": strict JSON decoding of ruleset.json,
-// abilities/*.json, and conditions/*.json (no unknown fields tolerated),
-// the grammar of every expression (parsed once, here, so a loaded Ruleset
-// never fails to parse an expression at runtime), every cross-reference an
-// ability, resource, or threshold makes (attributes, resources, defenses,
-// and condition ids must all be declared — spec §5), and — Task 3 —
-// adaptV1Abilities flattens every loaded Ability into Ruleset.Compiled via
-// AdaptV1Ability, byte-identically to how it already executed (see that
-// function's doc comment). For format_version "2": the same
-// manifest/conditions handling, plus atoms/*.json and
-// abilities/*.json-as-compositions, compiled at load into Ruleset.Compiled
-// (see loadV2, compile.go — spec §6). Either way, Ruleset.Compiled is
-// always populated on a successful Load, and Resolve (Task 5, rewired
-// Task 3) reads Compiled exclusively — spec 5c pillar "ONE execution
-// path". Every error names the offending file and field.
+// formatVersion1RejectedMsg is the clear, spec-naming error Load produces
+// for format_version "1" (or any other unsupported value) — spec §3: "clean
+// break... both existing rulesets are in-repo and migrate". Named as its
+// own constant (rather than inlined into loadManifest's fieldErr call) so
+// the exact wording load_test.go's rejection test pins is visibly the same
+// text a ruleset author would see, not a paraphrase.
+const formatVersion1RejectedMsg = "format v1 is retired (clean break, no external v1 authors — see docs/superpowers/specs/2026-07-25-format-v2-composition-design.md §3/§9); this ruleset must declare \"format_version\": \"2\" and be authored as atoms/compositions (§4)"
+
+// Load reads and fully validates the ruleset directory at dir: strict JSON
+// decoding of ruleset.json/conditions/*.json/atoms/*.json/
+// abilities/*.json-as-compositions (no unknown fields tolerated), the
+// grammar of every expression (parsed once, here, so a loaded Ruleset
+// never fails to parse an expression at runtime), every cross-reference a
+// resource, threshold, atom, or composition makes (attributes, resources,
+// defenses, and condition ids must all be declared — spec §5), and —
+// compile-at-load (spec §6) — every composition ability flattened into
+// Ruleset.Compiled by compile.go's compileCompositions. Ruleset.Compiled is
+// always populated on a successful Load, and Resolve reads Compiled
+// exclusively — spec 5c pillar "ONE execution path". Every error names the
+// offending file and field.
+//
+// format_version "1" (spec §3/§9, Task 4's sunset): REJECTED, by
+// loadManifest, before this function ever reads conditions/atoms/
+// abilities — supportedFormatVersions holds only "2", so manifest.
+// FormatVersion is always "2" by the time control reaches here. Both
+// rulesets that ever shipped as v1 (rulesets/tavern-brawl,
+// internal/rules/testdata/valid) migrated to v2 atoms/compositions in this
+// task; the v1 file-decode/cross-validate/adapt machinery that used to run
+// here (loadAbilities, crossValidate, adaptV1Abilities) had no other
+// caller and was removed as dead code (git-grep-verified — see the task-4
+// report). AdaptV1Ability itself (the ability-to-CompiledPower flattening
+// function, as opposed to the FILE-loading machinery around it) is kept:
+// it has one remaining, out-of-this-task's-file-scope caller —
+// resolve_test.go's fixtureRuleset — which builds hand-written *Ability
+// Go literals (never through Load) purely as Resolve-behavior test
+// fixtures, independent of whether any ruleset directory can still load as
+// v1. That caller does not "load v1" in the sense this sunset retires;
+// removing AdaptV1Ability would just break an unrelated, out-of-scope test
+// file for no behavioral gain.
 func Load(dir string) (*Ruleset, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -50,47 +75,7 @@ func Load(dir string) (*Ruleset, error) {
 		return nil, err
 	}
 
-	if manifest.FormatVersion == "2" {
-		return loadV2(dir, manifest)
-	}
-
-	conditions, err := loadConditions(filepath.Join(dir, "conditions"))
-	if err != nil {
-		return nil, err
-	}
-
-	abilities, err := loadAbilities(filepath.Join(dir, "abilities"))
-	if err != nil {
-		return nil, err
-	}
-
-	guide, err := os.ReadFile(filepath.Join(dir, "guide.md"))
-	if err != nil {
-		return nil, fmt.Errorf("rules: load %s: guide.md: %w", dir, err)
-	}
-
-	rs := &Ruleset{
-		ID:            manifest.ID,
-		Name:          manifest.Name,
-		FormatVersion: manifest.FormatVersion,
-		Resources:     manifest.resources,
-		Defenses:      manifest.Defenses,
-		Attributes:    manifest.Attributes,
-		Abilities:     abilities,
-		Conditions:    conditions,
-		Guide:         string(guide),
-	}
-
-	if err := crossValidate(rs); err != nil {
-		return nil, err
-	}
-
-	compiled, err := adaptV1Abilities(rs.Abilities)
-	if err != nil {
-		return nil, err
-	}
-	rs.Compiled = compiled
-	return rs, nil
+	return loadV2(dir, manifest)
 }
 
 // loadV2 is format_version "2"'s Load path (spec §3, §6): manifest (shared
@@ -175,8 +160,8 @@ type thresholdJSON struct {
 
 // loadedManifest carries both the raw decoded manifest and its resources
 // already converted to the public ResourceDef shape (expressions parsed),
-// since manifestJSON.resources needs its exprs parsed before crossValidate
-// can walk them for Refs().
+// since manifestJSON.resources needs its exprs parsed before
+// crossValidateResources can walk them for Refs().
 type loadedManifest struct {
 	ID            string
 	Name          string
@@ -199,7 +184,7 @@ func loadManifest(path string) (*loadedManifest, error) {
 		return nil, fieldErr(path, "name", "must not be empty")
 	}
 	if !supportedFormatVersions[raw.FormatVersion] {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q (supported: \"1\", \"2\")", raw.FormatVersion))
+		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q — %s", raw.FormatVersion, formatVersion1RejectedMsg))
 	}
 
 	seenAttr := map[string]bool{}
@@ -353,34 +338,15 @@ func loadConditions(dir string) (map[string]*Condition, error) {
 	return out, nil
 }
 
-// --- abilities/*.json ---
-
-type abilityJSON struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Usage     Usage         `json:"usage"`
-	Targeting targetingJSON `json:"targeting"`
-	Attack    *attackJSON   `json:"attack"`
-	Hit       []outcomeJSON `json:"hit"`
-	Miss      []outcomeJSON `json:"miss"`
-	Effect    []outcomeJSON `json:"effect"`
-}
-
-type targetingJSON struct {
-	// Range is a *int, not int: a plain int can't distinguish "author
-	// wrote 0" (a legitimate self/no-range ability — see
-	// testdata/valid/abilities/guard-stance.json) from "author omitted
-	// range entirely". MaxTargets stays a plain int: it has no legitimate
-	// zero value (must be >= 1), so the existing "< 1" check already
-	// catches omission without needing the same treatment.
-	Range      *int `json:"range"`
-	MaxTargets int  `json:"max_targets"`
-}
-
-type attackJSON struct {
-	Roll string `json:"roll"`
-	Vs   string `json:"vs"`
-}
+// --- outcome/effect JSON shapes ---
+//
+// These three types (outcomeJSON + its two field types) are format-v2
+// vocabulary now: format v1's abilities/*.json (which used to decode
+// directly into outcomeJSON via its own now-removed loadAbilities/
+// convertOutcomes) is gone (Task 4 sunset), but the SAME shape is still
+// exactly what an atom's outcome contribution's "effects" array is made
+// of (decodeOutcomeContribution, below, via its own rawEffects
+// []outcomeJSON) — so these stay, just under new ownership.
 
 type outcomeJSON struct {
 	ResourceChange  *resourceChangeJSON  `json:"resource_change,omitempty"`
@@ -451,140 +417,21 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func loadAbilities(dir string) (map[string]*Ability, error) {
-	out := map[string]*Ability{}
-	paths, err := jsonFilesIn(dir)
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range paths {
-		var raw abilityJSON
-		if err := decodeStrict(path, &raw); err != nil {
-			return nil, err
-		}
-		if raw.ID == "" {
-			return nil, fieldErr(path, "id", "must not be empty")
-		}
-		if raw.Name == "" {
-			return nil, fieldErr(path, "name", "must not be empty")
-		}
-		if _, dup := out[raw.ID]; dup {
-			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate ability id %q", raw.ID))
-		}
-		// A JSON document with no "usage" key at all decodes Usage to its
-		// zero value (AtWill=false, Limited=nil) without (*Usage).
-		// UnmarshalJSON ever running — encoding/json only invokes a field's
-		// UnmarshalJSON when the key is present. Reject that silently-
-		// unusable state explicitly rather than letting it through.
-		if !raw.Usage.AtWill && raw.Usage.Limited == nil {
-			return nil, fieldErr(path, "usage", `must be set (either "at_will" or {"limited": {...}})`)
-		}
-		if raw.Targeting.MaxTargets < 1 {
-			return nil, fieldErr(path, "targeting.max_targets", "must be at least 1")
-		}
-		if raw.Targeting.Range == nil {
-			return nil, fieldErr(path, "targeting.range", "must be set (the key must be present, even for range 0)")
-		}
-		if *raw.Targeting.Range < 0 {
-			return nil, fieldErr(path, "targeting.range", "must not be negative")
-		}
-
-		ability := &Ability{
-			ID:         raw.ID,
-			Name:       raw.Name,
-			Usage:      raw.Usage,
-			Targeting:  Targeting{Range: *raw.Targeting.Range, MaxTargets: raw.Targeting.MaxTargets},
-			sourcePath: path,
-		}
-
-		if raw.Attack != nil {
-			if raw.Attack.Roll == "" {
-				return nil, fieldErr(path, "attack.roll", "must not be empty")
-			}
-			if raw.Attack.Vs == "" {
-				return nil, fieldErr(path, "attack.vs", "must not be empty")
-			}
-			rollExpr, err := Parse(raw.Attack.Roll)
-			if err != nil {
-				return nil, fieldErr(path, "attack.roll", err.Error())
-			}
-			ability.Attack = &Attack{Roll: rollExpr, RollSrc: raw.Attack.Roll, Vs: raw.Attack.Vs}
-		} else if len(raw.Hit) > 0 || len(raw.Miss) > 0 {
-			return nil, fieldErr(path, "hit/miss", "must be empty on an ability with no attack")
-		}
-
-		ability.Hit, err = convertOutcomes(path, "hit", raw.Hit)
-		if err != nil {
-			return nil, err
-		}
-		ability.Miss, err = convertOutcomes(path, "miss", raw.Miss)
-		if err != nil {
-			return nil, err
-		}
-		ability.Effect, err = convertOutcomes(path, "effect", raw.Effect)
-		if err != nil {
-			return nil, err
-		}
-
-		out[raw.ID] = ability
-	}
-	return out, nil
-}
-
-func convertOutcomes(path, field string, raw []outcomeJSON) ([]Outcome, error) {
-	out := make([]Outcome, 0, len(raw))
-	for i, o := range raw {
-		itemField := fmt.Sprintf("%s[%d]", field, i)
-		set := 0
-		if o.ResourceChange != nil {
-			set++
-		}
-		if o.ApplyCondition != nil {
-			set++
-		}
-		if o.RemoveCondition != nil {
-			set++
-		}
-		if set != 1 {
-			return nil, fieldErr(path, itemField, "must set exactly one of resource_change, apply_condition, or remove_condition")
-		}
-
-		switch {
-		case o.ResourceChange != nil:
-			rc := o.ResourceChange
-			if rc.Resource == "" {
-				return nil, fieldErr(path, itemField+".resource_change.resource", "must not be empty")
-			}
-			if rc.DeltaExpr == "" {
-				return nil, fieldErr(path, itemField+".resource_change.delta_expr", "must not be empty")
-			}
-			e, err := Parse(rc.DeltaExpr)
-			if err != nil {
-				return nil, fieldErr(path, itemField+".resource_change.delta_expr", err.Error())
-			}
-			out = append(out, Outcome{
-				Kind: OutcomeResourceChange,
-				ResourceChange: &ResourceChangeOutcome{
-					Resource: rc.Resource, DeltaExpr: e, DeltaExprSrc: rc.DeltaExpr,
-				},
-			})
-		case o.ApplyCondition != nil:
-			if o.ApplyCondition.ID == "" {
-				return nil, fieldErr(path, itemField+".apply_condition.id", "must not be empty")
-			}
-			out = append(out, Outcome{Kind: OutcomeApplyCondition, ApplyCondition: &ApplyConditionOutcome{ID: o.ApplyCondition.ID}})
-		case o.RemoveCondition != nil:
-			if o.RemoveCondition.ID == "" {
-				return nil, fieldErr(path, itemField+".remove_condition.id", "must not be empty")
-			}
-			out = append(out, Outcome{Kind: OutcomeRemoveCondition, RemoveCondition: &RemoveConditionOutcome{ID: o.RemoveCondition.ID}})
-		}
-	}
-	return out, nil
-}
-
 // --- v1-to-CompiledPower adapter (Task 3, spec 5c pillar: "Resolve
 // executes CompiledPower through ONE code path") ---
+//
+// Task 4 update: Load itself no longer has a v1 file-loading branch to
+// call this from (format_version "1" is rejected before any of
+// conditions/atoms/abilities is even read — see Load's doc comment) — the
+// FILE-decoding half of v1 support (loadAbilities, convertOutcomes, and
+// the abilityJSON/targetingJSON/attackJSON shapes they used) had no other
+// caller and was removed as dead code. AdaptV1Ability itself (below) is
+// kept: internal/rules/resolve_test.go's fixtureRuleset still calls it
+// directly, as a convenient way to flatten hand-built *Ability Go values
+// (never decoded from any file) into the CompiledPower shape Resolve
+// executes — see AdaptV1Ability's own doc comment for why that is a
+// distinct thing from "loading a v1 ruleset directory" and therefore
+// outside this sunset's removal.
 
 // v1RefRe matches one v1-shaped ref occurrence: a sigil ('@' or '#'),
 // optional whitespace (the grammar's tokenizer allows whitespace between
@@ -593,10 +440,13 @@ func convertOutcomes(path, field string, raw []outcomeJSON) ([]Outcome, error) {
 // grammatical meaning in this expression language, and v1-authored
 // expression source never contains scope syntax (the '.'-scope grammar
 // postdates v1 content, and scopeV1Source only ever runs on text that has
-// ALREADY Parse()d successfully under v1's bare-ref-only usage at
-// ability-decode time — loadAbilities/convertOutcomes, above) — so
-// rewriting every occurrence this regex finds is safe unconditionally, not
-// just for the fixtures this task happens to exercise.
+// ALREADY Parse()d successfully under v1's bare-ref-only usage (v1's own
+// ability-file decoding is gone — Task 4 sunset — but AdaptV1Ability's
+// remaining caller, resolve_test.go's fixtureRuleset, only ever passes it
+// *Ability values built from literal v1-style expression source, which
+// hits this same invariant) — so rewriting every occurrence this regex
+// finds is safe unconditionally, not just for the fixtures this task
+// happens to exercise.
 var v1RefRe = regexp.MustCompile(`[@#][ \t\r\n]*[A-Za-z_][A-Za-z0-9_]*`)
 
 // scopeV1Source rewrites every bare ref occurrence in src into its
@@ -644,17 +494,21 @@ func scopedParse(src, scope string) (*Expr, error) {
 	return e, nil
 }
 
-// AdaptV1Ability flattens one format-v1 Ability into a CompiledPower — the
-// v1-to-CompiledPower adapter itself. Exported (unlike the rest of this
-// file's v1 machinery) so a caller that builds a *Ruleset by hand,
-// bypassing Load entirely (internal/rules/resolve_test.go's
-// fixtureRuleset — a deliberate, pre-existing test pattern for exercising
-// Resolve without depending on Load's cross-validation), can populate
-// Ruleset.Compiled with the EXACT same logic adaptV1Abilities uses for
-// every real format-v1 Load. This keeps "Resolve executes CompiledPower
-// through ONE code path" true for hand-built test rulesets too, rather
-// than requiring Resolve to special-case a Ruleset with a populated
-// Abilities map but no Compiled entries.
+// AdaptV1Ability flattens one format-v1-shaped Ability into a CompiledPower
+// — the v1-to-CompiledPower adapter itself. Exported (unlike the rest of
+// this file's former v1 machinery, now removed — Task 4 sunset) so a
+// caller that builds a *Ruleset by hand, bypassing Load entirely
+// (internal/rules/resolve_test.go's fixtureRuleset — a deliberate,
+// pre-existing test pattern for exercising Resolve without depending on
+// Load's cross-validation), can populate Ruleset.Compiled without hand-
+// writing a CompiledPower literal for every fixture ability. This keeps
+// "Resolve executes CompiledPower through ONE code path" true for that
+// hand-built test ruleset too, rather than requiring Resolve to special-
+// case a Ruleset with a populated Abilities map but no Compiled entries.
+// No ruleset DIRECTORY can load as format_version "1" anymore (Load
+// rejects it before reading a single ability file — see Load's doc
+// comment); this function's remaining relevance is exactly that one
+// out-of-this-task's-file-scope test fixture, not real ruleset loading.
 //
 // v1's attack {roll, vs-defense-name} becomes a CompiledResolution{Roll,
 // Vs}, with Branches fixed at ["hit", "miss"] — v1's own words, verbatim —
@@ -675,9 +529,9 @@ func scopedParse(src, scope string) (*Expr, error) {
 // through this adapter, or every existing v1 batch golden would break.
 // The same split applies to every hit/miss/effect resource_change's
 // DeltaExpr/DeltaExprSrc (adaptV1Outcomes, below): DeltaExpr becomes the
-// TARGET-scoped executable parse; DeltaExprSrc is left exactly as
-// loadAbilities/convertOutcomes already set it at v1-decode time (v1's
-// original, unscoped source), never touched by this function. VsSrc is
+// TARGET-scoped executable parse; DeltaExprSrc is left exactly as the
+// caller's *Ability value already carries it (v1's original, unscoped
+// source), never touched by this function. VsSrc is
 // the one field with no true v1 "original" to preserve — v1's Attack.Vs
 // was a bare defense NAME, never an expression at all — so it is set to
 // the synthesized "@target.<defense>" text; this is only ever OBSERVABLE
@@ -757,39 +611,12 @@ func adaptV1Outcomes(outcomes []Outcome) ([]Outcome, error) {
 	return out, nil
 }
 
-// adaptV1Abilities runs AdaptV1Ability over every ability in abilities,
-// building the Ruleset.Compiled map for a format-v1 Load (Load's v1 path,
-// above). Iterates in sorted-id order — not for output determinism (the
-// result is a map; map equality does not depend on build order) but so
-// that IF AdaptV1Ability ever failed (provably unreachable per its own doc
-// comment, for any Ability that already passed crossValidate), the
-// reported error would name the same ability on every run, matching this
-// file's and compile.go's shared determinism convention for error
-// reporting.
-func adaptV1Abilities(abilities map[string]*Ability) (map[string]*CompiledPower, error) {
-	ids := make([]string, 0, len(abilities))
-	for id := range abilities {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	out := make(map[string]*CompiledPower, len(abilities))
-	for _, id := range ids {
-		cp, err := AdaptV1Ability(abilities[id])
-		if err != nil {
-			return nil, err
-		}
-		out[id] = cp
-	}
-	return out, nil
-}
-
 // --- cross-reference validation (spec §5) ---
 
 // checkExprRefs validates every attribute/resource ref e.Refs() finds
 // against attrSet/resSet, naming path/field on the first miss. Shared by
-// crossValidate (v1) and compile.go's v2 cross-reference checks (spec §5's
-// "v1-style cross-ref rules carried over" requirement) so both versions
+// crossValidateResources and compile.go's v2 cross-reference checks (spec
+// §5's "v1-style cross-ref rules carried over" requirement) so both
 // report undeclared names identically.
 func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool) error {
 	if e == nil {
@@ -812,10 +639,11 @@ func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool)
 // crossValidateResources checks every resource's default_max_expr and
 // threshold 'when' ref, and every threshold's apply_condition id, against
 // the manifest's declared attribute/resource set and declared conditions.
-// Split out of crossValidate (review: v2 sub-project 5c) because
-// resources+thresholds are declared identically in ruleset.json for both
-// format versions (spec §3) — loadV2 needs exactly this check, with none
-// of crossValidate's v1-Ability-specific logic below.
+// resources+thresholds are declared identically in ruleset.json regardless
+// of format version (spec §3) — loadV2 (the only Load path left, Task 4)
+// calls this directly; the v1-Ability-specific cross-reference checks that
+// used to wrap this call (crossValidate) had no caller left once Load's v1
+// branch was removed and were removed as dead code alongside it.
 func crossValidateResources(rs *Ruleset) error {
 	attrSet := toSet(rs.Attributes)
 	resSet := map[string]bool{}
@@ -839,85 +667,6 @@ func crossValidateResources(rs *Ruleset) error {
 			}
 		}
 	}
-	return nil
-}
-
-// crossValidate checks every attribute/resource ref, every declared
-// resource/condition/defense name an ability or threshold points at,
-// against the sets manifest.json/conditions/abilities actually declared.
-// Runs after every file has been individually decoded and every
-// expression parsed, so any failure here is purely a referential-integrity
-// problem, not a syntax one.
-func crossValidate(rs *Ruleset) error {
-	attrSet := toSet(rs.Attributes)
-	defSet := toSet(rs.Defenses)
-	resSet := map[string]bool{}
-	for _, r := range rs.Resources {
-		resSet[r.Name] = true
-	}
-	checkExpr := func(path, field string, e *Expr) error {
-		return checkExprRefs(path, field, e, attrSet, resSet)
-	}
-
-	if err := crossValidateResources(rs); err != nil {
-		return err
-	}
-
-	// Stable iteration order for deterministic error messages across runs.
-	ids := make([]string, 0, len(rs.Abilities))
-	for id := range rs.Abilities {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	for _, id := range ids {
-		a := rs.Abilities[id]
-		path := a.sourcePath
-
-		if a.Attack != nil {
-			if err := checkExpr(path, "attack.roll", a.Attack.Roll); err != nil {
-				return err
-			}
-			if !defSet[a.Attack.Vs] {
-				return fieldErr(path, "attack.vs", fmt.Sprintf("references undeclared defense %q", a.Attack.Vs))
-			}
-		}
-
-		if a.Usage.Limited != nil {
-			if !resSet[a.Usage.Limited.Resource] {
-				return fieldErr(path, "usage.limited.resource", fmt.Sprintf("references undeclared resource %q", a.Usage.Limited.Resource))
-			}
-		}
-
-		for _, list := range []struct {
-			field    string
-			outcomes []Outcome
-		}{
-			{"hit", a.Hit}, {"miss", a.Miss}, {"effect", a.Effect},
-		} {
-			for i, o := range list.outcomes {
-				itemField := fmt.Sprintf("%s[%d]", list.field, i)
-				switch o.Kind {
-				case OutcomeResourceChange:
-					if err := checkExpr(path, itemField+".resource_change.delta_expr", o.ResourceChange.DeltaExpr); err != nil {
-						return err
-					}
-					if !resSet[o.ResourceChange.Resource] {
-						return fieldErr(path, itemField+".resource_change.resource", fmt.Sprintf("references undeclared resource %q", o.ResourceChange.Resource))
-					}
-				case OutcomeApplyCondition:
-					if _, ok := rs.Conditions[o.ApplyCondition.ID]; !ok {
-						return fieldErr(path, itemField+".apply_condition.id", fmt.Sprintf("references undeclared condition %q", o.ApplyCondition.ID))
-					}
-				case OutcomeRemoveCondition:
-					if _, ok := rs.Conditions[o.RemoveCondition.ID]; !ok {
-						return fieldErr(path, itemField+".remove_condition.id", fmt.Sprintf("references undeclared condition %q", o.RemoveCondition.ID))
-					}
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -1361,9 +1110,8 @@ func loadCompositions(dir string) (map[string]*compositionAbility, error) {
 		if _, dup := out[raw.ID]; dup {
 			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate ability id %q", raw.ID))
 		}
-		// Same rationale as v1's loadAbilities: a JSON document with no
-		// "usage" key at all decodes Usage to its zero value without
-		// UnmarshalJSON ever running.
+		// A JSON document with no "usage" key at all decodes Usage to its
+		// zero value without UnmarshalJSON ever running.
 		if !raw.Usage.AtWill && raw.Usage.Limited == nil {
 			return nil, fieldErr(path, "usage", `must be set (either "at_will" or {"limited": {...}})`)
 		}

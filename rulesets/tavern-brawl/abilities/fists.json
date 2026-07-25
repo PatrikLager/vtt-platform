@@ -2,11 +2,9 @@
   "id": "fists",
   "name": "Fists",
   "usage": "at_will",
-  "targeting": { "range": 1, "max_targets": 1 },
-  "attack": { "roll": "1d20 + @brawn", "vs": "footing" },
-  "hit": [
-    { "resource_change": { "resource": "drink", "delta_expr": "1" } }
-  ],
-  "miss": [],
-  "effect": []
+  "compose": [
+    { "atom": "brawl-reach", "bind": { "reach": 1 } },
+    { "atom": "footing-contest", "bind": { "attack_stat": "brawn" } },
+    { "atom": "drink-soak", "bind": { "amount": "1" } }
+  ]
 }

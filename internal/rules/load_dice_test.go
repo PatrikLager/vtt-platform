@@ -20,7 +20,7 @@ func TestLoadRejectsDiceInThresholdWhen(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [
@@ -51,7 +51,7 @@ func TestLoadRejectsDiceInDefaultMaxExpr(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [

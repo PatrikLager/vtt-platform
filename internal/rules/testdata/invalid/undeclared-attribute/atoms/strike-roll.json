@@ -1,0 +1,17 @@
+{
+  "id": "strike-roll",
+  "params": [
+    { "name": "attack_stat", "kind": "attribute" }
+  ],
+  "provides": ["strike"],
+  "consumes": ["delivery"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "strike",
+      "roll": "1d20 + @caster.{attack_stat}",
+      "vs": "@target.guard",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

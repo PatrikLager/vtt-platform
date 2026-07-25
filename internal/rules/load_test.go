@@ -22,9 +22,14 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 // TestLoadValidFixture pins the full happy path: every declared attribute,
-// resource, defense, ability, and condition from testdata/valid ends up on
-// the returned Ruleset, and every expression in it parsed cleanly (Load
-// returns no error).
+// resource, defense, condition from testdata/valid ends up on the returned
+// Ruleset, every composition ability flattens into Ruleset.Compiled with
+// the expected shape, and every expression in it parsed cleanly (Load
+// returns no error). testdata/valid is format_version "2" (Task 4's v1
+// sunset — migrated the same way rulesets/tavern-brawl was): Abilities is
+// always an empty, non-nil map for a v2-loaded Ruleset (spec §3 — v2's
+// abilities/*.json are compositions, not v1 Ability-shaped), so this test
+// asserts against Compiled, not Abilities.
 func TestLoadValidFixture(t *testing.T) {
 	rs, err := rules.Load(fixture(t, "valid"))
 	if err != nil {
@@ -40,8 +45,8 @@ func TestLoadValidFixture(t *testing.T) {
 	if rs.Name != "Test Ruleset" {
 		t.Errorf("Name = %q, want %q", rs.Name, "Test Ruleset")
 	}
-	if rs.FormatVersion != "1" {
-		t.Errorf("FormatVersion = %q, want %q", rs.FormatVersion, "1")
+	if rs.FormatVersion != "2" {
+		t.Errorf("FormatVersion = %q, want %q", rs.FormatVersion, "2")
 	}
 
 	if !equalStrings(rs.Attributes, []string{"brawn", "grit"}) {
@@ -78,29 +83,33 @@ func TestLoadValidFixture(t *testing.T) {
 		t.Fatal("Thresholds[0].When: want non-nil")
 	}
 
-	if len(rs.Abilities) != 3 {
-		t.Fatalf("len(Abilities) = %d, want 3 (strike, guard-stance, stand-down)", len(rs.Abilities))
+	if rs.Abilities == nil || len(rs.Abilities) != 0 {
+		t.Errorf("Abilities = %v, want a non-nil, EMPTY map (format_version \"2\": abilities are compositions, not v1 Ability-shaped)", rs.Abilities)
 	}
-	strike, ok := rs.Abilities["strike"]
+
+	if len(rs.Compiled) != 3 {
+		t.Fatalf("len(Compiled) = %d, want 3 (strike, guard-stance, stand-down)", len(rs.Compiled))
+	}
+	strike, ok := rs.Compiled["strike"]
 	if !ok {
-		t.Fatal(`Abilities["strike"]: want present`)
+		t.Fatal(`Compiled["strike"]: want present`)
 	}
-	if strike.Attack == nil {
-		t.Fatal("strike.Attack: want non-nil")
+	if strike.Resolution == nil {
+		t.Fatal("strike.Resolution: want non-nil")
 	}
-	if strike.Attack.Vs != "guard" {
-		t.Errorf("strike.Attack.Vs = %q, want %q", strike.Attack.Vs, "guard")
+	if strike.Resolution.VsSrc != "@target.guard" {
+		t.Errorf("strike.Resolution.VsSrc = %q, want %q", strike.Resolution.VsSrc, "@target.guard")
 	}
 	if !strike.Usage.AtWill || strike.Usage.Limited != nil {
 		t.Errorf("strike.Usage = %+v, want AtWill=true Limited=nil", strike.Usage)
 	}
-	if len(strike.Hit) != 1 || strike.Hit[0].Kind != rules.OutcomeResourceChange {
-		t.Fatalf("strike.Hit = %+v, want one ResourceChange outcome", strike.Hit)
+	if len(strike.BranchOutcomes[0]) != 1 || strike.BranchOutcomes[0][0].Kind != rules.OutcomeResourceChange {
+		t.Fatalf("strike.BranchOutcomes[0] (hit) = %+v, want one ResourceChange outcome", strike.BranchOutcomes[0])
 	}
 
-	guardStance, ok := rs.Abilities["guard-stance"]
+	guardStance, ok := rs.Compiled["guard-stance"]
 	if !ok {
-		t.Fatal(`Abilities["guard-stance"]: want present`)
+		t.Fatal(`Compiled["guard-stance"]: want present`)
 	}
 	if guardStance.Usage.AtWill || guardStance.Usage.Limited == nil {
 		t.Fatalf("guard-stance.Usage = %+v, want Limited set", guardStance.Usage)
@@ -108,22 +117,22 @@ func TestLoadValidFixture(t *testing.T) {
 	if guardStance.Usage.Limited.Resource != "pool_a" || guardStance.Usage.Limited.Cost != 1 {
 		t.Errorf("guard-stance.Usage.Limited = %+v, want {pool_a 1}", guardStance.Usage.Limited)
 	}
-	if guardStance.Attack != nil {
-		t.Error("guard-stance.Attack: want nil (non-attack ability)")
+	if guardStance.Resolution != nil {
+		t.Error("guard-stance.Resolution: want nil (non-attack ability, no resolution atom)")
 	}
-	if len(guardStance.Effect) != 1 || guardStance.Effect[0].Kind != rules.OutcomeApplyCondition {
-		t.Fatalf("guard-stance.Effect = %+v, want one ApplyCondition outcome", guardStance.Effect)
+	if len(guardStance.Effects) != 1 || guardStance.Effects[0].Kind != rules.OutcomeApplyCondition {
+		t.Fatalf("guard-stance.Effects = %+v, want one ApplyCondition outcome", guardStance.Effects)
 	}
-	if guardStance.Effect[0].ApplyCondition.ID != "guarded" {
-		t.Errorf("guard-stance.Effect[0].ApplyCondition.ID = %q, want %q", guardStance.Effect[0].ApplyCondition.ID, "guarded")
+	if guardStance.Effects[0].ApplyCondition.ID != "guarded" {
+		t.Errorf("guard-stance.Effects[0].ApplyCondition.ID = %q, want %q", guardStance.Effects[0].ApplyCondition.ID, "guarded")
 	}
 
-	standDown, ok := rs.Abilities["stand-down"]
+	standDown, ok := rs.Compiled["stand-down"]
 	if !ok {
-		t.Fatal(`Abilities["stand-down"]: want present`)
+		t.Fatal(`Compiled["stand-down"]: want present`)
 	}
-	if len(standDown.Effect) != 1 || standDown.Effect[0].Kind != rules.OutcomeRemoveCondition {
-		t.Fatalf("stand-down.Effect = %+v, want one RemoveCondition outcome", standDown.Effect)
+	if len(standDown.Effects) != 1 || standDown.Effects[0].Kind != rules.OutcomeRemoveCondition {
+		t.Fatalf("stand-down.Effects = %+v, want one RemoveCondition outcome", standDown.Effects)
 	}
 
 	if len(rs.Conditions) != 1 {
@@ -150,60 +159,57 @@ func TestLoadMissingDirectory(t *testing.T) {
 	}
 }
 
-// TestLoadV1DispatchUnaffectedByV2 pins Load's format_version dispatch
-// (P10 task-2, UPDATED P10 task-3 — see below): a format_version "1"
-// ruleset takes the EXACT same v1 decode/cross-validate path it always
-// has — Atoms stays nil (v2-only field), Abilities is v1-Ability-shaped
-// and non-empty, exactly like TestLoadValidFixture already established
-// before this task existed. This is the thin regression pin for "v1
-// loading stays fully intact" at the Load() entry-point level;
-// TestLoadValidFixture and the rest of this file cover v1's actual
-// decode/validation behavior in depth and are unchanged.
-//
-// Compiled's assertion FLIPPED in Task 3 (spec 5c pillar: "Resolve
-// executes CompiledPower through ONE code path"): Load's v1 path now ALSO
-// adapts every loaded Ability into Ruleset.Compiled (load.go's
-// AdaptV1Ability/adaptV1Abilities), so Compiled is non-nil and holds one
-// entry per ability, matching Abilities' key set exactly — Resolve
-// (resolve.go) reads Compiled exclusively, regardless of format_version,
-// and never branches on FormatVersion. This supersedes P10 task-2's
-// design decision #5 ("nil for a format-v1-loaded Ruleset... Task 3's
-// Resolve should branch on FormatVersion/read Compiled for v2"), which
-// that report itself flagged as provisional, subject to Task 3's ruling —
-// seeing the adapter through to Load-time population, rather than a
-// per-call Resolve-side branch, is the ruling this task made (see
-// AdaptV1Ability's doc comment, load.go, for the full rationale).
-func TestLoadV1DispatchUnaffectedByV2(t *testing.T) {
-	rs, err := rules.Load(fixture(t, "valid"))
-	if err != nil {
-		t.Fatalf("Load(valid): unexpected error: %v", err)
+// TestLoadRejectsFormatVersion1 is Task 4's v1-sunset pin (spec §3/§9,
+// task brief: "keep one explicit format_version-\"1\"-rejected fixture +
+// test asserting the new error"): a format_version "1" ruleset — a full
+// directory, testdata/invalid/format-version-1, shaped exactly like the
+// v1 ruleset directories this repo used to load before this task (v1-
+// shaped abilities/conditions/guide.md, preserved verbatim as a visible
+// "this is what got rejected" artifact) — is rejected by loadManifest
+// BEFORE Load ever reads conditions/atoms/abilities: the error names
+// ruleset.json, format_version, and points at the v2 spec document a
+// ruleset author needs to migrate. This supersedes
+// TestLoadV1DispatchUnaffectedByV2 (removed): that test pinned "a v1
+// ruleset loads and adapts into Compiled", a code path this task retired
+// entirely — there is no longer any format_version "1" ruleset that CAN
+// load, so the premise itself is gone, not just the assertion.
+func TestLoadRejectsFormatVersion1(t *testing.T) {
+	_, err := rules.Load(fixture(t, "invalid", "format-version-1"))
+	if err == nil {
+		t.Fatal("Load(invalid/format-version-1): want error, got nil")
 	}
-	if rs.FormatVersion != "1" {
-		t.Fatalf("FormatVersion = %q, want %q", rs.FormatVersion, "1")
-	}
-	if rs.Compiled == nil {
-		t.Fatal("Compiled: want a non-nil map for a format_version \"1\" Ruleset (Task 3: Load adapts every v1 Ability into Compiled)")
-	}
-	if len(rs.Abilities) == 0 {
-		t.Error("Abilities: want the usual non-empty v1 ability set, unaffected by v2's addition")
-	}
-	if len(rs.Compiled) != len(rs.Abilities) {
-		t.Errorf("len(Compiled) = %d, want %d (one adapted CompiledPower per v1 Ability, same key set)", len(rs.Compiled), len(rs.Abilities))
-	}
-	for id := range rs.Abilities {
-		if _, ok := rs.Compiled[id]; !ok {
-			t.Errorf("Compiled[%q]: not present, want an adapted CompiledPower for every ability in Abilities", id)
+	for _, sub := range []string{"ruleset.json", "format_version", "\"1\"", "format v1 is retired", "format-v2-composition-design"} {
+		if !strings.Contains(err.Error(), sub) {
+			t.Errorf("Load(invalid/format-version-1) error = %q, want it to contain %q", err.Error(), sub)
 		}
-	}
-	if rs.Atoms != nil {
-		t.Errorf("Atoms = %v, want nil for a format_version \"1\" Ruleset", rs.Atoms)
 	}
 }
 
 // TestLoadInvalidFixtures is the exhaustive cross-reference / strict-decode
 // validation table: one fixture directory per validation rule (task brief:
 // "one per validation rule"), each asserting the returned error names both
-// the offending file and field.
+// the offending file and field. Task 4 (v1 sunset): every fixture below is
+// now format_version "2" (migrated the same way rulesets/tavern-brawl and
+// testdata/valid were — see the task-4 report for the atom-by-atom
+// derivation of where each fault now lives). Two content changes from the
+// v1 table: "attack-undeclared-defense" (the bad name moved from a bare
+// v1 defense-name string into a two-actor-position expression ref, which
+// must satisfy the expression grammar's IDENT charset — "no-such-defense"
+// would be a parse error, not a cross-reference one; "no_such_defense"
+// exercises the SAME validation rule the v1 fixture did) and
+// "malformed-expression" (the bad text moved from abilityJSON's top-level
+// "attack.roll" field into an atom's resolution contribution, spliced and
+// parsed at compile.go's compileResolution — the field name in the error
+// is "resolution.roll" now, not "attack.roll"; same parse-failure rule
+// either way). "usage-undeclared-resource" is REMOVED, not migrated: see
+// the task-4 report for why — compile.go's compileCompositions never
+// cross-validates a composition's usage.limited.resource against the
+// ruleset's declared resources (verified empirically: a v2 ability
+// declaring usage.limited.resource of an UNDECLARED name loads
+// successfully), a real validation-coverage gap between v1 and v2 that is
+// out of this task's file scope to fix (compile.go is untouched platform
+// behavior) — the fixture is excised because its premise can no longer be
+// demonstrated, not because the rule stopped mattering.
 func TestLoadInvalidFixtures(t *testing.T) {
 	cases := []struct {
 		dir         string
@@ -231,7 +237,7 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		},
 		{
 			dir:         "malformed-expression",
-			wantErrSubs: []string{"strike.json", "attack.roll"},
+			wantErrSubs: []string{"strike.json", "resolution.roll"},
 		},
 		{
 			dir:         "threshold-undeclared-condition",
@@ -239,15 +245,11 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		},
 		{
 			dir:         "attack-undeclared-defense",
-			wantErrSubs: []string{"strike.json", "no-such-defense"},
+			wantErrSubs: []string{"strike.json", "no_such_defense"},
 		},
 		{
 			dir:         "duplicate-condition-id",
 			wantErrSubs: []string{"guarded"},
-		},
-		{
-			dir:         "usage-undeclared-resource",
-			wantErrSubs: []string{"guard-stance.json", "no_such_pool"},
 		},
 		{
 			dir:         "outcome-undeclared-condition",
@@ -255,7 +257,7 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		},
 		{
 			dir:         "hit-without-attack",
-			wantErrSubs: []string{"guard-stance.json"},
+			wantErrSubs: []string{"guard-stance.json", "no resolution contribution"},
 		},
 	}
 
@@ -292,7 +294,7 @@ func TestLoadRejectsThresholdMissingRemoveWhenFalse(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [
@@ -323,7 +325,7 @@ func TestLoadAcceptsThresholdExplicitFalse(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [
@@ -356,8 +358,10 @@ func TestLoadRejectsUsageLimitedMissingCost(t *testing.T) {
   "id": "guard-stance",
   "name": "Guard Stance",
   "usage": { "limited": { "resource": "pool_a" } },
-  "targeting": { "range": 0, "max_targets": 1 },
-  "effect": [ { "apply_condition": { "id": "guarded" } } ]
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "apply-guarded", "bind": {} }
+  ]
 }`)
 	_, err := rules.Load(dir)
 	if err == nil {
@@ -379,8 +383,10 @@ func TestLoadRejectsUsageLimitedNegativeCost(t *testing.T) {
   "id": "guard-stance",
   "name": "Guard Stance",
   "usage": { "limited": { "resource": "pool_a", "cost": -5 } },
-  "targeting": { "range": 0, "max_targets": 1 },
-  "effect": [ { "apply_condition": { "id": "guarded" } } ]
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "apply-guarded", "bind": {} }
+  ]
 }`)
 	_, err := rules.Load(dir)
 	if err == nil {
@@ -401,56 +407,36 @@ func TestLoadAcceptsUsageLimitedZeroCost(t *testing.T) {
   "id": "guard-stance",
   "name": "Guard Stance",
   "usage": { "limited": { "resource": "pool_a", "cost": 0 } },
-  "targeting": { "range": 0, "max_targets": 1 },
-  "effect": [ { "apply_condition": { "id": "guarded" } } ]
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "apply-guarded", "bind": {} }
+  ]
 }`)
 	rs, err := rules.Load(dir)
 	if err != nil {
 		t.Fatalf("Load with usage.limited.cost = 0: unexpected error: %v", err)
 	}
-	if rs.Abilities["guard-stance"].Usage.Limited.Cost != 0 {
-		t.Errorf("Cost = %d, want 0", rs.Abilities["guard-stance"].Usage.Limited.Cost)
+	if rs.Compiled["guard-stance"].Usage.Limited.Cost != 0 {
+		t.Errorf("Cost = %d, want 0", rs.Compiled["guard-stance"].Usage.Limited.Cost)
 	}
 }
 
-// TestLoadRejectsTargetingMissingRange: targeting.range must be present.
-// A plain `int` can't tell "author wrote 0" (a legitimate self/no-range
-// ability, e.g. valid/abilities/guard-stance.json) apart from "author
-// omitted range entirely".
-func TestLoadRejectsTargetingMissingRange(t *testing.T) {
-	dir := t.TempDir()
-	copyDir(t, fixture(t, "valid"), dir)
-	writeFile(t, filepath.Join(dir, "abilities", "strike.json"), `{
-  "id": "strike",
-  "name": "Strike",
-  "usage": "at_will",
-  "targeting": { "max_targets": 1 },
-  "attack": { "roll": "1d20 + @brawn", "vs": "guard" },
-  "hit": [ { "resource_change": { "resource": "pool_a", "delta_expr": "0 - 1" } } ],
-  "miss": [],
-  "effect": []
-}`)
-	_, err := rules.Load(dir)
-	if err == nil {
-		t.Fatal("Load with targeting.range absent: want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "range") {
-		t.Errorf("error = %q, want it to mention range", err)
-	}
-}
-
-// TestLoadAcceptsTargetingZeroRange is the companion positive case: range
-// 0 is a legitimate, already-fixtured value (valid/abilities/guard-stance.json)
-// and must still load cleanly.
-func TestLoadAcceptsTargetingZeroRange(t *testing.T) {
-	rs, err := rules.Load(fixture(t, "valid"))
-	if err != nil {
-		t.Fatalf("Load(valid): unexpected error: %v", err)
-	}
-	if rs.Abilities["guard-stance"].Targeting.Range != 0 {
-		t.Errorf("guard-stance.Targeting.Range = %d, want 0", rs.Abilities["guard-stance"].Targeting.Range)
-	}
-}
+// TestLoadRejectsTargetingMissingRange and TestLoadAcceptsTargetingZeroRange
+// (v1-only test surface, EXCISED — Task 4): both pinned abilityJSON's
+// top-level "targeting.range" field, a shape that no longer exists at all
+// in format v2 — a v2 composition has no ability-level "targeting" field;
+// targeting comes exclusively from a composed atom's targeting
+// contribution (atom.schema.json's targetingContribution, required
+// "range"/"max_targets" — spec §4). That v2 equivalent already has
+// coverage: TestSchemaRequiredFieldsMatchLoaderEnforcementV2 (schema_
+// test.go) walks atom.schema.json's targetingContribution.required
+// against testdata/valid-v2/atoms/reach-delivery.json (its own comment
+// names it "targeting contribution"), deleting "range" and asserting Load
+// rejects it — the same validation rule, exercised at the position it
+// actually lives in now. The zero-range positive case is likewise still
+// live: internal/rules/testdata/valid's own self-delivery/melee-delivery
+// atoms and rulesets/tavern-brawl's sober-up (reach 0) both load and
+// resolve through TestLoadValidFixture and the conformance suite.
 
 // TestLoadRejectsInvalidAttributeIdentifier pins that manifest attribute/
 // defense/resource names must match the expression grammar's IDENT
@@ -466,7 +452,7 @@ func TestLoadRejectsInvalidAttributeIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit-bonus"],
   "defenses": ["guard"],
   "resources": [
@@ -489,7 +475,7 @@ func TestLoadRejectsInvalidResourceIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [
@@ -516,7 +502,7 @@ func TestLoadRejectsInvalidDefenseIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["will-power"],
   "resources": [

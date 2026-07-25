@@ -1,0 +1,18 @@
+{
+  "id": "drink-soak",
+  "params": [
+    { "name": "amount", "kind": "expr" }
+  ],
+  "provides": [],
+  "consumes": ["swing"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "swing",
+      "branch": "hit",
+      "effects": [
+        { "resource_change": { "resource": "drink", "delta_expr": "{amount}" } }
+      ]
+    }
+  ]
+}

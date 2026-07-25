@@ -1,7 +1,7 @@
 {
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "1",
+  "format_version": "2",
   "unexpected_field": true,
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],

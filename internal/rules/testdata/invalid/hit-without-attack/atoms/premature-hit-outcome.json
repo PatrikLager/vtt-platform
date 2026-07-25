@@ -1,0 +1,16 @@
+{
+  "id": "premature-hit-outcome",
+  "params": [],
+  "provides": [],
+  "consumes": ["strike"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "hit",
+      "effects": [
+        { "apply_condition": { "id": "guarded" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "footing-contest",
+  "params": [
+    { "name": "attack_stat", "kind": "attribute" }
+  ],
+  "provides": ["swing"],
+  "consumes": ["reach"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "swing",
+      "roll": "1d20 + @caster.{attack_stat}",
+      "vs": "@target.footing",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "splash-of-water",
+  "name": "Splash of Water",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "branch_outcomes": [
+    null,
+    null
+  ],
+  "effects": [
+    {
+      "kind": "remove_condition",
+      "condition_id": "dazed-by-ale"
+    }
+  ]
+}

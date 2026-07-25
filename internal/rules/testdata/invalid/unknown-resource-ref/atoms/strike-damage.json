@@ -1,0 +1,18 @@
+{
+  "id": "strike-damage",
+  "params": [
+    { "name": "power", "kind": "int" }
+  ],
+  "provides": [],
+  "consumes": ["strike"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "hit",
+      "effects": [
+        { "resource_change": { "resource": "pool_a", "delta_expr": "0 - {power} + #target.no_such_pool" } }
+      ]
+    }
+  ]
+}

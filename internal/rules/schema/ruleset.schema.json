@@ -11,8 +11,8 @@
     "name": { "type": "string", "minLength": 1 },
     "format_version": {
       "type": "string",
-      "enum": ["1"],
-      "description": "Only \"1\" is accepted by this loader version."
+      "enum": ["2"],
+      "description": "Only \"2\" is accepted by this loader version — format v1 is retired (Task 4, spec 2026-07-25-format-v2-composition-design.md §3/§9: clean break, no external v1 authors). See atom.schema.json for the atoms/*.json this format version composes abilities from."
     },
     "attributes": {
       "type": "array",

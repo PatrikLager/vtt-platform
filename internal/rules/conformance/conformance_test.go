@@ -1,7 +1,6 @@
 package conformance_test
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,22 +119,21 @@ func TestRunCompiledGoldenMismatch(t *testing.T) {
 	}
 }
 
-// TestRunCompiledGoldenExemptForV1 proves the exemption half of spec §8's
-// rule ("v1 rulesets exempt until none exist" — the task brief's own
-// words): the pre-existing v1 "minimal" fixture ships no goldens/compiled/
-// directory at all and must still pass Run cleanly — TestRunValidRuleset
-// already proves this incidentally, but this test names the invariant
-// explicitly so a future change to runCompiledGoldens's format_version
-// gate is caught by an assertion that SAYS what it's protecting, not just
-// a side effect of an unrelated test staying green.
-func TestRunCompiledGoldenExemptForV1(t *testing.T) {
-	if _, err := os.Stat(fixture("minimal", "goldens", "compiled")); !os.IsNotExist(err) {
-		t.Fatalf("fixture precondition: testdata/minimal/goldens/compiled must NOT exist (this test proves v1 needs none), stat error = %v", err)
-	}
-	if err := conformance.Run(fixture("minimal")); err != nil {
-		t.Fatalf("Run(minimal): unexpected error (v1 rulesets must be exempt from the compiled-golden requirement): %v", err)
-	}
-}
+// TestRunCompiledGoldenExemptForV1 (REMOVED, Task 4): proved the exemption
+// half of spec §8's rule ("v1 rulesets exempt until none exist" — the
+// task brief's own words) by pointing conformance.Run at a v1-shaped
+// "minimal" fixture that shipped no goldens/compiled/ directory. Task 4's
+// sunset retires format_version "1" entirely — Load rejects it before
+// reading a single file, so no ruleset directory can be "v1-shaped and
+// loadable" anymore, and this test's premise is unreproducible by
+// construction, not merely stale. "minimal" itself migrated to v2 (Task
+// 4 report) and now ships goldens/compiled/poke.json like every other v2
+// fixture; runCompiledGoldens's own `if rs.FormatVersion != "2" { return
+// nil }` exemption clause (conformance.go, untouched platform behavior —
+// out of this task's file scope) is consequently dead code in practice
+// now, since Load never again returns a Ruleset with any other
+// FormatVersion — flagged here for a future cleanup pass rather than
+// touched by this task.
 
 // TestRunMissingPerAbilityGolden pins F7: spec §8 mandates a golden scenario
 // per ability, so a ruleset that loads and smoke-passes but ships no golden

@@ -1,7 +1,7 @@
 {
   "id": "smoke-fail",
   "name": "Smoke Fail",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": [],
   "defenses": [],
   "resources": [

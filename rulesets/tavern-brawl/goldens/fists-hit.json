@@ -15,7 +15,7 @@
       "actor_id": "brawler",
       "ability_id": "fists",
       "target_ids": ["patron"],
-      "rolls": [{ "expression": "1d20 + @brawn", "results": [12], "total": 15 }],
+      "rolls": [{ "expression": "1d20 + @caster.brawn", "results": [12], "total": 15 }],
       "outcome_summary": "Fists on patron: hit (15 vs 10)"
     },
     { "type": "ResourceChanged", "actor_id": "patron", "resource": "drink", "delta": 1, "new_value": 1, "reason": "ability:fists:hit" },

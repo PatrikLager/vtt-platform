@@ -2,8 +2,8 @@
   "id": "stand-down",
   "name": "Stand Down",
   "usage": "at_will",
-  "targeting": { "range": 0, "max_targets": 1 },
-  "effect": [
-    { "remove_condition": { "id": "guarded" } }
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "remove-guarded", "bind": {} }
   ]
 }

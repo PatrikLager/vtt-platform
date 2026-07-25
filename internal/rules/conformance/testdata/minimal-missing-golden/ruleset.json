@@ -1,7 +1,7 @@
 {
   "id": "minimal-missing-golden",
   "name": "Minimal Missing Golden",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["str"],
   "defenses": ["def"],
   "resources": [

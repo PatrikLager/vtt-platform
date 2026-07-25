@@ -561,50 +561,87 @@ func TestSchemaFormatVersionEnumMatchesLoader(t *testing.T) {
 	})
 }
 
-// TestSchemaOutcomeOneOfMatchesLoader cross-checks the ability schema's
-// outcome oneOf (exactly one of resource_change/apply_condition/
-// remove_condition) against the loader: an outcome object setting ZERO of
-// the three, and one setting TWO, must both be rejected.
+// TestSchemaOutcomeOneOfMatchesLoader cross-checks the ability/atom
+// schemas' outcome-effect oneOf (exactly one of resource_change/
+// apply_condition/remove_condition) against the loader: an effect object
+// setting ZERO of the three, and one setting TWO, must both be rejected —
+// AND named as this specific validation rule (not just "some error"),
+// since a v2 outcome-effect list lives inside an atom's outcome
+// contribution and several OTHER load-time checks could otherwise mask a
+// gap here with an unrelated rejection.
+//
+// Format v2 (Task 4): v1's abilityJSON.Hit/Miss/Effect (a bare outcome
+// list on the ability itself) is gone — the shape this test exercises now
+// lives exclusively inside an atom's outcome contribution's "effects"
+// array (decodeOutcomeContribution, load.go), so this test targets
+// testdata/valid/atoms/apply-guarded.json instead of an ability file.
+// Before this rewrite, this test targeted abilities/guard-stance.json's
+// (removed) top-level "effect" field — once that field stopped existing
+// in valid v2 ability JSON, writing to it just tripped
+// decodeStrict's DisallowUnknownFields ("unknown field \"effect\"") and
+// the test kept PASSING for an entirely different, unintended reason
+// (any error satisfies "err == nil" failing) — a latent coverage gap this
+// rewrite closes, not just a mechanical port.
 func TestSchemaOutcomeOneOfMatchesLoader(t *testing.T) {
 	t.Run("zero_of_three", func(t *testing.T) {
 		dir := t.TempDir()
 		copyDir(t, "testdata/valid", dir)
-		writeOutcomeAbility(t, dir, `[ {} ]`)
+		writeOutcomeAtomEffects(t, dir, `[ {} ]`)
 		_, err := rules.Load(dir)
 		if err == nil {
-			t.Fatal("Load with an outcome setting none of resource_change/apply_condition/remove_condition: want error, got nil")
+			t.Fatal("Load with an effect setting none of resource_change/apply_condition/remove_condition: want error, got nil")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one of") {
+			t.Errorf("error = %q, want it to name the exactly-one-of-three rule (not some other rejection)", err)
 		}
 	})
 	t.Run("two_of_three", func(t *testing.T) {
 		dir := t.TempDir()
 		copyDir(t, "testdata/valid", dir)
-		writeOutcomeAbility(t, dir, `[ {"apply_condition": {"id": "guarded"}, "remove_condition": {"id": "guarded"}} ]`)
+		writeOutcomeAtomEffects(t, dir, `[ {"apply_condition": {"id": "guarded"}, "remove_condition": {"id": "guarded"}} ]`)
 		_, err := rules.Load(dir)
 		if err == nil {
-			t.Fatal("Load with an outcome setting two of resource_change/apply_condition/remove_condition: want error, got nil")
+			t.Fatal("Load with an effect setting two of resource_change/apply_condition/remove_condition: want error, got nil")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one of") {
+			t.Errorf("error = %q, want it to name the exactly-one-of-three rule (not some other rejection)", err)
 		}
 	})
 }
 
-// writeOutcomeAbility overwrites the guard-stance ability's "effect" list
-// with rawOutcomes (a JSON array literal) for TestSchemaOutcomeOneOfMatchesLoader.
-func writeOutcomeAbility(t *testing.T, dir, rawOutcomes string) {
+// writeOutcomeAtomEffects overwrites atoms/apply-guarded.json's
+// contributes[0].effects list with rawEffects (a JSON array literal) for
+// TestSchemaOutcomeOneOfMatchesLoader — the v2 home of the outcome-effect
+// oneOf shape (decodeOutcomeContribution, load.go).
+func writeOutcomeAtomEffects(t *testing.T, dir, rawEffects string) {
 	t.Helper()
-	path := filepath.Join(dir, "abilities", "guard-stance.json")
+	path := filepath.Join(dir, "atoms", "apply-guarded.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("writeOutcomeAbility: read %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: read %s: %v", path, err)
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
-		t.Fatalf("writeOutcomeAbility: unmarshal %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: unmarshal %s: %v", path, err)
 	}
-	obj["effect"] = json.RawMessage(rawOutcomes)
+	var contributes []map[string]json.RawMessage
+	if err := json.Unmarshal(obj["contributes"], &contributes); err != nil {
+		t.Fatalf("writeOutcomeAtomEffects: unmarshal %s contributes: %v", path, err)
+	}
+	if len(contributes) != 1 {
+		t.Fatalf("writeOutcomeAtomEffects: %s: want exactly 1 contribution, got %d", path, len(contributes))
+	}
+	contributes[0]["effects"] = json.RawMessage(rawEffects)
+	contributesOut, err := json.Marshal(contributes)
+	if err != nil {
+		t.Fatalf("writeOutcomeAtomEffects: marshal contributes: %v", err)
+	}
+	obj["contributes"] = contributesOut
 	out, err := json.Marshal(obj)
 	if err != nil {
-		t.Fatalf("writeOutcomeAbility: marshal %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: marshal %s: %v", path, err)
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		t.Fatalf("writeOutcomeAbility: write %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: write %s: %v", path, err)
 	}
 }

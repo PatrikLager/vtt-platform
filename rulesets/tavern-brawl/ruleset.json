@@ -1,7 +1,7 @@
 {
   "id": "tavern-brawl",
   "name": "Tavern Brawl",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["brawn", "grit"],
   "defenses": ["footing"],
   "resources": [

@@ -16,8 +16,8 @@
       "ability_id": "chair-swing",
       "target_ids": ["patron"],
       "rolls": [
-        { "expression": "1d20 + @brawn", "results": [16], "total": 19 },
-        { "expression": "1 + 1d4", "results": [2], "total": 3 }
+        { "expression": "1d20 + @caster.brawn", "results": [16], "total": 19 },
+        { "expression": "(1 + 1d4)", "results": [2], "total": 3 }
       ],
       "outcome_summary": "Chair Swing on patron: hit (19 vs 10)"
     },

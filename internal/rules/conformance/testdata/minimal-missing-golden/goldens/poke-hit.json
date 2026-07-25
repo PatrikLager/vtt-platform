@@ -14,7 +14,7 @@
       "actor_id": "caster",
       "ability_id": "poke",
       "target_ids": ["target"],
-      "rolls": [{ "expression": "1d20 + @str", "results": [15], "total": 18 }],
+      "rolls": [{ "expression": "1d20 + @caster.str", "results": [15], "total": 18 }],
       "outcome_summary": "Poke on target: hit (18 vs 10)"
     },
     { "type": "ResourceChanged", "actor_id": "target", "resource": "pool", "delta": 1, "new_value": 1, "reason": "ability:poke:hit" },

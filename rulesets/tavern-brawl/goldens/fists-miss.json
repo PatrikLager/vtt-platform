@@ -15,7 +15,7 @@
       "actor_id": "brawler",
       "ability_id": "fists",
       "target_ids": ["patron"],
-      "rolls": [{ "expression": "1d20 + @brawn", "results": [2], "total": 5 }],
+      "rolls": [{ "expression": "1d20 + @caster.brawn", "results": [2], "total": 5 }],
       "outcome_summary": "Fists on patron: miss (5 vs 30)"
     }
   ]
