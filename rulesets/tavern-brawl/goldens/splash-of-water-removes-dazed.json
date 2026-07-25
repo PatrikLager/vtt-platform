@@ -1,0 +1,17 @@
+{
+  "name": "splash-of-water-removes-dazed",
+  "ability_id": "splash-of-water",
+  "scene": "tavern",
+  "actors": [
+    { "id": "brawler", "x": 0, "y": 0, "attributes": { "brawn": 3, "grit": 1 }, "resources": { "drink": { "current": 0, "max": 5 } } },
+    { "id": "drunkard", "x": 1, "y": 0, "attributes": { "brawn": 2, "grit": 0 }, "resources": { "drink": { "current": 3, "max": 3 } } }
+  ],
+  "conditions": [{ "actor_id": "drunkard", "condition_id": "dazed-by-ale" }],
+  "actor_id": "brawler",
+  "target_ids": ["drunkard"],
+  "rolls": [],
+  "want_events": [
+    { "type": "AbilityUsed", "actor_id": "brawler", "ability_id": "splash-of-water", "target_ids": ["drunkard"], "outcome_summary": "Splash of Water on drunkard" },
+    { "type": "ConditionRemoved", "actor_id": "drunkard", "condition_id": "dazed-by-ale", "reason": "ability:splash-of-water:effect" }
+  ]
+}

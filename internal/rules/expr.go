@@ -40,7 +40,15 @@ import (
 // choice, not an accident of Go's operator semantics.
 //
 // Dice (NdM) are resolved through the caller-supplied Roller at Eval time;
-// Parse never rolls anything. '@'-refs read the attrs map passed to Eval;
+// Parse never rolls anything. NOTE (v1 load-time restriction): although the
+// grammar permits DICE anywhere a factor is legal, the loader (load.go)
+// REJECTS dice in the two expression positions that are evaluated without
+// recording their rolls onto AbilityUsed.rolls — a resource's
+// default_max_expr and a threshold's `when` — because a die there would draw
+// from the Roller unrecorded, breaking spec §2 decision 3's rolled-once-
+// recorded-forever testimony contract. Dice remain legal in attack rolls and
+// resource_change delta_expr, which ARE recorded. See Expr.HasDice.
+// '@'-refs read the attrs map passed to Eval;
 // '#'-refs read the resources map (a resource's CURRENT value only — v1 has
 // no way to reference a resource's max from inside an expression). Refs
 // are not resolved against a ruleset's declared names until Load
@@ -147,6 +155,38 @@ func (e *Expr) Refs() (attrs []string, resources []string) {
 	}
 	walk(e.root)
 	return attrs, resources
+}
+
+// HasDice reports whether the expression contains any DICE node. The loader
+// uses it to reject dice in the two expression positions that are evaluated
+// WITHOUT recording their rolls onto AbilityUsed.rolls — threshold `when` and
+// resource `default_max_expr` — a v1 restriction that preserves spec §2
+// decision 3's "rolled once, recorded forever" testimony contract (dice
+// elsewhere, in attack rolls and resource_change delta_expr, ARE recorded).
+func (e *Expr) HasDice() bool {
+	if e == nil || e.root == nil {
+		return false
+	}
+	var walk func(n *Node) bool
+	walk = func(n *Node) bool {
+		if n == nil {
+			return false
+		}
+		switch n.kind {
+		case nodeDice:
+			return true
+		case nodeBinOp:
+			return walk(n.left) || walk(n.right)
+		case nodeFunc:
+			for _, a := range n.args {
+				if walk(a) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(e.root)
 }
 
 // ParseError is returned by Parse on any grammar or lexical violation. Pos

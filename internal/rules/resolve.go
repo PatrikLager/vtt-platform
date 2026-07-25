@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -78,8 +79,10 @@ import (
 //
 // Finally, every (actor, resource) pair that changed value during this
 // resolution (usage spend, and/or any hit/miss/effect resource_change) has
-// its resource's declared thresholds evaluated, in resource declaration
-// order then threshold declaration order, against the actor's final
+// its resource's declared thresholds evaluated, in the order those (actor,
+// resource) pairs FIRST CHANGED this resolution, then threshold declaration
+// order (matching evalThresholds' own doc — change-order, not resource
+// declaration order), against the actor's final
 // (post-every-change-in-this-batch) attributes/resources: a threshold whose
 // "when" expression evaluates non-zero applies its condition if not already
 // present; one with remove_when_false set removes its condition, if
@@ -113,6 +116,15 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 	}
 	targets := make(map[string]*vttv1.Actor, len(targetIDs))
 	for _, tid := range targetIDs {
+		if _, dup := targets[tid]; dup {
+			// Reject rather than silently dedupe: the execution loop applies
+			// per-target outcomes for every entry in target_ids, so a repeated
+			// id would land the ability's stateful outcomes N times on ONE
+			// actor (wire-controllable amplification within max_targets). The
+			// spec is silent on duplicate semantics; rejecting is the safe
+			// default and never changes a caller's intent behind their back.
+			return nil, fmt.Errorf("rules: resolve: duplicate target id %q", tid)
+		}
 		a, ok := st.Actors[tid]
 		if !ok {
 			return nil, fmt.Errorf("rules: resolve: unknown target actor %q", tid)
@@ -190,10 +202,14 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 			if err != nil {
 				return nil, fmt.Errorf("rules: resolve: ability %q attack roll: %w", ability.ID, err)
 			}
+			total32, err := int32Checked(total, fmt.Sprintf("ability %q attack roll total", ability.ID))
+			if err != nil {
+				return nil, err
+			}
 			rolls = append(rolls, &vttv1.AbilityUsed_Roll{
 				Expression: ability.Attack.RollSrc,
 				Results:    toInt32Slice(dice),
-				Total:      int32(total),
+				Total:      total32,
 			})
 
 			defenseVal := int(targets[tid].GetAttributes()[ability.Attack.Vs])
@@ -372,10 +388,17 @@ func (r *resolveState) applyOutcomes(actorID string, outcomes []Outcome, ability
 			if err != nil {
 				return nil, nil, fmt.Errorf("rules: resolve: ability %q resource_change on %q: %w", abilityID, rc.Resource, err)
 			}
+			delta32, err := int32Checked(delta, fmt.Sprintf("ability %q resource_change on %q delta", abilityID, rc.Resource))
+			if err != nil {
+				return nil, nil, err
+			}
 			if len(dice) > 0 {
-				rolls = append(rolls, &vttv1.AbilityUsed_Roll{Expression: rc.DeltaExprSrc, Results: toInt32Slice(dice), Total: int32(delta)})
+				rolls = append(rolls, &vttv1.AbilityUsed_Roll{Expression: rc.DeltaExprSrc, Results: toInt32Slice(dice), Total: delta32})
 			}
 			nv := r.applyDelta(actorID, rc.Resource, delta)
+			if _, err := int32Checked(nv, fmt.Sprintf("ability %q resource_change on %q new_value", abilityID, rc.Resource)); err != nil {
+				return nil, nil, err
+			}
 			events = append(events, resourceChangedEnvelope(actorID, rc.Resource, delta, nv, reason))
 
 		case OutcomeApplyCondition:
@@ -448,7 +471,8 @@ func (r *resolveState) evalThresholds() ([]*vttv1.Envelope, error) {
 // individual die result rolled across possibly-multiple Roll calls made
 // while evaluating ONE expression — an expression can contain more than one
 // DICE node (e.g. "1d8 + 1d6"), and AbilityUsed.rolls records one entry per
-// EXPRESSION (attack roll, or damage delta_expr), not one per DICE node.
+// EXPRESSION (attack roll, or resource_change delta_expr), not one per DICE
+// node.
 type recordingRoller struct {
 	inner   Roller
 	results []int
@@ -484,6 +508,29 @@ func toInt32Slice(in []int) []int32 {
 		out[i] = int32(v)
 	}
 	return out
+}
+
+// int32Checked converts v to int32, rejecting anything outside the int32 wire
+// range with a clean rules error rather than silently truncating. Resolve
+// computes resource math and roll totals in 64-bit int, but the contract's
+// ResourceChanged.delta/new_value and AbilityUsed_Roll.total fields are int32:
+// a legal, loadable expression (the grammar's closed '*' has no magnitude
+// bound beyond the int-literal fit) can evaluate past int32, and truncating
+// it would either poison Resolve↔engine parity (the engine independently
+// recomputes the clamp and rejects the mismatch) or, in the mod-2^32 corner,
+// write false Delta testimony into the append-only log. Bounding here keeps
+// every emitted value honest — and keeps the pairing with engine.Apply's
+// int64 clamp exact.
+//
+// The usage-spend ResourceChanged is deliberately NOT routed through here:
+// its delta is -cost and its new_value is current-cost, and Resolve's own
+// insufficient-resource guard already proved cost <= current, where current
+// is an int32 — so both provably fit int32 and cannot overflow.
+func int32Checked(v int, what string) (int32, error) {
+	if v < math.MinInt32 || v > math.MaxInt32 {
+		return 0, fmt.Errorf("rules: resolve: %s value %d is outside the int32 wire range [%d, %d]", what, v, math.MinInt32, math.MaxInt32)
+	}
+	return int32(v), nil
 }
 
 // --- envelope builders (payload only — see Resolve's doc comment) ---

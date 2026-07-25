@@ -1,0 +1,12 @@
+{
+  "id": "prod",
+  "name": "Prod",
+  "usage": "at_will",
+  "targeting": { "range": 1, "max_targets": 1 },
+  "attack": { "roll": "1d20 + @str", "vs": "def" },
+  "hit": [
+    { "resource_change": { "resource": "pool", "delta_expr": "1" } }
+  ],
+  "miss": [],
+  "effect": []
+}

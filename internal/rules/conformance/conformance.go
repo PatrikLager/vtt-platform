@@ -203,10 +203,33 @@ func runGoldens(dir string, rs *rules.Ruleset) error {
 		return fmt.Errorf("goldens: %w", err)
 	}
 	sort.Strings(paths) // deterministic order across a filesystem's own listing
+	covered := make(map[string]bool, len(rs.Abilities))
 	for _, p := range paths {
-		if err := runGolden(p, rs); err != nil {
+		g, err := decodeGolden(p)
+		if err != nil {
 			return fmt.Errorf("golden %s: %w", p, err)
 		}
+		if err := runGolden(g, rs); err != nil {
+			return fmt.Errorf("golden %s: %w", p, err)
+		}
+		covered[g.AbilityID] = true
+	}
+
+	// Spec §8: a golden scenario per ability. Enforce that every declared
+	// ability has at least one golden — otherwise the forever-gate can
+	// silently lose all its pins (a goldens/ rename, a .JSON typo, an
+	// accidental deletion) with zero signal, or a future ruleset can satisfy
+	// "the SAME suite untouched" with no golden coverage at all. Deterministic
+	// error (sorted) naming the first uncovered ability.
+	var uncovered []string
+	for id := range rs.Abilities {
+		if !covered[id] {
+			uncovered = append(uncovered, id)
+		}
+	}
+	if len(uncovered) > 0 {
+		sort.Strings(uncovered)
+		return fmt.Errorf("ability %q has no golden scenario (spec §8 requires at least one golden per declared ability)", uncovered[0])
 	}
 	return nil
 }
@@ -295,12 +318,7 @@ func decodeGolden(path string) (*goldenFile, error) {
 	return &g, nil
 }
 
-func runGolden(path string, rs *rules.Ruleset) error {
-	g, err := decodeGolden(path)
-	if err != nil {
-		return err
-	}
-
+func runGolden(g *goldenFile, rs *rules.Ruleset) error {
 	scene := g.Scene
 	if scene == "" {
 		scene = "scene"

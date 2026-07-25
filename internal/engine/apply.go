@@ -107,20 +107,27 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if !ok {
 			return fmt.Errorf("engine: resource changed for unknown resource %q on actor %q", rc.Resource, rc.ActorId)
 		}
-		computed := res.Current + rc.Delta
+		// Compute the clamp in int64 so int32 arithmetic can never wrap
+		// before the floor/cap is applied: a hand-crafted event could
+		// otherwise drive res.Current + rc.Delta past int32, wrap to a value
+		// the floor pulls to 0 (or the cap accepts), and get accepted with a
+		// dishonest new_value (spec §3; matches internal/rules' int32-bounded
+		// emission so a legitimately-emitted event still verifies exactly).
+		computed := int64(res.Current) + int64(rc.Delta)
 		if computed < 0 {
 			computed = 0
 		}
-		if res.Max > 0 && computed > res.Max {
-			computed = res.Max
+		if res.Max > 0 && computed > int64(res.Max) {
+			computed = int64(res.Max)
 		}
 		// The interpreter computes the post-clamp value; the engine
 		// verifies it here rather than trusting it, keeping the log's
 		// testimony honest (spec §3).
-		if computed != rc.NewValue {
+		if computed != int64(rc.NewValue) {
 			return fmt.Errorf("engine: resource %q on actor %q: event new_value %d does not match computed %d", rc.Resource, rc.ActorId, rc.NewValue, computed)
 		}
-		actor.Resources[rc.Resource] = &vttv1.Resource{Current: computed, Max: res.Max}
+		// computed == rc.NewValue (an int32), so it fits int32 for storage.
+		actor.Resources[rc.Resource] = &vttv1.Resource{Current: int32(computed), Max: res.Max}
 		return nil
 
 	case *vttv1.Envelope_ConditionApplied:

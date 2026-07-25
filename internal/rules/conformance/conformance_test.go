@@ -67,6 +67,22 @@ func TestRunUnknownDirectory(t *testing.T) {
 	}
 }
 
+// TestRunMissingPerAbilityGolden pins F7: spec §8 mandates a golden scenario
+// per ability, so a ruleset that loads and smoke-passes but ships no golden
+// for one of its abilities must fail Run, naming the uncovered ability —
+// otherwise the P4 forever-gate silently loses its pins to a rename, a typo,
+// or a deletion, and 5b's dnd45e-minimal could satisfy "the SAME suite" with
+// no golden coverage at all.
+func TestRunMissingPerAbilityGolden(t *testing.T) {
+	err := conformance.Run(fixture("minimal-missing-golden"))
+	if err == nil {
+		t.Fatal("Run(minimal-missing-golden): want error for the ability with no golden, got nil")
+	}
+	if !strings.Contains(err.Error(), "prod") {
+		t.Errorf("Run(minimal-missing-golden) error = %q, want it to name the uncovered ability %q", err.Error(), "prod")
+	}
+}
+
 // TestConformanceOverRulesetsGlob is the "forever" gate the task brief
 // calls for: every ruleset committed under rulesets/ — today just
 // tavern-brawl, tomorrow also 5b's dnd45e-minimal — must pass Run

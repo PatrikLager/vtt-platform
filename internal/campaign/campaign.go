@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -40,6 +41,16 @@ type Campaign struct {
 	mu    sync.Mutex
 	log   *store.Store
 	state *engine.State
+
+	// head is the highest sequence the store has assigned so far — i.e.
+	// store's SELECT MAX(seq) — maintained under c.mu on every successful
+	// rebuild/append. It exists so AppendBatch can validate against clones
+	// stamped with the SAME contiguous sequences the store is about to
+	// assign (head+1..head+N); see AppendBatch for why that equivalence
+	// holds. head counts every persisted row, including retraction markers
+	// and retracted events (nothing is ever deleted from the log), exactly
+	// as store's MAX(seq) does.
+	head int64
 
 	// poisoned is set when a post-persist step fails (see errPoisoned). Once
 	// true, every method fails until the Campaign is reopened.
@@ -71,6 +82,13 @@ func (c *Campaign) rebuildLocked() error {
 		return err
 	}
 	c.state = st
+	// events are ordered by sequence; the last one is the log head (markers
+	// and retracted events included — they are real persisted rows the store
+	// still counts in MAX(seq)).
+	c.head = 0
+	if n := len(events); n > 0 {
+		c.head = events[n-1].Sequence
+	}
 	return nil
 }
 
@@ -144,6 +162,7 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	c.head = seq // the store just assigned this as the new log head
 	if err := engine.Apply(c.state, env); err != nil {
 		// Snapshot-validated, so this is unreachable; fail loudly if not.
 		// The event is already persisted (commit point above) but the live
@@ -268,12 +287,33 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	// error return except in the caller's own envelope objects — matching
 	// Append's own behavior, where a rejected event's stamped session_id
 	// is not reverted either).
+	//
+	// The validation fold MUST see the same sequence each envelope will
+	// carry when it is later live-applied, because some folds are
+	// sequence-dependent (SessionEnded writes EndSeq = env.Sequence, and
+	// EndSeq==0 is the "session still open" sentinel — folding an unstamped,
+	// Sequence==0 SessionEnded would leave the session looking open and
+	// validate differently than it live-applies). We fold CLONES stamped
+	// with provisional contiguous sequences head+1..head+N.
+	//
+	// Those provisional values are PROVABLY identical to what store.AppendBatch
+	// will assign below: the store assigns MAX(seq)+1..MAX(seq)+N, and c.head
+	// is maintained to equal store's MAX(seq) after every append/rebuild.
+	// The whole call holds c.mu, and every path that appends to the log
+	// (Append, AppendBatch, Undo) runs under c.mu, so no other append can
+	// advance MAX(seq) between reading c.head here and store.AppendBatch's
+	// own MAX(seq) read — same lock ⇒ same head ⇒ identical sequences. The
+	// real envelopes keep Sequence==0 (store.AppendBatch requires that and
+	// stamps them itself); only the throwaway clones carry the provisional
+	// sequence, used solely to drive validation.
 	snap := c.state.Snapshot()
-	for _, env := range envs {
+	for i, env := range envs {
 		if err := stampSessionIDAgainst(env, snap); err != nil {
 			return 0, err
 		}
-		if err := engine.Apply(snap, env); err != nil {
+		clone := proto.Clone(env).(*vttv1.Envelope)
+		clone.Sequence = c.head + int64(i) + 1
+		if err := engine.Apply(snap, clone); err != nil {
 			return 0, err
 		}
 	}
@@ -281,15 +321,18 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	c.head = firstSeq + int64(len(envs)) - 1 // store just assigned this run
 	for _, env := range envs {
 		if err := engine.Apply(c.state, env); err != nil {
-			// Snapshot-validated, so this is unreachable; fail loudly if
-			// not. The batch is already persisted (commit point above) but
-			// the live projection could not be advanced to match — poison
-			// the Campaign rather than serve a projection that has
-			// silently fallen behind the log. Do not notify anything: a
-			// poisoned campaign must not advertise events its own
-			// projection couldn't fold.
+			// Genuinely unreachable now: validation folded clones carrying
+			// the exact sequences store.AppendBatch just assigned (proven
+			// above), so a fold that passed validation cannot fail here.
+			// Kept as a fail-loud backstop. The batch is already persisted
+			// (commit point above) but the live projection could not be
+			// advanced to match — poison the Campaign rather than serve a
+			// projection that has silently fallen behind the log. Do not
+			// notify anything: a poisoned campaign must not advertise events
+			// its own projection couldn't fold.
 			c.poisoned = true
 			return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
 		}

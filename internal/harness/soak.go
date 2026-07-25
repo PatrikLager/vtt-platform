@@ -387,7 +387,8 @@ func drainQuiescentEnvelopes(events <-chan *vttv1.Envelope, window time.Duration
 // client.go's package comment): plain equality for Scenes/Tokens/Sessions,
 // proto.Equal per actor for Actors (protobuf messages carry unexported
 // state that reflect.DeepEqual does not compare correctly — proto.Equal is
-// the documented way).
+// the documented way; Conditions, like Scenes/Tokens/Sessions, is a plain
+// struct map compared with reflect.DeepEqual).
 func statesEqual(a, b *engine.State) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -399,6 +400,9 @@ func statesEqual(a, b *engine.State) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.Sessions, b.Sessions) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Conditions, b.Conditions) {
 		return false
 	}
 	if len(a.Actors) != len(b.Actors) {

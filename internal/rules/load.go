@@ -172,6 +172,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 			if err != nil {
 				return nil, fieldErr(path, field+".default_max_expr", err.Error())
 			}
+			if e.HasDice() {
+				return nil, fieldErr(path, field+".default_max_expr", "must not contain dice (v1: default_max_expr is evaluated without recording its rolls — see internal/rules/expr.go)")
+			}
 			def.DefaultMaxExpr = e
 			def.DefaultMaxExprSrc = *r.DefaultMaxExpr
 		}
@@ -190,6 +193,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 			whenExpr, err := Parse(th.When)
 			if err != nil {
 				return nil, fieldErr(path, thField+".when", err.Error())
+			}
+			if whenExpr.HasDice() {
+				return nil, fieldErr(path, thField+".when", "must not contain dice (v1: a threshold 'when' is evaluated without recording its rolls, which would break the rolled-once-recorded-forever testimony contract — see internal/rules/expr.go)")
 			}
 			def.Thresholds = append(def.Thresholds, Threshold{
 				When:            whenExpr,

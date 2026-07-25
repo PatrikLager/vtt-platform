@@ -179,16 +179,24 @@ func TestUndoRetractsWholeAppendBatchRange(t *testing.T) {
 
 	before := c.State()
 
+	// The batch spans the rules event family too (ResourceChanged +
+	// ConditionApplied), so undoing the whole range and rebuilding must
+	// restore Resources AND Conditions to their pre-batch state — pinned by
+	// statesEqual, which now compares Conditions (F9).
 	envs := []*vttv1.Envelope{
-		cenv(nextID(), &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"}}),
+		cenv(nextID(), &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: "a1", Name: "Hero", ModuleId: "m",
+			Resources: map[string]*vttv1.Resource{"vigor": {Current: 3, Max: 10}},
+		}}),
 		cenv(nextID(), &vttv1.TokenPlaced{
 			TokenId: "t1", SceneId: "scn", ActorId: "a1",
 			Position: &vttv1.GridPosition{X: 3, Y: 7},
 		}),
-		cenv(nextID(), &vttv1.TokenMoved{
-			TokenId: "t1", SceneId: "scn",
-			From: &vttv1.GridPosition{X: 3, Y: 7},
-			To:   &vttv1.GridPosition{X: 5, Y: 8},
+		cenv(nextID(), &vttv1.ResourceChanged{
+			ActorId: "a1", Resource: "vigor", Delta: 2, NewValue: 5, Reason: "ability:x:hit",
+		}),
+		cenv(nextID(), &vttv1.ConditionApplied{
+			ActorId: "a1", ConditionId: "marked", Source: "threshold:vigor",
 		}),
 	}
 	firstSeq, err := c.AppendBatch(envs)

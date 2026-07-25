@@ -421,10 +421,17 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 		{seq: 2, env: &vttv1.Envelope{EventId: "e2", Payload: &vttv1.Envelope_SceneCreated{
 			SceneCreated: &vttv1.SceneCreated{SceneId: "scn-1", Name: "Hall", GridWidth: 10, GridHeight: 10}}}, to: []string{"dm"}},
 		{seq: 3, env: &vttv1.Envelope{EventId: "e3", Payload: &vttv1.Envelope_ActorAdded{
-			ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "act-1", Name: "Ursus"}}}}, to: []string{"dm"}},
+			ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "act-1", Name: "Ursus",
+				Resources: map[string]*vttv1.Resource{"vigor": {Current: 7, Max: 10}}}}}}, to: []string{"dm"}},
 		{seq: 4, env: &vttv1.Envelope{EventId: "e4", Payload: &vttv1.Envelope_TokenPlaced{
 			TokenPlaced: &vttv1.TokenPlaced{TokenId: "tok-1", SceneId: "scn-1", ActorId: "act-1",
 				Position: &vttv1.GridPosition{X: 3, Y: 4}}}}, to: []string{"dm"}},
+		// A rules event so resourceAt/hasCondition probes have concrete state
+		// to assert against. The harness fake decouples the sent command from
+		// the scripted broadcast (exactly as the ActorAdded step above does),
+		// so a use_ability command drives a ConditionApplied into the fold.
+		{seq: 5, env: &vttv1.Envelope{EventId: "e5", Payload: &vttv1.Envelope_ConditionApplied{
+			ConditionApplied: &vttv1.ConditionApplied{ActorId: "act-1", ConditionId: "dazed", Source: "test"}}}, to: []string{"dm"}},
 	})
 
 	sc := &harness.Scenario{
@@ -434,6 +441,7 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"Ursus"}}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"placeToken":{"tokenId":"tok-1","sceneId":"scn-1","actorId":"act-1","position":{"x":3,"y":4}}}`), Expect: &harness.Expect{OK: true}},
+			{By: "dm", Command: rawCmd(t, `{"useAbility":{"actorId":"act-1","abilityId":"daze","targetIds":["act-1"]}}`), Expect: &harness.Expect{OK: true}},
 		},
 		Probes: probes,
 	}
@@ -484,6 +492,30 @@ func TestRunScenarioProbesPerKind(t *testing.T) {
 		rep := runMiniScenario(t, []harness.Probe{{ActorExists: &harness.ActorExistsProbe{ActorId: "act-nonexistent"}}})
 		if rep.Probes[0].Pass {
 			t.Fatalf("actorExists probe = %+v, want Pass=false (actor was never added)", rep.Probes[0])
+		}
+	})
+	t.Run("resourceAt pass", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 7}}})
+		if !rep.Probes[0].Pass {
+			t.Fatalf("resourceAt probe = %+v, want Pass=true (vigor is 7)", rep.Probes[0])
+		}
+	})
+	t.Run("resourceAt fail", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 99}}})
+		if rep.Probes[0].Pass {
+			t.Fatalf("resourceAt probe = %+v, want Pass=false (vigor is 7, not 99)", rep.Probes[0])
+		}
+	})
+	t.Run("hasCondition pass", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: true}}})
+		if !rep.Probes[0].Pass {
+			t.Fatalf("hasCondition probe = %+v, want Pass=true (dazed is present)", rep.Probes[0])
+		}
+	})
+	t.Run("hasCondition fail", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: false}}})
+		if rep.Probes[0].Pass {
+			t.Fatalf("hasCondition probe = %+v, want Pass=false (dazed IS present, probe wanted absent)", rep.Probes[0])
 		}
 	})
 }

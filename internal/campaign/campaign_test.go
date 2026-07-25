@@ -43,6 +43,12 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
 	case *vttv1.EventsRetracted:
 		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
+	case *vttv1.ResourceChanged:
+		e.Payload = &vttv1.Envelope_ResourceChanged{ResourceChanged: p}
+	case *vttv1.ConditionApplied:
+		e.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
+	case *vttv1.ConditionRemoved:
+		e.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
 	}
 	return e
 }

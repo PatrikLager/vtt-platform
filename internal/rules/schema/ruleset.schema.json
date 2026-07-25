@@ -41,7 +41,7 @@
           },
           "default_max_expr": {
             "type": "string",
-            "description": "Optional expression (see internal/rules/expr.go grammar)."
+            "description": "Optional expression (see internal/rules/expr.go grammar). Dice (NdM) are rejected at load time in v1: this expression is evaluated without recording its rolls, so a die here would draw from the Roller unrecorded."
           },
           "thresholds": {
             "type": "array",
@@ -53,7 +53,7 @@
                 "when": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Expression; non-zero result means the threshold is met."
+                  "description": "Expression; non-zero result means the threshold is met. Dice (NdM) are rejected at load time in v1: a threshold 'when' is evaluated without recording its rolls, which would break the rolled-once-recorded-forever testimony contract (spec §2 decision 3)."
                 },
                 "apply_condition": {
                   "type": "string",
