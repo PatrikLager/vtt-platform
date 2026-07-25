@@ -1,0 +1,10 @@
+{
+  "id": "strike",
+  "name": "Strike (duplicate)",
+  "usage": "at_will",
+  "targeting": { "range": 1, "max_targets": 1 },
+  "attack": { "roll": "1d20 + @brawn", "vs": "guard" },
+  "hit": [],
+  "miss": [],
+  "effect": []
+}

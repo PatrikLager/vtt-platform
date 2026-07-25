@@ -25,6 +25,7 @@ components:
   gateway:  { in: internal/gateway }
   harness:  { in: internal/harness }
   mcp:      { in: internal/mcp }
+  rules:    { in: internal/rules }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -42,4 +43,10 @@ deps:
   # store/campaign/gateway/identity forbidden here too, tests included. The
   # official Go MCP SDK is vendor (depOnAnyVendor: true above), unlisted.
   mcp:      { mayDependOn: [harness, engine, contract, mcp] }
+  # internal/rules is the ruleset format/loader/expression-grammar package
+  # (ruleset-interpreter spec §5, task-4-brief.md): reads no other package's
+  # code yet — the engine/contract entries are pre-registered for Task 5's
+  # Resolve (pure function over engine.State + contract types); nothing else
+  # may import rules until Task 6 wires it into the gateway.
+  rules:    { mayDependOn: [engine, contract, rules] }
   cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp] }

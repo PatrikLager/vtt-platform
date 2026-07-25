@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
+  "title": "Ruleset manifest (ruleset.json)",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, and the ruleset's declared attribute/defense/resource vocabulary. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "type": "object",
+  "required": ["id", "name", "format_version"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "format_version": {
+      "type": "string",
+      "enum": ["1"],
+      "description": "Only \"1\" is accepted by this loader version."
+    },
+    "attributes": {
+      "type": "array",
+      "description": "Names usable as '@'-refs in expressions (e.g. attack rolls, damage, default_max_expr). Each name must match ^[A-Za-z_][A-Za-z0-9_]*$ — the expression grammar's IDENT charset (internal/rules/expr.go); NOT the kebab-case used for ability/condition ids, since a hyphenated name would lex as subtraction rather than one identifier (e.g. \"brawn-2\" -> \"brawn\" - 2).",
+      "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "uniqueItems": true
+    },
+    "defenses": {
+      "type": "array",
+      "description": "Names an ability's attack.vs may target. Constrained to the same ^[A-Za-z_][A-Za-z0-9_]*$ charset as attributes/resources for consistency, even though defense names are currently only ever used as plain string field values (attack.vs), never lexed inside an expression.",
+      "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "uniqueItems": true
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "Also usable as a '#'-ref in expressions — must match ^[A-Za-z_][A-Za-z0-9_]*$ (the expression grammar's IDENT charset), not kebab-case."
+          },
+          "default_max_expr": {
+            "type": "string",
+            "description": "Optional expression (see internal/rules/expr.go grammar)."
+          },
+          "thresholds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["when", "apply_condition", "remove_when_false"],
+              "additionalProperties": false,
+              "properties": {
+                "when": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Expression; non-zero result means the threshold is met."
+                },
+                "apply_condition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A condition id declared under conditions/."
+                },
+                "remove_when_false": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
