@@ -163,3 +163,27 @@ sheet UI descriptors (sub-project 7); bestiary distribution.
   actor's declared max — decided at plan time against the Actor shape.
 - Adventure format — designed with the world layer; Temple-of-Evil-on-5e
   is its acceptance vision (Patrik, this session).
+
+## 12. Amendments (2026-07-25, merge gate)
+
+1. **Ability-outcome idempotency:** `apply_condition`/`remove_condition` outcomes are
+   IDEMPOTENT — an already-present condition is not re-applied, an absent condition's
+   removal is silently skipped. Generalizes §5's threshold-only guard; required because a
+   re-applied condition would doom the atomic batch at the engine fold.
+2. **Cross-resource threshold evaluation order:** FIRST-TOUCH CHANGE ORDER — the order in
+   which (actor, resource) pairs are first changed during the resolution — then threshold
+   declaration order. NOT resource declaration order.
+3. **Grammar decisions frozen at Task 4:** expression-referenceable names (attributes,
+   defenses, resources) use IDENT charset `[A-Za-z_][A-Za-z0-9_]*`; ability/condition ids
+   are kebab-case; NO unary minus (write `0 - x`); integer literals must fit int64 (parse
+   error otherwise); dice bounds are count 1..100, sides 1..1000; parser recursion depth is
+   capped at 200.
+4. **Dice rejected in threshold/max expressions:** dice terms are REJECTED at load time in
+   threshold `when` and in `default_max_expr` — a v1 restriction preserving §2 decision 3's
+   rolled-once-recorded-forever testimony; threshold evaluation does not record rolls.
+5. **Numeric value contract:** expression results, resource deltas, and `new_value`s are
+   bounded to int32 (the wire contract); `Resolve` rejects out-of-range values with a clean
+   rules error; the engine computes its clamp verification in int64 (no wrap acceptance).
+6. **Duplicate target_ids rejected (Patrik-ruled 2026-07-25):** duplicate `target_ids` in
+   one `UseAbility` are REJECTED with a clean validation error — the ruleset author's
+   `max_targets` fan-out cap cannot be concentrated onto a single target from the wire.

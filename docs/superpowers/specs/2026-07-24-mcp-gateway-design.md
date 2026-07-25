@@ -86,3 +86,15 @@ seats (one agent connection per `vtt mcp` process).
   + fresh fold): decided at plan time against harness reconnect semantics.
 - Whether get_events_since should filter event kinds: v2, driven by real
   LLM usage.
+
+## 10. Amendment (2026-07-25, sub-project 5a merge)
+
+Tool count is now TWELVE (§4's "nine" is superseded):
+
+- `use_ability` + `remove_condition` auto-appeared from the toolgen
+  manifest — zero per-command code, as §4 already guaranteed.
+- `get_ruleset_guide` added: `vtt mcp --ruleset` flag takes a startup
+  snapshot of `guide.md` and serves it verbatim. Server-authoritative guide
+  delivery (the MCP server reading the guide live from a running `vtt
+  serve` instead of its own snapshot) is a 5b/v2 contract-addition
+  candidate, not built here.

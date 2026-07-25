@@ -156,3 +156,17 @@ now). No browser client (sub-project 7). No password auth, no accounts.
   session (single authority, no race window, same pattern as sequence
   stamping). Implemented as a small fix task on the next branch; wire events
   logged before that fix keep an empty session_id (no real campaigns yet).
+
+## 13. Amendment (2026-07-25, sub-project 5a merge)
+
+The §4 authz table gains two rows for 5a's new commands:
+
+| Command | dm | agent | player | spectator |
+|---|---|---|---|---|
+| UseAbility | ✓ | ✓ | only self-controlled actors (via `Actor.controller_id`) | — |
+| RemoveCondition | ✓ | ✓ | only self-controlled actors (via `Actor.controller_id`) | — |
+
+Same ownership check as `MoveToken`. The table now covers 9 commands × 4
+roles = 36 literal cells. `CommandResult` for `UseAbility` carries the
+FIRST sequence of the atomic batch (5a's `AppendBatch`), not a single
+event's sequence.
