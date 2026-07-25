@@ -93,6 +93,37 @@ func TestServeMissingCampaignErrors(t *testing.T) {
 	}
 }
 
+// TestServeOptionalRulesetOmittedStillRequiresCampaign proves --ruleset is
+// genuinely optional (ruleset-interpreter Task 6): omitting it must NOT
+// itself be an error — the same missing-required-flag error as
+// TestServeMissingCampaignErrors fires for the SAME reason (no --campaign),
+// not because --ruleset was left out.
+func TestServeOptionalRulesetOmittedStillRequiresCampaign(t *testing.T) {
+	_, err := runCLI(t, "serve")
+	if err == nil || !strings.Contains(err.Error(), "campaign") {
+		t.Fatalf("want the missing-campaign error (not a ruleset-related one), got %v", err)
+	}
+}
+
+// TestServeBadRulesetDirFailsLoudBeforeListening proves a --ruleset
+// directory that fails rules.Load fails the command loudly, at boot,
+// BEFORE ever starting to listen (composeServer's own fail-loud-at-open
+// posture, matching a bad --campaign path) — this is why runCLI (in-
+// process, synchronous) can drive this case directly without hanging: a
+// bad ruleset never reaches srv.ListenAndServe.
+func TestServeBadRulesetDirFailsLoudBeforeListening(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	badRulesetDir := filepath.Join(t.TempDir(), "no-such-ruleset")
+
+	_, err := runCLI(t, "serve", "--campaign", campaignPath, "--ruleset", badRulesetDir)
+	if err == nil {
+		t.Fatal("want error for a --ruleset directory that does not exist")
+	}
+	if !strings.Contains(err.Error(), "ruleset") {
+		t.Fatalf("error = %q, want it to name the ruleset load failure", err.Error())
+	}
+}
+
 func extractField(t *testing.T, out, prefix string) string {
 	t.Helper()
 	for _, line := range strings.Split(out, "\n") {

@@ -22,6 +22,53 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
+// resolveRulesetDir resolves a scenario's bare ruleset id (Scenario.Ruleset,
+// e.g. "tavern-brawl") to a loadable directory: rulesets/<id>, relative to
+// the REPOSITORY ROOT (ruleset-interpreter Task 6 binding: "self-contained
+// boot loads rulesets/<id> relative to repo root"). Resolution rule,
+// documented here as the one place it is implemented: walk upward from the
+// current working directory until a go.mod file is found (findRepoRoot) —
+// this makes bootSelfContained work identically no matter what the
+// process's cwd happens to be: the repo root itself (the expected `vtt
+// client run` invocation), any subdirectory of it, or a Go test binary's
+// own package directory (`go test` sets cwd to the package source dir,
+// e.g. cmd/vtt — the SAME mechanism library_test.go's
+// TestScenarioLibraryRunsSelfContained relies on when it runs
+// scenarios/toy-brawl.json through this exact function). All of those land
+// on the SAME rulesets/ directory this repo commits at its root.
+func resolveRulesetDir(id string) (string, error) {
+	root, err := findRepoRoot()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, "rulesets", id)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("ruleset %q not found (looked for a directory at %s)", id, dir)
+	}
+	return dir, nil
+}
+
+// findRepoRoot walks upward from the current working directory until it
+// finds a directory containing go.mod, returning that directory. Returns
+// an error if it reaches the filesystem root without finding one.
+func findRepoRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("find repo root: %w", err)
+	}
+	for {
+		if info, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !info.IsDir() {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("find repo root: no go.mod found above %s", dir)
+		}
+		dir = parent
+	}
+}
+
 // bootResult is bootSelfContained's output: everything `vtt client run`
 // needs to drive the scenario, expressed only as strings plus a teardown
 // func — the strings (WSURL, Tokens, IDs) are exactly what a live
@@ -58,7 +105,16 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	}
 	campaignPath := filepath.Join(dir, "campaign.db")
 
-	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0")
+	rulesetDir := ""
+	if sc.Ruleset != "" {
+		rulesetDir, err = resolveRulesetDir(sc.Ruleset)
+		if err != nil {
+			os.RemoveAll(dir)
+			return nil, fmt.Errorf("vtt client run: resolve scenario ruleset %q: %w", sc.Ruleset, err)
+		}
+	}
+
+	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, fmt.Errorf("vtt client run: boot server: %w", err)

@@ -38,7 +38,11 @@ deps:
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway] }
+  # rules added Task 6 (ruleset-interpreter wiring): the gateway's
+  # use_ability handler calls rules.Resolve directly over an OPTIONAL
+  # server-config *rules.Ruleset (nil keeps every pre-Task-6 behavior
+  # unchanged — see gateway.Server.WithRuleset's doc comment).
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -75,4 +79,8 @@ deps:
   # Resolve reads — the same shape as rules' own pre-registered deps, plus
   # rules itself (which rules cannot depend on).
   conformance: { mayDependOn: [rules, engine, contract, conformance] }
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp] }
+  # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
+  # call rules.Load directly (cmd composes; internal/mcp itself still may
+  # NOT import rules — its Config carries only the already-loaded guide
+  # string, so the P1 wire-client boundary above is untouched).
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules] }

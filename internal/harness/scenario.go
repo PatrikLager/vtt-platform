@@ -31,6 +31,15 @@ type Scenario struct {
 	Participants []Participant `json:"participants"`
 	Steps        []Step        `json:"steps"`
 	Probes       []Probe       `json:"probes"`
+	// Ruleset is OPTIONAL (ruleset-interpreter Task 6): a bare ruleset id
+	// (e.g. "tavern-brawl"), never a path — resolution to an actual
+	// directory is a caller concern (cmd/vtt's self-contained boot glue
+	// resolves it relative to the repository root; see
+	// resolveRulesetDir's doc comment there). Empty means this scenario
+	// exercises no ruleset-dependent commands (use_ability/
+	// remove_condition), the overwhelmingly common case for the
+	// pre-existing library — those scenarios never set this field.
+	Ruleset string `json:"ruleset,omitempty"`
 }
 
 // Participant declares one connection the engine dials at scenario start
@@ -73,12 +82,20 @@ type ReconnectSpec struct {
 	AfterSequence int64 `json:"afterSequence"`
 }
 
-// Probe is exactly one of the three v1 probe kinds, evaluated against
+// Probe is exactly one of the five probe kinds, evaluated against
 // Fold(participant 0's observed events) once every step has run.
+// ResourceAt/HasCondition were added in ruleset-interpreter Task 6, so
+// scenarios (e.g. scenarios/toy-brawl.json) can assert the concrete,
+// structural result of a use_ability/remove_condition run — a resource's
+// final current value, or whether a condition is present on an actor —
+// without needing exact-dice matching (the harness cannot predict a live
+// crypto Roller's draws; see resolve.go's Roller doc comment).
 type Probe struct {
 	TokenAt      *TokenAtProbe      `json:"tokenAt,omitempty"`
 	SessionCount *SessionCountProbe `json:"sessionCount,omitempty"`
 	ActorExists  *ActorExistsProbe  `json:"actorExists,omitempty"`
+	ResourceAt   *ResourceAtProbe   `json:"resourceAt,omitempty"`
+	HasCondition *HasConditionProbe `json:"hasCondition,omitempty"`
 }
 
 // TokenAtProbe asserts a token exists at exactly (X, Y).
@@ -97,6 +114,24 @@ type SessionCountProbe struct {
 // ActorExistsProbe asserts an actor with this id exists.
 type ActorExistsProbe struct {
 	ActorId string `json:"actorId"`
+}
+
+// ResourceAtProbe asserts a named resource's CURRENT value on an actor
+// (ruleset-interpreter Task 6) — e.g. proving a use_ability hit's
+// resource_change outcome actually landed, deterministically, without
+// needing to predict a live crypto Roller's draws.
+type ResourceAtProbe struct {
+	ActorId  string `json:"actorId"`
+	Resource string `json:"resource"`
+	Value    int32  `json:"value"`
+}
+
+// HasConditionProbe asserts whether a named condition is present (or
+// absent, when Present is false) on an actor (ruleset-interpreter Task 6).
+type HasConditionProbe struct {
+	ActorId     string `json:"actorId"`
+	ConditionId string `json:"conditionId"`
+	Present     bool   `json:"present"`
 }
 
 // LoadScenario reads and strictly parses a scenario file: unknown JSON
@@ -138,6 +173,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		Participants []Participant     `json:"participants"`
 		Steps        []json.RawMessage `json:"steps"`
 		Probes       []Probe           `json:"probes"`
+		Ruleset      string            `json:"ruleset,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -145,7 +181,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		return nil, fmt.Errorf("parse scenario: %w", err)
 	}
 
-	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes}
+	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset}
 	sc.Steps = make([]Step, len(raw.Steps))
 	for i, rawStep := range raw.Steps {
 		var st Step
@@ -209,7 +245,7 @@ func validateStep(st Step) error {
 	return nil
 }
 
-// validateProbe enforces Probe's exactly-one-of-three-kinds contract.
+// validateProbe enforces Probe's exactly-one-of-five-kinds contract.
 func validateProbe(p Probe) error {
 	n := 0
 	if p.TokenAt != nil {
@@ -221,8 +257,14 @@ func validateProbe(p Probe) error {
 	if p.ActorExists != nil {
 		n++
 	}
+	if p.ResourceAt != nil {
+		n++
+	}
+	if p.HasCondition != nil {
+		n++
+	}
 	if n != 1 {
-		return fmt.Errorf("exactly one of tokenAt/sessionCount/actorExists required, got %d", n)
+		return fmt.Errorf("exactly one of tokenAt/sessionCount/actorExists/resourceAt/hasCondition required, got %d", n)
 	}
 	return nil
 }

@@ -337,6 +337,24 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 		sr.Detail = fmt.Sprintf("want ok=true, got ok=false (error %q)", result.Error)
 		return sr
 	}
+
+	// use_ability is BATCH-aware (ruleset-interpreter Task 6, binding):
+	// result.Sequence carries only the FIRST sequence of a
+	// campaign.AppendBatch batch — rules.Resolve can emit anywhere from one
+	// (AbilityUsed alone, e.g. a miss with no on-miss outcomes) to several
+	// events per use, and the step has no way to know the batch's length in
+	// advance. Every other accepted command still produces exactly ONE
+	// event, matched by observeOnAll below.
+	if _, isUseAbility := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); isUseAbility {
+		missing, detail := observeBatchOnAll(conns, history, result.Sequence, observeTimeout, denialAbsenceWindow)
+		if len(missing) > 0 {
+			sr.Detail = fmt.Sprintf("use_ability batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
+			return sr
+		}
+		sr.Pass = true
+		return sr
+	}
+
 	missing := observeOnAll(conns, history, result.Sequence, observeTimeout)
 	if len(missing) > 0 {
 		sr.Detail = fmt.Sprintf("event (sequence %d) not observed matching by: %s", result.Sequence, strings.Join(missing, ", "))
@@ -478,6 +496,164 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 	return missing
 }
 
+// observeBatchOnAll asserts every participant observes the FULL batch a
+// use_ability command's result implies, as a CONTIGUOUS run of sequences
+// starting at firstSeq (ruleset-interpreter Task 6, binding, documented
+// here as the one place this is implemented): a use_ability CommandResult
+// carries only the batch's first sequence (campaign.AppendBatch's own
+// contract — see internal/gateway/ruleset.go), never its length, so this
+// cannot wait for a known event count the way observeOnAll does for a
+// single-event command.
+//
+// Per participant, independently and in parallel: wait up to firstTimeout
+// for an event whose Sequence equals firstSeq (the batch's leading event,
+// AbilityUsed); once seen, keep collecting subsequent events as long as
+// each arrives within quietWindow of the previous one AND its Sequence is
+// exactly one past the last one collected (a gap-free run) — the run ends
+// the instant either condition fails: quietWindow elapses with nothing
+// further (the batch is over — the SAME "bounded wait proves a negative"
+// reasoning denialAbsenceWindow's own doc comment already relies on), or an
+// event arrives breaking contiguity (a genuine bug, surfaced as a mismatch
+// rather than silently accepted). Every observed event — whether or not it
+// ends up part of the counted run — is still recorded into history, ground
+// truth for any later step or probe, exactly like observeOnAll's own
+// per-event recording.
+//
+// Correctness of "any event observed here belongs to this batch" rests on
+// RunScenario's own serial execution: exactly one command is ever in
+// flight at a time (steps run strictly in order, and this function is only
+// reached after `result.Ok` has already been confirmed for THIS step's own
+// command) — no other participant is issuing a concurrent command whose
+// events could interleave with this batch's broadcast while this function
+// is collecting, so there is nothing to "push back" onto conn.Events() (a
+// channel offers no such operation) even in the contiguity-break failure
+// case above.
+//
+// The step passes only if every participant's collected run has the SAME
+// length and the SAME sequence of event ids, in order (compared against
+// the first participant's own run) — one atomic AppendBatch broadcast to
+// every subscriber must look identical to every observer, or the step
+// fails naming which participant(s) diverged and how.
+func observeBatchOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
+	names := sortedParticipantNames(conns)
+	results := make(chan batchOutcome, len(names))
+	var mu sync.Mutex
+
+	for _, name := range names {
+		name, conn := name, conns[name]
+		go func() {
+			results <- collectBatchRun(name, conn, history, &mu, firstSeq, firstTimeout, quietWindow)
+		}()
+	}
+
+	byName := make(map[string]batchOutcome, len(names))
+	for range names {
+		r := <-results
+		byName[r.name] = r
+	}
+
+	for _, name := range names {
+		if o := byName[name]; o.err != "" {
+			missing = append(missing, name)
+			if detail == "" {
+				detail = fmt.Sprintf("%s: %s", name, o.err)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return missing, detail
+	}
+
+	want := byName[names[0]].envs
+	for _, name := range names[1:] {
+		got := byName[name].envs
+		if len(got) != len(want) {
+			missing = append(missing, name)
+			if detail == "" {
+				detail = fmt.Sprintf("%s observed %d batch events, %s observed %d", name, len(got), names[0], len(want))
+			}
+			continue
+		}
+		for i := range want {
+			if got[i].EventId != want[i].EventId {
+				missing = append(missing, name)
+				if detail == "" {
+					detail = fmt.Sprintf("%s batch event %d (sequence %d) id mismatch vs %s", name, i, got[i].Sequence, names[0])
+				}
+				break
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing, detail
+}
+
+// batchOutcome is one participant's result from collectBatchRun: envs is
+// the contiguous run collected so far (possibly partial, on an err); err is
+// empty on success.
+type batchOutcome struct {
+	name string
+	envs []*vttv1.Envelope
+	err  string
+}
+
+// collectBatchRun is observeBatchOnAll's single-participant worker: wait
+// for the batch's leading event (Sequence == firstSeq) within firstTimeout,
+// then keep collecting a gap-free run of subsequent events, each within
+// quietWindow of the last, until quietWindow elapses (success: the batch is
+// over) or a non-contiguous event breaks the run (failure). Every event
+// observed — including the one that breaks contiguity, if any — is
+// recorded into history under mu, regardless of outcome (ground truth for
+// any later step or probe, matching observeOnAll's own per-event recording
+// contract).
+func collectBatchRun(name string, conn Conn, history map[string][]*vttv1.Envelope, mu *sync.Mutex, firstSeq int64, firstTimeout, quietWindow time.Duration) batchOutcome {
+	record := func(env *vttv1.Envelope) {
+		mu.Lock()
+		history[name] = append(history[name], env)
+		mu.Unlock()
+	}
+
+	first, ok := recvWithin(conn, firstTimeout)
+	if !ok {
+		return batchOutcome{name: name, err: "no event observed"}
+	}
+	record(first)
+	if first.Sequence != firstSeq {
+		return batchOutcome{name: name, err: fmt.Sprintf("first observed event sequence = %d, want %d", first.Sequence, firstSeq)}
+	}
+
+	envs := []*vttv1.Envelope{first}
+	last := first.Sequence
+	for {
+		next, ok := recvWithin(conn, quietWindow)
+		if !ok {
+			return batchOutcome{name: name, envs: envs} // quiet window elapsed: batch complete.
+		}
+		record(next)
+		if next.Sequence != last+1 {
+			return batchOutcome{name: name, envs: envs, err: fmt.Sprintf(
+				"batch run broken: sequence %d arrived immediately after %d (non-contiguous)", next.Sequence, last)}
+		}
+		envs = append(envs, next)
+		last = next.Sequence
+	}
+}
+
+// recvWithin reads one event from conn within timeout, or returns
+// (nil, false) on timeout or channel closure.
+func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool) {
+	select {
+	case env, ok := <-conn.Events():
+		if !ok {
+			return nil, false
+		}
+		return env, true
+	case <-time.After(timeout):
+		return nil, false
+	}
+}
+
 // drainAllForSilence waits window for EVERY participant in parallel (so the
 // total wall-clock cost is ~window regardless of participant count, not
 // window*count) and returns the names of any that received an event —
@@ -561,7 +737,37 @@ func evaluateProbe(idx int, p Probe, state *engine.State) ProbeResult {
 			Index: idx, Kind: "actorExists", Pass: ok,
 			Detail: fmt.Sprintf("actorExists %s: got present=%t", p.ActorExists.ActorId, ok),
 		}
+	case p.ResourceAt != nil:
+		actor, ok := state.Actors[p.ResourceAt.ActorId]
+		var got int32
+		var resPresent bool
+		if ok {
+			if r, rok := actor.GetResources()[p.ResourceAt.Resource]; rok {
+				got = r.GetCurrent()
+				resPresent = true
+			}
+		}
+		pass := ok && resPresent && got == p.ResourceAt.Value
+		return ProbeResult{
+			Index: idx, Kind: "resourceAt", Pass: pass,
+			Detail: fmt.Sprintf("resourceAt %s/%s: got actorPresent=%t resourcePresent=%t current=%d, want current=%d",
+				p.ResourceAt.ActorId, p.ResourceAt.Resource, ok, resPresent, got, p.ResourceAt.Value),
+		}
+	case p.HasCondition != nil:
+		present := false
+		for _, c := range state.Conditions[p.HasCondition.ActorId] {
+			if c.ID == p.HasCondition.ConditionId {
+				present = true
+				break
+			}
+		}
+		pass := present == p.HasCondition.Present
+		return ProbeResult{
+			Index: idx, Kind: "hasCondition", Pass: pass,
+			Detail: fmt.Sprintf("hasCondition %s/%s: got present=%t, want present=%t",
+				p.HasCondition.ActorId, p.HasCondition.ConditionId, present, p.HasCondition.Present),
+		}
 	default:
-		return ProbeResult{Index: idx, Kind: "unknown", Detail: "probe has none of tokenAt/sessionCount/actorExists set"}
+		return ProbeResult{Index: idx, Kind: "unknown", Detail: "probe has none of tokenAt/sessionCount/actorExists/resourceAt/hasCondition set"}
 	}
 }

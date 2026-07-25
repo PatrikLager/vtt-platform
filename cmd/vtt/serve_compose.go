@@ -7,6 +7,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // composeServer opens the campaign and identity handles for campaignPath
@@ -39,7 +40,14 @@ import (
 // part of shutdown, rather than trusting the caller (or a timeout) — is a
 // ledgered carry-forward (see .superpowers/sdd/progress.md), not solved by
 // this comment.
-func composeServer(campaignPath, addr string) (*http.Server, func() error, error) {
+// rulesetDir is OPTIONAL (ruleset-interpreter Task 6, spec §7): "" keeps
+// every pre-Task-6 behavior exactly as it was — a nil gateway.Server
+// ruleset, use_ability commands rejected with a clean "no ruleset loaded"
+// CommandResult. A non-empty rulesetDir is loaded via rules.Load (fails
+// loud here, at boot, closing both handles before returning — the same
+// fail-loud-at-open posture composeServer already gives a bad
+// campaign/identity path) and wired in via gateway.Server.WithRuleset.
+func composeServer(campaignPath, addr, rulesetDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
@@ -51,9 +59,20 @@ func composeServer(campaignPath, addr string) (*http.Server, func() error, error
 		return nil, nil, fmt.Errorf("vtt serve: open identity: %w", err)
 	}
 
+	gw := gateway.New(c, ids)
+	if rulesetDir != "" {
+		rs, err := rules.Load(rulesetDir)
+		if err != nil {
+			ids.Close()
+			c.Close()
+			return nil, nil, fmt.Errorf("vtt serve: load ruleset %s: %w", rulesetDir, err)
+		}
+		gw = gw.WithRuleset(rs)
+	}
+
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: gateway.New(c, ids).Handler(),
+		Handler: gw.Handler(),
 	}
 	closeFn := func() error {
 		idsErr := ids.Close()

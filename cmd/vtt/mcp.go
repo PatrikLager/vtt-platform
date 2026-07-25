@@ -12,6 +12,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/PatrikLager/vtt-platform/internal/mcp"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // toolsJSON is a COMMITTED COPY of contract/gen/tools/tools.json (Taskfile
@@ -40,7 +41,7 @@ var toolsJSON []byte
 // lifecycle, reconnect, and generic tool dispatch live in internal/mcp —
 // this command only resolves its two inputs and wires them together.
 func newMCPCmd() *cobra.Command {
-	var serverURL, token string
+	var serverURL, token, rulesetDir string
 
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -50,7 +51,25 @@ func newMCPCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			srv, err := mcp.New(mcp.Config{WSURL: serverURL, Token: tok, ToolsJSON: toolsJSON})
+
+			// --ruleset is OPTIONAL (ruleset-interpreter Task 6, controller
+			// decision: no wire contract addition — see the task report).
+			// A bad directory fails loud here, at boot, exactly like `vtt
+			// serve --ruleset` (serve_compose.go's composeServer): this
+			// package never hands internal/mcp a directory path, only the
+			// already-validated guide TEXT (mcp.Config.RulesetGuide's own
+			// doc comment) — internal/mcp may not import internal/rules at
+			// all (.go-arch-lint.yml's P1 boundary).
+			guide := ""
+			if rulesetDir != "" {
+				rs, err := rules.Load(rulesetDir)
+				if err != nil {
+					return fmt.Errorf("vtt mcp: load ruleset %s: %w", rulesetDir, err)
+				}
+				guide = rs.Guide
+			}
+
+			srv, err := mcp.New(mcp.Config{WSURL: serverURL, Token: tok, ToolsJSON: toolsJSON, RulesetGuide: guide})
 			if err != nil {
 				return fmt.Errorf("vtt mcp: %w", err)
 			}
@@ -74,6 +93,7 @@ func newMCPCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&serverURL, "server", "", "gateway ws:// URL (required)")
 	cmd.Flags().StringVar(&token, "token", "", "agent invite/session token (env VTT_TOKEN honored; flag wins)")
+	cmd.Flags().StringVar(&rulesetDir, "ruleset", "", "path to a ruleset directory (optional; enables get_ruleset_guide's guide.md content)")
 	_ = cmd.MarkFlagRequired("server")
 
 	return cmd

@@ -23,6 +23,14 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"start_session":  {identity.RoleDM: true, identity.RoleAgent: true},
 	"end_session":    {identity.RoleDM: true, identity.RoleAgent: true},
 	"retract_events": {identity.RoleDM: true, identity.RoleAgent: true},
+	// use_ability/remove_condition (ruleset-interpreter Task 6): dm/agent
+	// may target any actor; a player may only act as an actor THEY
+	// control — the additional ownership check below, on the command's own
+	// actor_id field, mirrors move_token's token-ownership check exactly
+	// (same shape, different field: the ACTOR being acted as, not a token
+	// being moved).
+	"use_ability":      {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"remove_condition": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -39,8 +47,16 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	if !known || !roles[p.Role] {
 		return fmt.Errorf("%w: role %q may not issue %q", ErrUnauthorized, p.Role, name)
 	}
-	if name == "move_token" && p.Role == identity.RolePlayer {
+	if p.Role != identity.RolePlayer {
+		return nil
+	}
+	switch name {
+	case "move_token":
 		return authorizeTokenOwnership(p, cmd.GetMoveToken(), st)
+	case "use_ability":
+		return authorizeActorOwnership(p, cmd.GetUseAbility().GetActorId(), st)
+	case "remove_condition":
+		return authorizeActorOwnership(p, cmd.GetRemoveCondition().GetActorId(), st)
 	}
 	return nil
 }
@@ -57,6 +73,22 @@ func authorizeTokenOwnership(p *identity.Participant, req *vttv1.MoveTokenReques
 	actor, ok := st.Actors[tok.ActorID]
 	if !ok || actor.GetControllerId() == "" || actor.GetControllerId() != p.ID {
 		return fmt.Errorf("%w: token %q is not controlled by participant %q", ErrUnauthorized, req.GetTokenId(), p.ID)
+	}
+	return nil
+}
+
+// authorizeActorOwnership enforces the player-only ownership rule for
+// use_ability and remove_condition: the actor named by the command's own
+// actor_id must exist and be controlled by this participant. This is the
+// SAME shape as authorizeTokenOwnership above, just checked directly
+// against Actor.controller_id instead of resolving through a token first —
+// use_ability/remove_condition name their acting actor directly, with no
+// token indirection (a controllerless actor, empty ControllerId, is
+// DM/agent only, exactly as move_token's ownership check treats it).
+func authorizeActorOwnership(p *identity.Participant, actorID string, st *engine.State) error {
+	actor, ok := st.Actors[actorID]
+	if !ok || actor.GetControllerId() == "" || actor.GetControllerId() != p.ID {
+		return fmt.Errorf("%w: actor %q is not controlled by participant %q", ErrUnauthorized, actorID, p.ID)
 	}
 	return nil
 }
@@ -79,6 +111,10 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "end_session"
 	case *vttv1.ClientCommand_RetractEvents:
 		return "retract_events"
+	case *vttv1.ClientCommand_UseAbility:
+		return "use_ability"
+	case *vttv1.ClientCommand_RemoveCondition:
+		return "remove_condition"
 	default:
 		return ""
 	}
