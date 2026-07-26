@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkizQQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIAEIJCgdjb21tYW5kIlAKDUNvbW1hbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcnJvchgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoAyJiCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSABCBwoFZnJhbWVCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkiJQoNTG9hZEFkdmVudHVyZRIUCgxhZHZlbnR1cmVfaWQYASABKAki/gQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIABIvCg5sb2FkX2FkdmVudHVyZRgWIAEoCzIVLnZ0dC52MS5Mb2FkQWR2ZW50dXJlSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiYgoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAQgcKBWZyYW1lQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -337,6 +337,23 @@ export const DeleteNoteSchema: GenMessage<DeleteNote> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 12);
 
 /**
+ * @generated from message vtt.v1.LoadAdventure
+ */
+export type LoadAdventure = Message<"vtt.v1.LoadAdventure"> & {
+  /**
+   * @generated from field: string adventure_id = 1;
+   */
+  adventureId: string;
+};
+
+/**
+ * Describes the message vtt.v1.LoadAdventure.
+ * Use `create(LoadAdventureSchema)` to create a new message.
+ */
+export const LoadAdventureSchema: GenMessage<LoadAdventure> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 13);
+
+/**
  * @generated from message vtt.v1.ClientCommand
  */
 export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
@@ -420,6 +437,12 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
      */
     value: DeleteNote;
     case: "deleteNote";
+  } | {
+    /**
+     * @generated from field: vtt.v1.LoadAdventure load_adventure = 22;
+     */
+    value: LoadAdventure;
+    case: "loadAdventure";
   } | { case: undefined; value?: undefined };
 };
 
@@ -428,7 +451,7 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
  * Use `create(ClientCommandSchema)` to create a new message.
  */
 export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 13);
+  messageDesc(file_vtt_v1_commands, 14);
 
 /**
  * @generated from message vtt.v1.CommandResult
@@ -460,7 +483,7 @@ export type CommandResult = Message<"vtt.v1.CommandResult"> & {
  * Use `create(CommandResultSchema)` to create a new message.
  */
 export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 14);
+  messageDesc(file_vtt_v1_commands, 15);
 
 /**
  * The server->client frame; the oneof key is the frame discriminator.
@@ -491,5 +514,5 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 15);
+  messageDesc(file_vtt_v1_commands, 16);
 

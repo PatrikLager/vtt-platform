@@ -1,0 +1,11 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V14",
+  "sequence": "50",
+  "occurredAt": "2026-07-26T09:30:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "dm",
+  "adventureLoaded": {
+    "adventureId": "goblin-ambush",
+    "name": "Goblin Ambush"
+  }
+}

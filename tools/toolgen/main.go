@@ -173,6 +173,20 @@ var manifest = []toolSpec{
 		description: "Delete a world note by key.",
 		descriptor:  (&vttv1.DeleteNote{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.LoadAdventure",
+		name:        "load_adventure",
+		description: "Load a prepared adventure into the campaign — compiles its scenes, statblocks, notes, and opening narration into one atomic batch of setup events. DM/agent only.",
+		descriptor:  (&vttv1.LoadAdventure{}).ProtoReflect().Descriptor(),
+		// requiredOverride check (the fabrication-trap lesson — see
+		// add_actor/add_narration above): LoadAdventure has exactly one
+		// field, adventure_id, and it is genuinely required — there is no
+		// way to load "an" adventure without naming which one, unlike
+		// add_actor's controllerId or add_narration's anchors, which are
+		// legitimately omittable. The derived required list (["adventureId"],
+		// since the field is not proto3 `optional`) is already semantically
+		// honest, so no override is needed here.
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

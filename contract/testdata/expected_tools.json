@@ -211,5 +211,16 @@
       },
       "required": ["key"]
     }
+  },
+  {
+    "name": "load_adventure",
+    "description": "Load a prepared adventure into the campaign — compiles its scenes, statblocks, notes, and opening narration into one atomic batch of setup events. DM/agent only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "adventureId": { "type": "string" }
+      },
+      "required": ["adventureId"]
+    }
   }
 ]

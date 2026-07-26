@@ -748,6 +748,50 @@ func (x *DeleteNote) GetKey() string {
 	return ""
 }
 
+type LoadAdventure struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AdventureId   string                 `protobuf:"bytes,1,opt,name=adventure_id,json=adventureId,proto3" json:"adventure_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadAdventure) Reset() {
+	*x = LoadAdventure{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadAdventure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadAdventure) ProtoMessage() {}
+
+func (x *LoadAdventure) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadAdventure.ProtoReflect.Descriptor instead.
+func (*LoadAdventure) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *LoadAdventure) GetAdventureId() string {
+	if x != nil {
+		return x.AdventureId
+	}
+	return ""
+}
+
 type ClientCommand struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -765,6 +809,7 @@ type ClientCommand struct {
 	//	*ClientCommand_AddNarration
 	//	*ClientCommand_UpsertNote
 	//	*ClientCommand_DeleteNote
+	//	*ClientCommand_LoadAdventure
 	Command       isClientCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -772,7 +817,7 @@ type ClientCommand struct {
 
 func (x *ClientCommand) Reset() {
 	*x = ClientCommand{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[13]
+	mi := &file_vtt_v1_commands_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +829,7 @@ func (x *ClientCommand) String() string {
 func (*ClientCommand) ProtoMessage() {}
 
 func (x *ClientCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[13]
+	mi := &file_vtt_v1_commands_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +842,7 @@ func (x *ClientCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCommand.ProtoReflect.Descriptor instead.
 func (*ClientCommand) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{13}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ClientCommand) GetRequestId() string {
@@ -922,6 +967,15 @@ func (x *ClientCommand) GetDeleteNote() *DeleteNote {
 	return nil
 }
 
+func (x *ClientCommand) GetLoadAdventure() *LoadAdventure {
+	if x != nil {
+		if x, ok := x.Command.(*ClientCommand_LoadAdventure); ok {
+			return x.LoadAdventure
+		}
+	}
+	return nil
+}
+
 type isClientCommand_Command interface {
 	isClientCommand_Command()
 }
@@ -974,6 +1028,10 @@ type ClientCommand_DeleteNote struct {
 	DeleteNote *DeleteNote `protobuf:"bytes,21,opt,name=delete_note,json=deleteNote,proto3,oneof"`
 }
 
+type ClientCommand_LoadAdventure struct {
+	LoadAdventure *LoadAdventure `protobuf:"bytes,22,opt,name=load_adventure,json=loadAdventure,proto3,oneof"`
+}
+
 func (*ClientCommand_MoveToken) isClientCommand_Command() {}
 
 func (*ClientCommand_CreateScene) isClientCommand_Command() {}
@@ -998,6 +1056,8 @@ func (*ClientCommand_UpsertNote) isClientCommand_Command() {}
 
 func (*ClientCommand_DeleteNote) isClientCommand_Command() {}
 
+func (*ClientCommand_LoadAdventure) isClientCommand_Command() {}
+
 type CommandResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1010,7 +1070,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[14]
+	mi := &file_vtt_v1_commands_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1022,7 +1082,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[14]
+	mi := &file_vtt_v1_commands_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1035,7 +1095,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{14}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CommandResult) GetRequestId() string {
@@ -1080,7 +1140,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1092,7 +1152,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1105,7 +1165,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{15}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ServerFrame) GetFrame() isServerFrame_Frame {
@@ -1209,7 +1269,9 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"\x1e\n" +
 	"\n" +
 	"DeleteNote\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\"\xf2\x05\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"2\n" +
+	"\rLoadAdventure\x12!\n" +
+	"\fadventure_id\x18\x01 \x01(\tR\vadventureId\"\xb2\x06\n" +
 	"\rClientCommand\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x129\n" +
@@ -1231,7 +1293,8 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\vupsert_note\x18\x14 \x01(\v2\x12.vtt.v1.UpsertNoteH\x00R\n" +
 	"upsertNote\x125\n" +
 	"\vdelete_note\x18\x15 \x01(\v2\x12.vtt.v1.DeleteNoteH\x00R\n" +
-	"deleteNoteB\t\n" +
+	"deleteNote\x12>\n" +
+	"\x0eload_adventure\x18\x16 \x01(\v2\x15.vtt.v1.LoadAdventureH\x00R\rloadAdventureB\t\n" +
 	"\acommand\"p\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
@@ -1256,7 +1319,7 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_commands_proto_rawDescData
 }
 
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_vtt_v1_commands_proto_goTypes = []any{
 	(*MoveTokenRequest)(nil),  // 0: vtt.v1.MoveTokenRequest
 	(*MoveTokenResponse)(nil), // 1: vtt.v1.MoveTokenResponse
@@ -1271,19 +1334,20 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*AddNarration)(nil),      // 10: vtt.v1.AddNarration
 	(*UpsertNote)(nil),        // 11: vtt.v1.UpsertNote
 	(*DeleteNote)(nil),        // 12: vtt.v1.DeleteNote
-	(*ClientCommand)(nil),     // 13: vtt.v1.ClientCommand
-	(*CommandResult)(nil),     // 14: vtt.v1.CommandResult
-	(*ServerFrame)(nil),       // 15: vtt.v1.ServerFrame
-	(*GridPosition)(nil),      // 16: vtt.v1.GridPosition
-	(*TokenMoved)(nil),        // 17: vtt.v1.TokenMoved
-	(*Actor)(nil),             // 18: vtt.v1.Actor
-	(*Envelope)(nil),          // 19: vtt.v1.Envelope
+	(*LoadAdventure)(nil),     // 13: vtt.v1.LoadAdventure
+	(*ClientCommand)(nil),     // 14: vtt.v1.ClientCommand
+	(*CommandResult)(nil),     // 15: vtt.v1.CommandResult
+	(*ServerFrame)(nil),       // 16: vtt.v1.ServerFrame
+	(*GridPosition)(nil),      // 17: vtt.v1.GridPosition
+	(*TokenMoved)(nil),        // 18: vtt.v1.TokenMoved
+	(*Actor)(nil),             // 19: vtt.v1.Actor
+	(*Envelope)(nil),          // 20: vtt.v1.Envelope
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	16, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	17, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	18, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	16, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	17, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	18, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	19, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	17, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
 	0,  // 4: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
 	2,  // 5: vtt.v1.ClientCommand.create_scene:type_name -> vtt.v1.CreateScene
 	3,  // 6: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
@@ -1296,13 +1360,14 @@ var file_vtt_v1_commands_proto_depIdxs = []int32{
 	10, // 13: vtt.v1.ClientCommand.add_narration:type_name -> vtt.v1.AddNarration
 	11, // 14: vtt.v1.ClientCommand.upsert_note:type_name -> vtt.v1.UpsertNote
 	12, // 15: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
-	14, // 16: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	19, // 17: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	13, // 16: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
+	15, // 17: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	20, // 18: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -1312,7 +1377,7 @@ func file_vtt_v1_commands_proto_init() {
 	}
 	file_vtt_v1_events_proto_init()
 	file_vtt_v1_commands_proto_msgTypes[0].OneofWrappers = []any{}
-	file_vtt_v1_commands_proto_msgTypes[13].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[14].OneofWrappers = []any{
 		(*ClientCommand_MoveToken)(nil),
 		(*ClientCommand_CreateScene)(nil),
 		(*ClientCommand_AddActor)(nil),
@@ -1325,8 +1390,9 @@ func file_vtt_v1_commands_proto_init() {
 		(*ClientCommand_AddNarration)(nil),
 		(*ClientCommand_UpsertNote)(nil),
 		(*ClientCommand_DeleteNote)(nil),
+		(*ClientCommand_LoadAdventure)(nil),
 	}
-	file_vtt_v1_commands_proto_msgTypes[15].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[16].OneofWrappers = []any{
 		(*ServerFrame_Result)(nil),
 		(*ServerFrame_Event)(nil),
 	}
@@ -1336,7 +1402,7 @@ func file_vtt_v1_commands_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

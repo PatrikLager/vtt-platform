@@ -64,6 +64,12 @@ func TestNarrationAddedEnvelopeRoundTrip(t *testing.T) {
 func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "upsert_note_command.json", &vttv1.ClientCommand{})
 }
+func TestAdventureLoadedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "adventure_loaded_envelope.json", &vttv1.Envelope{})
+}
+func TestLoadAdventureCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "load_adventure_command.json", &vttv1.ClientCommand{})
+}
 func TestServerFrameResultRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_result.json", &vttv1.ServerFrame{})
 }
