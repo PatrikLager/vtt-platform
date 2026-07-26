@@ -1,0 +1,12 @@
+{
+  "name": "out-of-range-rejection",
+  "ability_id": "longsword-strike",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "str": 4 } },
+    { "id": "goblin", "x": 3, "y": 0, "attributes": { "ac": 15 } }
+  ],
+  "actor_id": "fighter",
+  "target_ids": ["goblin"],
+  "want_error": "out of range"
+}

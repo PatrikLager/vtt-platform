@@ -1,0 +1,5 @@
+{
+  "id": "dying",
+  "name": "Dying",
+  "description": "This creature has dropped to 0 hit points and is unconscious and failing. It must be stabilized or healed before it bleeds out; further damage while dying can kill outright per the DM's ruling. Applied automatically when hp reaches 0, removed automatically the moment hp rises above 0 again (e.g. from healing)."
+}

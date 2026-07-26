@@ -1,0 +1,18 @@
+{
+  "id": "recovery",
+  "params": [
+    { "name": "amount", "kind": "expr" }
+  ],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": null,
+      "branch": "always",
+      "effects": [
+        { "resource_change": { "resource": "hp", "delta_expr": "{amount}" } }
+      ]
+    }
+  ]
+}

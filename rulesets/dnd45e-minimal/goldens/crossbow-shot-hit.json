@@ -1,0 +1,26 @@
+{
+  "name": "crossbow-shot-hit",
+  "ability_id": "crossbow-shot",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "dex": 2 } },
+    { "id": "goblin-archer", "x": 6, "y": 0, "attributes": { "ac": 14, "max_hp": 6 }, "resources": { "hp": { "current": 6, "max": 6 } } }
+  ],
+  "actor_id": "fighter",
+  "target_ids": ["goblin-archer"],
+  "rolls": [{ "results": [12] }, { "results": [2] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "fighter",
+      "ability_id": "crossbow-shot",
+      "target_ids": ["goblin-archer"],
+      "rolls": [
+        { "expression": "1d20 + @caster.dex + (2)", "results": [12], "total": 16 },
+        { "expression": "0 - (1d8)", "results": [2], "total": -2 }
+      ],
+      "outcome_summary": "Crossbow Shot on goblin-archer: hit (16 vs 14)"
+    },
+    { "type": "ResourceChanged", "actor_id": "goblin-archer", "resource": "hp", "delta": -2, "new_value": 4, "reason": "ability:crossbow-shot:hit" }
+  ]
+}

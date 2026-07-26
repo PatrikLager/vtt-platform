@@ -1,0 +1,26 @@
+{
+  "name": "goblin-scimitar-hit",
+  "ability_id": "goblin-scimitar",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "goblin", "x": 0, "y": 0, "attributes": { "dex": 3 } },
+    { "id": "fighter", "x": 1, "y": 0, "attributes": { "ac": 17, "max_hp": 28 }, "resources": { "hp": { "current": 28, "max": 28 } } }
+  ],
+  "actor_id": "goblin",
+  "target_ids": ["fighter"],
+  "rolls": [{ "results": [14] }, { "results": [3] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "goblin",
+      "ability_id": "goblin-scimitar",
+      "target_ids": ["fighter"],
+      "rolls": [
+        { "expression": "1d20 + @caster.dex + (2)", "results": [14], "total": 19 },
+        { "expression": "0 - (1d6 + 2)", "results": [3], "total": -5 }
+      ],
+      "outcome_summary": "Goblin Scimitar on fighter: hit (19 vs 17)"
+    },
+    { "type": "ResourceChanged", "actor_id": "fighter", "resource": "hp", "delta": -5, "new_value": 23, "reason": "ability:goblin-scimitar:hit" }
+  ]
+}

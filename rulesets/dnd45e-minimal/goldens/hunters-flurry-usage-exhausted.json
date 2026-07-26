@@ -1,0 +1,12 @@
+{
+  "name": "hunters-flurry-usage-exhausted",
+  "ability_id": "hunters-flurry",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "dex": 2 }, "resources": { "flurry_uses": { "current": 0, "max": 1 } } },
+    { "id": "goblin-cutter", "x": 1, "y": 0, "attributes": { "ac": 15 } }
+  ],
+  "actor_id": "fighter",
+  "target_ids": ["goblin-cutter"],
+  "want_error": "insufficient \"flurry_uses\""
+}

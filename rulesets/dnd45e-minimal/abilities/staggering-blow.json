@@ -1,0 +1,11 @@
+{
+  "id": "staggering-blow",
+  "name": "Staggering Blow",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "melee-delivery", "bind": { "reach": 1 } },
+    { "atom": "weapon-attack-roll", "bind": { "attack_stat": "str", "prof": 3, "defense": "fort" } },
+    { "atom": "weapon-damage", "bind": { "damage_expr": "1d6 + @caster.str" } },
+    { "atom": "condition-rider", "bind": { "condition": "dazed" } }
+  ]
+}

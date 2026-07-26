@@ -1,0 +1,24 @@
+{
+  "name": "longsword-strike-miss",
+  "ability_id": "longsword-strike",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "str": 4 } },
+    { "id": "goblin", "x": 1, "y": 0, "attributes": { "ac": 15, "max_hp": 8 }, "resources": { "hp": { "current": 8, "max": 8 } } }
+  ],
+  "actor_id": "fighter",
+  "target_ids": ["goblin"],
+  "rolls": [{ "results": [5] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "fighter",
+      "ability_id": "longsword-strike",
+      "target_ids": ["goblin"],
+      "rolls": [
+        { "expression": "1d20 + @caster.str + (3)", "results": [5], "total": 12 }
+      ],
+      "outcome_summary": "Longsword Strike on goblin: miss (12 vs 15)"
+    }
+  ]
+}

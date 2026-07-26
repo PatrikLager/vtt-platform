@@ -1,0 +1,18 @@
+{
+  "id": "graze-damage",
+  "params": [
+    { "name": "damage_expr", "kind": "expr" }
+  ],
+  "provides": [],
+  "consumes": ["strike"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "miss",
+      "effects": [
+        { "resource_change": { "resource": "hp", "delta_expr": "0 - half({damage_expr})" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "id": "bloodied",
+  "name": "Bloodied",
+  "description": "This creature is at or below half its maximum hit points. Some powers and effects key off bloodied status; it is not itself a penalty, just a marker of how badly hurt the creature is. Applied and removed automatically as hp crosses the halfway line (see the hp resource's thresholds)."
+}
