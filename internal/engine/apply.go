@@ -11,9 +11,19 @@ import (
 
 var ErrUnknownVariant = errors.New("engine: unknown event variant")
 
+// Size/anchor limits for the world layer (spec §4): a size posture, not a
+// scripting surface — no game-system meaning, just wire-frame bounds.
+const (
+	maxNoteKeyBytes   = 128
+	maxNoteTitleBytes = 256
+	maxTextBytes      = 8192 // 8 KiB; applies to both narration and note text
+)
+
 // Apply advances st by one event. It validates BEFORE mutating: any error
-// return leaves st unchanged. AttackRolled, EventsRetracted, and AbilityUsed
-// are deliberate no-ops here (spec §5).
+// return leaves st unchanged. AttackRolled, EventsRetracted, AbilityUsed,
+// and NarrationAdded are deliberate no-ops here (spec §5; world-layer spec
+// §4 for NarrationAdded — the feed IS the log, read via the existing event
+// streams).
 func Apply(st *State, env *vttv1.Envelope) error {
 	switch p := env.Payload.(type) {
 	case *vttv1.Envelope_SessionStarted:
@@ -143,6 +153,53 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		st.Conditions[ca.ActorId] = append(st.Conditions[ca.ActorId], ActorCondition{
 			ID: ca.ConditionId, Source: ca.Source, AppliedSeq: env.Sequence,
 		})
+		return nil
+
+	case *vttv1.Envelope_NarrationAdded:
+		na := p.NarrationAdded
+		if len(na.Text) == 0 || len(na.Text) > maxTextBytes {
+			return fmt.Errorf("engine: narration text must be 1-%d bytes, got %d", maxTextBytes, len(na.Text))
+		}
+		if na.AnchorFromSeq < 0 || na.AnchorToSeq < 0 {
+			return fmt.Errorf("engine: narration anchor sequence must not be negative (from %d, to %d)", na.AnchorFromSeq, na.AnchorToSeq)
+		}
+		// 0/0 is unanchored and valid; anchors are a range or absent, never
+		// a half-range (spec §4).
+		if na.AnchorFromSeq != 0 || na.AnchorToSeq != 0 {
+			if na.AnchorFromSeq == 0 || na.AnchorToSeq == 0 {
+				return fmt.Errorf("engine: narration anchor must set both anchor_from_seq and anchor_to_seq, or neither (got from %d, to %d)", na.AnchorFromSeq, na.AnchorToSeq)
+			}
+			if na.AnchorFromSeq > na.AnchorToSeq {
+				return fmt.Errorf("engine: narration anchor_from_seq %d must not exceed anchor_to_seq %d", na.AnchorFromSeq, na.AnchorToSeq)
+			}
+			// Anchors point backward at recorded history, never forward at
+			// or beyond the narrating event's own sequence.
+			if na.AnchorToSeq >= env.Sequence {
+				return fmt.Errorf("engine: narration anchor_to_seq %d must be before this event's own sequence %d", na.AnchorToSeq, env.Sequence)
+			}
+		}
+		return nil // deliberate no-op — the feed IS the log (spec §4)
+
+	case *vttv1.Envelope_NoteUpserted:
+		nu := p.NoteUpserted
+		if len(nu.Key) == 0 || len(nu.Key) > maxNoteKeyBytes {
+			return fmt.Errorf("engine: note key must be 1-%d bytes, got %d", maxNoteKeyBytes, len(nu.Key))
+		}
+		if len(nu.Title) > maxNoteTitleBytes {
+			return fmt.Errorf("engine: note title must be at most %d bytes, got %d", maxNoteTitleBytes, len(nu.Title))
+		}
+		if len(nu.Text) == 0 || len(nu.Text) > maxTextBytes {
+			return fmt.Errorf("engine: note text must be 1-%d bytes, got %d", maxTextBytes, len(nu.Text))
+		}
+		st.Notes[nu.Key] = Note{Title: nu.Title, Text: nu.Text, UpdatedSeq: env.Sequence}
+		return nil
+
+	case *vttv1.Envelope_NoteDeleted:
+		nd := p.NoteDeleted
+		if _, ok := st.Notes[nd.Key]; !ok {
+			return fmt.Errorf("engine: note %q not present", nd.Key)
+		}
+		delete(st.Notes, nd.Key)
 		return nil
 
 	case *vttv1.Envelope_ConditionRemoved:
