@@ -161,5 +161,43 @@
       },
       "required": ["actorId", "conditionId"]
     }
+  },
+  {
+    "name": "add_narration",
+    "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "as": { "type": "string" },
+        "anchorFromSeq": { "type": "integer" },
+        "anchorToSeq": { "type": "integer" }
+      },
+      "required": ["text", "as", "anchorFromSeq", "anchorToSeq"]
+    }
+  },
+  {
+    "name": "upsert_note",
+    "description": "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "title": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "required": ["key", "title", "text"]
+    }
+  },
+  {
+    "name": "delete_note",
+    "description": "Delete a world note by key.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" }
+      },
+      "required": ["key"]
+    }
   }
 ]

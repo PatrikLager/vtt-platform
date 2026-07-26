@@ -119,6 +119,24 @@ var manifest = []toolSpec{
 		description: "Remove a named condition from an actor (DM-ended durations).",
 		descriptor:  (&vttv1.RemoveCondition{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.AddNarration",
+		name:        "add_narration",
+		description: "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+		descriptor:  (&vttv1.AddNarration{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.UpsertNote",
+		name:        "upsert_note",
+		description: "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
+		descriptor:  (&vttv1.UpsertNote{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.DeleteNote",
+		name:        "delete_note",
+		description: "Delete a world note by key.",
+		descriptor:  (&vttv1.DeleteNote{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

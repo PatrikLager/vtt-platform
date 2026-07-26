@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIsgDCg1DbGllbnRDb21tYW5kEhIKCnJlcXVlc3RfaWQYASABKAkSLgoKbW92ZV90b2tlbhgKIAEoCzIYLnZ0dC52MS5Nb3ZlVG9rZW5SZXF1ZXN0SAASKwoMY3JlYXRlX3NjZW5lGAsgASgLMhMudnR0LnYxLkNyZWF0ZVNjZW5lSAASJQoJYWRkX2FjdG9yGAwgASgLMhAudnR0LnYxLkFkZEFjdG9ySAASKQoLcGxhY2VfdG9rZW4YDSABKAsyEi52dHQudjEuUGxhY2VUb2tlbkgAEi0KDXN0YXJ0X3Nlc3Npb24YDiABKAsyFC52dHQudjEuU3RhcnRTZXNzaW9uSAASKQoLZW5kX3Nlc3Npb24YDyABKAsyEi52dHQudjEuRW5kU2Vzc2lvbkgAEi8KDnJldHJhY3RfZXZlbnRzGBAgASgLMhUudnR0LnYxLlJldHJhY3RFdmVudHNIABIpCgt1c2VfYWJpbGl0eRgRIAEoCzISLnZ0dC52MS5Vc2VBYmlsaXR5SAASMwoQcmVtb3ZlX2NvbmRpdGlvbhgSIAEoCzIXLnZ0dC52MS5SZW1vdmVDb25kaXRpb25IAEIJCgdjb21tYW5kIlAKDUNvbW1hbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcnJvchgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoAyJiCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSABCBwoFZnJhbWVCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkizQQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIAEIJCgdjb21tYW5kIlAKDUNvbW1hbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcnJvchgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoAyJiCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSABCBwoFZnJhbWVCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -261,6 +261,82 @@ export const RemoveConditionSchema: GenMessage<RemoveCondition> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 9);
 
 /**
+ * @generated from message vtt.v1.AddNarration
+ */
+export type AddNarration = Message<"vtt.v1.AddNarration"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * @generated from field: string as = 2;
+   */
+  as: string;
+
+  /**
+   * @generated from field: int64 anchor_from_seq = 3;
+   */
+  anchorFromSeq: bigint;
+
+  /**
+   * @generated from field: int64 anchor_to_seq = 4;
+   */
+  anchorToSeq: bigint;
+};
+
+/**
+ * Describes the message vtt.v1.AddNarration.
+ * Use `create(AddNarrationSchema)` to create a new message.
+ */
+export const AddNarrationSchema: GenMessage<AddNarration> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 10);
+
+/**
+ * @generated from message vtt.v1.UpsertNote
+ */
+export type UpsertNote = Message<"vtt.v1.UpsertNote"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message vtt.v1.UpsertNote.
+ * Use `create(UpsertNoteSchema)` to create a new message.
+ */
+export const UpsertNoteSchema: GenMessage<UpsertNote> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 11);
+
+/**
+ * @generated from message vtt.v1.DeleteNote
+ */
+export type DeleteNote = Message<"vtt.v1.DeleteNote"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+};
+
+/**
+ * Describes the message vtt.v1.DeleteNote.
+ * Use `create(DeleteNoteSchema)` to create a new message.
+ */
+export const DeleteNoteSchema: GenMessage<DeleteNote> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 12);
+
+/**
  * @generated from message vtt.v1.ClientCommand
  */
 export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
@@ -326,6 +402,24 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
      */
     value: RemoveCondition;
     case: "removeCondition";
+  } | {
+    /**
+     * @generated from field: vtt.v1.AddNarration add_narration = 19;
+     */
+    value: AddNarration;
+    case: "addNarration";
+  } | {
+    /**
+     * @generated from field: vtt.v1.UpsertNote upsert_note = 20;
+     */
+    value: UpsertNote;
+    case: "upsertNote";
+  } | {
+    /**
+     * @generated from field: vtt.v1.DeleteNote delete_note = 21;
+     */
+    value: DeleteNote;
+    case: "deleteNote";
   } | { case: undefined; value?: undefined };
 };
 
@@ -334,7 +428,7 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
  * Use `create(ClientCommandSchema)` to create a new message.
  */
 export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 10);
+  messageDesc(file_vtt_v1_commands, 13);
 
 /**
  * @generated from message vtt.v1.CommandResult
@@ -366,7 +460,7 @@ export type CommandResult = Message<"vtt.v1.CommandResult"> & {
  * Use `create(CommandResultSchema)` to create a new message.
  */
 export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 11);
+  messageDesc(file_vtt_v1_commands, 14);
 
 /**
  * The server->client frame; the oneof key is the frame discriminator.
@@ -397,5 +491,5 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 12);
+  messageDesc(file_vtt_v1_commands, 15);
 

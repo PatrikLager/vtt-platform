@@ -120,6 +120,15 @@ message ConditionRemoved {
   string reason = 3;
 }
 
+message NarrationAdded {
+  string text = 1;
+  string as = 2;
+  int64 anchor_from_seq = 3;
+  int64 anchor_to_seq = 4;
+}
+message NoteUpserted { string key = 1; string title = 2; string text = 3; }
+message NoteDeleted { string key = 1; }
+
 message Envelope {
   string event_id = 1;
   int64 sequence = 2;
@@ -141,5 +150,8 @@ message Envelope {
     ResourceChanged resource_changed = 19;
     ConditionApplied condition_applied = 20;
     ConditionRemoved condition_removed = 21;
+    NarrationAdded narration_added = 22;
+    NoteUpserted note_upserted = 23;
+    NoteDeleted note_deleted = 24;
   }
 }

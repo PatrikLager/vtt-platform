@@ -123,7 +123,10 @@ func TestMCPCommandMissingTokenErrorsViaRunCLI(t *testing.T) {
 // Stdin/Stdout pipes (mcpsdk.IOTransport) — proving cmd/vtt/mcp.go's real
 // RunE(ctx, &mcpsdk.StdioTransport{}) path actually works end to end, not
 // just the in-memory-transport substitute TestMCPSpecSevenExitCriteria
-// uses below. list_tools must report all 12 tools; closing the client
+// uses below. list_tools must report all 15 tools (world-layer P11 Task 1
+// contract addition — add_narration/upsert_note/delete_note — bumps this
+// from 12; fix-forward per controller ruling, Task 3 owns the real MCP
+// e2e wiring for these three commands); closing the client
 // session then closes the subprocess's stdin, which is enough to let the
 // process exit on its own (asserted via a bounded Wait, Kill as the
 // fallback safety net matching this package's established subprocess-test
@@ -166,8 +169,8 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools over real stdio: %v (stderr: %s)", err, stderr.String())
 	}
-	if len(res.Tools) != 12 {
-		t.Fatalf("ListTools over real stdio: got %d tools, want 12: %v", len(res.Tools), res.Tools)
+	if len(res.Tools) != 15 {
+		t.Fatalf("ListTools over real stdio: got %d tools, want 15: %v", len(res.Tools), res.Tools)
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.
