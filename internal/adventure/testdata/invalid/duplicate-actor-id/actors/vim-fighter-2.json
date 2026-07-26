@@ -1,0 +1,15 @@
+{
+  "actor_id": "vim-fighter",
+  "name": "Vim Fighter (again)",
+  "attributes": {
+    "vim": 8,
+    "vigor": 8,
+    "brace": 8
+  },
+  "resources": {
+    "focus": {
+      "current": 5,
+      "max": 5
+    }
+  }
+}

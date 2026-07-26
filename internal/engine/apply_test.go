@@ -43,6 +43,8 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
 	case *vttv1.NoteDeleted:
 		e.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
+	case *vttv1.AdventureLoaded:
+		e.Payload = &vttv1.Envelope_AdventureLoaded{AdventureLoaded: p}
 	}
 	return e
 }
@@ -491,6 +493,26 @@ func TestAbilityUsedIsDeliberateNoOp(t *testing.T) {
 	after := st.Snapshot()
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("AbilityUsed must not mutate state")
+	}
+}
+
+// TestAdventureLoadedIsDeliberateNoOp pins AdventureLoaded as testimony-only
+// (adventure-format spec §3, mirroring AbilityUsed's pattern): it is the
+// compile batch's FIRST event, making the log self-describing about what was
+// loaded — the actual state changes arrive via the SceneCreated/ActorAdded/
+// TokenPlaced/NoteUpserted/NarrationAdded events that follow it in the SAME
+// batch (internal/adventure's Compile), never through this event's own fold.
+func TestAdventureLoadedIsDeliberateNoOp(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(3, &vttv1.AdventureLoaded{
+		AdventureId: "goblin-ambush", Name: "Goblin Ambush",
+	})))
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("AdventureLoaded must not mutate state")
 	}
 }
 

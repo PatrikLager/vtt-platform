@@ -31,6 +31,11 @@ components:
   # its parent's entry), and this subpackage's dependency shape genuinely
   # differs from rules' own (it imports rules itself, which rules cannot).
   conformance: { in: internal/rules/conformance }
+  # internal/adventure (Task 2, adventure-format spec §5): Load/Compile for
+  # the adventure format v1 — a directory of prepared content (scenes,
+  # statblock instances, notes, an opening) written FOR a specific ruleset,
+  # compiled into ordinary setup events one AppendBatch applies.
+  adventure: { in: internal/adventure }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -42,7 +47,14 @@ deps:
   # use_ability handler calls rules.Resolve directly over an OPTIONAL
   # server-config *rules.Ruleset (nil keeps every pre-Task-6 behavior
   # unchanged — see gateway.Server.WithRuleset's doc comment).
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules] }
+  # adventure added Task 4-forward (adventure-format spec §5/§7): the
+  # gateway's future load_adventure handler will call adventure.Load (at
+  # boot, per-adventure) and adventure.Compile (per request) directly, the
+  # same shape rules gained in Task 6 above. Declared now, alongside Task
+  # 2's own adventure component, rather than left for Task 4 to add — Task
+  # 2's brief pre-authorizes this edge so arch-lint never blocks Task 4's
+  # gateway wiring on a forgotten dependency-graph update.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -79,6 +91,17 @@ deps:
   # Resolve reads — the same shape as rules' own pre-registered deps, plus
   # rules itself (which rules cannot depend on).
   conformance: { mayDependOn: [rules, engine, contract, conformance] }
+  # internal/adventure (Task 2, adventure-format spec §5): Load validates a
+  # statblock's attribute/resource vocabulary against a *rules.Ruleset
+  # (rules dep); Compile builds *vttv1.Envelope values (contract dep) and
+  # checks collisions against an *engine.State snapshot (engine dep).
+  # Today, only gateway may import this package (the Task-4-forward edge on
+  # gateway's own entry above) — cmd's deps (below) are UNCHANGED by this
+  # task and do NOT list adventure; cmd gains it only if/when a future task
+  # actually needs it (e.g. `--adventures-dir` boot wiring), the same
+  # as-needed discipline rules' own cmd edge followed (added at Task 6, not
+  # pre-declared at Task 4/5).
+  adventure: { mayDependOn: [engine, contract, rules, adventure] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide

@@ -30,9 +30,11 @@ const (
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
 // return leaves st unchanged. AttackRolled, EventsRetracted, AbilityUsed,
-// and NarrationAdded are deliberate no-ops here (spec §5; world-layer spec
-// §4 for NarrationAdded — the feed IS the log, read via the existing event
-// streams).
+// NarrationAdded, and AdventureLoaded are deliberate no-ops here (spec §5;
+// world-layer spec §4 for NarrationAdded — the feed IS the log, read via
+// the existing event streams; adventure-format spec §3 for AdventureLoaded
+// — AbilityUsed's pattern, meaning arrives via the other events in the same
+// Compile batch, internal/adventure).
 func Apply(st *State, env *vttv1.Envelope) error {
 	switch p := env.Payload.(type) {
 	case *vttv1.Envelope_SessionStarted:
@@ -115,6 +117,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_AbilityUsed:
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)
+
+	case *vttv1.Envelope_AdventureLoaded:
+		return nil // testimony, not state — AbilityUsed's pattern: the compile batch's FIRST event, meaning arrives via the SceneCreated/ActorAdded/TokenPlaced/NoteUpserted/NarrationAdded events that follow it in the same batch (adventure-format spec §3, internal/adventure's Compile)
 
 	case *vttv1.Envelope_ResourceChanged:
 		rc := p.ResourceChanged
