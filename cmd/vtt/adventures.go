@@ -73,6 +73,16 @@ func loadAdventuresDir(dir string, rs *rules.Ruleset) (map[string]*adventure.Adv
 		out[adv.ID] = adv
 		dirOf[adv.ID] = e.Name()
 	}
+	// Zero adventures loaded from an EXISTING dir (either literally empty,
+	// or every entry was a non-directory stray, silently skipped above) is
+	// a boot error, not a quiet success (fix-wave F4, spec §7: "fail loud
+	// at startup, not at the table"). Without this check, a typo'd or
+	// never-synced --adventures-dir booted cleanly with zero adventures
+	// configured — inconsistent with the NONEXISTENT-dir case just above,
+	// which already fails loud via os.ReadDir's own error.
+	if len(out) == 0 {
+		return nil, fmt.Errorf("adventures dir %s contains no adventures", dir)
+	}
 	return out, nil
 }
 

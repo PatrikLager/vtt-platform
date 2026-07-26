@@ -180,7 +180,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// get_state / get_events_since (read_tools.go): registered in the same
-	// tool table as the 12 generic command tools above (spec §4).
+	// tool table as the 13 generic command tools above (spec §4).
 	s.registerReadTools()
 
 	// get_ruleset_guide (ruleset-interpreter Task 6, guide_tool.go):

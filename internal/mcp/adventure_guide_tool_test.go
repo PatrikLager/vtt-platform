@@ -84,6 +84,49 @@ func TestGetAdventureGuideReturnsGuideTextWhenConfigured(t *testing.T) {
 	}
 }
 
+// TestGetAdventureGuideReturnsEachAdventuresOwnGuideWhenMultipleConfigured
+// covers the id-to-guide association itself (fix-wave F2, task-12-wf-final-
+// review finding): every other test in this file configures at most ONE
+// adventure guide, so a lookup bug that serves a DIFFERENT configured
+// adventure's guide whenever more than one exists (e.g. iterating the map
+// for the first entry, or a copy-paste key mixup) is indistinguishable from
+// a correct lookup in the degenerate single-entry case. This configures
+// TWO adventure guides with clearly distinct content and asserts each
+// adventureId returns ITS OWN guide text, not the other one's — the
+// multi-adventure --adventures-dir shape loadAdventuresDir (cmd/vtt) and
+// its own duplicate-id boot check are built to support.
+func TestGetAdventureGuideReturnsEachAdventuresOwnGuideWhenMultipleConfigured(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	guides := map[string]string{
+		"goblin-ambush": "# Goblin Ambush\n\nThe archer flees once badly wounded.",
+		"cellar-rats":   "# Cellar Rats\n\nHollis throws the first punch if pressed.",
+	}
+	cs, cleanup := startSessionWithAdventureGuides(t, fs.wsURL(), guides)
+	defer cleanup()
+
+	for id, want := range guides {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+			Name:      "get_adventure_guide",
+			Arguments: map[string]any{"adventureId": id},
+		})
+		cancel()
+		if err != nil {
+			t.Fatalf("CallTool(%q): %v", id, err)
+		}
+		if res.IsError {
+			t.Fatalf("CallTool(%q): want IsError=false, got %+v", id, res)
+		}
+		text, ok := res.Content[0].(*mcpsdk.TextContent)
+		if !ok {
+			t.Fatalf("CallTool(%q): want text content, got %T", id, res.Content[0])
+		}
+		if text.Text != want {
+			t.Fatalf("CallTool(%q): guide text = %q, want its OWN configured guide %q (not another adventure's)", id, text.Text, want)
+		}
+	}
+}
+
 func TestGetAdventureGuideNoAdventuresConfiguredCleanError(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSessionWithAdventureGuides(t, fs.wsURL(), nil) // no --adventures-dir

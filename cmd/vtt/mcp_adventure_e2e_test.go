@@ -175,6 +175,29 @@ func TestMCPAdventuresDirWithoutRulesetFlagIsAStartupError(t *testing.T) {
 	}
 }
 
+// TestMCPEmptyAdventuresDirIsAStartupError covers fix-wave F4's `vtt mcp`
+// half: an EXISTING --adventures-dir with zero subdirectories fails
+// immediately as a startup error, before ever dialing the gateway — the
+// same fail-loud-at-boot posture TestMCPAdventuresDirWithoutRulesetFlag
+// IsAStartupError already covers for the flag-pairing case, now for the
+// zero-loaded case (loadAdventuresDir, adventures.go).
+func TestMCPEmptyAdventuresDirIsAStartupError(t *testing.T) {
+	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
+	if err != nil {
+		t.Fatalf("resolveRulesetDir(dnd45e-minimal): %v", err)
+	}
+	emptyAdventuresDir := t.TempDir() // exists, zero subdirectories
+
+	_, err = runCLI(t, "mcp", "--server", "ws://127.0.0.1:1/ws", "--token", "irrelevant",
+		"--ruleset", rulesetDir, "--adventures-dir", emptyAdventuresDir)
+	if err == nil {
+		t.Fatal("want an error starting `vtt mcp --adventures-dir` pointed at an existing-but-empty directory")
+	}
+	if !strings.Contains(err.Error(), "no adventures") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "no adventures")
+	}
+}
+
 // TestMCPGetAdventureGuideNoDirCleanError covers the "no dir → clean error"
 // half of the exit criterion: `vtt mcp` started with NEITHER
 // --adventures-dir NOR --ruleset (startMCPFixture, unchanged from before

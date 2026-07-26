@@ -163,6 +163,31 @@ func TestServeBadAdventuresDirFailsLoudBeforeListening(t *testing.T) {
 	}
 }
 
+// TestServeEmptyAdventuresDirFailsLoudBeforeListening covers fix-wave F4:
+// an EXISTING --adventures-dir with zero subdirectories (a typo'd or
+// never-synced path pointing at a real-but-wrong or empty directory) fails
+// loud at boot, before ever starting to listen — mirroring
+// TestServeBadAdventuresDirFailsLoudBeforeListening's nonexistent-dir case,
+// which already failed loud; before this fix, an EXISTING-but-empty dir
+// booted "successfully" with zero adventures configured, deferring the
+// misconfiguration to the table (spec §7's fail-loud-at-boot posture).
+func TestServeEmptyAdventuresDirFailsLoudBeforeListening(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
+	if err != nil {
+		t.Fatalf("resolveRulesetDir(dnd45e-minimal): %v", err)
+	}
+	emptyAdventuresDir := t.TempDir() // exists, zero subdirectories
+
+	_, err = runCLI(t, "serve", "--campaign", campaignPath, "--ruleset", rulesetDir, "--adventures-dir", emptyAdventuresDir)
+	if err == nil {
+		t.Fatal("want error for an existing-but-empty --adventures-dir")
+	}
+	if !strings.Contains(err.Error(), "no adventures") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "no adventures")
+	}
+}
+
 // TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening
 // covers the spec §7 binding literally: "adventures declaring a different
 // ruleset than served = boot error too — the dir is for THIS table." The

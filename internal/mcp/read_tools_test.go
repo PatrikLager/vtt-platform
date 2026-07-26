@@ -250,12 +250,14 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 
 // TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools covers the
 // top-level contract: get_state, get_events_since, get_ruleset_guide, and
-// get_adventure_guide land in the SAME tool table as the nine generic
-// command tools (wantCommandToolNames — grew from 7 to 9 with use_ability/
-// remove_condition, ruleset-interpreter sub-project 5a Task 1), bringing
-// list_tools to exactly 17 (adventure-format sub-project 9: P12 Task 1
-// added load_adventure to the generic dispatch set, bumping 15->16;
-// P12 Task 4 adds get_adventure_guide itself, bumping 16->17 — same
+// get_adventure_guide land in the SAME tool table as the thirteen generic
+// command tools (wantCommandToolNames, tools_test.go — grew from 7 to 9
+// with use_ability/remove_condition, ruleset-interpreter sub-project 5a
+// Task 1; 9 to 12 with add_narration/upsert_note/delete_note, world-layer
+// sub-project 8 P11 Task 1; 12 to 13 with load_adventure, adventure-format
+// sub-project 9 P12 Task 1), bringing list_tools to exactly 17
+// (adventure-format sub-project 9: P12 Task 1's load_adventure bumped
+// 15->16; P12 Task 4's get_adventure_guide bumped 16->17 — same
 // pre-authorized fix-forward pattern as Task 1's own 15->16 bump, P11 Task
 // 1's precedent bump from 12 to 15).
 func TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools(t *testing.T) {
@@ -274,7 +276,12 @@ func TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools(t *testing.T) 
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "add_narration", "upsert_note", "delete_note", "load_adventure", "get_adventure_guide")
+	// wantCommandToolNames already carries all 13 generic command tools
+	// (including add_narration/upsert_note/delete_note/load_adventure —
+	// fix-wave F5 grew the pin to match the oneof itself); only the four
+	// read/guide tools registered separately (read_tools.go, guide_tool.go,
+	// adventure_guide_tool.go) are appended here.
+	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "get_adventure_guide")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
 	}

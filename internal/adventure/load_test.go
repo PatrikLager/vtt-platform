@@ -139,6 +139,7 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		dir  string
 		want []string // every substring must appear in err.Error()
 	}{
+		{"format-version-bad", []string{"adventure.json", `field "format_version"`, `"7"`}},
 		{"ruleset-mismatch", []string{"adventure.json", `field "ruleset"`}},
 		{"undeclared-attribute", []string{"vim-fighter.json", `field "attributes"`, `"grit"`}},
 		{"undeclared-resource", []string{"vim-fighter.json", `field "resources"`, `"mana"`}},
@@ -198,7 +199,7 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 	// a mismatch here means someone added/removed a fixture directory
 	// without updating TestLoadInvalidFixtures (or vice versa).
 	want := []string{
-		"ruleset-mismatch", "undeclared-attribute", "undeclared-resource",
+		"format-version-bad", "ruleset-mismatch", "undeclared-attribute", "undeclared-resource",
 		"resource-current-over-max", "note-key-too-long", "note-title-too-long",
 		"note-text-too-long", "narration-empty", "narration-too-long",
 		"duplicate-scene-id", "duplicate-actor-id", "duplicate-token-id",
@@ -257,6 +258,42 @@ func TestLoadDoesNotRequireGuideFileToExist(t *testing.T) {
 	}
 	if _, err := os.Stat(adv.GuidePath); !os.IsNotExist(err) {
 		t.Fatalf("test setup bug: guide.md should be absent, stat err = %v", err)
+	}
+}
+
+// TestLoadRejectsMissingFormatVersion pins the absent-key half of
+// format_version validation (fix-wave F1, load.go's supportedFormatVersions
+// check): a manifest that omits the "format_version" key entirely decodes
+// FormatVersion to Go's zero value (""), which supportedFormatVersions
+// rejects through the exact same code path as an explicit wrong value
+// (testdata/invalid/format-version-bad's "7") — both fail
+// supportedFormatVersions[raw.FormatVersion]. Deliberately NOT a second
+// catalogue fixture directory (that would duplicate the same rejection
+// under a different name in TestLoadInvalidFixtures); a focused, hand-built
+// temp fixture instead, following TestLoadDoesNotRequireGuideFileToExist's
+// copyFixtureDirExcluding pattern — copy testdata/valid except its
+// adventure.json, then write a fresh one with no format_version key at all.
+func TestLoadRejectsMissingFormatVersion(t *testing.T) {
+	dir := copyFixtureDirExcluding(t, "testdata/valid", "adventure.json")
+	manifest := `{
+  "id": "brace-yard",
+  "name": "Brace Yard",
+  "ruleset": "proving-grounds-mini",
+  "opening_narration": "The yard is quiet before the bell rings."
+}`
+	if err := os.WriteFile(filepath.Join(dir, "adventure.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write adventure.json without format_version: %v", err)
+	}
+
+	rs := loadFixtureRuleset(t)
+	_, err := adventure.Load(dir, rs)
+	if err == nil {
+		t.Fatal("want error for a manifest missing the format_version key entirely")
+	}
+	for _, want := range []string{"adventure.json", `field "format_version"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+		}
 	}
 }
 

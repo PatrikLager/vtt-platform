@@ -75,6 +75,47 @@ func TestLoadAdventuresDirFollowsSymlinkedAdventureDirectories(t *testing.T) {
 	}
 }
 
+// TestLoadAdventuresDirEmptyDirIsBootError covers fix-wave F4: an
+// EXISTING --adventures-dir with zero subdirectories must fail loud,
+// exactly like a nonexistent directory already does (os.ReadDir error
+// above) — before this fix, an existing-but-empty dir returned an empty
+// map with a nil error, so a typo'd or never-synced --adventures-dir
+// booted "successfully" with no adventures at all, deferring the failure
+// to the table (spec §7: "fail loud at startup, not at the table").
+func TestLoadAdventuresDirEmptyDirIsBootError(t *testing.T) {
+	rs := loadDnd45eMinimalForCmd(t)
+	dir := t.TempDir() // exists, zero entries
+
+	_, err := loadAdventuresDir(dir, rs)
+	if err == nil {
+		t.Fatal("want an error for an existing-but-empty --adventures-dir")
+	}
+	if !strings.Contains(err.Error(), "no adventures") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "no adventures")
+	}
+}
+
+// TestLoadAdventuresDirOnlyNonDirectoryEntriesIsBootError covers the other
+// path to zero loaded adventures (fix-wave F4): a dir that exists and has
+// entries, but every entry is a non-directory stray file (all silently
+// skipped by the loop) — same zero-loaded outcome as a literally empty
+// dir, and must fail the same way.
+func TestLoadAdventuresDirOnlyNonDirectoryEntriesIsBootError(t *testing.T) {
+	rs := loadDnd45eMinimalForCmd(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("not an adventure"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := loadAdventuresDir(dir, rs)
+	if err == nil {
+		t.Fatal("want an error when every entry is a non-directory (zero adventures loaded)")
+	}
+	if !strings.Contains(err.Error(), "no adventures") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "no adventures")
+	}
+}
+
 // TestLoadAdventuresDirSkipsNonDirectoryEntries covers a stray file sitting
 // alongside real adventure subdirectories — silently skipped, not an
 // error (mirrors adventure.Load's own jsonFilesIn precedent of ignoring

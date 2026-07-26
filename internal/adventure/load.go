@@ -25,6 +25,17 @@ const (
 	maxTextBytes      = 8192 // shared by note text AND opening narration, exactly as engine's maxTextBytes is shared by note text and NarrationAdded.text
 )
 
+// supportedFormatVersions is the set of format_version values Load accepts
+// for an adventure manifest (spec §4: "format_version \"1\""). Mirrors
+// internal/rules/load.go's own supportedFormatVersions — the ruleset
+// format's load-bearing version switch — so this sibling loader rejects an
+// absent, empty, or arbitrary value (fix-wave F1) instead of silently
+// loading under whatever semantics happen to be current, the same
+// discipline that let the ruleset format retire v1 cleanly when v2 arrived
+// (docs/superpowers/plans/2026-07-25-format-v2-composition.md). Only "1"
+// exists today; a future adventure format v2 adds its value here.
+var supportedFormatVersions = map[string]bool{"1": true}
+
 // Load reads and fully validates the adventure directory at dir against rs
 // (the already-loaded ruleset the adventure declares itself written for):
 // strict JSON decoding of adventure.json/scenes/*.json/actors/*.json/
@@ -127,6 +138,9 @@ func loadManifest(path string) (*manifestJSON, error) {
 	}
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
+	}
+	if !supportedFormatVersions[raw.FormatVersion] {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q (want \"1\")", raw.FormatVersion))
 	}
 	if raw.Ruleset == "" {
 		return nil, fieldErr(path, "ruleset", "must not be empty")

@@ -20,23 +20,30 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// wantCommandToolNames are the 9 oneof-field names in vttv1.ClientCommand's
+// wantCommandToolNames are the 13 oneof-field names in vttv1.ClientCommand's
 // "command" oneof, restated here (not derived from the SDK under test) so
 // this test pins the actual expected set rather than trivially re-deriving
 // whatever tools.go happened to register. Grew from 7 to 9 with
 // use_ability/remove_condition (ruleset-interpreter sub-project 5a, Task 1
-// — contract's rules vocabulary).
+// — contract's rules vocabulary), 9 to 12 with add_narration/upsert_note/
+// delete_note (world-layer sub-project 8, P11 Task 1), and 12 to 13 with
+// load_adventure (adventure-format sub-project 9, P12 Task 1 — fix-wave F5
+// sweep: this pin had silently stopped growing with the oneof itself,
+// leaving load_adventure unpinned here even though it landed on this
+// branch).
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",
 	"use_ability", "remove_condition",
+	"add_narration", "upsert_note", "delete_note",
+	"load_adventure",
 }
 
 // This test scopes itself to "the command tools are present by name" — it
 // deliberately does NOT assert the total tool count, since P7 Task 2
-// (read_tools.go) and Task 6 register three more (get_state,
-// get_events_since, get_ruleset_guide) into the SAME tool table;
-// TestListToolsReturnsFifteenToolsIncludingReadAndGuideTools
+// (read_tools.go) and Task 6 register four more (get_state,
+// get_events_since, get_ruleset_guide, get_adventure_guide) into the SAME
+// tool table; TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools
 // (read_tools_test.go) owns the total-count assertion for the full,
 // current contract.
 func TestListToolsReturnsAllCommandToolsByName(t *testing.T) {
