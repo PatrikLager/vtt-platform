@@ -102,12 +102,12 @@ deps:
   # statblock's attribute/resource vocabulary against a *rules.Ruleset
   # (rules dep); Compile builds *vttv1.Envelope values (contract dep) and
   # checks collisions against an *engine.State snapshot (engine dep).
-  # Today, only gateway may import this package (the Task-4-forward edge on
-  # gateway's own entry above) — cmd's deps (below) are UNCHANGED by this
-  # task and do NOT list adventure; cmd gains it only if/when a future task
-  # actually needs it (e.g. `--adventures-dir` boot wiring), the same
+  # gateway imports it for the load_adventure handler (Task 4); cmd now
+  # imports it too (Task 4, see cmd's own entry below) — `vtt serve
+  # --adventures-dir`/`vtt mcp --adventures-dir` both walk the adventures
+  # directory and call adventure.Load per subdirectory at boot, the same
   # as-needed discipline rules' own cmd edge followed (added at Task 6, not
-  # pre-declared at Task 4/5).
+  # pre-declared earlier).
   adventure: { mayDependOn: [engine, contract, rules, adventure] }
   # internal/adventure/conformance (Task 3, adventure-format spec §6): mirrors
   # rules/conformance's own registration exactly — Run resolves+loads a
@@ -119,4 +119,11 @@ deps:
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide
   # string, so the P1 wire-client boundary above is untouched).
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules] }
+  # adventure added Task 4 (adventure-format spec §7 wiring): `vtt serve
+  # --adventures-dir` and `vtt mcp --adventures-dir` both walk the
+  # adventures directory and call adventure.Load per subdirectory directly
+  # (cmd composes, same shape as rules above); internal/mcp itself still may
+  # NOT import adventure — its Config carries only the already-loaded guide
+  # strings (map[adventure_id]guide.md content), so the P1 wire-client
+  # boundary is untouched here too.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure] }

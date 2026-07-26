@@ -22,13 +22,13 @@ const serveShutdownTimeout = 5 * time.Second
 // an *http.Server) lives in composeServer (serve_compose.go); this command
 // only calls it and runs the result.
 func newServeCmd() *cobra.Command {
-	var campaignPath, addr, rulesetDir string
+	var campaignPath, addr, rulesetDir, adventuresDir string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve a campaign over the WebSocket/HTTP gateway",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, closeFn, err := composeServer(campaignPath, addr, rulesetDir)
+			srv, closeFn, err := composeServer(campaignPath, addr, rulesetDir, adventuresDir)
 			if err != nil {
 				return err
 			}
@@ -74,6 +74,7 @@ func newServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&campaignPath, "campaign", "", "path to the campaign SQLite file (required)")
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "address to listen on")
 	cmd.Flags().StringVar(&rulesetDir, "ruleset", "", "path to a ruleset directory (optional; enables use_ability/remove_condition — omit to keep serving without one)")
+	cmd.Flags().StringVar(&adventuresDir, "adventures-dir", "", "path to a directory of adventure subdirectories (optional; enables load_adventure — requires --ruleset, every adventure is loaded and validated at boot)")
 	_ = cmd.MarkFlagRequired("campaign")
 
 	return cmd

@@ -10,6 +10,7 @@ import (
 	"github.com/coder/websocket"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -74,6 +75,17 @@ type Server struct {
 	// separately configurable at this layer).
 	ruleset *rules.Ruleset
 	roller  rules.Roller
+
+	// adventures is OPTIONAL server config (adventure-format Task 4): nil/
+	// empty is today's behavior — a load_adventure command gets a clean "no
+	// adventures available" CommandResult (ok=false) rather than a
+	// connection drop or a crash, exactly matching ruleset's own "no
+	// ruleset loaded" posture. Set via WithAdventures, BOOT TIME ONLY — the
+	// map is never mutated or re-loaded per request; adventure-format spec
+	// §7: "All available adventures load+validate at BOOT (fail loud at
+	// startup, not at the table)". Keyed by the adventure's own manifest id
+	// (adventure.Adventure.ID), not its directory name.
+	adventures map[string]*adventure.Adventure
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -96,6 +108,19 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 func (s *Server) WithRuleset(rs *rules.Ruleset) *Server {
 	s.ruleset = rs
 	s.roller = rules.NewCryptoRoller()
+	return s
+}
+
+// WithAdventures configures s to serve advs via load_adventure, keyed by
+// each adventure's own id (advs.Adventure.ID — the caller, cmd/vtt's boot
+// glue, is responsible for building this map with THAT key, not the
+// directory name it loaded from). advs is expected already fully loaded and
+// validated (adventure.Load, boot time, fail loud on any error — spec §7);
+// this method does no I/O and no validation of its own. Returns s for
+// call-site chaining (mirrors WithRuleset); mutates s in place, so it is
+// not safe to call concurrently with s already serving traffic.
+func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
+	s.adventures = advs
 	return s
 }
 
@@ -287,12 +312,15 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// use_ability does not become a single Envelope via ToEvent (it
-	// produces rules.Resolve's whole ordered batch instead — ruleset.go);
-	// every other command, including remove_condition, still flows through
-	// the plain ToEvent -> campaign.Append path below.
+	// use_ability/load_adventure do not become a single Envelope via ToEvent
+	// (they each produce a whole ordered batch instead — ruleset.go/
+	// adventure.go); every other command, including remove_condition, still
+	// flows through the plain ToEvent -> campaign.Append path below.
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
+	}
+	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
+		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)
 	}
 
 	env, err := ToEvent(cmd, p)

@@ -15,6 +15,18 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
+// errMCPAdventuresRequireRuleset is newMCPCmd's boot-time flag error when
+// --adventures-dir is given without --ruleset (adventure-format Task 4,
+// spec §7 binding: "MCP flag precedent" — require both, documented here).
+// get_adventure_guide itself needs no ruleset (it serves guide.md text
+// verbatim, untouched by any rule vocabulary), but LOADING an adventures
+// directory does: adventure.Load validates every adventure's statblocks
+// against a *rules.Ruleset, and there is no "the served ruleset" to
+// validate against without --ruleset. Mirrors errAdventuresRequireRuleset's
+// exact reasoning (serve_compose.go) for `vtt serve`'s own pairing of the
+// same two flags.
+const errMCPAdventuresRequireRuleset = "vtt mcp: --adventures-dir requires --ruleset (adventures load+validate against it)"
+
 // toolsJSON is a COMMITTED COPY of contract/gen/tools/tools.json (Taskfile
 // generate:contract's `cp` line keeps it byte-identical; check:drift fails
 // the gate the moment it ever diverges — plan Task 3's binding tools.json
@@ -41,7 +53,7 @@ var toolsJSON []byte
 // lifecycle, reconnect, and generic tool dispatch live in internal/mcp —
 // this command only resolves its two inputs and wires them together.
 func newMCPCmd() *cobra.Command {
-	var serverURL, token, rulesetDir string
+	var serverURL, token, rulesetDir, adventuresDir string
 
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -50,6 +62,10 @@ func newMCPCmd() *cobra.Command {
 			tok, err := resolveMCPToken(token)
 			if err != nil {
 				return err
+			}
+
+			if adventuresDir != "" && rulesetDir == "" {
+				return errors.New(errMCPAdventuresRequireRuleset)
 			}
 
 			// --ruleset is OPTIONAL (ruleset-interpreter Task 6, controller
@@ -61,15 +77,40 @@ func newMCPCmd() *cobra.Command {
 			// doc comment) — internal/mcp may not import internal/rules at
 			// all (.go-arch-lint.yml's P1 boundary).
 			guide := ""
+			var rs *rules.Ruleset
 			if rulesetDir != "" {
-				rs, err := rules.Load(rulesetDir)
+				rs, err = rules.Load(rulesetDir)
 				if err != nil {
 					return fmt.Errorf("vtt mcp: load ruleset %s: %w", rulesetDir, err)
 				}
 				guide = rs.Guide
 			}
 
-			srv, err := mcp.New(mcp.Config{WSURL: serverURL, Token: tok, ToolsJSON: toolsJSON, RulesetGuide: guide})
+			// --adventures-dir is OPTIONAL (adventure-format Task 4): same
+			// fail-loud-at-boot posture, and the same P1 boundary as
+			// --ruleset above — this package hands internal/mcp only the
+			// already-loaded, already-validated guide TEXT per adventure id
+			// (mcp.Config.AdventureGuides), never a directory path.
+			// Required together with --ruleset (checked above): every
+			// adventure declares the ruleset id it was written for, and
+			// adventure.Load needs an already-loaded *rules.Ruleset to
+			// validate against.
+			var adventureGuides map[string]string
+			if adventuresDir != "" {
+				advs, err := loadAdventuresDir(adventuresDir, rs)
+				if err != nil {
+					return fmt.Errorf("vtt mcp: load adventures %s: %w", adventuresDir, err)
+				}
+				adventureGuides, err = loadAdventureGuides(advs)
+				if err != nil {
+					return fmt.Errorf("vtt mcp: %w", err)
+				}
+			}
+
+			srv, err := mcp.New(mcp.Config{
+				WSURL: serverURL, Token: tok, ToolsJSON: toolsJSON,
+				RulesetGuide: guide, AdventureGuides: adventureGuides,
+			})
 			if err != nil {
 				return fmt.Errorf("vtt mcp: %w", err)
 			}
@@ -94,6 +135,7 @@ func newMCPCmd() *cobra.Command {
 	cmd.Flags().StringVar(&serverURL, "server", "", "gateway ws:// URL (required)")
 	cmd.Flags().StringVar(&token, "token", "", "agent invite/session token (env VTT_TOKEN honored; flag wins)")
 	cmd.Flags().StringVar(&rulesetDir, "ruleset", "", "path to a ruleset directory (optional; enables get_ruleset_guide's guide.md content)")
+	cmd.Flags().StringVar(&adventuresDir, "adventures-dir", "", "path to a directory of adventure subdirectories (optional; enables get_adventure_guide's guide.md content — requires --ruleset)")
 	_ = cmd.MarkFlagRequired("server")
 
 	return cmd

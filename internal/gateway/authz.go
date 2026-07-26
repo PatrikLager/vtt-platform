@@ -41,6 +41,12 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"add_narration": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"upsert_note":   {identity.RoleDM: true, identity.RoleAgent: true},
 	"delete_note":   {identity.RoleDM: true, identity.RoleAgent: true},
+	// load_adventure (adventure-format Task 4, spec §7): "the DM calls
+	// load_adventure when the table is ready" — dm/agent only, same shape
+	// as create_scene/add_actor/place_token, no additional ownership check
+	// (an adventure load is not scoped to any actor a participant
+	// controls).
+	"load_adventure": {identity.RoleDM: true, identity.RoleAgent: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -131,6 +137,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "upsert_note"
 	case *vttv1.ClientCommand_DeleteNote:
 		return "delete_note"
+	case *vttv1.ClientCommand_LoadAdventure:
+		return "load_adventure"
 	default:
 		return ""
 	}

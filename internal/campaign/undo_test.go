@@ -239,6 +239,80 @@ func TestUndoRetractsWholeAppendBatchRange(t *testing.T) {
 	}
 }
 
+// TestUndoRetractsAdventureLoadBatch proves the existing Undo range
+// machinery retracts an adventure-format load batch (adventure-format Task
+// 4, spec §7: "the adventure batch retracts as a range (existing
+// machinery) — tested") exactly like any other AppendBatch batch —
+// TestUndoRetractsWholeAppendBatchRange above already proves the GENERIC
+// machinery against a rules-shaped batch (ActorAdded/TokenPlaced/
+// ResourceChanged/ConditionApplied); this test proves it for the
+// adventure-shaped one specifically: every event kind adventure.Compile
+// emits, in its own binding order (AdventureLoaded, SceneCreated,
+// ActorAdded, TokenPlaced, NoteUpserted, NarrationAdded — see
+// internal/adventure/compile.go). internal/campaign may not import
+// internal/adventure (arch-lint: campaign's own mayDependOn lists only
+// [contract, store, engine, campaign] — adventure is a content-format layer
+// ABOVE campaign, not a campaign dependency), so the batch is built
+// directly with cenv, matching Compile's own envelope shapes by hand rather
+// than calling adventure.Compile — content lifted from the real, committed
+// adventures/goblin-ambush fixture (scene/actor/note/narration text) so
+// this test reads as "the real adventure's batch shape", not an arbitrary
+// one.
+func TestUndoRetractsAdventureLoadBatch(t *testing.T) {
+	c := openTemp(t)
+	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "n"}))
+
+	before := c.State()
+
+	envs := []*vttv1.Envelope{
+		cenv(nextID(), &vttv1.AdventureLoaded{AdventureId: "goblin-ambush", Name: "Goblin Ambush"}),
+		cenv(nextID(), &vttv1.SceneCreated{
+			SceneId: "ravine", Name: "The Ravine Trail", GridWidth: 32, GridHeight: 32,
+		}),
+		cenv(nextID(), &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: "act-fighter", Name: "Human Fighter",
+			Attributes: map[string]int32{"str": 4, "dex": 2, "con": 3},
+			Resources:  map[string]*vttv1.Resource{"vigor": {Current: 28, Max: 28}},
+		}}),
+		cenv(nextID(), &vttv1.TokenPlaced{
+			TokenId: "tok-fighter", SceneId: "ravine", ActorId: "act-fighter",
+			Position: &vttv1.GridPosition{X: 0, Y: 0},
+		}),
+		cenv(nextID(), &vttv1.NoteUpserted{
+			Key: "ravine-trail-warning", Title: "Trail Warning",
+			Text: "Crude markings are scratched into the rock near the ravine's mouth.",
+		}),
+		cenv(nextID(), &vttv1.NarrationAdded{Text: "The trail narrows into a ravine."}),
+	}
+	firstSeq, err := c.AppendBatch(envs)
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	lastSeq := envs[len(envs)-1].Sequence
+
+	// Sanity: the batch actually landed before undoing it — otherwise this
+	// test would trivially pass for the wrong reason.
+	loaded := c.State()
+	if statesEqual(before, loaded) {
+		t.Fatal("state after the adventure batch == pre-batch state — the batch did not land, this test proves nothing")
+	}
+	if _, ok := loaded.Scenes["ravine"]; !ok {
+		t.Fatal(`want scene "ravine" present after the adventure batch`)
+	}
+	if _, ok := loaded.Notes["ravine-trail-warning"]; !ok {
+		t.Fatal(`want note "ravine-trail-warning" present after the adventure batch`)
+	}
+
+	if _, err := c.Undo(firstSeq, lastSeq, "retract adventure load", nextID(), "dm", "test-participant"); err != nil {
+		t.Fatalf("Undo(adventure batch range): %v", err)
+	}
+
+	undone := c.State()
+	if !statesEqual(before, undone) {
+		t.Fatalf("state after undoing the adventure batch != pre-batch state\nbefore: %+v\nafter:  %+v", before, undone)
+	}
+}
+
 // TestUndoSubscriberReceivesRetractionMarker covers
 // subscriber-sees-the-marker: a subscriber caught up to the pre-undo log
 // receives the EventsRetracted envelope itself as a live event.

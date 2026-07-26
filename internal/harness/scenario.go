@@ -40,6 +40,18 @@ type Scenario struct {
 	// remove_condition), the overwhelmingly common case for the
 	// pre-existing library — those scenarios never set this field.
 	Ruleset string `json:"ruleset,omitempty"`
+	// Adventures is OPTIONAL (adventure-format Task 4): a bare directory
+	// path relative to the REPOSITORY ROOT (e.g. "adventures" — the repo's
+	// own top-level adventures/ directory, each of whose subdirectories is
+	// one loadable adventure), mirroring Ruleset's own repo-root-relative
+	// resolution (cmd/vtt's self-contained boot glue resolves it the same
+	// way; see resolveAdventuresDir's doc comment there). Unlike Ruleset
+	// (a bare id further joined under rulesets/<id>), this field is already
+	// the directory itself — --adventures-dir's own shape — so no further
+	// joining happens beyond the repo-root prefix. Empty means this
+	// scenario exercises no load_adventure command, the common case for the
+	// pre-existing library.
+	Adventures string `json:"adventures,omitempty"`
 }
 
 // Participant declares one connection the engine dials at scenario start
@@ -195,6 +207,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		Steps        []json.RawMessage `json:"steps"`
 		Probes       []Probe           `json:"probes"`
 		Ruleset      string            `json:"ruleset,omitempty"`
+		Adventures   string            `json:"adventures,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -202,7 +215,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		return nil, fmt.Errorf("parse scenario: %w", err)
 	}
 
-	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset}
+	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset, Adventures: raw.Adventures}
 	sc.Steps = make([]Step, len(raw.Steps))
 	for i, rawStep := range raw.Steps {
 		var st Step

@@ -55,6 +55,8 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
 	case *vttv1.NoteDeleted:
 		e.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
+	case *vttv1.AdventureLoaded:
+		e.Payload = &vttv1.Envelope_AdventureLoaded{AdventureLoaded: p}
 	}
 	return e
 }

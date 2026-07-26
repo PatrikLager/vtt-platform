@@ -248,20 +248,17 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 	}
 }
 
-// TestListToolsReturnsSixteenToolsIncludingReadAndGuideTools covers the
-// top-level contract: get_state, get_events_since, and get_ruleset_guide
-// land in the SAME tool table as the nine generic command tools
-// (wantCommandToolNames — grew from 7 to 9 with use_ability/
-// remove_condition, ruleset-interpreter sub-project 5a Task 1),
-// bringing list_tools to exactly 16 (adventure-format sub-project 9, P12
-// Task 1: contract additive-only vocabulary — load_adventure — regenerates
-// cmd/vtt/tools.json to 13 command tools; fix-forward PRE-AUTHORIZED by
-// this task's own brief so the branch stays green at every commit, since
-// Task 1's brief scoped contract-only and forbade internal/mcp changes
-// otherwise. Task 2/3 still own the real engine/MCP e2e wiring/round-trip
-// work for this command — same shape as P11 Task 1's precedent bump from
-// 12 to 15).
-func TestListToolsReturnsSixteenToolsIncludingReadAndGuideTools(t *testing.T) {
+// TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools covers the
+// top-level contract: get_state, get_events_since, get_ruleset_guide, and
+// get_adventure_guide land in the SAME tool table as the nine generic
+// command tools (wantCommandToolNames — grew from 7 to 9 with use_ability/
+// remove_condition, ruleset-interpreter sub-project 5a Task 1), bringing
+// list_tools to exactly 17 (adventure-format sub-project 9: P12 Task 1
+// added load_adventure to the generic dispatch set, bumping 15->16;
+// P12 Task 4 adds get_adventure_guide itself, bumping 16->17 — same
+// pre-authorized fix-forward pattern as Task 1's own 15->16 bump, P11 Task
+// 1's precedent bump from 12 to 15).
+func TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
 	defer cleanup()
@@ -277,7 +274,7 @@ func TestListToolsReturnsSixteenToolsIncludingReadAndGuideTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "add_narration", "upsert_note", "delete_note", "load_adventure")
+	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "add_narration", "upsert_note", "delete_note", "load_adventure", "get_adventure_guide")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
 	}

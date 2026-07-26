@@ -33,7 +33,7 @@ func startMCPFixtureWithRuleset(t *testing.T, rulesetDir string) mcpFixture {
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir)
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}

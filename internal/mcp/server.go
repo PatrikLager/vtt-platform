@@ -98,11 +98,20 @@ var harnessDial = harness.Dial
 // fails loud immediately, exactly like `vtt serve`) and hands this package
 // only the guide TEXT — never a directory path, never the loaded Ruleset
 // struct itself.
+//
+// AdventureGuides is OPTIONAL (adventure-format Task 4): the ALREADY-LOADED
+// contents of every configured adventure's guide.md, keyed by adventure id,
+// or nil/empty if no --adventures-dir flag was given to `vtt mcp`. Same P1
+// boundary as RulesetGuide above — this package may not import
+// internal/adventure either, so cmd/vtt validates the directory (and every
+// adventure's guide.md, non-empty required) at boot and hands this package
+// only the resolved guide TEXT per id.
 type Config struct {
-	WSURL        string
-	Token        string
-	ToolsJSON    []byte
-	RulesetGuide string
+	WSURL           string
+	Token           string
+	ToolsJSON       []byte
+	RulesetGuide    string
+	AdventureGuides map[string]string
 }
 
 // Server is the MCP server core: session lifecycle plus generic command
@@ -175,9 +184,17 @@ func New(cfg Config) (*Server, error) {
 	s.registerReadTools()
 
 	// get_ruleset_guide (ruleset-interpreter Task 6, guide_tool.go):
-	// registered in the SAME tool table, bringing the count to 15 (12
-	// generic command tools + get_state + get_events_since + this one).
+	// registered in the SAME tool table, bringing the count to 16 as of
+	// adventure-format P12 Task 1's load_adventure contract addition (13
+	// generic command tools + get_state + get_events_since + this one; was
+	// 15 with 12 generic command tools before that task).
 	s.registerGuideTool()
+
+	// get_adventure_guide (adventure-format Task 4, adventure_guide_tool.go):
+	// registered in the SAME tool table too, bringing the count to 17 (the
+	// 13 generic command tools as of P12 Task 1's load_adventure addition +
+	// get_state + get_events_since + get_ruleset_guide + this one).
+	s.registerAdventureGuideTool()
 
 	return s, nil
 }

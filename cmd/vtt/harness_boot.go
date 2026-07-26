@@ -49,6 +49,26 @@ func resolveRulesetDir(id string) (string, error) {
 	return dir, nil
 }
 
+// resolveAdventuresDir resolves a scenario's relative Adventures dir path
+// (e.g. "adventures") to an absolute directory relative to the REPOSITORY
+// ROOT (adventure-format Task 4 binding: "self-contained boot passes it to
+// serve-compose", mirroring resolveRulesetDir's own repo-root-relative
+// resolution above). Unlike resolveRulesetDir, rel is already the directory
+// itself (Scenario.Adventures' own doc comment) — no further joining under
+// a fixed parent happens beyond the repo-root prefix.
+func resolveAdventuresDir(rel string) (string, error) {
+	root, err := findRepoRoot()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, rel)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("adventures dir %q not found (looked for a directory at %s)", rel, dir)
+	}
+	return dir, nil
+}
+
 // findRepoRoot walks upward from the current working directory until it
 // finds a directory containing go.mod, returning that directory. Returns
 // an error if it reaches the filesystem root without finding one.
@@ -114,7 +134,16 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		}
 	}
 
-	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir)
+	adventuresDir := ""
+	if sc.Adventures != "" {
+		adventuresDir, err = resolveAdventuresDir(sc.Adventures)
+		if err != nil {
+			os.RemoveAll(dir)
+			return nil, fmt.Errorf("vtt client run: resolve scenario adventures dir %q: %w", sc.Adventures, err)
+		}
+	}
+
+	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir)
 	if err != nil {
 		os.RemoveAll(dir)
 		return nil, fmt.Errorf("vtt client run: boot server: %w", err)

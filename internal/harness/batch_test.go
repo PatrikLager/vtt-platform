@@ -1,16 +1,17 @@
 package harness_test
 
-// batch_test.go covers observeBatchOnAll (engine.go), the use_ability
-// batch-aware ok-step matcher (ruleset-interpreter Task 6, binding): a
-// use_ability CommandResult carries only the FIRST sequence of its
+// batch_test.go covers observeBatchOnAll (engine.go), the batch-aware
+// ok-step matcher (ruleset-interpreter Task 6, binding; extended to
+// load_adventure by adventure-format Task 4 — see the
+// TestRunScenarioLoadAdventureBatch* tests below): a use_ability OR
+// load_adventure CommandResult carries only the FIRST sequence of its
 // campaign.AppendBatch batch, so the ok-step assertion cannot wait for a
 // known event count the way every other command's single-event
 // observeOnAll does. These tests use the SAME scripted fakeConn
-// infrastructure as engine_test.go (world map, okSend/broadcast) — a
-// use_ability batch is simulated by scripting a SendCommand that
-// broadcasts MULTIPLE envelopes (with contiguous sequences) to every
-// participant in one call, exactly what a real AppendBatch broadcast looks
-// like on the wire.
+// infrastructure as engine_test.go (world map, okSend/broadcast) — a batch
+// is simulated by scripting a SendCommand that broadcasts MULTIPLE
+// envelopes (with contiguous sequences) to every participant in one call,
+// exactly what a real AppendBatch broadcast looks like on the wire.
 
 import (
 	"context"
@@ -203,5 +204,100 @@ func TestRunScenarioUseAbilityBatchNoEventAtAllFails(t *testing.T) {
 	}
 	if !strings.Contains(rep.Steps[0].Detail, "dm") {
 		t.Fatalf("Detail = %q, want it to name dm", rep.Steps[0].Detail)
+	}
+}
+
+// --- load_adventure is ALSO batch-aware (adventure-format Task 4) ---------
+//
+// load_adventure's CommandResult is the SAME shape as use_ability's: it
+// carries only the batch's first sequence (campaign.AppendBatch's own
+// contract — internal/gateway/adventure.go), never its length. The ok-step
+// matcher must recognize BOTH oneof cases as batch-shaped, not just
+// use_ability.
+
+// loadAdventureCmdJSON is a fixed load_adventure oneof body for this file's
+// tests — its exact adventure_id is irrelevant to the matcher under test
+// (the scripted fakeConn ignores the arguments entirely).
+const loadAdventureCmdJSON = `{"loadAdventure":{"adventureId":"goblin-ambush"}}`
+
+func runOneLoadAdventureStep(t *testing.T, world map[string]*fakeConn, participants []harness.Participant) *harness.Report {
+	t.Helper()
+	sc := &harness.Scenario{
+		Participants: participants,
+		Steps: []harness.Step{
+			{By: "dm", Command: rawCmd(t, loadAdventureCmdJSON), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScenario: %v", err)
+	}
+	return rep
+}
+
+// TestRunScenarioLoadAdventureBatchAllEventsObservedPasses mirrors
+// TestRunScenarioUseAbilityBatchAllEventsObservedPasses exactly, but over a
+// load_adventure command: a multi-event batch broadcast to both
+// participants passes the ok-step, and every event lands in both
+// participants' history in order.
+func TestRunScenarioLoadAdventureBatchAllEventsObservedPasses(t *testing.T) {
+	dm := newFakeConn("dm")
+	watcher := newFakeConn("watcher")
+	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+	envs := []*vttv1.Envelope{abilityUsedEnv("a1"), abilityUsedEnv("a2"), abilityUsedEnv("a3")}
+	dm.send = batchSend(world, 1, envs, "dm", "watcher")
+
+	rep := runOneLoadAdventureStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+	if !rep.Pass || len(rep.Steps) != 1 || !rep.Steps[0].Pass {
+		t.Fatalf("Report.Pass = %v, want true (steps = %+v)", rep.Pass, rep.Steps)
+	}
+}
+
+// TestRunScenarioLoadAdventureBatchLeavesNoLeftoverEventsForNextStep proves
+// the matcher fully DRAINS a load_adventure batch before the step returns —
+// not merely "sees one event with the right leading sequence and calls it
+// done" (which observeOnAll, the single-event matcher, would do: it only
+// ever reads ONE event per participant and checks its sequence, silently
+// leaving the batch's remaining events queued on the connection). A
+// three-event load_adventure batch is broadcast first; a second, ordinary
+// single-event step follows. If load_adventure were (incorrectly) treated
+// as a plain single-event command, this second step would observe one of
+// the FIRST batch's own leftover events instead of its own — a sequence
+// mismatch, failing the step and corrupting every later observation on this
+// connection for the rest of the scenario.
+func TestRunScenarioLoadAdventureBatchLeavesNoLeftoverEventsForNextStep(t *testing.T) {
+	dm := newFakeConn("dm")
+	world := map[string]*fakeConn{"dm": dm}
+
+	loadEnvs := []*vttv1.Envelope{abilityUsedEnv("adv1"), abilityUsedEnv("adv2"), abilityUsedEnv("adv3")}
+	nextEnv := abilityUsedEnv("next")
+	calls := 0
+	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+		calls++
+		if calls == 1 {
+			for i, env := range loadEnvs {
+				env.Sequence = int64(1 + i)
+				broadcast(world, env, "dm")
+			}
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
+		nextEnv.Sequence = 4
+		broadcast(world, nextEnv, "dm")
+		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 4}, nil
+	}
+
+	sc := &harness.Scenario{
+		Participants: []harness.Participant{{Name: "dm"}},
+		Steps: []harness.Step{
+			{By: "dm", Command: rawCmd(t, loadAdventureCmdJSON), Expect: &harness.Expect{OK: true}},
+			{By: "dm", Command: rawCmd(t, `{"endSession":{}}`), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScenario: %v", err)
+	}
+	if !rep.Pass {
+		t.Fatalf("Report.Pass = false, want true (the load_adventure batch must be fully drained so the next step observes its OWN event, not a leftover): steps=%+v", rep.Steps)
 	}
 }

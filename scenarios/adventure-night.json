@@ -1,0 +1,29 @@
+{
+  "name": "adventure-night",
+  "ruleset": "dnd45e-minimal",
+  "adventures": "scenarios/testdata/dnd45e-minimal-adventures",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "player", "role": "player"},
+    {"name": "spectator", "role": "spectator"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"ok": true}},
+
+    {"by": "player", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "dm", "command": {"loadAdventure": {"adventureId": "no-such-adventure"}}, "expect": {"deniedContaining": "unknown adventure"}},
+
+    {"by": "dm", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "rally", "targetIds": ["act-fighter"]}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "collides"}}
+  ],
+  "probes": [
+    {"tokenAt": {"tokenId": "tok-fighter", "x": 0, "y": 0}},
+    {"tokenAt": {"tokenId": "tok-cutter", "x": 1, "y": 0}},
+    {"tokenAt": {"tokenId": "tok-archer", "x": 5, "y": 0}},
+    {"noteAt": {"key": "ravine-trail-warning", "titleIs": "Trail Warning", "textContains": "markings"}},
+    {"resourceAt": {"actorId": "act-fighter", "resource": "hp", "value": 28}}
+  ]
+}

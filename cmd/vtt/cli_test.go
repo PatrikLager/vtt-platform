@@ -124,6 +124,73 @@ func TestServeBadRulesetDirFailsLoudBeforeListening(t *testing.T) {
 	}
 }
 
+// TestServeAdventuresDirWithoutRulesetFailsLoudBeforeListening covers the
+// adventure-format Task 4 flag pairing binding (spec §7, mirroring the MCP
+// flag precedent for `vtt mcp`): `--adventures-dir` without `--ruleset` is
+// a boot-time error, before ever starting to listen — every adventure
+// declares the ruleset id it was written for, and there is no "the served
+// ruleset" to validate it against without one.
+func TestServeAdventuresDirWithoutRulesetFailsLoudBeforeListening(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+
+	_, err := runCLI(t, "serve", "--campaign", campaignPath, "--adventures-dir", t.TempDir())
+	if err == nil {
+		t.Fatal("want error for --adventures-dir without --ruleset")
+	}
+	if !strings.Contains(err.Error(), "--adventures-dir") || !strings.Contains(err.Error(), "--ruleset") {
+		t.Fatalf("error = %q, want it to name both --adventures-dir and --ruleset", err.Error())
+	}
+}
+
+// TestServeBadAdventuresDirFailsLoudBeforeListening mirrors
+// TestServeBadRulesetDirFailsLoudBeforeListening: a --adventures-dir that
+// does not exist fails the command loudly, at boot, before ever starting
+// to listen.
+func TestServeBadAdventuresDirFailsLoudBeforeListening(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
+	if err != nil {
+		t.Fatalf("resolveRulesetDir(dnd45e-minimal): %v", err)
+	}
+	badAdventuresDir := filepath.Join(t.TempDir(), "no-such-adventures-dir")
+
+	_, err = runCLI(t, "serve", "--campaign", campaignPath, "--ruleset", rulesetDir, "--adventures-dir", badAdventuresDir)
+	if err == nil {
+		t.Fatal("want error for a --adventures-dir that does not exist")
+	}
+	if !strings.Contains(err.Error(), "adventures") {
+		t.Fatalf("error = %q, want it to name the adventures load failure", err.Error())
+	}
+}
+
+// TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening
+// covers the spec §7 binding literally: "adventures declaring a different
+// ruleset than served = boot error too — the dir is for THIS table." The
+// real, committed adventures/cellar-rats declares ruleset "tavern-brawl";
+// serving with --ruleset dnd45e-minimal must reject it at boot, naming the
+// mismatch (adventure.Load's own ruleset-id-match error, propagated
+// verbatim through loadAdventuresDir/composeServer).
+func TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
+	if err != nil {
+		t.Fatalf("resolveRulesetDir(dnd45e-minimal): %v", err)
+	}
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("findRepoRoot: %v", err)
+	}
+
+	_, err = runCLI(t, "serve", "--campaign", campaignPath, "--ruleset", rulesetDir,
+		"--adventures-dir", filepath.Join(root, "adventures"))
+	if err == nil {
+		t.Fatal("want error serving --adventures-dir adventures/ (mixed rulesets) against --ruleset dnd45e-minimal")
+	}
+	if !strings.Contains(err.Error(), "ruleset") {
+		t.Fatalf("error = %q, want it to name the ruleset mismatch", err.Error())
+	}
+}
+
 func extractField(t *testing.T, out, prefix string) string {
 	t.Helper()
 	for _, line := range strings.Split(out, "\n") {

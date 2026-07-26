@@ -338,17 +338,20 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 		return sr
 	}
 
-	// use_ability is BATCH-aware (ruleset-interpreter Task 6, binding):
-	// result.Sequence carries only the FIRST sequence of a
-	// campaign.AppendBatch batch — rules.Resolve can emit anywhere from one
+	// use_ability and load_adventure are BATCH-aware (ruleset-interpreter
+	// Task 6, binding; extended to load_adventure by adventure-format Task
+	// 4 — both commands' CommandResult carries only the FIRST sequence of a
+	// campaign.AppendBatch batch): rules.Resolve can emit anywhere from one
 	// (AbilityUsed alone, e.g. a miss with no on-miss outcomes) to several
-	// events per use, and the step has no way to know the batch's length in
-	// advance. Every other accepted command still produces exactly ONE
+	// events per use, and adventure.Compile emits one envelope per scene/
+	// actor/placement/note plus a leading AdventureLoaded and trailing
+	// NarrationAdded — neither step has any way to know its batch's length
+	// in advance. Every other accepted command still produces exactly ONE
 	// event, matched by observeOnAll below.
-	if _, isUseAbility := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); isUseAbility {
+	if isBatchCommand(&cmd) {
 		missing, detail := observeBatchOnAll(conns, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 		if len(missing) > 0 {
-			sr.Detail = fmt.Sprintf("use_ability batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
+			sr.Detail = fmt.Sprintf("batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
 			return sr
 		}
 		sr.Pass = true
@@ -362,6 +365,21 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	}
 	sr.Pass = true
 	return sr
+}
+
+// isBatchCommand reports whether cmd's oneof case produces a whole
+// campaign.AppendBatch batch (result.Sequence names only the batch's FIRST
+// sequence) rather than a single Envelope via campaign.Append — the set of
+// commands runCommandStep must route to observeBatchOnAll instead of
+// observeOnAll. Grows as new batch-producing commands are added (use_ability
+// — ruleset-interpreter Task 6; load_adventure — adventure-format Task 4).
+func isBatchCommand(cmd *vttv1.ClientCommand) bool {
+	switch cmd.GetCommand().(type) {
+	case *vttv1.ClientCommand_UseAbility, *vttv1.ClientCommand_LoadAdventure:
+		return true
+	default:
+		return false
+	}
 }
 
 // runReconnectStep closes the participant's current connection, redials via
