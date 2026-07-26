@@ -62,13 +62,17 @@ adventures/<id>/
 
 Load-time validation (every error names file+field; nothing persists on
 any failure): manifest ruleset MUST equal the served ruleset's id
-(mismatch = clean error); statblock attribute/resource names must be
-declared by the ruleset (defenses valued in attributes per the v2
-convention); resource current ≤ max when max > 0; note keys/titles/texts
-and narration within the world layer's byte caps; all placement
-actor_ids resolve within the adventure; scene/token/actor/note ids must
-NOT collide with existing campaign state at load time (checked against
-the live snapshot before the batch — rejection, not overwrite).
+(mismatch = clean error); `format_version` must be present and equal
+"1" — any other or missing value is rejected at load (amended
+2026-07-26, merge gate: the rules-loader precedent applies, keeping the
+versioning escape hatch load-bearing); statblock attribute/resource
+names must be declared by the ruleset (defenses valued in attributes
+per the v2 convention); resource current ≤ max when max > 0; note
+keys/titles/texts and narration within the world layer's byte caps; all
+placement actor_ids resolve within the adventure; scene/token/actor/
+note ids must NOT collide with existing campaign state at load time
+(checked against the live snapshot before the batch — rejection, not
+overwrite).
 
 ## 5. Loader & compile (`internal/adventure`)
 
@@ -80,8 +84,10 @@ narration. Gateway handler: authz → Load'd-at-boot adventure lookup by
 id (unknown id = clean error; no adventures dir = "no adventures
 available") → Compile against the live snapshot → campaign.AppendBatch;
 result carries first sequence. arch-lint: `adventure → {engine,
-contract, rules, adventure}`; gateway gains adventure; nothing else may
-import it.
+contract, rules, adventure}`; gateway and cmd gain adventure (amended
+2026-07-26, merge gate: cmd's edge is forced by §7's boot-time
+validation of `serve`/`mcp --adventures-dir`); nothing else may import
+it.
 
 ## 6. The proof — conformance analog + two adventures
 
