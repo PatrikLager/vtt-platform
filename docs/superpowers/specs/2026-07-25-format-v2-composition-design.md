@@ -35,9 +35,14 @@ expression-sized dice. Engine, contract, gateway, harness, MCP: UNTOUCHED.
    listed in §10, not passed off as generic.
 4. **No new implicit contracts:** every inter-atom relationship is
    declared (provides/consumes), every ref is scoped where two actors are
-   in play, params splice as parsed subtrees (never string substitution),
-   and composition order is derived from the dependency graph — a
-   hand-ordered list is never load-bearing.
+   in play, params splice as parsed subtrees (never string substitution).
+   Execution order is DAG-derived; among DAG-independent atoms,
+   composition list order breaks ties, and that tie order is
+   semantically meaningful — not cosmetic — when tied outcomes touch the
+   same clamped resource (non-commutative under floor/cap), so authors
+   order ties deliberately; the order is deterministic and pinned by
+   compiled goldens (corrected 2026-07-26, final review: the original
+   "never load-bearing" claim was demonstrably false).
 
 ## 3. Format v2 layout
 
@@ -86,14 +91,24 @@ delivery atom's contribution, `reliable`-style flags stay out (YAGNI).
   declarations at load. `expr`/`int` params splice into contribution
   expressions as parenthesized parsed subtrees (hygienic — a binding of
   `1 + 1` can never change surrounding precedence); name-kinds substitute
-  into ref positions only.
+  into ref positions only. Splice hygiene: a placeholder may not occupy
+  scope position (directly between a sigil and `.`); the words `caster`
+  and `target` are reserved and may not be declared as attribute,
+  defense, or resource names, or condition ids.
 - **provides/consumes:** plain strings, ruleset-chosen. A composition is
   valid iff every consumed key is provided by exactly one atom in the
   composition, the graph is acyclic, and every contribution's `key`
-  refers to a key the atom provides or consumes. Execution order is the
-  topological order of the graph; ties break by composition list order
-  (deterministic, but NEVER load-bearing for correctness — that is the
-  contract's job).
+  refers to a key the atom provides or consumes; a provides/consumes edge
+  that the fixed execution phase order (branch outcomes, then
+  always-effects) cannot honor — e.g. an always-outcome atom providing a
+  key a branch-outcome atom consumes — is a LOAD ERROR, rejected like a
+  cycle. Execution order is the topological order of the graph; among
+  DAG-independent atoms, ties break by composition list order, and that
+  tie order is semantically meaningful — when tied outcomes touch the
+  same clamped resource, the result is non-commutative under floor/cap,
+  so authors order ties deliberately. The order is deterministic and
+  pinned by compiled-form goldens (corrected 2026-07-26, final review:
+  the original "never load-bearing" claim was demonstrably false).
 - **Contribution kinds** (closed set, the execution vocabulary):
   - `targeting` — `{range, max_targets}` (exactly one per composition).
   - `resolution` — `{key, roll, vs, branches: [<ge-label>, <lt-label>]}`:
@@ -200,6 +215,11 @@ unchanged and now gates both.
   concept; actor attributes already carry weapon data for v2 dice-exprs;
   a dedicated update-actor command is world-layer work.
 - **Reactions/interrupts, turn engine, areas, healing systems** — as 5a.
+- **Comparison-direction is fixed:** `total >= threshold` always selects
+  the first branch label (ties favor the first/ge label — the d20-family
+  convention); traditions requiring a strict must-exceed comparison need
+  a threshold+1 workaround that alters the wire-visible `vs` text —
+  named residue for a future comparison-direction field.
 - The `hit/miss`-shaped binary resolution itself is generic
   roll-vs-threshold, but single-resolution-per-ability is a real
   constraint listed above.
@@ -212,3 +232,28 @@ unchanged and now gates both.
   the hot-reload feature (explicitly out of scope since 5a).
 - Cross-ruleset atom libraries ("share my atoms as a package") — only if
   a real second author appears; guarded against baking in by guarantee #1.
+
+## 12. Amendments (2026-07-26, merge gate)
+
+1. **Defenses are valued in the actor's attribute map:** declared under
+   the manifest's `defenses` list, defense values are read the same way
+   attributes are — `@scope.<name>` — not through a separate lookup;
+   attribute/defense name collisions are rejected at load.
+2. **Negative int-kind bindings are rejected:** an `int`-kind param bound
+   to a negative literal is a load error; rulesets needing a negative
+   constant use the `expr`-kind `0 - N` idiom (consistent with the
+   no-unary-minus grammar rule).
+3. **`compose` entries require `bind`:** every composition entry must
+   carry a `bind` object, even when empty (`{}`) — no implicit omission.
+4. **`AbilityUsed.rolls[].expression` records SourceText:** in v2 this is
+   the post-splice text (the expression as spliced, not the pre-splice
+   atom source) — testimony speaks the author's written expression while
+   scoped semantics execute underneath it.
+5. **Compiled-form goldens use the canonical serialization:** stable
+   field order, SourceText (not AST) for expressions; orphaned
+   compiled-golden files (no corresponding ability) fail conformance.
+6. **Branch labels `always`, `usage`, and `effect` are reserved** and may
+   not be used as ruleset-chosen resolution branch labels.
+7. **`vs` expressions may roll dice:** the roll, when present, is
+   recorded between the resolution roll and the outcome rolls, per
+   target.
