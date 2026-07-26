@@ -119,6 +119,60 @@ var manifest = []toolSpec{
 		description: "Remove a named condition from an actor (DM-ended durations).",
 		descriptor:  (&vttv1.RemoveCondition{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.AddNarration",
+		name:        "add_narration",
+		description: "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+		descriptor:  (&vttv1.AddNarration{}).ProtoReflect().Descriptor(),
+		// The fabrication trap (same shape as add_actor's fix above): none
+		// of AddNarration's fields are proto3 `optional`, so the derived
+		// required list would force `as` and both anchor fields even
+		// though spec §3 documents all three as optional — an LLM caller
+		// then fabricates a speaker label or an anchor pair rather than
+		// sending nothing. A fabricated backward anchor pair passes ALL
+		// engine validation (internal/engine/apply.go) and persists
+		// forever in the append-only log. Only text is genuinely required
+		// to narrate at all. Unlike add_actor's override (keyed on the
+		// nested "vtt.v1.Actor" message reached via AddActor.actor),
+		// AddNarration's fields are direct fields on AddNarration itself,
+		// so this override is keyed on "vtt.v1.AddNarration".
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.AddNarration": {
+				requiredOverride: []string{"text"},
+				fieldDocs: map[string]string{
+					"as":            "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
+					"anchorFromSeq": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+					"anchorToSeq":   "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+				},
+			},
+		},
+	},
+	{
+		message:     "vtt.v1.UpsertNote",
+		name:        "upsert_note",
+		description: "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
+		descriptor:  (&vttv1.UpsertNote{}).ProtoReflect().Descriptor(),
+		// Same shape, lower stakes: title is not proto3 `optional` either,
+		// so the derived required list would force it even though an
+		// empty title is adjudicated-legal (the engine only enforces a max
+		// — internal/engine/apply.go's NoteUpserted case). Keyed on
+		// "vtt.v1.UpsertNote" itself for the same direct-field reason as
+		// AddNarration above.
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.UpsertNote": {
+				requiredOverride: []string{"key", "text"},
+				fieldDocs: map[string]string{
+					"title": "Optional; may be empty.",
+				},
+			},
+		},
+	},
+	{
+		message:     "vtt.v1.DeleteNote",
+		name:        "delete_note",
+		description: "Delete a world note by key.",
+		descriptor:  (&vttv1.DeleteNote{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

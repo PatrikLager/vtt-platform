@@ -33,12 +33,22 @@ type ActorCondition struct {
 	AppliedSeq int64
 }
 
+// Note is a durable, DM-authored world fact (world-layer spec §4):
+// last-write-wins on the key; prior versions are not kept in State — they
+// remain retrievable by replaying the log, free (NoteUpserted events are
+// never mutated in place).
+type Note struct {
+	Title, Text string
+	UpdatedSeq  int64
+}
+
 type State struct {
 	Scenes     map[string]Scene
 	Actors     map[string]*vttv1.Actor
 	Tokens     map[string]Token
 	Sessions   []Session
 	Conditions map[string][]ActorCondition // keyed by actor id
+	Notes      map[string]Note             // keyed by note key
 }
 
 func NewState() *State {
@@ -47,6 +57,7 @@ func NewState() *State {
 		Actors:     map[string]*vttv1.Actor{},
 		Tokens:     map[string]Token{},
 		Conditions: map[string][]ActorCondition{},
+		Notes:      map[string]Note{},
 	}
 }
 
@@ -65,6 +76,9 @@ func (st *State) Snapshot() *State {
 	out.Sessions = append([]Session(nil), st.Sessions...)
 	for k, v := range st.Conditions {
 		out.Conditions[k] = append([]ActorCondition(nil), v...)
+	}
+	for k, v := range st.Notes {
+		out.Notes[k] = v
 	}
 	return out
 }

@@ -47,7 +47,17 @@ type propModel struct {
 
 	sessionOpen bool
 
-	sceneN, actorN, tokenN int
+	sceneN, actorN, tokenN, noteN int
+
+	// noteKeys tracks keys the model believes are CURRENTLY present (world-
+	// layer Task 3): doUpsertNote appends a fresh key or re-upserts an
+	// existing one (last-write-wins exercised); doDeleteNote removes a
+	// tracked key on success. Deliberately NOT unioned into allSeqs — see
+	// doAddNarration/doUpsertNote/doDeleteNote's doc comments: narration/
+	// note events are exercised as their own action kind, not folded into
+	// the undo-eligible pool, keeping this task's addition minimal and
+	// independently verifiable against the pre-existing action mix.
+	noteKeys []string
 }
 
 func newPropModel() *propModel {
@@ -229,17 +239,114 @@ func (m *propModel) doEndSession(t *testing.T, c *campaign.Campaign, idx int) {
 	m.allSeqs = append(m.allSeqs, seq)
 }
 
-// step picks one random VALID action given the current model and applies it,
-// per the action mix in the brief: create scene ~5%, add actor ~10%, place
-// token ~15% (when scene+actor exist), move token ~55% (when tokens exist),
-// undo ~10% (when an eligible non-marker, un-retracted sequence exists —
-// see doUndo for why a rejected undo is not a test failure), start/end
-// session ~5% (start if none open; end if one's open, gated further to
-// rand<0.05 so sessions stay open across most of the run). Any bucket whose
-// precondition isn't met falls through to the next check using the same
-// draw, and the session bucket's own "session open, but the 0.05 gate
-// didn't fire" branch falls back to addActor — always valid — so every
-// iteration guarantees forward progress toward the requested event count.
+// doAddNarration appends a NarrationAdded event, mixing anchored and
+// unanchored draws (world-layer Task 3, spec §4): roughly half of every
+// draw with at least two prior sequences on record attempts an anchor
+// pointing at two ALREADY-RECORDED sequences (never a future one —
+// respecting the spec's backward-only anchor rule) drawn from allSeqs, the
+// same pool doUndo already treats as "real, addressable history". Both
+// anchored and unanchored draws are expected to succeed unconditionally —
+// this exercises both code paths.
+//
+// FORMERLY a known bug here (P11 Task 3's original report): campaign.Append
+// used to validate the caller's envelope directly while its Sequence was
+// still 0 (the store assigns the real value strictly AFTER the validating
+// Apply call), so engine.Apply's anchor check `AnchorToSeq >= env.Sequence`
+// always compared against 0 — every anchored narration was rejected
+// regardless of validity. FIXED by the controller-authorized follow-up in
+// this same task (internal/campaign/campaign.go's Append now validates a
+// proto.Clone stamped with the provisional sequence c.head+1 — the same
+// fix AppendBatch already applied for its own sequence-dependent folds;
+// see Append's doc comment and append_sequence_validation_test.go for the
+// full proof). Anchored draws here are no longer expected to fail.
+func (m *propModel) doAddNarration(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	na := &vttv1.NarrationAdded{Text: fmt.Sprintf("narration entry #%d", idx)}
+	if len(m.allSeqs) >= 2 && rng.Float64() < 0.5 {
+		from := m.allSeqs[rng.Intn(len(m.allSeqs))]
+		to := m.allSeqs[rng.Intn(len(m.allSeqs))]
+		if from > to {
+			from, to = to, from
+		}
+		na.AnchorFromSeq = from
+		na.AnchorToSeq = to
+	}
+	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: na}}
+	propMust(t, c, env, idx, "addNarration")
+	counts["addNarration"]++
+}
+
+// doUpsertNote appends a NoteUpserted event (world-layer Task 3): about
+// 30% of draws with an existing tracked key re-upsert it (last-write-wins
+// exercised — the SAME key, a new title/text, no rejection expected),
+// the rest mint a fresh key.
+func (m *propModel) doUpsertNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	var key string
+	if len(m.noteKeys) > 0 && rng.Float64() < 0.30 {
+		key = m.noteKeys[rng.Intn(len(m.noteKeys))]
+	} else {
+		m.noteN++
+		key = fmt.Sprintf("prop-note-%d", m.noteN)
+		m.noteKeys = append(m.noteKeys, key)
+	}
+	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NoteUpserted{
+		NoteUpserted: &vttv1.NoteUpserted{
+			Key: key, Title: fmt.Sprintf("Note %s", key), Text: fmt.Sprintf("text for %s at action #%d", key, idx),
+		},
+	}}
+	propMust(t, c, env, idx, "upsertNote")
+	counts["upsertNote"]++
+}
+
+// doDeleteNote appends a NoteDeleted event (world-layer Task 3): about 30%
+// of draws (or any draw with no tracked key at all) target an absent key
+// deliberately — deleteNote's own rejection posture (matches condition
+// removal, spec §3) — counted as deleteNoteRejected, not a test failure,
+// exactly like doUndo counts undoRejected. The rest delete a real tracked
+// key and untrack it.
+func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	absent := len(m.noteKeys) == 0 || rng.Float64() < 0.30
+	var key string
+	if absent {
+		key = fmt.Sprintf("prop-note-absent-%d", idx)
+	} else {
+		i := rng.Intn(len(m.noteKeys))
+		key = m.noteKeys[i]
+		m.noteKeys = append(m.noteKeys[:i], m.noteKeys[i+1:]...)
+	}
+	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{Key: key}}}
+	_, err := c.Append(env)
+	if err != nil {
+		if !absent {
+			t.Fatalf("property test (seed=%d): action #%d (deleteNote) failed unexpectedly for a tracked key %q: %v", propertySeed, idx, key, err)
+		}
+		counts["deleteNoteRejected"]++
+		return
+	}
+	if absent {
+		t.Fatalf("property test (seed=%d): action #%d (deleteNote) unexpectedly succeeded for an absent key %q", propertySeed, idx, key)
+	}
+	counts["deleteNote"]++
+}
+
+// step picks one random VALID action given the current model and applies
+// it, per the action mix (re-baselined this task, world-layer Task 3 —
+// deliberately NOT the same mix as before; see the report for old->new
+// pinned counts, both the wiring pass and the anchor-fix follow-up pass):
+// create scene ~5%, add actor ~10%, place token ~13% (when scene+actor
+// exist), move token ~40% (when tokens exist), undo ~8% (when an eligible
+// non-marker, un-retracted sequence exists — see doUndo for why a rejected
+// undo is not a test failure), add narration ~9% (mix of anchored/
+// unanchored, both expected to succeed — see doAddNarration's doc comment
+// for the anchor-validation fix that made anchored draws reliably
+// succeed), upsert note ~8%, delete note ~5% (absent-key rejections
+// counted, not failures — same posture as undo), start/end session for
+// the remainder (start if none open; end if one's open, gated further to
+// rand<0.05 so sessions stay open across most of the run). Any bucket
+// whose precondition
+// isn't met falls through to the next check using the same draw, and the
+// session bucket's own "session open, but the 0.05 gate didn't fire" branch
+// falls back to addActor — always valid — so every iteration guarantees
+// forward progress toward the requested event count.
 func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
 	r := rng.Float64()
 	switch {
@@ -249,20 +356,26 @@ func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx
 	case r < 0.15:
 		m.doAddActor(t, c, idx)
 		counts["addActor"]++
-	case r < 0.30 && m.canPlaceToken():
+	case r < 0.28 && m.canPlaceToken():
 		m.doPlaceToken(t, c, rng, idx)
 		counts["placeToken"]++
-	case r < 0.85 && m.canMoveToken():
+	case r < 0.68 && m.canMoveToken():
 		m.doMoveToken(t, c, rng, idx)
 		counts["moveToken"]++
-	case r < 0.95 && m.canUndo():
+	case r < 0.76 && m.canUndo():
 		m.doUndo(t, c, rng, idx, counts)
+	case r < 0.84:
+		m.doAddNarration(t, c, rng, idx, counts)
+	case r < 0.90:
+		m.doUpsertNote(t, c, rng, idx, counts)
+	case r < 0.94:
+		m.doDeleteNote(t, c, rng, idx, counts)
 	default:
 		switch {
 		case !m.sessionOpen:
 			m.doStartSession(t, c, idx)
 			counts["startSession"]++
-		case rng.Float64() < 0.05:
+		case rng.Float64() < 0.15:
 			m.doEndSession(t, c, idx)
 			counts["endSession"]++
 		default:
@@ -324,9 +437,17 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 	if counts["undo"] == 0 {
 		t.Fatalf("property test (seed=%d): undo was never exercised — this run proves nothing about retraction", propertySeed)
 	}
-	for _, kind := range []string{"createScene", "addActor", "placeToken", "moveToken", "startSession", "endSession"} {
+	for _, kind := range []string{
+		"createScene", "addActor", "placeToken", "moveToken", "startSession", "endSession",
+		"addNarration", "upsertNote", "deleteNote",
+	} {
 		if counts[kind] == 0 {
 			t.Errorf("property test (seed=%d): action type %q was never exercised", propertySeed, kind)
 		}
 	}
+	// deleteNoteRejected (absent-key) is EXPECTED to be non-zero too — see
+	// doDeleteNote's doc comment — but a zero count there is not itself a
+	// failure (a different seed/mix could legitimately avoid drawing it);
+	// this run's actual counts are logged below regardless, for the
+	// report's old->new pin.
 }

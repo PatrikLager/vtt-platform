@@ -248,13 +248,19 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 	}
 }
 
-// TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools covers the
+// TestListToolsReturnsFifteenToolsIncludingReadAndGuideTools covers the
 // top-level contract: get_state, get_events_since, and get_ruleset_guide
 // land in the SAME tool table as the nine generic command tools
 // (wantCommandToolNames — grew from 7 to 9 with use_ability/
 // remove_condition, ruleset-interpreter sub-project 5a Task 1),
-// bringing list_tools to exactly 12 (Task 6 adds get_ruleset_guide).
-func TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools(t *testing.T) {
+// bringing list_tools to exactly 15 (world-layer sub-project 8, P11 Task
+// 1: contract additive-only vocabulary — add_narration/upsert_note/
+// delete_note — regenerates cmd/vtt/tools.json to 12 command tools;
+// fix-forward per controller ruling so the branch stays green at every
+// commit, since Task 1's own brief scoped contract-only and forbade
+// internal/mcp changes otherwise. Task 3 still owns the real MCP e2e
+// wiring/round-trip work for these three commands).
+func TestListToolsReturnsFifteenToolsIncludingReadAndGuideTools(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
 	defer cleanup()
@@ -270,7 +276,7 @@ func TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide")
+	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "add_narration", "upsert_note", "delete_note")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
 	}
@@ -444,6 +450,39 @@ func TestGetStateDescriptionDocumentsBodyShape(t *testing.T) {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("get_state description does not mention %q:\n%s", want, desc)
 		}
+	}
+}
+
+// TestGetStateDescriptionNamesNotesKey covers the world-layer spec §5
+// discoverability gap (merge-gate MUST-FIX, paired with
+// TestServerInstructionsMentionNarrationAsTableMemory in server_test.go):
+// getStateDescription enumerated only "Scenes/Tokens/Sessions" before this
+// fix, never naming the new top-level "Notes" key world notes fold into —
+// an MCP agent reading get_state's own tool description had no way to
+// discover world notes exist without already knowing to look, guessing
+// purely from the upsert_note/delete_note tool NAMES.
+func TestGetStateDescriptionNamesNotesKey(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var desc string
+	for _, tl := range res.Tools {
+		if tl.Name == "get_state" {
+			desc = tl.Description
+		}
+	}
+	if desc == "" {
+		t.Fatal("ListTools: get_state not found")
+	}
+	if !strings.Contains(desc, "Notes") {
+		t.Fatalf("get_state description does not name the Notes key:\n%s", desc)
 	}
 }
 

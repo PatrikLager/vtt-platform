@@ -82,20 +82,24 @@ type ReconnectSpec struct {
 	AfterSequence int64 `json:"afterSequence"`
 }
 
-// Probe is exactly one of the five probe kinds, evaluated against
+// Probe is exactly one of the six probe kinds, evaluated against
 // Fold(participant 0's observed events) once every step has run.
 // ResourceAt/HasCondition were added in ruleset-interpreter Task 6, so
 // scenarios (e.g. scenarios/toy-brawl.json) can assert the concrete,
 // structural result of a use_ability/remove_condition run — a resource's
 // final current value, or whether a condition is present on an actor —
 // without needing exact-dice matching (the harness cannot predict a live
-// crypto Roller's draws; see resolve.go's Roller doc comment).
+// crypto Roller's draws; see resolve.go's Roller doc comment). NoteAt was
+// added in world-layer Task 3, so scenarios (e.g. scenarios/story-table.json)
+// can assert a world note's current key/title/text after upsert/replace/
+// delete — the SAME "assert structural state, not exact wire bytes" shape.
 type Probe struct {
 	TokenAt      *TokenAtProbe      `json:"tokenAt,omitempty"`
 	SessionCount *SessionCountProbe `json:"sessionCount,omitempty"`
 	ActorExists  *ActorExistsProbe  `json:"actorExists,omitempty"`
 	ResourceAt   *ResourceAtProbe   `json:"resourceAt,omitempty"`
 	HasCondition *HasConditionProbe `json:"hasCondition,omitempty"`
+	NoteAt       *NoteAtProbe       `json:"noteAt,omitempty"`
 }
 
 // TokenAtProbe asserts a token exists at exactly (X, Y).
@@ -132,6 +136,23 @@ type HasConditionProbe struct {
 	ActorId     string `json:"actorId"`
 	ConditionId string `json:"conditionId"`
 	Present     bool   `json:"present"`
+}
+
+// NoteAtProbe asserts a world note's current state by key (world-layer Task
+// 3): Key must be present (a probe against an absent/deleted key always
+// fails — there is no Present-style "assert absent" flag here, since
+// deleteNote's own denial/rejection posture and the story-table library
+// scenario's "deleted-absent rejection" step already cover the absence
+// case at the command layer). TitleIs and TextContains are BOTH optional
+// and independently checked ONLY when non-empty: a probe that sets neither
+// asserts presence alone; a probe that sets one or both narrows the
+// assertion to that note's exact Title (TitleIs) and/or a substring of its
+// Text (TextContains, for asserting content without pinning it verbatim —
+// same shape as Expect.DeniedContaining's substring match).
+type NoteAtProbe struct {
+	Key          string `json:"key"`
+	TitleIs      string `json:"titleIs,omitempty"`
+	TextContains string `json:"textContains,omitempty"`
 }
 
 // LoadScenario reads and strictly parses a scenario file: unknown JSON
@@ -245,7 +266,7 @@ func validateStep(st Step) error {
 	return nil
 }
 
-// validateProbe enforces Probe's exactly-one-of-five-kinds contract.
+// validateProbe enforces Probe's exactly-one-of-six-kinds contract.
 func validateProbe(p Probe) error {
 	n := 0
 	if p.TokenAt != nil {
@@ -263,8 +284,11 @@ func validateProbe(p Probe) error {
 	if p.HasCondition != nil {
 		n++
 	}
+	if p.NoteAt != nil {
+		n++
+	}
 	if n != 1 {
-		return fmt.Errorf("exactly one of tokenAt/sessionCount/actorExists/resourceAt/hasCondition required, got %d", n)
+		return fmt.Errorf("exactly one of tokenAt/sessionCount/actorExists/resourceAt/hasCondition/noteAt required, got %d", n)
 	}
 	return nil
 }

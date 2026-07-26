@@ -298,3 +298,29 @@ func TestServerInstructionsScopeTheInt64AsStringRuleToNotGetState(t *testing.T) 
 		t.Fatalf("server Instructions does not scope the int64-as-string rule as having an exception:\n%s", instr)
 	}
 }
+
+// TestServerInstructionsMentionNarrationAsTableMemory covers the world-
+// layer spec §5 deliverable that was dropped in the spec-to-plan
+// translation (merge-gate MUST-FIX): "Instructions text: one line telling
+// the agent narration is how the table remembers its story." The shipped
+// instructions const had no such line — an MCP agent had no way to
+// discover add_narration/upsert_note's PURPOSE (as opposed to their bare
+// names) from the server's own self-description. Pins both halves: the
+// narration-is-story-memory line, and world notes named as the durable
+// counterpart.
+func TestServerInstructionsMentionNarrationAsTableMemory(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+
+	instr := cs.InitializeResult().Instructions
+	if !strings.Contains(instr, "narration") {
+		t.Fatalf("server Instructions never mentions narration:\n%s", instr)
+	}
+	if !strings.Contains(instr, "remembers") {
+		t.Fatalf("server Instructions does not say narration is how the table remembers its story:\n%s", instr)
+	}
+	if !strings.Contains(instr, "notes") {
+		t.Fatalf("server Instructions never mentions world notes as the table's durable memory:\n%s", instr)
+	}
+}

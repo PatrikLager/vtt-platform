@@ -255,5 +255,70 @@
       "type": "object"
     },
     "name": "remove_condition"
+  },
+  {
+    "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+    "inputSchema": {
+      "properties": {
+        "anchorFromSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+          "type": "integer"
+        },
+        "anchorToSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+          "type": "integer"
+        },
+        "as": {
+          "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "add_narration"
+  },
+  {
+    "description": "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "description": "Optional; may be empty.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "upsert_note"
+  },
+  {
+    "description": "Delete a world note by key.",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "delete_note"
   }
 ]

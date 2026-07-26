@@ -62,6 +62,15 @@ message RemoveCondition {
   string condition_id = 2;
 }
 
+message AddNarration {
+  string text = 1;
+  string as = 2;
+  int64 anchor_from_seq = 3;
+  int64 anchor_to_seq = 4;
+}
+message UpsertNote { string key = 1; string title = 2; string text = 3; }
+message DeleteNote { string key = 1; }
+
 message ClientCommand {
   string request_id = 1;
   oneof command {
@@ -74,6 +83,9 @@ message ClientCommand {
     RetractEvents retract_events = 16;
     UseAbility use_ability = 17;
     RemoveCondition remove_condition = 18;
+    AddNarration add_narration = 19;
+    UpsertNote upsert_note = 20;
+    DeleteNote delete_note = 21;
   }
 }
 

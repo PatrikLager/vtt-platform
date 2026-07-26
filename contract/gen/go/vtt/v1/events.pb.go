@@ -1088,6 +1088,178 @@ func (x *ConditionRemoved) GetReason() string {
 	return ""
 }
 
+type NarrationAdded struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	As            string                 `protobuf:"bytes,2,opt,name=as,proto3" json:"as,omitempty"`
+	AnchorFromSeq int64                  `protobuf:"varint,3,opt,name=anchor_from_seq,json=anchorFromSeq,proto3" json:"anchor_from_seq,omitempty"`
+	AnchorToSeq   int64                  `protobuf:"varint,4,opt,name=anchor_to_seq,json=anchorToSeq,proto3" json:"anchor_to_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NarrationAdded) Reset() {
+	*x = NarrationAdded{}
+	mi := &file_vtt_v1_events_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NarrationAdded) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NarrationAdded) ProtoMessage() {}
+
+func (x *NarrationAdded) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NarrationAdded.ProtoReflect.Descriptor instead.
+func (*NarrationAdded) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *NarrationAdded) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *NarrationAdded) GetAs() string {
+	if x != nil {
+		return x.As
+	}
+	return ""
+}
+
+func (x *NarrationAdded) GetAnchorFromSeq() int64 {
+	if x != nil {
+		return x.AnchorFromSeq
+	}
+	return 0
+}
+
+func (x *NarrationAdded) GetAnchorToSeq() int64 {
+	if x != nil {
+		return x.AnchorToSeq
+	}
+	return 0
+}
+
+type NoteUpserted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NoteUpserted) Reset() {
+	*x = NoteUpserted{}
+	mi := &file_vtt_v1_events_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NoteUpserted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NoteUpserted) ProtoMessage() {}
+
+func (x *NoteUpserted) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NoteUpserted.ProtoReflect.Descriptor instead.
+func (*NoteUpserted) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *NoteUpserted) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *NoteUpserted) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *NoteUpserted) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type NoteDeleted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NoteDeleted) Reset() {
+	*x = NoteDeleted{}
+	mi := &file_vtt_v1_events_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NoteDeleted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NoteDeleted) ProtoMessage() {}
+
+func (x *NoteDeleted) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NoteDeleted.ProtoReflect.Descriptor instead.
+func (*NoteDeleted) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *NoteDeleted) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
 type Envelope struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	EventId    string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -1111,6 +1283,9 @@ type Envelope struct {
 	//	*Envelope_ResourceChanged
 	//	*Envelope_ConditionApplied
 	//	*Envelope_ConditionRemoved
+	//	*Envelope_NarrationAdded
+	//	*Envelope_NoteUpserted
+	//	*Envelope_NoteDeleted
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1118,7 +1293,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_vtt_v1_events_proto_msgTypes[17]
+	mi := &file_vtt_v1_events_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1130,7 +1305,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[17]
+	mi := &file_vtt_v1_events_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1143,7 +1318,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{17}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Envelope) GetEventId() string {
@@ -1303,6 +1478,33 @@ func (x *Envelope) GetConditionRemoved() *ConditionRemoved {
 	return nil
 }
 
+func (x *Envelope) GetNarrationAdded() *NarrationAdded {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_NarrationAdded); ok {
+			return x.NarrationAdded
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetNoteUpserted() *NoteUpserted {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_NoteUpserted); ok {
+			return x.NoteUpserted
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetNoteDeleted() *NoteDeleted {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_NoteDeleted); ok {
+			return x.NoteDeleted
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -1355,6 +1557,18 @@ type Envelope_ConditionRemoved struct {
 	ConditionRemoved *ConditionRemoved `protobuf:"bytes,21,opt,name=condition_removed,json=conditionRemoved,proto3,oneof"`
 }
 
+type Envelope_NarrationAdded struct {
+	NarrationAdded *NarrationAdded `protobuf:"bytes,22,opt,name=narration_added,json=narrationAdded,proto3,oneof"`
+}
+
+type Envelope_NoteUpserted struct {
+	NoteUpserted *NoteUpserted `protobuf:"bytes,23,opt,name=note_upserted,json=noteUpserted,proto3,oneof"`
+}
+
+type Envelope_NoteDeleted struct {
+	NoteDeleted *NoteDeleted `protobuf:"bytes,24,opt,name=note_deleted,json=noteDeleted,proto3,oneof"`
+}
+
 func (*Envelope_TokenMoved) isEnvelope_Payload() {}
 
 func (*Envelope_AttackRolled) isEnvelope_Payload() {}
@@ -1379,6 +1593,12 @@ func (*Envelope_ConditionApplied) isEnvelope_Payload() {}
 
 func (*Envelope_ConditionRemoved) isEnvelope_Payload() {}
 
+func (*Envelope_NarrationAdded) isEnvelope_Payload() {}
+
+func (*Envelope_NoteUpserted) isEnvelope_Payload() {}
+
+func (*Envelope_NoteDeleted) isEnvelope_Payload() {}
+
 type AbilityUsed_Roll struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Expression    string                 `protobuf:"bytes,1,opt,name=expression,proto3" json:"expression,omitempty"`
@@ -1390,7 +1610,7 @@ type AbilityUsed_Roll struct {
 
 func (x *AbilityUsed_Roll) Reset() {
 	*x = AbilityUsed_Roll{}
-	mi := &file_vtt_v1_events_proto_msgTypes[20]
+	mi := &file_vtt_v1_events_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1402,7 +1622,7 @@ func (x *AbilityUsed_Roll) String() string {
 func (*AbilityUsed_Roll) ProtoMessage() {}
 
 func (x *AbilityUsed_Roll) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[20]
+	mi := &file_vtt_v1_events_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1761,18 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x10ConditionRemoved\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
 	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xe8\a\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x80\x01\n" +
+	"\x0eNarrationAdded\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12\x0e\n" +
+	"\x02as\x18\x02 \x01(\tR\x02as\x12&\n" +
+	"\x0fanchor_from_seq\x18\x03 \x01(\x03R\ranchorFromSeq\x12\"\n" +
+	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\"J\n" +
+	"\fNoteUpserted\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"\x1f\n" +
+	"\vNoteDeleted\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"\xa2\t\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12;\n" +
@@ -1566,7 +1797,10 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\fability_used\x18\x12 \x01(\v2\x13.vtt.v1.AbilityUsedH\x00R\vabilityUsed\x12D\n" +
 	"\x10resource_changed\x18\x13 \x01(\v2\x17.vtt.v1.ResourceChangedH\x00R\x0fresourceChanged\x12G\n" +
 	"\x11condition_applied\x18\x14 \x01(\v2\x18.vtt.v1.ConditionAppliedH\x00R\x10conditionApplied\x12G\n" +
-	"\x11condition_removed\x18\x15 \x01(\v2\x18.vtt.v1.ConditionRemovedH\x00R\x10conditionRemovedB\t\n" +
+	"\x11condition_removed\x18\x15 \x01(\v2\x18.vtt.v1.ConditionRemovedH\x00R\x10conditionRemoved\x12A\n" +
+	"\x0fnarration_added\x18\x16 \x01(\v2\x16.vtt.v1.NarrationAddedH\x00R\x0enarrationAdded\x12;\n" +
+	"\rnote_upserted\x18\x17 \x01(\v2\x14.vtt.v1.NoteUpsertedH\x00R\fnoteUpserted\x128\n" +
+	"\fnote_deleted\x18\x18 \x01(\v2\x13.vtt.v1.NoteDeletedH\x00R\vnoteDeletedB\t\n" +
 	"\apayloadBBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
@@ -1581,7 +1815,7 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_events_proto_rawDescData
 }
 
-var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_vtt_v1_events_proto_goTypes = []any{
 	(*GridPosition)(nil),          // 0: vtt.v1.GridPosition
 	(*TokenMoved)(nil),            // 1: vtt.v1.TokenMoved
@@ -1600,25 +1834,28 @@ var file_vtt_v1_events_proto_goTypes = []any{
 	(*ResourceChanged)(nil),       // 14: vtt.v1.ResourceChanged
 	(*ConditionApplied)(nil),      // 15: vtt.v1.ConditionApplied
 	(*ConditionRemoved)(nil),      // 16: vtt.v1.ConditionRemoved
-	(*Envelope)(nil),              // 17: vtt.v1.Envelope
-	nil,                           // 18: vtt.v1.Actor.AttributesEntry
-	nil,                           // 19: vtt.v1.Actor.ResourcesEntry
-	(*AbilityUsed_Roll)(nil),      // 20: vtt.v1.AbilityUsed.Roll
-	(*structpb.Struct)(nil),       // 21: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 22: google.protobuf.Timestamp
+	(*NarrationAdded)(nil),        // 17: vtt.v1.NarrationAdded
+	(*NoteUpserted)(nil),          // 18: vtt.v1.NoteUpserted
+	(*NoteDeleted)(nil),           // 19: vtt.v1.NoteDeleted
+	(*Envelope)(nil),              // 20: vtt.v1.Envelope
+	nil,                           // 21: vtt.v1.Actor.AttributesEntry
+	nil,                           // 22: vtt.v1.Actor.ResourcesEntry
+	(*AbilityUsed_Roll)(nil),      // 23: vtt.v1.AbilityUsed.Roll
+	(*structpb.Struct)(nil),       // 24: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
 	0,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
 	0,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
 	2,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
 	3,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	18, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	19, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	21, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	21, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	22, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	24, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
 	6,  // 7: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
 	0,  // 8: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
-	20, // 9: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
-	22, // 10: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	23, // 9: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
+	25, // 10: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
 	1,  // 11: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
 	4,  // 12: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
 	7,  // 13: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
@@ -1631,12 +1868,15 @@ var file_vtt_v1_events_proto_depIdxs = []int32{
 	14, // 20: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
 	15, // 21: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
 	16, // 22: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
-	5,  // 23: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	17, // 23: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
+	18, // 24: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
+	19, // 25: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
+	5,  // 26: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -1644,7 +1884,7 @@ func file_vtt_v1_events_proto_init() {
 	if File_vtt_v1_events_proto != nil {
 		return
 	}
-	file_vtt_v1_events_proto_msgTypes[17].OneofWrappers = []any{
+	file_vtt_v1_events_proto_msgTypes[20].OneofWrappers = []any{
 		(*Envelope_TokenMoved)(nil),
 		(*Envelope_AttackRolled)(nil),
 		(*Envelope_SceneCreated)(nil),
@@ -1657,6 +1897,9 @@ func file_vtt_v1_events_proto_init() {
 		(*Envelope_ResourceChanged)(nil),
 		(*Envelope_ConditionApplied)(nil),
 		(*Envelope_ConditionRemoved)(nil),
+		(*Envelope_NarrationAdded)(nil),
+		(*Envelope_NoteUpserted)(nil),
+		(*Envelope_NoteDeleted)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1664,7 +1907,7 @@ func file_vtt_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

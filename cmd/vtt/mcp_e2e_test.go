@@ -123,7 +123,10 @@ func TestMCPCommandMissingTokenErrorsViaRunCLI(t *testing.T) {
 // Stdin/Stdout pipes (mcpsdk.IOTransport) — proving cmd/vtt/mcp.go's real
 // RunE(ctx, &mcpsdk.StdioTransport{}) path actually works end to end, not
 // just the in-memory-transport substitute TestMCPSpecSevenExitCriteria
-// uses below. list_tools must report all 12 tools; closing the client
+// uses below. list_tools must report all 15 tools (world-layer P11 Task 1
+// contract addition — add_narration/upsert_note/delete_note — bumps this
+// from 12; fix-forward per controller ruling, Task 3 owns the real MCP
+// e2e wiring for these three commands); closing the client
 // session then closes the subprocess's stdin, which is enough to let the
 // process exit on its own (asserted via a bounded Wait, Kill as the
 // fallback safety net matching this package's established subprocess-test
@@ -166,8 +169,8 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools over real stdio: %v (stderr: %s)", err, stderr.String())
 	}
-	if len(res.Tools) != 12 {
-		t.Fatalf("ListTools over real stdio: got %d tools, want 12: %v", len(res.Tools), res.Tools)
+	if len(res.Tools) != 15 {
+		t.Fatalf("ListTools over real stdio: got %d tools, want 15: %v", len(res.Tools), res.Tools)
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.
@@ -701,4 +704,222 @@ func assertSpectatorCommandDeniedConnectionIntact(t *testing.T, fx mcpFixture) {
 	// (callGetStateGeneric itself fatals on IsError, which is exactly this
 	// proof).
 	_ = callGetStateGeneric(t, cs)
+}
+
+// --- world-layer (Task 3) round-trip: add_narration + upsert_note --------
+
+// mustCallToolOK calls name/args against cs and asserts a plain (non-batch)
+// ok=true CommandResult, returning its Sequence — the SAME decode shape
+// playScenarioThroughTools uses per-step, pulled out here since this test
+// calls tools directly rather than playing a scenario file.
+func mustCallToolOK(t *testing.T, cs *mcpsdk.ClientSession, name string, args map[string]any) int64 {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatalf("%s: CallTool: %v", name, err)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("%s: want text content, got %T", name, res.Content[0])
+	}
+	var result vttv1.CommandResult
+	if err := protojson.Unmarshal([]byte(text.Text), &result); err != nil {
+		t.Fatalf("%s: result not valid CommandResult protojson: %v", name, err)
+	}
+	if res.IsError || !result.GetOk() {
+		t.Fatalf("%s: want ok=true, got IsError=%v result=%+v", name, res.IsError, &result)
+	}
+	return result.GetSequence()
+}
+
+// TestMCPWorldLayerRoundTrip is world-layer (Task 3)'s own MCP exit
+// criterion (spec §6): add_narration and upsert_note called against a REAL
+// composeServer gateway (startMCPFixture, the same live-server fixture
+// TestMCPSpecSevenExitCriteria uses) round-trip all the way to BOTH read
+// paths — the upserted note surfaces in get_state's folded Notes map, and
+// the narration surfaces as its own event in get_events_since — proving the
+// wiring this task added is real, not just individually unit-tested at the
+// gateway/harness layers.
+func TestMCPWorldLayerRoundTrip(t *testing.T) {
+	fx := startMCPFixture(t)
+	cs, cleanup := startMCPSession(t, fx.wsURL, fx.agentToken)
+	defer cleanup()
+
+	const narrationText = "The party enters the ruined keep."
+	const noteKey = "ruined-keep"
+	const noteTitle = "Ruined Keep"
+	const noteText = "Collapsed east wall; goblins nest within."
+
+	narrationSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{"text": narrationText})
+	noteSeq := mustCallToolOK(t, cs, "upsert_note", map[string]any{
+		"key": noteKey, "title": noteTitle, "text": noteText,
+	})
+	if noteSeq <= narrationSeq {
+		t.Fatalf("upsert_note sequence %d, want it to follow add_narration's sequence %d", noteSeq, narrationSeq)
+	}
+
+	// --- note visible in get_state ---
+	//
+	// get_state is NOT protojson (read_tools.go's own doc comment): top-
+	// level keys are the exact Go struct field names off *engine.State
+	// (e.g. "Notes"), and Note's own fields ("Title"/"Text"/"UpdatedSeq")
+	// the same way — never protojson's camelCase.
+	gotState := waitForMCPHeadSequence(t, cs, noteSeq)
+	notes, ok := gotState["Notes"].(map[string]any)
+	if !ok {
+		t.Fatalf(`get_state: "Notes" = %#v, want a JSON object`, gotState["Notes"])
+	}
+	note, ok := notes[noteKey].(map[string]any)
+	if !ok {
+		t.Fatalf("get_state: Notes[%q] = %#v, want a JSON object (the upserted note)", noteKey, notes[noteKey])
+	}
+	if note["Title"] != noteTitle {
+		t.Fatalf("get_state: Notes[%q].Title = %#v, want %q", noteKey, note["Title"], noteTitle)
+	}
+	if note["Text"] != noteText {
+		t.Fatalf("get_state: Notes[%q].Text = %#v, want %q", noteKey, note["Text"], noteText)
+	}
+	if updatedSeq, ok := note["UpdatedSeq"].(float64); !ok || int64(updatedSeq) != noteSeq {
+		t.Fatalf("get_state: Notes[%q].UpdatedSeq = %#v, want %d", noteKey, note["UpdatedSeq"], noteSeq)
+	}
+
+	// --- narration visible in get_events_since ---
+	assertNarrationVisibleInEventsSince(t, cs, narrationSeq, narrationText)
+}
+
+// assertNarrationVisibleInEventsSince pages get_events_since from the
+// beginning and asserts exactly one envelope at wantSeq carries a
+// NarrationAdded payload with the given text — each returned event is its
+// own protojson encoding (get_events_since's own wire convention, unlike
+// get_state), so it decodes straight into *vttv1.Envelope.
+func assertNarrationVisibleInEventsSince(t *testing.T, cs *mcpsdk.ClientSession, wantSeq int64, wantText string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "get_events_since",
+		Arguments: map[string]any{"afterSequence": int64(0), "limit": 200},
+	})
+	if err != nil {
+		t.Fatalf("get_events_since: CallTool: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("get_events_since: want IsError=false, got %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
+	}
+	var page struct {
+		Events []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &page); err != nil {
+		t.Fatalf("get_events_since: response did not decode: %v (body: %s)", err, text.Text)
+	}
+
+	var found *vttv1.NarrationAdded
+	var foundSeq int64
+	for _, raw := range page.Events {
+		var env vttv1.Envelope
+		if err := protojson.Unmarshal(raw, &env); err != nil {
+			t.Fatalf("get_events_since: envelope did not decode as protojson: %v (body: %s)", err, raw)
+		}
+		if na := env.GetNarrationAdded(); na != nil {
+			found = na
+			foundSeq = env.GetSequence()
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("get_events_since: no NarrationAdded event found among %d events", len(page.Events))
+	}
+	if foundSeq != wantSeq {
+		t.Fatalf("get_events_since: NarrationAdded sequence = %d, want %d", foundSeq, wantSeq)
+	}
+	if found.Text != wantText {
+		t.Fatalf("get_events_since: NarrationAdded.Text = %q, want %q", found.Text, wantText)
+	}
+}
+
+// TestMCPAddNarrationWithAnchorsRoundTrips closes the merge-gate MUST-FIX
+// anchor-coverage gap: neither TestMCPWorldLayerRoundTrip nor its fake-wire
+// counterpart (internal/mcp/world_layer_e2e_test.go) ever sent
+// anchorFromSeq/anchorToSeq, so the generic dispatch's int64 anchor decode
+// (internal/mcp/server.go's protojson.Unmarshal, fed args where
+// add_narration's own inputSchema declares both fields "type": "integer" —
+// the ordinary MCP-tool-argument convention, NOT protojson's quoted-string
+// int64 convention) had zero end-to-end coverage in either direction. This
+// test sends a valid BACKWARD anchor pair as plain JSON integers against a
+// REAL composeServer gateway (the same live-server fixture
+// TestMCPWorldLayerRoundTrip uses) and asserts both the call succeeds and
+// the anchors the engine fold accepted are exactly what comes back out of
+// get_events_since.
+func TestMCPAddNarrationWithAnchorsRoundTrips(t *testing.T) {
+	fx := startMCPFixture(t)
+	cs, cleanup := startMCPSession(t, fx.wsURL, fx.agentToken)
+	defer cleanup()
+
+	firstSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{
+		"text": "The party arrives at the ruined gate.",
+	})
+
+	const anchoredText = "The rusted portcullis groans upward."
+	anchoredSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{
+		"text":          anchoredText,
+		"anchorFromSeq": firstSeq,
+		"anchorToSeq":   firstSeq,
+	})
+	if anchoredSeq <= firstSeq {
+		t.Fatalf("anchored add_narration sequence %d, want it to follow the first narration's sequence %d", anchoredSeq, firstSeq)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "get_events_since",
+		Arguments: map[string]any{"afterSequence": int64(0), "limit": 200},
+	})
+	if err != nil {
+		t.Fatalf("get_events_since: CallTool: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("get_events_since: want IsError=false, got %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
+	}
+	var page struct {
+		Events []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &page); err != nil {
+		t.Fatalf("get_events_since: response did not decode: %v (body: %s)", err, text.Text)
+	}
+
+	var found *vttv1.NarrationAdded
+	for _, raw := range page.Events {
+		var env vttv1.Envelope
+		if err := protojson.Unmarshal(raw, &env); err != nil {
+			t.Fatalf("get_events_since: envelope did not decode as protojson: %v (body: %s)", err, raw)
+		}
+		if env.GetSequence() != anchoredSeq {
+			continue
+		}
+		if na := env.GetNarrationAdded(); na != nil {
+			found = na
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("get_events_since: no NarrationAdded event found at sequence %d among %d events", anchoredSeq, len(page.Events))
+	}
+	if found.Text != anchoredText {
+		t.Fatalf("get_events_since: NarrationAdded.Text = %q, want %q", found.Text, anchoredText)
+	}
+	if found.AnchorFromSeq != firstSeq || found.AnchorToSeq != firstSeq {
+		t.Fatalf("get_events_since: NarrationAdded anchors = (%d, %d), want (%d, %d)",
+			found.AnchorFromSeq, found.AnchorToSeq, firstSeq, firstSeq)
+	}
 }

@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi2gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIlcKDFNjZW5lQ3JlYXRlZBIQCghzY2VuZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCmdyaWRfd2lkdGgYAyABKAUSEwoLZ3JpZF9oZWlnaHQYBCABKAUiKgoKQWN0b3JBZGRlZBIcCgVhY3RvchgBIAEoCzINLnZ0dC52MS5BY3RvciJrCgtUb2tlblBsYWNlZBIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHgoOU2Vzc2lvblN0YXJ0ZWQSDAoEbmFtZRgBIAEoCSIOCgxTZXNzaW9uRW5kZWQiTQoPRXZlbnRzUmV0cmFjdGVkEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIsUBCgtBYmlsaXR5VXNlZBIQCghhY3Rvcl9pZBgBIAEoCRISCgphYmlsaXR5X2lkGAIgASgJEhIKCnRhcmdldF9pZHMYAyADKAkSJwoFcm9sbHMYBCADKAsyGC52dHQudjEuQWJpbGl0eVVzZWQuUm9sbBIXCg9vdXRjb21lX3N1bW1hcnkYBSABKAkaOgoEUm9sbBISCgpleHByZXNzaW9uGAEgASgJEg8KB3Jlc3VsdHMYAiADKAUSDQoFdG90YWwYAyABKAUiZwoPUmVzb3VyY2VDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg0KBWRlbHRhGAMgASgFEhEKCW5ld192YWx1ZRgEIAEoBRIOCgZyZWFzb24YBSABKAkiSgoQQ29uZGl0aW9uQXBwbGllZBIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkSDgoGc291cmNlGAMgASgJIkoKEENvbmRpdGlvblJlbW92ZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSLyBQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi2gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIlcKDFNjZW5lQ3JlYXRlZBIQCghzY2VuZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCmdyaWRfd2lkdGgYAyABKAUSEwoLZ3JpZF9oZWlnaHQYBCABKAUiKgoKQWN0b3JBZGRlZBIcCgVhY3RvchgBIAEoCzINLnZ0dC52MS5BY3RvciJrCgtUb2tlblBsYWNlZBIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHgoOU2Vzc2lvblN0YXJ0ZWQSDAoEbmFtZRgBIAEoCSIOCgxTZXNzaW9uRW5kZWQiTQoPRXZlbnRzUmV0cmFjdGVkEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIsUBCgtBYmlsaXR5VXNlZBIQCghhY3Rvcl9pZBgBIAEoCRISCgphYmlsaXR5X2lkGAIgASgJEhIKCnRhcmdldF9pZHMYAyADKAkSJwoFcm9sbHMYBCADKAsyGC52dHQudjEuQWJpbGl0eVVzZWQuUm9sbBIXCg9vdXRjb21lX3N1bW1hcnkYBSABKAkaOgoEUm9sbBISCgpleHByZXNzaW9uGAEgASgJEg8KB3Jlc3VsdHMYAiADKAUSDQoFdG90YWwYAyABKAUiZwoPUmVzb3VyY2VDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg0KBWRlbHRhGAMgASgFEhEKCW5ld192YWx1ZRgEIAEoBRIOCgZyZWFzb24YBSABKAkiSgoQQ29uZGl0aW9uQXBwbGllZBIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkSDgoGc291cmNlGAMgASgJIkoKEENvbmRpdGlvblJlbW92ZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJaCg5OYXJyYXRpb25BZGRlZBIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjgKDE5vdGVVcHNlcnRlZBILCgNrZXkYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEdGV4dBgDIAEoCSIaCgtOb3RlRGVsZXRlZBILCgNrZXkYASABKAkigQcKCEVudmVsb3BlEhAKCGV2ZW50X2lkGAEgASgJEhAKCHNlcXVlbmNlGAIgASgDEi8KC29jY3VycmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCmFjdG9yX3JvbGUYBSABKAkSFgoOcGFydGljaXBhbnRfaWQYBiABKAkSKQoLdG9rZW5fbW92ZWQYCiABKAsyEi52dHQudjEuVG9rZW5Nb3ZlZEgAEi0KDWF0dGFja19yb2xsZWQYCyABKAsyFC52dHQudjEuQXR0YWNrUm9sbGVkSAASLQoNc2NlbmVfY3JlYXRlZBgMIAEoCzIULnZ0dC52MS5TY2VuZUNyZWF0ZWRIABIpCgthY3Rvcl9hZGRlZBgNIAEoCzISLnZ0dC52MS5BY3RvckFkZGVkSAASKwoMdG9rZW5fcGxhY2VkGA4gASgLMhMudnR0LnYxLlRva2VuUGxhY2VkSAASMQoPc2Vzc2lvbl9zdGFydGVkGA8gASgLMhYudnR0LnYxLlNlc3Npb25TdGFydGVkSAASLQoNc2Vzc2lvbl9lbmRlZBgQIAEoCzIULnZ0dC52MS5TZXNzaW9uRW5kZWRIABIzChBldmVudHNfcmV0cmFjdGVkGBEgASgLMhcudnR0LnYxLkV2ZW50c1JldHJhY3RlZEgAEisKDGFiaWxpdHlfdXNlZBgSIAEoCzITLnZ0dC52MS5BYmlsaXR5VXNlZEgAEjMKEHJlc291cmNlX2NoYW5nZWQYEyABKAsyFy52dHQudjEuUmVzb3VyY2VDaGFuZ2VkSAASNQoRY29uZGl0aW9uX2FwcGxpZWQYFCABKAsyGC52dHQudjEuQ29uZGl0aW9uQXBwbGllZEgAEjUKEWNvbmRpdGlvbl9yZW1vdmVkGBUgASgLMhgudnR0LnYxLkNvbmRpdGlvblJlbW92ZWRIABIxCg9uYXJyYXRpb25fYWRkZWQYFiABKAsyFi52dHQudjEuTmFycmF0aW9uQWRkZWRIABItCg1ub3RlX3Vwc2VydGVkGBcgASgLMhQudnR0LnYxLk5vdGVVcHNlcnRlZEgAEisKDG5vdGVfZGVsZXRlZBgYIAEoCzITLnZ0dC52MS5Ob3RlRGVsZXRlZEgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -535,6 +535,82 @@ export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*
   messageDesc(file_vtt_v1_events, 16);
 
 /**
+ * @generated from message vtt.v1.NarrationAdded
+ */
+export type NarrationAdded = Message<"vtt.v1.NarrationAdded"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * @generated from field: string as = 2;
+   */
+  as: string;
+
+  /**
+   * @generated from field: int64 anchor_from_seq = 3;
+   */
+  anchorFromSeq: bigint;
+
+  /**
+   * @generated from field: int64 anchor_to_seq = 4;
+   */
+  anchorToSeq: bigint;
+};
+
+/**
+ * Describes the message vtt.v1.NarrationAdded.
+ * Use `create(NarrationAddedSchema)` to create a new message.
+ */
+export const NarrationAddedSchema: GenMessage<NarrationAdded> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 17);
+
+/**
+ * @generated from message vtt.v1.NoteUpserted
+ */
+export type NoteUpserted = Message<"vtt.v1.NoteUpserted"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message vtt.v1.NoteUpserted.
+ * Use `create(NoteUpsertedSchema)` to create a new message.
+ */
+export const NoteUpsertedSchema: GenMessage<NoteUpserted> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 18);
+
+/**
+ * @generated from message vtt.v1.NoteDeleted
+ */
+export type NoteDeleted = Message<"vtt.v1.NoteDeleted"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+};
+
+/**
+ * Describes the message vtt.v1.NoteDeleted.
+ * Use `create(NoteDeletedSchema)` to create a new message.
+ */
+export const NoteDeletedSchema: GenMessage<NoteDeleted> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 19);
+
+/**
  * @generated from message vtt.v1.Envelope
  */
 export type Envelope = Message<"vtt.v1.Envelope"> & {
@@ -645,6 +721,24 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: ConditionRemoved;
     case: "conditionRemoved";
+  } | {
+    /**
+     * @generated from field: vtt.v1.NarrationAdded narration_added = 22;
+     */
+    value: NarrationAdded;
+    case: "narrationAdded";
+  } | {
+    /**
+     * @generated from field: vtt.v1.NoteUpserted note_upserted = 23;
+     */
+    value: NoteUpserted;
+    case: "noteUpserted";
+  } | {
+    /**
+     * @generated from field: vtt.v1.NoteDeleted note_deleted = 24;
+     */
+    value: NoteDeleted;
+    case: "noteDeleted";
   } | { case: undefined; value?: undefined };
 };
 
@@ -653,5 +747,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 17);
+  messageDesc(file_vtt_v1_events, 20);
 

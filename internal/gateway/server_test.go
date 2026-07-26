@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -568,4 +569,199 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	if tm.TokenMoved.To == nil || tm.TokenMoved.To.X != 9 || tm.TokenMoved.To.Y != 9 {
 		t.Fatalf("To = %+v, want (9,9)", tm.TokenMoved.To)
 	}
+}
+
+// TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
+// layer (Task 3) precedent RemoveCondition already set: the gateway forwards
+// add_narration/upsert_note/delete_note through the SAME single-Append path
+// as every other command (server.go's handleCommand has no world-layer-
+// specific branch), so a fold-level validation rejection — an absent
+// delete_note key, or oversized narration text past the 8 KiB cap
+// (internal/engine/apply.go's size posture) — must surface as an ordinary
+// ok=false CommandResult and leave the connection (and the campaign) fully
+// usable afterward, never poisoned (campaign.Append validates against a
+// snapshot BEFORE persisting — see that method's doc comment).
+func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, 4)
+
+	// A valid upsert first, so there is a real key to delete-after-recovery.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-upsert",
+		Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
+			Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+		}},
+	})
+	upsertResult := readResult(t, dmConn)
+	if !upsertResult.Ok {
+		t.Fatalf("want ok=true for a valid upsert_note, got error %q", upsertResult.Error)
+	}
+
+	// Rejection 1: delete_note for a key that was never upserted.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-delete-absent",
+		Command:   &vttv1.ClientCommand_DeleteNote{DeleteNote: &vttv1.DeleteNote{Key: "no-such-note"}},
+	})
+	deleteAbsentResult := readResult(t, dmConn)
+	if deleteAbsentResult.Ok {
+		t.Fatal("want ok=false deleting a note key that was never upserted")
+	}
+	if deleteAbsentResult.Error == "" {
+		t.Fatal("want non-empty error on the absent-key rejection")
+	}
+
+	// Rejection 2: add_narration with text past the 8 KiB size cap.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-narration-oversized",
+		Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+			Text: strings.Repeat("x", 8193),
+		}},
+	})
+	oversizedResult := readResult(t, dmConn)
+	if oversizedResult.Ok {
+		t.Fatal("want ok=false for narration text exceeding the 8 KiB cap")
+	}
+	if oversizedResult.Error == "" {
+		t.Fatal("want non-empty error on the size-cap rejection")
+	}
+
+	// Recovery: the SAME connection can still issue a valid command
+	// afterward — proof the two rejections above left the campaign
+	// unpoisoned, exactly like TestPlayerOwnershipDenialNoBroadcast's own
+	// recovery step proves for an authz denial.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-delete-ok",
+		Command:   &vttv1.ClientCommand_DeleteNote{DeleteNote: &vttv1.DeleteNote{Key: "kobold-den"}},
+	})
+	recoveryResult := readResult(t, dmConn)
+	if !recoveryResult.Ok {
+		t.Fatalf("want ok=true deleting the real note after two rejections, got error %q (campaign appears poisoned)", recoveryResult.Error)
+	}
+}
+
+// TestNarrationForwardAnchorRejectedCleanConnectionIntact closes the merge-
+// gate MUST-FIX anchor-rejection wire seam: every existing wire test
+// (TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned above,
+// scenarios/story-table.json) exercises only the ACCEPTED anchor path or
+// non-anchor rejections — no wire-level test ever sent an INVALID anchor
+// and asserted the clean ok=false + unpoisoned-connection contract spec §6
+// promises ("size-cap and anchor rejections surface as clean ok=false").
+// This sits precisely on the provisional-stamp seam (campaign.go's Append)
+// this branch changed: a regression there, or a gateway-side change that
+// drops/zeroes/swaps the anchor fields in ToEvent before Append, would make
+// an invalid anchor silently accepted while every other existing wire test
+// stayed green.
+func TestNarrationForwardAnchorRejectedCleanConnectionIntact(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, 4)
+
+	// Forward anchor: anchorToSeq (999) is nowhere near before this
+	// narration's own (about-to-be-assigned) sequence — engine.Apply
+	// rejects any anchor_to_seq >= the narrating event's own sequence
+	// (internal/engine/apply.go), pinning the exact error string this test
+	// asserts on.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-narration-forward-anchor",
+		Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+			Text: "a narration with a bad anchor", AnchorFromSeq: 1, AnchorToSeq: 999,
+		}},
+	})
+	result := readResult(t, dmConn)
+	if result.Ok {
+		t.Fatal("want ok=false for a forward anchor (anchorToSeq far beyond any recorded sequence)")
+	}
+	if !strings.Contains(result.Error, "must be before") {
+		t.Fatalf("want error containing %q, got %q", "must be before", result.Error)
+	}
+
+	// Connection intact, campaign unpoisoned: the SAME connection can still
+	// issue a valid command afterward.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-narration-ok",
+		Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+			Text: "a plain, unanchored narration",
+		}},
+	})
+	recoveryResult := readResult(t, dmConn)
+	if !recoveryResult.Ok {
+		t.Fatalf("want ok=true for a valid narration after the forward-anchor rejection, got error %q (campaign appears poisoned)", recoveryResult.Error)
+	}
+}
+
+// TestOversizedFrameClosesConnectionMaxLegalPayloadWorks covers the
+// amendment-mandated fix (server.go's maxWSFrameBytes doc comment): the
+// gateway's per-command websocket frame bound (32 KiB) is now an explicit,
+// OWNED part of the size posture (handleWS's conn.SetReadLimit call) rather
+// than silently inherited from coder/websocket's undocumented default read
+// limit — no SetReadLimit call existed anywhere in internal/ or cmd/
+// before this fix. Two directions: a frame one byte over the limit closes
+// the connection with StatusMessageTooBig — pure transport-layer
+// enforcement, before DecodeCommand ever sees the bytes, so any content
+// triggers it, not just a well-formed oversized command — while a legal
+// command whose encoded frame sits at EXACTLY the limit still round-trips
+// cleanly (proving the explicit cap didn't shrink the effective bound
+// below the library's own prior default).
+func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
+	t.Run("frame one byte over the limit closes the connection", func(t *testing.T) {
+		f := newGWFixture(t)
+		conn := f.dial(f.dmToken, 4)
+
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer writeCancel()
+		oversized := []byte(strings.Repeat("x", 32769))
+		if err := conn.Write(writeCtx, websocket.MessageText, oversized); err != nil {
+			t.Fatalf("write oversized frame: %v", err)
+		}
+
+		readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer readCancel()
+		if _, _, err := conn.Read(readCtx); err == nil {
+			t.Fatal("want the connection to close after an oversized frame, got a clean read")
+		} else if status := websocket.CloseStatus(err); status != websocket.StatusMessageTooBig {
+			t.Fatalf("close status = %v, want StatusMessageTooBig (err=%v)", status, err)
+		}
+	})
+
+	t.Run("a command frame at exactly the limit still works", func(t *testing.T) {
+		f := newGWFixture(t)
+		conn := f.dial(f.dmToken, 4)
+
+		// Compute the request_id padding needed to land the encoded
+		// ClientCommand frame at EXACTLY maxWSFrameBytes, rather than
+		// hardcoding a byte count that would silently drift out of sync
+		// with protojson's own field-encoding overhead.
+		probe := &vttv1.ClientCommand{
+			RequestId: "r",
+			Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+				Text: "a legal narration riding a frame at exactly the read limit",
+			}},
+		}
+		probeRaw, err := protojson.Marshal(probe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		extraNeeded := 32768 - len(probeRaw)
+		if extraNeeded < 0 {
+			t.Fatalf("test setup: probe command already exceeds 32768 bytes (%d)", len(probeRaw))
+		}
+		probe.RequestId = strings.Repeat("r", 1+extraNeeded)
+		raw, err := protojson.Marshal(probe)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) != 32768 {
+			t.Fatalf("test setup: encoded frame is %d bytes, want exactly 32768", len(raw))
+		}
+
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer writeCancel()
+		if err := conn.Write(writeCtx, websocket.MessageText, raw); err != nil {
+			t.Fatalf("write max-legal-payload frame: %v", err)
+		}
+
+		result := readResult(t, conn)
+		if !result.Ok {
+			t.Fatalf("want ok=true for a command frame at exactly the 32768-byte read limit, got error %q", result.Error)
+		}
+	})
 }

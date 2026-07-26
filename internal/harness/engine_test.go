@@ -432,6 +432,12 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 		// so a use_ability command drives a ConditionApplied into the fold.
 		{seq: 5, env: &vttv1.Envelope{EventId: "e5", Payload: &vttv1.Envelope_ConditionApplied{
 			ConditionApplied: &vttv1.ConditionApplied{ActorId: "act-1", ConditionId: "dazed", Source: "test"}}}, to: []string{"dm"}},
+		// A NoteUpserted so noteAt probes have concrete state to assert
+		// against (world-layer Task 3 — same "decoupled command vs.
+		// broadcast" shape as the rules event above: the sent command is an
+		// upsertNote, matched by sequence position, not content).
+		{seq: 6, env: &vttv1.Envelope{EventId: "e6", Payload: &vttv1.Envelope_NoteUpserted{
+			NoteUpserted: &vttv1.NoteUpserted{Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel."}}}, to: []string{"dm"}},
 	})
 
 	sc := &harness.Scenario{
@@ -442,6 +448,7 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"Ursus"}}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"placeToken":{"tokenId":"tok-1","sceneId":"scn-1","actorId":"act-1","position":{"x":3,"y":4}}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"useAbility":{"actorId":"act-1","abilityId":"daze","targetIds":["act-1"]}}`), Expect: &harness.Expect{OK: true}},
+			{By: "dm", Command: rawCmd(t, `{"upsertNote":{"key":"kobold-den","title":"Kobold Den","text":"Three kobolds guard the east tunnel."}}`), Expect: &harness.Expect{OK: true}},
 		},
 		Probes: probes,
 	}
@@ -516,6 +523,38 @@ func TestRunScenarioProbesPerKind(t *testing.T) {
 		rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: false}}})
 		if rep.Probes[0].Pass {
 			t.Fatalf("hasCondition probe = %+v, want Pass=false (dazed IS present, probe wanted absent)", rep.Probes[0])
+		}
+	})
+	t.Run("noteAt pass bare key", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den"}}})
+		if !rep.Probes[0].Pass {
+			t.Fatalf("noteAt probe = %+v, want Pass=true (key present, no title/text filter)", rep.Probes[0])
+		}
+	})
+	t.Run("noteAt pass titleIs and textContains", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{
+			Key: "kobold-den", TitleIs: "Kobold Den", TextContains: "east tunnel",
+		}}})
+		if !rep.Probes[0].Pass {
+			t.Fatalf("noteAt probe = %+v, want Pass=true (title and text substring both match)", rep.Probes[0])
+		}
+	})
+	t.Run("noteAt fail wrong titleIs", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TitleIs: "Goblin Warren"}}})
+		if rep.Probes[0].Pass {
+			t.Fatalf("noteAt probe = %+v, want Pass=false (title is \"Kobold Den\", not \"Goblin Warren\")", rep.Probes[0])
+		}
+	})
+	t.Run("noteAt fail wrong textContains", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TextContains: "west bridge"}}})
+		if rep.Probes[0].Pass {
+			t.Fatalf("noteAt probe = %+v, want Pass=false (text does not contain \"west bridge\")", rep.Probes[0])
+		}
+	})
+	t.Run("noteAt fail absent key", func(t *testing.T) {
+		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "no-such-note"}}})
+		if rep.Probes[0].Pass {
+			t.Fatalf("noteAt probe = %+v, want Pass=false (key was never upserted)", rep.Probes[0])
 		}
 	})
 }

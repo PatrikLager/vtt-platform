@@ -16,8 +16,8 @@ import (
 // statesEqual compares two engine.State snapshots. Actors are proto messages
 // (unexported protoimpl bookkeeping fields make them unsafe to compare with
 // reflect.DeepEqual across a fresh unmarshal), so they're compared with
-// proto.Equal; Scenes, Tokens, Sessions, and Conditions are plain structs and
-// compared with ordinary equality.
+// proto.Equal; Scenes, Tokens, Sessions, Conditions, and Notes are plain
+// structs and compared with ordinary equality.
 func statesEqual(a, b *engine.State) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -32,6 +32,9 @@ func statesEqual(a, b *engine.State) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.Conditions, b.Conditions) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Notes, b.Notes) {
 		return false
 	}
 	if len(a.Actors) != len(b.Actors) {

@@ -52,10 +52,40 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return useAbilityCmd("a1")
 	case "remove_condition":
 		return removeConditionCmd("a1")
+	case "add_narration":
+		return addNarrationCmd()
+	case "upsert_note":
+		return upsertNoteCmd()
+	case "delete_note":
+		return deleteNoteCmd()
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
 	}
+}
+
+// addNarrationCmd builds a plain, unanchored AddNarration ClientCommand — a
+// trivially valid command for authz purposes (Authorize never checks
+// narration content/anchor sanity, only role; that validation lives in the
+// fold, internal/engine/apply.go).
+func addNarrationCmd() *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{
+		AddNarration: &vttv1.AddNarration{Text: "the door creaks open"},
+	}}
+}
+
+// upsertNoteCmd builds a minimal, valid UpsertNote ClientCommand.
+func upsertNoteCmd() *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UpsertNote{
+		UpsertNote: &vttv1.UpsertNote{Key: "n1", Title: "A Note", Text: "note text"},
+	}}
+}
+
+// deleteNoteCmd builds a minimal, valid DeleteNote ClientCommand.
+func deleteNoteCmd() *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DeleteNote{
+		DeleteNote: &vttv1.DeleteNote{Key: "n1"},
+	}}
 }
 
 // useAbilityCmd builds a UseAbility ClientCommand acting AS actorID,
@@ -77,7 +107,7 @@ func removeConditionCmd(actorID string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 9 commands x 4 roles authorization matrix.
+// authzCase is one cell of the 12 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -87,14 +117,19 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 36-cell matrix (spec §4, grown from 28 by
-// ruleset-interpreter Task 6's use_ability/remove_condition rows): every
-// command against every one of the four roles. move_token/player,
-// use_ability/player, and remove_condition/player are all TRUE here
-// because the shared fixture in TestAuthorizeTableAllCommandsAllRoles gives
-// participant "p-1" ownership of actor "a1" (and its token "t1") — the
-// table alone allows it, and the dedicated ownership tests below
-// independently prove each additional check.
+// authzCases is the full 48-cell matrix (spec §4, grown from 36 by
+// world-layer Task 3's add_narration/upsert_note/delete_note rows, which
+// themselves grew from 28 by ruleset-interpreter Task 6's use_ability/
+// remove_condition rows): every command against every one of the four
+// roles. move_token/player, use_ability/player, and remove_condition/player
+// are all TRUE here because the shared fixture in
+// TestAuthorizeTableAllCommandsAllRoles gives participant "p-1" ownership of
+// actor "a1" (and its token "t1") — the table alone allows it, and the
+// dedicated ownership tests below independently prove each additional
+// check. add_narration/upsert_note/delete_note have NO ownership check at
+// all (spec §5: "world facts are the DM's" is a role-only gate, unlike
+// move_token/use_ability/remove_condition's per-actor ownership) — a plain
+// role lookup is the entire story for these three rows.
 var authzCases = []authzCase{
 	{"move_token", identity.RoleDM, true},
 	{"move_token", identity.RoleAgent, true},
@@ -140,6 +175,21 @@ var authzCases = []authzCase{
 	{"remove_condition", identity.RoleAgent, true},
 	{"remove_condition", identity.RolePlayer, true},
 	{"remove_condition", identity.RoleSpectator, false},
+
+	{"add_narration", identity.RoleDM, true},
+	{"add_narration", identity.RoleAgent, true},
+	{"add_narration", identity.RolePlayer, true},
+	{"add_narration", identity.RoleSpectator, false},
+
+	{"upsert_note", identity.RoleDM, true},
+	{"upsert_note", identity.RoleAgent, true},
+	{"upsert_note", identity.RolePlayer, false},
+	{"upsert_note", identity.RoleSpectator, false},
+
+	{"delete_note", identity.RoleDM, true},
+	{"delete_note", identity.RoleAgent, true},
+	{"delete_note", identity.RolePlayer, false},
+	{"delete_note", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -154,8 +204,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 36 {
-		t.Fatalf("authzCases has %d entries, want 36 (9 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 48 {
+		t.Fatalf("authzCases has %d entries, want 48 (12 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

@@ -161,5 +161,55 @@
       },
       "required": ["actorId", "conditionId"]
     }
+  },
+  {
+    "name": "add_narration",
+    "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "as": {
+          "type": "string",
+          "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk)."
+        },
+        "anchorFromSeq": {
+          "type": "integer",
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other."
+        },
+        "anchorToSeq": {
+          "type": "integer",
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other."
+        }
+      },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "upsert_note",
+    "description": "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "title": {
+          "type": "string",
+          "description": "Optional; may be empty."
+        },
+        "text": { "type": "string" }
+      },
+      "required": ["key", "text"]
+    }
+  },
+  {
+    "name": "delete_note",
+    "description": "Delete a world note by key.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" }
+      },
+      "required": ["key"]
+    }
   }
 ]

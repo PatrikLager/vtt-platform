@@ -36,7 +36,7 @@ var wantCommandToolNames = []string{
 // deliberately does NOT assert the total tool count, since P7 Task 2
 // (read_tools.go) and Task 6 register three more (get_state,
 // get_events_since, get_ruleset_guide) into the SAME tool table;
-// TestListToolsReturnsTwelveToolsIncludingReadAndGuideTools
+// TestListToolsReturnsFifteenToolsIncludingReadAndGuideTools
 // (read_tools_test.go) owns the total-count assertion for the full,
 // current contract.
 func TestListToolsReturnsAllCommandToolsByName(t *testing.T) {

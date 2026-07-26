@@ -1,0 +1,39 @@
+{
+  "name": "story-table",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "player", "role": "player", "controls": ["act-hero"]},
+    {"name": "spectator", "role": "spectator"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Story Table"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "scn-table", "name": "The Rusty Flagon", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-hero", "name": "Lera", "controllerId": "{{id:player}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-hero", "sceneId": "scn-table", "actorId": "act-hero", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"moveToken": {"tokenId": "tok-hero", "to": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"addNarration": {"text": "Lera steps toward the bar, anchored to her own move.", "anchorFromSeq": 5, "anchorToSeq": 5}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"addNarration": {"text": "A hush falls over the tavern as the story begins."}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addNarration": {"text": "You'll not pass, adventurer!", "as": "Goblin Cutter"}}, "expect": {"ok": true}},
+    {"by": "player", "command": {"addNarration": {"text": "I raise my sword and step forward."}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"upsertNote": {"key": "kobold-den", "title": "Kobold Den", "text": "Three kobolds guard the east tunnel."}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"upsertNote": {"key": "kobold-den", "title": "Kobold Den (cleared)", "text": "The tunnel is empty now; the kobolds fled west."}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"upsertNote": {"key": "old-rumor", "title": "Old Rumor", "text": "They say the innkeeper buried gold under the cellar."}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"deleteNote": {"key": "old-rumor"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"deleteNote": {"key": "old-rumor"}}, "expect": {"deniedContaining": "not present"}},
+
+    {"by": "spectator", "command": {"addNarration": {"text": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "player", "command": {"upsertNote": {"key": "player-note", "title": "nope", "text": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "dm", "command": {"endSession": {}}, "expect": {"ok": true}}
+  ],
+  "probes": [
+    {"actorExists": {"actorId": "act-hero"}},
+    {"tokenAt": {"tokenId": "tok-hero", "x": 1, "y": 1}},
+    {"sessionCount": {"open": 0, "total": 1}},
+    {"noteAt": {"key": "kobold-den", "titleIs": "Kobold Den (cleared)", "textContains": "fled west"}}
+  ]
+}

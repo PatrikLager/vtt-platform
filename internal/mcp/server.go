@@ -44,6 +44,11 @@ Poll pattern: act (call a command tool) -> read its result (ok/error) ->
 call get_events_since to see what else happened, yours and others', before
 acting again. There are no push notifications here; you must poll.
 
+Narration (add_narration) is how the table remembers its story — every
+entry becomes part of the same log as the mechanics, replayed together;
+world notes (upsert_note/delete_note, visible in get_state's Notes) are its
+durable memory of facts that outlive any one conversation.
+
 Wire conventions (contract/README.md is the full constitution):
  - int64 fields serialize as JSON STRINGS in results and event envelopes
    (e.g. "sequence": "42"), never bare JSON numbers. get_state's body is
@@ -166,11 +171,11 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// get_state / get_events_since (read_tools.go): registered in the same
-	// tool table as the seven generic command tools above (spec §4).
+	// tool table as the 12 generic command tools above (spec §4).
 	s.registerReadTools()
 
 	// get_ruleset_guide (ruleset-interpreter Task 6, guide_tool.go):
-	// registered in the SAME tool table, bringing the count to 12 (9
+	// registered in the SAME tool table, bringing the count to 15 (12
 	// generic command tools + get_state + get_events_since + this one).
 	s.registerGuideTool()
 

@@ -3,6 +3,7 @@ package engine_test
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -36,6 +37,12 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
 	case *vttv1.ConditionRemoved:
 		e.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
+	case *vttv1.NarrationAdded:
+		e.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: p}
+	case *vttv1.NoteUpserted:
+		e.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
+	case *vttv1.NoteDeleted:
+		e.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
 	}
 	return e
 }
@@ -310,6 +317,121 @@ func TestApplyRejections(t *testing.T) {
 				})
 			},
 		},
+		{
+			name:  "NoteUpserted with empty key",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteUpserted{Key: "", Title: "T", Text: "hello"})
+			},
+		},
+		{
+			name:  "NoteUpserted with key exceeding 128 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteUpserted{Key: strings.Repeat("k", 129), Title: "T", Text: "hello"})
+			},
+		},
+		{
+			name:  "NoteUpserted with title exceeding 256 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteUpserted{Key: "k1", Title: strings.Repeat("t", 257), Text: "hello"})
+			},
+		},
+		{
+			name:  "NoteUpserted with empty text",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteUpserted{Key: "k1", Title: "T", Text: ""})
+			},
+		},
+		{
+			name:  "NoteUpserted with text exceeding 8192 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteUpserted{Key: "k1", Title: "T", Text: strings.Repeat("x", 8193)})
+			},
+		},
+		{
+			name:  "NoteDeleted for absent key",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NoteDeleted{Key: "missing-note"})
+			},
+		},
+		{
+			name:  "NarrationAdded with empty text",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NarrationAdded{Text: ""})
+			},
+		},
+		{
+			name:  "NarrationAdded with text exceeding 8192 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NarrationAdded{Text: strings.Repeat("x", 8193)})
+			},
+		},
+		{
+			name:  "NarrationAdded with negative anchor from",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(20, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: -1, AnchorToSeq: 5})
+			},
+		},
+		{
+			name:  "NarrationAdded with negative anchor to",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(20, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 1, AnchorToSeq: -5})
+			},
+		},
+		{
+			name:  "NarrationAdded with anchor from greater than to",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(100, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 6, AnchorToSeq: 3})
+			},
+		},
+		{
+			// Boundary: to == this event's own sequence is still rejected —
+			// anchors point strictly backward at recorded history, never at
+			// or beyond the narrating event itself.
+			name:  "NarrationAdded with anchor to at or after this event's own sequence",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(10, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 3, AnchorToSeq: 10})
+			},
+		},
+		{
+			name:  "NarrationAdded with anchor from set and to zero (half-set)",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(20, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 5, AnchorToSeq: 0})
+			},
+		},
+		{
+			name:  "NarrationAdded with anchor to set and from zero (half-set)",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(20, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 0, AnchorToSeq: 5})
+			},
+		},
+		{
+			// Merge-gate MUST-FIX (overturning the task-level "deliberate"
+			// ruling): `as` was the only uncapped participant-writable
+			// world-layer field, its effective bound resting silently on
+			// coder/websocket's unpinned ~32 KiB default read limit rather
+			// than a posture the fold itself owns. One over the new
+			// maxNarrationAsBytes cap (256, matching the analogous
+			// NoteUpserted.Title cap) must reject.
+			name:  "NarrationAdded with as exceeding 256 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NarrationAdded{Text: "hello", As: strings.Repeat("a", 257)})
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -369,6 +491,46 @@ func TestAbilityUsedIsDeliberateNoOp(t *testing.T) {
 	after := st.Snapshot()
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("AbilityUsed must not mutate state")
+	}
+}
+
+// TestNarrationAddedIsDeliberateNoOp pins NarrationAdded as testimony-only
+// (world-layer spec §4, mirroring AbilityUsed's pattern): the feed IS the
+// log, read back via the existing event streams — the fold validates the
+// envelope (a well-formed, validly-anchored narration here) but never
+// touches State.
+func TestNarrationAddedIsDeliberateNoOp(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(10, &vttv1.NarrationAdded{
+		Text: "The goblin cutter snarls.", As: "Goblin Cutter",
+		AnchorFromSeq: 3, AnchorToSeq: 5,
+	})))
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("NarrationAdded must not mutate state")
+	}
+}
+
+// TestNarrationAddedAsAtCapIsAccepted is the boundary-accept counterpart to
+// TestApplyRejections' "NarrationAdded with as exceeding 256 bytes" case
+// (merge-gate MUST-FIX): exactly maxNarrationAsBytes (256) must be
+// accepted, pinning the cap at `>`, not `>=` — the same at-cap-accept
+// discipline the note key/title/text caps already follow implicitly via
+// their own accept tests.
+func TestNarrationAddedAsAtCapIsAccepted(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(10, &vttv1.NarrationAdded{
+		Text: "hello", As: strings.Repeat("a", 256),
+	})))
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("NarrationAdded must not mutate state")
 	}
 }
 
@@ -443,6 +605,61 @@ func TestConditionRemovedAccept(t *testing.T) {
 	}
 }
 
+// TestNoteUpsertedAccept covers create: a fresh key gets a Note recording
+// UpdatedSeq from the envelope's own Sequence, not any caller-supplied
+// value (there isn't one — Note has no wire-supplied sequence field).
+func TestNoteUpsertedAccept(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(4, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach", Text: "A river town.",
+	})))
+
+	got, ok := st.Notes["town-hollowreach"]
+	if !ok {
+		t.Fatal("want note town-hollowreach present")
+	}
+	want := engine.Note{Title: "Hollowreach", Text: "A river town.", UpdatedSeq: 4}
+	if got != want {
+		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
+// TestNoteUpsertedReplaceIsLastWriteWins covers the replace path: upserting
+// an existing key overwrites Title/Text wholesale and re-stamps UpdatedSeq
+// from the later event's Sequence — no merge, no history kept in State (the
+// log is the history, per spec §4).
+func TestNoteUpsertedReplaceIsLastWriteWins(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(4, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach", Text: "A river town.",
+	})))
+
+	must(t, engine.Apply(st, env(9, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach (burned)", Text: "Was a river town.",
+	})))
+
+	got := st.Notes["town-hollowreach"]
+	want := engine.Note{Title: "Hollowreach (burned)", Text: "Was a river town.", UpdatedSeq: 9}
+	if got != want {
+		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
+// TestNoteDeletedAccept covers delete of a present key.
+func TestNoteDeletedAccept(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(4, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach", Text: "A river town.",
+	})))
+
+	must(t, engine.Apply(st, env(5, &vttv1.NoteDeleted{Key: "town-hollowreach"})))
+
+	if _, ok := st.Notes["town-hollowreach"]; ok {
+		t.Fatal("want note town-hollowreach absent after delete")
+	}
+}
+
 func TestEventsRetractedIsNoOpInline(t *testing.T) {
 	st := seedScene(t)
 	before := st.Snapshot()
@@ -483,11 +700,14 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 	must(t, engine.Apply(st, env(5, &vttv1.ConditionApplied{
 		ActorId: "a1", ConditionId: "cond1", Source: "spell",
 	})))
+	must(t, engine.Apply(st, env(6, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach", Text: "A river town.",
+	})))
 
 	snap := st.Snapshot()
 
 	// Mutate the ORIGINAL after taking the snapshot.
-	must(t, engine.Apply(st, env(6, &vttv1.TokenMoved{
+	must(t, engine.Apply(st, env(7, &vttv1.TokenMoved{
 		TokenId: "t1", SceneId: "scn",
 		From: &vttv1.GridPosition{X: 1, Y: 1},
 		To:   &vttv1.GridPosition{X: 9, Y: 9},
@@ -496,8 +716,13 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 		st.Actors["a1"].Attributes = map[string]int32{}
 	}
 	st.Actors["a1"].Attributes["x"] = 1
-	must(t, engine.Apply(st, env(7, &vttv1.ConditionApplied{
+	must(t, engine.Apply(st, env(8, &vttv1.ConditionApplied{
 		ActorId: "a1", ConditionId: "cond2", Source: "trap",
+	})))
+	// Overwrite the SAME key post-snapshot: if Snapshot had aliased the map
+	// instead of copying it, this would silently corrupt snap's entry too.
+	must(t, engine.Apply(st, env(9, &vttv1.NoteUpserted{
+		Key: "town-hollowreach", Title: "Hollowreach (burned)", Text: "Was a river town.",
 	})))
 
 	snapTok := snap.Tokens["t1"]
@@ -513,5 +738,11 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 	wantConds := []engine.ActorCondition{{ID: "cond1", Source: "spell", AppliedSeq: 5}}
 	if !reflect.DeepEqual(snapConds, wantConds) {
 		t.Fatalf("snapshot conditions mutated: got %+v, want %+v", snapConds, wantConds)
+	}
+
+	snapNote := snap.Notes["town-hollowreach"]
+	wantNote := engine.Note{Title: "Hollowreach", Text: "A river town.", UpdatedSeq: 6}
+	if snapNote != wantNote {
+		t.Fatalf("snapshot note mutated: got %+v, want %+v", snapNote, wantNote)
 	}
 }

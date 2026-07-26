@@ -1,0 +1,13 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V13",
+  "sequence": "45",
+  "occurredAt": "2026-07-26T09:12:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "dm",
+  "narrationAdded": {
+    "text": "The goblin cutter snarls and lunges, but the blow goes wide.",
+    "as": "Goblin Cutter",
+    "anchorFromSeq": "44",
+    "anchorToSeq": "44"
+  }
+}

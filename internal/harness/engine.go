@@ -171,8 +171,8 @@ type StepResult struct {
 	Detail string
 }
 
-// ProbeResult is one probe's outcome. Kind is "tokenAt", "sessionCount", or
-// "actorExists".
+// ProbeResult is one probe's outcome. Kind is "tokenAt", "sessionCount",
+// "actorExists", "resourceAt", "hasCondition", or "noteAt".
 type ProbeResult struct {
 	Index  int
 	Kind   string
@@ -767,7 +767,17 @@ func evaluateProbe(idx int, p Probe, state *engine.State) ProbeResult {
 			Detail: fmt.Sprintf("hasCondition %s/%s: got present=%t, want present=%t",
 				p.HasCondition.ActorId, p.HasCondition.ConditionId, present, p.HasCondition.Present),
 		}
+	case p.NoteAt != nil:
+		note, ok := state.Notes[p.NoteAt.Key]
+		titleOK := p.NoteAt.TitleIs == "" || note.Title == p.NoteAt.TitleIs
+		textOK := p.NoteAt.TextContains == "" || strings.Contains(note.Text, p.NoteAt.TextContains)
+		pass := ok && titleOK && textOK
+		return ProbeResult{
+			Index: idx, Kind: "noteAt", Pass: pass,
+			Detail: fmt.Sprintf("noteAt %s: got present=%t title=%q text=%q, want titleIs=%q textContains=%q",
+				p.NoteAt.Key, ok, note.Title, note.Text, p.NoteAt.TitleIs, p.NoteAt.TextContains),
+		}
 	default:
-		return ProbeResult{Index: idx, Kind: "unknown", Detail: "probe has none of tokenAt/sessionCount/actorExists/resourceAt/hasCondition set"}
+		return ProbeResult{Index: idx, Kind: "unknown", Detail: "probe has none of tokenAt/sessionCount/actorExists/resourceAt/hasCondition/noteAt set"}
 	}
 }
