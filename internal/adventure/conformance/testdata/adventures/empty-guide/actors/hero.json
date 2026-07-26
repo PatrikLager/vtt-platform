@@ -1,0 +1,15 @@
+{
+  "actor_id": "hero",
+  "name": "Hero",
+  "attributes": {
+    "vim": 10,
+    "vigor": 8,
+    "brace": 6
+  },
+  "resources": {
+    "focus": {
+      "current": 5,
+      "max": 20
+    }
+  }
+}

@@ -320,5 +320,20 @@
       "type": "object"
     },
     "name": "delete_note"
+  },
+  {
+    "description": "Load a prepared adventure into the campaign — compiles its scenes, statblocks, notes, and opening narration into one atomic batch of setup events. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "adventureId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adventureId"
+      ],
+      "type": "object"
+    },
+    "name": "load_adventure"
   }
 ]

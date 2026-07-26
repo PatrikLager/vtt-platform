@@ -1,0 +1,12 @@
+[
+  {
+    "key": "yard-rumor",
+    "title": "Yard Rumor",
+    "text": "Something stirs behind the well."
+  },
+  {
+    "key": "yard-rumor",
+    "title": "Yard Rumor Redux",
+    "text": "Same key, different note."
+  }
+]

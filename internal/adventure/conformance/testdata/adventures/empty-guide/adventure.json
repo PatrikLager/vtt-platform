@@ -1,0 +1,7 @@
+{
+  "id": "fixture-adventure",
+  "name": "Fixture Adventure",
+  "format_version": "1",
+  "ruleset": "fixture-ruleset",
+  "opening_narration": "A quiet room, waiting for something to happen."
+}

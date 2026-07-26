@@ -1,0 +1,26 @@
+{
+  "id": "ravine",
+  "name": "The Ravine Trail",
+  "grid_width": 32,
+  "grid_height": 32,
+  "placements": [
+    {
+      "token_id": "tok-fighter",
+      "actor_id": "act-fighter",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "token_id": "tok-cutter",
+      "actor_id": "act-cutter",
+      "x": 1,
+      "y": 0
+    },
+    {
+      "token_id": "tok-archer",
+      "actor_id": "act-archer",
+      "x": 5,
+      "y": 0
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "actor_id": "mara",
+  "name": "Mara Voss",
+  "attributes": {
+    "brawn": 4,
+    "grit": 1,
+    "footing": 10
+  },
+  "resources": {
+    "drink": {
+      "current": 1,
+      "max": 4
+    },
+    "stamina": {
+      "current": 2,
+      "max": 2
+    }
+  }
+}

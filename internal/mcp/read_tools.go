@@ -93,7 +93,7 @@ var getEventsSinceInputSchema = map[string]any{
 }
 
 // registerReadTools adds get_state and get_events_since to the same tool
-// table New builds the 12 generic command tools into (spec §4: "Both
+// table New builds the 13 generic command tools into (spec §4: "Both
 // registered in the same tool table").
 func (s *Server) registerReadTools() {
 	s.mcp.AddTool(&mcpsdk.Tool{

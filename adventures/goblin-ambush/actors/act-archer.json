@@ -1,0 +1,20 @@
+{
+  "actor_id": "act-archer",
+  "name": "Goblin Archer",
+  "attributes": {
+    "str": 0,
+    "dex": 4,
+    "con": 1,
+    "max_hp": 6,
+    "ac": 14,
+    "fort": 11,
+    "ref": 15,
+    "will": 11
+  },
+  "resources": {
+    "hp": {
+      "current": 6,
+      "max": 6
+    }
+  }
+}

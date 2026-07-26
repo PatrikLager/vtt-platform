@@ -1,0 +1,19 @@
+{
+  "actor_id": "hollis",
+  "name": "Hollis Ketch",
+  "attributes": {
+    "brawn": 3,
+    "grit": 2,
+    "footing": 12
+  },
+  "resources": {
+    "drink": {
+      "current": 0,
+      "max": 5
+    },
+    "stamina": {
+      "current": 2,
+      "max": 2
+    }
+  }
+}

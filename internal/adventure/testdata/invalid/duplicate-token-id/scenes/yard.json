@@ -1,0 +1,20 @@
+{
+  "id": "yard",
+  "name": "The Yard",
+  "grid_width": 10,
+  "grid_height": 10,
+  "placements": [
+    {
+      "token_id": "tok-vim",
+      "actor_id": "vim-fighter",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "token_id": "tok-vim",
+      "actor_id": "brace-guard",
+      "x": 5,
+      "y": 5
+    }
+  ]
+}

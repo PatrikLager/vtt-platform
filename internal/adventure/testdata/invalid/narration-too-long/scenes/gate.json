@@ -1,0 +1,14 @@
+{
+  "id": "gate",
+  "name": "The Gate",
+  "grid_width": 8,
+  "grid_height": 8,
+  "placements": [
+    {
+      "token_id": "tok-vim-2",
+      "actor_id": "vim-fighter",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}

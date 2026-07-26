@@ -129,6 +129,15 @@ message NarrationAdded {
 message NoteUpserted { string key = 1; string title = 2; string text = 3; }
 message NoteDeleted { string key = 1; }
 
+// Pure testimony (AbilityUsed's pattern — engine no-op): the compile
+// batch's FIRST event, making the log self-describing about what was
+// loaded. Every other event the batch produces is existing vocabulary
+// (SceneCreated, ActorAdded, TokenPlaced, NoteUpserted, NarrationAdded).
+message AdventureLoaded {
+  string adventure_id = 1;
+  string name = 2;
+}
+
 message Envelope {
   string event_id = 1;
   int64 sequence = 2;
@@ -153,5 +162,6 @@ message Envelope {
     NarrationAdded narration_added = 22;
     NoteUpserted note_upserted = 23;
     NoteDeleted note_deleted = 24;
+    AdventureLoaded adventure_loaded = 25;
   }
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -9,6 +10,17 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
+
+// errAdventuresRequireRuleset is composeServer's boot-time flag error when
+// adventuresDir is set but rulesetDir is not (adventure-format Task 4,
+// binding, mirroring the MCP flag precedent — cmd/vtt/mcp.go requires the
+// same pairing for get_adventure_guide): every adventure declares the
+// ruleset id it was written for, and Load validates that declaration
+// against "the served ruleset" (spec §7 — "the dir is for THIS table"). With
+// no ruleset configured for serve at all, there is no served ruleset to
+// validate against, so the pairing is required rather than silently
+// skipping validation.
+const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --ruleset (adventures load+validate against the served ruleset)"
 
 // composeServer opens the campaign and identity handles for campaignPath
 // and wires them into a gateway.Server's Handler on an *http.Server bound
@@ -47,7 +59,23 @@ import (
 // loud here, at boot, closing both handles before returning — the same
 // fail-loud-at-open posture composeServer already gives a bad
 // campaign/identity path) and wired in via gateway.Server.WithRuleset.
-func composeServer(campaignPath, addr, rulesetDir string) (*http.Server, func() error, error) {
+//
+// adventuresDir is OPTIONAL (adventure-format Task 4, spec §7): "" keeps
+// every pre-Task-4 behavior exactly as it was — a nil/empty
+// gateway.Server.adventures, load_adventure commands rejected with a clean
+// "no adventures available" CommandResult. A non-empty adventuresDir
+// REQUIRES a non-empty rulesetDir too (errAdventuresRequireRuleset — every
+// adventure declares the ruleset id it was written for, and there is no
+// "the served ruleset" to validate it against otherwise); every immediate
+// subdirectory of adventuresDir is loaded and validated against the served
+// ruleset via loadAdventuresDir (adventures.go) — fail loud here, at boot,
+// on ANY single adventure's failure (spec §7: "All available adventures
+// load+validate at BOOT... fail loud at startup, not at the table"),
+// closing both handles before returning, exactly like a bad rulesetDir
+// above. A mismatched adventure (one declaring a different ruleset id than
+// rulesetDir) is caught by adventure.Load itself (its own ruleset-id-match
+// check) and surfaces as this same boot error.
+func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
@@ -60,14 +88,30 @@ func composeServer(campaignPath, addr, rulesetDir string) (*http.Server, func() 
 	}
 
 	gw := gateway.New(c, ids)
+	var rs *rules.Ruleset
 	if rulesetDir != "" {
-		rs, err := rules.Load(rulesetDir)
+		rs, err = rules.Load(rulesetDir)
 		if err != nil {
 			ids.Close()
 			c.Close()
 			return nil, nil, fmt.Errorf("vtt serve: load ruleset %s: %w", rulesetDir, err)
 		}
 		gw = gw.WithRuleset(rs)
+	}
+
+	if adventuresDir != "" {
+		if rs == nil {
+			ids.Close()
+			c.Close()
+			return nil, nil, errors.New(errAdventuresRequireRuleset)
+		}
+		advs, err := loadAdventuresDir(adventuresDir, rs)
+		if err != nil {
+			ids.Close()
+			c.Close()
+			return nil, nil, fmt.Errorf("vtt serve: load adventures %s: %w", adventuresDir, err)
+		}
+		gw = gw.WithAdventures(advs)
 	}
 
 	srv := &http.Server{

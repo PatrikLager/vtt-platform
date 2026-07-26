@@ -1,0 +1,96 @@
+[
+  {
+    "type": "adventure_loaded",
+    "adventure_loaded": {
+      "adventure_id": "cellar-rats",
+      "name": "Cellar Rats"
+    }
+  },
+  {
+    "type": "scene_created",
+    "scene_created": {
+      "scene_id": "cellar",
+      "name": "The Cellar",
+      "grid_width": 6,
+      "grid_height": 6
+    }
+  },
+  {
+    "type": "actor_added",
+    "actor_added": {
+      "actor_id": "hollis",
+      "name": "Hollis Ketch",
+      "attributes": {
+        "brawn": 3,
+        "grit": 2,
+        "footing": 12
+      },
+      "resources": {
+        "drink": {
+          "current": 0,
+          "max": 5
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      }
+    }
+  },
+  {
+    "type": "actor_added",
+    "actor_added": {
+      "actor_id": "mara",
+      "name": "Mara Voss",
+      "attributes": {
+        "brawn": 4,
+        "grit": 1,
+        "footing": 10
+      },
+      "resources": {
+        "drink": {
+          "current": 1,
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      }
+    }
+  },
+  {
+    "type": "token_placed",
+    "token_placed": {
+      "token_id": "tok-hollis",
+      "scene_id": "cellar",
+      "actor_id": "hollis",
+      "x": 1,
+      "y": 1
+    }
+  },
+  {
+    "type": "token_placed",
+    "token_placed": {
+      "token_id": "tok-mara",
+      "scene_id": "cellar",
+      "actor_id": "mara",
+      "x": 4,
+      "y": 1
+    }
+  },
+  {
+    "type": "note_upserted",
+    "note_upserted": {
+      "key": "cellar-house-rules",
+      "title": "House Rules",
+      "text": "Chairs and fists only — the barkeep confiscates anything sharper before it reaches the cellar stairs."
+    }
+  },
+  {
+    "type": "narration_added",
+    "narration_added": {
+      "text": "The cellar door bangs shut behind you as Hollis and Mara square off between the ale casks, neither one willing to back down first."
+    }
+  }
+]

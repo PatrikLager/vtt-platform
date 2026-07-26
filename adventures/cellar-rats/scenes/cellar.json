@@ -1,0 +1,20 @@
+{
+  "id": "cellar",
+  "name": "The Cellar",
+  "grid_width": 6,
+  "grid_height": 6,
+  "placements": [
+    {
+      "token_id": "tok-hollis",
+      "actor_id": "hollis",
+      "x": 1,
+      "y": 1
+    },
+    {
+      "token_id": "tok-mara",
+      "actor_id": "mara",
+      "x": 4,
+      "y": 1
+    }
+  ]
+}

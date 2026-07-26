@@ -27,7 +27,7 @@ import (
 func TestServeComposeEndToEnd(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}

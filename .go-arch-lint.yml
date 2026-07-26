@@ -31,6 +31,18 @@ components:
   # its parent's entry), and this subpackage's dependency shape genuinely
   # differs from rules' own (it imports rules itself, which rules cannot).
   conformance: { in: internal/rules/conformance }
+  # internal/adventure (Task 2, adventure-format spec §5): Load/Compile for
+  # the adventure format v1 — a directory of prepared content (scenes,
+  # statblock instances, notes, an opening) written FOR a specific ruleset,
+  # compiled into ordinary setup events one AppendBatch applies.
+  adventure: { in: internal/adventure }
+  # internal/adventure/conformance (Task 3, adventure-format spec §6): the
+  # adventure-format analog of internal/rules/conformance — same reasoning
+  # as that package's own entry above (go-arch-lint's `in:` match is
+  # non-recursive, and this subpackage's dependency shape genuinely differs
+  # from adventure's own: it imports adventure AND rules, neither of which
+  # adventure itself may import back).
+  adventureconformance: { in: internal/adventure/conformance }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -42,7 +54,14 @@ deps:
   # use_ability handler calls rules.Resolve directly over an OPTIONAL
   # server-config *rules.Ruleset (nil keeps every pre-Task-6 behavior
   # unchanged — see gateway.Server.WithRuleset's doc comment).
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules] }
+  # adventure added Task 4-forward (adventure-format spec §5/§7): the
+  # gateway's future load_adventure handler will call adventure.Load (at
+  # boot, per-adventure) and adventure.Compile (per request) directly, the
+  # same shape rules gained in Task 6 above. Declared now, alongside Task
+  # 2's own adventure component, rather than left for Task 4 to add — Task
+  # 2's brief pre-authorizes this edge so arch-lint never blocks Task 4's
+  # gateway wiring on a forgotten dependency-graph update.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -79,8 +98,32 @@ deps:
   # Resolve reads — the same shape as rules' own pre-registered deps, plus
   # rules itself (which rules cannot depend on).
   conformance: { mayDependOn: [rules, engine, contract, conformance] }
+  # internal/adventure (Task 2, adventure-format spec §5): Load validates a
+  # statblock's attribute/resource vocabulary against a *rules.Ruleset
+  # (rules dep); Compile builds *vttv1.Envelope values (contract dep) and
+  # checks collisions against an *engine.State snapshot (engine dep).
+  # gateway imports it for the load_adventure handler (Task 4); cmd now
+  # imports it too (Task 4, see cmd's own entry below) — `vtt serve
+  # --adventures-dir`/`vtt mcp --adventures-dir` both walk the adventures
+  # directory and call adventure.Load per subdirectory at boot, the same
+  # as-needed discipline rules' own cmd edge followed (added at Task 6, not
+  # pre-declared earlier).
+  adventure: { mayDependOn: [engine, contract, rules, adventure] }
+  # internal/adventure/conformance (Task 3, adventure-format spec §6): mirrors
+  # rules/conformance's own registration exactly — Run resolves+loads a
+  # ruleset (rules dep), loads+compiles an adventure against it (adventure
+  # dep), compiles against an engine.State (engine dep), and builds
+  # *vttv1.Envelope-shaped goldens (contract dep).
+  adventureconformance: { mayDependOn: [adventure, rules, engine, contract, adventureconformance] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide
   # string, so the P1 wire-client boundary above is untouched).
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules] }
+  # adventure added Task 4 (adventure-format spec §7 wiring): `vtt serve
+  # --adventures-dir` and `vtt mcp --adventures-dir` both walk the
+  # adventures directory and call adventure.Load per subdirectory directly
+  # (cmd composes, same shape as rules above); internal/mcp itself still may
+  # NOT import adventure — its Config carries only the already-loaded guide
+  # strings (map[adventure_id]guide.md content), so the P1 wire-client
+  # boundary is untouched here too.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure] }

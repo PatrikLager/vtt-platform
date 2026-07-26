@@ -58,10 +58,22 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return upsertNoteCmd()
 	case "delete_note":
 		return deleteNoteCmd()
+	case "load_adventure":
+		return loadAdventureCmd()
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
 	}
+}
+
+// loadAdventureCmd builds a minimal, valid LoadAdventure ClientCommand
+// (adventure-format Task 4). Authorize never checks adventure existence —
+// only role — so a bare id is a trivially valid command for authz purposes;
+// the gateway handler (adventure.go) owns the "unknown adventure" lookup.
+func loadAdventureCmd() *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadAdventure{
+		LoadAdventure: &vttv1.LoadAdventure{AdventureId: "goblin-ambush"},
+	}}
 }
 
 // addNarrationCmd builds a plain, unanchored AddNarration ClientCommand — a
@@ -107,7 +119,7 @@ func removeConditionCmd(actorID string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 12 commands x 4 roles authorization matrix.
+// authzCase is one cell of the 13 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -117,19 +129,22 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 48-cell matrix (spec §4, grown from 36 by
-// world-layer Task 3's add_narration/upsert_note/delete_note rows, which
-// themselves grew from 28 by ruleset-interpreter Task 6's use_ability/
-// remove_condition rows): every command against every one of the four
-// roles. move_token/player, use_ability/player, and remove_condition/player
-// are all TRUE here because the shared fixture in
-// TestAuthorizeTableAllCommandsAllRoles gives participant "p-1" ownership of
-// actor "a1" (and its token "t1") — the table alone allows it, and the
-// dedicated ownership tests below independently prove each additional
-// check. add_narration/upsert_note/delete_note have NO ownership check at
-// all (spec §5: "world facts are the DM's" is a role-only gate, unlike
-// move_token/use_ability/remove_condition's per-actor ownership) — a plain
-// role lookup is the entire story for these three rows.
+// authzCases is the full 52-cell matrix (spec §4/§7, grown from 48 by
+// adventure-format Task 4's load_adventure row, which itself grew from 36 by
+// world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
+// 28 by ruleset-interpreter Task 6's use_ability/remove_condition rows):
+// every command against every one of the four roles. move_token/player,
+// use_ability/player, and remove_condition/player are all TRUE here because
+// the shared fixture in TestAuthorizeTableAllCommandsAllRoles gives
+// participant "p-1" ownership of actor "a1" (and its token "t1") — the
+// table alone allows it, and the dedicated ownership tests below
+// independently prove each additional check. add_narration/upsert_note/
+// delete_note have NO ownership check at all (spec §5: "world facts are the
+// DM's" is a role-only gate, unlike move_token/use_ability/remove_condition's
+// per-actor ownership) — a plain role lookup is the entire story for these
+// three rows. load_adventure is dm/agent only (spec §7: "the DM calls
+// load_adventure when the table is ready") — same shape as create_scene/
+// add_actor/place_token, no ownership check, no player row.
 var authzCases = []authzCase{
 	{"move_token", identity.RoleDM, true},
 	{"move_token", identity.RoleAgent, true},
@@ -190,6 +205,11 @@ var authzCases = []authzCase{
 	{"delete_note", identity.RoleAgent, true},
 	{"delete_note", identity.RolePlayer, false},
 	{"delete_note", identity.RoleSpectator, false},
+
+	{"load_adventure", identity.RoleDM, true},
+	{"load_adventure", identity.RoleAgent, true},
+	{"load_adventure", identity.RolePlayer, false},
+	{"load_adventure", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -204,8 +224,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 48 {
-		t.Fatalf("authzCases has %d entries, want 48 (12 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 52 {
+		t.Fatalf("authzCases has %d entries, want 52 (13 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
