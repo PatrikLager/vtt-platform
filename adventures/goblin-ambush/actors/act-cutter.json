@@ -1,0 +1,20 @@
+{
+  "actor_id": "act-cutter",
+  "name": "Goblin Cutter",
+  "attributes": {
+    "str": 1,
+    "dex": 3,
+    "con": 1,
+    "max_hp": 8,
+    "ac": 15,
+    "fort": 12,
+    "ref": 14,
+    "will": 11
+  },
+  "resources": {
+    "hp": {
+      "current": 8,
+      "max": 8
+    }
+  }
+}

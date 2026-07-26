@@ -1,0 +1,24 @@
+{
+  "actor_id": "act-fighter",
+  "name": "Human Fighter",
+  "attributes": {
+    "str": 4,
+    "dex": 2,
+    "con": 3,
+    "max_hp": 28,
+    "ac": 17,
+    "fort": 15,
+    "ref": 13,
+    "will": 12
+  },
+  "resources": {
+    "hp": {
+      "current": 28,
+      "max": 28
+    },
+    "flurry_uses": {
+      "current": 1,
+      "max": 1
+    }
+  }
+}

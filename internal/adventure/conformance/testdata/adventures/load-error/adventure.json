@@ -1,0 +1,7 @@
+{
+  "id": "fixture-adventure",
+  "name": "Fixture Adventure",
+  "format_version": "1",
+  "ruleset": "does-not-exist-ruleset",
+  "opening_narration": "This adventure never gets far enough to matter."
+}

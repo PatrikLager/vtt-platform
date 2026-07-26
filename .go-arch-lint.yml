@@ -36,6 +36,13 @@ components:
   # statblock instances, notes, an opening) written FOR a specific ruleset,
   # compiled into ordinary setup events one AppendBatch applies.
   adventure: { in: internal/adventure }
+  # internal/adventure/conformance (Task 3, adventure-format spec §6): the
+  # adventure-format analog of internal/rules/conformance — same reasoning
+  # as that package's own entry above (go-arch-lint's `in:` match is
+  # non-recursive, and this subpackage's dependency shape genuinely differs
+  # from adventure's own: it imports adventure AND rules, neither of which
+  # adventure itself may import back).
+  adventureconformance: { in: internal/adventure/conformance }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -102,6 +109,12 @@ deps:
   # as-needed discipline rules' own cmd edge followed (added at Task 6, not
   # pre-declared at Task 4/5).
   adventure: { mayDependOn: [engine, contract, rules, adventure] }
+  # internal/adventure/conformance (Task 3, adventure-format spec §6): mirrors
+  # rules/conformance's own registration exactly — Run resolves+loads a
+  # ruleset (rules dep), loads+compiles an adventure against it (adventure
+  # dep), compiles against an engine.State (engine dep), and builds
+  # *vttv1.Envelope-shaped goldens (contract dep).
+  adventureconformance: { mayDependOn: [adventure, rules, engine, contract, adventureconformance] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide

@@ -1,0 +1,14 @@
+{
+  "id": "room",
+  "name": "The Room",
+  "grid_width": 4,
+  "grid_height": 4,
+  "placements": [
+    {
+      "token_id": "tok-hero",
+      "actor_id": "hero",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}

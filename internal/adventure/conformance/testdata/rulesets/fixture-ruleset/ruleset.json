@@ -1,0 +1,14 @@
+{
+  "id": "fixture-ruleset",
+  "name": "Fixture Ruleset",
+  "format_version": "2",
+  "attributes": ["vim", "vigor"],
+  "defenses": ["brace"],
+  "resources": [
+    {
+      "name": "focus",
+      "default_max_expr": "10 + @vim",
+      "thresholds": []
+    }
+  ]
+}

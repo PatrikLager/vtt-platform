@@ -1,0 +1,60 @@
+[
+  {
+    "type": "adventure_loaded",
+    "adventure_loaded": {
+      "adventure_id": "fixture-adventure",
+      "name": "Fixture Adventure"
+    }
+  },
+  {
+    "type": "scene_created",
+    "scene_created": {
+      "scene_id": "room",
+      "name": "The Room",
+      "grid_width": 4,
+      "grid_height": 4
+    }
+  },
+  {
+    "type": "actor_added",
+    "actor_added": {
+      "actor_id": "hero",
+      "name": "Hero",
+      "attributes": {
+        "vim": 10,
+        "vigor": 8,
+        "brace": 6
+      },
+      "resources": {
+        "focus": {
+          "current": 5,
+          "max": 99
+        }
+      }
+    }
+  },
+  {
+    "type": "token_placed",
+    "token_placed": {
+      "token_id": "tok-hero",
+      "scene_id": "room",
+      "actor_id": "hero",
+      "x": 0,
+      "y": 0
+    }
+  },
+  {
+    "type": "note_upserted",
+    "note_upserted": {
+      "key": "room-note",
+      "title": "A Note",
+      "text": "Dust covers everything."
+    }
+  },
+  {
+    "type": "narration_added",
+    "narration_added": {
+      "text": "A quiet room, waiting for something to happen."
+    }
+  }
+]
