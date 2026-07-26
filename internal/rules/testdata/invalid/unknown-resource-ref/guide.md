@@ -1,7 +1,18 @@
 # Test Ruleset
 
-A minimal ruleset fixture used to exercise the `internal/rules` loader and
-interpreter in tests. Not a real game system.
+A minimal format-v2 ruleset fixture used to exercise the `internal/rules`
+loader and interpreter in tests. Not a real game system.
+
+## Atoms
+
+- **melee-delivery** (`reach`: int) — targeting at the given reach.
+- **self-delivery** — targeting at range 0.
+- **strike-roll** (`attack_stat`: attribute) — `1d20 + attack_stat` vs
+  `guard`, labeled `hit`/`miss`.
+- **strike-damage** (`power`: int) — on a `strike-roll` hit, spends
+  `power` points of `pool_a`.
+- **apply-guarded** / **remove-guarded** — unconditionally apply/remove
+  `guarded`.
 
 ## Abilities
 

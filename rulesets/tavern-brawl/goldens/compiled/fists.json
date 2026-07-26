@@ -1,0 +1,29 @@
+{
+  "id": "fists",
+  "name": "Fists",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.brawn",
+    "vs": "@target.footing",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "drink",
+        "delta_expr": "(1)"
+      }
+    ],
+    null
+  ]
+}

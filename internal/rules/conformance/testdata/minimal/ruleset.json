@@ -1,7 +1,7 @@
 {
   "id": "minimal",
   "name": "Minimal",
-  "format_version": "1",
+  "format_version": "2",
   "attributes": ["str"],
   "defenses": ["def"],
   "resources": [

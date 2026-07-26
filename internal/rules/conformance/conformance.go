@@ -31,9 +31,13 @@
 //	  "rolls": [{"results": [15]}],        // one entry per expression that
 //	                                       // actually rolls dice, in the
 //	                                       // exact order Resolve evaluates
-//	                                       // them (attack roll first, then
-//	                                       // each hit/miss/effect
-//	                                       // resource_change that rolls)
+//	                                       // them, per target: the
+//	                                       // resolution roll first, then —
+//	                                       // for a v2 vs-with-dice
+//	                                       // resolution — the Vs roll
+//	                                       // (recorded only when it rolls),
+//	                                       // then each hit/miss/effect
+//	                                       // resource_change that rolls
 //	  "want_error": "",                    // set XOR want_events, never both
 //	  "want_events": [
 //	    {"type": "AbilityUsed", "actor_id": "...", "ability_id": "...",
@@ -59,6 +63,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -69,8 +74,10 @@ import (
 
 // Run validates the ruleset directory at dir. A nil return means dir is a
 // fully conformant ruleset: it loads cleanly, every ability it declares
-// resolves against a fixture actor generated from its own manifest, and
-// every golden fixture it ships (if any) reproduces exactly.
+// resolves against a fixture actor generated from its own manifest, every
+// golden fixture it ships (if any) reproduces exactly, and — for a
+// format-v2 ruleset (Task 3, spec §8) — every declared ability ships a
+// matching compiled-form golden under goldens/compiled/.
 func Run(dir string) error {
 	rs, err := rules.Load(dir)
 	if err != nil {
@@ -80,6 +87,9 @@ func Run(dir string) error {
 		return fmt.Errorf("conformance: %s: %w", dir, err)
 	}
 	if err := runGoldens(dir, rs); err != nil {
+		return fmt.Errorf("conformance: %s: %w", dir, err)
+	}
+	if err := runCompiledGoldens(dir, rs); err != nil {
 		return fmt.Errorf("conformance: %s: %w", dir, err)
 	}
 	return nil
@@ -124,8 +134,17 @@ func (smokeRoller) Roll(n, sides int) ([]int, int) {
 func smokeTest(rs *rules.Ruleset) error {
 	st := buildFixtureState(rs)
 
-	ids := make([]string, 0, len(rs.Abilities))
-	for id := range rs.Abilities {
+	// Iterates rs.Compiled, not rs.Abilities (Task 3, spec 5c pillar:
+	// "Resolve executes CompiledPower through ONE code path"): Compiled is
+	// now populated for EVERY successfully-loaded ruleset, v1 (via the
+	// load.go adapter) and v2 (via compile.go) alike, with the exact same
+	// key set Abilities would have had for a v1 ruleset — so this is a
+	// pure rename for v1's existing behavior, and closes a real gap for
+	// v2: a v2-loaded Ruleset's Abilities is deliberately empty (v2's
+	// abilities/*.json are compositions, not v1 Ability-shaped), so this
+	// smoke pass previously iterated zero abilities for any v2 ruleset.
+	ids := make([]string, 0, len(rs.Compiled))
+	for id := range rs.Compiled {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids) // deterministic order; map iteration never leaks out
@@ -203,7 +222,7 @@ func runGoldens(dir string, rs *rules.Ruleset) error {
 		return fmt.Errorf("goldens: %w", err)
 	}
 	sort.Strings(paths) // deterministic order across a filesystem's own listing
-	covered := make(map[string]bool, len(rs.Abilities))
+	covered := make(map[string]bool, len(rs.Compiled))
 	for _, p := range paths {
 		g, err := decodeGolden(p)
 		if err != nil {
@@ -220,9 +239,12 @@ func runGoldens(dir string, rs *rules.Ruleset) error {
 	// silently lose all its pins (a goldens/ rename, a .JSON typo, an
 	// accidental deletion) with zero signal, or a future ruleset can satisfy
 	// "the SAME suite untouched" with no golden coverage at all. Deterministic
-	// error (sorted) naming the first uncovered ability.
+	// error (sorted) naming the first uncovered ability. Iterates rs.Compiled
+	// (Task 3), not rs.Abilities — see smokeTest's comment; this is what
+	// makes batch-golden enforcement apply to v2 rulesets' abilities for the
+	// first time, not just v1's.
 	var uncovered []string
-	for id := range rs.Abilities {
+	for id := range rs.Compiled {
 		if !covered[id] {
 			uncovered = append(uncovered, id)
 		}
@@ -460,6 +482,194 @@ func compareOneEvent(env *vttv1.Envelope, w goldenEvent) error {
 	default:
 		return fmt.Errorf("golden declares unknown event type %q", w.Type)
 	}
+}
+
+// --- compiled-form goldens (Task 3, spec 5c §6/§8) ---
+//
+// A compiled-form golden (goldens/compiled/<ability>.json) pins the
+// flattened CompiledPower a ruleset's Load produces for one ability — spec
+// §6's "inspectable artifact... conformance can dump it" — so a refactor
+// of a v2 ruleset's atoms that changes what an ability compiles TO (not
+// just how it's authored) is a visible, reviewed drift, not a silent
+// behavior change. REQUIRED per declared ability: every ruleset loads as
+// format_version "2" (format v1 is retired — load.go), so every ability a
+// ruleset declares ships a compiled-form golden. The canonical
+// serialization is compiledPowerDump below:
+// stable field order (a struct, not CompiledPower's own map-shaped
+// internals — it has none, but the DTO shape is what's actually
+// marshaled, independent of Go's zero-value/field-order quirks), and
+// expression SourceText (RollSrc/VsSrc/DeltaExprSrc — spec's explicit
+// "not AST" requirement; CompiledPower's *Expr fields have no exported
+// internals to marshal at all, so this DTO is the only way to serialize
+// one regardless).
+
+// DumpCompiledPower renders cp as the canonical JSON serialization
+// compiled-form goldens pin. Exported as the "dump helper... for
+// authoring" the task brief calls for: derive a golden by loading the
+// real ruleset, running this against rs.Compiled[id], and writing the
+// result verbatim to goldens/compiled/<id>.json — runCompiledGoldens
+// (below) is the read side of the exact same DTO.
+func DumpCompiledPower(cp *rules.CompiledPower) ([]byte, error) {
+	b, err := json.MarshalIndent(toCompiledPowerDump(cp), "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("conformance: dump compiled power %q: %w", cp.ID, err)
+	}
+	return append(b, '\n'), nil
+}
+
+type compiledPowerDump struct {
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	Usage          usageDump        `json:"usage"`
+	Targeting      targetingDump    `json:"targeting"`
+	Resolution     *resolutionDump  `json:"resolution,omitempty"`
+	BranchOutcomes [2][]outcomeDump `json:"branch_outcomes"`
+	Effects        []outcomeDump    `json:"effects,omitempty"`
+}
+
+type usageDump struct {
+	AtWill  bool         `json:"at_will,omitempty"`
+	Limited *limitedDump `json:"limited,omitempty"`
+}
+
+type limitedDump struct {
+	Resource string `json:"resource"`
+	Cost     int    `json:"cost"`
+}
+
+type targetingDump struct {
+	Range      int `json:"range"`
+	MaxTargets int `json:"max_targets"`
+}
+
+type resolutionDump struct {
+	Roll     string    `json:"roll"`
+	Vs       string    `json:"vs"`
+	Branches [2]string `json:"branches"`
+}
+
+// outcomeDump mirrors rules.Outcome's oneof-by-Kind shape (format.go):
+// exactly one of Resource+DeltaExpr, ConditionID (for apply_condition), or
+// ConditionID (for remove_condition — Kind disambiguates which) is
+// populated, matching the field it came from.
+type outcomeDump struct {
+	Kind        string `json:"kind"`
+	Resource    string `json:"resource,omitempty"`
+	DeltaExpr   string `json:"delta_expr,omitempty"`
+	ConditionID string `json:"condition_id,omitempty"`
+}
+
+const (
+	outcomeKindResourceChange  = "resource_change"
+	outcomeKindApplyCondition  = "apply_condition"
+	outcomeKindRemoveCondition = "remove_condition"
+)
+
+func toCompiledPowerDump(cp *rules.CompiledPower) compiledPowerDump {
+	dto := compiledPowerDump{
+		ID:             cp.ID,
+		Name:           cp.Name,
+		Usage:          usageDump{AtWill: cp.Usage.AtWill},
+		Targeting:      targetingDump{Range: cp.Targeting.Range, MaxTargets: cp.Targeting.MaxTargets},
+		BranchOutcomes: [2][]outcomeDump{toOutcomeDumps(cp.BranchOutcomes[0]), toOutcomeDumps(cp.BranchOutcomes[1])},
+		Effects:        toOutcomeDumps(cp.Effects),
+	}
+	if cp.Usage.Limited != nil {
+		dto.Usage.Limited = &limitedDump{Resource: cp.Usage.Limited.Resource, Cost: cp.Usage.Limited.Cost}
+	}
+	if cp.Resolution != nil {
+		dto.Resolution = &resolutionDump{
+			Roll:     cp.Resolution.RollSrc,
+			Vs:       cp.Resolution.VsSrc,
+			Branches: cp.Resolution.Branches,
+		}
+	}
+	return dto
+}
+
+func toOutcomeDumps(outcomes []rules.Outcome) []outcomeDump {
+	if len(outcomes) == 0 {
+		return nil
+	}
+	out := make([]outcomeDump, len(outcomes))
+	for i, o := range outcomes {
+		switch o.Kind {
+		case rules.OutcomeResourceChange:
+			out[i] = outcomeDump{Kind: outcomeKindResourceChange, Resource: o.ResourceChange.Resource, DeltaExpr: o.ResourceChange.DeltaExprSrc}
+		case rules.OutcomeApplyCondition:
+			out[i] = outcomeDump{Kind: outcomeKindApplyCondition, ConditionID: o.ApplyCondition.ID}
+		case rules.OutcomeRemoveCondition:
+			out[i] = outcomeDump{Kind: outcomeKindRemoveCondition, ConditionID: o.RemoveCondition.ID}
+		}
+	}
+	return out
+}
+
+// runCompiledGoldens enforces spec §8's per-ability compiled-form golden:
+// goldens/compiled/<id>.json must exist and deep-equal (via
+// compiledPowerDump, so JSON formatting/key-order differences never cause a
+// false failure — only real content drift does) the ruleset's actual
+// rs.Compiled[id]. A missing file or a content mismatch is a named failure,
+// naming both the ability and the golden path, with a got/want dump on
+// mismatch (mirroring compareEvents' diagnostic style below for the
+// batch-golden pass). Every ruleset loads as format_version "2" (v1 is
+// retired), so there is no exemption.
+func runCompiledGoldens(dir string, rs *rules.Ruleset) error {
+	ids := make([]string, 0, len(rs.Compiled))
+	for id := range rs.Compiled {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // deterministic order; map iteration never leaks out
+
+	for _, id := range ids {
+		path := filepath.Join(dir, "goldens", "compiled", id+".json")
+		wantBytes, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("ability %q: missing compiled golden %s: %w", id, path, err)
+		}
+		var want compiledPowerDump
+		dec := json.NewDecoder(bytes.NewReader(wantBytes))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&want); err != nil {
+			return fmt.Errorf("ability %q: compiled golden %s: decode: %w", id, path, err)
+		}
+		got := toCompiledPowerDump(rs.Compiled[id])
+		if !reflect.DeepEqual(got, want) {
+			gotBytes, dumpErr := DumpCompiledPower(rs.Compiled[id])
+			if dumpErr != nil {
+				return fmt.Errorf("ability %q: compiled golden %s does not match the compiled power (drift), and re-dumping for diagnostics failed: %w", id, path, dumpErr)
+			}
+			return fmt.Errorf("ability %q: compiled golden %s does not match the compiled power (drift)\ngot:\n%s\nwant:\n%s", id, path, gotBytes, wantBytes)
+		}
+	}
+
+	// Reverse direction (finding R1): a goldens/compiled/*.json file whose
+	// name matches no compiled ability is a stale pin (a rename or deletion
+	// left it behind) — the forward loop above never reads it, so without
+	// this check it sits in the repo as an authoritative-looking artifact
+	// forever. Reject it, naming the orphan. The golden filename = ability id
+	// convention is thus validated in BOTH directions.
+	compiledDir := filepath.Join(dir, "goldens", "compiled")
+	entries, err := os.ReadDir(compiledDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No compiled-golden directory at all: the forward loop already
+			// failed above for any declared ability, and a ruleset with zero
+			// abilities has nothing to orphan.
+			return nil
+		}
+		return fmt.Errorf("reading compiled goldens directory %s: %w", compiledDir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".json")
+		if _, ok := rs.Compiled[id]; !ok {
+			return fmt.Errorf("orphan compiled golden %s: names ability %q, which this ruleset does not declare (a stale pin left by a rename or deletion)", filepath.Join(compiledDir, e.Name()), id)
+		}
+	}
+	return nil
 }
 
 func equalStrings(a, b []string) bool {

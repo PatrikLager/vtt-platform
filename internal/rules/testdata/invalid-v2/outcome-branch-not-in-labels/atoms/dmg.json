@@ -1,0 +1,16 @@
+{
+  "id": "dmg",
+  "params": [],
+  "provides": [],
+  "consumes": ["clash"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "clash",
+      "branch": "miss",
+      "effects": [
+        { "resource_change": { "resource": "focus", "delta_expr": "0" } }
+      ]
+    }
+  ]
+}

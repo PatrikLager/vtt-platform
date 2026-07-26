@@ -2,6 +2,11 @@
 
 **Date:** 2026-07-25
 **Status:** Approved design (brainstorming output)
+**Superseded (2026-07-26):** format v1 defined here is superseded by
+format v2 (`2026-07-25-format-v2-composition-design.md`, merged
+2026-07-26); §§4-5's format/expression definitions are historical. The
+execution semantics — event ordering, thresholds, testimony, engine
+verification — remain authoritative as amended.
 **Parent:** Platform spec §4.6 (there called "rule modules" — terminology
 amended by this spec, see §2.4); pillars P2 (rules as data; vocabulary ban)
 and P4 (boundary proven by a toy second ruleset); ADR-007 note (module/

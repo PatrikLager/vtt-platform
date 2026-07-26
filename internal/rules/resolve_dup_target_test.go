@@ -13,6 +13,9 @@ import (
 // which would let a wire client concentrate a full max_targets fan-out (and
 // its stateful resource_change outcomes) on a single actor.
 func TestResolveRejectsDuplicateTargetIDs(t *testing.T) {
+	// fixtureRuleset (resolve_test.go) already populates Compiled directly —
+	// Resolve executes CompiledPower exclusively, for every hand-built
+	// fixture in this package.
 	rs := fixtureRuleset(t)
 	st := newTestState()
 	putActor(st, "a", map[string]int32{"brawn": 3}, nil)

@@ -1,0 +1,19 @@
+{
+  "id": "invalid-fixture",
+  "name": "Invalid Fixture",
+  "format_version": "2",
+  "attributes": ["vim"],
+  "defenses": ["brace"],
+  "resources": [
+    {
+      "name": "focus",
+      "thresholds": [
+        {
+          "when": "@caster.vim",
+          "apply_condition": "winded",
+          "remove_when_false": true
+        }
+      ]
+    }
+  ]
+}

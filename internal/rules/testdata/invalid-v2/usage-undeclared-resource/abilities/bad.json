@@ -1,0 +1,9 @@
+{
+  "id": "bad",
+  "name": "Bad",
+  "usage": { "limited": { "resource": "no_such_pool", "cost": 1 } },
+  "compose": [
+    { "atom": "reach", "bind": {} },
+    { "atom": "gain", "bind": {} }
+  ]
+}

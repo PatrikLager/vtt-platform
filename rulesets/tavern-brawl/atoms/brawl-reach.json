@@ -1,0 +1,11 @@
+{
+  "id": "brawl-reach",
+  "params": [
+    { "name": "reach", "kind": "int" }
+  ],
+  "provides": ["reach"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": "{reach}", "max_targets": 1 }
+  ]
+}

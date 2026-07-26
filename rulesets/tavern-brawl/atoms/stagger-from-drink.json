@@ -1,0 +1,16 @@
+{
+  "id": "stagger-from-drink",
+  "params": [],
+  "provides": [],
+  "consumes": ["swing"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "swing",
+      "branch": "hit",
+      "effects": [
+        { "apply_condition": { "id": "dazed-by-ale" } }
+      ]
+    }
+  ]
+}

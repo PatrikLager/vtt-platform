@@ -2,8 +2,8 @@
   "id": "splash-of-water",
   "name": "Splash of Water",
   "usage": "at_will",
-  "targeting": { "range": 1, "max_targets": 1 },
-  "effect": [
-    { "remove_condition": { "id": "dazed-by-ale" } }
+  "compose": [
+    { "atom": "brawl-reach", "bind": { "reach": 1 } },
+    { "atom": "towel-off", "bind": {} }
   ]
 }

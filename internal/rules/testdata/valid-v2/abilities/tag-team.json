@@ -1,0 +1,11 @@
+{
+  "id": "tag-team",
+  "name": "Tag Team",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "reach-delivery", "bind": { "reach": 1 } },
+    { "atom": "clash-roll", "bind": { "clash_stat": "vim", "edge": 0 } },
+    { "atom": "tag-q", "bind": {} },
+    { "atom": "tag-p", "bind": {} }
+  ]
+}

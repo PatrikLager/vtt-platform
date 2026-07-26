@@ -61,11 +61,95 @@ func TestRunGoldenMismatch(t *testing.T) {
 	}
 }
 
+// TestRunOrphanCompiledGolden pins finding R1: a goldens/compiled/*.json
+// file whose name matches no compiled ability (a stale pin left behind by a
+// rename or deletion) must fail Run, naming the orphan — the reverse of the
+// missing-golden check, closing the one load-bearing filename convention the
+// suite previously validated in only one direction.
+func TestRunOrphanCompiledGolden(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-orphan-compiled-golden"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-orphan-compiled-golden): want error for the orphan compiled golden, got nil")
+	}
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("Run(minimal-v2-orphan-compiled-golden) error = %q, want it to name the orphan %q", err.Error(), "ghost")
+	}
+	if !strings.Contains(err.Error(), "orphan") {
+		t.Errorf("Run(minimal-v2-orphan-compiled-golden) error = %q, want it to call out the orphan", err.Error())
+	}
+}
+
 func TestRunUnknownDirectory(t *testing.T) {
 	if err := conformance.Run(fixture("does-not-exist")); err == nil {
 		t.Fatal("Run(does-not-exist): want error, got nil")
 	}
 }
+
+// TestRunValidV2Ruleset is TestRunValidRuleset's format-v2 counterpart
+// (Task 3): a single composed ability ("poke", minimal-v2/) whose batch
+// golden (goldens/poke-hit.json) AND compiled-form golden
+// (goldens/compiled/poke.json) both reproduce exactly — proving the smoke
+// pass, the batch-golden pass, and the NEW compiled-form-golden pass
+// (spec §8) all actually run for a v2 ruleset, not just a v1 one (a v2
+// ruleset's Abilities map is deliberately empty — Task 2's design
+// decision — so before Task 3 rewired smokeTest/runGoldens to iterate
+// rs.Compiled instead, both passes silently covered ZERO abilities for
+// any v2 ruleset; this test would have passed vacuously against that gap).
+func TestRunValidV2Ruleset(t *testing.T) {
+	if err := conformance.Run(fixture("minimal-v2")); err != nil {
+		t.Fatalf("Run(minimal-v2): unexpected error: %v", err)
+	}
+}
+
+// TestRunCompiledGoldenMissing proves the compiled-form golden pass is
+// actually enforced for a v2 ruleset (spec §8, Task 3): a ruleset
+// otherwise identical to minimal-v2 but shipping no goldens/compiled/
+// directory at all must fail Run, naming the ability with no compiled
+// golden.
+func TestRunCompiledGoldenMissing(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-missing-compiled-golden"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-missing-compiled-golden): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "poke") {
+		t.Errorf("Run(minimal-v2-missing-compiled-golden) error = %q, want it to name the ability %q", err.Error(), "poke")
+	}
+	if !strings.Contains(err.Error(), "missing compiled golden") {
+		t.Errorf("Run(minimal-v2-missing-compiled-golden) error = %q, want it to say the golden is missing", err.Error())
+	}
+}
+
+// TestRunCompiledGoldenMismatch proves compiled-golden comparison is exact,
+// not vacuous: a goldens/compiled/poke.json that deliberately disagrees
+// with what the ruleset actually compiles to (targeting.range: 99 instead
+// of 1 — a drifted/hand-edited golden) must fail Run, naming the ability
+// and the drift.
+func TestRunCompiledGoldenMismatch(t *testing.T) {
+	err := conformance.Run(fixture("minimal-v2-compiled-golden-mismatch"))
+	if err == nil {
+		t.Fatal("Run(minimal-v2-compiled-golden-mismatch): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "poke") {
+		t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to name the ability %q", err.Error(), "poke")
+	}
+	if !strings.Contains(err.Error(), "drift") {
+		t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to call out the drift", err.Error())
+	}
+}
+
+// TestRunCompiledGoldenExemptForV1 (REMOVED, Task 4): proved the exemption
+// half of spec §8's rule ("v1 rulesets exempt until none exist" — the
+// task brief's own words) by pointing conformance.Run at a v1-shaped
+// "minimal" fixture that shipped no goldens/compiled/ directory. Task 4's
+// sunset retires format_version "1" entirely — Load rejects it before
+// reading a single file, so no ruleset directory can be "v1-shaped and
+// loadable" anymore, and this test's premise is unreproducible by
+// construction, not merely stale. "minimal" itself migrated to v2 (Task
+// 4 report) and now ships goldens/compiled/poke.json like every other v2
+// fixture; runCompiledGoldens's former `if rs.FormatVersion != "2" { return
+// nil }` exemption clause was consequently dead code (Load never returns a
+// Ruleset with any other FormatVersion) and has been removed in the fix
+// wave.
 
 // TestRunMissingPerAbilityGolden pins F7: spec §8 mandates a golden scenario
 // per ability, so a ruleset that loads and smoke-passes but ships no golden

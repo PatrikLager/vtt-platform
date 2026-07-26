@@ -1,0 +1,11 @@
+{
+  "id": "bad",
+  "params": [
+    { "name": "x", "kind": "bogus" }
+  ],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 1, "max_targets": 1 }
+  ]
+}

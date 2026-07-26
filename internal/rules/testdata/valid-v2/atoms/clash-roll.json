@@ -1,0 +1,18 @@
+{
+  "id": "clash-roll",
+  "params": [
+    { "name": "clash_stat", "kind": "attribute" },
+    { "name": "edge", "kind": "int" }
+  ],
+  "provides": ["clash"],
+  "consumes": ["delivery"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + @caster.{clash_stat} + {edge}",
+      "vs": "@target.brace",
+      "branches": ["connect", "graze"]
+    }
+  ]
+}

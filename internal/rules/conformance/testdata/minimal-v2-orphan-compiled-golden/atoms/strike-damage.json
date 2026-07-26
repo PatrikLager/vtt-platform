@@ -1,0 +1,16 @@
+{
+  "id": "strike-damage",
+  "params": [],
+  "provides": [],
+  "consumes": ["strike"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "hit",
+      "effects": [
+        { "resource_change": { "resource": "pool", "delta_expr": "1" } }
+      ]
+    }
+  ]
+}

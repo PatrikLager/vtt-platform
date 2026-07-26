@@ -1,0 +1,22 @@
+{
+  "id": "sober-up",
+  "name": "Sober Up",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 0,
+    "max_targets": 1
+  },
+  "branch_outcomes": [
+    null,
+    null
+  ],
+  "effects": [
+    {
+      "kind": "resource_change",
+      "resource": "drink",
+      "delta_expr": "0 - #target.drink"
+    }
+  ]
+}

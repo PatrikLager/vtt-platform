@@ -1,0 +1,10 @@
+{
+  "id": "quick-jab",
+  "name": "Quick Jab",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "reach-delivery", "bind": { "reach": 1 } },
+    { "atom": "clash-roll", "bind": { "clash_stat": "vim", "edge": 2 } },
+    { "atom": "clash-damage", "bind": { "power": 3 } }
+  ]
+}

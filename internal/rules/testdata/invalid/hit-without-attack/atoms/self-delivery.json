@@ -1,0 +1,9 @@
+{
+  "id": "self-delivery",
+  "params": [],
+  "provides": ["delivery", "strike"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 0, "max_targets": 1 }
+  ]
+}

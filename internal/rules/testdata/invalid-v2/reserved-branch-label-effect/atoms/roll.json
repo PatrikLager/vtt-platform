@@ -1,0 +1,15 @@
+{
+  "id": "roll",
+  "params": [],
+  "provides": ["x"],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "x",
+      "roll": "1d20 + @caster.vim",
+      "vs": "@target.brace",
+      "branches": ["effect", "miss"]
+    }
+  ]
+}

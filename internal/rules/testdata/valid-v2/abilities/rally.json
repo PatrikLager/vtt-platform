@@ -1,0 +1,9 @@
+{
+  "id": "rally",
+  "name": "Rally",
+  "usage": { "limited": { "resource": "focus", "cost": 1 } },
+  "compose": [
+    { "atom": "reach-delivery", "bind": { "reach": 0 } },
+    { "atom": "rally-effect", "bind": { "gain": 5 } }
+  ]
+}

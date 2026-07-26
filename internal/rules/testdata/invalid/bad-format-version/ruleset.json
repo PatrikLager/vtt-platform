@@ -1,7 +1,7 @@
 {
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
+  "format_version": "3",
   "attributes": ["brawn", "grit"],
   "defenses": ["guard"],
   "resources": [

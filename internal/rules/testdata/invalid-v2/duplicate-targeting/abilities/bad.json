@@ -1,0 +1,9 @@
+{
+  "id": "bad",
+  "name": "Bad",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "a", "bind": {} },
+    { "atom": "b", "bind": {} }
+  ]
+}

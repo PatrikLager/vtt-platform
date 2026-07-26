@@ -1,0 +1,5 @@
+{
+  "id": "target",
+  "name": "Target",
+  "description": "A condition whose id collides with a reserved scope word."
+}

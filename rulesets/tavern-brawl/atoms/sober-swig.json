@@ -1,0 +1,16 @@
+{
+  "id": "sober-swig",
+  "params": [],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": null,
+      "branch": "always",
+      "effects": [
+        { "resource_change": { "resource": "drink", "delta_expr": "0 - #target.drink" } }
+      ]
+    }
+  ]
+}

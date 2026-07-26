@@ -1,0 +1,18 @@
+{
+  "id": "bad",
+  "params": [
+    { "name": "edge", "kind": "int" }
+  ],
+  "provides": ["clash"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": 1, "max_targets": 1 },
+    {
+      "kind": "resolution",
+      "key": "clash",
+      "roll": "1d20 + {nope}",
+      "vs": "@target.brace",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

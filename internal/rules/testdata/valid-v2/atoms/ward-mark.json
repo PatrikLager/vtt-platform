@@ -1,0 +1,19 @@
+{
+  "id": "ward-mark",
+  "params": [
+    { "name": "mark", "kind": "condition" }
+  ],
+  "provides": [],
+  "consumes": ["check"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "check",
+      "branch": "fail",
+      "effects": [
+        { "apply_condition": { "id": "{mark}" } },
+        { "remove_condition": { "id": "steadied" } }
+      ]
+    }
+  ]
+}

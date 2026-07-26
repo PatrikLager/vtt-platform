@@ -1,0 +1,15 @@
+{
+  "id": "strike-roll",
+  "params": [],
+  "provides": ["strike"],
+  "consumes": ["delivery"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "strike",
+      "roll": "1d20 + @caster.vim",
+      "vs": "@target.brace",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

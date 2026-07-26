@@ -1,9 +1,0 @@
-{
-  "id": "guard-stance",
-  "name": "Guard Stance",
-  "usage": { "limited": { "resource": "no_such_pool", "cost": 1 } },
-  "targeting": { "range": 0, "max_targets": 1 },
-  "effect": [
-    { "apply_condition": { "id": "guarded" } }
-  ]
-}

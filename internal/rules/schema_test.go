@@ -143,6 +143,37 @@ func TestSchemaPropertiesCoverFixtureFields(t *testing.T) {
 	}
 }
 
+// TestSchemaPropertiesCoverV2FixtureFields is
+// TestSchemaPropertiesCoverFixtureFields's format-v2 counterpart: atom.
+// schema.json (new this task) and ability.schema.json's v2 composition
+// shape, cross-checked against testdata/valid-v2 fixtures. Kept as its
+// own test rather than added to TestSchemaPropertiesCoverFixtureFields's
+// `cases` table because that table already has a "ability.schema.json"
+// entry (the v1 fixture) — a second entry with the same schemaFile would
+// still run correctly (Go disambiguates same-named subtests), but a
+// distinct function name is clearer about which fixture generation is
+// under test.
+func TestSchemaPropertiesCoverV2FixtureFields(t *testing.T) {
+	cases := []struct {
+		schemaFile  string
+		fixtureFile string
+	}{
+		{"atom.schema.json", "testdata/valid-v2/atoms/clash-roll.json"},
+		{"ability.schema.json", "testdata/valid-v2/abilities/quick-jab.json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.schemaFile+"/"+filepath.Base(tc.fixtureFile), func(t *testing.T) {
+			schema := readSchema(t, tc.schemaFile)
+			props := propertyKeys(t, schema)
+			for key := range jsonKeys(t, tc.fixtureFile) {
+				if !props[key] {
+					t.Errorf("fixture %s uses field %q, but %s's properties do not declare it", tc.fixtureFile, key, tc.schemaFile)
+				}
+			}
+		})
+	}
+}
+
 // --- generalized nested-"required" walker ---
 //
 // The point of this machinery (review fix wave, task-4-brief follow-up):
@@ -391,6 +422,89 @@ func TestSchemaRequiredFieldsMatchLoaderEnforcement(t *testing.T) {
 	}
 }
 
+// TestSchemaRequiredFieldsMatchLoaderEnforcementV2 is
+// TestSchemaRequiredFieldsMatchLoaderEnforcement's format-v2 counterpart
+// (P10 task-2 brief: "the nested-required anti-drift walker must cover
+// atom.schema.json"). The walker mechanism above does NOT auto-glob
+// schema/*.json — its `cases` table is hand-maintained and hardcoded to
+// testdata/valid, so atom.schema.json (new this task) and ability.
+// schema.json's v2 "compose" branch need their OWN entry point: running
+// them through the v1 function's `cases` table would just skip every v2
+// requirement (as the v1 test's own skip messages already show for
+// "compose" — testdata/valid, a v1 fixture set, never demonstrates it).
+// Same collectRequired/navigatePath/deleteNestedJSONKey/dedupeReqCases
+// machinery, pointed at testdata/valid-v2 instead. Kept as a separate
+// function (duplicating the v1 loop's body rather than parameterizing it)
+// so this task's addition carries zero risk of altering the v1 test's
+// behavior — v1 loading, and everything that verifies it, stays untouched
+// per this task's brief.
+func TestSchemaRequiredFieldsMatchLoaderEnforcementV2(t *testing.T) {
+	cases := []struct {
+		schemaFile string
+		probeFiles []string // tried in order; first with the field present wins
+	}{
+		{"atom.schema.json", []string{
+			"atoms/reach-delivery.json", // targeting contribution
+			"atoms/clash-roll.json",     // resolution contribution
+			"atoms/clash-damage.json",   // outcome contribution + resource_change effect
+			"atoms/rally-effect.json",   // outcome contribution, branch "always" / null key
+			"atoms/ward-mark.json",      // outcome effects[0]: apply_condition (review fix wave, item 4 — closes the prior apply_condition SKIP)
+			"atoms/ward-clear.json",     // outcome effects[0]: remove_condition (walker only probes array index 0, so this needed its own file — closes the prior remove_condition SKIP)
+			"atoms/wide-delivery.json",  // targeting max_targets as a "{param}" placeholder
+			"atoms/guard-check.json",    // defense-kind param used in "vs"
+		}},
+		{"ability.schema.json", []string{
+			"abilities/quick-jab.json",
+			"abilities/rally.json",
+			"abilities/tag-team.json",
+			"abilities/ward-shift.json",
+		}},
+	}
+
+	for _, tc := range cases {
+		schema := readSchema(t, tc.schemaFile)
+		reqCases := dedupeReqCases(collectRequired(t, schema, schema, nil, 0))
+		if len(reqCases) == 0 {
+			t.Fatalf("%s declares no required fields anywhere — nothing to cross-check (this itself would be a schema authoring bug)", tc.schemaFile)
+		}
+
+		for _, rc := range reqCases {
+			name := tc.schemaFile + "/"
+			if p := pathString(rc.path); p != "" {
+				name += p + "."
+			}
+			name += rc.field
+
+			t.Run(name, func(t *testing.T) {
+				var targetFile string
+				for _, pf := range tc.probeFiles {
+					data := readJSONFile(t, filepath.Join("testdata/valid-v2", pf))
+					container, found := navigatePath(any(data), rc.path)
+					if !found {
+						continue
+					}
+					if _, hasField := container[rc.field]; hasField {
+						targetFile = pf
+						break
+					}
+				}
+				if targetFile == "" {
+					t.Skipf("no fixture under testdata/valid-v2 demonstrates %s required field %q at path %q — nothing to exercise", tc.schemaFile, rc.field, pathString(rc.path))
+				}
+
+				dir := t.TempDir()
+				copyDir(t, "testdata/valid-v2", dir)
+				deleteNestedJSONKey(t, filepath.Join(dir, targetFile), rc.path, rc.field)
+
+				_, err := rules.Load(dir)
+				if err == nil {
+					t.Fatalf("%s declares %q required at %q, but Load succeeded after deleting it from %s", tc.schemaFile, rc.field, pathString(rc.path), targetFile)
+				}
+			})
+		}
+	}
+}
+
 // TestSchemaFormatVersionEnumMatchesLoader cross-checks the declared enum
 // on ruleset.schema.json's format_version against what Load actually
 // accepts: every enum member must load cleanly (format-version-wise), and
@@ -447,50 +561,87 @@ func TestSchemaFormatVersionEnumMatchesLoader(t *testing.T) {
 	})
 }
 
-// TestSchemaOutcomeOneOfMatchesLoader cross-checks the ability schema's
-// outcome oneOf (exactly one of resource_change/apply_condition/
-// remove_condition) against the loader: an outcome object setting ZERO of
-// the three, and one setting TWO, must both be rejected.
+// TestSchemaOutcomeOneOfMatchesLoader cross-checks the ability/atom
+// schemas' outcome-effect oneOf (exactly one of resource_change/
+// apply_condition/remove_condition) against the loader: an effect object
+// setting ZERO of the three, and one setting TWO, must both be rejected —
+// AND named as this specific validation rule (not just "some error"),
+// since a v2 outcome-effect list lives inside an atom's outcome
+// contribution and several OTHER load-time checks could otherwise mask a
+// gap here with an unrelated rejection.
+//
+// Format v2 (Task 4): v1's abilityJSON.Hit/Miss/Effect (a bare outcome
+// list on the ability itself) is gone — the shape this test exercises now
+// lives exclusively inside an atom's outcome contribution's "effects"
+// array (decodeOutcomeContribution, load.go), so this test targets
+// testdata/valid/atoms/apply-guarded.json instead of an ability file.
+// Before this rewrite, this test targeted abilities/guard-stance.json's
+// (removed) top-level "effect" field — once that field stopped existing
+// in valid v2 ability JSON, writing to it just tripped
+// decodeStrict's DisallowUnknownFields ("unknown field \"effect\"") and
+// the test kept PASSING for an entirely different, unintended reason
+// (any error satisfies "err == nil" failing) — a latent coverage gap this
+// rewrite closes, not just a mechanical port.
 func TestSchemaOutcomeOneOfMatchesLoader(t *testing.T) {
 	t.Run("zero_of_three", func(t *testing.T) {
 		dir := t.TempDir()
 		copyDir(t, "testdata/valid", dir)
-		writeOutcomeAbility(t, dir, `[ {} ]`)
+		writeOutcomeAtomEffects(t, dir, `[ {} ]`)
 		_, err := rules.Load(dir)
 		if err == nil {
-			t.Fatal("Load with an outcome setting none of resource_change/apply_condition/remove_condition: want error, got nil")
+			t.Fatal("Load with an effect setting none of resource_change/apply_condition/remove_condition: want error, got nil")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one of") {
+			t.Errorf("error = %q, want it to name the exactly-one-of-three rule (not some other rejection)", err)
 		}
 	})
 	t.Run("two_of_three", func(t *testing.T) {
 		dir := t.TempDir()
 		copyDir(t, "testdata/valid", dir)
-		writeOutcomeAbility(t, dir, `[ {"apply_condition": {"id": "guarded"}, "remove_condition": {"id": "guarded"}} ]`)
+		writeOutcomeAtomEffects(t, dir, `[ {"apply_condition": {"id": "guarded"}, "remove_condition": {"id": "guarded"}} ]`)
 		_, err := rules.Load(dir)
 		if err == nil {
-			t.Fatal("Load with an outcome setting two of resource_change/apply_condition/remove_condition: want error, got nil")
+			t.Fatal("Load with an effect setting two of resource_change/apply_condition/remove_condition: want error, got nil")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one of") {
+			t.Errorf("error = %q, want it to name the exactly-one-of-three rule (not some other rejection)", err)
 		}
 	})
 }
 
-// writeOutcomeAbility overwrites the guard-stance ability's "effect" list
-// with rawOutcomes (a JSON array literal) for TestSchemaOutcomeOneOfMatchesLoader.
-func writeOutcomeAbility(t *testing.T, dir, rawOutcomes string) {
+// writeOutcomeAtomEffects overwrites atoms/apply-guarded.json's
+// contributes[0].effects list with rawEffects (a JSON array literal) for
+// TestSchemaOutcomeOneOfMatchesLoader — the v2 home of the outcome-effect
+// oneOf shape (decodeOutcomeContribution, load.go).
+func writeOutcomeAtomEffects(t *testing.T, dir, rawEffects string) {
 	t.Helper()
-	path := filepath.Join(dir, "abilities", "guard-stance.json")
+	path := filepath.Join(dir, "atoms", "apply-guarded.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("writeOutcomeAbility: read %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: read %s: %v", path, err)
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
-		t.Fatalf("writeOutcomeAbility: unmarshal %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: unmarshal %s: %v", path, err)
 	}
-	obj["effect"] = json.RawMessage(rawOutcomes)
+	var contributes []map[string]json.RawMessage
+	if err := json.Unmarshal(obj["contributes"], &contributes); err != nil {
+		t.Fatalf("writeOutcomeAtomEffects: unmarshal %s contributes: %v", path, err)
+	}
+	if len(contributes) != 1 {
+		t.Fatalf("writeOutcomeAtomEffects: %s: want exactly 1 contribution, got %d", path, len(contributes))
+	}
+	contributes[0]["effects"] = json.RawMessage(rawEffects)
+	contributesOut, err := json.Marshal(contributes)
+	if err != nil {
+		t.Fatalf("writeOutcomeAtomEffects: marshal contributes: %v", err)
+	}
+	obj["contributes"] = contributesOut
 	out, err := json.Marshal(obj)
 	if err != nil {
-		t.Fatalf("writeOutcomeAbility: marshal %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: marshal %s: %v", path, err)
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		t.Fatalf("writeOutcomeAbility: write %s: %v", path, err)
+		t.Fatalf("writeOutcomeAtomEffects: write %s: %v", path, err)
 	}
 }
