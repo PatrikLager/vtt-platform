@@ -31,6 +31,25 @@ import (
 // fan-out lag under normal load.
 const gatewayBuffer = 256
 
+// maxWSFrameBytes is the per-connection websocket message read limit,
+// pinned explicitly via conn.SetReadLimit in handleWS below (amendment-
+// mandated merge-gate fix, review finding: "as" was the only participant-
+// writable world-layer field with no cap of its own, its EFFECTIVE bound
+// resting silently on coder/websocket's undocumented default read limit —
+// nothing in internal/ or cmd/ had ever called SetReadLimit). This value
+// matches that library default (github.com/coder/websocket v1.8.15,
+// websocket.Conn's own doc comment: "By default, the connection has a
+// message read limit of 32768 bytes") byte-for-byte, so pinning it changes
+// no observed behavior today — the point is OWNERSHIP: this is now the
+// gateway's own stated outer size posture for every inbound command frame,
+// not an inherited default that could silently drift wider (or narrower)
+// on a future coder/websocket upgrade. Every command's own per-field caps
+// (internal/engine/apply.go's maxTextBytes etc.) are stricter than this and
+// unaffected by it; this is the layer's outermost wire-frame bound, the one
+// thing standing between an oversized frame and Accept ever handing that
+// connection's bytes to DecodeCommand at all.
+const maxWSFrameBytes = 32768
+
 // Server is the WebSocket/HTTP gateway (spec §3, §7.9): it wires the pure
 // core in this package (Authorize, ToEvent, EncodeFrame, DecodeCommand) to
 // a real transport over one already-open Campaign and identity DB.
@@ -114,6 +133,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return // Accept already wrote the HTTP error response.
 	}
+	// Own the wire size posture (maxWSFrameBytes's doc comment): pin the
+	// read limit explicitly rather than leaving it to coder/websocket's
+	// unpinned default.
+	conn.SetReadLimit(maxWSFrameBytes)
 
 	s.serve(r.Context(), conn, p, after)
 }

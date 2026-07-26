@@ -261,12 +261,15 @@
     "inputSchema": {
       "properties": {
         "anchorFromSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
           "type": "integer"
         },
         "anchorToSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
           "type": "integer"
         },
         "as": {
+          "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
           "type": "string"
         },
         "text": {
@@ -274,10 +277,7 @@
         }
       },
       "required": [
-        "text",
-        "as",
-        "anchorFromSeq",
-        "anchorToSeq"
+        "text"
       ],
       "type": "object"
     },
@@ -294,12 +294,12 @@
           "type": "string"
         },
         "title": {
+          "description": "Optional; may be empty.",
           "type": "string"
         }
       },
       "required": [
         "key",
-        "title",
         "text"
       ],
       "type": "object"

@@ -842,3 +842,84 @@ func assertNarrationVisibleInEventsSince(t *testing.T, cs *mcpsdk.ClientSession,
 		t.Fatalf("get_events_since: NarrationAdded.Text = %q, want %q", found.Text, wantText)
 	}
 }
+
+// TestMCPAddNarrationWithAnchorsRoundTrips closes the merge-gate MUST-FIX
+// anchor-coverage gap: neither TestMCPWorldLayerRoundTrip nor its fake-wire
+// counterpart (internal/mcp/world_layer_e2e_test.go) ever sent
+// anchorFromSeq/anchorToSeq, so the generic dispatch's int64 anchor decode
+// (internal/mcp/server.go's protojson.Unmarshal, fed args where
+// add_narration's own inputSchema declares both fields "type": "integer" —
+// the ordinary MCP-tool-argument convention, NOT protojson's quoted-string
+// int64 convention) had zero end-to-end coverage in either direction. This
+// test sends a valid BACKWARD anchor pair as plain JSON integers against a
+// REAL composeServer gateway (the same live-server fixture
+// TestMCPWorldLayerRoundTrip uses) and asserts both the call succeeds and
+// the anchors the engine fold accepted are exactly what comes back out of
+// get_events_since.
+func TestMCPAddNarrationWithAnchorsRoundTrips(t *testing.T) {
+	fx := startMCPFixture(t)
+	cs, cleanup := startMCPSession(t, fx.wsURL, fx.agentToken)
+	defer cleanup()
+
+	firstSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{
+		"text": "The party arrives at the ruined gate.",
+	})
+
+	const anchoredText = "The rusted portcullis groans upward."
+	anchoredSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{
+		"text":          anchoredText,
+		"anchorFromSeq": firstSeq,
+		"anchorToSeq":   firstSeq,
+	})
+	if anchoredSeq <= firstSeq {
+		t.Fatalf("anchored add_narration sequence %d, want it to follow the first narration's sequence %d", anchoredSeq, firstSeq)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "get_events_since",
+		Arguments: map[string]any{"afterSequence": int64(0), "limit": 200},
+	})
+	if err != nil {
+		t.Fatalf("get_events_since: CallTool: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("get_events_since: want IsError=false, got %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
+	}
+	var page struct {
+		Events []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &page); err != nil {
+		t.Fatalf("get_events_since: response did not decode: %v (body: %s)", err, text.Text)
+	}
+
+	var found *vttv1.NarrationAdded
+	for _, raw := range page.Events {
+		var env vttv1.Envelope
+		if err := protojson.Unmarshal(raw, &env); err != nil {
+			t.Fatalf("get_events_since: envelope did not decode as protojson: %v (body: %s)", err, raw)
+		}
+		if env.GetSequence() != anchoredSeq {
+			continue
+		}
+		if na := env.GetNarrationAdded(); na != nil {
+			found = na
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("get_events_since: no NarrationAdded event found at sequence %d among %d events", anchoredSeq, len(page.Events))
+	}
+	if found.Text != anchoredText {
+		t.Fatalf("get_events_since: NarrationAdded.Text = %q, want %q", found.Text, anchoredText)
+	}
+	if found.AnchorFromSeq != firstSeq || found.AnchorToSeq != firstSeq {
+		t.Fatalf("get_events_since: NarrationAdded anchors = (%d, %d), want (%d, %d)",
+			found.AnchorFromSeq, found.AnchorToSeq, firstSeq, firstSeq)
+	}
+}

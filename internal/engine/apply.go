@@ -17,6 +17,15 @@ const (
 	maxNoteKeyBytes   = 128
 	maxNoteTitleBytes = 256
 	maxTextBytes      = 8192 // 8 KiB; applies to both narration and note text
+	// maxNarrationAsBytes caps the narration speaker label the same way
+	// NoteUpserted.Title is capped (256 B). Merge-gate MUST-FIX, overturning
+	// the task-level "deliberate" ruling: `as` was otherwise the one
+	// participant-writable world-layer field with no cap of its own,
+	// leaving its effective bound resting silently on coder/websocket's
+	// unpinned ~32 KiB default read limit — append-only permanence means
+	// that posture has to be owned by the fold before any live log exists,
+	// not inherited from a third-party default nobody pinned.
+	maxNarrationAsBytes = 256
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
@@ -159,6 +168,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		na := p.NarrationAdded
 		if len(na.Text) == 0 || len(na.Text) > maxTextBytes {
 			return fmt.Errorf("engine: narration text must be 1-%d bytes, got %d", maxTextBytes, len(na.Text))
+		}
+		if len(na.As) > maxNarrationAsBytes {
+			return fmt.Errorf("engine: narration as must be at most %d bytes, got %d", maxNarrationAsBytes, len(na.As))
 		}
 		if na.AnchorFromSeq < 0 || na.AnchorToSeq < 0 {
 			return fmt.Errorf("engine: narration anchor sequence must not be negative (from %d, to %d)", na.AnchorFromSeq, na.AnchorToSeq)

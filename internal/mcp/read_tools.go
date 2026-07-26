@@ -42,9 +42,11 @@ const getStateDescription = `Return the campaign's current derived state, ` +
 	`body (everything but headSequence and wireConnected) is NOT ` +
 	`protojson: it follows the state dump's own Go-JSON conventions ` +
 	`instead — top-level keys and the plain Go types under them (Scenes/` +
-	`Tokens/Sessions and their own fields) serialize as their exact Go ` +
-	`struct field names, e.g. a session's "StartSeq"/"EndSeq", both plain ` +
-	`JSON numbers, never strings — while nested Actor values use their ` +
+	`Tokens/Sessions/Notes and their own fields) serialize as their exact ` +
+	`Go struct field names, e.g. a session's "StartSeq"/"EndSeq" (plain ` +
+	`JSON numbers, never strings), or a world note's "Title"/"Text"/` +
+	`"UpdatedSeq" keyed under Notes by the note's own key — while nested ` +
+	`Actor values use their ` +
 	`protobuf-generated snake_case tags instead (e.g. "actor_id"). ` +
 	`Neither matches protojson's camelCase; headSequence and wireConnected ` +
 	`are the two deliberately camelCase keys added on top of this body. ` +
@@ -91,7 +93,7 @@ var getEventsSinceInputSchema = map[string]any{
 }
 
 // registerReadTools adds get_state and get_events_since to the same tool
-// table New builds the seven generic command tools into (spec §4: "Both
+// table New builds the 12 generic command tools into (spec §4: "Both
 // registered in the same tool table").
 func (s *Server) registerReadTools() {
 	s.mcp.AddTool(&mcpsdk.Tool{

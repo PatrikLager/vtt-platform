@@ -418,6 +418,20 @@ func TestApplyRejections(t *testing.T) {
 				return env(20, &vttv1.NarrationAdded{Text: "hello", AnchorFromSeq: 0, AnchorToSeq: 5})
 			},
 		},
+		{
+			// Merge-gate MUST-FIX (overturning the task-level "deliberate"
+			// ruling): `as` was the only uncapped participant-writable
+			// world-layer field, its effective bound resting silently on
+			// coder/websocket's unpinned ~32 KiB default read limit rather
+			// than a posture the fold itself owns. One over the new
+			// maxNarrationAsBytes cap (256, matching the analogous
+			// NoteUpserted.Title cap) must reject.
+			name:  "NarrationAdded with as exceeding 256 bytes",
+			setup: seedScene,
+			envFunc: func(st *engine.State) *vttv1.Envelope {
+				return env(3, &vttv1.NarrationAdded{Text: "hello", As: strings.Repeat("a", 257)})
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -492,6 +506,26 @@ func TestNarrationAddedIsDeliberateNoOp(t *testing.T) {
 	must(t, engine.Apply(st, env(10, &vttv1.NarrationAdded{
 		Text: "The goblin cutter snarls.", As: "Goblin Cutter",
 		AnchorFromSeq: 3, AnchorToSeq: 5,
+	})))
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("NarrationAdded must not mutate state")
+	}
+}
+
+// TestNarrationAddedAsAtCapIsAccepted is the boundary-accept counterpart to
+// TestApplyRejections' "NarrationAdded with as exceeding 256 bytes" case
+// (merge-gate MUST-FIX): exactly maxNarrationAsBytes (256) must be
+// accepted, pinning the cap at `>`, not `>=` — the same at-cap-accept
+// discipline the note key/title/text caps already follow implicitly via
+// their own accept tests.
+func TestNarrationAddedAsAtCapIsAccepted(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(10, &vttv1.NarrationAdded{
+		Text: "hello", As: strings.Repeat("a", 256),
 	})))
 
 	after := st.Snapshot()

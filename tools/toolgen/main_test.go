@@ -203,6 +203,104 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	}
 }
 
+// TestAddNarrationRequiredOverrideReplacesDerivedList covers the
+// add_narration fabrication-trap fix (final review Fix — same shape as
+// add_actor's, see TestAddActorRequiredOverrideReplacesDerivedList's own
+// doc comment): none of AddNarration's fields are proto3 `optional`
+// (ADR-007's synthetic-oneof annotation), so schemaFor's derived required
+// list would otherwise force `as`/anchorFromSeq/anchorToSeq alongside
+// `text` — spec §3 documents all three as optional (empty `as` = speak as
+// yourself; 0/0 anchors = unanchored), so an LLM caller obeying the
+// derived schema has no way to omit them and fabricates values instead.
+// The manifest's requiredOverride on add_narration must replace the
+// derived list entirely, down to exactly "text" — unlike add_actor's
+// override (keyed on the nested "vtt.v1.Actor" message reached via
+// AddActor.actor), AddNarration's fields are direct fields on AddNarration
+// itself, so the override here is keyed on "vtt.v1.AddNarration".
+func TestAddNarrationRequiredOverrideReplacesDerivedList(t *testing.T) {
+	tool := findTool(t, "add_narration")
+	schema, ok := tool["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_narration: inputSchema missing or not an object: %#v", tool["inputSchema"])
+	}
+	got := schema["required"]
+	want := []any{"text"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("add_narration required = %v, want %v", got, want)
+	}
+}
+
+// TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication covers the
+// per-field guidance half of the same fix: as/anchorFromSeq/anchorToSeq —
+// each demoted from required to optional — must carry a "description"
+// steering the LLM away from fabricating a value (omit-when-unanchored /
+// speaking-as-self), and text (the one field that stayed required) must
+// carry none.
+func TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
+	tool := findTool(t, "add_narration")
+	schema := tool["inputSchema"].(map[string]any)
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_narration: properties missing or not an object: %#v", schema["properties"])
+	}
+
+	wantSubstr := map[string]string{
+		"as":            "speak as yourself",
+		"anchorFromSeq": "unanchored",
+		"anchorToSeq":   "unanchored",
+	}
+	for field, substr := range wantSubstr {
+		prop, ok := props[field].(map[string]any)
+		if !ok {
+			t.Fatalf("add_narration properties[%q] missing or not an object: %#v", field, props[field])
+		}
+		desc, _ := prop["description"].(string)
+		if !strings.Contains(desc, substr) {
+			t.Fatalf("add_narration properties[%q].description = %q, want it to contain %q", field, desc, substr)
+		}
+	}
+
+	textProp, ok := props["text"].(map[string]any)
+	if !ok {
+		t.Fatalf(`add_narration properties["text"] missing or not an object: %#v`, props["text"])
+	}
+	if _, hasDoc := textProp["description"]; hasDoc {
+		t.Fatalf(`add_narration properties["text"] has a description, want none (it's the one field that stayed required)`)
+	}
+}
+
+// TestUpsertNoteRequiredOverrideReplacesDerivedList covers the analogous,
+// lower-stakes fabrication trap the same review flagged: none of
+// UpsertNote's fields are proto3 `optional` either, so the derived list
+// would force `title` alongside key/text even though empty title is
+// adjudicated-legal (spec-permitted "may be empty" ruling, engine only
+// enforces a max — internal/engine/apply.go's NoteUpserted case). The
+// override replaces the derived list with exactly ["key", "text"].
+func TestUpsertNoteRequiredOverrideReplacesDerivedList(t *testing.T) {
+	tool := findTool(t, "upsert_note")
+	schema, ok := tool["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("upsert_note: inputSchema missing or not an object: %#v", tool["inputSchema"])
+	}
+	got := schema["required"]
+	want := []any{"key", "text"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("upsert_note required = %v, want %v", got, want)
+	}
+
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("upsert_note: properties missing or not an object: %#v", schema["properties"])
+	}
+	titleProp, ok := props["title"].(map[string]any)
+	if !ok {
+		t.Fatalf(`upsert_note properties["title"] missing or not an object: %#v`, props["title"])
+	}
+	if desc, _ := titleProp["description"].(string); !strings.Contains(desc, "may be empty") {
+		t.Fatalf(`upsert_note properties["title"].description = %q, want it to contain "may be empty"`, desc)
+	}
+}
+
 func TestStructSpecialCaseFiresOnNestedValue(t *testing.T) {
 	got := schemaFor((&vttv1.AddActor{}).ProtoReflect().Descriptor())
 	props, ok := got["properties"].(map[string]any)
