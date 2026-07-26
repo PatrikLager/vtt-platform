@@ -103,6 +103,16 @@ staggering-blow dazed application (hasCondition probe), goblin counterattack,
 remove_condition, denial rows (player driving goblin, spectator). Joins the
 committed scenario library in `task check` forever.
 
+*(Amended 2026-07-26, merge gate: under crypto dice the daze is
+hit-dependent, so the shipped scenario asserts only the deterministic
+subset — staggering-blow as an ok-step without a positive dazed probe,
+`hasCondition dazed=false` on the never-targeted archer, and the
+remove_condition DENIAL path ("not present"); no deterministic ok-path
+removal is possible with this content. The counterattack is delivered by
+the untouched archer so no dying creature acts in any dice outcome. The
+positive dazed/removal paths are pinned deterministically by the
+fixed-seed goldens instead.)*
+
 ## 6. Testing
 
 Zero platform changes — the diff touches only `rulesets/dnd45e-minimal/`,
