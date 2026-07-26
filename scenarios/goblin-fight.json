@@ -36,7 +36,7 @@
 
     {"by": "fighter", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "staggering-blow", "targetIds": ["act-cutter"]}}, "expect": {"ok": true}},
 
-    {"by": "dm", "command": {"useAbility": {"actorId": "act-cutter", "abilityId": "goblin-scimitar", "targetIds": ["act-fighter"]}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"useAbility": {"actorId": "act-archer", "abilityId": "goblin-shortbow", "targetIds": ["act-fighter"]}}, "expect": {"ok": true}},
 
     {"by": "fighter", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "rally", "targetIds": ["act-fighter"]}}, "expect": {"ok": true}},
     {"by": "fighter", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "rally", "targetIds": ["act-fighter"]}}, "expect": {"ok": true}},

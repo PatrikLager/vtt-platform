@@ -98,6 +98,20 @@ independent facts.
   duration or save-ends timer of their own (conditions are DM-narrated
   markers; the platform tracks structurally only).
 
+**Conditions are narration, not enforcement.** The engine tracks which
+conditions are on which actor, and fires `bloodied`/`dying` automatically
+off the `hp` thresholds above — but it never READS a condition anywhere
+inside `use_ability`'s resolution. A `dying` (0 hp) or `dazed` actor can
+still be the caster OR the target of any ability, with no rejection, no
+penalty, nothing: the platform will happily let a creature at 0 hp swing a
+weapon, or let a `dazed` actor act as many times as the DM calls
+`use_ability` for it. "Unconscious and failing" (`dying`) and "can act
+only once per turn" (`dazed`) describe what the FICTION says that creature
+can do, not a rule the engine enforces. Stopping a dying goblin from
+striking back, or capping a dazed fighter at one action, is entirely on
+the DM's narration at the table — the same call a human DM would make,
+just without any engine backup.
+
 ## Atoms
 
 Seven small, D&D-flavored statements, composed into the seven abilities
@@ -234,42 +248,103 @@ narrates turn order and calls `use_ability` for whichever token acts next:
 
 ## Reference statblocks
 
-Copy these attribute/resource maps into `add_actor` verbatim (adjust `x`/`y`
-for where the token starts). Remember the max_hp duplication rule above —
-`max_hp` (attribute) always equals `hp`'s `max` (resource). Per format v2
-convention, `ac`/`fort`/`ref`/`will` live directly IN the `attributes` map,
-alongside `str`/`dex`/`con`/`max_hp` — there is no separate defenses object.
+Each JSON block below is the EXACT `actor` argument to pass to `add_actor`
+— copy it verbatim, wire field for wire field. `add_actor`'s wire schema is
+`actorId`/`name`/`controllerId`/`attributes`/`resources` (plus the opaque
+`moduleId`/`moduleData` pair this slice doesn't use) — there is NO `x`/`y`
+field and NO `abilities` field, and the MCP layer rejects unknown fields
+outright (`mcp: invalid arguments for add_actor: ...`). Positioning is a
+SEPARATE call, `place_token`, made AFTER `add_actor` — see "Combat setup
+sequence" below. Each statblock's "Ability lists" note explains why
+abilities aren't part of the payload either.
+
+Remember the max_hp duplication rule above — `max_hp` (attribute) always
+equals `hp`'s `max` (resource). Per format v2 convention, `ac`/`fort`/
+`ref`/`will` live directly IN the `attributes` map, alongside `str`/`dex`/
+`con`/`max_hp` — there is no separate defenses object.
 
 ### Goblin cutter
 
+```json
+{
+  "actorId": "act-cutter",
+  "name": "Goblin Cutter",
+  "attributes": {"str": 1, "dex": 3, "con": 1, "max_hp": 8,
+                 "ac": 15, "fort": 12, "ref": 14, "will": 11},
+  "resources": {"hp": {"current": 8, "max": 8}}
+}
 ```
-attributes: { "str": 1, "dex": 3, "con": 1, "max_hp": 8,
-              "ac": 15, "fort": 12, "ref": 14, "will": 11 }
-resources: { "hp": { "current": 8, "max": 8 } }
-abilities: goblin-scimitar
-```
+
+**Ability lists (narrative discipline):** goblin-scimitar. The platform
+does not enforce per-actor ability lists anywhere on the wire —
+`use_ability` accepts any ability from this ruleset called from ANY actor,
+regardless of what it "should" know. Which creature knows which move is
+the DM's discipline to maintain in the fiction, not something the engine
+checks or rejects.
 
 ### Goblin archer
 
+```json
+{
+  "actorId": "act-archer",
+  "name": "Goblin Archer",
+  "attributes": {"str": 0, "dex": 4, "con": 1, "max_hp": 6,
+                 "ac": 14, "fort": 11, "ref": 15, "will": 11},
+  "resources": {"hp": {"current": 6, "max": 6}}
+}
 ```
-attributes: { "str": 0, "dex": 4, "con": 1, "max_hp": 6,
-              "ac": 14, "fort": 11, "ref": 15, "will": 11 }
-resources: { "hp": { "current": 6, "max": 6 } }
-abilities: goblin-shortbow, goblin-scimitar
-```
+
+**Ability lists (narrative discipline):** goblin-shortbow, goblin-scimitar.
+Same caveat as above — nothing on the wire binds these two abilities to
+this actor specifically; it is narration, not a platform rule.
 
 ### Human fighter
 
-```
-attributes: { "str": 4, "dex": 2, "con": 3, "max_hp": 28,
-              "ac": 17, "fort": 15, "ref": 13, "will": 12 }
-resources: { "hp": { "current": 28, "max": 28 },
-              "flurry_uses": { "current": 1, "max": 1 } }
-abilities: longsword-strike, crossbow-shot, hunters-flurry, staggering-blow, rally
+```json
+{
+  "actorId": "act-fighter",
+  "name": "Human Fighter",
+  "attributes": {"str": 4, "dex": 2, "con": 3, "max_hp": 28,
+                 "ac": 17, "fort": 15, "ref": 13, "will": 12},
+  "resources": {"hp": {"current": 28, "max": 28},
+                "flurry_uses": {"current": 1, "max": 1}}
+}
 ```
 
-Only actors that actually have `hunters-flurry` on their ability list need
-the `flurry_uses` resource — a goblin never does.
+**Ability lists (narrative discipline):** longsword-strike, crossbow-shot,
+hunters-flurry, staggering-blow, rally. Same caveat again — this is a note
+for the DM's own bookkeeping, not a wire-enforced list. The `flurry_uses`
+**resource**, by contrast, IS wire-real: it's what `hunters-flurry` actually
+spends, and it only exists on an actor whose `add_actor` call included it
+in `resources` — the Human Fighter above is the only statblock in this
+guide that needs it; neither goblin statblock carries `flurry_uses` at
+all.
+
+## Combat setup sequence
+
+`use_ability` hard-requires a placed token for the caster AND for every
+target — range resolution reads token positions, and an actor with no
+token anywhere fails outright (`rules: resolve: actor "..." has no token
+placed (cannot determine range)`). The wire order that gets every
+combatant to a usable state, every time:
+
+1. `create_scene` — once, for the encounter map.
+2. `add_actor` — once per combatant, using the statblocks above verbatim.
+3. `place_token` — once per combatant, in that scene, at a starting
+   position. Positioning happens HERE, not in `add_actor` (which has no
+   `x`/`y` field — see "Reference statblocks" above).
+4. THEN, and only then, `use_ability` — call it before every combatant has
+   a placed token and the very first attack fails with "no token placed".
+
+Range is Chebyshev distance between the two tokens (diagonals cost the
+same as orthogonal moves — a king's-move metric), checked against the
+ability's declared range. This slice's ranges: melee abilities
+(`goblin-scimitar`, `longsword-strike`, `staggering-blow`, `rally`) reach 1
+square; `goblin-shortbow` and `hunters-flurry` reach 10; `crossbow-shot`
+reaches 15. Place the goblins within melee/shortbow reach of the fighter
+(and of each other, if you want `hunters-flurry` to catch both at once) —
+not out past crossbow range, or even the fighter's opening melee attack
+will be out of range.
 
 ## Demo runbook
 
@@ -277,34 +352,62 @@ To run this ruleset live:
 
 1. Start a fresh campaign server pointed at this ruleset:
    ```
-   vtt serve --campaign <fresh> --ruleset rulesets/dnd45e-minimal
+   vtt serve --campaign <fresh> --addr :8443 --ruleset rulesets/dnd45e-minimal
    ```
-2. Invite the DMing agent:
+2. Invite the DMing agent — `--campaign` must be the exact SAME file
+   `serve` just opened in step 1; `--name` is any label for this
+   participant:
    ```
-   vtt invite --role agent
+   vtt invite --campaign <same file as serve> --name claude-dm --role agent
    ```
-3. In the agent's `.mcp.json`, reuse the existing entry from the earlier
-   demo and add `--ruleset` to the `vtt mcp` args (so `get_ruleset_guide`
-   can serve this document):
+   This prints the token exactly once — capture it now, it cannot be
+   recovered later:
+   ```
+   participant id: <id>
+   token (shown once — store it now, it cannot be recovered): <token>
+   ```
+3. In the SAME shell you are about to launch Claude Code from, capture
+   that token into the environment without it ever landing in shell
+   history:
+   ```
+   read -s VTT_TOKEN && export VTT_TOKEN
+   ```
+   (prompts silently, nothing echoed, nothing to scroll back through — or
+   set `HISTIGNORE='export VTT_TOKEN=*'` first if you'd rather type it
+   directly). Do this BEFORE opening Claude Code: a subprocess only
+   inherits the environment of the shell it was launched from, and `vtt
+   mcp` reads `VTT_TOKEN` from its own process environment
+   (`resolveMCPToken`'s env fallback; see also the top-level README's
+   "Claude Code" section) — no token value is ever written to `.mcp.json`
+   itself.
+4. Point the agent's `.mcp.json` at the running gateway AND this ruleset:
    ```json
    {
      "mcpServers": {
        "vtt": {
          "command": "vtt",
-         "args": ["mcp", "--ruleset", "rulesets/dnd45e-minimal"]
+         "args": ["mcp", "--server", "ws://localhost:8443/ws", "--ruleset", "rulesets/dnd45e-minimal"]
        }
      }
    }
    ```
-4. Suggested opening prompt for the DMing agent:
-   > Read the ruleset guide with `get_ruleset_guide`, then set the scene
-   > and add the fighter and two goblins from the reference statblocks
-   > above (adjust starting positions so the goblins are within range of
-   > the fighter). Run the fight turn by turn with `use_ability`, narrating
-   > each roll's outcome, applying `staggering-blow`'s `dazed` narratively
-   > when it lands, and calling `remove_condition` when a narrated effect
-   > ends. Let the automatic `bloodied`/`dying` thresholds speak for
-   > themselves in your narration.
+   `--server` must match the `--addr` `serve` used in step 1; `--ruleset`
+   is what makes `get_ruleset_guide` serve this document.
+5. Open Claude Code from that SAME shell (so the subprocess inherits
+   `VTT_TOKEN`) with this repo's `.mcp.json` in scope.
+6. Suggested opening prompt for the DMing agent:
+   > Read the ruleset guide with `get_ruleset_guide`. Then follow the
+   > "Combat setup sequence" it describes: `create_scene`, then
+   > `add_actor` for the fighter and two goblins from the reference
+   > statblocks, then `place_token` for all three — positioned so the
+   > goblins start within the fighter's melee/shortbow range, not out at
+   > crossbow range. Only once every combatant has a placed token, run the
+   > fight turn by turn with `use_ability`, narrating each roll's outcome,
+   > applying `staggering-blow`'s `dazed` narratively when it lands, and
+   > calling `remove_condition` when a narrated effect ends. Remember: the
+   > engine never stops a dying or dazed actor from acting — that
+   > enforcement is entirely yours as narrator. Let the automatic
+   > `bloodied`/`dying` thresholds speak for themselves in your narration.
 
 Patrik watches the fight live; his acceptance of the session is the merge
 gate for this ruleset.
