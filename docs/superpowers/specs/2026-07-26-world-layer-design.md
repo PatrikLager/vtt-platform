@@ -60,6 +60,16 @@ non-empty and ≤ 8 KiB (a size posture, not a scripting surface); anchor
 sanity `from <= to`, both ≥ 0, `to` ≤ the validating snapshot's head
 (anchors point backward at recorded history, never forward).
 
+*(Amended 2026-07-26, merge gate — the size posture in full, every cap
+denominated in UTF-8 BYTES, not characters: note key ≤ 128 B non-empty;
+note title ≤ 256 B may-be-empty; note text and narration text ≤ 8192 B
+non-empty; narration speaker label `as` ≤ 256 B may-be-empty — the
+final-review triage overturned an earlier leave-uncapped ruling because
+append-only permanence means caps must precede any live log. The
+gateway's 32 KiB per-frame websocket bound is an OWNED part of this
+posture, pinned by an explicit SetReadLimit in internal/gateway rather
+than inherited silently from a library default.)*
+
 ## 5. Wiring
 
 - **Gateway/authz:** `add_narration` — dm/agent/player allow, spectator
