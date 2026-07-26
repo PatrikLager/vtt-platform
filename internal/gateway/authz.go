@@ -31,6 +31,16 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// being moved).
 	"use_ability":      {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"remove_condition": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	// add_narration/upsert_note/delete_note (world-layer Task 3, spec §5):
+	// everyone at the table narrates or speaks (dm/agent/player), spectators
+	// stay read-only — the SAME role set as move_token/use_ability, but with
+	// NO additional ownership check (narration/notes are not scoped to an
+	// actor a participant controls). upsert_note/delete_note are dm/agent
+	// only: world facts are the DM's (spec §5 — "revisit if players ever
+	// co-author").
+	"add_narration": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"upsert_note":   {identity.RoleDM: true, identity.RoleAgent: true},
+	"delete_note":   {identity.RoleDM: true, identity.RoleAgent: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -115,6 +125,12 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "use_ability"
 	case *vttv1.ClientCommand_RemoveCondition:
 		return "remove_condition"
+	case *vttv1.ClientCommand_AddNarration:
+		return "add_narration"
+	case *vttv1.ClientCommand_UpsertNote:
+		return "upsert_note"
+	case *vttv1.ClientCommand_DeleteNote:
+		return "delete_note"
 	default:
 		return ""
 	}

@@ -102,6 +102,26 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ConditionId: c.RemoveCondition.GetConditionId(),
 			Reason:      "manual",
 		}}
+	case *vttv1.ClientCommand_AddNarration:
+		// world-layer Task 3: same plain single-Envelope conversion as
+		// remove_condition above — size-cap/anchor-sanity validation lives in
+		// the fold (internal/engine/apply.go), not here.
+		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
+			Text:          c.AddNarration.GetText(),
+			As:            c.AddNarration.GetAs(),
+			AnchorFromSeq: c.AddNarration.GetAnchorFromSeq(),
+			AnchorToSeq:   c.AddNarration.GetAnchorToSeq(),
+		}}
+	case *vttv1.ClientCommand_UpsertNote:
+		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
+			Key:   c.UpsertNote.GetKey(),
+			Title: c.UpsertNote.GetTitle(),
+			Text:  c.UpsertNote.GetText(),
+		}}
+	case *vttv1.ClientCommand_DeleteNote:
+		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{
+			Key: c.DeleteNote.GetKey(),
+		}}
 	default:
 		return nil, ErrUnknownCommand
 	}

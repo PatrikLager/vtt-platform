@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -567,5 +568,73 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	}
 	if tm.TokenMoved.To == nil || tm.TokenMoved.To.X != 9 || tm.TokenMoved.To.Y != 9 {
 		t.Fatalf("To = %+v, want (9,9)", tm.TokenMoved.To)
+	}
+}
+
+// TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
+// layer (Task 3) precedent RemoveCondition already set: the gateway forwards
+// add_narration/upsert_note/delete_note through the SAME single-Append path
+// as every other command (server.go's handleCommand has no world-layer-
+// specific branch), so a fold-level validation rejection — an absent
+// delete_note key, or oversized narration text past the 8 KiB cap
+// (internal/engine/apply.go's size posture) — must surface as an ordinary
+// ok=false CommandResult and leave the connection (and the campaign) fully
+// usable afterward, never poisoned (campaign.Append validates against a
+// snapshot BEFORE persisting — see that method's doc comment).
+func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, 4)
+
+	// A valid upsert first, so there is a real key to delete-after-recovery.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-upsert",
+		Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
+			Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+		}},
+	})
+	upsertResult := readResult(t, dmConn)
+	if !upsertResult.Ok {
+		t.Fatalf("want ok=true for a valid upsert_note, got error %q", upsertResult.Error)
+	}
+
+	// Rejection 1: delete_note for a key that was never upserted.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-delete-absent",
+		Command:   &vttv1.ClientCommand_DeleteNote{DeleteNote: &vttv1.DeleteNote{Key: "no-such-note"}},
+	})
+	deleteAbsentResult := readResult(t, dmConn)
+	if deleteAbsentResult.Ok {
+		t.Fatal("want ok=false deleting a note key that was never upserted")
+	}
+	if deleteAbsentResult.Error == "" {
+		t.Fatal("want non-empty error on the absent-key rejection")
+	}
+
+	// Rejection 2: add_narration with text past the 8 KiB size cap.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-narration-oversized",
+		Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+			Text: strings.Repeat("x", 8193),
+		}},
+	})
+	oversizedResult := readResult(t, dmConn)
+	if oversizedResult.Ok {
+		t.Fatal("want ok=false for narration text exceeding the 8 KiB cap")
+	}
+	if oversizedResult.Error == "" {
+		t.Fatal("want non-empty error on the size-cap rejection")
+	}
+
+	// Recovery: the SAME connection can still issue a valid command
+	// afterward — proof the two rejections above left the campaign
+	// unpoisoned, exactly like TestPlayerOwnershipDenialNoBroadcast's own
+	// recovery step proves for an authz denial.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-delete-ok",
+		Command:   &vttv1.ClientCommand_DeleteNote{DeleteNote: &vttv1.DeleteNote{Key: "kobold-den"}},
+	})
+	recoveryResult := readResult(t, dmConn)
+	if !recoveryResult.Ok {
+		t.Fatalf("want ok=true deleting the real note after two rejections, got error %q (campaign appears poisoned)", recoveryResult.Error)
 	}
 }

@@ -223,6 +223,72 @@ func TestToEventRemoveConditionProducesConditionRemoved(t *testing.T) {
 	}
 }
 
+// TestToEventAddNarrationProducesNarrationAdded covers the first of the
+// three world-layer (Task 3) commands that flow through the SAME plain
+// ToEvent -> campaign.Append path as every pre-Task-6 command — no batch,
+// no special handling (unlike use_ability).
+func TestToEventAddNarrationProducesNarrationAdded(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{
+		AddNarration: &vttv1.AddNarration{Text: "the door creaks open", As: "Goblin Cutter", AnchorFromSeq: 2, AnchorToSeq: 3},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	na, ok := env.Payload.(*vttv1.Envelope_NarrationAdded)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_NarrationAdded", env.Payload)
+	}
+	if na.NarrationAdded.Text != "the door creaks open" || na.NarrationAdded.As != "Goblin Cutter" ||
+		na.NarrationAdded.AnchorFromSeq != 2 || na.NarrationAdded.AnchorToSeq != 3 {
+		t.Fatalf("NarrationAdded = %+v, want text/as/anchors verbatim from the command", na.NarrationAdded)
+	}
+}
+
+// TestToEventUpsertNoteProducesNoteUpserted covers the second world-layer
+// command.
+func TestToEventUpsertNoteProducesNoteUpserted(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UpsertNote{
+		UpsertNote: &vttv1.UpsertNote{Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel."},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nu, ok := env.Payload.(*vttv1.Envelope_NoteUpserted)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_NoteUpserted", env.Payload)
+	}
+	if nu.NoteUpserted.Key != "kobold-den" || nu.NoteUpserted.Title != "Kobold Den" || nu.NoteUpserted.Text != "Three kobolds guard the east tunnel." {
+		t.Fatalf("NoteUpserted = %+v, want key/title/text verbatim from the command", nu.NoteUpserted)
+	}
+}
+
+// TestToEventDeleteNoteProducesNoteDeleted covers the third world-layer
+// command.
+func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DeleteNote{
+		DeleteNote: &vttv1.DeleteNote{Key: "kobold-den"},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nd, ok := env.Payload.(*vttv1.Envelope_NoteDeleted)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_NoteDeleted", env.Payload)
+	}
+	if nd.NoteDeleted.Key != "kobold-den" {
+		t.Fatalf("NoteDeleted.Key = %q, want %q", nd.NoteDeleted.Key, "kobold-den")
+	}
+}
+
 func TestToEventUnknownCommandErrors(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	if env, err := gateway.ToEvent(&vttv1.ClientCommand{}, p); err == nil {
