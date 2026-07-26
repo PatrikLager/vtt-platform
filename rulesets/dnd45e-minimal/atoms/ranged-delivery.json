@@ -1,0 +1,12 @@
+{
+  "id": "ranged-delivery",
+  "params": [
+    { "name": "distance", "kind": "int" },
+    { "name": "targets", "kind": "int" }
+  ],
+  "provides": ["engagement"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": "{distance}", "max_targets": "{targets}" }
+  ]
+}

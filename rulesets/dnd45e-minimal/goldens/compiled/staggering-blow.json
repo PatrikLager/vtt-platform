@@ -1,0 +1,33 @@
+{
+  "id": "staggering-blow",
+  "name": "Staggering Blow",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.str + (3)",
+    "vs": "@target.fort",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "hp",
+        "delta_expr": "0 - (1d6 + @caster.str)"
+      },
+      {
+        "kind": "apply_condition",
+        "condition_id": "dazed"
+      }
+    ],
+    null
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "hunters-flurry",
+  "name": "Hunter's Flurry",
+  "usage": {
+    "limited": {
+      "resource": "flurry_uses",
+      "cost": 1
+    }
+  },
+  "targeting": {
+    "range": 10,
+    "max_targets": 2
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.dex + (2)",
+    "vs": "@target.ac",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "hp",
+        "delta_expr": "0 - (1d8 + @caster.dex)"
+      }
+    ],
+    [
+      {
+        "kind": "resource_change",
+        "resource": "hp",
+        "delta_expr": "0 - half((1d8 + @caster.dex))"
+      }
+    ]
+  ]
+}

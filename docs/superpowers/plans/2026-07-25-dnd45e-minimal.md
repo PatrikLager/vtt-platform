@@ -52,3 +52,15 @@ Scenario: top-level `"ruleset": "dnd45e-minimal"`; session + scene; fighter (pla
 ### Task 3: Workflow-level final review (Patrik's standing preference) + fix wave → DEMO GATE
 
 Lenses scaled to a data-only diff: (1) golden-arithmetic verifier (re-derive every golden independently); (2) 4.5e-fidelity + guide honesty (guide vs ruleset vs scenario consistency; runbook correctness); (3) format-compliance + P4 (zero platform changes; conformance untouched; YAGNI). Adversarial verify panel per finding. Fix wave. Then STOP: present the demo runbook to Patrik — the live rematch is the merge gate. Merge bundle after acceptance: memory update; v2-grammar carry-forwards (max-reference, comparison operators) ledgered.
+
+---
+
+## v2 resume note (2026-07-26)
+
+Sub-project 5c merged: format v2 supersedes v1. Task 1 is re-executed on
+branch `feat/dnd45e-minimal-v2` authoring atoms + compositions per the
+spec's §9 amendment (math of §4 verbatim; caster-scoped damage;
+defenses valued in attributes; compiled goldens per ability). Task 2/3
+unchanged in intent; Task 2's add_actor payloads follow the v2 statblock
+convention. The earlier v1 WIP (9 golden derivations) is arithmetic
+reference at .superpowers/sdd/p9-dnd45e-minimal-wip.

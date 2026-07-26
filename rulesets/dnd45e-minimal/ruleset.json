@@ -1,0 +1,28 @@
+{
+  "id": "dnd45e-minimal",
+  "name": "D&D 4.5e (Minimal)",
+  "format_version": "2",
+  "attributes": ["str", "dex", "con", "max_hp"],
+  "defenses": ["ac", "fort", "ref", "will"],
+  "resources": [
+    {
+      "name": "hp",
+      "thresholds": [
+        {
+          "when": "max(0, @max_hp - #hp * 2 + 1)",
+          "apply_condition": "bloodied",
+          "remove_when_false": true
+        },
+        {
+          "when": "max(0, 1 - #hp)",
+          "apply_condition": "dying",
+          "remove_when_false": true
+        }
+      ]
+    },
+    {
+      "name": "flurry_uses",
+      "thresholds": []
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "staggering-blow-dazed",
+  "ability_id": "staggering-blow",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "str": 4 } },
+    { "id": "goblin-cutter", "x": 1, "y": 0, "attributes": { "fort": 12, "max_hp": 8 }, "resources": { "hp": { "current": 8, "max": 8 } } }
+  ],
+  "actor_id": "fighter",
+  "target_ids": ["goblin-cutter"],
+  "rolls": [{ "results": [8] }, { "results": [2] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "fighter",
+      "ability_id": "staggering-blow",
+      "target_ids": ["goblin-cutter"],
+      "rolls": [
+        { "expression": "1d20 + @caster.str + (3)", "results": [8], "total": 15 },
+        { "expression": "0 - (1d6 + @caster.str)", "results": [2], "total": -6 }
+      ],
+      "outcome_summary": "Staggering Blow on goblin-cutter: hit (15 vs 12)"
+    },
+    { "type": "ResourceChanged", "actor_id": "goblin-cutter", "resource": "hp", "delta": -6, "new_value": 2, "reason": "ability:staggering-blow:hit" },
+    { "type": "ConditionApplied", "actor_id": "goblin-cutter", "condition_id": "dazed", "source": "ability:staggering-blow:hit" },
+    { "type": "ConditionApplied", "actor_id": "goblin-cutter", "condition_id": "bloodied", "source": "threshold:hp" }
+  ]
+}

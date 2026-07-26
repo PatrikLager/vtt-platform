@@ -1,0 +1,11 @@
+{
+  "id": "hunters-flurry",
+  "name": "Hunter's Flurry",
+  "usage": { "limited": { "resource": "flurry_uses", "cost": 1 } },
+  "compose": [
+    { "atom": "ranged-delivery", "bind": { "distance": 10, "targets": 2 } },
+    { "atom": "weapon-attack-roll", "bind": { "attack_stat": "dex", "prof": 2, "defense": "ac" } },
+    { "atom": "weapon-damage", "bind": { "damage_expr": "1d8 + @caster.dex" } },
+    { "atom": "graze-damage", "bind": { "damage_expr": "1d8 + @caster.dex" } }
+  ]
+}

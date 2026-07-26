@@ -1,0 +1,9 @@
+{
+  "id": "rally",
+  "name": "Rally",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "melee-delivery", "bind": { "reach": 1 } },
+    { "atom": "recovery", "bind": { "amount": "1d6 + @target.con" } }
+  ]
+}

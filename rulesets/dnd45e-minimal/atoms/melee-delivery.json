@@ -1,0 +1,11 @@
+{
+  "id": "melee-delivery",
+  "params": [
+    { "name": "reach", "kind": "int" }
+  ],
+  "provides": ["engagement"],
+  "consumes": [],
+  "contributes": [
+    { "kind": "targeting", "range": "{reach}", "max_targets": 1 }
+  ]
+}

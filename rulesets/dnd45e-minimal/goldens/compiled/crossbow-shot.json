@@ -1,0 +1,29 @@
+{
+  "id": "crossbow-shot",
+  "name": "Crossbow Shot",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 15,
+    "max_targets": 1
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.dex + (2)",
+    "vs": "@target.ac",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "hp",
+        "delta_expr": "0 - (1d8)"
+      }
+    ],
+    null
+  ]
+}

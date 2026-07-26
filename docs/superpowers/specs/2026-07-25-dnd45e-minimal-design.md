@@ -103,6 +103,16 @@ staggering-blow dazed application (hasCondition probe), goblin counterattack,
 remove_condition, denial rows (player driving goblin, spectator). Joins the
 committed scenario library in `task check` forever.
 
+*(Amended 2026-07-26, merge gate: under crypto dice the daze is
+hit-dependent, so the shipped scenario asserts only the deterministic
+subset — staggering-blow as an ok-step without a positive dazed probe,
+`hasCondition dazed=false` on the never-targeted archer, and the
+remove_condition DENIAL path ("not present"); no deterministic ok-path
+removal is possible with this content. The counterattack is delivered by
+the untouched archer so no dying creature acts in any dice outcome. The
+positive dazed/removal paths are pinned deterministically by the
+fixed-seed goldens instead.)*
+
 ## 6. Testing
 
 Zero platform changes — the diff touches only `rulesets/dnd45e-minimal/`,
@@ -131,3 +141,26 @@ resource_change is allowed and exercised by a golden; the surge SYSTEM is
 not modeled); equipment/enhancement layer; marks/aura enforcement; areas;
 int/cha attributes; more monsters (the bestiary grows with the adventure
 format); any platform or format change whatsoever.
+
+## 9. Amendment (2026-07-26, sub-project 5c merge — v2 authoring)
+
+Format v2 (2026-07-25-format-v2-composition-design.md) supersedes the
+monolithic ability form this spec's §4 sketched. What changes and what
+stands:
+
+- **The MATH of §4 stands verbatim** — same rolls, dice, deltas,
+  thresholds, conditions, statblocks. §4's ability list now defines each
+  ability's *observable mechanics*; their FORM becomes atoms +
+  compositions (Task-1 authoring decides the atom decomposition).
+- **The original blocker is resolved:** damage expressions are written
+  with caster scoping — e.g. longsword-strike hit is
+  `0 - (1d8 + @caster.str)` — no flat-baking, no statblock entanglement.
+- **All two-actor expressions carry explicit scopes**; thresholds stay
+  bare (owner-scoped), unchanged from §3.
+- **Defenses are valued in the actor's attribute map** (v2 convention):
+  guide statblocks and scenario add_actor payloads put ac/fort/ref/will
+  in attributes alongside str/dex/con/max_hp.
+- **Compiled-form goldens** (`goldens/compiled/<ability>.json`) are
+  required per ability in addition to §4's batch goldens.
+- `caster`/`target` are reserved words (no manifest name may use them) —
+  §4's declarations already comply.

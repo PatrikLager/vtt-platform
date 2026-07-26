@@ -1,0 +1,22 @@
+{
+  "id": "rally",
+  "name": "Rally",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "branch_outcomes": [
+    null,
+    null
+  ],
+  "effects": [
+    {
+      "kind": "resource_change",
+      "resource": "hp",
+      "delta_expr": "(1d6 + @target.con)"
+    }
+  ]
+}

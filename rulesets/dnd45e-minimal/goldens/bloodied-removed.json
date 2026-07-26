@@ -1,0 +1,26 @@
+{
+  "name": "bloodied-removed",
+  "ability_id": "rally",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "fighter", "x": 0, "y": 0, "attributes": { "con": 3, "max_hp": 28 }, "resources": { "hp": { "current": 10, "max": 28 } } }
+  ],
+  "conditions": [{ "actor_id": "fighter", "condition_id": "bloodied" }],
+  "actor_id": "fighter",
+  "target_ids": ["fighter"],
+  "rolls": [{ "results": [4] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "fighter",
+      "ability_id": "rally",
+      "target_ids": ["fighter"],
+      "rolls": [
+        { "expression": "(1d6 + @target.con)", "results": [4], "total": 7 }
+      ],
+      "outcome_summary": "Rally on fighter"
+    },
+    { "type": "ResourceChanged", "actor_id": "fighter", "resource": "hp", "delta": 7, "new_value": 17, "reason": "ability:rally:effect" },
+    { "type": "ConditionRemoved", "actor_id": "fighter", "condition_id": "bloodied", "reason": "threshold:hp" }
+  ]
+}

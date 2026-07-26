@@ -1,0 +1,19 @@
+{
+  "id": "weapon-attack-roll",
+  "params": [
+    { "name": "attack_stat", "kind": "attribute" },
+    { "name": "prof", "kind": "int" },
+    { "name": "defense", "kind": "defense" }
+  ],
+  "provides": ["strike"],
+  "consumes": ["engagement"],
+  "contributes": [
+    {
+      "kind": "resolution",
+      "key": "strike",
+      "roll": "1d20 + @caster.{attack_stat} + {prof}",
+      "vs": "@target.{defense}",
+      "branches": ["hit", "miss"]
+    }
+  ]
+}

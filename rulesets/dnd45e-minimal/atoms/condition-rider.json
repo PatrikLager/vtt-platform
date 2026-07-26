@@ -1,0 +1,18 @@
+{
+  "id": "condition-rider",
+  "params": [
+    { "name": "condition", "kind": "condition" }
+  ],
+  "provides": [],
+  "consumes": ["strike"],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": "strike",
+      "branch": "hit",
+      "effects": [
+        { "apply_condition": { "id": "{condition}" } }
+      ]
+    }
+  ]
+}

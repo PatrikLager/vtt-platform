@@ -1,0 +1,26 @@
+{
+  "name": "goblin-shortbow-hit",
+  "ability_id": "goblin-shortbow",
+  "scene": "goblin-fight",
+  "actors": [
+    { "id": "goblin-archer", "x": 0, "y": 0, "attributes": { "dex": 4 } },
+    { "id": "fighter", "x": 6, "y": 0, "attributes": { "ac": 17, "max_hp": 28 }, "resources": { "hp": { "current": 28, "max": 28 } } }
+  ],
+  "actor_id": "goblin-archer",
+  "target_ids": ["fighter"],
+  "rolls": [{ "results": [13] }, { "results": [5] }],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "goblin-archer",
+      "ability_id": "goblin-shortbow",
+      "target_ids": ["fighter"],
+      "rolls": [
+        { "expression": "1d20 + @caster.dex + (2)", "results": [13], "total": 19 },
+        { "expression": "0 - (1d8)", "results": [5], "total": -5 }
+      ],
+      "outcome_summary": "Goblin Shortbow on fighter: hit (19 vs 17)"
+    },
+    { "type": "ResourceChanged", "actor_id": "fighter", "resource": "hp", "delta": -5, "new_value": 23, "reason": "ability:goblin-shortbow:hit" }
+  ]
+}

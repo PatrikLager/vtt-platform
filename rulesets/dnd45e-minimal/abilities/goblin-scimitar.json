@@ -1,0 +1,10 @@
+{
+  "id": "goblin-scimitar",
+  "name": "Goblin Scimitar",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "melee-delivery", "bind": { "reach": 1 } },
+    { "atom": "weapon-attack-roll", "bind": { "attack_stat": "dex", "prof": 2, "defense": "ac" } },
+    { "atom": "weapon-damage", "bind": { "damage_expr": "1d6 + 2" } }
+  ]
+}

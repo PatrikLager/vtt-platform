@@ -1,0 +1,29 @@
+{
+  "id": "goblin-scimitar",
+  "name": "Goblin Scimitar",
+  "usage": {
+    "at_will": true
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.dex + (2)",
+    "vs": "@target.ac",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "hp",
+        "delta_expr": "0 - (1d6 + 2)"
+      }
+    ],
+    null
+  ]
+}
