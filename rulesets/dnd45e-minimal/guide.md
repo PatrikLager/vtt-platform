@@ -346,6 +346,110 @@ reaches 15. Place the goblins within melee/shortbow reach of the fighter
 not out past crossbow range, or even the fighter's opening melee attack
 will be out of range.
 
+## Wire quick reference
+
+Every argument shape below is copied field-for-field from
+`cmd/vtt/tools.json` — the MCP layer rejects unknown fields outright, so a
+guessed shape is a wasted round trip, not a warning. Required fields are
+exactly what the schema marks required, not inferred from what "feels"
+required.
+
+### create_scene
+
+`sceneId`/`name`/`gridWidth`/`gridHeight` — all four required:
+
+```json
+{"sceneId": "scn-goblin-fight", "name": "Forest Trail", "gridWidth": 32, "gridHeight": 32}
+```
+
+### add_actor
+
+Already documented — see "Reference statblocks" above; each JSON block
+there IS the exact `actor` argument, wire field for wire field.
+
+### place_token
+
+`tokenId`/`sceneId`/`actorId`/`position` — all four required. `tokenId` is
+never minted for you: always supply your own chosen id explicitly
+(omitting it is a rejected call, not an auto-generated one):
+
+```json
+{"tokenId": "tok-cutter", "sceneId": "scn-goblin-fight", "actorId": "act-cutter", "position": {"x": 1, "y": 0}}
+```
+
+### move_token
+
+`tokenId`/`to` required, `to` holding `{x, y}`; `reason` is an optional
+string. The field is `to`, NOT `position` — `place_token` and `move_token`
+name the same `{x, y}` shape differently, and the wrong key is a rejected
+call, not a hint at the right one:
+
+```json
+{"tokenId": "tok-archer", "to": {"x": 30, "y": 0}}
+```
+
+### use_ability
+
+`actorId`/`abilityId`/`targetIds` all required; `targetIds` is always an
+array, even for a single target or a self-cast (`rally` on the caster is
+still `"targetIds": ["act-fighter"]`, not a bare string):
+
+```json
+{"actorId": "act-fighter", "abilityId": "longsword-strike", "targetIds": ["act-cutter"]}
+```
+
+### remove_condition
+
+`actorId`/`conditionId` both required:
+
+```json
+{"actorId": "act-archer", "conditionId": "dazed"}
+```
+
+### get_state
+
+No arguments at all — call it with an empty object:
+
+```json
+{}
+```
+
+### get_events_since
+
+`afterSequence` required, `limit` optional (default 50, max 200 — values
+above 200 are clamped, not rejected). Both are plain JSON numbers — see
+"Reading the event log" below for why that matters when the value you're
+passing came from a `use_ability` result:
+
+```json
+{"afterSequence": 12, "limit": 50}
+```
+
+## Reading the event log
+
+A fresh connection — including the one every `vtt mcp` process opens on
+launch — replays this campaign's ENTIRE event log from sequence 0, not
+from "now," and does not block your first tool call while it catches up.
+Read `get_state`/`get_events_since` right after connecting and you can
+race that replay: the response is honest about how far THIS connection
+has folded (`get_state`'s top-level `headSequence`), not a claim that
+nothing more recent exists elsewhere. If `headSequence` looks behind what
+you expect, wait and re-read — do not treat a low `headSequence` as
+"nothing has happened yet."
+
+`use_ability`'s own result carries a `sequence` too — the new batch's
+FIRST event, but as a protojson STRING (`"sequence": "42"`), not the plain
+number `get_events_since`'s `afterSequence` argument wants; convert it
+before you pass it on. And because `afterSequence` is exclusive
+(strictly-greater-than, not "starting at"), passing that sequence value
+straight through SKIPS the batch's own first event — call
+`get_events_since` with `afterSequence` one LESS than the returned
+sequence to read the batch from its true start. Expect the whole batch
+back together (the default `limit` of 50 comfortably covers a single
+ability's handful of events): the testimony event first (`AbilityUsed`,
+carrying the rolls), then its `ResourceChanged`/`ConditionApplied`
+effects — the same order "A worked example" above walks through.
+
 ## Demo runbook
 
 To run this ruleset live:
