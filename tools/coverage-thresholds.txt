@@ -1,0 +1,42 @@
+# Per-package coverage floors, enforced by task check:coverage.
+#
+# 85% is the ENTRY requirement for a new package, not the target. Patrik's
+# ruling (2026-07-27): "The coverage 85% is a minimum. The higher the better."
+# A flat 85% floor would let internal/engine rot from 97.7% down to 85% while
+# the gate stayed green the whole way — the exact drift a gate exists to stop.
+# So each package is held to what it has already earned.
+#
+# RAISING a floor is routine: do it whenever a package durably improves.
+# LOWERING one is a reviewed decision (CLAUDE.md rule 2: never weaken a gate
+# to pass it) and needs a reason recorded in the ledger.
+#
+# The values below sit a little under each package's measured coverage. Across
+# three full runs only ONE package actually varied: internal/harness, at
+# 85.60 / 86.39 / 85.60 (spread 0.79pp). Every other package — gateway,
+# cmd/vtt and mcp included, despite being socket-heavy — had a spread of
+# exactly 0.00. So harness's margin is empirical; the rest is a small uniform
+# buffer against variance not yet observed, on the reasoning that a gate which
+# cries wolf gets disabled. If that buffer ever hides a real regression,
+# tighten it: these are floors, and nothing stops them being raised.
+#
+# SEVERAL floors below depend on the subprocess-coverage merge (see
+# check:coverage and buildVTTBinary), not just cmd/vtt's. cmd/vtt is the
+# obvious one — 79.5% in-process, 85.2% with its exec'd binary runs counted —
+# but `go build -cover` without -coverpkg instruments EVERY main-module package
+# linked into the binary, so internal/rules also gains about 0.3pp from it, and
+# its 89.0 floor was recorded from the merged number. If the merge silently
+# stops working, these floors are what catch it.
+
+github.com/PatrikLager/vtt-platform/cmd/vtt                          85.0
+github.com/PatrikLager/vtt-platform/internal/adventure               89.5
+github.com/PatrikLager/vtt-platform/internal/adventure/conformance   89.0
+github.com/PatrikLager/vtt-platform/internal/campaign                85.5
+github.com/PatrikLager/vtt-platform/internal/engine                  97.5
+github.com/PatrikLager/vtt-platform/internal/gateway                 88.5
+github.com/PatrikLager/vtt-platform/internal/harness                 85.0
+github.com/PatrikLager/vtt-platform/internal/identity                87.5
+github.com/PatrikLager/vtt-platform/internal/mcp                     87.5
+github.com/PatrikLager/vtt-platform/internal/rules                   89.0
+github.com/PatrikLager/vtt-platform/internal/rules/conformance       85.5
+github.com/PatrikLager/vtt-platform/internal/store                   90.0
+github.com/PatrikLager/vtt-platform/tools/toolgen                    85.0

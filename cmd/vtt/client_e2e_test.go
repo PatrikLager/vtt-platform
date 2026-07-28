@@ -501,7 +501,31 @@ func TestEventsTailBinaryExitsCleanlyOnSIGINT(t *testing.T) {
 func buildVTTBinary(t *testing.T) string {
 	t.Helper()
 	binPath := filepath.Join(t.TempDir(), "vtt")
-	build := exec.Command("go", "build", "-o", binPath, ".")
+	args := []string{"build", "-o", binPath, "."}
+	// When check:coverage's subprocess pass sets VTT_SUBPROCESS_COVERDIR,
+	// build an INSTRUMENTED binary. Every subprocess started from these
+	// tests inherits both that variable and GOCOVERDIR through os.Environ()
+	// — no call site overrides cmd.Env — so each run drops its coverage data
+	// into that directory as it exits, and check:coverage merges it with the
+	// in-process profile.
+	//
+	// The guard is deliberately NOT GOCOVERDIR: `go test -coverprofile`
+	// exports GOCOVERDIR itself for its own use, so keying off it would
+	// build instrumented binaries during the ordinary coverage passes too,
+	// and `task check` would never once exercise the uninstrumented binary
+	// that actually ships.
+	//
+	// Without this, cmd/vtt's real behavior is verified but INVISIBLE:
+	// newServeCmd's RunE, newMCPCmd's RunE and main() are exercised only
+	// by subprocess runs, and `go test` coverage cannot see inside another
+	// process. The package measured 79.5% while its entrypoints were
+	// genuinely covered — a measurement gap, not a testing gap. Lowering
+	// the threshold would have hidden it; instrumenting the binary makes
+	// the number honest instead.
+	if os.Getenv("VTT_SUBPROCESS_COVERDIR") != "" {
+		args = []string{"build", "-cover", "-o", binPath, "."}
+	}
+	build := exec.Command("go", args...)
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build ./cmd/vtt: %v\n%s", err, out)
 	}
