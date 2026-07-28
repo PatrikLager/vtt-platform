@@ -34,6 +34,13 @@
     }
   },
   {
+    "type": "actor_added",
+    "actor_added": {
+      "actor_id": "wraith",
+      "name": "Wraith"
+    }
+  },
+  {
     "type": "token_placed",
     "token_placed": {
       "token_id": "tok-hero",

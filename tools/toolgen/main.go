@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -256,14 +257,8 @@ func schemaForWithOverrides(md protoreflect.MessageDescriptor, overrides map[pro
 	return map[string]any{"type": "object", "properties": props, "required": required}
 }
 
-// valueSchema derives the JSON Schema for a single scalar/message value,
-// with no overrides — see schemaFor's doc comment on when to use the plain
-// form vs. valueSchemaWithOverrides.
-func valueSchema(f protoreflect.FieldDescriptor) map[string]any {
-	return valueSchemaWithOverrides(f, nil)
-}
-
-// valueSchemaWithOverrides is valueSchema plus overrides, threaded into any
+// valueSchemaWithOverrides derives the JSON Schema for a single
+// scalar/message value, threading overrides into any
 // recursive schemaForWithOverrides call it makes — shared by plain fields,
 // map values, and list items. google.protobuf.Struct is emitted as a bare
 // open object since the contract never inspects module-owned data (see
@@ -301,16 +296,30 @@ func buildTools() []map[string]any {
 func main() {
 	out := flag.String("o", "", "output path (default stdout)")
 	flag.Parse()
+	if err := run(*out, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// run renders the tool definitions to outPath, or to w when outPath is empty.
+// Split out of main so the rendering and write paths are reachable from a
+// test: main itself is now a flag-parsing shim thin enough that nothing
+// untested lives in it. It also replaces main's two panics with a returned
+// error — a generator that fails should print a message and exit non-zero,
+// not dump a stack trace into the build output.
+func run(outPath string, w io.Writer) error {
 	data, err := json.MarshalIndent(buildTools(), "", "  ")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("toolgen: marshal: %w", err)
 	}
 	data = append(data, '\n')
-	if *out == "" {
-		fmt.Print(string(data))
-		return
+	if outPath == "" {
+		_, err := w.Write(data)
+		return err
 	}
-	if err := os.WriteFile(*out, data, 0o644); err != nil {
-		panic(err)
+	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		return fmt.Errorf("toolgen: write %s: %w", outPath, err)
 	}
+	return nil
 }

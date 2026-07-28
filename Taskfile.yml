@@ -17,13 +17,112 @@ tasks:
       # fix). internal/mcp joins this group from its introduction (P7 Task
       # 1) for the same determinism reason, decided up front rather than
       # waited on for a flake sighting of its own.
-      - go test $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt' -e '^.*internal/mcp')
-      - go test -p 1 ./internal/gateway/... ./cmd/vtt/... ./internal/mcp/...
+      # The Go suite runs inside check:coverage, which executes exactly these
+      # two package sets with -count=1 (strictly stronger than a cached run)
+      # plus a third instrumented pass over cmd/vtt. Running them here too
+      # would execute the whole suite twice per `task check` for no added
+      # signal — a test failure in any pass still aborts the gate.
+      - task: check:coverage
       - bun test
       - task: check:drift
       - task: check:breaking
       - task: check:vocabulary
       - task: check:arch
+
+  check:coverage:
+    desc: >
+      Per-package coverage floors, enforced. Thresholds RATCHET (see
+      tools/coverage-thresholds.txt): each package is held to max(85,
+      whatever it already earned), so a package cannot rot down to the
+      floor while staying green -- 85% is the entry requirement, not the
+      target.
+
+      Subprocess coverage is merged in. cmd/vtt's entrypoints (newServeCmd
+      and newMCPCmd RunE bodies, main) are exercised ONLY by tests that
+      build the real binary and exec it; `go test` cannot see inside
+      another process, so those runs write covdata to their own directory
+      (see buildVTTBinary) and `go tool covdata merge` unions it with the
+      in-process covdata natively. Without the merge cmd/vtt reads ~79%
+      while genuinely covered -- a measurement gap, not a testing gap, and
+      the fix is an honest number rather than a lower bar.
+    cmds:
+      - |
+        set -e
+        D_UNIT="$(mktemp -d)"
+        D_SUB="$(mktemp -d)"
+        D_MERGED="$(mktemp -d)"
+        PROFILE="$(mktemp -t merged-cov.XXXXXX)"
+        EXPECT="$(mktemp -t cov-expect.XXXXXX)"
+        LOG="$(mktemp -t cov-tests.XXXXXX)"
+        trap 'rm -rf "$D_UNIT" "$D_SUB" "$D_MERGED" "$PROFILE" "$EXPECT" "$LOG"' EXIT
+
+        # Run a command, showing output only if it fails. NOTE the deliberate
+        # absence of a pipe: `cmd | tail -3` takes the PIPELINE's exit status
+        # (tail's, always 0) without `pipefail`, so `set -e` never fires and a
+        # failing step ships green. A review proved that exact defect here, in
+        # the line written to prevent it.
+        run_quiet() {
+          if ! "$@" > "$LOG" 2>&1; then
+            cat "$LOG" >&2
+            return 1
+          fi
+        }
+
+        # The gate script is itself gated: several of its own review findings
+        # were "passes when it should fail", the one property a gate must not
+        # have.
+        run_quiet python3 tools/check_coverage_test.py
+
+        # Every package that MUST appear in the profile. This is NOT redundant
+        # with coverage-thresholds.txt: `go test -cover -args
+        # -test.gocoverdir` emits covdata only from test binaries that RUN, so
+        # a package with no _test.go files produces NOTHING and lands in
+        # neither the measured set nor the thresholds -- invisible to both
+        # set-equality directions. See the script for the full reasoning.
+        run_quiet_capture() {
+          if ! "$@" > "$EXPECT" 2> "$LOG"; then
+            cat "$LOG" >&2
+            return 1
+          fi
+        }
+        run_quiet_capture ./tools/list-measured-packages.sh
+
+        # Passes 1-2: in-process coverage, written as covdata rather than a
+        # text profile so `go tool covdata merge` can do the merging. These
+        # build UNINSTRUMENTED binaries: buildVTTBinary keys off
+        # VTT_SUBPROCESS_COVERDIR, not GOCOVERDIR, because `go test -cover`
+        # manages GOCOVERDIR itself -- keying off it would instrument the
+        # binary in every pass, and `task check` would never once exercise the
+        # configuration that actually ships.
+        #
+        # Output is logged and shown on failure: `go test` writes failure
+        # diagnostics to stdout, and >/dev/null would turn a real failure (or
+        # the ledgered contention flake) into a bare non-zero exit with
+        # nothing to read.
+        run_quiet go test -count=1 -cover $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt' -e '^.*internal/mcp') -args -test.gocoverdir="$D_UNIT"
+        run_quiet go test -count=1 -cover -p 1 ./internal/gateway/... ./cmd/vtt/... ./internal/mcp/... -args -test.gocoverdir="$D_UNIT"
+
+        # Pass 3: subprocess coverage. buildVTTBinary sees
+        # VTT_SUBPROCESS_COVERDIR and builds `go build -cover`, so every exec'd
+        # binary drops covdata into D_SUB as it exits. This is what makes
+        # cmd/vtt's newServeCmd/newMCPCmd RunE bodies and main() visible --
+        # in-process alone cmd/vtt reads 79.5%, with these runs counted 85.2%.
+        # NOTE: `go build -cover` without -coverpkg instruments EVERY
+        # main-module package linked into the binary, so this pass also lifts
+        # internal packages the binary pulls in (internal/rules by ~0.3pp).
+        VTT_SUBPROCESS_COVERDIR="$D_SUB" GOCOVERDIR="$D_SUB" run_quiet go test -count=1 -p 1 ./cmd/vtt/...
+        if [ -z "$(ls -A "$D_SUB" 2>/dev/null)" ]; then
+          echo "check:coverage: no subprocess coverage collected -- cmd/vtt would be understated" >&2
+          exit 1
+        fi
+
+        # Native merge. This replaced ~200 lines of hand-rolled Python whose
+        # block parser and count-summing union produced three of the four
+        # review rounds' enforcement defects.
+        run_quiet go tool covdata merge -i="$D_UNIT,$D_SUB" -o="$D_MERGED"
+        run_quiet go tool covdata textfmt -i="$D_MERGED" -o="$PROFILE"
+
+        python3 tools/check-coverage.py tools/coverage-thresholds.txt "$PROFILE" "$EXPECT"
 
   check:vocabulary:
     desc: Fail on game-system vocabulary in platform code (P2/P4)

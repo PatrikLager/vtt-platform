@@ -539,9 +539,14 @@ func TestNarrationAddedIsDeliberateNoOp(t *testing.T) {
 // TestNarrationAddedAsAtCapIsAccepted is the boundary-accept counterpart to
 // TestApplyRejections' "NarrationAdded with as exceeding 256 bytes" case
 // (merge-gate MUST-FIX): exactly maxNarrationAsBytes (256) must be
-// accepted, pinning the cap at `>`, not `>=` — the same at-cap-accept
-// discipline the note key/title/text caps already follow implicitly via
-// their own accept tests.
+// accepted, pinning the cap at `>`, not `>=`.
+//
+// CORRECTION (2026-07-27): this comment used to claim the note key/title/
+// text caps "already follow implicitly via their own accept tests". That
+// was FALSE — a mutation audit found `>` -> `>=` surviving at apply.go:202,
+// :205 and :208, because nothing exercised those caps at their exact value.
+// The claim went unchecked for two sub-projects. Their real at-cap tests now
+// live in apply_boundary_test.go.
 func TestNarrationAddedAsAtCapIsAccepted(t *testing.T) {
 	st := seedScene(t)
 	before := st.Snapshot()
