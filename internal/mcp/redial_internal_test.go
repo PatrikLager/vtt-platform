@@ -29,6 +29,18 @@ import (
 
 // fakeWSServer starts a minimal WebSocket endpoint that accepts and holds
 // connections open, so harness.Dial can succeed against it.
+//
+// It must DRAIN READS, not just park on the request context. harness.Client's
+// Close sends a close frame and then waits on readerDone (client.go:236-237),
+// which needs the peer to complete the closing handshake. A handler blocked on
+// <-r.Context().Done() never reads, never sees the close frame, and never
+// replies — so every Close waited out coder/websocket's default handshake
+// timeout of five seconds.
+//
+// That was not a harness problem, it was this helper's. Three mcp tests cost
+// 5.00s each for it, taking the suite to 16.6s, which in turn made gremlins
+// time out 57 of 64 mutants and rendered the package unmeasurable. Reading in
+// a loop lets the handshake complete in microseconds.
 func fakeWSServer(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -38,7 +50,13 @@ func fakeWSServer(t *testing.T) string {
 			return
 		}
 		defer conn.CloseNow()
-		<-r.Context().Done()
+		// Read until the peer closes. Returning on error is what lets
+		// coder/websocket answer the close handshake promptly.
+		for {
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				return
+			}
+		}
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

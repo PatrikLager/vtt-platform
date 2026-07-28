@@ -43,7 +43,18 @@ func TestRedialClosesClientWhenContextCanceledBetweenDialSuccessAndInstall(t *te
 			return
 		}
 		defer conn.CloseNow()
-		<-r.Context().Done() // hold the connection open until the client (or test teardown) closes it
+		// Drain reads rather than parking on the request context. Parking
+		// means this handler never sees the client's close frame and never
+		// answers the closing handshake, so harness.Client.Close waits out
+		// coder/websocket's 5s handshake timeout (it blocks on readerDone,
+		// client.go:236-237) — this test cost exactly 5.00s for that reason.
+		// Three such tests took the mcp suite to 16.6s, which made gremlins
+		// time out 57 of 64 mutants and left the package unmeasurable.
+		for {
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				return
+			}
+		}
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
