@@ -11,42 +11,39 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
-// A denied command must produce NO broadcast. The scenario engine proves that
-// negative by waiting denialAbsenceWindow (300ms) and checking nothing
-// arrived, and that constant's own doc comment states the resulting weakness
-// plainly:
+// CORRECTION (2026-07-28). The first version of this file claimed the harness
+// could MISS a denied command's broadcast entirely, and that claim was used to
+// justify replacing denialAbsenceWindow with an ordering-based proof. The
+// claim was wrong, and the test that "proved" it modelled an impossible
+// failure.
 //
-//	"it can only ever false-PASS an implementation that eventually (but
-//	 slowly) broadcasts past this window"
+// What it did: delayed the leaked broadcast until AFTER the next accepted
+// step's broadcast. That is OUT-OF-ORDER delivery. The gateway broadcasts only
+// from the store subscription, which delivers in sequence order per
+// connection, so a leak cannot overtake a later event. And out-of-order
+// delivery would defeat an ordering-based proof too — the test contradicted
+// the design it was arguing for.
 //
-// This test makes that weakness concrete rather than leaving it as a comment.
-// A server that leaks a denied command's broadcast 400ms later is a real bug —
-// the event reaches every participant and lands in the log — and the harness
-// reports the scenario as PASSING.
+// What is actually true, pinned below: a realistic leak IS caught today.
+// observeOnAll reads exactly ONE event per participant and fails unless its
+// sequence matches, so a leak arriving first makes the next accepted step fail
+// and the scenario fail with it. denialAbsenceWindow is not load-bearing for
+// detection.
 //
-// It also costs: that 300ms wait runs on every denial assertion and accounts
-// for 64 of the harness suite's 93 seconds (measured by dropping the window to
-// 10ms: 93s -> 29s), which is in turn why internal/harness has been excluded
-// from mutation testing as "hours per run".
+// The real defect is ATTRIBUTION. The denied step — the one that actually
+// misbehaved — is reported PASSING, and the innocent step after it is blamed
+// with a misleading "event not observed" message. An operator reading that
+// report investigates the wrong command.
 //
-// Both problems have one cause — proving absence by waiting — and one fix:
-// prove it by ORDERING instead. Per-connection delivery is sequence-ordered,
-// so a leaked event must arrive before the NEXT accepted step's event. Waiting
-// for that event and finding nothing extra ahead of it is a proof, not a
-// timeout: it is faster AND catches a leak at any delay.
+// So the case for absence-by-ordering is COST AND CLARITY, not correctness:
+//   - 64s of internal/harness's 93s and 28s of cmd/vtt's 42s is this one
+//     300ms window (measured by dropping it to 10ms), which is why both
+//     packages are excluded from check:mutation;
+//   - and a failure should name the step that caused it.
 //
-// HOW THIS TEST IS WRITTEN, AND WHY: it asserts the CURRENT, WRONG behaviour
-// — that the late leak is MISSED. That is deliberate. A test asserting the
-// correct behaviour would have to be skipped to keep `task check` green, and a
-// skipped test is precisely the honor system this repo's gates exist to
-// remove: nothing would fail if the fix were never written.
-//
-// Pinned this way round, the redesign CANNOT land quietly. Implement
-// absence-by-ordering and this test fails, forcing whoever does it to flip the
-// assertion to the commented-out form below and rename the test. That is the
-// hand-over: a RED waiting to happen, wired into the gate rather than a note
-// in a ledger.
-func TestDeniedCommandLeakingAfterTheWindowIsMISSED_knownGap(t *testing.T) {
+// This test is written to FAIL when that lands: fix the attribution and the
+// assertions below break, forcing whoever does it to update them.
+func TestDeniedCommandLeakIsCaughtButMisattributed(t *testing.T) {
 	world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 
 	leak := &vttv1.Envelope{
@@ -55,12 +52,14 @@ func TestDeniedCommandLeakingAfterTheWindowIsMISSED_knownGap(t *testing.T) {
 		Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
 	}
 	accepted := &vttv1.Envelope{
-		EventId: "accepted",
-		Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
+		EventId:  "accepted",
+		Sequence: 2,
+		Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
 	}
 
-	// Step 0: denied, but the server broadcasts anyway — LATE, past the
-	// 300ms absence window a timeout-based proof can see.
+	// A denied command the server wrongly persists and broadcasts. Both
+	// broadcasts are SLOW (past the 300ms absence window) but IN ORDER, which
+	// is the only way a real gateway can behave.
 	world["player"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 		go func() {
 			time.Sleep(400 * time.Millisecond)
@@ -68,12 +67,16 @@ func TestDeniedCommandLeakingAfterTheWindowIsMISSED_knownGap(t *testing.T) {
 		}()
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false, Error: "not authorized"}, nil
 	}
-	// Step 1: accepted, and its broadcast is the ordering witness — the leak
-	// above must already have arrived by the time this one does.
-	world["dm"].send = okSend(world, 2, accepted, "dm", "player")
+	world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			broadcast(world, accepted, "dm", "player")
+		}()
+		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 2}, nil
+	}
 
 	sc := &harness.Scenario{
-		Name:         "late-leak",
+		Name:         "leak-attribution",
 		Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
 		Steps: []harness.Step{
 			{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
@@ -89,28 +92,24 @@ func TestDeniedCommandLeakingAfterTheWindowIsMISSED_knownGap(t *testing.T) {
 		t.Fatalf("RunScenario: %v", err)
 	}
 
-	// The gap, pinned. When absence-by-ordering lands, this assertion breaks.
-	if !rep.Pass {
-		t.Fatal("this scenario now FAILS, which means the late leak is being caught — the " +
-			"absence-by-ordering redesign has landed. Flip this test to its correct form " +
-			"(below), rename it to TestDeniedCommandLeakingAfterTheWindowIsCaught, and " +
-			"delete this note.")
+	// DETECTION — the guarantee that matters, and it holds today.
+	if rep.Pass {
+		t.Fatal("a denied command broadcast to every participant and the scenario PASSED — " +
+			"detection is broken")
 	}
-	t.Log(strings.Join([]string{
-		"KNOWN GAP: a denied command broadcast 400ms later reached every participant",
-		"and the scenario passed. denialAbsenceWindow proves absence by waiting, so any",
-		"leak slower than the window is invisible — its own doc comment says so.",
-	}, " "))
 
-	// The correct assertions, ready to swap in:
-	//
-	//	if rep.Pass {
-	//		t.Fatal("scenario PASSED despite a denied command broadcasting to every participant")
-	//	}
-	//	if len(rep.Steps) == 0 || rep.Steps[0].Pass {
-	//		t.Errorf("the DENIED step (index 0) must be the one reported failing; got %+v", rep.Steps)
-	//	}
-	//	if d := rep.Steps[0].Detail; !strings.Contains(d, "broadcast") {
-	//		t.Errorf("failure detail should name the unexpected broadcast, got %q", d)
-	//	}
+	// ATTRIBUTION — today's defect, pinned so a fix cannot land silently.
+	if !rep.Steps[0].Pass {
+		t.Fatal("the DENIED step now fails, which means attribution has been fixed — update " +
+			"this test to assert that step fails with a detail naming the unexpected " +
+			"broadcast, and delete the misattribution assertions below")
+	}
+	if rep.Steps[1].Pass {
+		t.Fatal("the accepted step passed unexpectedly; this test no longer models what it claims")
+	}
+	if d := rep.Steps[1].Detail; !strings.Contains(d, "not observed") {
+		t.Errorf("expected the innocent step to be blamed with an 'event not observed' message, got %q", d)
+	}
+	t.Logf("KNOWN DEFECT (attribution): the denied step reports pass=true; blame lands on step 1 "+
+		"as %q, pointing an operator at the wrong command", rep.Steps[1].Detail)
 }
