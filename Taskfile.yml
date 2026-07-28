@@ -28,6 +28,7 @@ tasks:
       - task: check:breaking
       - task: check:vocabulary
       - task: check:arch
+      - task: check:mutation
 
   check:coverage:
     desc: >
@@ -123,6 +124,39 @@ tasks:
         run_quiet go tool covdata textfmt -i="$D_MERGED" -o="$PROFILE"
 
         python3 tools/check-coverage.py tools/coverage-thresholds.txt "$PROFILE" "$EXPECT"
+
+  check:mutation:
+    desc: >
+      Mutation gate (ADR-010): every surviving mutant must be adjudicated
+      equivalent in tools/mutation-equivalents.txt, with a stated reason.
+      Runs as part of `check` -- Patrik's ruling, 2026-07-28: "Time is not an
+      issue, quality is. Do not count seconds to achieve quality." An earlier
+      draft kept this out of check purely on runtime, and that reasoning is
+      void.
+
+      Not gremlins' own --threshold-efficacy: that gates on a ratio, so enough
+      newly-killed mutants can mask a new survivor (49k/2L = 96.08% passes,
+      and so does 100k/3L at 97.1%). The standard is the 2026-07-24 audit's
+      own -- zero UNADJUDICATED survivors.
+
+      internal/harness is excluded: its fixed sleeps cost ~70s PER MUTANT, so
+      a full run is hours. Recorded in ADR-010 with its fake-clock dependency
+      rather than left as folklore.
+    cmds:
+      - |
+        set -e
+        LOG="$(mktemp -t mutation-tests.XXXXXX)"
+        trap 'rm -f "$LOG"' EXIT
+        # NO PIPE. `cmd | tail -3` takes the PIPELINE's exit status (tail's,
+        # always 0) without pipefail, so under `set -e` a failing gate-test
+        # ships green -- the exact defect a review found in check:coverage's
+        # equivalent line, and one I re-introduced here before catching it.
+        if ! python3 tools/check_mutation_test.py > "$LOG" 2>&1; then
+          cat "$LOG" >&2
+          exit 1
+        fi
+        tail -3 "$LOG"
+        python3 tools/check-mutation.py tools/mutation-equivalents.txt
 
   check:vocabulary:
     desc: Fail on game-system vocabulary in platform code (P2/P4)
