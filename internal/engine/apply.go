@@ -35,6 +35,12 @@ const (
 // the existing event streams; adventure-format spec §3 for AdventureLoaded
 // — AbilityUsed's pattern, meaning arrives via the other events in the same
 // Compile batch, internal/adventure).
+// Complexity: one switch over every event type. ADR-003 mandates a SINGLE
+// fold, so this is dispatch breadth, not tangled logic — splitting it into
+// per-event helpers would scatter the very thing ADR-003 exists to keep in
+// one place.
+//
+//nolint:gocyclo
 func Apply(st *State, env *vttv1.Envelope) error {
 	switch p := env.Payload.(type) {
 	case *vttv1.Envelope_SessionStarted:

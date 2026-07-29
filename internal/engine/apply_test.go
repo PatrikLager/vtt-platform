@@ -162,6 +162,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "TokenPlaced with unknown actor",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				return st
 			},
@@ -186,6 +187,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "duplicate actor id",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
 					Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
@@ -201,6 +203,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "duplicate token id",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
 					Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
@@ -221,6 +224,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "SessionEnded with no open session",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				return engine.NewState()
 			},
 			envFunc: func(st *engine.State) *vttv1.Envelope {
@@ -246,6 +250,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "ResourceChanged for unknown resource",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
 				return st
@@ -259,6 +264,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "ResourceChanged new_value mismatch",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, actorAddedEnv(3, "a1", map[string]*vttv1.Resource{
 					"pool-a": {Current: 5, Max: 10},
@@ -275,6 +281,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "duplicate condition (actor,id)",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
 				st.Conditions["a1"] = []engine.ActorCondition{
@@ -291,6 +298,7 @@ func TestApplyRejections(t *testing.T) {
 		{
 			name: "ConditionRemoved for absent condition",
 			setup: func(t *testing.T) *engine.State {
+				t.Helper()
 				st := seedScene(t)
 				must(t, engine.Apply(st, actorAddedEnv(3, "a1", nil)))
 				return st

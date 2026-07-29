@@ -51,7 +51,7 @@ PACKAGES = [
     "./internal/mcp/",                     # ~857s
 ]
 
-# `LIVED CONDITIONALS_BOUNDARY at apply.go:141:15`
+# `LIVED CONDITIONALS_BOUNDARY at apply.go:147:15`
 LIVED_RE = re.compile(r"^\s*LIVED\s+(\S+)\s+at\s+(\S+)\s*$")
 
 # `   TIMED OUT CONDITIONALS_NEGATION at server.go:158:9`

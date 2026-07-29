@@ -219,7 +219,7 @@ func (s *Server) Run(ctx context.Context, transport mcpsdk.Transport) error {
 	// attempt on the stdio-EOF path).
 	defer func() {
 		if c := s.currentClient(); c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 	}()
 
@@ -287,7 +287,7 @@ func (s *Server) redial(ctx context.Context) bool {
 			// setClient. Close the orphan ourselves and bail out exactly
 			// like any other canceled-before-connecting case.
 			if ctx.Err() != nil {
-				client.Close()
+				_ = client.Close() // orphaned by a ctx cancelled mid-dial
 				return false
 			}
 			s.setClient(client)

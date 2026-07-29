@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	_ "modernc.org/sqlite"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/store"

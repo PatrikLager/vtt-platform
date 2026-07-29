@@ -96,6 +96,7 @@ func propMust(t *testing.T, c *campaign.Campaign, env *vttv1.Envelope, idx int, 
 }
 
 func (m *propModel) doCreateScene(t *testing.T, c *campaign.Campaign, idx int) {
+	t.Helper()
 	m.sceneN++
 	id := fmt.Sprintf("prop-scn-%d", m.sceneN)
 	seq := propMust(t, c, cenv(nextID(), &vttv1.SceneCreated{
@@ -106,6 +107,7 @@ func (m *propModel) doCreateScene(t *testing.T, c *campaign.Campaign, idx int) {
 }
 
 func (m *propModel) doAddActor(t *testing.T, c *campaign.Campaign, idx int) {
+	t.Helper()
 	m.actorN++
 	id := fmt.Sprintf("prop-actor-%d", m.actorN)
 	seq := propMust(t, c, cenv(nextID(), &vttv1.ActorAdded{
@@ -116,6 +118,7 @@ func (m *propModel) doAddActor(t *testing.T, c *campaign.Campaign, idx int) {
 }
 
 func (m *propModel) doPlaceToken(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int) {
+	t.Helper()
 	m.tokenN++
 	id := fmt.Sprintf("prop-tok-%d", m.tokenN)
 	scene := m.scenes[rng.Intn(len(m.scenes))]
@@ -139,6 +142,7 @@ func (m *propModel) doPlaceToken(t *testing.T, c *campaign.Campaign, rng *rand.R
 // into an invalid action; it only means From/To are not always contiguous,
 // which doesn't matter for what this test verifies.
 func (m *propModel) doMoveToken(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int) {
+	t.Helper()
 	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]
 	from := m.tokenPos[id]
 	to := [2]int32{int32(rng.Intn(50)), int32(rng.Intn(50))}
@@ -228,12 +232,14 @@ func (m *propModel) resyncFromState(st *engine.State) {
 }
 
 func (m *propModel) doStartSession(t *testing.T, c *campaign.Campaign, idx int) {
+	t.Helper()
 	seq := propMust(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "prop-session"}), idx, "startSession")
 	m.sessionOpen = true
 	m.allSeqs = append(m.allSeqs, seq)
 }
 
 func (m *propModel) doEndSession(t *testing.T, c *campaign.Campaign, idx int) {
+	t.Helper()
 	seq := propMust(t, c, cenv(nextID(), &vttv1.SessionEnded{}), idx, "endSession")
 	m.sessionOpen = false
 	m.allSeqs = append(m.allSeqs, seq)
@@ -260,6 +266,7 @@ func (m *propModel) doEndSession(t *testing.T, c *campaign.Campaign, idx int) {
 // see Append's doc comment and append_sequence_validation_test.go for the
 // full proof). Anchored draws here are no longer expected to fail.
 func (m *propModel) doAddNarration(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	t.Helper()
 	na := &vttv1.NarrationAdded{Text: fmt.Sprintf("narration entry #%d", idx)}
 	if len(m.allSeqs) >= 2 && rng.Float64() < 0.5 {
 		from := m.allSeqs[rng.Intn(len(m.allSeqs))]
@@ -280,6 +287,7 @@ func (m *propModel) doAddNarration(t *testing.T, c *campaign.Campaign, rng *rand
 // exercised — the SAME key, a new title/text, no rejection expected),
 // the rest mint a fresh key.
 func (m *propModel) doUpsertNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	t.Helper()
 	var key string
 	if len(m.noteKeys) > 0 && rng.Float64() < 0.30 {
 		key = m.noteKeys[rng.Intn(len(m.noteKeys))]
@@ -304,6 +312,7 @@ func (m *propModel) doUpsertNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 // exactly like doUndo counts undoRejected. The rest delete a real tracked
 // key and untrack it.
 func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	t.Helper()
 	absent := len(m.noteKeys) == 0 || rng.Float64() < 0.30
 	var key string
 	if absent {
@@ -348,6 +357,7 @@ func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 // falls back to addActor — always valid — so every iteration guarantees
 // forward progress toward the requested event count.
 func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
+	t.Helper()
 	r := rng.Float64()
 	switch {
 	case r < 0.05:

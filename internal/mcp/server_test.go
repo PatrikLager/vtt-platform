@@ -149,6 +149,7 @@ func sendFrame(t *testing.T, conn *websocket.Conn, frame *vttv1.ServerFrame) {
 // sendResult scripts a CommandResult frame back to the client. errStr may be
 // empty (the ok=true case never sets it).
 func sendResult(t *testing.T, conn *websocket.Conn, requestID string, ok bool, errStr string, seq int64) {
+	t.Helper()
 	sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: &vttv1.CommandResult{
 		RequestId: requestID, Ok: ok, Error: errStr, Sequence: seq,
 	}}})

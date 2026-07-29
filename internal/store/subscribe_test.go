@@ -213,11 +213,11 @@ func TestNotifyIgnoresZeroSequence(t *testing.T) {
 
 	// A normal, correctly-stamped envelope still delivers afterward — the
 	// guard must not disable the subscriber or the store.
-	real := newEnv("e-real")
-	if _, err := s.Append(real); err != nil {
+	live := newEnv("e-real")
+	if _, err := s.Append(live); err != nil {
 		t.Fatal(err)
 	}
-	s.Notify(real)
+	s.Notify(live)
 	if got := recv(t, ch); got.EventId != "e-real" {
 		t.Fatalf("live delivery after guard: got %s, want e-real", got.EventId)
 	}

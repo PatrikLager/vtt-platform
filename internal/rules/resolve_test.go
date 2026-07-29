@@ -154,7 +154,7 @@ func newTestState() *engine.State {
 	return st
 }
 
-func res(current, max int32) *vttv1.Resource { return &vttv1.Resource{Current: current, Max: max} }
+func res(current, upper int32) *vttv1.Resource { return &vttv1.Resource{Current: current, Max: upper} }
 
 func putActor(st *engine.State, id string, attrs map[string]int32, resources map[string]*vttv1.Resource) {
 	st.Actors[id] = &vttv1.Actor{ActorId: id, Name: id, Attributes: attrs, Resources: resources}

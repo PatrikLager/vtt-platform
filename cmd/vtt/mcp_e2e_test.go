@@ -25,8 +25,8 @@ package main
 //
 // Every test here lives in package main (cmd/vtt), same as
 // client_e2e_test.go/serve_e2e_test.go, because it needs composeServer
-// (unexported, cmd-only) — "cmd may compose" — and toolsJSON (mcp.go's
-// go:embed var, same package).
+// (unexported, cmd-only) — "cmd may compose" — and toolsJSON (the embedded
+// var declared in mcp.go, same package).
 
 import (
 	"bytes"

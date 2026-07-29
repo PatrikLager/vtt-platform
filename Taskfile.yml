@@ -5,6 +5,7 @@ tasks:
     desc: Single quality gateway — every task must leave this green
     cmds:
       - go vet ./...
+      - task: lint
       # internal/gateway, cmd/vtt, and internal/mcp are the socket-heavy
       # suites (real WebSocket/subprocess tests, or in-process MCP sessions
       # fronting a fake WebSocket wire per P7 task-1-brief.md): run
@@ -29,6 +30,22 @@ tasks:
       - task: check:vocabulary
       - task: check:arch
       - task: check:mutation
+
+  lint:
+    desc: >
+      golangci-lint over the whole tree, tests included. Config lives in
+      .golangci.yml -- read its header before editing, because `run` accepts
+      an INVALID config silently and reports 0 issues.
+    cmds:
+      # `config verify` first: the config is schema-checked before it is
+      # trusted. Without this, a v1-schema key or a mistyped `version` is
+      # ignored without a warning and the gate passes while enforcing far
+      # less than it claims -- which is exactly how this config shipped its
+      # first draft (a dead linters-settings block, and an exclusion whose
+      # text matched every `unused` message and so disabled that linter
+      # outright).
+      - golangci-lint config verify
+      - golangci-lint run ./...
 
   check:coverage:
     desc: >

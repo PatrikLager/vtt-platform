@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -578,8 +579,8 @@ func TestParseScopedRefsInvalidScope(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Parse(%q): want error, got nil", tc.src)
 			}
-			pe, ok := err.(*rules.ParseError)
-			if !ok {
+			var pe *rules.ParseError
+			if !errors.As(err, &pe) {
 				t.Fatalf("Parse(%q) error = %v (%T), want a *rules.ParseError", tc.src, err, err)
 			}
 			if pe.Pos != tc.wantPos {
@@ -1113,8 +1114,8 @@ func TestParseDiceChainRejectedWithoutParens(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Parse(%q): want error (ambiguous unparenthesized dice chain), got nil", src)
 			}
-			pe, ok := err.(*rules.ParseError)
-			if !ok {
+			var pe *rules.ParseError
+			if !errors.As(err, &pe) {
 				t.Fatalf("Parse(%q) error = %v (%T), want a *rules.ParseError", src, err, err)
 			}
 			if !strings.Contains(pe.Msg, "ambiguous dice chain") {

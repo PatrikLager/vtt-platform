@@ -67,8 +67,8 @@ func fakeWSServer(t *testing.T) string {
 // afterwards.
 func stubDial(t *testing.T, fn func(context.Context, string, string, int64) (*harness.Client, error)) {
 	t.Helper()
-	real := harnessDial
-	t.Cleanup(func() { harnessDial = real })
+	origDial := harnessDial
+	t.Cleanup(func() { harnessDial = origDial })
 	harnessDial = fn
 }
 
@@ -101,7 +101,7 @@ func TestRedialRetriesAndResumesFromLastSeen(t *testing.T) {
 		mu     sync.Mutex
 		afters []int64
 	)
-	real := harnessDial
+	origDial := harnessDial
 	stubDial(t, func(dctx context.Context, u, tok string, after int64) (*harness.Client, error) {
 		mu.Lock()
 		afters = append(afters, after)
@@ -110,7 +110,7 @@ func TestRedialRetriesAndResumesFromLastSeen(t *testing.T) {
 		if n < 3 {
 			return nil, errors.New("connection refused")
 		}
-		return real(dctx, u, tok, after)
+		return origDial(dctx, u, tok, after)
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

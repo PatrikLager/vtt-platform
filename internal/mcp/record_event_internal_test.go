@@ -260,12 +260,12 @@ func TestPumpRedialsWhenConnectionDropsWithLiveContext(t *testing.T) {
 	wsURL := fakeWSServer(t)
 
 	redialled := make(chan struct{}, 4)
-	real := harnessDial
+	origDial := harnessDial
 	var dials int
 	stubDial(t, func(dctx context.Context, u, tok string, after int64) (*harness.Client, error) {
 		dials++
 		if dials == 1 {
-			return real(dctx, u, tok, after) // the connection that will drop
+			return origDial(dctx, u, tok, after) // the connection that will drop
 		}
 		redialled <- struct{}{}
 		return nil, errors.New("refused") // enough to prove the attempt happened

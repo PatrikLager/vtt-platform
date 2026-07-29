@@ -32,7 +32,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer closeFn()
+			defer func() { _ = closeFn() }() // see composeServer's hijack-contract note
 
 			if rulesetDir != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "vtt serve: listening on %s (campaign %s, ruleset %s)\n", addr, campaignPath, rulesetDir)
@@ -58,6 +58,11 @@ func newServeCmd() *cobra.Command {
 				// composeServer's doc comment) — those die with the process
 				// exit that follows. The exit itself never depends on them:
 				// this RunE returns within serveShutdownTimeout regardless.
+				// context.Background() is deliberate, not an oversight:
+				// cmd.Context() is ALREADY CANCELLED — that is why this branch
+				// is running — so deriving the shutdown deadline from it would
+				// hand Shutdown an expired context and it would return
+				// instantly, turning graceful shutdown into an abrupt one.
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), serveShutdownTimeout)
 				defer cancel()
 				shutdownErr := srv.Shutdown(shutdownCtx)

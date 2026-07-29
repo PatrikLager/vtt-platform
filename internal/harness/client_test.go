@@ -110,12 +110,14 @@ func sendFrame(t *testing.T, conn *websocket.Conn, frame *vttv1.ServerFrame) {
 }
 
 func sendResult(t *testing.T, conn *websocket.Conn, requestID string, ok bool, seq int64) {
+	t.Helper()
 	sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: &vttv1.CommandResult{
 		RequestId: requestID, Ok: ok, Sequence: seq,
 	}}})
 }
 
 func sendEvent(t *testing.T, conn *websocket.Conn, eventID string, seq int64) {
+	t.Helper()
 	sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: &vttv1.Envelope{
 		EventId: eventID, Sequence: seq,
 	}}})

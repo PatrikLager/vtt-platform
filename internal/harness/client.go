@@ -261,7 +261,7 @@ func (c *Client) readLoop() {
 		if err := protojson.Unmarshal(raw, &frame); err != nil {
 			wrapped := fmt.Errorf("harness: malformed server frame: %w", err)
 			c.teardown(wrapped)
-			c.conn.Close(websocket.StatusUnsupportedData, "harness: malformed frame")
+			_ = c.conn.Close(websocket.StatusUnsupportedData, "harness: malformed frame")
 			return
 		}
 
@@ -274,7 +274,7 @@ func (c *Client) readLoop() {
 			}
 		default:
 			c.teardown(errors.New("harness: server frame has neither result nor event"))
-			c.conn.Close(websocket.StatusUnsupportedData, "harness: empty frame")
+			_ = c.conn.Close(websocket.StatusUnsupportedData, "harness: empty frame")
 			return
 		}
 	}
@@ -307,7 +307,7 @@ func (c *Client) deliverEvent(env *vttv1.Envelope) bool {
 		return true
 	default:
 		c.teardown(ErrEventsOverflow)
-		c.conn.Close(websocket.StatusPolicyViolation, "harness: events buffer overflow")
+		_ = c.conn.Close(websocket.StatusPolicyViolation, "harness: events buffer overflow")
 		return false
 	}
 }

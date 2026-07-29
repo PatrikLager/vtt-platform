@@ -61,6 +61,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -188,13 +189,24 @@ func buildFixtureState(rs *rules.Ruleset) *engine.State {
 	buildResources := func() map[string]*vttv1.Resource {
 		out := make(map[string]*vttv1.Resource, len(rs.Resources))
 		for _, r := range rs.Resources {
-			max := fixtureResourceFallbackMax
+			largest := fixtureResourceFallbackMax
 			if r.DefaultMaxExpr != nil {
 				if v, err := rules.Eval(r.DefaultMaxExpr, attrsInt, nil, smokeRoller{}); err == nil && v > 0 {
-					max = int32(v)
+					// A ruleset authors this expression, and nothing bounds it
+					// to int32 — see int32Checked's doc comment in resolve.go:
+					// the grammar's closed '*' has no magnitude bound beyond
+					// the int literal fit. An unclamped conversion wraps to a
+					// NEGATIVE Max, which silently produces a nonsense smoke
+					// fixture instead of failing. Clamp: this is a generic
+					// stand-in actor, so a saturated ceiling is the honest
+					// reading of "bigger than any resource could need".
+					if v > math.MaxInt32 {
+						v = math.MaxInt32
+					}
+					largest = int32(v)
 				}
 			}
-			out[r.Name] = &vttv1.Resource{Current: max, Max: max}
+			out[r.Name] = &vttv1.Resource{Current: largest, Max: largest}
 		}
 		return out
 	}

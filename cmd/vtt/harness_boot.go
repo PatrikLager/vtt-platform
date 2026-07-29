@@ -129,7 +129,7 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	if sc.Ruleset != "" {
 		rulesetDir, err = resolveRulesetDir(sc.Ruleset)
 		if err != nil {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 			return nil, fmt.Errorf("vtt client run: resolve scenario ruleset %q: %w", sc.Ruleset, err)
 		}
 	}
@@ -138,21 +138,21 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	if sc.Adventures != "" {
 		adventuresDir, err = resolveAdventuresDir(sc.Adventures)
 		if err != nil {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 			return nil, fmt.Errorf("vtt client run: resolve scenario adventures dir %q: %w", sc.Adventures, err)
 		}
 	}
 
 	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir)
 	if err != nil {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 		return nil, fmt.Errorf("vtt client run: boot server: %w", err)
 	}
 
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
-		closeCompose()
-		os.RemoveAll(dir)
+		_ = closeCompose()
+		_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 		return nil, fmt.Errorf("vtt client run: listen: %w", err)
 	}
 	serveErrCh := make(chan error, 1)
@@ -160,9 +160,9 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 
 	tokens, ids, err := mintInvites(campaignPath, sc)
 	if err != nil {
-		srv.Close()
-		closeCompose()
-		os.RemoveAll(dir)
+		_ = srv.Close() // best-effort; the boot error below is what matters
+		_ = closeCompose()
+		_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 		return nil, err
 	}
 

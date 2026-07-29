@@ -185,11 +185,11 @@ func parseAfter(raw string) (int64, error) {
 // itself — so two writes can never race on the wire, and the ordering of
 // interleaved results/events is whatever order they arrive at outCh.
 func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	events, cancel, err := s.campaign.Subscribe(after, s.buffer)
 	if err != nil {
-		conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
+		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
 	}
 
@@ -245,7 +245,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// silently dead forever. Force the connection closed so that Read
 		// errors out and drives the normal shutdown() path.
 		if !closing.Load() {
-			conn.CloseNow()
+			_ = conn.CloseNow()
 		}
 	}()
 
@@ -277,7 +277,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// Malformed frame: close only THIS connection (binding
 			// contract) — every other connection is untouched.
 			shutdown()
-			conn.Close(websocket.StatusPolicyViolation, "gateway: malformed frame")
+			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: malformed frame")
 			return
 		}
 

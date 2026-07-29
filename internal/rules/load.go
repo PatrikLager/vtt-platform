@@ -161,6 +161,11 @@ type loadedManifest struct {
 	resources     []ResourceDef
 }
 
+// Complexity: straight-line validation of one manifest — a long sequence of
+// independent field checks, each with its own error. Splitting it would only
+// move the branches somewhere else.
+//
+//nolint:gocyclo
 func loadManifest(path string) (*loadedManifest, error) {
 	var raw manifestJSON
 	if err := decodeStrict(path, &raw); err != nil {
@@ -618,7 +623,7 @@ func loadAtoms(dir string) (map[string]*AtomDef, error) {
 			}
 			paramNames[p.Name] = true
 			paramKinds[p.Name] = p.Kind
-			params = append(params, ParamDef{Name: p.Name, Kind: p.Kind})
+			params = append(params, ParamDef(p))
 		}
 
 		contributes := make([]Contribution, 0, len(raw.Contributes))
@@ -825,6 +830,10 @@ func decodeResolutionContribution(path, field string, probe map[string]json.RawM
 	}, nil
 }
 
+// Complexity: one decoder over a wide oneof; the branches are mutually
+// exclusive shapes, not nested logic.
+//
+//nolint:gocyclo
 func decodeOutcomeContribution(path, field string, probe map[string]json.RawMessage, paramNames map[string]bool) (Contribution, error) {
 	keyRaw, ok := probe["key"]
 	if !ok {

@@ -81,7 +81,7 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("identity: open %s: %w", path, err)
 	}
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		_ = db.Close() // closing a handle whose schema init just failed
 		return nil, fmt.Errorf("identity: init schema: %w", err)
 	}
 	return &DB{db: db}, nil
