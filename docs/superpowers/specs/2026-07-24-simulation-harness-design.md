@@ -130,6 +130,14 @@ impractical at ~70s/run; the branch's seven injection proofs stand as the
 interim teeth evidence; the `audit:mutation` target already lists harness
 with this caveat).
 
+> **Update 2026-07-29.** The fixed-sleep cost is gone — the harness tests run
+> inside `testing/synctest` bubbles, the suite is ~0.7s, and a full mutation
+> run is under four minutes. The condition this paragraph sets is therefore
+> met. The audit did NOT extend to harness on landing, because the run it
+> unblocked reports ~29 survivors and ~32 uncovered mutants; that is now the
+> blocker, and it is a coverage gap rather than a runtime one. See ADR-010's
+> amendment of the same date for the authoritative statement.
+
 ## 8. Exit criteria
 
 - `three-role-exit.json` green via self-contained run AND against a live
