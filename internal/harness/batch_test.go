@@ -18,6 +18,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
@@ -84,51 +85,57 @@ func runOneUseAbilityStep(t *testing.T, world map[string]*fakeConn, participants
 // internal/gateway/ruleset_test.go's TestUseAbilityHitProducesBatchFirst
 // Sequence; this test isolates the harness matcher itself).
 func TestRunScenarioUseAbilityBatchAllEventsObservedPasses(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	envs := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2"), abilityUsedEnv("e3")}
-	dm.send = batchSend(world, 1, envs, "dm", "watcher")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		envs := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2"), abilityUsedEnv("e3")}
+		dm.send = batchSend(world, 1, envs, "dm", "watcher")
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
-	if !rep.Pass || len(rep.Steps) != 1 || !rep.Steps[0].Pass {
-		t.Fatalf("Report.Pass = %v, want true (steps = %+v)", rep.Pass, rep.Steps)
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+		if !rep.Pass || len(rep.Steps) != 1 || !rep.Steps[0].Pass {
+			t.Fatalf("Report.Pass = %v, want true (steps = %+v)", rep.Pass, rep.Steps)
+		}
+	})
 }
 
 // TestRunScenarioUseAbilitySingleEventBatchPasses covers the minimum-length
 // batch (e.g. a miss with no on-miss outcomes: AbilityUsed alone) — the
 // matcher must not require MORE than one event.
 func TestRunScenarioUseAbilitySingleEventBatchPasses(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	dm.send = batchSend(world, 1, []*vttv1.Envelope{abilityUsedEnv("e1")}, "dm", "watcher")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		dm.send = batchSend(world, 1, []*vttv1.Envelope{abilityUsedEnv("e1")}, "dm", "watcher")
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true (single-event batch); steps = %+v", rep.Steps)
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true (single-event batch); steps = %+v", rep.Steps)
+		}
+	})
 }
 
 // TestRunScenarioUseAbilityBatchMissingParticipantFails covers a
 // participant that never receives ANY of the batch's events (a broadcast
 // bug) — the step must fail, naming that participant.
 func TestRunScenarioUseAbilityBatchMissingParticipantFails(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	envs := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2")}
-	// Broadcast to dm only — watcher never sees anything.
-	dm.send = batchSend(world, 1, envs, "dm")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		envs := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2")}
+		// Broadcast to dm only — watcher never sees anything.
+		dm.send = batchSend(world, 1, envs, "dm")
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (watcher never observed the batch)")
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "watcher") {
-		t.Fatalf("Detail = %q, want it to name the missing participant %q", rep.Steps[0].Detail, "watcher")
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (watcher never observed the batch)")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "watcher") {
+			t.Fatalf("Detail = %q, want it to name the missing participant %q", rep.Steps[0].Detail, "watcher")
+		}
+	})
 }
 
 // TestRunScenarioUseAbilityBatchPartialObservationFails covers a
@@ -137,28 +144,30 @@ func TestRunScenarioUseAbilityBatchMissingParticipantFails(t *testing.T) {
 // tail event) — the length-mismatch cross-participant check must catch it
 // even though this participant's own run is internally gap-free.
 func TestRunScenarioUseAbilityBatchPartialObservationFails(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	full := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2"), abilityUsedEnv("e3")}
-	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-		for i, env := range full {
-			env.Sequence = 1 + int64(i)
-			broadcast(world, env, "dm")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		full := []*vttv1.Envelope{abilityUsedEnv("e1"), abilityUsedEnv("e2"), abilityUsedEnv("e3")}
+		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			for i, env := range full {
+				env.Sequence = 1 + int64(i)
+				broadcast(world, env, "dm")
+			}
+			// watcher only ever sees the first two of the three.
+			broadcast(world, full[0], "watcher")
+			broadcast(world, full[1], "watcher")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
 		}
-		// watcher only ever sees the first two of the three.
-		broadcast(world, full[0], "watcher")
-		broadcast(world, full[1], "watcher")
-		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
-	}
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (watcher observed only 2 of 3 batch events)")
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "watcher") {
-		t.Fatalf("Detail = %q, want it to name the short-observing participant %q", rep.Steps[0].Detail, "watcher")
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (watcher observed only 2 of 3 batch events)")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "watcher") {
+			t.Fatalf("Detail = %q, want it to name the short-observing participant %q", rep.Steps[0].Detail, "watcher")
+		}
+	})
 }
 
 // TestRunScenarioUseAbilityBatchNonContiguousEventFails covers a broken
@@ -166,25 +175,27 @@ func TestRunScenarioUseAbilityBatchPartialObservationFails(t *testing.T) {
 // event) — a gap in the sequence run must fail the step rather than being
 // silently accepted as "the batch ended early".
 func TestRunScenarioUseAbilityBatchNonContiguousEventFails(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
-	e1 := abilityUsedEnv("e1")
-	e1.Sequence = 1
-	e2 := abilityUsedEnv("e2")
-	e2.Sequence = 3 // gap: skips sequence 2 entirely
-	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-		broadcast(world, e1, "dm")
-		broadcast(world, e2, "dm")
-		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
-	}
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
+		e1 := abilityUsedEnv("e1")
+		e1.Sequence = 1
+		e2 := abilityUsedEnv("e2")
+		e2.Sequence = 3 // gap: skips sequence 2 entirely
+		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			broadcast(world, e1, "dm")
+			broadcast(world, e2, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}})
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (non-contiguous batch sequence)")
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "non-contiguous") {
-		t.Fatalf("Detail = %q, want it to name the contiguity break", rep.Steps[0].Detail)
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}})
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (non-contiguous batch sequence)")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "non-contiguous") {
+			t.Fatalf("Detail = %q, want it to name the contiguity break", rep.Steps[0].Detail)
+		}
+	})
 }
 
 // TestRunScenarioUseAbilityBatchNoEventAtAllFails covers a use_ability
@@ -192,19 +203,21 @@ func TestRunScenarioUseAbilityBatchNonContiguousEventFails(t *testing.T) {
 // most basic wiring failure) — the same "no event observed" timeout path
 // observeOnAll's own tests already cover for single-event commands.
 func TestRunScenarioUseAbilityBatchNoEventAtAllFails(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
-	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
-	}
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
+		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
 
-	rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}})
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (no batch event ever broadcast)")
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "dm") {
-		t.Fatalf("Detail = %q, want it to name dm", rep.Steps[0].Detail)
-	}
+		rep := runOneUseAbilityStep(t, world, []harness.Participant{{Name: "dm"}})
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (no batch event ever broadcast)")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "dm") {
+			t.Fatalf("Detail = %q, want it to name dm", rep.Steps[0].Detail)
+		}
+	})
 }
 
 // --- load_adventure is ALSO batch-aware (adventure-format Task 4) ---------
@@ -241,16 +254,18 @@ func runOneLoadAdventureStep(t *testing.T, world map[string]*fakeConn, participa
 // participants passes the ok-step, and every event lands in both
 // participants' history in order.
 func TestRunScenarioLoadAdventureBatchAllEventsObservedPasses(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	envs := []*vttv1.Envelope{abilityUsedEnv("a1"), abilityUsedEnv("a2"), abilityUsedEnv("a3")}
-	dm.send = batchSend(world, 1, envs, "dm", "watcher")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		envs := []*vttv1.Envelope{abilityUsedEnv("a1"), abilityUsedEnv("a2"), abilityUsedEnv("a3")}
+		dm.send = batchSend(world, 1, envs, "dm", "watcher")
 
-	rep := runOneLoadAdventureStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
-	if !rep.Pass || len(rep.Steps) != 1 || !rep.Steps[0].Pass {
-		t.Fatalf("Report.Pass = %v, want true (steps = %+v)", rep.Pass, rep.Steps)
-	}
+		rep := runOneLoadAdventureStep(t, world, []harness.Participant{{Name: "dm"}, {Name: "watcher"}})
+		if !rep.Pass || len(rep.Steps) != 1 || !rep.Steps[0].Pass {
+			t.Fatalf("Report.Pass = %v, want true (steps = %+v)", rep.Pass, rep.Steps)
+		}
+	})
 }
 
 // TestRunScenarioLoadAdventureBatchLeavesNoLeftoverEventsForNextStep proves
@@ -266,38 +281,40 @@ func TestRunScenarioLoadAdventureBatchAllEventsObservedPasses(t *testing.T) {
 // mismatch, failing the step and corrupting every later observation on this
 // connection for the rest of the scenario.
 func TestRunScenarioLoadAdventureBatchLeavesNoLeftoverEventsForNextStep(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
 
-	loadEnvs := []*vttv1.Envelope{abilityUsedEnv("adv1"), abilityUsedEnv("adv2"), abilityUsedEnv("adv3")}
-	nextEnv := abilityUsedEnv("next")
-	calls := 0
-	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-		calls++
-		if calls == 1 {
-			for i, env := range loadEnvs {
-				env.Sequence = int64(1 + i)
-				broadcast(world, env, "dm")
+		loadEnvs := []*vttv1.Envelope{abilityUsedEnv("adv1"), abilityUsedEnv("adv2"), abilityUsedEnv("adv3")}
+		nextEnv := abilityUsedEnv("next")
+		calls := 0
+		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			calls++
+			if calls == 1 {
+				for i, env := range loadEnvs {
+					env.Sequence = int64(1 + i)
+					broadcast(world, env, "dm")
+				}
+				return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
 			}
-			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+			nextEnv.Sequence = 4
+			broadcast(world, nextEnv, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 4}, nil
 		}
-		nextEnv.Sequence = 4
-		broadcast(world, nextEnv, "dm")
-		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 4}, nil
-	}
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, loadAdventureCmdJSON), Expect: &harness.Expect{OK: true}},
-			{By: "dm", Command: rawCmd(t, `{"endSession":{}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true (the load_adventure batch must be fully drained so the next step observes its OWN event, not a leftover): steps=%+v", rep.Steps)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, loadAdventureCmdJSON), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"endSession":{}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true (the load_adventure batch must be fully drained so the next step observes its OWN event, not a leftover): steps=%+v", rep.Steps)
+		}
+	})
 }

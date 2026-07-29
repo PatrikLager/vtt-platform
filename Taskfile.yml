@@ -54,9 +54,11 @@ tasks:
   #   4 whole product - `task check` (defined above). Pre-merge / CI only.
   #
   # Packages land in a tier by their nature:
-  #   internal/harness is TIER 1 despite being the slowest package (~51s). Its
-  #     tests drive the harness library against scripted fakes -- that is a
-  #     unit test of that library, and its runtime is sleeps, not scope.
+  #   internal/harness is TIER 1: its tests drive the harness library against
+  #     scripted fakes, which is a unit test of that library. It used to be the
+  #     slowest package by far (~51s of tier 1's 55s), purely from fixed
+  #     sleeps; the tests now run inside testing/synctest bubbles and the
+  #     package takes ~0.7s. Tier 1 as a whole is ~6s.
   #   internal/gateway and internal/mcp are TIER 2: real in-process wiring
   #     across gateway/campaign/store and mcp/harness respectively.
   #   cmd/vtt is TIER 3 whole and undivided. It is the composition root; its
@@ -239,9 +241,13 @@ tasks:
       and so does 100k/3L at 97.1%). The standard is the 2026-07-24 audit's
       own -- zero UNADJUDICATED survivors.
 
-      internal/harness is excluded: its fixed sleeps cost ~70s PER MUTANT, so
-      a full run is hours. Recorded in ADR-010 with its fake-clock dependency
-      rather than left as folklore.
+      internal/harness is still excluded, but the OLD REASON is void. It was
+      "fixed sleeps cost ~70s PER MUTANT, so a full run is hours". Those
+      sleeps are gone -- the tests run in synctest bubbles -- and a full run
+      now measures 3m38s (158 killed, 29 lived, 32 not covered, 1 timed out).
+      What blocks it is the 29 survivors: they must be killed or adjudicated
+      first, or adding the package would simply red the gate. That is a real
+      gap in the harness's own tests, no longer a runtime excuse.
     cmds:
       - |
         set -e
@@ -348,15 +354,12 @@ tasks:
       default parallel workers (see docs/superpowers/reports/
       2026-07-24-mutation-audit.md methodology note); --timeout-coefficient
       10 gives real per-mutant test runs comfortable headroom at workers=1.
-      CAVEAT (internal/harness, added P6 final review): this suite's
-      fixed-sleep cost (denialAbsenceWindow/observeTimeout waits repeated
-      across dozens of tests, plus soak's checkpoint drains) totals ~70s of
-      real wall-clock PER MUTANT — gremlins reruns the whole package's test
-      suite once per surviving/candidate mutant, so a full run here is
-      impractical (hours, not minutes) until the ledgered fake-clock work
-      lands (.superpowers/sdd/progress.md). The spec-§7 mutation-audit
-      wording adjustment this implies is bundled into the merge-gate, not
-      done here.
+      RESOLVED (internal/harness, 2026-07-29): the fixed-sleep cost that
+      made this package impractical — ~70s of real wall-clock PER MUTANT,
+      hours per run — is gone. Its tests run inside testing/synctest
+      bubbles, so the suite is ~0.7s and a full mutation run measures
+      3m38s. The remaining blocker is 29 unadjudicated survivors, which is
+      a test-coverage gap rather than a runtime one.
     vars:
       # go env GOPATH, not a hardcoded $HOME/go: honors GOPATH overrides
       # (env var or `go env -w`) instead of assuming the Go default layout.

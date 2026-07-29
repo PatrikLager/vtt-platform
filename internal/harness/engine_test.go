@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
@@ -23,6 +25,10 @@ type fakeConn struct {
 	name   string
 	events chan *vttv1.Envelope
 	send   func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error)
+
+	// mu guards closed AND the send on events, so Close can never close the
+	// channel out from under an in-flight broadcast.
+	mu     sync.Mutex
 	closed bool
 }
 
@@ -39,9 +45,61 @@ func (c *fakeConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vt
 
 func (c *fakeConn) Events() <-chan *vttv1.Envelope { return c.events }
 
+// Close honours the Conn contract that Client documents and this fake had
+// been quietly breaking: "Events() ... is closed when the connection ends
+// (server close, local Close, or a protocol/overflow error)". The old Close
+// set a flag and left the channel open forever, so any consumer ranging over
+// Events() — RunSoak's per-participant drain goroutines, for instance —
+// blocked for the life of the process. Invisible under `go test`, which does
+// not fail on leaked goroutines; a synctest bubble refuses to exit with them
+// and is how this was found.
+//
+// Idempotent: RunScenario's reconnect path closes a connection the test's own
+// t.Cleanup may close again.
 func (c *fakeConn) Close() error {
-	c.closed = true
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		c.closed = true
+		close(c.events)
+	}
 	return nil
+}
+
+// trySend delivers env unless the connection is closed, and drops it if so.
+// A fake gateway must behave like a real one here: the soak's checkpoint
+// dials a throwaway connection and closes it while the world still holds a
+// reference, and a real server drops writes to a departed socket rather than
+// crashing. Holding mu across the send is safe because every channel here is
+// buffered far beyond what any scenario emits.
+func (c *fakeConn) trySend(env *vttv1.Envelope) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	select {
+	case c.events <- env:
+	default:
+		// A full buffer is a fixture bug, and BLOCKING on it here would be
+		// the worst possible way to find out: sync.Mutex.Lock is explicitly
+		// not "durably blocked" for synctest's purposes, so a sender parked
+		// on a full channel while holding mu stops the bubble advancing its
+		// clock AND stops it raising its deadlock panic. The run would hang
+		// to the package test timeout with no synctest diagnostic at all.
+		// Fail loudly and immediately instead.
+		panic(fmt.Sprintf("fakeConn %s: events buffer full (cap %d) — a fixture is emitting "+
+			"more than it declared room for; raise the buffer rather than letting this block",
+			c.name, cap(c.events)))
+	}
+}
+
+// isClosed reports whether Close has been called, for the tests that assert
+// on reconnect behaviour.
+func (c *fakeConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 var _ harness.Conn = (*fakeConn)(nil)
@@ -50,7 +108,7 @@ var _ harness.Conn = (*fakeConn)(nil)
 // ample for these scripted, single-digit-event scenarios).
 func broadcast(world map[string]*fakeConn, env *vttv1.Envelope, to ...string) {
 	for _, name := range to {
-		world[name].events <- env
+		world[name].trySend(env)
 	}
 }
 
@@ -96,198 +154,210 @@ func sceneCreatedEnv(id string) *vttv1.Envelope {
 // --- ok-step: pass / fail --------------------------------------------------
 
 func TestRunScenarioOKStepPassesWhenAllParticipantsObserveBroadcast(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	dm.send = okSend(world, 1, sessionStartedEnv("ev-1"), "dm", "watcher")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		dm.send = okSend(world, 1, sessionStartedEnv("ev-1"), "dm", "watcher")
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "watcher"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
-	}
-	if len(rep.Steps) != 1 || !rep.Steps[0].Pass {
-		t.Fatalf("Steps = %+v, want one passing step", rep.Steps)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "watcher"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
+		}
+		if len(rep.Steps) != 1 || !rep.Steps[0].Pass {
+			t.Fatalf("Steps = %+v, want one passing step", rep.Steps)
+		}
+	})
 }
 
 func TestRunScenarioOKStepFailsWhenBroadcastOmittedForOneParticipant(t *testing.T) {
-	dm := newFakeConn("dm")
-	watcher := newFakeConn("watcher")
-	world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
-	// Deliberately omit "watcher" from the broadcast target list.
-	dm.send = okSend(world, 1, sessionStartedEnv("ev-1"), "dm")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		watcher := newFakeConn("watcher")
+		world := map[string]*fakeConn{"dm": dm, "watcher": watcher}
+		// Deliberately omit "watcher" from the broadcast target list.
+		dm.send = okSend(world, 1, sessionStartedEnv("ev-1"), "dm")
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "watcher"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (watcher never saw the broadcast)")
-	}
-	if len(rep.Steps) != 1 || rep.Steps[0].Pass {
-		t.Fatalf("Steps = %+v, want one failing step", rep.Steps)
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "watcher") {
-		t.Fatalf("Steps[0].Detail = %q, want it to name \"watcher\"", rep.Steps[0].Detail)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "watcher"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (watcher never saw the broadcast)")
+		}
+		if len(rep.Steps) != 1 || rep.Steps[0].Pass {
+			t.Fatalf("Steps = %+v, want one failing step", rep.Steps)
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "watcher") {
+			t.Fatalf("Steps[0].Detail = %q, want it to name \"watcher\"", rep.Steps[0].Detail)
+		}
+	})
 }
 
 // --- denial: pass / fail ----------------------------------------------------
 
 func TestRunScenarioDenialStepPassesWithNoBroadcast(t *testing.T) {
-	dm := newFakeConn("dm")
-	player := newFakeConn("player")
-	world := map[string]*fakeConn{"dm": dm, "player": player}
-	player.send = denySend("not authorized: token has no controller", world, nil)
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		player.send = denySend("not authorized: token has no controller", world, nil)
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
-		Steps: []harness.Step{
-			{By: "player", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
-				Expect: &harness.Expect{DeniedContaining: "not authorized"}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "player", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
+					Expect: &harness.Expect{DeniedContaining: "not authorized"}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
+		}
+	})
 }
 
 func TestRunScenarioDenialStepFailsWhenBroadcastLeaksAnyway(t *testing.T) {
-	dm := newFakeConn("dm")
-	player := newFakeConn("player")
-	world := map[string]*fakeConn{"dm": dm, "player": player}
-	// Deny the command but leak a broadcast to "dm" anyway.
-	player.send = denySend("not authorized", world, sessionStartedEnv("leak-1"), "dm")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		// Deny the command but leak a broadcast to "dm" anyway.
+		player.send = denySend("not authorized", world, sessionStartedEnv("leak-1"), "dm")
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
-		Steps: []harness.Step{
-			{By: "player", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
-				Expect: &harness.Expect{DeniedContaining: "not authorized"}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (dm observed a leaked broadcast on a denied command)")
-	}
-	if !strings.Contains(rep.Steps[0].Detail, "dm") {
-		t.Fatalf("Steps[0].Detail = %q, want it to name \"dm\"", rep.Steps[0].Detail)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "player", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
+					Expect: &harness.Expect{DeniedContaining: "not authorized"}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (dm observed a leaked broadcast on a denied command)")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "dm") {
+			t.Fatalf("Steps[0].Detail = %q, want it to name \"dm\"", rep.Steps[0].Detail)
+		}
+	})
 }
 
 // --- reconnect: pass / fail -------------------------------------------------
 
 func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
-	dm := newFakeConn("dm")
-	player := newFakeConn("player")
-	world := map[string]*fakeConn{"dm": dm, "player": player}
-	env1 := sessionStartedEnv("ev-1")
-	env2 := sceneCreatedEnv("ev-2")
-	dm.send = sequencedSend(world, []scriptedResult{
-		{seq: 1, env: env1, to: []string{"dm", "player"}},
-		{seq: 2, env: env2, to: []string{"dm", "player"}},
-	})
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		env1 := sessionStartedEnv("ev-1")
+		env2 := sceneCreatedEnv("ev-2")
+		dm.send = sequencedSend(world, []scriptedResult{
+			{seq: 1, env: env1, to: []string{"dm", "player"}},
+			{seq: 2, env: env2, to: []string{"dm", "player"}},
+		})
 
-	// The redial for "player" replays exactly what it saw live.
-	reconnected := newFakeConn("player-reconnected")
-	reconnected.events <- env1
-	reconnected.events <- env2
+		// The redial for "player" replays exactly what it saw live.
+		reconnected := newFakeConn("player-reconnected")
+		reconnected.events <- env1
+		reconnected.events <- env2
 
-	dial := func(name string, after int64) (harness.Conn, error) {
-		if name == "player" && after == 0 {
-			// First call (scenario start) uses the plain fixed dialer path;
-			// distinguish by whether this is the reconnect (after Close).
-			if player.closed {
-				return reconnected, nil
+		dial := func(name string, after int64) (harness.Conn, error) {
+			if name == "player" && after == 0 {
+				// First call (scenario start) uses the plain fixed dialer path;
+				// distinguish by whether this is the reconnect (after Close).
+				if player.isClosed() {
+					return reconnected, nil
+				}
 			}
+			return fixedDialer(world)(name, after)
 		}
-		return fixedDialer(world)(name, after)
-	}
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
-			{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
-	}
-	if len(rep.Steps) != 3 || !rep.Steps[2].Pass {
-		t.Fatalf("reconnect step = %+v, want Pass=true", rep.Steps[2])
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
+		}
+		if len(rep.Steps) != 3 || !rep.Steps[2].Pass {
+			t.Fatalf("reconnect step = %+v, want Pass=true", rep.Steps[2])
+		}
+	})
 }
 
 func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
-	dm := newFakeConn("dm")
-	player := newFakeConn("player")
-	world := map[string]*fakeConn{"dm": dm, "player": player}
-	env1 := sessionStartedEnv("ev-1")
-	env2 := sceneCreatedEnv("ev-2")
-	dm.send = sequencedSend(world, []scriptedResult{
-		{seq: 1, env: env1, to: []string{"dm", "player"}},
-		{seq: 2, env: env2, to: []string{"dm", "player"}},
-	})
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		env1 := sessionStartedEnv("ev-1")
+		env2 := sceneCreatedEnv("ev-2")
+		dm.send = sequencedSend(world, []scriptedResult{
+			{seq: 1, env: env1, to: []string{"dm", "player"}},
+			{seq: 2, env: env2, to: []string{"dm", "player"}},
+		})
 
-	// The redial replays the WRONG second event (different event_id) —
-	// same count, so this fails on content, not on a timeout.
-	reconnected := newFakeConn("player-reconnected")
-	reconnected.events <- env1
-	reconnected.events <- sceneCreatedEnv("ev-2-CORRUPTED")
+		// The redial replays the WRONG second event (different event_id) —
+		// same count, so this fails on content, not on a timeout.
+		reconnected := newFakeConn("player-reconnected")
+		reconnected.events <- env1
+		reconnected.events <- sceneCreatedEnv("ev-2-CORRUPTED")
 
-	dial := func(name string, after int64) (harness.Conn, error) {
-		if name == "player" && after == 0 && player.closed {
-			return reconnected, nil
+		dial := func(name string, after int64) (harness.Conn, error) {
+			if name == "player" && after == 0 && player.isClosed() {
+				return reconnected, nil
+			}
+			return fixedDialer(world)(name, after)
 		}
-		return fixedDialer(world)(name, after)
-	}
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
-			{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if rep.Pass {
-		t.Fatal("Report.Pass = true, want false (catch-up replayed a corrupted event_id)")
-	}
-	if rep.Steps[2].Pass {
-		t.Fatalf("reconnect step = %+v, want Pass=false", rep.Steps[2])
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false (catch-up replayed a corrupted event_id)")
+		}
+		if rep.Steps[2].Pass {
+			t.Fatalf("reconnect step = %+v, want Pass=false", rep.Steps[2])
+		}
+	})
 }
 
 // --- participant-id placeholder resolution (P6 Task 4 fix round) -----------
@@ -299,37 +369,39 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 // controllerId field is the real, resolved id, never the literal
 // placeholder text.
 func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
 
-	const wantID = "real-participant-id-abc123"
-	var gotControllerID string
-	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-		gotControllerID = cmd.GetAddActor().GetActor().GetControllerId()
-		env := &vttv1.Envelope{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_ActorAdded{
-			ActorAdded: &vttv1.ActorAdded{Actor: cmd.GetAddActor().GetActor()},
-		}}
-		broadcast(world, env, "dm")
-		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
-	}
+		const wantID = "real-participant-id-abc123"
+		var gotControllerID string
+		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			gotControllerID = cmd.GetAddActor().GetActor().GetControllerId()
+			env := &vttv1.Envelope{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_ActorAdded{
+				ActorAdded: &vttv1.ActorAdded{Actor: cmd.GetAddActor().GetActor()},
+			}}
+			broadcast(world, env, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:lera}}"}}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	ids := map[string]string{"lera": wantID}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), ids, io.Discard)
-	if err != nil {
-		t.Fatalf("RunScenario: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
-	}
-	if gotControllerID != wantID {
-		t.Fatalf("dispatched command's controllerId = %q, want the resolved id %q (placeholder must resolve before dispatch, not be sent literally)", gotControllerID, wantID)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:lera}}"}}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		ids := map[string]string{"lera": wantID}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), ids, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
+		}
+		if gotControllerID != wantID {
+			t.Fatalf("dispatched command's controllerId = %q, want the resolved id %q (placeholder must resolve before dispatch, not be sent literally)", gotControllerID, wantID)
+		}
+	})
 }
 
 // TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder proves a
@@ -339,25 +411,27 @@ func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T)
 // unscripted (nil), so a call would panic/error immediately if resolution
 // let the run proceed that far.
 func TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:nobody}}"}}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err == nil {
-		t.Fatalf("RunScenario: want a non-nil framework error for an unresolved {{id:nobody}} placeholder, got nil (report=%+v)", rep)
-	}
-	if !strings.Contains(err.Error(), "nobody") {
-		t.Fatalf("RunScenario error = %q, want it to name the unresolved participant %q", err.Error(), "nobody")
-	}
-	if rep != nil {
-		t.Fatalf("RunScenario: want nil report on a framework-level resolution error, got %+v", rep)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:nobody}}"}}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err == nil {
+			t.Fatalf("RunScenario: want a non-nil framework error for an unresolved {{id:nobody}} placeholder, got nil (report=%+v)", rep)
+		}
+		if !strings.Contains(err.Error(), "nobody") {
+			t.Fatalf("RunScenario error = %q, want it to name the unresolved participant %q", err.Error(), "nobody")
+		}
+		if rep != nil {
+			t.Fatalf("RunScenario: want nil report on a framework-level resolution error, got %+v", rep)
+		}
+	})
 }
 
 // --- fresh-campaign assumption ----------------------------------------------
@@ -374,34 +448,36 @@ func TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder(t *testing.T) {
 // sequence numbers from a fresh campaign; relative-sequence scenarios are a
 // planned format extension, not implemented).
 func TestRunScenarioErrorsOnPreExistingCatchUpEvents(t *testing.T) {
-	dm := newFakeConn("dm")
-	world := map[string]*fakeConn{"dm": dm}
-	// Simulate a non-fresh campaign: one event already queued on dm's
-	// connection at dial time — exactly what a real gateway's after=0
-	// catch-up replay of prior history would deliver before any command has
-	// been issued.
-	dm.events <- sessionStartedEnv("pre-existing-1")
-	dm.send = okSend(world, 2, sceneCreatedEnv("ev-2"), "dm")
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		world := map[string]*fakeConn{"dm": dm}
+		// Simulate a non-fresh campaign: one event already queued on dm's
+		// connection at dial time — exactly what a real gateway's after=0
+		// catch-up replay of prior history would deliver before any command has
+		// been issued.
+		dm.events <- sessionStartedEnv("pre-existing-1")
+		dm.send = okSend(world, 2, sceneCreatedEnv("ev-2"), "dm")
 
-	sc := &harness.Scenario{
-		Participants: []harness.Participant{{Name: "dm"}},
-		Steps: []harness.Step{
-			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
-		},
-	}
-	rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
-	if err == nil {
-		t.Fatalf("RunScenario: want a framework error for a non-fresh campaign, got nil (report=%+v)", rep)
-	}
-	if !strings.Contains(err.Error(), "fresh campaign") {
-		t.Fatalf("RunScenario error = %q, want it to name the fresh-campaign requirement", err.Error())
-	}
-	if !strings.Contains(err.Error(), "1 pre-existing") {
-		t.Fatalf("RunScenario error = %q, want it to report the count of pre-existing events", err.Error())
-	}
-	if rep != nil {
-		t.Fatalf("RunScenario: want nil report on a framework-level fresh-campaign error, got %+v", rep)
-	}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err == nil {
+			t.Fatalf("RunScenario: want a framework error for a non-fresh campaign, got nil (report=%+v)", rep)
+		}
+		if !strings.Contains(err.Error(), "fresh campaign") {
+			t.Fatalf("RunScenario error = %q, want it to name the fresh-campaign requirement", err.Error())
+		}
+		if !strings.Contains(err.Error(), "1 pre-existing") {
+			t.Fatalf("RunScenario error = %q, want it to report the count of pre-existing events", err.Error())
+		}
+		if rep != nil {
+			t.Fatalf("RunScenario: want nil report on a framework-level fresh-campaign error, got %+v", rep)
+		}
+	})
 }
 
 // --- probes: pass / fail per kind -------------------------------------------
@@ -466,96 +542,126 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 
 func TestRunScenarioProbesPerKind(t *testing.T) {
 	t.Run("tokenAt pass", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{TokenAt: &harness.TokenAtProbe{TokenId: "tok-1", X: 3, Y: 4}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("tokenAt probe = %+v, want Pass=true", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{TokenAt: &harness.TokenAtProbe{TokenId: "tok-1", X: 3, Y: 4}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("tokenAt probe = %+v, want Pass=true", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("tokenAt fail", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{TokenAt: &harness.TokenAtProbe{TokenId: "tok-1", X: 9, Y: 9}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("tokenAt probe = %+v, want Pass=false (wrong position)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{TokenAt: &harness.TokenAtProbe{TokenId: "tok-1", X: 9, Y: 9}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("tokenAt probe = %+v, want Pass=false (wrong position)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("sessionCount pass", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{SessionCount: &harness.SessionCountProbe{Open: 1, Total: 1}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("sessionCount probe = %+v, want Pass=true", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{SessionCount: &harness.SessionCountProbe{Open: 1, Total: 1}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("sessionCount probe = %+v, want Pass=true", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("sessionCount fail", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{SessionCount: &harness.SessionCountProbe{Open: 0, Total: 1}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("sessionCount probe = %+v, want Pass=false (session is still open)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{SessionCount: &harness.SessionCountProbe{Open: 0, Total: 1}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("sessionCount probe = %+v, want Pass=false (session is still open)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("actorExists pass", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{ActorExists: &harness.ActorExistsProbe{ActorId: "act-1"}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("actorExists probe = %+v, want Pass=true", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{ActorExists: &harness.ActorExistsProbe{ActorId: "act-1"}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("actorExists probe = %+v, want Pass=true", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("actorExists fail", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{ActorExists: &harness.ActorExistsProbe{ActorId: "act-nonexistent"}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("actorExists probe = %+v, want Pass=false (actor was never added)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{ActorExists: &harness.ActorExistsProbe{ActorId: "act-nonexistent"}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("actorExists probe = %+v, want Pass=false (actor was never added)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("resourceAt pass", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 7}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("resourceAt probe = %+v, want Pass=true (vigor is 7)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 7}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("resourceAt probe = %+v, want Pass=true (vigor is 7)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("resourceAt fail", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 99}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("resourceAt probe = %+v, want Pass=false (vigor is 7, not 99)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{ResourceAt: &harness.ResourceAtProbe{ActorId: "act-1", Resource: "vigor", Value: 99}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("resourceAt probe = %+v, want Pass=false (vigor is 7, not 99)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("hasCondition pass", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: true}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("hasCondition probe = %+v, want Pass=true (dazed is present)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: true}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("hasCondition probe = %+v, want Pass=true (dazed is present)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("hasCondition fail", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: false}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("hasCondition probe = %+v, want Pass=false (dazed IS present, probe wanted absent)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{HasCondition: &harness.HasConditionProbe{ActorId: "act-1", ConditionId: "dazed", Present: false}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("hasCondition probe = %+v, want Pass=false (dazed IS present, probe wanted absent)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("noteAt pass bare key", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den"}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("noteAt probe = %+v, want Pass=true (key present, no title/text filter)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den"}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("noteAt probe = %+v, want Pass=true (key present, no title/text filter)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("noteAt pass titleIs and textContains", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{
-			Key: "kobold-den", TitleIs: "Kobold Den", TextContains: "east tunnel",
-		}}})
-		if !rep.Probes[0].Pass {
-			t.Fatalf("noteAt probe = %+v, want Pass=true (title and text substring both match)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{
+				Key: "kobold-den", TitleIs: "Kobold Den", TextContains: "east tunnel",
+			}}})
+			if !rep.Probes[0].Pass {
+				t.Fatalf("noteAt probe = %+v, want Pass=true (title and text substring both match)", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("noteAt fail wrong titleIs", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TitleIs: "Goblin Warren"}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("noteAt probe = %+v, want Pass=false (title is \"Kobold Den\", not \"Goblin Warren\")", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TitleIs: "Goblin Warren"}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("noteAt probe = %+v, want Pass=false (title is \"Kobold Den\", not \"Goblin Warren\")", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("noteAt fail wrong textContains", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TextContains: "west bridge"}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("noteAt probe = %+v, want Pass=false (text does not contain \"west bridge\")", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "kobold-den", TextContains: "west bridge"}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("noteAt probe = %+v, want Pass=false (text does not contain \"west bridge\")", rep.Probes[0])
+			}
+		})
 	})
 	t.Run("noteAt fail absent key", func(t *testing.T) {
-		rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "no-such-note"}}})
-		if rep.Probes[0].Pass {
-			t.Fatalf("noteAt probe = %+v, want Pass=false (key was never upserted)", rep.Probes[0])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			rep := runMiniScenario(t, []harness.Probe{{NoteAt: &harness.NoteAtProbe{Key: "no-such-note"}}})
+			if rep.Probes[0].Pass {
+				t.Fatalf("noteAt probe = %+v, want Pass=false (key was never upserted)", rep.Probes[0])
+			}
+		})
 	})
 }
 

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -122,7 +123,18 @@ func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
 	c.events = make(chan *vttv1.Envelope, 8192)
 	for _, env := range w.history {
 		if env.Sequence > after {
-			c.events <- env
+			// Non-blocking for the same reason trySend is: this send happens
+			// under w.mu, and blocking on a full buffer while holding a mutex
+			// stalls a synctest bubble with no diagnostic -- it just hangs to
+			// the test timeout. The 8192 cap is ~8x the largest committed
+			// soak, so overflow means a fixture grew past its headroom.
+			select {
+			case c.events <- env:
+			default:
+				panic(fmt.Sprintf("soakWorld: catch-up preload for %q exceeded the %d-envelope "+
+					"buffer at sequence %d; raise it rather than letting this block",
+					name, cap(c.events), env.Sequence))
+			}
 		}
 	}
 	c.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
@@ -298,7 +310,9 @@ func (w *soakWorld) maybeLeak() {
 
 func (w *soakWorld) broadcast(env *vttv1.Envelope) {
 	for _, c := range w.conns {
-		c.events <- env
+		// trySend, not a bare channel send: conns keeps every connection ever
+		// dialled, including the checkpoint's throwaway one after it closes.
+		c.trySend(env)
 	}
 }
 
@@ -316,41 +330,43 @@ func soakTestIDs() map[string]string {
 // including the deterministically-assigned request_id) must match exactly,
 // in order, across both runs.
 func TestRunSoakGeneratorDeterministicForSameSeed(t *testing.T) {
-	const events = 250
-	ids := soakTestIDs()
+	synctest.Test(t, func(t *testing.T) {
+		const events = 250
+		ids := soakTestIDs()
 
-	w1 := newSoakWorld(ids)
-	rep1, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 7, Events: events, CheckEvery: events + 1, IDs: ids}, w1.dial, io.Discard)
-	if err != nil {
-		t.Fatalf("RunSoak (run 1): %v", err)
-	}
-
-	w2 := newSoakWorld(ids)
-	rep2, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 7, Events: events, CheckEvery: events + 1, IDs: ids}, w2.dial, io.Discard)
-	if err != nil {
-		t.Fatalf("RunSoak (run 2): %v", err)
-	}
-
-	if !rep1.Pass {
-		t.Fatalf("run 1: Report.Pass = false, want true: %+v", rep1)
-	}
-	if !rep2.Pass {
-		t.Fatalf("run 2: Report.Pass = false, want true: %+v", rep2)
-	}
-
-	if len(w1.dispatchLog) != len(w2.dispatchLog) {
-		t.Fatalf("dispatched command count differs: run1=%d run2=%d", len(w1.dispatchLog), len(w2.dispatchLog))
-	}
-	if len(w1.dispatchLog) != events {
-		t.Fatalf("dispatched command count = %d, want %d (one per action)", len(w1.dispatchLog), events)
-	}
-	for i := range w1.dispatchLog {
-		if w1.dispatchLog[i] != w2.dispatchLog[i] {
-			t.Fatalf("command %d differs between same-seed runs:\n run1: %s\n run2: %s", i, w1.dispatchLog[i], w2.dispatchLog[i])
+		w1 := newSoakWorld(ids)
+		rep1, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 7, Events: events, CheckEvery: events + 1, IDs: ids}, w1.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak (run 1): %v", err)
 		}
-	}
+
+		w2 := newSoakWorld(ids)
+		rep2, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 7, Events: events, CheckEvery: events + 1, IDs: ids}, w2.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak (run 2): %v", err)
+		}
+
+		if !rep1.Pass {
+			t.Fatalf("run 1: Report.Pass = false, want true: %+v", rep1)
+		}
+		if !rep2.Pass {
+			t.Fatalf("run 2: Report.Pass = false, want true: %+v", rep2)
+		}
+
+		if len(w1.dispatchLog) != len(w2.dispatchLog) {
+			t.Fatalf("dispatched command count differs: run1=%d run2=%d", len(w1.dispatchLog), len(w2.dispatchLog))
+		}
+		if len(w1.dispatchLog) != events {
+			t.Fatalf("dispatched command count = %d, want %d (one per action)", len(w1.dispatchLog), events)
+		}
+		for i := range w1.dispatchLog {
+			if w1.dispatchLog[i] != w2.dispatchLog[i] {
+				t.Fatalf("command %d differs between same-seed runs:\n run1: %s\n run2: %s", i, w1.dispatchLog[i], w2.dispatchLog[i])
+			}
+		}
+	})
 }
 
 // TestRunSoakGeneratorDiffersForDifferentSeed is the determinism test's
@@ -358,32 +374,34 @@ func TestRunSoakGeneratorDeterministicForSameSeed(t *testing.T) {
 // "always identical" degenerate generator: a different seed must diverge
 // somewhere in the dispatched sequence.
 func TestRunSoakGeneratorDiffersForDifferentSeed(t *testing.T) {
-	const events = 250
-	ids := soakTestIDs()
+	synctest.Test(t, func(t *testing.T) {
+		const events = 250
+		ids := soakTestIDs()
 
-	w1 := newSoakWorld(ids)
-	if _, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 1, Events: events, CheckEvery: events + 1, IDs: ids}, w1.dial, io.Discard); err != nil {
-		t.Fatalf("RunSoak (seed 1): %v", err)
-	}
-	w2 := newSoakWorld(ids)
-	if _, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 2, Events: events, CheckEvery: events + 1, IDs: ids}, w2.dial, io.Discard); err != nil {
-		t.Fatalf("RunSoak (seed 2): %v", err)
-	}
+		w1 := newSoakWorld(ids)
+		if _, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 1, Events: events, CheckEvery: events + 1, IDs: ids}, w1.dial, io.Discard); err != nil {
+			t.Fatalf("RunSoak (seed 1): %v", err)
+		}
+		w2 := newSoakWorld(ids)
+		if _, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 2, Events: events, CheckEvery: events + 1, IDs: ids}, w2.dial, io.Discard); err != nil {
+			t.Fatalf("RunSoak (seed 2): %v", err)
+		}
 
-	identical := len(w1.dispatchLog) == len(w2.dispatchLog)
-	if identical {
-		for i := range w1.dispatchLog {
-			if w1.dispatchLog[i] != w2.dispatchLog[i] {
-				identical = false
-				break
+		identical := len(w1.dispatchLog) == len(w2.dispatchLog)
+		if identical {
+			for i := range w1.dispatchLog {
+				if w1.dispatchLog[i] != w2.dispatchLog[i] {
+					identical = false
+					break
+				}
 			}
 		}
-	}
-	if identical {
-		t.Fatal("seed=1 and seed=2 produced byte-identical dispatched sequences — the generator isn't actually seeded")
-	}
+		if identical {
+			t.Fatal("seed=1 and seed=2 produced byte-identical dispatched sequences — the generator isn't actually seeded")
+		}
+	})
 }
 
 // --- Step 1: mix-ratio sanity -------------------------------------------------
@@ -395,44 +413,46 @@ func TestRunSoakGeneratorDiffersForDifferentSeed(t *testing.T) {
 // authz-denied 5%). Tolerance is generous (±5 points) — this is a sanity
 // check on the mix, not a statistical test of the RNG.
 func TestRunSoakActionMixRatioSanity(t *testing.T) {
-	const events = 1000
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
+	synctest.Test(t, func(t *testing.T) {
+		const events = 1000
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
 
-	rep, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 42, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
-	if err != nil {
-		t.Fatalf("RunSoak: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true: counts=%+v", rep.Counts)
-	}
-
-	want := map[string]float64{
-		"createScene":   0.05,
-		"addActor":      0.10,
-		"placeToken":    0.15,
-		"moveOwn":       0.50,
-		"sessionChurn":  0.05,
-		"retraction":    0.10,
-		"deniedAttempt": 0.05,
-	}
-	const tolerance = 0.05
-	for kind, wantFrac := range want {
-		got := float64(rep.Counts[kind]) / float64(events)
-		if diff := got - wantFrac; diff < -tolerance || diff > tolerance {
-			t.Errorf("action %q: got fraction %.3f (%d/%d), want ~%.3f ± %.2f: counts=%+v",
-				kind, got, rep.Counts[kind], events, wantFrac, tolerance, rep.Counts)
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 42, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
 		}
-	}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: counts=%+v", rep.Counts)
+		}
 
-	sum := 0
-	for _, n := range rep.Counts {
-		sum += n
-	}
-	if sum != events {
-		t.Fatalf("sum of Counts = %d, want %d (every action must land in exactly one bucket): counts=%+v", sum, events, rep.Counts)
-	}
+		want := map[string]float64{
+			"createScene":   0.05,
+			"addActor":      0.10,
+			"placeToken":    0.15,
+			"moveOwn":       0.50,
+			"sessionChurn":  0.05,
+			"retraction":    0.10,
+			"deniedAttempt": 0.05,
+		}
+		const tolerance = 0.05
+		for kind, wantFrac := range want {
+			got := float64(rep.Counts[kind]) / float64(events)
+			if diff := got - wantFrac; diff < -tolerance || diff > tolerance {
+				t.Errorf("action %q: got fraction %.3f (%d/%d), want ~%.3f ± %.2f: counts=%+v",
+					kind, got, rep.Counts[kind], events, wantFrac, tolerance, rep.Counts)
+			}
+		}
+
+		sum := 0
+		for _, n := range rep.Counts {
+			sum += n
+		}
+		if sum != events {
+			t.Fatalf("sum of Counts = %d, want %d (every action must land in exactly one bucket): counts=%+v", sum, events, rep.Counts)
+		}
+	})
 }
 
 // --- Step 1: denied-attempt bookkeeping --------------------------------------
@@ -443,28 +463,30 @@ func TestRunSoakActionMixRatioSanity(t *testing.T) {
 // and that bucket must actually have fired at least once for the run to
 // prove anything.
 func TestRunSoakDeniedAttemptBookkeeping(t *testing.T) {
-	const events = 500
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
+	synctest.Test(t, func(t *testing.T) {
+		const events = 500
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
 
-	rep, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 3, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
-	if err != nil {
-		t.Fatalf("RunSoak: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true: %+v", rep)
-	}
-	if rep.Counts["deniedAttempt"] == 0 {
-		t.Fatal("Counts[deniedAttempt] = 0 — this run proves nothing about the deliberate authz-denied bucket")
-	}
-	if rep.Denied != rep.Counts["deniedAttempt"] {
-		t.Fatalf("Denied = %d, Counts[deniedAttempt] = %d, want equal (nothing outside the deliberate bucket should ever be denied)",
-			rep.Denied, rep.Counts["deniedAttempt"])
-	}
-	if rep.Accepted+rep.Denied != events {
-		t.Fatalf("Accepted(%d) + Denied(%d) != Events(%d)", rep.Accepted, rep.Denied, events)
-	}
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 3, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: %+v", rep)
+		}
+		if rep.Counts["deniedAttempt"] == 0 {
+			t.Fatal("Counts[deniedAttempt] = 0 — this run proves nothing about the deliberate authz-denied bucket")
+		}
+		if rep.Denied != rep.Counts["deniedAttempt"] {
+			t.Fatalf("Denied = %d, Counts[deniedAttempt] = %d, want equal (nothing outside the deliberate bucket should ever be denied)",
+				rep.Denied, rep.Counts["deniedAttempt"])
+		}
+		if rep.Accepted+rep.Denied != events {
+			t.Fatalf("Accepted(%d) + Denied(%d) != Events(%d)", rep.Accepted, rep.Denied, events)
+		}
+	})
 }
 
 // --- Step 1: players-only-move-own invariant ---------------------------------
@@ -477,48 +499,50 @@ func TestRunSoakDeniedAttemptBookkeeping(t *testing.T) {
 // from the fake world's own final state and full history, independent of
 // RunSoak's internal model bookkeeping.
 func TestRunSoakPlayersOnlyMoveOwnTokens(t *testing.T) {
-	const events = 500
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
+	synctest.Test(t, func(t *testing.T) {
+		const events = 500
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
 
-	rep, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 11, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
-	if err != nil {
-		t.Fatalf("RunSoak: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true: %+v", rep)
-	}
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 11, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: %+v", rep)
+		}
 
-	playerByID := map[string]string{}
-	for name, id := range ids {
-		playerByID[id] = name
-	}
+		playerByID := map[string]string{}
+		for name, id := range ids {
+			playerByID[id] = name
+		}
 
-	checked := 0
-	for _, env := range w.history {
-		tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved)
-		if !ok {
-			continue
+		checked := 0
+		for _, env := range w.history {
+			tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved)
+			if !ok {
+				continue
+			}
+			playerName, isPlayer := playerByID[env.ParticipantId]
+			if !isPlayer {
+				continue // dm/agent-issued move — no ownership restriction
+			}
+			tok, ok := w.st.Tokens[tm.TokenMoved.GetTokenId()]
+			if !ok {
+				t.Fatalf("sequence %d: moved token %q no longer exists in final state", env.Sequence, tm.TokenMoved.GetTokenId())
+			}
+			actor := w.st.Actors[tok.ActorID]
+			if actor.GetControllerId() != env.ParticipantId {
+				t.Fatalf("sequence %d: %s moved token %q (actor %q, controller %q) — not their own token",
+					env.Sequence, playerName, tm.TokenMoved.GetTokenId(), tok.ActorID, actor.GetControllerId())
+			}
+			checked++
 		}
-		playerName, isPlayer := playerByID[env.ParticipantId]
-		if !isPlayer {
-			continue // dm/agent-issued move — no ownership restriction
+		if checked == 0 {
+			t.Fatal("no player-issued TokenMoved events observed — this run proves nothing about the invariant")
 		}
-		tok, ok := w.st.Tokens[tm.TokenMoved.GetTokenId()]
-		if !ok {
-			t.Fatalf("sequence %d: moved token %q no longer exists in final state", env.Sequence, tm.TokenMoved.GetTokenId())
-		}
-		actor := w.st.Actors[tok.ActorID]
-		if actor.GetControllerId() != env.ParticipantId {
-			t.Fatalf("sequence %d: %s moved token %q (actor %q, controller %q) — not their own token",
-				env.Sequence, playerName, tm.TokenMoved.GetTokenId(), tok.ActorID, actor.GetControllerId())
-		}
-		checked++
-	}
-	if checked == 0 {
-		t.Fatal("no player-issued TokenMoved events observed — this run proves nothing about the invariant")
-	}
+	})
 }
 
 // --- checkpoint mechanics (fake-world smoke) ---------------------------------
@@ -529,23 +553,25 @@ func TestRunSoakPlayersOnlyMoveOwnTokens(t *testing.T) {
 // world (the REAL end-to-end proof, against a live gateway, is Step 2's
 // cmd-level e2e test).
 func TestRunSoakCheckpointsRunPeriodicallyAndAtEnd(t *testing.T) {
-	const events = 120
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
+	synctest.Test(t, func(t *testing.T) {
+		const events = 120
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
 
-	var log bytes.Buffer
-	rep, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 5, Events: events, CheckEvery: 50, IDs: ids}, w.dial, &log)
-	if err != nil {
-		t.Fatalf("RunSoak: %v", err)
-	}
-	if !rep.Pass {
-		t.Fatalf("Report.Pass = false, want true: %+v\nlog:\n%s", rep, log.String())
-	}
-	if rep.Checkpoints < 2 {
-		t.Fatalf("Checkpoints = %d, want >= 2 (at least one periodic + the final one) for %d events at CheckEvery=50: log:\n%s",
-			rep.Checkpoints, events, log.String())
-	}
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 5, Events: events, CheckEvery: 50, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: %+v\nlog:\n%s", rep, log.String())
+		}
+		if rep.Checkpoints < 2 {
+			t.Fatalf("Checkpoints = %d, want >= 2 (at least one periodic + the final one) for %d events at CheckEvery=50: log:\n%s",
+				rep.Checkpoints, events, log.String())
+		}
+	})
 }
 
 // --- fresh-campaign assumption -----------------------------------------------
@@ -558,25 +584,27 @@ func TestRunSoakCheckpointsRunPeriodicallyAndAtEnd(t *testing.T) {
 // named framework error — not a confusing failure buried somewhere in the
 // generated run.
 func TestRunSoakErrorsOnPreExistingCatchUpEvents(t *testing.T) {
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
-	w.seq = 1
-	w.history = []*vttv1.Envelope{
-		{EventId: "ev-1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
-			SessionStarted: &vttv1.SessionStarted{Name: "pre-existing"}}},
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.seq = 1
+		w.history = []*vttv1.Envelope{
+			{EventId: "ev-1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
+				SessionStarted: &vttv1.SessionStarted{Name: "pre-existing"}}},
+		}
 
-	_, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: 1, Events: 10, CheckEvery: 100, IDs: ids}, w.dial, io.Discard)
-	if err == nil {
-		t.Fatal("RunSoak: want a framework error for a non-fresh campaign, got nil")
-	}
-	if !strings.Contains(err.Error(), "fresh campaign") {
-		t.Fatalf("RunSoak error = %q, want it to name the fresh-campaign requirement", err.Error())
-	}
-	if !strings.Contains(err.Error(), "1 pre-existing") {
-		t.Fatalf("RunSoak error = %q, want it to report the count of pre-existing events", err.Error())
-	}
+		_, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 1, Events: 10, CheckEvery: 100, IDs: ids}, w.dial, io.Discard)
+		if err == nil {
+			t.Fatal("RunSoak: want a framework error for a non-fresh campaign, got nil")
+		}
+		if !strings.Contains(err.Error(), "fresh campaign") {
+			t.Fatalf("RunSoak error = %q, want it to name the fresh-campaign requirement", err.Error())
+		}
+		if !strings.Contains(err.Error(), "1 pre-existing") {
+			t.Fatalf("RunSoak error = %q, want it to report the count of pre-existing events", err.Error())
+		}
+	})
 }
 
 // TestRunSoakCatchesALeakFromANonFinalDenial pins the soak twin of the
@@ -595,37 +623,39 @@ func TestRunSoakErrorsOnPreExistingCatchUpEvents(t *testing.T) {
 // action at 32; the fake leaks on the FIRST of them only. Before the fix this
 // run passed.
 func TestRunSoakCatchesALeakFromANonFinalDenial(t *testing.T) {
-	const (
-		seed          = 22
-		events        = 60
-		leakOnOrdinal = 1 // the denial at action 30, immediately followed by another
-	)
-	ids := soakTestIDs()
-	w := newSoakWorld(ids)
-	w.leakOnDenial = func(ordinal int) bool { return ordinal == leakOnOrdinal }
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			seed          = 22
+			events        = 60
+			leakOnOrdinal = 1 // the denial at action 30, immediately followed by another
+		)
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.leakOnDenial = func(ordinal int) bool { return ordinal == leakOnOrdinal }
 
-	var log bytes.Buffer
-	rep, err := harness.RunSoak(context.Background(),
-		harness.SoakConfig{Seed: seed, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, &log)
-	if err != nil {
-		t.Fatalf("RunSoak: %v", err)
-	}
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: seed, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
 
-	if w.leaked != 1 {
-		t.Fatalf("fixture broke: the fake leaked %d times, want exactly 1 — reseed via the "+
-			"consecutive-denial probe rather than deleting this assertion", w.leaked)
-	}
-	// Assert the SHAPE this test needs, rather than trusting a comment about
-	// seed 22. If the generator's mix ever shifts so the leaking denial
-	// becomes the LAST one before an accepted action, the case degrades to one
-	// the pre-fix code also handled — and the test would keep passing while
-	// silently testing nothing.
-	assertDenialDenialAccept(t, log.String())
-	if rep.Pass {
-		t.Error("a denied action broadcast an envelope to every participant and the soak " +
-			"PASSED: a denial that is not the last one before an accepted action must still " +
-			"have its absence claim settled")
-	}
+		if w.leaked != 1 {
+			t.Fatalf("fixture broke: the fake leaked %d times, want exactly 1 — reseed via the "+
+				"consecutive-denial probe rather than deleting this assertion", w.leaked)
+		}
+		// Assert the SHAPE this test needs, rather than trusting a comment about
+		// seed 22. If the generator's mix ever shifts so the leaking denial
+		// becomes the LAST one before an accepted action, the case degrades to one
+		// the pre-fix code also handled — and the test would keep passing while
+		// silently testing nothing.
+		assertDenialDenialAccept(t, log.String())
+		if rep.Pass {
+			t.Error("a denied action broadcast an envelope to every participant and the soak " +
+				"PASSED: a denial that is not the last one before an accepted action must still " +
+				"have its absence claim settled")
+		}
+	})
 }
 
 // assertDenialDenialAccept fails unless the action log contains two denials

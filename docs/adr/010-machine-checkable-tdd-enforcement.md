@@ -96,6 +96,26 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    at all. When it lands, harness joins the gated set. `cmd/vtt` is unmeasured
    for the same reason (~40s per test run) and carries the same obligation.
 
+   **AMENDED 2026-07-29 — the precondition is met, the conclusion was wrong.**
+   The fake-clock work landed: the harness tests now run inside
+   `testing/synctest` bubbles, where the clock advances only once every
+   goroutine is durably blocked. The package suite went 51s → 0.7s and a full
+   mutation run is **3m38s**, so the runtime argument above is void.
+   `internal/harness` still does NOT join the gated set, for a different and
+   more uncomfortable reason: that run reports **29 survivors and 32 uncovered
+   mutants** (220 total, at `check:mutation`'s own timeout coefficient of 30).
+   Re-measure before acting on the split — the Lived/Not-covered boundary has
+   been seen to shift by one between runs and trees; the total does not. The sleeps were never the only thing hiding this — they were the
+   reason nobody had looked. Gating the package is now a matter of killing or
+   adjudicating those 29, tracked as its own task; the exclusion is a recorded
+   test-coverage debt, not a performance concession.
+
+   Worth noting for `cmd/vtt`, which this ADR bundles under the same excuse:
+   the "~40s per test run" above has never held up. It measured 32s earlier in
+   this effort and **21.3s** now (`go test -count=1 -p 1 ./cmd/vtt/...`). Do
+   not inherit either number without re-measuring — that applies to the 32s
+   this sentence used to quote, too.
+
    Every other package is gated. The list was ONCE the five that happened to
    have been measured while this gate was written, which silently dropped
    `internal/campaign` — a package the older `audit:mutation` task did cover,

@@ -35,11 +35,21 @@ import sys
 # Gating it immediately found three real survivors in c.head's batch
 # arithmetic. A gate scoped to what its author touched is not a gate.
 #
-# internal/harness is the only deliberate exclusion, and not on grounds of
-# taste: its fixed sleeps cost ~70s PER MUTANT (gremlins reruns the package
-# suite once per mutant), so a run is hours rather than minutes. That is a
-# DESIGN problem — the ledgered fake-clock work — not a speed preference, and
-# when it lands harness joins this list. Recorded in ADR-010.
+# internal/harness is the only deliberate exclusion. The reason it carried
+# until 2026-07-29 — "fixed sleeps cost ~70s PER MUTANT, so a run is hours" —
+# is VOID: the fake-clock work landed (its tests run in testing/synctest
+# bubbles), the suite went 51s -> 0.7s, and a full mutation run at this file's
+# own coefficient measures under four minutes.
+#
+# It stays out for a worse reason: that run reports 29 survivors and 32
+# not-covered mutants, so adding it here would simply red the gate. Roughly 60
+# mutants need killing or adjudicating first. The sleeps were never what hid
+# them; they were why nobody had looked.
+#
+# Re-measure before trusting the split: the Lived/Not-covered boundary has
+# been observed to move by one between runs and between trees (29/32 here,
+# 30/31 on a neighbouring tree). The total, 220, is stable. See ADR-010's
+# 2026-07-29 amendment.
 PACKAGES = [
     "./tools/toolgen/",                    # ~5s
     "./internal/identity/",                # ~16s
