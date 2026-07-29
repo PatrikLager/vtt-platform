@@ -2,12 +2,14 @@ package gateway_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -150,47 +152,130 @@ func (f *gwFixture) dial(token string, after int64) *websocket.Conn {
 
 // --- read/write helpers -------------------------------------------------
 
-func readFrame(t *testing.T, conn *websocket.Conn) *vttv1.ServerFrame {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, raw, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("read frame: %v", err)
-	}
-	var frame vttv1.ServerFrame
-	if err := protojson.Unmarshal(raw, &frame); err != nil {
-		t.Fatalf("unmarshal frame: %v (raw=%s)", err, raw)
-	}
-	return &frame
+// --- per-connection frame demultiplexing ---------------------------------
+//
+// The gateway does NOT order a command's CommandResult relative to the
+// Envelopes that command produced. Results are enqueued by the command loop
+// and events by the broadcast pump: two independent producers feeding one
+// writer goroutine (see serve's "Writer choice" comment in server.go, which
+// says so outright -- "the ordering of interleaved results/events is whatever
+// order they arrive at outCh"). Either can win the race.
+//
+// The previous helpers read POSITIONALLY, skipping up to 10 frames of the
+// wrong kind and DISCARDING them. That produced two failure modes, both seen
+// in CI and both misfiled as a resource-contention flake:
+//
+//   - a batch bigger than the budget failed outright, "no CommandResult
+//     within 10 frames" -- an adventure load emits well over ten events;
+//   - a single inversion desynchronised the connection PERMANENTLY, because
+//     the discarded frame was the one a later read wanted, so that read
+//     blocked until the 20s deadline.
+//
+// Load never caused either; it only changes how often the race flips. A
+// captured frame log shows the inversion plainly: five commands arriving
+// RESULT-then-EVENT, then one arriving EVENT-then-RESULT.
+//
+// frameQueue owns the ONLY reader for a connection and sorts frames by kind
+// into separate queues, so asking for a result never consumes an event, and
+// no read depends on arrival order. This is exactly what harness.Client
+// already does in production -- SendCommand returns the result, Events() is a
+// separate channel -- so these tests were the outlier, not the server.
+type frameQueue struct {
+	results chan *vttv1.CommandResult
+	events  chan *vttv1.Envelope
+	closed  chan struct{}
+	err     error // written before closed is closed; read only after
 }
 
-// readResult reads frames until it sees a CommandResult (skipping any
-// Envelope frames that race ahead of it — the writer interleaves the pump
-// and the command loop, so a broadcast can legitimately arrive first).
+func newFrameQueue(conn *websocket.Conn) *frameQueue {
+	q := &frameQueue{
+		results: make(chan *vttv1.CommandResult, 256),
+		events:  make(chan *vttv1.Envelope, 256),
+		closed:  make(chan struct{}),
+	}
+	go func() {
+		defer close(q.closed)
+		for {
+			// context.Background(), never a deadline. coder/websocket's
+			// setupReadTimeout registers an AfterFunc that closes the WHOLE
+			// socket when a Read's context expires, so a bounded Read is
+			// destructive by design in this library. Reading unbounded here
+			// and bounding the WAIT with a channel select avoids that path
+			// entirely (Background's Done() is nil, so the AfterFunc is never
+			// registered).
+			_, raw, err := conn.Read(context.Background())
+			if err != nil {
+				q.err = err
+				return
+			}
+			var f vttv1.ServerFrame
+			if err := protojson.Unmarshal(raw, &f); err != nil {
+				q.err = fmt.Errorf("unmarshal frame: %w (raw=%s)", err, raw)
+				return
+			}
+			if r := f.GetResult(); r != nil {
+				q.results <- r
+			} else if e := f.GetEvent(); e != nil {
+				q.events <- e
+			}
+		}
+	}()
+	return q
+}
+
+var (
+	frameQueuesMu sync.Mutex
+	frameQueues   = map[*websocket.Conn]*frameQueue{}
+)
+
+// queueFor attaches the demultiplexer on first use.
+//
+// LAZILY, and that matters: TestOverflowForcesSocketClosedAndOthersKeepServing
+// depends on a connection nobody reads, so that the server-side subscribe
+// buffer overflows and the server force-closes the socket. Attaching a reader
+// at dial would drain that connection and the overflow would never happen.
+func queueFor(conn *websocket.Conn) *frameQueue {
+	frameQueuesMu.Lock()
+	defer frameQueuesMu.Unlock()
+	q, ok := frameQueues[conn]
+	if !ok {
+		q = newFrameQueue(conn)
+		frameQueues[conn] = q
+	}
+	return q
+}
+
+const frameWait = 3 * time.Second
+
+// readResult returns this connection's next CommandResult. Events that arrive
+// first are queued, not discarded, so a later readEvent still sees them.
 func readResult(t *testing.T, conn *websocket.Conn) *vttv1.CommandResult {
 	t.Helper()
-	for i := 0; i < 10; i++ {
-		f := readFrame(t, conn)
-		if r := f.GetResult(); r != nil {
-			return r
-		}
+	q := queueFor(conn)
+	select {
+	case r := <-q.results:
+		return r
+	case <-q.closed:
+		t.Fatalf("readResult: connection closed: %v", q.err)
+	case <-time.After(frameWait):
+		t.Fatalf("readResult: no CommandResult within %s", frameWait)
 	}
-	t.Fatal("readResult: no CommandResult within 10 frames")
 	return nil
 }
 
-// readEvent reads frames until it sees an Envelope (skipping CommandResult
-// frames from this same connection's own in-flight commands).
+// readEvent returns this connection's next Envelope. Results that arrive
+// first are queued, not discarded.
 func readEvent(t *testing.T, conn *websocket.Conn) *vttv1.Envelope {
 	t.Helper()
-	for i := 0; i < 10; i++ {
-		f := readFrame(t, conn)
-		if e := f.GetEvent(); e != nil {
-			return e
-		}
+	q := queueFor(conn)
+	select {
+	case e := <-q.events:
+		return e
+	case <-q.closed:
+		t.Fatalf("readEvent: connection closed: %v", q.err)
+	case <-time.After(frameWait):
+		t.Fatalf("readEvent: no Envelope within %s", frameWait)
 	}
-	t.Fatal("readEvent: no Envelope within 10 frames")
 	return nil
 }
 
@@ -207,13 +292,21 @@ func sendCommand(t *testing.T, conn *websocket.Conn, cmd *vttv1.ClientCommand) {
 	}
 }
 
+// assertNoFrameWithin fails if ANY frame arrives within d. Routed through the
+// queue like every other read, so it no longer destroys the connection on the
+// expected path -- coder/websocket closes the socket when a Read's context
+// expires, which made the old version single-use.
 func assertNoFrameWithin(t *testing.T, conn *websocket.Conn, d time.Duration) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), d)
-	defer cancel()
-	_, raw, err := conn.Read(ctx)
-	if err == nil {
-		t.Fatalf("want no frame within %s, got %s", d, raw)
+	q := queueFor(conn)
+	select {
+	case r := <-q.results:
+		t.Fatalf("want no frame within %s, got result %s", d, r.GetRequestId())
+	case e := <-q.events:
+		t.Fatalf("want no frame within %s, got event seq=%d", d, e.GetSequence())
+	case <-q.closed:
+		t.Fatalf("want no frame within %s, connection closed: %v", d, q.err)
+	case <-time.After(d):
 	}
 }
 

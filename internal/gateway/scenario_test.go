@@ -117,121 +117,84 @@ func (f *exitFixture) dial(token string, after int64) *scenarioConn {
 
 // --- scenarioConn: non-destructive bounded reads --------------------------
 
-// scenarioConn wraps a *websocket.Conn with a background goroutine that is
-// the connection's ONLY reader, running an unbounded (context.Background)
-// Conn.Read loop and forwarding each decoded frame onto a buffered channel.
+// scenarioConn is a thin wrapper over the shared frameQueue (server_test.go),
+// which owns the connection's only reader and sorts frames by kind.
 //
-// This deliberately does NOT reuse server_test.go's package-level
-// readFrame/readResult/readEvent/assertNoFrameWithin helpers, which each
-// call conn.Read directly with a context.WithTimeout. That is safe there
-// ONLY because every one of THOSE tests either expects the read to succeed
-// well inside the deadline, or (assertNoFrameWithin) uses the connection
-// exactly once and discards it. coder/websocket's Conn.setupReadTimeout
-// registers a context.AfterFunc that calls c.close() — closing the WHOLE
-// socket, not just aborting the one read — if the context passed to Read is
-// still live when it expires (see vendored conn.go:188-199, read.go
-// prepareRead/finishRead): a genuinely-timed-out Read is therefore
-// destructive by design in this library. This scenario issues MULTIPLE
-// "assert nothing arrived" checks per connection and keeps using those same
-// connections for real traffic afterward, so that destructive path is not
-// an option here. Routing every bounded wait (both "expect a frame" and
-// "expect no frame") through a channel select against time.After — instead
-// of handing an expiring context to Conn.Read — avoids ever triggering it:
-// context.Background()'s Done() is nil, so setupReadTimeout's very first
-// check (`if ctx.Done() == nil { return false }`) skips registering the
-// AfterFunc altogether.
+// It used to maintain its OWN reader and channel, deliberately not reusing
+// server_test.go's helpers, because those called conn.Read with an expiring
+// context: coder/websocket's setupReadTimeout registers an AfterFunc that
+// calls c.close(), closing the WHOLE socket rather than aborting one read
+// (see vendored conn.go:188-199, read.go prepareRead/finishRead), so a
+// genuinely-timed-out Read is destructive by design in that library. This
+// scenario issues MULTIPLE "assert nothing arrived" checks per connection and
+// keeps using those connections afterward, so that path was not an option.
+//
+// frameQueue now reads with context.Background() and bounds every wait with a
+// channel select instead, so the destructive path is unreachable for ALL
+// tests in this package -- Background's Done() is nil, so setupReadTimeout's
+// first check (`if ctx.Done() == nil { return false }`) skips registering the
+// AfterFunc at all. The separate implementation therefore no longer earns its
+// keep, and sharing one means the result/event demultiplexing is not
+// something a future connection wrapper can forget.
 type scenarioConn struct {
-	conn   *websocket.Conn
-	frames chan *vttv1.ServerFrame
+	conn *websocket.Conn
+	q    *frameQueue
 }
 
 func newScenarioConn(conn *websocket.Conn) *scenarioConn {
-	sc := &scenarioConn{conn: conn, frames: make(chan *vttv1.ServerFrame, 64)}
-	go func() {
-		defer close(sc.frames)
-		for {
-			_, raw, err := conn.Read(context.Background())
-			if err != nil {
-				return // real close (test cleanup's CloseNow, or a genuine server-side close)
-			}
-			var frame vttv1.ServerFrame
-			if err := protojson.Unmarshal(raw, &frame); err != nil {
-				return
-			}
-			sc.frames <- &frame
-		}
-	}()
-	return sc
+	return &scenarioConn{conn: conn, q: queueFor(conn)}
 }
 
-// readFrame waits up to d for the next frame, failing the test on timeout
-// or on the connection having closed.
-func (sc *scenarioConn) readFrame(t *testing.T, d time.Duration) *vttv1.ServerFrame {
-	t.Helper()
-	select {
-	case f, ok := <-sc.frames:
-		if !ok {
-			t.Fatal("scenarioConn: connection closed while waiting for a frame")
-		}
-		return f
-	case <-time.After(d):
-		t.Fatalf("scenarioConn: no frame within %s", d)
-		return nil
-	}
-}
-
-// scenarioConnReadBudget bounds readResult/readEvent's per-frame wait.
-// Raised 10s->20s (P6 final review, 4th sighting of
-// TestThreeRoleExitScenarioOverLiveWebSockets flaking under full-suite
-// -race contention — see .superpowers/sdd/progress.md's flake tracker):
-// serializing this package's suite in Taskfile's check task (go test -p 1
-// ./internal/gateway/ ./cmd/vtt/) is the primary fix for the contention
-// itself; this wider budget is the belt, not the buckle — a correct
-// implementation still returns in milliseconds under normal load, so this
-// only ever matters on an already-contended machine.
+// scenarioConnReadBudget bounds each wait. It was raised 10s->20s chasing
+// what was recorded as a contention flake; the real cause was result/event
+// interleaving desynchronising the connection (see frameQueue in
+// server_test.go), which no budget could fix -- the awaited frame had already
+// been consumed and discarded. Kept generous because it now only guards
+// against a genuinely wedged server.
 const scenarioConnReadBudget = 20 * time.Second
 
-// readResult reads frames until a CommandResult appears, skipping any
-// Envelope frames that race ahead of it (mirrors server_test.go's
-// readResult).
+// readResult returns the next CommandResult. An Envelope that arrives first
+// stays queued for the next readEvent instead of being thrown away.
 func (sc *scenarioConn) readResult(t *testing.T) *vttv1.CommandResult {
 	t.Helper()
-	for i := 0; i < 10; i++ {
-		if r := sc.readFrame(t, scenarioConnReadBudget).GetResult(); r != nil {
-			return r
-		}
+	select {
+	case r := <-sc.q.results:
+		return r
+	case <-sc.q.closed:
+		t.Fatalf("scenarioConn.readResult: connection closed: %v", sc.q.err)
+	case <-time.After(scenarioConnReadBudget):
+		t.Fatalf("scenarioConn.readResult: no CommandResult within %s", scenarioConnReadBudget)
 	}
-	t.Fatal("scenarioConn.readResult: no CommandResult within 10 frames")
 	return nil
 }
 
-// readEvent reads frames until an Envelope appears, skipping any
-// CommandResult frames from this connection's own in-flight commands
-// (mirrors server_test.go's readEvent).
+// readEvent returns the next Envelope. A CommandResult that arrives first
+// stays queued for the next readResult.
 func (sc *scenarioConn) readEvent(t *testing.T) *vttv1.Envelope {
 	t.Helper()
-	for i := 0; i < 10; i++ {
-		if e := sc.readFrame(t, scenarioConnReadBudget).GetEvent(); e != nil {
-			return e
-		}
+	select {
+	case e := <-sc.q.events:
+		return e
+	case <-sc.q.closed:
+		t.Fatalf("scenarioConn.readEvent: connection closed: %v", sc.q.err)
+	case <-time.After(scenarioConnReadBudget):
+		t.Fatalf("scenarioConn.readEvent: no Envelope within %s", scenarioConnReadBudget)
 	}
-	t.Fatal("scenarioConn.readEvent: no Envelope within 10 frames")
 	return nil
 }
 
-// assertNoFrameWithin waits up to d and fails the test if ANY frame arrives
-// (or the connection closes) in that window. Unlike server_test.go's
-// package-level assertNoFrameWithin, observing "nothing arrived" here does
-// NOT close the connection — see scenarioConn's doc comment — so it is safe
-// to call repeatedly on a connection this scenario keeps using afterward.
+// assertNoFrameWithin waits up to d and fails if ANY frame arrives (or the
+// connection closes). Non-destructive: this scenario keeps using these
+// connections afterward.
 func (sc *scenarioConn) assertNoFrameWithin(t *testing.T, d time.Duration) {
 	t.Helper()
 	select {
-	case f, ok := <-sc.frames:
-		if !ok {
-			t.Fatalf("scenarioConn: connection unexpectedly closed while expecting no frame within %s", d)
-		}
-		t.Fatalf("scenarioConn: want no frame within %s, got %v", d, f)
+	case r := <-sc.q.results:
+		t.Fatalf("scenarioConn: want no frame within %s, got result %s", d, r.GetRequestId())
+	case e := <-sc.q.events:
+		t.Fatalf("scenarioConn: want no frame within %s, got event seq=%d", d, e.GetSequence())
+	case <-sc.q.closed:
+		t.Fatalf("scenarioConn: connection unexpectedly closed while expecting no frame within %s", d)
 	case <-time.After(d):
 		// Nothing arrived: exactly what we want, connection stays open.
 	}
