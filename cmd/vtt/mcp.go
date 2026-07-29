@@ -36,9 +36,9 @@ const errMCPAdventuresRequireRuleset = "vtt mcp: --adventures-dir requires --rul
 // regenerate-and-diff would immediately revert it anyway); edit
 // tools/toolgen's manifest source and regenerate instead.
 //
-// go:embed cannot reach outside this package's own directory (the reason
-// tools.json is copied here at all rather than embedded straight from
-// contract/gen/tools/), and a runtime file read would break vtt's
+// The embed directive cannot reach outside its own package directory (the
+// reason tools.json is copied here at all, rather than embedded straight
+// from contract/gen/tools/), and a runtime file read would break vtt's
 // single-binary distribution — internal/mcp.Config.ToolsJSON takes raw
 // bytes precisely so this is the ONLY place cmd/vtt touches the
 // filesystem for it.

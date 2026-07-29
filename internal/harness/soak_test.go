@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -85,6 +87,14 @@ type soakWorld struct {
 	ids         map[string]string // participant name -> id
 	conns       []*fakeConn       // every currently-live connection (broadcast targets)
 	dispatchLog []string          // protojson of every command received, in dispatch order
+
+	// leakOnDenial, when set, is consulted on every denied command with that
+	// denial's 0-based ordinal. Returning true makes the fake broadcast an
+	// envelope it never persisted — the exact server bug RunSoak's denial
+	// bookkeeping exists to catch.
+	leakOnDenial func(ordinal int) bool
+	denials      int
+	leaked       int
 }
 
 func newSoakWorld(ids map[string]string) *soakWorld {
@@ -141,11 +151,13 @@ func (w *soakWorld) handle(name string, cmd *vttv1.ClientCommand) *vttv1.Command
 	kind := soakCommandKind(cmd)
 	allowed, known := soakCommandRoles[kind]
 	if !known || !allowed[role] {
+		w.maybeLeak()
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false,
 			Error: fmt.Sprintf("gateway: not authorized: role %q may not issue %q", role, kind)}
 	}
 	if kind == "move_token" && role == "player" {
 		if errMsg := w.checkOwnership(name, cmd.GetMoveToken()); errMsg != "" {
+			w.maybeLeak()
 			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false, Error: errMsg}
 		}
 	}
@@ -240,6 +252,48 @@ func (w *soakWorld) applyRetraction(reqID string, r *vttv1.RetractEvents) *vttv1
 	w.st = rebuilt
 	w.broadcast(marker)
 	return &vttv1.CommandResult{RequestId: reqID, Ok: true, Sequence: marker.Sequence}
+}
+
+// maybeLeak consults leakOnDenial with this denial's 0-based ordinal and, if
+// it says so, broadcasts an envelope the fake never persisted — the exact
+// server bug RunSoak's denial bookkeeping exists to catch. Called from BOTH
+// denial paths (role and token ownership); the generator reaches the ownership
+// one far more often. Caller holds w.mu.
+func (w *soakWorld) maybeLeak() {
+	if w.leakOnDenial == nil {
+		return
+	}
+	ordinal := w.denials
+	w.denials++
+	if !w.leakOnDenial(ordinal) {
+		return
+	}
+	w.leaked++
+	// Model the bug faithfully: the server PERSISTS an event for the denied
+	// command and broadcasts it. So it takes a real sequence (and the next
+	// accepted event therefore lands above it, which is what makes the
+	// ordering proof able to see it) and must fold cleanly — an envelope the
+	// fold rejects would fail the run for the wrong reason.
+	w.seq++
+	env := &vttv1.Envelope{
+		EventId: fmt.Sprintf("leaked-%d", ordinal), Sequence: w.seq,
+		Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
+			Text: "leaked", AnchorFromSeq: w.seq - 1, AnchorToSeq: w.seq - 1}},
+	}
+	if err := engine.Apply(w.st, env); err != nil {
+		panic("soakWorld: leaked envelope must fold: " + err.Error())
+	}
+	w.history = append(w.history, env)
+	w.broadcast(env)
+
+	// Give the per-participant drain goroutines time to consume it before the
+	// NEXT action is planned. This is what makes the defect deterministic
+	// rather than a race: once the leak is already in histories, a snapshot
+	// taken by a LATER denial counts it as pre-existing, so settling against
+	// that later snapshot cannot see it. Without this pause the test passes
+	// against the buggy code roughly whenever the drain happens to be slow,
+	// which would make it worthless as a regression pin.
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (w *soakWorld) broadcast(env *vttv1.Envelope) {
@@ -523,4 +577,70 @@ func TestRunSoakErrorsOnPreExistingCatchUpEvents(t *testing.T) {
 	if !strings.Contains(err.Error(), "1 pre-existing") {
 		t.Fatalf("RunSoak error = %q, want it to report the count of pre-existing events", err.Error())
 	}
+}
+
+// TestRunSoakCatchesALeakFromANonFinalDenial pins the soak twin of the
+// consecutive-denial defect, where the consequence is worse than in the
+// scenario path: the leak is LOST, not merely misattributed.
+//
+// Absence was settled against a single outstanding denial, so a second denied
+// action overwrote the first's snapshot. In the soak that is fatal rather than
+// cosmetic, because per-participant drain goroutines run continuously: a leaked
+// envelope from denial A is drained into histories during the round trip to
+// denial B, and is therefore ALREADY COUNTED in B's snapshot. leakedBelow
+// starts iterating after it and finds nothing, so a server that broadcasts a
+// denied command's event reports Pass: true.
+//
+// Seed 22 puts two denials back to back at actions 30 and 31 with an accepted
+// action at 32; the fake leaks on the FIRST of them only. Before the fix this
+// run passed.
+func TestRunSoakCatchesALeakFromANonFinalDenial(t *testing.T) {
+	const (
+		seed          = 22
+		events        = 60
+		leakOnOrdinal = 1 // the denial at action 30, immediately followed by another
+	)
+	ids := soakTestIDs()
+	w := newSoakWorld(ids)
+	w.leakOnDenial = func(ordinal int) bool { return ordinal == leakOnOrdinal }
+
+	var log bytes.Buffer
+	rep, err := harness.RunSoak(context.Background(),
+		harness.SoakConfig{Seed: seed, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, &log)
+	if err != nil {
+		t.Fatalf("RunSoak: %v", err)
+	}
+
+	if w.leaked != 1 {
+		t.Fatalf("fixture broke: the fake leaked %d times, want exactly 1 — reseed via the "+
+			"consecutive-denial probe rather than deleting this assertion", w.leaked)
+	}
+	// Assert the SHAPE this test needs, rather than trusting a comment about
+	// seed 22. If the generator's mix ever shifts so the leaking denial
+	// becomes the LAST one before an accepted action, the case degrades to one
+	// the pre-fix code also handled — and the test would keep passing while
+	// silently testing nothing.
+	assertDenialDenialAccept(t, log.String())
+	if rep.Pass {
+		t.Error("a denied action broadcast an envelope to every participant and the soak " +
+			"PASSED: a denial that is not the last one before an accepted action must still " +
+			"have its absence claim settled")
+	}
+}
+
+// assertDenialDenialAccept fails unless the action log contains two denials
+// back to back followed by an accepted action — the shape that distinguishes a
+// non-final denial (which a single pending slot dropped) from a final one
+// (which it handled). See TestRunSoakCatchesALeakFromANonFinalDenial.
+func assertDenialDenialAccept(t *testing.T, log string) {
+	t.Helper()
+	outcome := regexp.MustCompile(`\[action \d+\][^\n]*?(denied as expected|accepted)`)
+	ms := outcome.FindAllStringSubmatch(log, -1)
+	for i := 0; i+2 < len(ms); i++ {
+		if ms[i][1] == "denied as expected" && ms[i+1][1] == "denied as expected" && ms[i+2][1] == "accepted" {
+			return
+		}
+	}
+	t.Fatalf("this seed no longer produces denied,denied,accepted in sequence, so the test no "+
+		"longer exercises a NON-FINAL denial; reseed via the probe. Log:\n%s", log)
 }

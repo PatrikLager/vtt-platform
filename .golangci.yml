@@ -1,0 +1,105 @@
+# golangci-lint configuration. Adapted from daana-code/focalc, 2026-07-29.
+#
+# THREE THINGS TO KNOW BEFORE EDITING:
+#
+# 1. `golangci-lint config verify` is the only thing that tells you this file
+#    is well-formed. `run` IGNORES unknown keys SILENTLY. The first version of
+#    this file had `version: 2` (a number, must be the string "2") and a whole
+#    v1-schema `linters-settings:` block; `run` reported "0 issues" while that
+#    block — including a gocyclo threshold — did nothing at all. Run
+#    `golangci-lint config verify` after every edit here.
+#
+# 2. `run.tests` is TRUE deliberately. With it false, the `unused` linter
+#    cannot see test files, so any helper used only by tests reads as dead.
+#    That mis-report cost a broken build once (`schemaFor` in tools/toolgen was
+#    deleted on the linter's word and `go vet` failed immediately), and the
+#    first attempt to silence it excluded the text "is unused" — which every
+#    U1000 message ends in, disabling the linter outright. Keep tests on and
+#    keep the exclusions scoped to specific linters.
+#
+# 3. errcheck: the `std-error-handling` preset is golangci-lint's own answer to
+#    unchecked `defer x.Close()` and friends. A hand-rolled exclude-functions
+#    list was tried first and silently matched nothing — the names need exact
+#    package-qualified signatures. Use the preset.
+
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+issues:
+  # Report EVERYTHING. The defaults (max-issues-per-linter 50, max-same-issues
+  # 3) silently truncate, so a repeated finding shows three times and hides the
+  # rest — during this config's own triage that made "3 issues" appear four
+  # separate times as each batch was fixed. A gate that under-reports is the
+  # failure mode this whole file exists to avoid.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  enable:
+  - errcheck
+  - govet
+  - ineffassign
+  - staticcheck
+  - unused
+  - gosec
+  - bodyclose
+  - nilerr
+  - nilnil
+  - errorlint
+  - contextcheck
+  - thelper
+  - misspell
+  - gocyclo
+  - unconvert
+  - usestdlibvars
+  - whitespace
+  - reassign
+  - predeclared
+  exclusions:
+    presets:
+    - std-error-handling
+    rules:
+    # Test code trades some rigour for directness: table tests grow long
+    # (gocyclo), fixtures are read from operator-named paths (gosec), and
+    # teardown errors are noise (errcheck, nilerr, nilnil).
+    #
+    # staticcheck and contextcheck are deliberately NOT excluded. They were,
+    # unjustified, and staticcheck was hiding an SA9009 in cmd/vtt's e2e test
+    # IDENTICAL to the one this config's adoption fixed in cmd/vtt/mcp.go — a
+    # malformed //go:embed directive. An exclusion nobody can justify is an
+    # exclusion that will hide the next real defect too.
+    # NOTE `unused` is deliberately NOT excluded here — seeing test files is
+    # the whole reason run.tests is true.
+    - path: _test\.go$
+      linters:
+      - gocyclo
+      - gosec
+      - errcheck
+      - nilerr
+      - nilnil
+      # bodyclose: every hit in test code is websocket.Dial's *http.Response,
+      # which the handshake consumes — there is no body to close on a
+      # successful upgrade. bodyclose cannot tell that apart from an ordinary
+      # HTTP response. Production code is still checked.
+      - bodyclose
+    - path: ^test/
+      linters:
+      - gocyclo
+      - gosec
+      - errcheck
+      - nilerr
+      - nilnil
+    # G304 (file inclusion via variable) is inherent to a CLI whose entire job
+    # is reading operator-named files: rulesets, adventures, scenario JSON.
+    # The path comes from an argv the operator typed, so "tainted" here means
+    # "the user chose it", which is the feature.
+    - linters:
+      - gosec
+      text: G304
+  settings:
+    gocyclo:
+      # The four functions above this are annotated individually with
+      # //nolint:gocyclo and a reason. Raising the global threshold to clear
+      # the worst one (Apply, at 59) would leave the gate unable to fire on
+      # anything else — which is what the previous value of 60 did.
+      min-complexity: 30

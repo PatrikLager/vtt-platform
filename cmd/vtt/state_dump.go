@@ -94,13 +94,13 @@ func drainQuiescent(events <-chan *vttv1.Envelope, window time.Duration) []*vttv
 // is empty (sequence 0 is never a real event — the log starts at 1 — so 0
 // unambiguously means "nothing received").
 func headSequence(events []*vttv1.Envelope) int64 {
-	var max int64
+	var highest int64
 	for _, env := range events {
-		if env.Sequence > max {
-			max = env.Sequence
+		if env.Sequence > highest {
+			highest = env.Sequence
 		}
 	}
-	return max
+	return highest
 }
 
 // writeDump marshals st (harness.Fold's *engine.State — named only by

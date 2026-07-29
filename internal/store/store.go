@@ -40,7 +40,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 	if _, err := db.Exec(schema); err != nil {
-		db.Close()
+		_ = db.Close() // closing a handle whose schema init just failed
 		return nil, fmt.Errorf("store: init schema: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -63,7 +63,7 @@ func (s *Store) Append(env *vttv1.Envelope) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
 
 	var next int64
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM events`).Scan(&next); err != nil {
@@ -132,7 +132,7 @@ func (s *Store) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
 
 	var next int64
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM events`).Scan(&next); err != nil {

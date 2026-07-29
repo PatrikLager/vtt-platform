@@ -205,7 +205,7 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 			if rv.Max > 0 && rv.Current > rv.Max {
 				return nil, nil, fieldErr(path, fmt.Sprintf("resources.%s.current", name), fmt.Sprintf("must not exceed max (%d > %d)", rv.Current, rv.Max))
 			}
-			resources[name] = ResourceVal{Current: rv.Current, Max: rv.Max}
+			resources[name] = ResourceVal(rv)
 		}
 
 		actorIDs[raw.ActorID] = true
@@ -293,7 +293,7 @@ func loadScenes(dir string, actorIDs map[string]bool) ([]AdventureScene, error) 
 			if p.Y < 0 || p.Y >= raw.GridHeight {
 				return nil, fieldErr(path, field+".y", fmt.Sprintf("must be within the scene grid [0,%d), got %d", raw.GridHeight, p.Y))
 			}
-			placements = append(placements, Placement{TokenID: p.TokenID, ActorID: p.ActorID, X: p.X, Y: p.Y})
+			placements = append(placements, Placement(p))
 		}
 
 		out = append(out, AdventureScene{
@@ -355,7 +355,7 @@ func loadNotes(dir string) ([]AdventureNote, error) {
 				return nil, fieldErr(path, field+".key", fmt.Sprintf("duplicate note key %q", n.Key))
 			}
 			seen[n.Key] = true
-			out = append(out, AdventureNote{Key: n.Key, Title: n.Title, Text: n.Text})
+			out = append(out, AdventureNote(n))
 		}
 	}
 	return out, nil

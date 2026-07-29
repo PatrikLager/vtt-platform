@@ -608,7 +608,12 @@ func writeTokensFile(t *testing.T, participants, ids map[string]string) string {
 // is still running, then cancel ctx to stop it. The returned channel
 // receives Execute's error exactly once, when it returns.
 func runCLIStreaming(ctx context.Context, out *syncBuffer, args ...string) <-chan error {
-	root := newRootCmd()
+	// contextcheck reports at the CHAIN ROOT rather than at the call it
+	// objects to, so this annotation cannot live where the decision is made.
+	// The decision is in serve.go: its shutdown path uses context.Background()
+	// because cmd.Context() is already cancelled by the time that branch runs,
+	// and deriving from it would make graceful shutdown instantaneous.
+	root := newRootCmd() //nolint:contextcheck // deliberate; see serve.go's shutdown branch
 	root.SetOut(out)
 	root.SetErr(out)
 	root.SetArgs(args)

@@ -195,15 +195,6 @@ func isOptional(f protoreflect.FieldDescriptor) bool {
 	return oo != nil && oo.IsSynthetic()
 }
 
-// schemaFor derives md's JSON Schema with no manifest overrides applied —
-// the plain recursive builder, used directly by tests that check this
-// package's structural handling (arrays, Struct) in isolation from any
-// tool's authoring guidance. buildTools always goes through
-// schemaForWithOverrides instead.
-func schemaFor(md protoreflect.MessageDescriptor) map[string]any {
-	return schemaForWithOverrides(md, nil)
-}
-
 // schemaForWithOverrides is schemaFor plus overrides: a proto message full
 // name -> fieldOverride map (see fieldOverride's doc comment), threaded
 // through every recursive call so a message type reached at ANY nesting
@@ -255,6 +246,14 @@ func schemaForWithOverrides(md protoreflect.MessageDescriptor, overrides map[pro
 	}
 
 	return map[string]any{"type": "object", "properties": props, "required": required}
+}
+
+// schemaFor derives md's JSON Schema with no manifest overrides applied — the
+// plain recursive builder, used by main_test.go to check this package's
+// structural handling (arrays, Struct) in isolation from any tool's authoring
+// guidance. Production paths always go through schemaForWithOverrides.
+func schemaFor(md protoreflect.MessageDescriptor) map[string]any {
+	return schemaForWithOverrides(md, nil)
 }
 
 // valueSchemaWithOverrides derives the JSON Schema for a single
@@ -318,6 +317,9 @@ func run(outPath string, w io.Writer) error {
 		_, err := w.Write(data)
 		return err
 	}
+	// #nosec G306 -- tools.json is a COMMITTED, non-secret generated
+	// artifact that the drift gate diffs and every developer reads; 0600
+	// would break that for no benefit.
 	if err := os.WriteFile(outPath, data, 0o644); err != nil {
 		return fmt.Errorf("toolgen: write %s: %w", outPath, err)
 	}

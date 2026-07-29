@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
@@ -83,7 +84,7 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 
 	ids, err := identity.Open(campaignPath)
 	if err != nil {
-		c.Close()
+		_ = c.Close() // best-effort; the compose error below is what matters
 		return nil, nil, fmt.Errorf("vtt serve: open identity: %w", err)
 	}
 
@@ -92,8 +93,8 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	if rulesetDir != "" {
 		rs, err = rules.Load(rulesetDir)
 		if err != nil {
-			ids.Close()
-			c.Close()
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
 			return nil, nil, fmt.Errorf("vtt serve: load ruleset %s: %w", rulesetDir, err)
 		}
 		gw = gw.WithRuleset(rs)
@@ -101,14 +102,14 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 
 	if adventuresDir != "" {
 		if rs == nil {
-			ids.Close()
-			c.Close()
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
 			return nil, nil, errors.New(errAdventuresRequireRuleset)
 		}
 		advs, err := loadAdventuresDir(adventuresDir, rs)
 		if err != nil {
-			ids.Close()
-			c.Close()
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
 			return nil, nil, fmt.Errorf("vtt serve: load adventures %s: %w", adventuresDir, err)
 		}
 		gw = gw.WithAdventures(advs)
@@ -117,6 +118,16 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: gw.Handler(),
+		// Bound the header-read phase only. A client that opens a connection
+		// and dribbles headers forever would otherwise hold a goroutine
+		// indefinitely (Slowloris); 10s is generous for a real client and
+		// fatal for that attack.
+		//
+		// Deliberately NOT ReadTimeout or WriteTimeout: those bound the whole
+		// request, and every /ws request becomes a long-lived hijacked
+		// WebSocket that must outlive any such deadline. ReadHeaderTimeout
+		// applies before the upgrade, so it is the one that is safe here.
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	closeFn := func() error {
 		idsErr := ids.Close()

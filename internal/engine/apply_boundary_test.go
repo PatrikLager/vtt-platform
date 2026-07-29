@@ -50,7 +50,7 @@ func TestNarrationSingleEventAnchorIsAccepted(t *testing.T) {
 	before := st.Snapshot()
 
 	must(t, engine.Apply(st, env(10, &vttv1.NarrationAdded{
-		Text: "The cutter's blade turns on the shield boss.",
+		Text:          "The cutter's blade turns on the shield boss.",
 		AnchorFromSeq: 5, AnchorToSeq: 5,
 	})))
 

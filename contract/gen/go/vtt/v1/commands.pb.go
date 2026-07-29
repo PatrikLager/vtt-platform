@@ -1127,6 +1127,28 @@ func (x *CommandResult) GetSequence() int64 {
 }
 
 // The server->client frame; the oneof key is the frame discriminator.
+// ServerFrame is everything the server sends on a connection.
+//
+// ORDERING CONTRACT — read this before writing a client.
+//
+// Frames are delivered in a single order per connection (one writer), and
+// events are ordered among THEMSELVES by sequence. But a CommandResult is
+// NOT ordered against the Envelopes that same command produced: the result
+// is enqueued by the command loop and the events by the broadcast pump, two
+// independent producers. Either can arrive first, and which one wins varies
+// with load.
+//
+// So a client MUST NOT correlate by arrival position. Correlate a result by
+// its request_id, and events by their sequence; a result's own sequence
+// field names the first event that command produced, which is what ties the
+// two streams together.
+//
+// This is not theoretical. The gateway's own tests read positionally, and it
+// cost two separate CI failure modes — a batch of events outrunning a
+// result, and one inversion desynchronising a connection permanently. See
+// frameQueue in internal/gateway/server_test.go for the shape a correct
+// reader takes: demultiplex the two kinds, never discard the one you were
+// not currently asking for.
 type ServerFrame struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Frame:

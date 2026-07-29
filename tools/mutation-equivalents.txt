@@ -32,10 +32,22 @@
 # the mutant is not equivalent — it is untested. Write the test.
 # ------------------------------------------------------------------------
 
-internal/engine  apply.go:141:15  CONDITIONALS_BOUNDARY
+# ------------------------------------------------------------------------
+# THESE ENTRIES ARE KEYED BY LINE:COLUMN, so ANY edit above a mutant shifts
+# it and the gate fails twice over: once for the "new" unadjudicated survivor
+# and once for the now-stale old entry. That is the design working — a
+# location-keyed pre-approval MUST NOT silently follow the code around, or it
+# would start excusing whatever ends up on that line later. On such a failure,
+# confirm the code at the NEW location is the same expression (read it; do not
+# assume the shift is uniform), then re-point the entry.
+# Seen 2026-07-29: a six-line //nolint:gocyclo comment above Apply moved both
+# of its entries down by six.
+# ------------------------------------------------------------------------
+
+internal/engine  apply.go:147:15  CONDITIONALS_BOUNDARY
     `computed < 0` -> `<=`: when computed is 0 the branch assigns 0, the value it already holds. computed is a local int64 whose only uses are a value comparison, a %d format and an int32() conversion — no pointer, no map, no nil-ness, so nothing can observe the assignment.
 
-internal/engine  apply.go:144:30  CONDITIONALS_BOUNDARY
+internal/engine  apply.go:150:30  CONDITIONALS_BOUNDARY
     `computed > int64(res.Max)` -> `>=`: when computed == Max the branch assigns Max, the value it already holds. Same reasoning as above. NOTE the sibling `res.Max > 0` on this line is NOT equivalent and IS killed — apply_test.go pins "max == 0 means unlimited".
 
 internal/campaign  campaign.go:447:55  ARITHMETIC_BASE

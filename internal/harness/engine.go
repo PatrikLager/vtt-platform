@@ -164,6 +164,16 @@ type Report struct {
 
 // StepResult is one step's outcome. Kind is "command" or "reconnect".
 type StepResult struct {
+	// absenceUnproven marks a passing DENIED step whose "no broadcast
+	// reached anyone" claim has not been established yet. RunScenario
+	// resolves it against the next accepted step. Unexported on purpose:
+	// `vtt client run --json` encodes this struct, and this is internal
+	// bookkeeping, not part of the report contract.
+	absenceUnproven bool
+	// firstSeq is the first sequence an ACCEPTED step produced (0 otherwise),
+	// used as the ordering witness for a preceding denial.
+	firstSeq int64
+
 	Index  int
 	By     string
 	Kind   string
@@ -250,6 +260,29 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	}
 
 	rep := &Report{Pass: true}
+	// A denied step passes provisionally: its "no broadcast reached anyone"
+	// claim is settled by the next accepted step's event (see leakedSince).
+	//
+	// This is a QUEUE, not a single slot. Denials run back to back in five of
+	// the six committed scenarios (denials.json has fourteen), and a denial
+	// produces no event to settle against — so a single slot was simply
+	// overwritten by the next denial, leaving the first one's claim never
+	// settled and any leak blamed on the wrong step.
+	var pending []pendingDenial
+
+	// Printing lags the queue by design: a step's line is written only once
+	// its verdict is FINAL. Printing eagerly meant a denied step that later
+	// flipped to failed had already been logged as pass=true, and without
+	// --json that log is the only output an operator sees.
+	nextToPrint := 0
+	printFinal := func(upto int) {
+		for ; nextToPrint < upto; nextToPrint++ {
+			s := rep.Steps[nextToPrint]
+			fmt.Fprintf(report, "[step %d] by=%s kind=%s pass=%t %s\n",
+				s.Index, s.By, s.Kind, s.Pass, s.Detail)
+		}
+	}
+
 	for i, st := range sc.Steps {
 		var sr StepResult
 		switch {
@@ -261,11 +294,47 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 			sr = StepResult{Index: i, By: st.By, Kind: "unknown", Detail: "step has neither command nor reconnect"}
 		}
 		rep.Steps = append(rep.Steps, sr)
-		if !sr.Pass {
+
+		// Settle EVERY outstanding denial against this step's own event: they
+		// all precede it, so anything they wrongly produced carries a lower
+		// sequence and must already have arrived.
+		if len(pending) > 0 && sr.firstSeq > 0 {
+			if leaked := leakedSince(history, pending[0].lens, sr.firstSeq); len(leaked) > 0 {
+				markLeaked(rep, pending, leaked)
+				// The witness step is collateral: it read the leaked event
+				// instead of its own, so its "not observed" message would
+				// otherwise send an operator after the wrong command.
+				if !sr.Pass {
+					rep.Steps[i].Detail += " (caused by the leaked broadcast from the denied step above)"
+				}
+			}
+			pending = nil
+		}
+		if sr.absenceUnproven {
+			pending = append(pending, pendingDenial{idx: i, lens: historyLens(history)})
+		}
+
+		if !rep.Steps[i].Pass {
 			rep.Pass = false
 		}
-		fmt.Fprintf(report, "[step %d] by=%s kind=%s pass=%t %s\n", sr.Index, sr.By, sr.Kind, sr.Pass, sr.Detail)
+		// Everything before the earliest outstanding denial is now final.
+		limit := i + 1
+		if len(pending) > 0 {
+			limit = pending[0].idx
+		}
+		printFinal(limit)
 	}
+
+	// Denials with no accepted step after them have no ordering witness, so
+	// they fall back to the original bounded wait. Only a trailing run of
+	// denials can reach this, so the cost is paid once per scenario rather
+	// than once per denial.
+	if len(pending) > 0 {
+		if leaked := drainAllForSilence(conns, history, denialAbsenceWindow); len(leaked) > 0 {
+			markLeaked(rep, pending, leaked)
+		}
+	}
+	printFinal(len(rep.Steps))
 
 	if len(sc.Participants) > 0 {
 		first := sc.Participants[0].Name
@@ -284,6 +353,71 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	}
 
 	return rep, nil
+}
+
+// pendingDenial is a denied step whose "no broadcast reached anyone" claim is
+// waiting on a later accepted step's sequence to settle it.
+type pendingDenial struct {
+	idx  int
+	lens map[string]int
+}
+
+// markLeaked records a leaked broadcast against the outstanding denials.
+//
+// Consecutive denials produce no events, so nothing orders them relative to
+// each other: when several are outstanding, the leak provably came from one of
+// them but which one is genuinely unknowable from the wire. The earliest
+// carries the failure — it is the first place an operator should look — and
+// the message states the range rather than implying a precision the proof does
+// not have.
+func markLeaked(rep *Report, pending []pendingDenial, leaked []string) {
+	first := pending[0]
+	detail := fmt.Sprintf("unexpected broadcast observed by %s after a denied command",
+		strings.Join(leaked, ", "))
+	if len(pending) > 1 {
+		detail += fmt.Sprintf(" (one of the denied steps %d-%d produced it; no accepted event"+
+			" separates them, so it cannot be pinned further)", first.idx, pending[len(pending)-1].idx)
+	}
+	rep.Steps[first.idx].Pass = false
+	rep.Steps[first.idx].Detail = detail
+	rep.Pass = false
+}
+
+// historyLens snapshots how many envelopes each participant has observed.
+func historyLens(history map[string][]*vttv1.Envelope) map[string]int {
+	out := make(map[string]int, len(history))
+	for name, envs := range history {
+		out[name] = len(envs)
+	}
+	return out
+}
+
+// leakedSince returns the participants who received an envelope with a
+// sequence BELOW witnessSeq after the snapshot in lens — i.e. an event that
+// was already in the log before the accepted step's own, and therefore was
+// produced by the denied command that preceded it.
+//
+// This is the ordering proof. Per-connection delivery is sequence-ordered and
+// the gateway broadcasts only from the store subscription, so anything a
+// denied command wrongly produced must arrive before the next accepted event.
+// Finding none by the time that event lands is proof of absence — no waiting,
+// and no dependence on how fast the server happens to be.
+func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witnessSeq int64) []string {
+	var leaked []string
+	for name, envs := range history {
+		// min: a reconnect step REBUILDS history from what the redialled
+		// connection actually replayed, so it can be SHORTER than a pending
+		// denial's snapshot. Indexing that unguarded panicked — the soak twin
+		// (leakedBelow) has always had this guard; this copy did not.
+		for _, env := range envs[min(lens[name], len(envs)):] {
+			if env.GetSequence() < witnessSeq {
+				leaked = append(leaked, name)
+				break
+			}
+		}
+	}
+	sort.Strings(leaked)
+	return leaked
 }
 
 // runCommandStep sends st.Command on the issuing participant's connection
@@ -323,12 +457,22 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 			sr.Detail = fmt.Sprintf("error %q does not contain %q", result.Error, st.Expect.DeniedContaining)
 			return sr
 		}
-		leaked := drainAllForSilence(conns, history, denialAbsenceWindow)
-		if len(leaked) > 0 {
-			sr.Detail = fmt.Sprintf("unexpected broadcast observed by %s after a denied command", strings.Join(leaked, ", "))
-			return sr
-		}
+		// Absence is NOT proven here. Proving it by waiting costs
+		// denialAbsenceWindow on every denial — 64s of this package's 93s
+		// and 28s of cmd/vtt's 42s — and blames the wrong step when a leak
+		// does occur: observeOnAll reads one event per participant and fails
+		// on a sequence mismatch, so the leak surfaces as the NEXT step's
+		// "event not observed", pointing an operator at the innocent command.
+		//
+		// Instead the verdict is deferred to RunScenario, which resolves it
+		// against the next accepted step's own event: per-connection delivery
+		// is sequence-ordered and the gateway broadcasts only from the store
+		// subscription, so anything the denied command wrongly produced
+		// carries a LOWER sequence and must already have arrived by then.
+		// That is a proof rather than a timeout, it costs nothing, and it
+		// names the step that caused it.
 		sr.Pass = true
+		sr.absenceUnproven = true
 		return sr
 	}
 
@@ -349,6 +493,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	// in advance. Every other accepted command still produces exactly ONE
 	// event, matched by observeOnAll below.
 	if isBatchCommand(&cmd) {
+		sr.firstSeq = result.Sequence
 		missing, detail := observeBatchOnAll(conns, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 		if len(missing) > 0 {
 			sr.Detail = fmt.Sprintf("batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
@@ -358,6 +503,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 		return sr
 	}
 
+	sr.firstSeq = result.Sequence
 	missing := observeOnAll(conns, history, result.Sequence, observeTimeout)
 	if len(missing) > 0 {
 		sr.Detail = fmt.Sprintf("event (sequence %d) not observed matching by: %s", result.Sequence, strings.Join(missing, ", "))

@@ -64,7 +64,7 @@ func Open(path string) (*Campaign, error) {
 	}
 	c := &Campaign{log: s}
 	if err := c.rebuildLocked(); err != nil {
-		s.Close()
+		_ = s.Close() // rebuild failed; the returned error is what matters
 		return nil, err
 	}
 	return c, nil

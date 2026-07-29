@@ -5,18 +5,28 @@ tasks:
     desc: Single quality gateway — every task must leave this green
     cmds:
       - go vet ./...
+      - task: lint
       # internal/gateway, cmd/vtt, and internal/mcp are the socket-heavy
       # suites (real WebSocket/subprocess tests, or in-process MCP sessions
       # fronting a fake WebSocket wire per P7 task-1-brief.md): run
-      # everything else in parallel, then run those three serialized (-p 1)
-      # — the 4th-sighting TestThreeRoleExitScenarioOverLiveWebSockets flake
-      # under full-suite -race contention (tracked in
-      # .superpowers/sdd/progress.md) is a resource-contention flake, not a
-      # logic bug, and serializing the heavy suites is the primary fix
-      # (scenario_test.go's read-budget raise is the belt, not the primary
-      # fix). internal/mcp joins this group from its introduction (P7 Task
-      # 1) for the same determinism reason, decided up front rather than
-      # waited on for a flake sighting of its own.
+      # everything else in parallel, then run those three serialized (-p 1).
+      #
+      # CORRECTION (2026-07-29). This comment previously called the repeated
+      # TestThreeRoleExitScenarioOverLiveWebSockets failure "a
+      # resource-contention flake, not a logic bug", and credited -p 1 as the
+      # primary fix. That diagnosis was WRONG, and it cost an hour of chasing
+      # load. The real cause: the gateway does not order a command's
+      # CommandResult against the Envelopes that command produced (server.go's
+      # "Writer choice" comment says so), and the test helpers read
+      # POSITIONALLY, discarding skipped frames — so one inversion
+      # desynchronised a connection permanently and a later read hung until
+      # its deadline. Captured frame logs showed the inversion directly.
+      # Fixed properly by demultiplexing results and events per connection
+      # (frameQueue, server_test.go); verified with 96 suite runs under 8-way
+      # contention, the condition that used to reproduce it within one round.
+      #
+      # -p 1 is kept for genuine resource reasons (these suites open real
+      # sockets and subprocesses), NOT as a flake mitigation.
       # The Go suite runs inside check:coverage, which executes exactly these
       # two package sets with -count=1 (strictly stronger than a cached run)
       # plus a third instrumented pass over cmd/vtt. Running them here too
@@ -29,6 +39,22 @@ tasks:
       - task: check:vocabulary
       - task: check:arch
       - task: check:mutation
+
+  lint:
+    desc: >
+      golangci-lint over the whole tree, tests included. Config lives in
+      .golangci.yml -- read its header before editing, because `run` accepts
+      an INVALID config silently and reports 0 issues.
+    cmds:
+      # `config verify` first: the config is schema-checked before it is
+      # trusted. Without this, a v1-schema key or a mistyped `version` is
+      # ignored without a warning and the gate passes while enforcing far
+      # less than it claims -- which is exactly how this config shipped its
+      # first draft (a dead linters-settings block, and an exclusion whose
+      # text matched every `unused` message and so disabled that linter
+      # outright).
+      - golangci-lint config verify
+      - golangci-lint run ./...
 
   check:coverage:
     desc: >

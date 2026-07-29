@@ -125,6 +125,11 @@ import (
 // returned batch, followed by the usage-spend ResourceChanged (if any),
 // then every per-target outcome event in target order, then every
 // threshold-driven condition event.
+// Complexity: the resolution pipeline — guards, cost, roll, outcome,
+// envelopes. The branches are sequential stages sharing accumulated state,
+// which is what makes extraction cost more clarity than it buys.
+//
+//nolint:gocyclo
 func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) ([]*vttv1.Envelope, error) {
 	ability, ok := rs.Compiled[cmd.GetAbilityId()]
 	if !ok {
@@ -379,8 +384,8 @@ func (r *resolveState) applyDelta(actorID, name string, delta int) int {
 	if nv < 0 {
 		nv = 0
 	}
-	if max := r.maxResource(actorID, name); max > 0 && nv > max {
-		nv = max
+	if upper := r.maxResource(actorID, name); upper > 0 && nv > upper {
+		nv = upper
 	}
 	key := resKey{actorID, name}
 	if _, seen := r.running[key]; !seen {
@@ -593,6 +598,9 @@ func evalRecordingScoped(e *Expr, caster, target EvalContext, roller Roller) (in
 func toInt32Slice(in []int) []int32 {
 	out := make([]int32, len(in))
 	for i, v := range in {
+		// #nosec G115 -- dice results only. The grammar bounds dice at
+		// 1..100 count x 1..1000 sides (expr.go), so every element is far
+		// inside int32.
 		out[i] = int32(v)
 	}
 	return out
@@ -629,6 +637,12 @@ func abilityUsedEnvelope(au *vttv1.AbilityUsed) *vttv1.Envelope {
 
 func resourceChangedEnvelope(actorID, resource string, delta, newValue int, reason string) *vttv1.Envelope {
 	return &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+		// #nosec G115 -- callers guarantee int32 range, and the two paths do
+		// it differently: the outcome path routes both values through
+		// int32Checked immediately before calling (resolve.go:473,481); the
+		// usage-spend path is deliberately exempt because cost <= current is
+		// already proven by the insufficient-resource guard and current is an
+		// int32 (see int32Checked's doc comment).
 		ActorId: actorID, Resource: resource, Delta: int32(delta), NewValue: int32(newValue), Reason: reason,
 	}}}
 }
