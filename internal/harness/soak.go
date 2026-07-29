@@ -214,9 +214,21 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	}
 
 	model := newSoakModel()
+	// #nosec G404 -- a SEEDED, reproducible generator is the entire point: the
+	// soak keystone pins seed-1 to exact accepted/denied/checkpoint counts.
+	// crypto/rand would make the suite unreproducible.
 	rng := rand.New(rand.NewSource(cfg.Seed))
 	rep := &SoakReport{Events: cfg.Events, Counts: map[string]int{}, Pass: true}
 	var lastAcceptedSeq int64
+	// A QUEUE, not a single slot. Denied attempts run back to back over a few
+	// hundred generated actions, and overwriting the slot silently DROPPED the
+	// earlier denial's claim — worse here than in the scenario path, because
+	// the per-participant drain goroutines fold a leaked envelope into
+	// histories during the round trip to the next denial, so it is already
+	// counted in that denial's own snapshot and invisible to it. Keeping every
+	// outstanding denial, and settling against the EARLIEST snapshot, is what
+	// makes the leak visible again.
+	var pending []*deniedPending
 
 	for i := 0; i < cfg.Events; i++ {
 		// planRetraction's eligibility pool reads the agent's own observed
@@ -284,12 +296,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 				fmt.Fprintf(report, "[action %d] by=%s kind=%s FAIL: denied but error %q does not contain \"not authorized\"\n", i, step.issuer, step.kind, result.Error)
 				continue
 			}
-			leaked := histories.grewSince(preLens, denialAbsenceWindow)
-			if len(leaked) > 0 {
-				rep.Pass = false
-				fmt.Fprintf(report, "[action %d] by=%s kind=%s FAIL: unexpected broadcast observed by %s after a denied command\n", i, step.issuer, step.kind, strings.Join(leaked, ", "))
-				continue
-			}
+			// Absence is settled by the NEXT accepted action's sequence
+			// rather than by waiting — see leakedBelow. grewSince's
+			// unconditional 300ms sleep ran on every denied action and, with
+			// the scenario path, accounted for most of this package's
+			// runtime, which is why it was excluded from check:mutation.
+			pending = append(pending, &deniedPending{idx: i, issuer: step.issuer, kind: string(step.kind), lens: preLens})
 			fmt.Fprintf(report, "[action %d] by=%s kind=%s denied as expected\n", i, step.issuer, step.kind)
 
 		case !result.Ok:
@@ -298,6 +310,31 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			fmt.Fprintf(report, "[action %d] by=%s kind=%s FAIL: unexpected denial: %s\n", i, step.issuer, step.kind, result.Error)
 
 		default:
+			if len(pending) > 0 {
+				// The witness must have ARRIVED before its absence proves
+				// anything. A leaked envelope carries a lower sequence, so
+				// per-connection ordering delivers it FIRST — but "first" is
+				// not "already": SendCommand returning means the server
+				// accepted the command, not that any broadcast has reached a
+				// participant's Events() channel. Settling immediately raced
+				// the per-participant drain goroutines and could discard a
+				// real leak, reporting Pass: true. waitFor's own doc comment
+				// names this exact race; the denial snapshot above already
+				// guards against it and the settle did not.
+				//
+				// This costs nothing on a healthy run: the witness event is
+				// one the server just accepted, so it is already in flight.
+				if !histories.waitAllCaughtUp(participantNames, result.Sequence, observeTimeout) {
+					rep.Pass = false
+					fmt.Fprintf(report, "[action %d] FAIL: not every participant observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
+						i, result.Sequence, observeTimeout)
+				}
+				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence); len(leaked) > 0 {
+					rep.Pass = false
+					fmt.Fprint(report, deniedLeakLine(pending, leaked))
+				}
+				pending = nil
+			}
 			step.apply(result.Sequence)
 			rep.Accepted++
 			lastAcceptedSeq = result.Sequence
@@ -311,11 +348,45 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 		}
 	}
 
+	// Denials with no accepted action after them have no ordering witness, so
+	// they fall back to the original bounded wait. Only a TRAILING RUN of
+	// denials can reach this, so the wait is paid once per soak.
+	if len(pending) > 0 {
+		if leaked := histories.grewSince(pending[0].lens, denialAbsenceWindow); len(leaked) > 0 {
+			rep.Pass = false
+			fmt.Fprint(report, deniedLeakLine(pending, leaked))
+		}
+	}
+
 	if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, report); err != nil {
 		return nil, err
 	}
 
 	return rep, nil
+}
+
+// deniedLeakLine formats a leak against the outstanding denied actions.
+// Nothing orders consecutive denials relative to each other — they produce no
+// events — so the EARLIEST carries the failure and the line discloses the
+// range instead of implying the leak was pinned to one action.
+func deniedLeakLine(pending []*deniedPending, leaked []string) string {
+	first := pending[0]
+	line := fmt.Sprintf("[action %d] by=%s kind=%s FAIL: unexpected broadcast observed by %s after a denied command",
+		first.idx, first.issuer, first.kind, strings.Join(leaked, ", "))
+	if len(pending) > 1 {
+		line += fmt.Sprintf(" (one of the denied actions %d-%d produced it; no accepted event separates them)",
+			first.idx, pending[len(pending)-1].idx)
+	}
+	return line + "\n"
+}
+
+// deniedPending is a denied action whose "no broadcast" claim is waiting on
+// the next accepted action's sequence to settle it.
+type deniedPending struct {
+	idx    int
+	issuer string
+	kind   string
+	lens   map[string]int
 }
 
 // runSoakCheckpoint folds the observer's incrementally-drained history,
@@ -473,6 +544,32 @@ func (h *soakHistories) lengths() map[string]int {
 		out[name] = len(envs)
 	}
 	return out
+}
+
+// leakedBelow reports (sorted) which participants received an envelope with a
+// sequence BELOW witnessSeq since the snapshot in before — an event that was
+// already in the log before the next accepted action's own, and therefore
+// produced by the denied action that preceded it.
+//
+// This replaces grewSince's unconditional sleep on the denial path. Per
+// connection, delivery is sequence-ordered and the gateway broadcasts only
+// from the store subscription, so anything a denied command wrongly produced
+// must arrive before the next accepted event. Finding none by then is a proof,
+// not a timeout: no wait, and it holds however slow the server is.
+func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var leaked []string
+	for name, envs := range h.data {
+		for _, env := range envs[min(before[name], len(envs)):] {
+			if env.GetSequence() < witnessSeq {
+				leaked = append(leaked, name)
+				break
+			}
+		}
+	}
+	sort.Strings(leaked)
+	return leaked
 }
 
 // grewSince waits window, then reports (sorted) which participants' history
@@ -700,6 +797,7 @@ func (m *soakModel) planPlaceToken(rng *rand.Rand) soakStep {
 	issuer := pickDMOrAgent(rng)
 	scene := m.scenes[rng.Intn(len(m.scenes))]
 	actor := m.actors[rng.Intn(len(m.actors))]
+	// #nosec G115 -- rng.Intn(50) is bounded to 0..49; int32 cannot overflow.
 	x, y := int32(rng.Intn(50)), int32(rng.Intn(50))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{PlaceToken: &vttv1.PlaceToken{
 		TokenId: id, SceneId: scene, ActorId: actor, Position: &vttv1.GridPosition{X: x, Y: y},
@@ -749,6 +847,7 @@ func (m *soakModel) planMoveOwn(rng *rand.Rand) (soakStep, bool) {
 	}
 	choice := options[rng.Intn(len(options))]
 	tok := choice.tokens[rng.Intn(len(choice.tokens))]
+	// #nosec G115 -- rng.Intn(50) is bounded to 0..49; int32 cannot overflow.
 	x, y := int32(rng.Intn(50)), int32(rng.Intn(50))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
@@ -816,6 +915,7 @@ func (m *soakModel) planDeniedAttempt(rng *rand.Rand) (soakStep, bool) {
 		return soakStep{}, false
 	}
 	tok := candidates[rng.Intn(len(candidates))]
+	// #nosec G115 -- rng.Intn(50) is bounded to 0..49; int32 cannot overflow.
 	x, y := int32(rng.Intn(50)), int32(rng.Intn(50))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
