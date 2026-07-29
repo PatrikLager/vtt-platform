@@ -14,6 +14,11 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
 2. **`task check` is the single quality gateway.** All gates green before
    any work is called done. Never weaken a gate to pass it; a gate change is
    its own reviewed decision.
+   `task check:fast` (vet + lint + tier-1 tests) is an inner-loop
+   convenience ONLY -- it is not this gate and never satisfies it. Tests are
+   tiered by what they ARE, not by runtime: tier 1 unit/area, 2 cross-layer,
+   3 external, 4 whole product (`task check`). A slow unit test stays in
+   tier 1. See Taskfile.yml's tier comment.
 3. **Contract evolution is additive only** (ADR-007; `check:breaking`
    enforces). Generated code is committed; regenerate via
    `task generate:contract`. Commands are imperative (`CreateScene`), events

@@ -40,6 +40,74 @@ tasks:
       - task: check:arch
       - task: check:mutation
 
+  # --- test tiers -----------------------------------------------------------
+  #
+  # Tiered by what a test IS, not by what it costs. Patrik's model, and the
+  # ordering rule that goes with it: a slow unit test is still a unit test and
+  # stays in tier 1. Timing is not a category.
+  #
+  #   1 unit/area  - one component, fakes at its edges. The TDD loop: written
+  #                  red against the spec, run on every change.
+  #   2 cross-layer - several layers wired together in-process. Run when a
+  #                  layer boundary changes.
+  #   3 external   - real processes and transports. Run when those change.
+  #   4 whole product - `task check` (defined above). Pre-merge / CI only.
+  #
+  # Packages land in a tier by their nature:
+  #   internal/harness is TIER 1 despite being the slowest package (~51s). Its
+  #     tests drive the harness library against scripted fakes -- that is a
+  #     unit test of that library, and its runtime is sleeps, not scope.
+  #   internal/gateway and internal/mcp are TIER 2: real in-process wiring
+  #     across gateway/campaign/store and mcp/harness respectively.
+  #   cmd/vtt is TIER 3 whole and undivided. It is the composition root; its
+  #     tests exercise the assembled binary, subprocesses, signals and real
+  #     stdio. Splitting it by file would need a build tag, which would take
+  #     those files out of lint and coverage -- silently narrowing two gates to
+  #     speed up a third is the trade this repo keeps getting burned by.
+
+  test:unit:
+    desc: Tier 1 -- unit/area tests. The TDD loop; run on every change.
+    cmds:
+      # -E with a (/|$) boundary, NOT a substring match: plain
+      # `grep -v /internal/gateway` also swallows a future internal/gatewayx,
+      # and the tier 2/3 patterns would not pick it up (go's `x/...` matches
+      # only x and x/-prefixed), so it would land in NO tier while every tier
+      # still reported green. check:coverage's identical filter is backstopped
+      # by list-measured-packages.sh; these tasks have no such backstop.
+      - go test -count=1 $(go list ./... | grep -v -E '/(internal/(gateway|mcp)|cmd/vtt)(/|$)')
+      # The TypeScript contract round-trips are unit tests by this tier's own
+      # definition. They select through bun, not `go list`, so they have to be
+      # named explicitly or an edit to a contract event gets a green tier 1
+      # with them never run.
+      - bun test
+
+  test:cross:
+    desc: Tier 2 -- cross-layer tests. Run when a layer boundary changes.
+    cmds:
+      # -p 1: these open real sockets in-process; see check's note.
+      - go test -count=1 -p 1 ./internal/gateway/... ./internal/mcp/...
+
+  test:external:
+    desc: Tier 3 -- external interactions (subprocesses, signals, real stdio).
+    cmds:
+      # -p 1 mirrors check's own cmd/vtt run. A no-op while cmd/vtt is a
+      # single package, but the moment it gains a subpackage this would start
+      # running subprocess suites concurrently while check still serialises
+      # them -- a divergence that shows up only as a local flake.
+      - go test -count=1 -p 1 ./cmd/vtt/...
+
+  check:fast:
+    desc: >
+      Tier 1 only, plus vet and lint -- the pre-commit / inner-loop gate.
+      NOT a substitute for `task check`, which is the merge gate. The full
+      list of what this SKIPS, so nobody has to diff the two by hand:
+      test:cross, test:external, check:coverage, check:mutation, check:drift,
+      check:breaking, check:arch and check:vocabulary.
+    cmds:
+      - go vet ./...
+      - task: lint
+      - task: test:unit
+
   lint:
     desc: >
       golangci-lint over the whole tree, tests included. Config lives in
@@ -126,7 +194,13 @@ tasks:
         # diagnostics to stdout, and >/dev/null would turn a real failure (or
         # the ledgered contention flake) into a bare non-zero exit with
         # nothing to read.
-        run_quiet go test -count=1 -cover $(go list ./... | grep -v -e '^.*internal/gateway' -e '^.*cmd/vtt' -e '^.*internal/mcp') -args -test.gocoverdir="$D_UNIT"
+        # Same anchored filter as test:unit -- these two must select the same
+        # set, and substring matching would let them drift silently the day a
+        # sibling-prefixed package appears. This one IS backstopped
+        # (list-measured-packages.sh + check-coverage.py fatal on any package
+        # no pass measured), which is why the bug was latent here and live in
+        # the tier tasks.
+        run_quiet go test -count=1 -cover $(go list ./... | grep -v -E '/(internal/(gateway|mcp)|cmd/vtt)(/|$)') -args -test.gocoverdir="$D_UNIT"
         run_quiet go test -count=1 -cover -p 1 ./internal/gateway/... ./cmd/vtt/... ./internal/mcp/... -args -test.gocoverdir="$D_UNIT"
 
         # Pass 3: subprocess coverage. buildVTTBinary sees
