@@ -105,7 +105,29 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    more uncomfortable reason: that run reports **29 survivors and 32 uncovered
    mutants** (220 total, at `check:mutation`'s own timeout coefficient of 30).
    Re-measure before acting on the split — the Lived/Not-covered boundary has
-   been seen to shift by one between runs and trees; the total does not. The sleeps were never the only thing hiding this — they were the
+   been seen to shift by one between runs and trees; the total does not.
+
+   **Progress, 2026-07-30 (`032894b`): 29 -> 24 survivors**, 163 killed. The
+   five killed were the deferred progress-print (`limit := i + 1`), the
+   leak-report range disclosure (`len(pending) > 1`), the two `RunSoak` config
+   guards, and scenario.go's report counters. Remaining, grouped so the next
+   pass is not a fresh triage:
+
+   | Group | Sites | Nature |
+   |---|---|---|
+   | Placeholder parse error path | `engine.go:102,103,105` (4) | `{{id:` with no closing `}}` is untested |
+   | Reconnect catch-up split | `engine.go:550` | `env.Sequence > after` boundary — highest value left |
+   | Soak range disclosure | `soak.go:376` (2) | twin of the killed `engine.go:377`; needs a single-denial soak fixture |
+   | Guards on empty input | `engine.go:244,256,339` | probably unreachable — verify against scenario validation before adjudicating |
+   | Soak cadence / eligibility | `soak.go:271,343,401,691` | checkpoint timing, `canPlaceToken` |
+   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip, id counters |
+   | Poll interval | `soak.go:611` | `time.Sleep(5ms)` — the likeliest genuine equivalent |
+
+   A caution earned twice on this branch: the first test written for the
+   progress-print mutant did NOT kill it, because the mutation changes only
+   WHEN a line is emitted and the end-of-run sweep makes the final buffer
+   identical. Verify every new test red-against-the-mutant in a throwaway
+   copy. "The test passes" has never been evidence that it tests anything. The sleeps were never the only thing hiding this — they were the
    reason nobody had looked. Gating the package is now a matter of killing or
    adjudicating those 29, tracked as its own task; the exclusion is a recorded
    test-coverage debt, not a performance concession.
