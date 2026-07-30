@@ -34,6 +34,7 @@ tasks:
       # signal — a test failure in any pass still aborts the gate.
       - task: check:coverage
       - bun test
+      - task: client:typecheck
       - task: check:drift
       - task: check:breaking
       - task: check:invariants
@@ -97,6 +98,17 @@ tasks:
       # running subprocess suites concurrently while check still serialises
       # them -- a divergence that shows up only as a local flake.
       - go test -count=1 -p 1 ./cmd/vtt/...
+
+  client:typecheck:
+    desc: >
+      Strict TypeScript typecheck of the client. Beyond `strict` this turns on
+      noUncheckedIndexedAccess and exactOptionalPropertyTypes, because the
+      fold mirrors a Go implementation field for field and the failure that
+      matters is a silently-undefined lookup producing a state that differs
+      from the server's without anything throwing. bun RUNS TypeScript but
+      does not type-check it, so without this the types are decoration.
+    cmds:
+      - bunx tsc --noEmit -p client/tsconfig.json
 
   check:secrets:staged:
     desc: >

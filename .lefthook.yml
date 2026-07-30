@@ -27,6 +27,8 @@ pre-commit:
       run: task check:invariants
     secrets:
       run: task check:secrets:staged
+    typecheck:
+      run: task client:typecheck
 
 pre-push:
   parallel: false
