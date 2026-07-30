@@ -45,8 +45,8 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	mint := func(name string, role identity.Role) string {
-		tok, _, err := ids.CreateInvite(name, role, nil)
+	mint := func(name string, role identity.Role, controls ...string) string {
+		tok, _, err := ids.CreateInvite(name, role, controls)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,7 +58,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 		ids:            ids,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer),
+		playerToken:    mint("Lera", identity.RolePlayer, "act-lera"),
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
@@ -476,6 +476,18 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 		}
 		if got.Controls == nil {
 			t.Errorf("%s: controls must be [] and never null — the client iterates it", tc.role)
+		}
+		// The player controls an actor, and that list must arrive INTACT.
+		// Nothing exercised a non-empty Controls until a surviving mutant
+		// showed that replacing it with an empty slice changed no test's
+		// outcome — which would have shown a player as controlling nothing
+		// and hidden their own actor from them.
+		if tc.role == "player" {
+			if len(got.Controls) != 1 || got.Controls[0] != "act-lera" {
+				t.Errorf("player controls = %v, want [act-lera]", got.Controls)
+			}
+		} else if len(got.Controls) != 0 {
+			t.Errorf("%s: controls = %v, want empty", tc.role, got.Controls)
 		}
 	}
 
