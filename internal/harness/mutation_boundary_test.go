@@ -3,6 +3,7 @@ package harness_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -545,6 +546,69 @@ func TestUnsetRequestIdGetsTheStepDefault(t *testing.T) {
 		if seen == "" {
 			t.Error("a command with no request_id must be given one; an empty id makes the " +
 				"result uncorrelatable")
+		}
+	})
+}
+
+// TestSoakGeneratedIdsStartAtOneAndAscend pins the `m.sceneN++` /
+// `m.actorN++` / `m.tokenN++` counters (soak.go).
+//
+// Mutated to `--`, the generator still produces UNIQUE ids — `soak-scn--1`,
+// `soak-scn--2` — so every determinism, ratio and bookkeeping assertion in
+// the soak suite still passes: both runs of a same-seed comparison are
+// mutated identically, and nothing else reads the ids' shape. The only
+// observable is the id text itself, which is exactly what a scenario author
+// reading a soak log or reproducing a failure by hand relies on.
+func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 5, Events: 120, CheckEvery: 1000, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("soak should pass: %+v", rep)
+		}
+
+		// The first id minted for each kind must be 1, and they must ascend.
+		for _, kind := range []struct{ prefix, field string }{
+			{"soak-scn-", "sceneId"},
+			{"soak-actor-", "actorId"},
+			{"soak-tok-", "tokenId"},
+		} {
+			re := regexp.MustCompile(regexp.QuoteMeta(kind.prefix) + `(-?\d+)`)
+			var seen []int
+			for _, cmd := range w.dispatchLog {
+				for _, m := range re.FindAllStringSubmatch(cmd, -1) {
+					var n int
+					if _, err := fmt.Sscanf(m[1], "%d", &n); err == nil {
+						seen = append(seen, n)
+					}
+				}
+			}
+			if len(seen) == 0 {
+				t.Fatalf("no %s ids in the dispatch log; the fixture no longer exercises this kind",
+					kind.prefix)
+			}
+			if seen[0] != 1 {
+				t.Errorf("first %s id is %d, want 1 — generated ids must start at 1 so a soak "+
+					"log can be read and reproduced by hand", kind.prefix, seen[0])
+			}
+			high := 0
+			for _, n := range seen {
+				if n > high {
+					high = n
+				}
+				if n < 1 {
+					t.Errorf("%s id %d is below 1; ids must ascend, not descend", kind.prefix, n)
+					break
+				}
+			}
+			if high < 1 {
+				t.Errorf("%s ids never exceeded %d", kind.prefix, high)
+			}
 		}
 	})
 }

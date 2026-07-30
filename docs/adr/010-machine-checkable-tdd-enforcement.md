@@ -107,42 +107,49 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    Re-measure before acting on the split — the Lived/Not-covered boundary has
    been seen to shift by one between runs and trees; the total does not.
 
-   **Progress, 2026-07-30: 29 -> 12 survivors**, 175 killed, efficacy 84.5% ->
-   93.6%, across three passes. Killed: the deferred progress-print; both
-   range-disclosure twins (engine.go and soak.go); the two `RunSoak` config
-   guards; scenario.go's report counters; the reconnect cursor boundary
-   (`env.Sequence > after` — at `>=` the harness fails servers for correctly
-   replaying only what follows the cursor); the whole `{{id:...}}` placeholder
-   error path; both empty-participant guards; the connection-cleanup defer;
-   request-id defaulting; and the checkpoint cadence.
+   **Progress, 2026-07-30: 29 -> 7 survivors**, 180 killed, efficacy 84.5% ->
+   96.3%, across four passes. Three findings outlast the count:
 
-   Two of those are worth reading before writing more tests here, because both
-   passed a plausible test that pinned nothing:
+   - **A loose bound is not a test.** The checkpoint test asserted
+     `Checkpoints >= 2`; the mutant produced 115 instead of 3 and passed. A
+     soak doing 40x the intended verification work, reporting success.
+   - **Timing-only mutations survive buffer assertions.** The progress-print
+     mutant changes only WHEN a line is emitted; the end-of-run sweep leaves
+     the final buffer byte-identical. It had to be caught by sampling the log
+     mid-run from inside the fake's send.
+   - **Rejection tests do not pin acceptance.** `validateProbe`'s counters
+     survived because the only probe test loaded an AMBIGUOUS probe and
+     asserted it errors — which a mutated counter also does. A validator that
+     rejects everything passes every rejection test.
 
-   - The progress-print mutant changes only WHEN a line is emitted; the
-     end-of-run sweep leaves the final buffer byte-identical. It had to be
-     caught by sampling the log MID-RUN from inside the fake's send.
-   - The checkpoint-cadence mutant made checkpoints run after almost every
-     accepted action instead of every 50th — 115 instead of 3. The existing
-     assertion was `Checkpoints >= 2`, which 115 satisfies comfortably. A
-     loose bound on a count is not a test of that count.
+   **`waitFor(name, 0, timeout)` does NOT return immediately** — it scans for
+   an envelope with `Sequence == 0`, and sequences start at 1, so it spins to
+   the deadline and returns false. That kills the easy assumption that
+   soak.go's `lastAcceptedSeq > 0` / `waitForSeq > 0` guards are equivalent
+   because "waiting for 0 is free". They are NOT free.
 
-   Remaining 12, grouped:
+   They are nevertheless **probably equivalent, for a different reason**:
+   `planDeniedAttempt` returns ok=false while `m.tokenIDs` is empty, and
+   tokens are only appended when a `placeToken` is ACCEPTED — so a denial is
+   structurally impossible until at least one action has been accepted, and
+   `lastAcceptedSeq` is provably >= 1 wherever those guards are evaluated. The
+   reasoning is a REACHABILITY argument, which is more fragile than the
+   value-identity arguments elsewhere in mutation-equivalents.txt: it breaks
+   the day a denial-able action exists that does not require a token. Record
+   that dependency with any entry.
 
-   | Group | Sites | Nature |
-   |---|---|---|
-   | Batch mismatch detail | `engine.go:737` | `detail == ""` keeps the FIRST mismatch; needs a one-participant-short batch fixture |
-   | Soak guards on "nothing yet" | `soak.go:271` (2), `soak.go:401` | `lastAcceptedSeq > 0` / `waitForSeq > 0` — check whether `waitFor(.., 0, ..)` returns immediately; if so these are genuine equivalents |
-   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip and id counters — observable only through the exact ids emitted |
-   | Eligibility boundary | `soak.go:691` | `canPlaceToken`'s `len(scenes) > 0 && len(actors) > 0` |
-   | Poll interval | `soak.go:611` | `time.Sleep(5ms)` — the likeliest genuine equivalent |
+   **Adjudication is blocked on gating, not the other way round.**
+   check-mutation.py computes stale entries as `set(equivalents) - claimed`,
+   and only packages in PACKAGES are ever claimed — so an equivalents entry
+   for `internal/harness` while harness is excluded is reported as stale and
+   REDS the gate. The remaining survivors must therefore be killed or
+   adjudicated and harness added to PACKAGES in one change.
 
-   **The flaky mutant resolved itself.** `client.go:339` appeared as a
-   survivor in one run and was absent from the two before and the two after,
-   with no test change touching it. Not adjudicating it from a single
-   measurement was correct. Treat any lone-run survivor in `internal/client`
-   the same way — that package drives a real WebSocket server and cannot be
-   synctest-bubbled, so its timing genuinely varies.
+   Remaining 7: `engine.go:737` (batch mismatch detail — needs a
+   one-participant-short batch fixture), `soak.go:271` (2) and `soak.go:401`
+   (the reachability argument above), `soak.go:611` (`time.Sleep(5ms)` poll
+   interval), `soak.go:691` (`canPlaceToken` eligibility), `soak.go:736` (RNG
+   coin flip).
 
    A caution earned twice on this branch: the first test written for the
    progress-print mutant did NOT kill it, because the mutation changes only

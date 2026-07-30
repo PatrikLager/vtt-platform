@@ -185,3 +185,46 @@ func TestLoadScenarioMissingFile(t *testing.T) {
 		t.Fatal("LoadScenario: want error for a missing file, got nil")
 	}
 }
+
+// TestLoadScenarioAcceptsEachSingleProbeKind pins validateProbe's `n++`
+// counters (scenario.go).
+//
+// The only probe-validation test loaded an AMBIGUOUS probe (two kinds set)
+// and asserted it errors. Mutating any `n++` to `n--` still fails that case —
+// the count is merely wrong in a different direction, and `n != 1` rejects it
+// either way. What the mutant actually breaks is the LEGAL case: a probe with
+// exactly one kind counts -1 and is rejected, so every valid scenario using
+// that probe kind stops loading.
+//
+// Testing only the rejection path leaves the acceptance path unpinned, and a
+// validator that rejects everything passes every rejection test.
+func TestLoadScenarioAcceptsEachSingleProbeKind(t *testing.T) {
+	kinds := map[string]string{
+		"tokenAt":      `{"tokenAt": {"tokenId": "t", "x": 1, "y": 1}}`,
+		"sessionCount": `{"sessionCount": {"open": 1, "total": 1}}`,
+		"actorExists":  `{"actorExists": {"actorId": "a"}}`,
+	}
+	for name, probe := range kinds {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "s.json")
+			body := `{
+				"name": "single-probe",
+				"participants": [{"name": "dm", "role": "dm"}],
+				"steps": [
+					{"by": "dm", "command": {"startSession": {"name": "s1"}}, "expect": {"ok": true}}
+				],
+				"probes": [` + probe + `]
+			}`
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sc, err := harness.LoadScenario(path)
+			if err != nil {
+				t.Fatalf("a probe with exactly one kind set must LOAD, got: %v", err)
+			}
+			if len(sc.Probes) != 1 {
+				t.Fatalf("Probes = %d, want 1", len(sc.Probes))
+			}
+		})
+	}
+}
