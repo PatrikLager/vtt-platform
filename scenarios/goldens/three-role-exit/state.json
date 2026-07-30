@@ -1,0 +1,48 @@
+{
+  "Actors": {
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "controller_id": "p-player"
+    },
+    "act-ursus": {
+      "actor_id": "act-ursus",
+      "name": "Ursus"
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-exit": {
+      "ID": "scn-exit",
+      "Name": "Exit Hall",
+      "GridWidth": 10,
+      "GridHeight": 10
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Exit Scenario",
+      "StartSeq": 1,
+      "EndSeq": 10
+    }
+  ],
+  "Tokens": {
+    "tok-lera": {
+      "ID": "tok-lera",
+      "SceneID": "scn-exit",
+      "ActorID": "act-lera",
+      "X": 2,
+      "Y": 2
+    },
+    "tok-ursus": {
+      "ID": "tok-ursus",
+      "SceneID": "scn-exit",
+      "ActorID": "act-ursus",
+      "X": 0,
+      "Y": 0
+    }
+  },
+  "headSequence": 10
+}

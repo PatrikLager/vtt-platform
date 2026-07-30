@@ -1,0 +1,75 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Smoke Session"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-smoke",
+      "name": "Smoke Scene",
+      "gridWidth": 5,
+      "gridHeight": 5
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-smoke",
+        "name": "Smoke Actor"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-smoke",
+      "sceneId": "scn-smoke",
+      "actorId": "act-smoke",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenMoved": {
+      "tokenId": "tok-smoke",
+      "sceneId": "scn-smoke",
+      "from": {},
+      "to": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionEnded": {}
+  }
+]

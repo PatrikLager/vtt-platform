@@ -1,0 +1,36 @@
+{
+  "Actors": {
+    "act-npc": {
+      "actor_id": "act-npc",
+      "name": "NPC"
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-deny": {
+      "ID": "scn-deny",
+      "Name": "Deny Hall",
+      "GridWidth": 5,
+      "GridHeight": 5
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Denials",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {
+    "tok-npc": {
+      "ID": "tok-npc",
+      "SceneID": "scn-deny",
+      "ActorID": "act-npc",
+      "X": 0,
+      "Y": 0
+    }
+  },
+  "headSequence": 4
+}

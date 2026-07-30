@@ -1,0 +1,51 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Denials"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-deny",
+      "name": "Deny Hall",
+      "gridWidth": 5,
+      "gridHeight": 5
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-npc",
+        "name": "NPC"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-npc",
+      "sceneId": "scn-deny",
+      "actorId": "act-npc",
+      "position": {}
+    }
+  }
+]

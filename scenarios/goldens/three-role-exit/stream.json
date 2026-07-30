@@ -1,0 +1,136 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Exit Scenario"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-exit",
+      "name": "Exit Hall",
+      "gridWidth": 10,
+      "gridHeight": 10
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-ursus",
+        "name": "Ursus"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-lera",
+        "name": "Lera",
+        "controllerId": "p-player"
+      }
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-ursus",
+      "sceneId": "scn-exit",
+      "actorId": "act-ursus",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-lera",
+      "sceneId": "scn-exit",
+      "actorId": "act-lera",
+      "position": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-player",
+    "tokenMoved": {
+      "tokenId": "tok-lera",
+      "sceneId": "scn-exit",
+      "from": {
+        "x": 1,
+        "y": 1
+      },
+      "to": {
+        "x": 2,
+        "y": 2
+      }
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "agent",
+    "participantId": "p-agent",
+    "tokenMoved": {
+      "tokenId": "tok-ursus",
+      "sceneId": "scn-exit",
+      "from": {},
+      "to": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "agent",
+    "participantId": "p-agent",
+    "eventsRetracted": {
+      "fromSequence": "8",
+      "toSequence": "8",
+      "reason": "test retraction"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionEnded": {}
+  }
+]

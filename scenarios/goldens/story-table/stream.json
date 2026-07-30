@@ -1,0 +1,165 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Story Table"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-table",
+      "name": "The Rusty Flagon",
+      "gridWidth": 10,
+      "gridHeight": 10
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-hero",
+        "name": "Lera",
+        "controllerId": "p-player"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-hero",
+      "sceneId": "scn-table",
+      "actorId": "act-hero",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenMoved": {
+      "tokenId": "tok-hero",
+      "sceneId": "scn-table",
+      "from": {},
+      "to": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "narrationAdded": {
+      "text": "Lera steps toward the bar, anchored to her own move.",
+      "anchorFromSeq": "5",
+      "anchorToSeq": "5"
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "narrationAdded": {
+      "text": "A hush falls over the tavern as the story begins."
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "narrationAdded": {
+      "text": "You'll not pass, adventurer!",
+      "as": "Goblin Cutter"
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-player",
+    "narrationAdded": {
+      "text": "I raise my sword and step forward."
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteUpserted": {
+      "key": "kobold-den",
+      "title": "Kobold Den",
+      "text": "Three kobolds guard the east tunnel."
+    }
+  },
+  {
+    "eventId": "evt-11",
+    "sequence": "11",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteUpserted": {
+      "key": "kobold-den",
+      "title": "Kobold Den (cleared)",
+      "text": "The tunnel is empty now; the kobolds fled west."
+    }
+  },
+  {
+    "eventId": "evt-12",
+    "sequence": "12",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteUpserted": {
+      "key": "old-rumor",
+      "title": "Old Rumor",
+      "text": "They say the innkeeper buried gold under the cellar."
+    }
+  },
+  {
+    "eventId": "evt-13",
+    "sequence": "13",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteDeleted": {
+      "key": "old-rumor"
+    }
+  },
+  {
+    "eventId": "evt-14",
+    "sequence": "14",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionEnded": {}
+  }
+]
