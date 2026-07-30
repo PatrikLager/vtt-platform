@@ -35,21 +35,33 @@ import sys
 # Gating it immediately found three real survivors in c.head's batch
 # arithmetic. A gate scoped to what its author touched is not a gate.
 #
-# internal/harness is the only deliberate exclusion. The reason it carried
-# until 2026-07-29 — "fixed sleeps cost ~70s PER MUTANT, so a run is hours" —
-# is VOID: the fake-clock work landed (its tests run in testing/synctest
-# bubbles), the suite went 51s -> 0.7s, and a full mutation run at this file's
-# own coefficient measures under four minutes.
+# internal/harness is STILL excluded, and the reason has changed twice. Keep
+# the history, because each version was true when written and each was
+# superseded by doing the work rather than by argument.
 #
-# It stays out for a worse reason: that run reports 29 survivors and 32
-# not-covered mutants, so adding it here would simply red the gate. Roughly 60
-# mutants need killing or adjudicating first. The sleeps were never what hid
-# them; they were why nobody had looked.
+#  1. "Fixed sleeps cost ~70s PER MUTANT, so a run is hours." VOID since
+#     2026-07-29: the tests moved into testing/synctest bubbles, the suite
+#     went 51s -> 0.7s, and a full run is under four minutes.
+#  2. "29 unadjudicated survivors." Worked down to 2 across five passes.
+#  3. The actual blocker now: the last real survivor is soak.go:271's
+#     CONDITIONALS_NEGATION, which removes a guard that exists to close a
+#     RACE — the "has every participant drained the last accepted event"
+#     wait before a denial snapshot. A test CAN detect its removal (see
+#     TestSoakSlowBroadcastIsNotMistakenForALeak, which delays the fan-out to
+#     force the ordering) but only ~60% of the time, measured over repeated
+#     runs. The test is stable on correct code, 8/8; it is the DETECTION that
+#     is probabilistic.
 #
-# Re-measure before trusting the split: the Lived/Not-covered boundary has
-# been observed to move by one between runs and between trees (29/32 here,
-# 30/31 on a neighbouring tree). The total, 220, is stable. See ADR-010's
-# 2026-07-29 amendment.
+# That is the honest shape of it: synctest made mutation testing feasible
+# here, and the same fake clock makes race-guard mutants nondeterministic to
+# kill, because "all goroutines durably blocked" erases the very interleaving
+# the guard defends against. Gating on a ~60% kill would hand this repo a
+# flaky gate, which is the failure mode every other gate here was built to
+# avoid. soak.go:611 compounds it: it flips between LIVED and TIMED OUT
+# across runs, so even an adjudication for it goes stale at random.
+#
+# Adding harness needs the race guard's effect made deterministic — not more
+# survivors killed.
 PACKAGES = [
     "./tools/toolgen/",                    # ~5s
     "./internal/identity/",                # ~16s

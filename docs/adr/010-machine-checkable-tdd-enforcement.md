@@ -107,49 +107,42 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    Re-measure before acting on the split — the Lived/Not-covered boundary has
    been seen to shift by one between runs and trees; the total does not.
 
-   **Progress, 2026-07-30: 29 -> 7 survivors**, 180 killed, efficacy 84.5% ->
-   96.3%, across four passes. Three findings outlast the count:
+   **Progress, 2026-07-30: 29 -> 2 survivors**, 186 killed, efficacy 84.5% ->
+   98.9%, across five passes. And harness STILL does not join the gated set —
+   for a third reason, which is the one worth recording.
 
-   - **A loose bound is not a test.** The checkpoint test asserted
-     `Checkpoints >= 2`; the mutant produced 115 instead of 3 and passed. A
-     soak doing 40x the intended verification work, reporting success.
-   - **Timing-only mutations survive buffer assertions.** The progress-print
-     mutant changes only WHEN a line is emitted; the end-of-run sweep leaves
-     the final buffer byte-identical. It had to be caught by sampling the log
-     mid-run from inside the fake's send.
-   - **Rejection tests do not pin acceptance.** `validateProbe`'s counters
-     survived because the only probe test loaded an AMBIGUOUS probe and
-     asserted it errors — which a mutated counter also does. A validator that
-     rejects everything passes every rejection test.
+   The first reason was runtime ("~70s per mutant"): void, the suite is 0.7s.
+   The second was the survivor count: worked down from 29 to 2. The third is
+   **flaky detection**. The last real survivor is soak.go:271's
+   CONDITIONALS_NEGATION, which deletes the wait that ensures every
+   participant has drained the last accepted event before a denial's snapshot
+   is taken. Its whole job is to close a RACE. A test can force the ordering
+   (TestSoakSlowBroadcastIsNotMistakenForALeak delays the fan-out so a
+   guardless run mistakes a slow legitimate broadcast for a leak) and it is
+   stable on correct code — 8/8 — but it detects the mutant only about 60% of
+   runs, measured.
 
-   **`waitFor(name, 0, timeout)` does NOT return immediately** — it scans for
-   an envelope with `Sequence == 0`, and sequences start at 1, so it spins to
-   the deadline and returns false. That kills the easy assumption that
-   soak.go's `lastAcceptedSeq > 0` / `waitForSeq > 0` guards are equivalent
-   because "waiting for 0 is free". They are NOT free.
+   **synctest gives and takes away.** The fake clock made mutation testing
+   here feasible at all, and the same mechanism makes race-guard mutants
+   nondeterministic to kill: "advance only when every goroutine is durably
+   blocked" erases the interleaving the guard defends against.
+   `soak.go:611` compounds it by flipping between LIVED and TIMED OUT across
+   runs, so even an adjudication for it goes stale at random.
 
-   They are nevertheless **probably equivalent, for a different reason**:
-   `planDeniedAttempt` returns ok=false while `m.tokenIDs` is empty, and
-   tokens are only appended when a `placeToken` is ACCEPTED — so a denial is
-   structurally impossible until at least one action has been accepted, and
-   `lastAcceptedSeq` is provably >= 1 wherever those guards are evaluated. The
-   reasoning is a REACHABILITY argument, which is more fragile than the
-   value-identity arguments elsewhere in mutation-equivalents.txt: it breaks
-   the day a denial-able action exists that does not require a token. Record
-   that dependency with any entry.
+   Gating on a ~60% kill would install a flaky gate — the exact failure mode
+   the coverage ratchet, the mutation gate and the lint gate were each built
+   to avoid, and the one this repo has already been burned by (see the
+   gateway frame-ordering flake, misfiled for four sightings as resource
+   contention). Adding harness needs the race guard's effect made
+   DETERMINISTIC, not more survivors killed. That is the next piece of work,
+   and it is a design question about the guard, not a testing chore.
 
-   **Adjudication is blocked on gating, not the other way round.**
-   check-mutation.py computes stale entries as `set(equivalents) - claimed`,
-   and only packages in PACKAGES are ever claimed — so an equivalents entry
-   for `internal/harness` while harness is excluded is reported as stale and
-   REDS the gate. The remaining survivors must therefore be killed or
-   adjudicated and harness added to PACKAGES in one change.
-
-   Remaining 7: `engine.go:737` (batch mismatch detail — needs a
-   one-participant-short batch fixture), `soak.go:271` (2) and `soak.go:401`
-   (the reachability argument above), `soak.go:611` (`time.Sleep(5ms)` poll
-   interval), `soak.go:691` (`canPlaceToken` eligibility), `soak.go:736` (RNG
-   coin flip).
+   The five passes were still worth it on their own terms: every survivor
+   killed was covered by a test that passed and asserted something true.
+   `Checkpoints >= 2` while the mutant produced 115. A log assertion while the
+   mutant changed only WHEN lines were written. A probe test that checked
+   rejection while the mutant broke acceptance. Uniqueness assertions while
+   the mutant made ids descend. Coverage called all of them exercised.
 
    A caution earned twice on this branch: the first test written for the
    progress-print mutant did NOT kill it, because the mutation changes only

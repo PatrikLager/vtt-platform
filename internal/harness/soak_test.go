@@ -88,6 +88,11 @@ type soakWorld struct {
 	ids         map[string]string // participant name -> id
 	conns       []*fakeConn       // every currently-live connection (broadcast targets)
 	dispatchLog []string          // protojson of every command received, in dispatch order
+	// dispatchIssuers is the participant that sent each dispatchLog entry, at
+	// the same index. The command JSON alone does not say who issued it (only
+	// addActor happens to embed a participant id), so without this the
+	// generator's issuer choices are unobservable to any test.
+	dispatchIssuers []string
 
 	// leakOnDenial, when set, is consulted on every denied command with that
 	// denial's 0-based ordinal. Returning true makes the fake broadcast an
@@ -96,6 +101,19 @@ type soakWorld struct {
 	leakOnDenial func(ordinal int) bool
 	denials      int
 	leaked       int
+
+	// slowBroadcast, when > 0, delivers ACCEPTED broadcasts from a goroutine
+	// after that delay instead of inline — modelling a server whose fan-out
+	// lands after the command result does. Under synctest the delay is free
+	// but still orders delivery after SendCommand returns.
+	slowBroadcast time.Duration
+	bcWG          sync.WaitGroup
+
+	// denyEverything makes the fake reject every command, so a run reaches
+	// its final checkpoint having accepted nothing and lastAcceptedSeq stays
+	// 0 — the one state that distinguishes runSoakCheckpoint's
+	// `waitForSeq > 0` guard from `>= 0`.
+	denyEverything bool
 }
 
 func newSoakWorld(ids map[string]string) *soakWorld {
@@ -158,6 +176,12 @@ func (w *soakWorld) handle(name string, cmd *vttv1.ClientCommand) *vttv1.Command
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false, Error: "soakWorld: marshal: " + err.Error()}
 	}
 	w.dispatchLog = append(w.dispatchLog, string(raw))
+	w.dispatchIssuers = append(w.dispatchIssuers, name)
+
+	if w.denyEverything {
+		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false,
+			Error: "gateway: not authorized: fixture denies everything"}
+	}
 
 	role := w.roles[name]
 	kind := soakCommandKind(cmd)
@@ -183,7 +207,18 @@ func (w *soakWorld) handle(name string, cmd *vttv1.ClientCommand) *vttv1.Command
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false, Error: "soakWorld: apply: " + err.Error()}
 	}
 	w.history = append(w.history, env)
-	w.broadcast(env)
+	if w.slowBroadcast > 0 {
+		w.bcWG.Add(1)
+		go func() {
+			defer w.bcWG.Done()
+			time.Sleep(w.slowBroadcast)
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			w.broadcast(env)
+		}()
+	} else {
+		w.broadcast(env)
+	}
 	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: env.Sequence}
 }
 

@@ -167,6 +167,14 @@ func TestRunScenarioUseAbilityBatchPartialObservationFails(t *testing.T) {
 		if !strings.Contains(rep.Steps[0].Detail, "watcher") {
 			t.Fatalf("Detail = %q, want it to name the short-observing participant %q", rep.Steps[0].Detail, "watcher")
 		}
+		// The participant NAME comes from the caller's own message, so
+		// asserting only that leaves observeBatchOnAll's explanatory half
+		// unpinned — mutating `detail == ""` to `!=` empties it and this test
+		// still passed. The counts are the part that says WHAT went wrong.
+		if !strings.Contains(rep.Steps[0].Detail, "observed 2 batch events") {
+			t.Fatalf("Detail = %q, want it to state the observed vs expected counts, not just "+
+				"name the participant", rep.Steps[0].Detail)
+		}
 	})
 }
 
