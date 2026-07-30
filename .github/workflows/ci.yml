@@ -72,6 +72,14 @@ jobs:
       # buf, gremlins and protoc-gen-go are `go tool` dependencies in go.mod,
       # so they need no install step and cannot drift from the module.
 
+      # `task check` runs `bun test`, which needs node_modules. Locally that
+      # directory already existed and is gitignored, so the gate had a
+      # dependency nobody had ever had to satisfy — a fresh clone would fail
+      # exactly as this workflow's first run did. `task setup` is the same
+      # step a human runs; CI calling it keeps the two honest.
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
       - name: Secret scan
         run: task check:secrets
 
