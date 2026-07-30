@@ -417,3 +417,134 @@ func TestSoakLoneDenialLeakDoesNotClaimARange(t *testing.T) {
 		}
 	})
 }
+
+// TestEmptyParticipantListDoesNotPanic pins both `len(sc.Participants) > 0`
+// guards (engine.go, the freshness drain and the probe fold).
+//
+// Nothing in scenario.go's validation requires a participant, so a scenario
+// declaring none is constructible and an author will eventually write one.
+// Mutated to `>= 0` the guards are always true and both bodies index
+// `sc.Participants[0]`, panicking on an empty slice — `vtt client run`
+// crashing on a valid-if-pointless input file instead of reporting on it.
+func TestEmptyParticipantListDoesNotPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := &harness.Scenario{Name: "no-participants"}
+		dial := func(string, int64) (harness.Conn, error) {
+			t.Error("dial must not be called when there are no participants")
+			return nil, nil
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("an empty scenario should report, not error: %v", err)
+		}
+		if !rep.Pass {
+			t.Errorf("a scenario with nothing to fail should pass, got %+v", rep)
+		}
+	})
+}
+
+// TestEveryDialledConnectionIsClosed pins `if c != nil` (engine.go's cleanup
+// defer).
+//
+// Mutated to `c == nil`, the loop closes only nil connections — that is, none
+// — and every real one leaks. Under `go test` that is invisible: nothing
+// fails, nothing warns, and the process exits. The property is worth asserting
+// on its own terms anyway, since `vtt client run` executes scenarios in a
+// long-lived process where leaked sockets accumulate.
+func TestEveryDialledConnectionIsClosed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+		world["dm"].send = okSend(world, 1, accepted, "dm", "player")
+
+		sc := &harness.Scenario{
+			Name:         "cleanup",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		for name, c := range world {
+			if !c.isClosed() {
+				t.Errorf("connection %q was left open; RunScenario must close every connection "+
+					"it dialled", name)
+			}
+		}
+	})
+}
+
+// TestAuthoredRequestIdIsPreserved pins `cmd.RequestId == ""` (engine.go).
+//
+// The default exists for commands that do not set one. Mutated to `!=`, the
+// logic inverts: an AUTHORED request id is overwritten with
+// `scenario-step-N`, and a blank one is left blank. Overwriting is the
+// damaging half — request_id is how a client correlates a result to the
+// command that caused it (see ServerFrame's ordering contract), so silently
+// rewriting it breaks correlation for any scenario that sets one deliberately.
+func TestAuthoredRequestIdIsPreserved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm")}
+		var seenIDs []string
+		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			seenIDs = append(seenIDs, cmd.GetRequestId())
+			broadcast(world, accepted, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
+
+		sc := &harness.Scenario{
+			Name:         "request-id",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"requestId":"authored-id","startSession":{"name":"s"}}`),
+					Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if len(seenIDs) != 1 || seenIDs[0] != "authored-id" {
+			t.Errorf("the scenario authored request_id %q; the harness must send it unchanged, "+
+				"got %v — request_id is how a result is correlated to its command",
+				"authored-id", seenIDs)
+		}
+	})
+}
+
+// TestUnsetRequestIdGetsTheStepDefault is the other half: a command with no
+// request id must receive the generated one, so results remain correlatable.
+func TestUnsetRequestIdGetsTheStepDefault(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm")}
+		var seen string
+		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			seen = cmd.GetRequestId()
+			broadcast(world, accepted, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		}
+		sc := &harness.Scenario{
+			Name:         "request-id-default",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if seen == "" {
+			t.Error("a command with no request_id must be given one; an empty id makes the " +
+				"result uncorrelatable")
+		}
+	})
+}

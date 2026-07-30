@@ -107,32 +107,42 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    Re-measure before acting on the split — the Lived/Not-covered boundary has
    been seen to shift by one between runs and trees; the total does not.
 
-   **Progress, 2026-07-30: 29 -> 18 survivors**, 170 killed, efficacy 84.5% ->
-   90.4%. Killed across two passes: the deferred progress-print
-   (`limit := i + 1`), both range-disclosure twins (`len(pending) > 1` in
-   engine.go AND soak.go), the two `RunSoak` config guards, scenario.go's
-   report counters, the reconnect cursor boundary (`env.Sequence > after` —
-   at `>=` the harness fails servers for correctly replaying only what
-   follows the cursor), and the whole `{{id:...}}` placeholder error path
-   (offset-zero detection, the slice arithmetic that names the participant,
-   and the empty-name case).
+   **Progress, 2026-07-30: 29 -> 12 survivors**, 175 killed, efficacy 84.5% ->
+   93.6%, across three passes. Killed: the deferred progress-print; both
+   range-disclosure twins (engine.go and soak.go); the two `RunSoak` config
+   guards; scenario.go's report counters; the reconnect cursor boundary
+   (`env.Sequence > after` — at `>=` the harness fails servers for correctly
+   replaying only what follows the cursor); the whole `{{id:...}}` placeholder
+   error path; both empty-participant guards; the connection-cleanup defer;
+   request-id defaulting; and the checkpoint cadence.
 
-   Remaining, grouped so the next pass is not a fresh triage:
+   Two of those are worth reading before writing more tests here, because both
+   passed a plausible test that pinned nothing:
+
+   - The progress-print mutant changes only WHEN a line is emitted; the
+     end-of-run sweep leaves the final buffer byte-identical. It had to be
+     caught by sampling the log MID-RUN from inside the fake's send.
+   - The checkpoint-cadence mutant made checkpoints run after almost every
+     accepted action instead of every 50th — 115 instead of 3. The existing
+     assertion was `Checkpoints >= 2`, which 115 satisfies comfortably. A
+     loose bound on a count is not a test of that count.
+
+   Remaining 12, grouped:
 
    | Group | Sites | Nature |
    |---|---|---|
-   | Guards on empty input | `engine.go:244,256,339` | probably unreachable — verify against scenario validation before adjudicating |
-   | Request-id defaulting | `engine.go:440` | `cmd.RequestId == ""` |
-   | Probe detail formatting | `engine.go:737` | `detail == ""` |
-   | Soak cadence / eligibility | `soak.go:271,343,401,691` | checkpoint timing, `canPlaceToken` |
-   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip, id counters — observable only via the exact ids emitted |
+   | Batch mismatch detail | `engine.go:737` | `detail == ""` keeps the FIRST mismatch; needs a one-participant-short batch fixture |
+   | Soak guards on "nothing yet" | `soak.go:271` (2), `soak.go:401` | `lastAcceptedSeq > 0` / `waitForSeq > 0` — check whether `waitFor(.., 0, ..)` returns immediately; if so these are genuine equivalents |
+   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip and id counters — observable only through the exact ids emitted |
+   | Eligibility boundary | `soak.go:691` | `canPlaceToken`'s `len(scenes) > 0 && len(actors) > 0` |
    | Poll interval | `soak.go:611` | `time.Sleep(5ms)` — the likeliest genuine equivalent |
 
-   **`client.go:339` is a FLAKY mutant.** It appeared in the third run having
-   been absent from the first two, with no test change touching it. That
-   package's tests drive a real WebSocket server and cannot be bubbled, so
-   their timing varies. Do not adjudicate it from a single run; re-measure
-   before deciding whether it is a real gap.
+   **The flaky mutant resolved itself.** `client.go:339` appeared as a
+   survivor in one run and was absent from the two before and the two after,
+   with no test change touching it. Not adjudicating it from a single
+   measurement was correct. Treat any lone-run survivor in `internal/client`
+   the same way — that package drives a real WebSocket server and cannot be
+   synctest-bubbled, so its timing genuinely varies.
 
    A caution earned twice on this branch: the first test written for the
    progress-print mutant did NOT kill it, because the mutation changes only
