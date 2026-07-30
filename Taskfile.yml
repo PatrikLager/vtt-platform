@@ -36,7 +36,7 @@ tasks:
       - bun test
       - task: check:drift
       - task: check:breaking
-      - task: check:vocabulary
+      - task: check:invariants
       - task: check:arch
       - task: check:mutation
 
@@ -131,7 +131,7 @@ tasks:
       NOT a substitute for `task check`, which is the merge gate. The full
       list of what this SKIPS, so nobody has to diff the two by hand:
       test:cross, test:external, check:coverage, check:mutation, check:drift,
-      check:breaking, check:arch and check:vocabulary.
+      check:breaking, check:arch and check:invariants.
     cmds:
       - go vet ./...
       - task: lint
@@ -291,15 +291,27 @@ tasks:
         tail -3 "$LOG"
         python3 tools/check-mutation.py tools/mutation-equivalents.txt
 
-  check:vocabulary:
-    desc: Fail on game-system vocabulary in platform code (P2/P4)
+  check:invariants:
+    desc: >
+      Every semgrep ADR guard in .semgrep/. Pointed at the DIRECTORY, not at
+      individual rule files, so a new guard joins the gate by existing —
+      writing a rule and forgetting to wire it is the failure this whole
+      effort is about, and it nearly happened with the ADR-003 guard.
     cmds:
-      # Targets must list every directory the rule's paths.include names
-      # (.semgrep/vocabulary.yml) — semgrep's own include/exclude only
-      # filters within whatever target paths are given on the CLI, it does
-      # not widen scanning beyond them. cmd/ added alongside internal/ when
-      # cmd/vtt was introduced (ADR-008).
-      - semgrep scan --config .semgrep/vocabulary.yml --error --quiet internal/ cmd/
+      # Targets must name every directory the rules apply to: semgrep's own
+      # include/exclude only filters WITHIN the CLI target paths, it never
+      # widens the scan. cmd/ was added alongside internal/ with ADR-008.
+      #
+      # A rule here must also NOT carry `paths.include` duplicating these
+      # targets: doing so made the ADR-003 guard scan 0 files while exiting
+      # 0 — clean-looking and enforcing nothing. Verify any new rule fires by
+      # injecting a violation in a throwaway copy.
+      - semgrep scan --config .semgrep/ --error --quiet internal/ cmd/
+
+  check:vocabulary:
+    desc: Deprecated alias for check:invariants; kept so older docs still work.
+    cmds:
+      - task: check:invariants
 
   check:arch:
     desc: Enforce package layering (store/engine/campaign)

@@ -11,6 +11,18 @@ never mutated in place. Only the event-application package writes state. Yields
 undo, replay, audit, and the LLM context feed.
 **Consequences:** The event store is SQLite-backed and append-only, with
 subscriptions fanning events out to human and LLM clients alike; a semgrep guard
-forbids direct state writes outside the event-application package. Session replay,
+forbids direct state writes outside the event-application package.
+
+**Enforcement (added 2026-07-30).** That semgrep guard did not exist until
+today — this ADR named its own enforcement for a week and did not have it,
+which is precisely the gap ADR-010 was written about. It is now
+`.semgrep/event-sourcing.yml`, run by `task check:invariants` in the gate and
+in the pre-commit hook, and verified to fire by injecting a violation in a
+throwaway copy rather than trusted because it exited 0. One exclusion is
+recorded with it: `internal/rules/conformance` builds a synthetic fixture
+world to evaluate abilities against, which is never persisted and never
+derived from a log, so the concern here — state no event explains — does not
+apply to it. Test files are excluded too, and that exclusion is a known blind
+spot, noted in the rule. Session replay,
 spectator catch-up, and undo fall out of the log for free rather than needing
 bespoke implementations.
