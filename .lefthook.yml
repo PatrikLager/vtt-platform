@@ -1,0 +1,45 @@
+# Git hooks. Install once per clone: `lefthook install`.
+#
+# The tiers here are the ones in Taskfile.yml, and the split is deliberate:
+# a hook people bypass is worse than no hook, so pre-commit is held to a few
+# seconds and everything slower is pushed outward.
+#
+#   pre-commit (~7s, parallel)  tier 1 + the cheap static gates
+#   pre-push   (~40s, serial)   tiers 2 and 3 + the contract gates
+#   CI                          `task check` in full, coverage and mutation
+#
+# This became viable only when internal/harness moved to testing/synctest:
+# tier 1 was 55s before that, and a 55-second pre-commit hook is a hook
+# people learn to skip with --no-verify.
+
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: task lint
+    vet:
+      run: go vet ./...
+    test-unit:
+      run: task test:unit
+    arch:
+      run: task check:arch
+    vocabulary:
+      run: task check:vocabulary
+    secrets:
+      run: task check:secrets:staged
+
+pre-push:
+  parallel: false
+  commands:
+    # Tiers 2 and 3: the layers and the assembled binary. Not in pre-commit
+    # because they only need running when a boundary or an entrypoint moves,
+    # and a push is the natural place to insist on it.
+    cross-layer:
+      run: task test:cross
+    external:
+      run: task test:external
+    # Generated artifacts and the additive-only contract rule (ADR-007).
+    drift:
+      run: task check:drift
+    breaking:
+      run: task check:breaking
