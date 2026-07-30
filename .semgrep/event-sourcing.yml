@@ -48,16 +48,27 @@ rules:
         - internal/rules/conformance/
     patterns:
       - pattern-either:
+          # INDEXED writes: every real mutation in engine.Apply is one of
+          # these. Matching the indexed shape rather than any assignment to a
+          # field of that NAME is what keeps the rule off ordinary DTOs — a
+          # response struct with a Conditions field assigns it wholesale, and
+          # an earlier draft of this rule flagged exactly that in
+          # internal/gateway/metadata.go.
           - pattern: $S.Scenes[$K] = $V
           - pattern: $S.Actors[$K] = $V
           - pattern: $S.Tokens[$K] = $V
           - pattern: $S.Conditions[$K] = $V
           - pattern: $S.Notes[$K] = $V
-          - pattern: $S.Scenes = $V
-          - pattern: $S.Actors = $V
-          - pattern: $S.Tokens = $V
-          - pattern: $S.Sessions = $V
-          - pattern: $S.Conditions = $V
-          - pattern: $S.Notes = $V
+          # Sessions is a slice, so its real mutation is an append back onto
+          # itself. Narrow on purpose: `out.Sessions = someSlice` on a DTO is
+          # not this.
           - pattern: $S.Sessions = append($S.Sessions, ...)
-          - pattern: $S.Conditions[$K] = append(...)
+    # KNOWN GAP, recorded rather than papered over: semgrep cannot resolve Go
+    # types (metavariable-type was tried and matches nothing here), so this
+    # rule keys on write SHAPE, not on the receiver actually being an
+    # engine.State. Narrowing to the shapes above therefore gives up catching
+    # a wholesale wipe like `st.Actors = nil`, which no code does today. The
+    # alternative — matching every assignment to a field with one of those
+    # names — produced false positives on ordinary response structs, and a
+    # rule that cries wolf on correct code gets excluded, which is worse than
+    # a rule with a stated blind spot.
