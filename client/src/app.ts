@@ -12,6 +12,7 @@
 import { Auth } from "./auth";
 import { Session } from "./session";
 import type { WireStatus } from "./wire";
+import { renderSpectator } from "./view/spectator";
 
 function gatewayURL(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -32,17 +33,35 @@ export function boot(root: HTMLElement): Session | null {
   history.replaceState(null, "", location.pathname);
 
   const session = new Session(gatewayURL(), token);
-  const status = root.querySelector("#status");
+  let status = "connecting";
+  let failure = "";
+
+  const paint = () => {
+    if (failure !== "") {
+      root.replaceChildren();
+      const p = document.createElement("p");
+      p.className = "fatal";
+      // A fold error means the client cannot derive the true board. Saying so
+      // is the honest option: rendering a plausible-looking wrong board would
+      // invite a player to act on a position that never existed.
+      p.textContent = `Cannot derive state from the log: ${failure}`;
+      root.appendChild(p);
+      return;
+    }
+    renderSpectator(root, session.state, [...session.events], status);
+  };
 
   session.onStatus((s: WireStatus) => {
-    if (status) status.textContent = s === "open" ? "connected" : s;
+    status = s === "open" ? "connected" : s;
+    paint();
   });
   session.onError((e) => {
-    // A fold error means the client cannot derive the true board. Say so
-    // rather than rendering a plausible-looking wrong one.
-    if (status) status.textContent = `cannot derive state: ${e.message}`;
+    failure = e.message;
+    paint();
   });
+  session.onChange(paint);
 
+  paint();
   void session.start();
   return session;
 }

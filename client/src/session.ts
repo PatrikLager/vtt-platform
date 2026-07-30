@@ -39,6 +39,16 @@ export class Session {
     return this.wire.head;
   }
 
+  /**
+   * The replayed log, in arrival order. The story feed and the event ticker
+   * render from the LOG rather than from derived state, because state has no
+   * memory of narration or of what happened in which order — that is the
+   * whole point of keeping the log around after folding it.
+   */
+  get events(): readonly Envelope[] {
+    return this.log;
+  }
+
   onChange(fn: () => void): void {
     this.changeHandlers.push(fn);
   }
