@@ -1,0 +1,63 @@
+# ADR-003 (event-sourced state): "Only the event-application package writes
+# state." The ADR's own Consequences section promised this guard —
+# "a semgrep guard forbids direct state writes outside the event-application
+# package" — and it did not exist until 2026-07-30. An ADR that names its own
+# enforcement and does not have it is the failure mode ADR-010 was written
+# about.
+#
+# What this catches: assignment into any engine.State field from outside
+# internal/engine. State is derived by folding the append-only log; a direct
+# write is state that no event explains, which breaks undo, replay, audit and
+# the LLM context feed simultaneously and leaves no trace of having done so.
+rules:
+  - id: no-direct-state-writes
+    languages: [go]
+    severity: ERROR
+    message: >-
+      ADR-003: engine.State may only be written by the event-application
+      package (internal/engine). State is DERIVED from the append-only log —
+      a direct write is state no event explains, which silently breaks undo,
+      replay, audit and the LLM feed. Emit an event and let engine.Apply fold
+      it. If this is a synthetic fixture rather than campaign state, it needs
+      an explicit exclusion here with a reason, not a nolint.
+    paths:
+      # No `include:` here. check:vocabulary carries one and works, but adding
+      # the same include to THIS rule made semgrep scan 0 targets when the
+      # Taskfile also passes `internal/ cmd/` on the command line — the two
+      # scopings interact and the rule silently matched nothing while exiting
+      # 0. The CLI targets already scope the scan; a redundant include bought
+      # nothing and cost the entire rule.
+      exclude:
+        # The event-application package itself: this is the one place the ADR
+        # permits to write.
+        - internal/engine/
+        # Test files build fixture states directly all over the suite, which
+        # is legitimate — they are constructing a hypothetical world to
+        # evaluate against, not mutating a campaign. NOTE this exclusion is
+        # the reason the rule cannot catch a production violation that only
+        # ever appears in a _test.go helper; the equivalent blind spot in the
+        # `unused` linter cost this repo a broken build, so keep it in mind.
+        - "*_test.go"
+        # internal/rules/conformance builds a SYNTHETIC smoke actor and golden
+        # fixtures from a ruleset's own manifest, to evaluate abilities
+        # against. That state is never persisted, never derived from a log,
+        # and never becomes campaign state — it is the input to a pure
+        # evaluation, so the ADR's concern (state no event explains) does not
+        # apply. Scoped to this package deliberately: a violation anywhere
+        # else, including elsewhere in internal/rules, is still an error.
+        - internal/rules/conformance/
+    patterns:
+      - pattern-either:
+          - pattern: $S.Scenes[$K] = $V
+          - pattern: $S.Actors[$K] = $V
+          - pattern: $S.Tokens[$K] = $V
+          - pattern: $S.Conditions[$K] = $V
+          - pattern: $S.Notes[$K] = $V
+          - pattern: $S.Scenes = $V
+          - pattern: $S.Actors = $V
+          - pattern: $S.Tokens = $V
+          - pattern: $S.Sessions = $V
+          - pattern: $S.Conditions = $V
+          - pattern: $S.Notes = $V
+          - pattern: $S.Sessions = append($S.Sessions, ...)
+          - pattern: $S.Conditions[$K] = append(...)

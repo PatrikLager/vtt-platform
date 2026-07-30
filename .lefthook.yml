@@ -24,7 +24,7 @@ pre-commit:
     arch:
       run: task check:arch
     vocabulary:
-      run: task check:vocabulary
+      run: task check:invariants
     secrets:
       run: task check:secrets:staged
 
