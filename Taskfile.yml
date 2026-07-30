@@ -98,6 +98,20 @@ tasks:
       # them -- a divergence that shows up only as a local flake.
       - go test -count=1 -p 1 ./cmd/vtt/...
 
+  check:secrets:staged:
+    desc: >
+      Scan STAGED changes for secrets (pre-commit). The repo is private and
+      .gitignore already excludes tokens.json/*.tokens.json, but "private"
+      and "gitignored" are both one mistake away from a leaked bearer token
+      in history, where deleting it does not undo it.
+    cmds:
+      - gitleaks git --staged --no-banner --redact -l error .
+
+  check:secrets:
+    desc: Scan the whole history for secrets (CI).
+    cmds:
+      - gitleaks git --no-banner --redact -l error .
+
   check:fast:
     desc: >
       Tier 1 only, plus vet and lint -- the pre-commit / inner-loop gate.

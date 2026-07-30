@@ -19,6 +19,12 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    tiered by what they ARE, not by runtime: tier 1 unit/area, 2 cross-layer,
    3 external, 4 whole product (`task check`). A slow unit test stays in
    tier 1. See Taskfile.yml's tier comment.
+   Git hooks enforce the first two tiers automatically, but ONLY after
+   `lefthook install` has been run once in the clone (.lefthook.yml):
+   pre-commit runs tier 1 plus lint/vet/arch/vocabulary/secrets in ~7s,
+   pre-push runs tiers 2-3 and the contract gates in ~40s. CI runs
+   `task check` whole. An unhooked clone is not obvious from the inside —
+   if hooks have never fired for you, check `.git/hooks/pre-commit` exists.
 3. **Contract evolution is additive only** (ADR-007; `check:breaking`
    enforces). Generated code is committed; regenerate via
    `task generate:contract`. Commands are imperative (`CreateScene`), events
