@@ -567,9 +567,16 @@ func TestRunSoakCheckpointsRunPeriodicallyAndAtEnd(t *testing.T) {
 		if !rep.Pass {
 			t.Fatalf("Report.Pass = false, want true: %+v\nlog:\n%s", rep, log.String())
 		}
-		if rep.Checkpoints < 2 {
-			t.Fatalf("Checkpoints = %d, want >= 2 (at least one periodic + the final one) for %d events at CheckEvery=50: log:\n%s",
-				rep.Checkpoints, events, log.String())
+		// EXACT, not ">= 2". The loose bound let a mutation of
+		// `rep.Accepted%checkEvery == 0` to `!=` survive: inverted, a
+		// checkpoint runs after almost EVERY accepted action rather than
+		// every 50th, which is ~115 checkpoints here — still comfortably
+		// ">= 2", and a soak doing 40x the intended verification work while
+		// reporting success. One periodic per full CheckEvery, plus the
+		// unconditional final one.
+		if want := rep.Accepted/50 + 1; rep.Checkpoints != want {
+			t.Fatalf("Checkpoints = %d, want exactly %d (%d accepted / CheckEvery 50, plus the "+
+				"final one): log:\n%s", rep.Checkpoints, want, rep.Accepted, log.String())
 		}
 	})
 }
