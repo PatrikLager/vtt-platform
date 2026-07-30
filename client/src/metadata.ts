@@ -27,6 +27,15 @@ export interface RulesetMeta {
   resources: string[];
 }
 
+/** Who this token makes you. Without it the client cannot tell which actors
+ *  it controls, and cannot choose which panels to render. */
+export interface Me {
+  participantId: string;
+  name: string;
+  role: "dm" | "player" | "agent" | "spectator";
+  controls: string[];
+}
+
 export interface AdventureMeta {
   id: string;
   name: string;
@@ -52,6 +61,12 @@ async function getJSON<T>(base: string, path: string, token: string): Promise<T 
     default:
       throw new Error(`metadata: ${path} returned ${resp.status}`);
   }
+}
+
+export async function fetchMe(base: string, token: string): Promise<Me> {
+  const me = await getJSON<Me>(base, "/api/me", token);
+  if (!me) throw new Error("metadata: /api/me is unavailable");
+  return me;
 }
 
 export async function fetchRuleset(base: string, token: string): Promise<RulesetMeta> {

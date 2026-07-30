@@ -438,3 +438,48 @@ func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 		}
 	}
 }
+
+// TestMetadataMeIdentifiesTheCaller pins /api/me, which T7's player UI cannot
+// work without: "which actors do I control" is an equality check against
+// participantId, and the role decides which panels exist at all. Inferring
+// either from the event stream would be guesswork — a spectator who has
+// caused no events looks exactly like a player who has not acted yet.
+func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
+	f := newMetaFixture(t, true)
+
+	for _, tc := range []struct {
+		role  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		code, body := f.get("/api/me", tc.token)
+		if code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", tc.role, code)
+		}
+		var got struct {
+			ParticipantID string   `json:"participantId"`
+			Role          string   `json:"role"`
+			Controls      []string `json:"controls"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("%s: decode: %v (body %s)", tc.role, err, body)
+		}
+		if got.Role != tc.role {
+			t.Errorf("role = %q, want %q", got.Role, tc.role)
+		}
+		if got.ParticipantID == "" {
+			t.Errorf("%s: participantId is empty; the client cannot match controller_id without it", tc.role)
+		}
+		if got.Controls == nil {
+			t.Errorf("%s: controls must be [] and never null — the client iterates it", tc.role)
+		}
+	}
+
+	if code, _ := f.get("/api/me", "garbage"); code != http.StatusUnauthorized {
+		t.Errorf("/api/me with a bad token: status = %d, want 401", code)
+	}
+}

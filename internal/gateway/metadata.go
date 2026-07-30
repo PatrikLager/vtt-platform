@@ -93,6 +93,44 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// --- /api/me ---------------------------------------------------------------
+
+type meJSON struct {
+	ParticipantID string   `json:"participantId"`
+	Name          string   `json:"name"`
+	Role          string   `json:"role"`
+	Controls      []string `json:"controls"`
+}
+
+// handleMe tells a client who its token makes it.
+//
+// Without this the client cannot know its own role or participant id, and
+// both are load-bearing: "which actors do I control" is an equality check
+// against participantId (Actor.controller_id), and the role decides which
+// panels render at all. Inferring either from the event stream would be
+// guesswork — a spectator who has caused no events is indistinguishable from
+// a player who has not acted yet.
+//
+// It reveals nothing the caller did not already prove by holding the token.
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	p := s.authed(w, r)
+	if p == nil {
+		return
+	}
+	// Non-nil so the client can iterate without a null check; a participant
+	// controlling nothing is the common case for a DM or spectator.
+	controls := p.Controls
+	if controls == nil {
+		controls = []string{}
+	}
+	writeJSON(w, meJSON{
+		ParticipantID: p.ID,
+		Name:          p.Name,
+		Role:          string(p.Role),
+		Controls:      controls,
+	})
+}
+
 // --- /api/ruleset ----------------------------------------------------------
 
 type abilityJSON struct {

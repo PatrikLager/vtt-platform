@@ -10,7 +10,7 @@
 import type { State } from "../state";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
-import { tokensOnScene, type Geometry, type TokenDisc } from "./grid";
+import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 
 export const CELL = 44;
 
@@ -58,7 +58,11 @@ export function describe(e: Envelope): string {
   }
 }
 
-function renderGrid(st: State, sceneId: string): HTMLElement {
+function renderGrid(
+  st: State,
+  sceneId: string,
+  onCell?: (c: { x: number; y: number }) => void,
+): HTMLElement {
   const scene = st.Scenes[sceneId];
   const wrap = el("section", "board");
   if (!scene) {
@@ -73,6 +77,16 @@ function renderGrid(st: State, sceneId: string): HTMLElement {
   board.style.height = `${geom.height * CELL}px`;
   board.style.backgroundSize = `${CELL}px ${CELL}px`;
   board.dataset["sceneId"] = sceneId;
+
+  if (onCell) {
+    board.style.cursor = "crosshair";
+    board.addEventListener("click", (ev) => {
+      // Offset from the board's own box, so the cell is right regardless of
+      // where the board sits in the page or how far it is scrolled.
+      const r = board.getBoundingClientRect();
+      onCell(cellFromPoint(ev.clientX - r.left, ev.clientY - r.top, geom));
+    });
+  }
 
   for (const d of tokensOnScene(st, sceneId)) {
     board.appendChild(renderDisc(d));
@@ -178,22 +192,42 @@ function renderStatus(st: State, status: string): HTMLElement {
 }
 
 /** Replace root's contents with the spectator view. */
+export interface ViewExtras {
+  // `| undefined` is explicit rather than relying on `?` alone:
+  // exactOptionalPropertyTypes distinguishes "absent" from "present and
+  // undefined", and callers build this object with conditional expressions
+  // that produce the latter.
+  /** Player panel, when the role has one. */
+  panel?: HTMLElement | undefined;
+  /** Board click handler, when the viewer may act. */
+  onCell?: ((c: { x: number; y: number }) => void) | undefined;
+  /** Transient message from the last command. */
+  toast?: string | undefined;
+}
+
 export function renderSpectator(
   root: HTMLElement,
   st: State,
   log: Envelope[],
   status: string,
+  extras: ViewExtras = {},
 ): void {
   // The active scene is the most recently created one: there is no
   // "current scene" on the wire yet, and picking the newest matches what a
   // DM just made. A scene selector belongs with the DM console (T8).
   const sceneId = Object.keys(st.Scenes).sort().at(-1) ?? "";
 
-  root.replaceChildren(
+  const nodes: HTMLElement[] = [
     renderStatus(st, status),
-    renderGrid(st, sceneId),
+    renderGrid(st, sceneId, extras.onCell),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),
-  );
+  ];
+  if (extras.panel) nodes.push(extras.panel);
+  if (extras.toast) {
+    const t = el("div", "toast", extras.toast);
+    nodes.push(t);
+  }
+  root.replaceChildren(...nodes);
 }
