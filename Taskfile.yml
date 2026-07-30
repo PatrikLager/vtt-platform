@@ -99,6 +99,16 @@ tasks:
       # them -- a divergence that shows up only as a local flake.
       - go test -count=1 -p 1 ./cmd/vtt/...
 
+  build:client:
+    desc: >
+      Build the web client into cmd/vtt/webdist, which is COMMITTED and
+      embedded into the binary. The output must be byte-identical across
+      runs or check:drift becomes a random failure — see client/vite.config.ts
+      for the settings that guarantee that (no content hashes, no sourcemaps)
+      and why each one is there.
+    cmds:
+      - bunx vite build --config client/vite.config.ts
+
   client:typecheck:
     desc: >
       Strict TypeScript typecheck of the client. Beyond `strict` this turns on
@@ -341,10 +351,22 @@ tasks:
       # — without this, the `cp` line would silently repair a divergence
       # instead of this check ever seeing it (git status scoped to
       # contract/gen alone never inspects cmd/vtt/tools.json).
+      #
+      # cmd/vtt/webdist joined on 2026-07-30 (client plan T5, approved as its
+      # own decision per CLAUDE.md rule 2). It is a BUILD ARTIFACT rather than
+      # generated code, which is only gateable because the build is
+      # reproducible: client/vite.config.ts disables content hashes and
+      # sourcemaps for that purpose, and it was verified by building twice
+      # into separate directories and diffing (identical, no absolute paths,
+      # no timestamps) BEFORE this line was written. If a vite upgrade ever
+      # changes the output, this gate fails until webdist is rebuilt and
+      # committed — that is the intended behaviour, and it makes a dependency
+      # bump a two-step change on purpose.
+      - task: build:client
       - |
-        if [ -n "$(git status --porcelain -- contract/gen cmd/vtt/tools.json)" ]; then
-          git status --porcelain -- contract/gen cmd/vtt/tools.json
-          echo "check:drift: committed contract/gen or cmd/vtt/tools.json does not match regenerated output" >&2
+        if [ -n "$(git status --porcelain -- contract/gen cmd/vtt/tools.json cmd/vtt/webdist)" ]; then
+          git status --porcelain -- contract/gen cmd/vtt/tools.json cmd/vtt/webdist
+          echo "check:drift: committed contract/gen, cmd/vtt/tools.json or cmd/vtt/webdist does not match regenerated output" >&2
           exit 1
         fi
 

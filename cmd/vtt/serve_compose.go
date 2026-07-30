@@ -124,6 +124,13 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
 	}
 
+	// The embedded client, when this binary was built with one. API-only is
+	// a valid configuration (the harness boots servers this way), so a
+	// missing bundle is not an error.
+	if fsys := clientFS(); fsys != nil {
+		gw = gw.WithStatic(fsys)
+	}
+
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: gw.Handler(),
