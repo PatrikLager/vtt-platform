@@ -221,3 +221,199 @@ func TestScenarioReportCountersMatchStepResults(t *testing.T) {
 		}
 	})
 }
+
+// TestReconnectCatchUpExcludesTheCursorEvent pins `env.Sequence > after`
+// (engine.go's runReconnectStep).
+//
+// `after` is a CURSOR, not a lower bound: the participant has already seen
+// that event, so catch-up must replay only what comes strictly after it.
+// Mutated to `>=`, the harness expects the cursor event to be replayed too —
+// so a correctly-behaving server, replaying only newer events, gets reported
+// as delivering a short catch-up. The harness would fail real servers for
+// being right.
+//
+// No existing reconnect test used an AfterSequence that names an event that
+// actually exists, so nothing distinguished the two.
+func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		sent := 0
+		events := []*vttv1.Envelope{
+			{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
+				SessionStarted: &vttv1.SessionStarted{Name: "s"}}},
+			{EventId: "e2", Sequence: 2, Payload: &vttv1.Envelope_SceneCreated{
+				SceneCreated: &vttv1.SceneCreated{SceneId: "scn-1", Name: "H", GridWidth: 4, GridHeight: 4}}},
+		}
+		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			env := events[sent]
+			sent++
+			broadcast(world, env, "dm", "player")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: env.Sequence}, nil
+		}
+
+		sc := &harness.Scenario{
+			Name:         "reconnect-cursor",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: []byte(`{"createScene":{"sceneId":"scn-1","name":"H","gridWidth":4,"gridHeight":4}}`),
+					Expect: &harness.Expect{OK: true}},
+				// after=1 names e1, which player already saw: only e2 may replay.
+				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 1}},
+			},
+		}
+
+		// A correct server: replays strictly what follows the cursor.
+		dial := func(name string, after int64) (harness.Conn, error) {
+			if name == "player" && after > 0 {
+				fresh := newFakeConn("player-redialled")
+				for _, env := range events[:sent] {
+					if env.Sequence > after {
+						fresh.trySend(env)
+					}
+				}
+				world["player"] = fresh
+				return fresh, nil
+			}
+			return world[name], nil
+		}
+
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if !rep.Steps[2].Pass {
+			t.Fatalf("a server replaying exactly the events after the cursor must PASS; "+
+				"detail %q", rep.Steps[2].Detail)
+		}
+	})
+}
+
+// TestUnresolvedPlaceholderIsNamedExactly pins the arithmetic in
+// `raw[idx+len(participantIDPlaceholderPrefix):]` (engine.go).
+//
+// The error exists to tell an author which participant id is missing. Mutated
+// to `idx - len(...)`, the slice starts before the placeholder and the message
+// names something like `"a":"{{id:alice` — still an error, still mentioning
+// the step, so a test asserting only "an error occurred" passes while the one
+// piece of information the message exists to carry is corrupted.
+func TestUnresolvedPlaceholderIsNamedExactly(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := &harness.Scenario{
+			Name:         "unresolved",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"addActor":{"actor":{"actorId":"a","controllerId":"{{id:alice}}"}}}`),
+					Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err == nil {
+			t.Fatal("an unresolved {{id:...}} must be a hard error, not dispatched literally")
+		}
+		if !strings.Contains(err.Error(), `participant "alice"`) {
+			t.Errorf("the error must name the participant exactly — that is the only thing it "+
+				"exists to tell the author — got %v", err)
+		}
+	})
+}
+
+// TestPlaceholderAtOffsetZeroIsStillDetected pins `idx >= 0` (engine.go).
+//
+// Mutated to `idx > 0`, a placeholder at the very start of the command slips
+// through and the literal bytes `{{id:...}}` are dispatched as if they were
+// real command data. Every realistic command is JSON and starts with `{`, so
+// the placeholder is never at offset 0 in practice — which is exactly why
+// nothing covered it, and exactly why the boundary needs pinning rather than
+// assuming.
+func TestPlaceholderAtOffsetZeroIsStillDetected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := &harness.Scenario{
+			Name:         "offset-zero",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{{id:ghost}}`), Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err == nil {
+			t.Fatal("a placeholder at offset 0 must still be caught; resolution is a byte scan " +
+				"that runs before any JSON parsing, so offset 0 is reachable")
+		}
+		if !strings.Contains(err.Error(), `participant "ghost"`) {
+			t.Errorf("error should name the participant, got %v", err)
+		}
+	})
+}
+
+// TestEmptyPlaceholderNameIsReportedAsEmpty pins `end >= 0` (engine.go).
+//
+// `{{id:}}` puts the closing delimiter immediately after the prefix, so the
+// suffix is found at index 0. Mutated to `end > 0`, that lookup is treated as
+// "no closing delimiter" and the reported name becomes the whole remainder of
+// the command — turning a precise "you left the name blank" into a message
+// quoting a slab of JSON.
+func TestEmptyPlaceholderNameIsReportedAsEmpty(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := &harness.Scenario{
+			Name:         "empty-name",
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: []byte(`{"addActor":{"actor":{"controllerId":"{{id:}}"}}}`),
+					Expect: &harness.Expect{OK: true}},
+			},
+		}
+		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err == nil {
+			t.Fatal("{{id:}} is unresolvable and must error")
+		}
+		if !strings.Contains(err.Error(), `participant ""`) {
+			t.Errorf("an empty name must be reported AS empty, not as the rest of the "+
+				"command, got %v", err)
+		}
+	})
+}
+
+// TestSoakLoneDenialLeakDoesNotClaimARange pins `len(pending) > 1` in soak.go
+// — the twin of the engine-side mutant killed alongside it.
+//
+// Mutated to `>= 1`, a leak from a SINGLE outstanding denial is reported as
+// "one of the denied actions N-N produced it", hedging about an attribution
+// that is in fact exact. The soak's existing leak test has TWO denials
+// outstanding, where the clause is correct and the mutant is indistinguishable
+// from the original; only a lone denial separates them.
+//
+// Seed 2 puts a lone denial at action 50 with an accepted action next; the
+// fake leaks on that denial only (ordinal 0).
+func TestSoakLoneDenialLeakDoesNotClaimARange(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			seed          = 2
+			events        = 60
+			leakOnOrdinal = 0 // the lone denial at action 50
+		)
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.leakOnDenial = func(ordinal int) bool { return ordinal == leakOnOrdinal }
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: seed, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if w.leaked != 1 {
+			t.Fatalf("fixture broke: leaked %d times, want exactly 1 — reseed via the probe", w.leaked)
+		}
+		if rep.Pass {
+			t.Fatal("a denied action broadcast to every participant; the soak must fail")
+		}
+		if strings.Contains(log.String(), "one of the denied actions") {
+			t.Errorf("one outstanding denial pins the leak exactly; the report must not hedge "+
+				"with a range. Log:\n%s", log.String())
+		}
+	})
+}

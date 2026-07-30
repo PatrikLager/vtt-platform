@@ -107,21 +107,32 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    Re-measure before acting on the split — the Lived/Not-covered boundary has
    been seen to shift by one between runs and trees; the total does not.
 
-   **Progress, 2026-07-30 (`032894b`): 29 -> 24 survivors**, 163 killed. The
-   five killed were the deferred progress-print (`limit := i + 1`), the
-   leak-report range disclosure (`len(pending) > 1`), the two `RunSoak` config
-   guards, and scenario.go's report counters. Remaining, grouped so the next
-   pass is not a fresh triage:
+   **Progress, 2026-07-30: 29 -> 18 survivors**, 170 killed, efficacy 84.5% ->
+   90.4%. Killed across two passes: the deferred progress-print
+   (`limit := i + 1`), both range-disclosure twins (`len(pending) > 1` in
+   engine.go AND soak.go), the two `RunSoak` config guards, scenario.go's
+   report counters, the reconnect cursor boundary (`env.Sequence > after` —
+   at `>=` the harness fails servers for correctly replaying only what
+   follows the cursor), and the whole `{{id:...}}` placeholder error path
+   (offset-zero detection, the slice arithmetic that names the participant,
+   and the empty-name case).
+
+   Remaining, grouped so the next pass is not a fresh triage:
 
    | Group | Sites | Nature |
    |---|---|---|
-   | Placeholder parse error path | `engine.go:102,103,105` (4) | `{{id:` with no closing `}}` is untested |
-   | Reconnect catch-up split | `engine.go:550` | `env.Sequence > after` boundary — highest value left |
-   | Soak range disclosure | `soak.go:376` (2) | twin of the killed `engine.go:377`; needs a single-denial soak fixture |
    | Guards on empty input | `engine.go:244,256,339` | probably unreachable — verify against scenario validation before adjudicating |
+   | Request-id defaulting | `engine.go:440` | `cmd.RequestId == ""` |
+   | Probe detail formatting | `engine.go:737` | `detail == ""` |
    | Soak cadence / eligibility | `soak.go:271,343,401,691` | checkpoint timing, `canPlaceToken` |
-   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip, id counters |
+   | Generator internals | `soak.go:736,743,761,795`, `scenario.go:286,292` | RNG coin flip, id counters — observable only via the exact ids emitted |
    | Poll interval | `soak.go:611` | `time.Sleep(5ms)` — the likeliest genuine equivalent |
+
+   **`client.go:339` is a FLAKY mutant.** It appeared in the third run having
+   been absent from the first two, with no test change touching it. That
+   package's tests drive a real WebSocket server and cannot be bubbled, so
+   their timing varies. Do not adjudicate it from a single run; re-measure
+   before deciding whether it is a real gap.
 
    A caution earned twice on this branch: the first test written for the
    progress-print mutant did NOT kill it, because the mutation changes only
