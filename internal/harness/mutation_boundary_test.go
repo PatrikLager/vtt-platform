@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
@@ -609,6 +610,177 @@ func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
 			if high < 1 {
 				t.Errorf("%s ids never exceeded %d", kind.prefix, high)
 			}
+		}
+	})
+}
+
+// TestSoakSurvivesShortRunsAcrossSeeds pins `canPlaceToken`'s
+// `len(m.scenes) > 0 && len(m.actors) > 0` (soak.go:691).
+//
+// Mutated to `>= 0`, either half is always true and planPlaceToken runs with
+// an empty pool: `m.scenes[rng.Intn(len(m.scenes))]` calls rng.Intn(0), which
+// PANICS. The committed soak tests all run long enough that scenes and actors
+// exist by the time placeToken is drawn, so none of them ever evaluates the
+// guard in the state it exists to protect.
+//
+// Short runs across many seeds is what reaches it: with only a handful of
+// actions the generator is repeatedly asked to act before the model has
+// anything to act on.
+func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
+	// 321 is not decoration. Both halves of the guard need a state where the
+	// OTHER half is already satisfied, and those states are rare: reaching
+	// "a scene exists but no actor does" needs a createScene draw (p=0.05)
+	// followed by a placeToken draw (p=0.15) with no intervening draw, because
+	// planStep's catch-all fallback is planAddActor and almost every
+	// unproductive draw therefore creates an actor. A 9000-run sweep with the
+	// actors-side mutation applied found seed 321 at Events=2 as the first
+	// hit; seeds 1-24 alone leave that half unpinned. Do not trim this list
+	// without re-running that sweep.
+	seeds := []int64{321}
+	for s := int64(1); s <= 24; s++ {
+		seeds = append(seeds, s)
+	}
+	for _, seed := range seeds {
+		synctest.Test(t, func(t *testing.T) {
+			ids := soakTestIDs()
+			w := newSoakWorld(ids)
+			events := 4
+			if seed == 321 {
+				events = 2 // the length at which 321 reaches the actors-side guard
+			}
+			rep, err := harness.RunSoak(context.Background(),
+				harness.SoakConfig{Seed: seed, Events: events, CheckEvery: 1000, IDs: ids}, w.dial, io.Discard)
+			if err != nil {
+				t.Fatalf("seed %d: RunSoak: %v", seed, err)
+			}
+			if !rep.Pass {
+				t.Fatalf("seed %d: a short soak must still pass: %+v", seed, rep)
+			}
+		})
+	}
+}
+
+// TestSoakIssuerChoiceIsPinnedForASeed pins `rng.Intn(2) == 0` in
+// pickDMOrAgent (soak.go:736).
+//
+// Mutated to `!=`, dm and agent simply swap. Every existing assertion
+// survives that: the same-seed determinism tests compare two runs that are
+// BOTH mutated, the action-mix ratios are unchanged, and both issuers remain
+// authorized for the commands in question. The only observable is which
+// participant issued which action for a given seed — and that IS a contract
+// here, because the soak's value depends on a seed reproducing a run exactly
+// (the pinned seed-1 counts in the docs rest on it).
+//
+// So this is a golden: the issuer sequence for the first lifecycle commands
+// of a fixed seed. It is deliberately narrow — the first four — so a genuine
+// generator change produces a small, readable diff rather than a wall.
+func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		if _, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 7, Events: 40, CheckEvery: 1000, IDs: ids}, w.dial, io.Discard); err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+
+		if len(w.dispatchIssuers) < 6 {
+			t.Fatalf("seed 7 dispatched only %d commands; the golden needs at least 6",
+				len(w.dispatchIssuers))
+		}
+		issuers := w.dispatchIssuers
+		got := strings.Join(issuers[:6], ",")
+		const want = "dm,agent,dm,dm,dm,agent"
+		if got != want {
+			t.Errorf("issuer sequence for seed 7 = %q, want %q — a seed must reproduce a run "+
+				"exactly, issuers included", got, want)
+		}
+	})
+}
+
+// TestSoakSlowBroadcastIsNotMistakenForALeak pins the
+// `if lastAcceptedSeq > 0 { waitAllCaughtUp(...) }` guard before a denial's
+// snapshot (soak.go:271).
+//
+// The guard's job, per its own comment, is to make sure every participant has
+// caught up to the last ACCEPTED sequence before the "before" snapshot is
+// taken. Without it the snapshot can be taken while a legitimate broadcast is
+// still in flight; that envelope then lands after the snapshot with a
+// sequence BELOW the next accepted event's, which is precisely leakedBelow's
+// definition of a leak. The soak would report a broadcast the server never
+// wrongly made — a false accusation, on a passing server.
+//
+// Nothing caught the guard's removal because with an inline fan-out the drain
+// almost always wins the race. Delaying the accepted broadcast makes the
+// ordering deterministic: a correct run waits for it, a guardless one does
+// not and cries leak.
+func TestSoakSlowBroadcastIsNotMistakenForALeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		// Long enough to land well after SendCommand returns; free under the
+		// fake clock, which advances only once everything is durably blocked.
+		w.slowBroadcast = 50 * time.Millisecond
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 22, Events: 60, CheckEvery: 1000, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		w.bcWG.Wait()
+
+		if !rep.Pass {
+			t.Fatalf("no denied command broadcast anything here; a merely SLOW fan-out must "+
+				"not be reported as a leak. Log:\n%s", log.String())
+		}
+		if strings.Contains(log.String(), "unexpected broadcast") {
+			t.Errorf("a legitimate late broadcast was reported as a leak:\n%s", log.String())
+		}
+	})
+}
+
+// TestSoakWithNoAcceptedActionsDoesNotWaitForSequenceZero pins
+// `waitForSeq > 0` in runSoakCheckpoint (soak.go:401).
+//
+// I nearly adjudicated this one equivalent, on the argument that a soak
+// always accepts its first action so waitForSeq is never 0. That argument is
+// wrong: it describes the GENERATOR, not the server. A server that rejects
+// everything leaves rep.Accepted at 0, so the final checkpoint — which runs
+// unconditionally — sees waitForSeq == 0.
+//
+// At `>= 0` the checkpoint then calls waitFor(observer, 0, observeTimeout),
+// and waitFor does NOT short-circuit on 0: it scans for an envelope with
+// Sequence == 0, sequences start at 1, so it spins to the deadline and
+// reports "never caught up to sequence 0" — a fabricated second failure
+// stacked on an already-failing run, pointing at the wrong thing.
+func TestSoakWithNoAcceptedActionsDoesNotWaitForSequenceZero(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.denyEverything = true
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 4, Events: 3, CheckEvery: 1000, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("every command was denied; the soak must fail")
+		}
+		if rep.Accepted != 0 {
+			t.Fatalf("fixture broke: Accepted = %d, want 0", rep.Accepted)
+		}
+		// Also pins `rep.Denied++` on the unexpected-denial path: every one of
+		// the three actions was rejected, so all three must be counted. That
+		// counter is the only record of how badly a run went, and nothing
+		// asserted it before this fixture existed to drive the path at all.
+		if rep.Denied != 3 {
+			t.Errorf("Denied = %d, want 3 — every rejected action must be counted", rep.Denied)
+		}
+		if strings.Contains(log.String(), "caught up to sequence 0") {
+			t.Errorf("with nothing accepted there is no sequence to catch up to; the checkpoint "+
+				"must skip the wait rather than invent a failure:\n%s", log.String())
 		}
 	})
 }
