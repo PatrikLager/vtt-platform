@@ -1,0 +1,43 @@
+{
+  "Actors": {
+    "act-hero": {
+      "actor_id": "act-hero",
+      "name": "Lera",
+      "controller_id": "p-player"
+    }
+  },
+  "Conditions": {},
+  "Notes": {
+    "kobold-den": {
+      "Title": "Kobold Den (cleared)",
+      "Text": "The tunnel is empty now; the kobolds fled west.",
+      "UpdatedSeq": 11
+    }
+  },
+  "Scenes": {
+    "scn-table": {
+      "ID": "scn-table",
+      "Name": "The Rusty Flagon",
+      "GridWidth": 10,
+      "GridHeight": 10
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Story Table",
+      "StartSeq": 1,
+      "EndSeq": 14
+    }
+  ],
+  "Tokens": {
+    "tok-hero": {
+      "ID": "tok-hero",
+      "SceneID": "scn-table",
+      "ActorID": "act-hero",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 14
+}

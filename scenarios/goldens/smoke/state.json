@@ -1,0 +1,36 @@
+{
+  "Actors": {
+    "act-smoke": {
+      "actor_id": "act-smoke",
+      "name": "Smoke Actor"
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-smoke": {
+      "ID": "scn-smoke",
+      "Name": "Smoke Scene",
+      "GridWidth": 5,
+      "GridHeight": 5
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Smoke Session",
+      "StartSeq": 1,
+      "EndSeq": 6
+    }
+  ],
+  "Tokens": {
+    "tok-smoke": {
+      "ID": "tok-smoke",
+      "SceneID": "scn-smoke",
+      "ActorID": "act-smoke",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 6
+}
