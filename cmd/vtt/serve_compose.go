@@ -112,7 +112,16 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 			_ = c.Close()   // best-effort; the compose error below is what matters
 			return nil, nil, fmt.Errorf("vtt serve: load adventures %s: %w", adventuresDir, err)
 		}
-		gw = gw.WithAdventures(advs)
+		// Guides are read HERE, at boot, not per request: cmd/vtt owns the
+		// filesystem (ADR-008), and an unreadable guide should fail loudly at
+		// startup rather than becoming a 500 in the middle of a session.
+		guides, err := loadAdventureGuides(advs)
+		if err != nil {
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
+			return nil, nil, fmt.Errorf("vtt serve: load adventure guides %s: %w", adventuresDir, err)
+		}
+		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
 	}
 
 	srv := &http.Server{

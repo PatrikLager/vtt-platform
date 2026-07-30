@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -231,4 +233,70 @@ func readCommandResult(conn *websocket.Conn, timeout time.Duration) (*vttv1.Comm
 		}
 	}
 	return nil, errors.New("no CommandResult within 10 frames")
+}
+
+// TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide covers the boot
+// path added with the metadata endpoints (T3).
+//
+// Guides are read at BOOT rather than per request, deliberately: cmd/vtt owns
+// the filesystem (ADR-008), and reading one lazily would turn a missing file
+// into a 500 in the middle of a session instead of a refusal to start. This
+// pins that posture — adventure.Load only RECORDS guide.md's path and never
+// opens it, so without this step a missing guide would go unnoticed until a
+// DM asked for it mid-game.
+func TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide(t *testing.T) {
+	advRoot := t.TempDir()
+	dst := filepath.Join(advRoot, "goblin-ambush")
+	if err := os.CopyFS(dst, os.DirFS(filepath.Join("..", "..", "adventures", "goblin-ambush"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dst, "guide.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	rulesetDir := filepath.Join("..", "..", "rulesets", "dnd45e-minimal")
+
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, advRoot)
+	if err == nil {
+		if closeFn != nil {
+			_ = closeFn()
+		}
+		_ = srv
+		t.Fatal("composeServer succeeded with a missing adventure guide; boot must fail loudly " +
+			"rather than serving an adventure whose guide cannot be read")
+	}
+	if !strings.Contains(err.Error(), "guide") {
+		t.Errorf("error should name the guide as the cause, got: %v", err)
+	}
+}
+
+// TestComposeServerLoadsAdventureGuidesAtBoot is the happy path's other half:
+// a well-formed adventures dir composes, which is what makes the failure
+// above attributable to the missing guide rather than to the fixture.
+func TestComposeServerLoadsAdventureGuidesAtBoot(t *testing.T) {
+	// A dir holding ONLY goblin-ambush. The committed adventures/ directory
+	// cannot be served wholesale: cellar-rats declares the tavern-brawl
+	// ruleset and goblin-ambush declares dnd45e-minimal, and a server loads
+	// exactly one ruleset, so pointing --adventures at the whole directory is
+	// a boot error by design rather than a fixture quirk.
+	advRoot := t.TempDir()
+	if err := os.CopyFS(filepath.Join(advRoot, "goblin-ambush"),
+		os.DirFS(filepath.Join("..", "..", "adventures", "goblin-ambush"))); err != nil {
+		t.Fatal(err)
+	}
+
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	srv, closeFn, err := composeServer(
+		campaignPath, "127.0.0.1:0",
+		filepath.Join("..", "..", "rulesets", "dnd45e-minimal"),
+		advRoot,
+	)
+	if err != nil {
+		t.Fatalf("composeServer with the committed adventures dir: %v", err)
+	}
+	defer func() { _ = closeFn() }()
+	if srv == nil {
+		t.Fatal("composeServer returned a nil server")
+	}
 }

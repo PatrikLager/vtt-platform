@@ -86,6 +86,12 @@ type Server struct {
 	// startup, not at the table)". Keyed by the adventure's own manifest id
 	// (adventure.Adventure.ID), not its directory name.
 	adventures map[string]*adventure.Adventure
+
+	// adventureGuides is the markdown served by /api/adventures/{id}/guide,
+	// keyed by adventure id. Set via WithAdventureGuides, boot time only.
+	// Held separately from adventures because the gateway does no file I/O:
+	// cmd/vtt reads the guides and hands them over (ADR-008).
+	adventureGuides map[string]string
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -129,6 +135,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealthz)
 	mux.HandleFunc("/ws", s.handleWS)
+	// Read-only metadata (metadata.go). Method-qualified patterns, so a POST
+	// to a read endpoint is a clean 405 rather than a silent success.
+	mux.HandleFunc("GET /api/ruleset", s.handleRuleset)
+	mux.HandleFunc("GET /api/ruleset/guide", s.handleRulesetGuide)
+	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
+	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 	return mux
 }
 
