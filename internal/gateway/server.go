@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"sync/atomic"
@@ -92,6 +93,11 @@ type Server struct {
 	// Held separately from adventures because the gateway does no file I/O:
 	// cmd/vtt reads the guides and hands them over (ADR-008).
 	adventureGuides map[string]string
+
+	// static is the built web client, served at / when non-nil. Optional:
+	// `vtt serve` without a bundle still serves the API, and a browser gets
+	// an honest 404 rather than a panic. Set via WithStatic, boot time only.
+	static fs.FS
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -114,6 +120,19 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 func (s *Server) WithRuleset(rs *rules.Ruleset) *Server {
 	s.ruleset = rs
 	s.roller = rules.NewCryptoRoller()
+	return s
+}
+
+// WithStatic serves fsys (the built web client) at /. Optional — a server
+// without it is API-only, which is what `vtt serve` is before the client is
+// built and what the harness's own throwaway servers always are.
+//
+// Takes an fs.FS rather than a directory path because the bundle is EMBEDDED
+// in the binary (cmd/vtt/embed.go): go:embed cannot cross package
+// directories, so cmd/vtt owns the embed and hands the FS over, the same
+// division of labour adventure guides already use.
+func (s *Server) WithStatic(fsys fs.FS) *Server {
+	s.static = fsys
 	return s
 }
 
@@ -141,6 +160,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ruleset/guide", s.handleRulesetGuide)
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
+
+	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
+	// the most specific pattern, so the explicit routes above always win — a
+	// naive catch-all registered first would serve index.html to the client's
+	// own /api fetches, which then fail to parse as JSON with an error that
+	// says nothing about routing.
+	//
+	// Unauthenticated on purpose: the browser must load the app before it has
+	// anywhere to type a token. What is public here is the PROGRAM; every
+	// route it then calls is authenticated.
+	if s.static != nil {
+		mux.Handle("/", http.FileServerFS(s.static))
+	}
 	return mux
 }
 
