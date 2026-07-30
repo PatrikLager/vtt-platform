@@ -45,8 +45,8 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	mint := func(name string, role identity.Role) string {
-		tok, _, err := ids.CreateInvite(name, role, nil)
+	mint := func(name string, role identity.Role, controls ...string) string {
+		tok, _, err := ids.CreateInvite(name, role, controls)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -58,7 +58,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 		ids:            ids,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer),
+		playerToken:    mint("Lera", identity.RolePlayer, "act-lera"),
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
@@ -436,5 +436,62 @@ func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 			t.Errorf("conditions not sorted by id: %+v", got.Conditions)
 			break
 		}
+	}
+}
+
+// TestMetadataMeIdentifiesTheCaller pins /api/me, which T7's player UI cannot
+// work without: "which actors do I control" is an equality check against
+// participantId, and the role decides which panels exist at all. Inferring
+// either from the event stream would be guesswork — a spectator who has
+// caused no events looks exactly like a player who has not acted yet.
+func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
+	f := newMetaFixture(t, true)
+
+	for _, tc := range []struct {
+		role  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		code, body := f.get("/api/me", tc.token)
+		if code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", tc.role, code)
+		}
+		var got struct {
+			ParticipantID string   `json:"participantId"`
+			Role          string   `json:"role"`
+			Controls      []string `json:"controls"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("%s: decode: %v (body %s)", tc.role, err, body)
+		}
+		if got.Role != tc.role {
+			t.Errorf("role = %q, want %q", got.Role, tc.role)
+		}
+		if got.ParticipantID == "" {
+			t.Errorf("%s: participantId is empty; the client cannot match controller_id without it", tc.role)
+		}
+		if got.Controls == nil {
+			t.Errorf("%s: controls must be [] and never null — the client iterates it", tc.role)
+		}
+		// The player controls an actor, and that list must arrive INTACT.
+		// Nothing exercised a non-empty Controls until a surviving mutant
+		// showed that replacing it with an empty slice changed no test's
+		// outcome — which would have shown a player as controlling nothing
+		// and hidden their own actor from them.
+		if tc.role == "player" {
+			if len(got.Controls) != 1 || got.Controls[0] != "act-lera" {
+				t.Errorf("player controls = %v, want [act-lera]", got.Controls)
+			}
+		} else if len(got.Controls) != 0 {
+			t.Errorf("%s: controls = %v, want empty", tc.role, got.Controls)
+		}
+	}
+
+	if code, _ := f.get("/api/me", "garbage"); code != http.StatusUnauthorized {
+		t.Errorf("/api/me with a bad token: status = %d, want 401", code)
 	}
 }

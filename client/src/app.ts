@@ -13,6 +13,9 @@ import { Auth } from "./auth";
 import { Session } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
+import { renderPlayerPanel, moveCommandFor, type PlayerUIState } from "./view/player";
+import { fetchMe, fetchRuleset, type Ability, type Me } from "./metadata";
+import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 function gatewayURL(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -35,6 +38,19 @@ export function boot(root: HTMLElement): Session | null {
   const session = new Session(gatewayURL(), token);
   let status = "connecting";
   let failure = "";
+  let me: Me | null = null;
+  let abilities: Ability[] = [];
+  let toast = "";
+  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "" };
+
+  const act = (cmd: ClientCommand) => {
+    void session.send(cmd).then((res) => {
+      // The result is shown verbatim on failure. A player who is told "not
+      // authorized" can act on that; a silent no-op looks like a broken UI.
+      toast = res.ok ? "" : `refused: ${res.error}`;
+      paint();
+    });
+  };
 
   const paint = () => {
     if (failure !== "") {
@@ -48,7 +64,17 @@ export function boot(root: HTMLElement): Session | null {
       root.appendChild(p);
       return;
     }
-    renderSpectator(root, session.state, [...session.events], status);
+    const canAct = me !== null && (me.role === "player" || me.role === "dm");
+    renderSpectator(root, session.state, [...session.events], status, {
+      panel: canAct ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint) : undefined,
+      onCell: canAct
+        ? (cell) => {
+            const cmd = moveCommandFor(session.state, me!, ui, cell);
+            if (cmd) act(cmd);
+          }
+        : undefined,
+      toast: toast || undefined,
+    });
   };
 
   session.onStatus((s: WireStatus) => {
@@ -62,6 +88,25 @@ export function boot(root: HTMLElement): Session | null {
   session.onChange(paint);
 
   paint();
+
+  // Identity and the ability list come from the HTTP side; both are needed
+  // before the player panel can render anything useful, and neither blocks
+  // the board from appearing.
+  void fetchMe(location.origin, token)
+    .then((m) => {
+      me = m;
+      paint();
+      return fetchRuleset(location.origin, token);
+    })
+    .then((rs) => {
+      abilities = rs.abilities;
+      paint();
+    })
+    .catch(() => {
+      // Metadata being unavailable degrades the client to spectator-shaped:
+      // the board and story still work, which is better than a blank page.
+    });
+
   void session.start();
   return session;
 }

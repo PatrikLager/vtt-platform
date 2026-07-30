@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide } from "../src/metadata";
+import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide, fetchMe } from "../src/metadata";
 
 function fakeAPI(routes: Record<string, { status?: number; body: unknown }>) {
   const seenAuth: string[] = [];
@@ -87,6 +87,20 @@ test("an unauthorized response is surfaced, not silently empty", async () => {
   const api = fakeAPI({ "/api/ruleset": { status: 401, body: {} } });
   try {
     await expect(fetchRuleset(api.base, "bad")).rejects.toThrow(/unauthorized/i);
+  } finally {
+    api.stop();
+  }
+});
+
+test("fetchMe reports the caller's role and controls", async () => {
+  const api = fakeAPI({
+    "/api/me": { body: { participantId: "p-1", name: "Lera", role: "player", controls: ["a1"] } },
+  });
+  try {
+    const me = await fetchMe(api.base, "t");
+    expect(me.role).toBe("player");
+    expect(me.participantId).toBe("p-1");
+    expect(me.controls).toEqual(["a1"]);
   } finally {
     api.stop();
   }
