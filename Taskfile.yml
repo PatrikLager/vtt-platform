@@ -112,6 +112,19 @@ tasks:
     cmds:
       - gitleaks git --no-banner --redact -l error .
 
+  setup:
+    desc: >
+      One-time setup for a fresh clone: JS dependencies and git hooks.
+      Both are invisible when missing, which is the problem. `bun test` runs
+      inside `task check` and needs node_modules (gitignored, so a clone has
+      none) -- CI's very first run failed on exactly this, after the gate had
+      been green locally for weeks against a directory that happened to
+      already exist. Hooks are worse: an unhooked clone looks identical from
+      the inside and simply never enforces anything.
+    cmds:
+      - bun install --frozen-lockfile
+      - lefthook install
+
   check:fast:
     desc: >
       Tier 1 only, plus vet and lint -- the pre-commit / inner-loop gate.

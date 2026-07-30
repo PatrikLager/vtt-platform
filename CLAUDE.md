@@ -19,8 +19,10 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    tiered by what they ARE, not by runtime: tier 1 unit/area, 2 cross-layer,
    3 external, 4 whole product (`task check`). A slow unit test stays in
    tier 1. See Taskfile.yml's tier comment.
-   Git hooks enforce the first two tiers automatically, but ONLY after
-   `lefthook install` has been run once in the clone (.lefthook.yml):
+   Run `task setup` once per clone (JS deps + git hooks) — `task check`
+   runs `bun test`, and node_modules is gitignored, so a fresh clone fails
+   the gate until it does. Hooks enforce the first two tiers, but ONLY
+   after that install (.lefthook.yml):
    pre-commit runs tier 1 plus lint/vet/arch/vocabulary/secrets in ~7s,
    pre-push runs tiers 2-3 and the contract gates in ~40s. CI runs
    `task check` whole. An unhooked clone is not obvious from the inside —
