@@ -14,3 +14,5 @@ tokens.json
 # but a local .mcp.json is still a personal machine-specific file, not
 # something this repo should track.
 .mcp.json
+client/e2e/.artifacts/
+client/e2e/.report/

@@ -33,7 +33,7 @@ tasks:
       # would execute the whole suite twice per `task check` for no added
       # signal — a test failure in any pass still aborts the gate.
       - task: check:coverage
-      - bun test
+      - bun test client/test contract contract-spike
       - task: client:typecheck
       - task: check:drift
       - task: check:breaking
@@ -82,7 +82,12 @@ tasks:
       # definition. They select through bun, not `go list`, so they have to be
       # named explicitly or an edit to a contract event gets a green tier 1
       # with them never run.
-      - bun test
+      #
+      # Directories are listed EXPLICITLY rather than letting bun glob: its
+      # default matcher also picks up *.spec.ts, which would drag the
+      # Playwright e2e into the unit tier where there is no browser to run
+      # them. e2e is `task e2e`, deliberately outside `check` (spec §6).
+      - bun test client/test contract contract-spike
 
   test:cross:
     desc: Tier 2 -- cross-layer tests. Run when a layer boundary changes.
@@ -98,6 +103,18 @@ tasks:
       # running subprocess suites concurrently while check still serialises
       # them -- a divergence that shows up only as a local flake.
       - go test -count=1 -p 1 ./cmd/vtt/...
+
+  e2e:
+    desc: >
+      Browser end-to-end against the SHIPPED binary, with screenshots.
+      DELIBERATELY NOT part of `task check` (client spec §6): it needs a
+      browser binary, which would make the default loop undownloadable on a
+      fresh clone. Mandatory at review and for the demo instead.
+      First run needs `bunx playwright install chromium`.
+      Screenshots land in client/e2e/.artifacts — they are the remote demo
+      medium, not decoration.
+    cmds:
+      - bunx playwright test
 
   build:client:
     desc: >

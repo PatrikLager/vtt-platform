@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "test": "bun test",
-    "build:client": "vite build --config client/vite.config.ts"
+    "build:client": "vite build --config client/vite.config.ts",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.13.0",
+    "@playwright/test": "1.57.0",
     "@types/bun": "1.3.14",
     "openapi-typescript": "^7.13.0",
     "quicktype": "^26.0.0",

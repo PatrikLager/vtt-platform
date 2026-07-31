@@ -24,17 +24,45 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return n;
 }
 
-function input(placeholder: string, cls = ""): HTMLInputElement {
+// What the DM has typed, kept ACROSS RE-RENDERS.
+//
+// The console is rebuilt whenever an event arrives, and at a live table
+// events arrive constantly — every move, every roll, every line of narration.
+// Without this, each rebuild replaced the inputs with empty ones and the DM
+// lost whatever they were part-way through typing. In practice that made the
+// longer forms impossible to complete at all: a note or a pasted actor takes
+// longer to type than the gap between two events.
+//
+// Found by the e2e (T9), not by any unit test — the bug only exists when a
+// real event stream runs alongside a real form.
+const draft: Record<string, string> = {};
+
+/** Clear a field's remembered text, after the command it fed succeeded. */
+function clearDraft(...fields: string[]): void {
+  for (const f of fields) delete draft[f];
+}
+
+// Every input carries a stable data-field. Placeholders are prose — they get
+// reworded, and they match by substring, so "name" also selects "session
+// name". A test that pins a field by its wording breaks on a copy edit and
+// silently targets the wrong box when two placeholders overlap.
+function input(placeholder: string, field: string, cls = ""): HTMLInputElement {
   const i = document.createElement("input");
   i.placeholder = placeholder;
+  i.dataset["field"] = field;
+  i.value = draft[field] ?? "";
+  i.addEventListener("input", () => {
+    draft[field] = i.value;
+  });
   if (cls) i.className = cls;
   return i;
 }
 
-function button(label: string, onClick: () => void): HTMLButtonElement {
+function button(label: string, onClick: () => void, action?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = "chip";
   b.textContent = label;
+  if (action) b.dataset["action"] = action;
   b.addEventListener("click", onClick);
   return b;
 }
@@ -65,7 +93,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   const openSession = d.st.Sessions.find((s) => s.EndSeq === 0);
 
   // --- session ---
-  const sessionName = input("session name", "wide");
+  const sessionName = input("session name", "session-name", "wide");
   wrap.appendChild(
     group(
       openSession ? `Session: ${openSession.Name}` : "Session",
@@ -77,17 +105,17 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
               const n = sessionName.value.trim();
               if (n === "") return d.notify("a session needs a name");
               d.send(startSession(n));
-              sessionName.value = "";
-            }),
+              clearDraft("session-name");
+            }, "start-session"),
           ]),
     ),
   );
 
   // --- scene ---
-  const sceneId = input("scene id");
-  const sceneName = input("name");
-  const w = input("w");
-  const h = input("h");
+  const sceneId = input("scene id", "scene-id");
+  const sceneName = input("name", "scene-name");
+  const w = input("w", "scene-w");
+  const h = input("h", "scene-h");
   w.className = "tiny";
   h.className = "tiny";
   wrap.appendChild(
@@ -106,9 +134,9 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   );
 
   // --- actor: form, and raw paste ---
-  const actorId = input("actor id");
-  const actorName = input("name");
-  const controller = input("controller participant id (optional)", "wide");
+  const actorId = input("actor id", "actor-id");
+  const actorName = input("name", "actor-name");
+  const controller = input("controller participant id (optional)", "actor-controller", "wide");
   wrap.appendChild(
     group(
       "Add actor",
@@ -116,13 +144,19 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       button("Add", () => {
         if (actorId.value.trim() === "") return d.notify("an actor needs an id");
         d.send(addActor(actorId.value.trim(), actorName.value.trim(), controller.value.trim() || undefined));
-      }),
+        clearDraft("actor-id", "actor-name", "actor-controller");
+      }, "add-actor"),
     ),
   );
 
   const paste = document.createElement("textarea");
   paste.placeholder = '{"actorId":"a1","name":"Lera","attributes":{"brawn":3}}';
   paste.className = "paste";
+  paste.dataset["field"] = "actor-json";
+  paste.value = draft["actor-json"] ?? "";
+  paste.addEventListener("input", () => {
+    draft["actor-json"] = paste.value;
+  });
   wrap.appendChild(
     group(
       "…or paste actor JSON",
@@ -133,17 +167,17 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         // blanking the console would lose what they typed.
         if (result instanceof Error) return d.notify(result.message);
         d.send(result);
-        paste.value = "";
+        clearDraft("actor-json");
       }),
     ),
   );
 
   // --- place token ---
-  const tokId = input("token id");
-  const tokScene = input("scene id");
-  const tokActor = input("actor id");
-  const tx = input("x");
-  const ty = input("y");
+  const tokId = input("token id", "token-id");
+  const tokScene = input("scene id", "token-scene");
+  const tokActor = input("actor id", "token-actor");
+  const tx = input("x", "token-x");
+  const ty = input("y", "token-y");
   tx.className = "tiny";
   ty.className = "tiny";
   wrap.appendChild(
@@ -158,7 +192,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           x: Number(tx.value) || 0,
           y: Number(ty.value) || 0,
         }));
-      }),
+        clearDraft("token-id", "token-scene", "token-actor", "token-x", "token-y");
+      }, "place-token"),
     ),
   );
 
@@ -177,9 +212,9 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   }
 
   // --- notes ---
-  const noteKey = input("key");
-  const noteTitle = input("title");
-  const noteText = input("text", "wide");
+  const noteKey = input("key", "note-key");
+  const noteTitle = input("title", "note-title");
+  const noteText = input("text", "note-text", "wide");
   wrap.appendChild(
     group(
       "Notes",
@@ -210,8 +245,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // --- undo ---
   const last = lastUndoable(d.log);
-  const from = input("from");
-  const to = input("to");
+  const from = input("from", "undo-from");
+  const to = input("to", "undo-to");
   from.className = "tiny";
   to.className = "tiny";
   const undoRow: HTMLElement[] = [];
