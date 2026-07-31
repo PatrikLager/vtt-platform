@@ -30,7 +30,7 @@ client/src/metadata.ts          100.00
 client/src/player.ts            100.00
 client/src/session.ts            97.36
 client/src/undo.ts              100.00
-client/src/view/dm.ts            90.72
+client/src/view/dm.ts            100.00
 client/src/view/feed.ts         100.00
 client/src/view/grid.ts         100.00
 client/src/view/player.ts        91.15
