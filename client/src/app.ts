@@ -14,7 +14,11 @@ import { Session } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
 import { renderPlayerPanel, moveCommandFor, type PlayerUIState } from "./view/player";
-import { fetchMe, fetchRuleset, type Ability, type Me } from "./metadata";
+import {
+  fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide,
+  type Ability, type AdventureMeta, type Me,
+} from "./metadata";
+import { renderDMConsole } from "./view/dm";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 function gatewayURL(): string {
@@ -40,6 +44,7 @@ export function boot(root: HTMLElement): Session | null {
   let failure = "";
   let me: Me | null = null;
   let abilities: Ability[] = [];
+  let adventures: AdventureMeta[] = [];
   let toast = "";
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "" };
 
@@ -64,9 +69,26 @@ export function boot(root: HTMLElement): Session | null {
       root.appendChild(p);
       return;
     }
-    const canAct = me !== null && (me.role === "player" || me.role === "dm");
+    const canAct = me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
+    const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint) : undefined,
+      console: isDM
+        ? renderDMConsole({
+            st: session.state,
+            log: [...session.events],
+            adventures,
+            guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
+            send: act,
+            notify: (m) => {
+              toast = m;
+              paint();
+            },
+            // window.confirm is deliberate for a destructive action: it is
+            // modal and unmissable, which a custom banner is not.
+            confirm: (m) => window.confirm(m),
+          })
+        : undefined,
       onCell: canAct
         ? (cell) => {
             const cmd = moveCommandFor(session.state, me!, ui, cell);
@@ -100,6 +122,11 @@ export function boot(root: HTMLElement): Session | null {
     })
     .then((rs) => {
       abilities = rs.abilities;
+      paint();
+      return fetchAdventures(location.origin, token);
+    })
+    .then((advs) => {
+      adventures = advs;
       paint();
     })
     .catch(() => {

@@ -6,7 +6,7 @@
 // firing commands that will bounce, not to enforce anything.
 
 import type { Actor, State, Token } from "./state";
-import type { Ability } from "./metadata";
+import type { Ability, Me } from "./metadata";
 import type { Point } from "./commands";
 
 /** The actors this participant controls. */
@@ -50,4 +50,31 @@ export function targetableTokens(st: State, actingTokenId: string, ability: Abil
     .filter((t) => t.SceneID === from.SceneID)
     .filter((t) => withinRange({ x: from.X, y: from.Y }, { x: t.X, y: t.Y }, ability.range))
     .sort((a, b) => (a.ID < b.ID ? -1 : a.ID > b.ID ? 1 : 0));
+}
+
+
+/**
+ * The actors a viewer may issue commands as.
+ *
+ * A player is limited to what they control. A DM or agent may act as ANY
+ * actor (client spec §4) — voicing an NPC is the normal case, and filtering
+ * to "controlled" would leave a DM able to run nothing at all, since NPCs
+ * deliberately have no controller.
+ *
+ * A spectator acts as nobody. That is a UI affordance, not a defence: the
+ * server refuses their commands regardless.
+ */
+export function actableActors(st: State, me: Me): Actor[] {
+  const all = Object.values(st.Actors).sort((a, b) =>
+    a.actorId < b.actorId ? -1 : a.actorId > b.actorId ? 1 : 0,
+  );
+  switch (me.role) {
+    case "dm":
+    case "agent":
+      return all;
+    case "player":
+      return controlledActors(st, me.participantId);
+    default:
+      return [];
+  }
 }

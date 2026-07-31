@@ -85,3 +85,104 @@ test("request ids are unique across commands", () => {
   ]);
   expect(ids.size).toBe(3);
 });
+
+// --- DM commands (T8) -------------------------------------------------------
+
+import {
+  startSession, endSession, createScene, addActor, placeToken,
+  loadAdventure, deleteNote, removeCondition, retractEvents, parseActorJSON,
+} from "../src/commands";
+
+test("loadAdventure matches the committed fixture", () => {
+  sameShape(
+    toJson(ClientCommandSchema, loadAdventure("goblin-ambush")) as Record<string, unknown>,
+    fixture("load_adventure_command.json"),
+  );
+});
+
+test("session start carries the name; end carries nothing", () => {
+  const s = toJson(ClientCommandSchema, startSession("Night One")) as Record<string, any>;
+  expect(s["startSession"]["name"]).toBe("Night One");
+  const e = toJson(ClientCommandSchema, endSession()) as Record<string, any>;
+  expect(e).toHaveProperty("endSession");
+});
+
+test("createScene and placeToken carry their geometry", () => {
+  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 10, 8)) as Record<string, any>;
+  expect(sc["createScene"]).toMatchObject({ sceneId: "s1", name: "Hall", gridWidth: 10, gridHeight: 8 });
+
+  const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 2, y: 3 })) as Record<string, any>;
+  expect(pt["placeToken"]).toMatchObject({ tokenId: "t1", sceneId: "s1", actorId: "a1" });
+  expect(pt["placeToken"]["position"]).toMatchObject({ x: 2, y: 3 });
+});
+
+test("a zero position is still sent as a position, not omitted", () => {
+  // protojson omits empty MESSAGES too. Placing at 0,0 must still carry a
+  // position object, or the server sees "no position" and rejects the place.
+  const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 0, y: 0 })) as Record<string, any>;
+  expect(pt["placeToken"]).toHaveProperty("position");
+});
+
+test("retractEvents sends an inclusive range as strings", () => {
+  const r = toJson(ClientCommandSchema, retractEvents(4n, 6n, "undo")) as Record<string, any>;
+  expect(r["retractEvents"]).toMatchObject({ fromSequence: "4", toSequence: "6", reason: "undo" });
+});
+
+test("retracting a single event uses the same sequence for both ends", () => {
+  const r = toJson(ClientCommandSchema, retractEvents(7n, 7n, "undo")) as Record<string, any>;
+  expect(r["retractEvents"]["fromSequence"]).toBe("7");
+  expect(r["retractEvents"]["toSequence"]).toBe("7");
+});
+
+test("removeCondition names the actor and the condition", () => {
+  const c = toJson(ClientCommandSchema, removeCondition("a1", "dazed")) as Record<string, any>;
+  expect(c["removeCondition"]).toMatchObject({ actorId: "a1", conditionId: "dazed" });
+});
+
+test("deleteNote carries the key", () => {
+  const d = toJson(ClientCommandSchema, deleteNote("kobold-den")) as Record<string, any>;
+  expect(d["deleteNote"]["key"]).toBe("kobold-den");
+});
+
+// --- raw-JSON actor paste ---------------------------------------------------
+
+test("a pasted actor is parsed into an addActor command", () => {
+  const cmd = parseActorJSON('{"actorId":"a1","name":"Lera","attributes":{"brawn":3}}');
+  expect(cmd).not.toBeInstanceOf(Error);
+  const json = toJson(ClientCommandSchema, cmd as never) as Record<string, any>;
+  expect(json["addActor"]["actor"]).toMatchObject({ actorId: "a1", name: "Lera" });
+  expect(json["addActor"]["actor"]["attributes"]).toMatchObject({ brawn: 3 });
+});
+
+test("malformed JSON returns an explanatory Error rather than throwing", () => {
+  // The DM is pasting by hand. A thrown exception blanks the console; a
+  // returned error can be shown next to the box they are typing in.
+  const err = parseActorJSON("{not json");
+  expect(err).toBeInstanceOf(Error);
+});
+
+test("valid JSON that is not an actor is rejected before it reaches the wire", () => {
+  // An actor with no id is refused by the server; catching it here tells the
+  // DM which field is wrong instead of surfacing a generic rejection.
+  const err = parseActorJSON('{"name":"No Id"}');
+  expect(err).toBeInstanceOf(Error);
+  expect((err as Error).message).toMatch(/actorId/i);
+});
+
+test("an unknown field in a pasted actor is rejected, not silently dropped", () => {
+  // Silently dropping it would let a DM believe they set something they did
+  // not — the same reason the server's own decoder is strict.
+  const err = parseActorJSON('{"actorId":"a1","hitPoints":10}');
+  expect(err).toBeInstanceOf(Error);
+});
+
+test("addActor from the form omits an empty controller rather than sending \"\"", () => {
+  // An empty controller_id means "DM-run NPC" on the wire. Sending an empty
+  // string explicitly is the same value but a different shape than the
+  // server's fixtures, and shape is what the round-trip tests pin.
+  const npc = toJson(ClientCommandSchema, addActor("a1", "Goblin")) as Record<string, any>;
+  expect(npc["addActor"]["actor"]).not.toHaveProperty("controllerId");
+
+  const pc = toJson(ClientCommandSchema, addActor("a2", "Lera", "p-1")) as Record<string, any>;
+  expect(pc["addActor"]["actor"]["controllerId"]).toBe("p-1");
+});

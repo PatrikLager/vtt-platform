@@ -199,6 +199,8 @@ export interface ViewExtras {
   // that produce the latter.
   /** Player panel, when the role has one. */
   panel?: HTMLElement | undefined;
+  /** DM console, for dm and agent roles only. */
+  console?: HTMLElement | undefined;
   /** Board click handler, when the viewer may act. */
   onCell?: ((c: { x: number; y: number }) => void) | undefined;
   /** Transient message from the last command. */
@@ -225,6 +227,7 @@ export function renderSpectator(
     renderTicker(log),
   ];
   if (extras.panel) nodes.push(extras.panel);
+  if (extras.console) nodes.push(extras.console);
   if (extras.toast) {
     const t = el("div", "toast", extras.toast);
     nodes.push(t);
