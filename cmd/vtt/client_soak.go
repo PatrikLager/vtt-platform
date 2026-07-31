@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -45,9 +45,14 @@ func newClientSoakCmd() *cobra.Command {
 				}
 			}()
 
+			// --json still CAPTURES the human log rather than discarding it,
+			// so a failing run can carry the reason in Report. Discarding it
+			// left CI with "Pass":false and no way to tell a fold-equality
+			// break from a caught-up-in-time timeout.
 			progress := cmd.OutOrStdout()
+			var captured bytes.Buffer
 			if jsonOut {
-				progress = io.Discard
+				progress = &captured
 			}
 			rep, err := harness.RunSoak(cmd.Context(), harness.SoakConfig{
 				Seed: seed, Events: events, CheckEvery: checkEvery, IDs: ids,
@@ -57,6 +62,9 @@ func newClientSoakCmd() *cobra.Command {
 			}
 
 			if jsonOut {
+				if !rep.Pass {
+					rep.Report = captured.String()
+				}
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(rep); err != nil {
 					return fmt.Errorf("vtt client soak: encode report: %w", err)
 				}

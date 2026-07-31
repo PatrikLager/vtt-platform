@@ -16,3 +16,6 @@ tokens.json
 .mcp.json
 client/e2e/.artifacts/
 client/e2e/.report/
+.tscov/
+.stryker-tmp/
+reports/

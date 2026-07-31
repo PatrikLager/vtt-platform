@@ -9,7 +9,9 @@
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.13.0",
+    "@happy-dom/global-registrator": "20.0.11",
     "@playwright/test": "1.57.0",
+    "@stryker-mutator/core": "^9.6.1",
     "@types/bun": "1.3.14",
     "openapi-typescript": "^7.13.0",
     "quicktype": "^26.0.0",

@@ -33,7 +33,11 @@ tasks:
       # would execute the whole suite twice per `task check` for no added
       # signal — a test failure in any pass still aborts the gate.
       - task: check:coverage
-      - bun test client/test contract contract-spike
+      # Same reasoning as check:coverage above: check:ts-coverage runs exactly
+      # `bun test client/test contract contract-spike`, with coverage on, so
+      # running the bare suite here as well would execute it twice for no
+      # added signal. A test failure there still aborts the gate.
+      - task: check:ts-coverage
       - task: client:typecheck
       - task: check:drift
       - task: check:breaking
@@ -191,6 +195,64 @@ tasks:
       # outright).
       - golangci-lint config verify
       - golangci-lint run ./...
+
+  check:ts-mutation:
+    desc: >
+      Mutation testing over the TypeScript client. Gates on ZERO
+      UNADJUDICATED SURVIVORS (tools/ts-mutation-equivalents.txt), not on a
+      mutation-score percentage -- a score is a ratio, and enough newly-killed
+      mutants mask a new survivor.
+
+      This exists because check:ts-coverage cannot see the gap it finds.
+      undo.ts was at 100% line coverage and 78.75% mutation score, and the
+      survivors sat on the `>= from` / `<= to` comparisons -- the inclusive
+      [from,to] range that IS retraction. Every line ran; nothing checked the
+      boundary.
+
+      Stryker has no bun test-runner plugin, so it drives `bun test` as an
+      opaque command and reads the exit code; coverageAnalysis is off because
+      the command runner cannot do per-test filtering. Config is
+      stryker.conf.json -- note ignorePatterns, which excludes a symlinked
+      adventures directory that Stryker's sandbox copy cannot follow.
+
+      DELIBERATELY NOT PART OF `task check` YET, and tools/ts-mutation-scope.md
+      records exactly why with the numbers: the full client measures 63.89%
+      with 602 survivors, and `mutate` currently covers only the one file
+      worked down to zero. Wiring a gate over 1 of 14 files into `check` would
+      make `check` mean less than it does now while looking like it means
+      more. Same judgement, same reason, as internal/harness sitting outside
+      check:mutation on the Go side.
+    cmds:
+      - python3 tools/check_ts_mutation_test.py -q
+      - npx stryker run stryker.conf.json
+      - python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
+
+  check:ts-coverage:
+    desc: >
+      Per-FILE coverage floors for the TypeScript client, enforced. Same
+      ratchet as check:coverage (tools/ts-coverage-thresholds.txt): each file
+      is held to what it already earned, so 85% is the entry requirement for
+      a new file rather than the target everything sinks to.
+
+      The reason this is a separate gate and not a `coverageThreshold` line in
+      bunfig.toml: bun reports coverage ONLY for files a test imported, so an
+      unimported file is ABSENT from the report rather than counted as 0, and
+      leaves the denominator with it. When this gate was written that hid
+      app.ts, view/dm.ts and view/spectator.ts -- 660 lines, 30% of the
+      client -- behind a healthy-looking 89.78%. A single global threshold
+      would have been green over all of it. So the file list comes from the
+      SOURCE TREE and an unmeasured file is an error.
+
+      The checker's own boundary tests run first: it IS the gate, so a bug in
+      it makes every number below it a lie. They found one (a file both
+      EXCLUDED and given a floor passed silently), and the gate's first real
+      run found another (a floor rounded to 2dp landing above the measurement
+      it came from).
+    cmds:
+      # -q: the Go equivalent runs through run_quiet for the same reason —
+      # gate output stays legible, and a failure is what should be loud.
+      - python3 tools/check_ts_coverage_test.py -q
+      - python3 tools/check-ts-coverage.py tools/ts-coverage-thresholds.txt
 
   check:coverage:
     desc: >
@@ -391,14 +453,34 @@ tasks:
     desc: Fail on breaking changes to contract/ vs main
     cmds:
       - |
-        if ! git rev-parse --verify -q main >/dev/null; then
-          echo "check:breaking: no local 'main' ref — fetch main before running this gate" >&2
+        # Resolve main as a LOCAL branch first, then origin/main.
+        #
+        # The fallback is not belt-and-braces, it is the only thing that makes
+        # this gate run on a pull request at all. actions/checkout creates a
+        # local branch only for the ref it checks out: on a push to main that
+        # IS main, but on a PR it is the PR branch, and main exists solely as
+        # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
+        # failed with "no local 'main' ref" on the repo's FIRST pull request,
+        # having passed every previous run — every one of which was a push to
+        # main, where the ref it wanted happened to exist.
+        #
+        # Read that the other way round: until that first PR, the contract
+        # breaking-change gate had never once executed in the situation it was
+        # built for. A breaking change would have been caught only after it
+        # landed on main.
+        REF=""
+        if git rev-parse --verify -q main >/dev/null; then
+          REF=main
+        elif git rev-parse --verify -q origin/main >/dev/null; then
+          REF=origin/main
+        else
+          echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
           exit 1
         fi
-        if git ls-tree -d main:contract >/dev/null 2>&1; then
-          cd contract && go tool buf breaking --against '../.git#branch=main,subdir=contract'
+        if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
+          cd contract && go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
         else
-          echo "check:breaking: contract/ not on main yet; gate activates after first merge"
+          echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
         fi
 
   generate:contract:

@@ -28,7 +28,16 @@ function gatewayURL(): string {
 
 export function boot(root: HTMLElement): Session | null {
   const auth = new Auth(localStorage);
-  const token = auth.get() ?? new URLSearchParams(location.search).get("token");
+  // A token in the URL WINS over a stored one. The other order looks safer
+  // and is not: it made re-invitation impossible, because a player who had
+  // ever connected kept their old identity no matter which link they opened,
+  // with no recovery short of clearing site data.
+  //
+  // The cost is that on a shared machine whoever pastes a link last is who
+  // you are. That is the authority the link already carries — it is a bearer
+  // credential, and anyone holding it can open a private window and be that
+  // identity anyway — and unlike the previous behaviour it is recoverable.
+  const token = new URLSearchParams(location.search).get("token") ?? auth.get();
   if (!token) {
     root.textContent = "No invite token. Open the link your DM sent you.";
     return null;

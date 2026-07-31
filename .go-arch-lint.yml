@@ -8,6 +8,13 @@ allow:
 # match this entry too and go unchecked.
 exclude:
   - contract-spike
+  # Stryker's sandbox is a full COPY of the repo, Go files included. A run
+  # that crashes (or one configured with cleanTempDir: false while debugging)
+  # leaves it on disk, and go-arch-lint then reports every duplicated file as
+  # unattached — 147 notices, and a pre-commit hook rejecting a commit for a
+  # reason nowhere near the change. stryker.conf.json also excludes the Go
+  # tree from the sandbox; this is the backstop for when that is not enough.
+  - .stryker-tmp
 excludeFiles:
   - contract/roundtrip_test\.go$
   # identity is self-only in production code (mayDependOn: [identity]), but
