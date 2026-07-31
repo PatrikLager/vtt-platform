@@ -44,6 +44,11 @@ tasks:
       - task: check:invariants
       - task: check:arch
       - task: check:mutation
+      # Scoped to the files worked to zero unadjudicated survivors, NOT to the
+      # whole client -- tools/ts-mutation-scope.md lists the twelve that are
+      # measured and not yet gated, with counts. Same shape as check:mutation,
+      # which gates 8 Go packages and documents why internal/harness is out.
+      - task: check:ts-mutation
 
   # --- test tiers -----------------------------------------------------------
   #
@@ -215,13 +220,20 @@ tasks:
       stryker.conf.json -- note ignorePatterns, which excludes a symlinked
       adventures directory that Stryker's sandbox copy cannot follow.
 
-      DELIBERATELY NOT PART OF `task check` YET, and tools/ts-mutation-scope.md
-      records exactly why with the numbers: the full client measures 63.89%
-      with 602 survivors, and `mutate` currently covers only the one file
-      worked down to zero. Wiring a gate over 1 of 14 files into `check` would
-      make `check` mean less than it does now while looking like it means
-      more. Same judgement, same reason, as internal/harness sitting outside
-      check:mutation on the Go side.
+      IN `task check`, but scoped: `mutate` covers undo.ts and fold.ts, the
+      two files worked to zero unadjudicated survivors. It was held out while
+      that set was one file; the reason it is in now is that a gate nobody
+      runs protects nothing, and without it those two can regress silently.
+      tools/ts-mutation-scope.md carries the twelve remaining files with their
+      survivor counts, so the narrowness is a published number rather than an
+      impression -- which is the thing that would otherwise make `check` look
+      broader than it is. Adding a file to `mutate` is the last step of
+      working it down, never the first.
+
+      Runtime grows with the gated set: ~1m12s for two files, and the full
+      client measured 4m55s over 1667 mutants. If that becomes the wrong trade
+      for the merge gate, move it to a pre-merge-only task -- do not narrow
+      `mutate` to make it fast, which would weaken the gate to pass it.
     cmds:
       - python3 tools/check_ts_mutation_test.py -q
       - npx stryker run stryker.conf.json

@@ -13,9 +13,20 @@ for this gate existing.
 
 ## Gated
 
-| file | survivors | note |
-|---|---|---|
-| `client/src/undo.ts` | 0 unadjudicated | 17 -> 0 by writing boundary tests; 2 adjudicated equivalent |
+| file | before | after | note |
+|---|---|---|---|
+| `client/src/undo.ts` | 78.75% | 97.50% | 17 survivors -> 0; 2 adjudicated equivalent |
+| `client/src/fold.ts` | 69.51% | 95.41% | 93 survivors -> 0; 14 adjudicated equivalent |
+
+fold.ts is worth reading about before doing the next file, because its 93
+survivors were not 93 different problems. 37 emptied an error MESSAGE and 35
+deleted a GUARD, against a module whose opening line is "parity includes
+REJECTING what Go rejects" — the rejection paths were almost entirely
+unpinned while line coverage read 95.59%. Two suites fixed it:
+client/test/fold-rejections.test.ts drives every guard and asserts its exact
+message, and fold-dump.test.ts drives the omitempty arms of the dump that the
+golden corpus's six scenarios happen not to contain. Expect the same shape
+elsewhere: the untested part is the error path, not the happy path.
 
 ## Measured, not yet gated
 
@@ -27,7 +38,6 @@ unadjudicated survivors before it joins `mutate`.
 | `client/src/view/dm.ts` | 166 |
 | `client/src/view/player.ts` | 89 |
 | `client/src/view/spectator.ts` | 63 |
-| `client/src/fold.ts` | 93 |
 | `client/src/app.ts` | 48 |
 | `client/src/view/feed.ts` | 42 |
 | `client/src/wire.ts` | 22 |

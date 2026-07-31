@@ -39,3 +39,53 @@ client/src/undo.ts 39:26 EqualityOperator
 
 client/src/undo.ts 63:28 EqualityOperator
     `e.sequence > head` -> `>=` when computing the head. Same shape as above: equality makes the assignment a no-op writing head's current value. head starts at 0n, so a sequence of 0 assigns 0n over 0n. Nothing downstream can distinguish them.
+
+# --- client/src/fold.ts -----------------------------------------------------
+#
+# fold.ts went 93 survivors -> 14 by writing the rejection and dump suites
+# (client/test/fold-rejections.test.ts, fold-dump.test.ts). The 14 below are
+# the residue, and they fall into four shapes, none of which any test can
+# observe. Each was checked against the "is there ANY observable?" rule rather
+# than "is the output the same?".
+
+client/src/fold.ts 37:9 ConditionalExpression
+    Deleting `if (env.payload.case === "eventsRetracted") continue;` in pass 2 lets a retraction MARKER reach apply(). apply()'s switch has no case for eventsRetracted, so it falls to `default: return`, and nothing before the switch has a side effect (it computes seq and reads payload). The marker is skipped either way — one by the guard, one by the default arm.
+
+client/src/fold.ts 37:30 StringLiteral
+    Same line, same effect by another route: the case name becomes "", the comparison is false for every envelope, and markers reach apply()'s no-op default arm. A payload-less envelope has case undefined, not "", so it cannot collide with the emptied literal.
+
+client/src/fold.ts 125:48 ArrayDeclaration
+    `st.Conditions[v.actorId] ?? []` -> `?? ["Stryker was here"]` in conditionRemoved. The fallback fires only when the actor has NEVER had a condition (an emptied list is retained as [], which is not nullish). findIndex then compares `c.ID` on a string element — undefined — against the condition id, yielding -1, so the fold throws the same "not present" error it would have thrown. The assignment that would leak the sentinel is after that throw.
+
+client/src/fold.ts 154:19 OptionalChaining
+    `actor.resources?.[v.resource]` -> `actor.resources[v.resource]`. Removing the guard only matters if a stored Actor can have undefined resources. It cannot: line 77 is the only writer to st.Actors and it always goes through copyActor, which builds `resources` as an object literal before returning.
+
+client/src/fold.ts 163:11 EqualityOperator
+    `computed < 0` -> `<= 0` in the resource clamp. The arms differ only at computed === 0, where the mutant assigns 0 over 0.
+
+client/src/fold.ts 164:26 EqualityOperator
+    `computed > res.max` -> `>=`. Differ only at computed === res.max, where the mutant assigns max over max.
+
+client/src/fold.ts 195:10 StringLiteral
+    `case "attackRolled":` -> `case "":`. The case body is a bare `return`, and an attackRolled event whose label no longer matches falls through to `default:`, which is also a bare `return`. A no-op reached two ways.
+
+client/src/fold.ts 196:10 StringLiteral
+    `case "abilityUsed":` -> `case "":`, same no-op-vs-no-op as above.
+
+client/src/fold.ts 197:5 ConditionalExpression
+    Rewrites the `case "adventureLoaded":` clause itself. Every arm involved returns without touching state, so no reordering of them is observable.
+
+client/src/fold.ts 197:10 StringLiteral
+    `case "adventureLoaded":` -> `case "":`, same no-op-vs-no-op as above.
+
+client/src/fold.ts 199:5 ConditionalExpression
+    Rewrites the `default:` clause. Its body is a bare `return`, shared with the three no-effect event kinds above it; nothing distinguishes reaching it from reaching them.
+
+client/src/fold.ts 246:34 EqualityOperator
+    `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".)
+
+client/src/fold.ts 287:7 ConditionalExpression
+    `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 77 is the only writer, and line 75 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true.
+
+client/src/fold.ts 287:21 StringLiteral
+    Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.

@@ -25,7 +25,7 @@
 client/src/app.ts                95.83
 client/src/auth.ts              100.00
 client/src/commands.ts          100.00
-client/src/fold.ts               95.59
+client/src/fold.ts               100.00
 client/src/metadata.ts          100.00
 client/src/player.ts            100.00
 client/src/session.ts            97.36
