@@ -105,3 +105,21 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   background: #3a1f1f; border: 1px solid #6b3535; color: #ffd7d7;
   padding: 8px 14px; border-radius: 6px;
 }
+
+/* DM console */
+.dm { grid-area: dm; }
+#app { grid-template-areas: "status status" "board feed" "player ticker" "dm ticker" "notes ticker"; }
+.dmgroup { margin-bottom: 10px; }
+.dmgroup h3 { font-size: 12px; color: var(--dim); margin: 0 0 4px; font-weight: 600; }
+.dm input, .dm textarea {
+  background: #0d0f13; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 4px 6px; font: inherit; width: 110px;
+}
+.dm input.wide { width: 240px; }
+.dm input.tiny { width: 48px; }
+.dm .paste { width: 100%; min-height: 60px; font-family: ui-monospace, monospace; font-size: 12px; }
+.dm .chip {
+  background: #232830; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit;
+}
+.dm .chip:hover { border-color: var(--accent); }

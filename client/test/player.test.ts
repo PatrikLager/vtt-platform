@@ -141,3 +141,27 @@ test("with no explicit selection the first controlled actor is used", () => {
   const cmd = moveCommandFor(world(), me, { selectedActorId: "", selectedAbilityId: "" }, { x: 1, y: 1 });
   expect(cmd).toBeNull();
 });
+
+// --- who each role may act as ----------------------------------------------
+
+import { actableActors } from "../src/player";
+
+test("a player may act only as actors they control", () => {
+  const ids = actableActors(world(), { ...me, role: "player" }).map((a) => a.actorId);
+  expect(ids).toEqual(["also-mine", "mine"]);
+});
+
+test("a DM may act as ANY actor, including NPCs nobody controls", () => {
+  // Spec §4: "act as ANY actor". A DM voicing a goblin is the normal case,
+  // and filtering to controlled actors would leave them able to run nothing.
+  const ids = actableActors(world(), { ...me, role: "dm" }).map((a) => a.actorId);
+  expect(ids).toEqual(["also-mine", "mine", "npc", "theirs"]);
+});
+
+test("an agent may act as any actor too — it runs the table alongside the DM", () => {
+  expect(actableActors(world(), { ...me, role: "agent" })).toHaveLength(4);
+});
+
+test("a spectator may act as nobody", () => {
+  expect(actableActors(world(), { ...me, role: "spectator" })).toEqual([]);
+});
