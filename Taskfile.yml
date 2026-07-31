@@ -453,14 +453,34 @@ tasks:
     desc: Fail on breaking changes to contract/ vs main
     cmds:
       - |
-        if ! git rev-parse --verify -q main >/dev/null; then
-          echo "check:breaking: no local 'main' ref — fetch main before running this gate" >&2
+        # Resolve main as a LOCAL branch first, then origin/main.
+        #
+        # The fallback is not belt-and-braces, it is the only thing that makes
+        # this gate run on a pull request at all. actions/checkout creates a
+        # local branch only for the ref it checks out: on a push to main that
+        # IS main, but on a PR it is the PR branch, and main exists solely as
+        # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
+        # failed with "no local 'main' ref" on the repo's FIRST pull request,
+        # having passed every previous run — every one of which was a push to
+        # main, where the ref it wanted happened to exist.
+        #
+        # Read that the other way round: until that first PR, the contract
+        # breaking-change gate had never once executed in the situation it was
+        # built for. A breaking change would have been caught only after it
+        # landed on main.
+        REF=""
+        if git rev-parse --verify -q main >/dev/null; then
+          REF=main
+        elif git rev-parse --verify -q origin/main >/dev/null; then
+          REF=origin/main
+        else
+          echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
           exit 1
         fi
-        if git ls-tree -d main:contract >/dev/null 2>&1; then
-          cd contract && go tool buf breaking --against '../.git#branch=main,subdir=contract'
+        if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
+          cd contract && go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
         else
-          echo "check:breaking: contract/ not on main yet; gate activates after first merge"
+          echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
         fi
 
   generate:contract:
