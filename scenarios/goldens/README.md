@@ -46,28 +46,41 @@ drift gate could never have gone green.
 
 ## Coverage
 
-Four scenarios, covering 10 of the 13 command types: sessions, scenes, actors,
-tokens, narration, notes, and retraction.
+Six scenarios, covering **all thirteen** command types.
 
-`adventure-night`, `toy-brawl` and `goblin-fight` are **absent on purpose**.
-They roll dice, and `WithRuleset` hardcodes an unseedable `CryptoRoller`
-(`internal/rules/crypto_roller.go`) whose draws no human can derive in
-advance. Adding them requires a roller seam — a production change that
-contradicts `WithRuleset`'s "never separately configurable at this layer"
-decision — and that is its own reviewed decision, not a test convenience to
-be sneaked in here. Until then this corpus omits `useAbility`,
-`loadAdventure` and `removeCondition`.
+`adventure-night` and `toy-brawl` roll dice, and are here because their event
+streams are shape-STABLE: the same events in the same order every run, with
+only the roll values differing (measured across repeated captures at 208 = 208
+and 178 = 178 lines). The drift gate masks dice-decided fields — `results`,
+`total`, `outcomeSummary`, `delta`, `newValue`, `outcome` — on BOTH sides of
+its comparison, so everything else is still checked: event order, sequences,
+which events are emitted, and every non-dice field. The committed streams keep
+their REAL dice, because the fold gate needs them to reproduce the
+hand-derived state.
 
-## What each scenario is for
+That masking was verified not to have neutered the gate: changing a non-dice
+field fails two scenarios, and suppressing `conditionApplied` fails the one
+that emits it.
 
-- **smoke** — the minimum: one of each core event, one session opened and closed.
-- **denials** — 18 steps, only 4 accepted. Proves rejected commands emit
-  *nothing*: head stays 4 and the session stays open despite two `endSession`
-  attempts.
-- **three-role-exit** — carries the **retraction** case. Seq 9 retracts seq 8,
-  so `tok-ursus` must stay at its placed `(0,0)`, not the `(5,5)` it was moved
-  to. Also the only reconnect coverage.
-- **story-table** — notes and narration. Four narrations leave *no* trace in
-  state by design; `kobold-den` is upserted twice so last-write-wins is
-  visible; `old-rumor` is created then deleted and must be absent rather than
-  empty.
+### goblin-fight is deliberately absent
+
+Not for want of trying. Its stream differs in SHAPE between runs — **519 vs
+507 lines**, measured — because a miss emits fewer events than a hit, and no
+masking of values can make two different event sequences comparable. Including
+it would mean either a permanently-red drift gate or an exemption that hides
+real drift.
+
+It costs nothing in coverage: every command type it uses is already covered by
+`toy-brawl`. Adding it needs a seedable roller at the gateway, which
+contradicts `WithRuleset`'s documented "never separately configurable at this
+layer" and is therefore its own decision, not a test convenience.
+
+## Deriving a dice scenario's golden
+
+The roll values are taken as TESTIMONY — they come from the recorded stream,
+exactly as server-assigned event ids and sequences already do. Everything else
+is derived independently, from the scenario definition and (for
+`adventure-night`) the adventure's own source files. The derivation answers
+"given these rolls, what state must result", which is a human act the machine
+does not do for you.
+

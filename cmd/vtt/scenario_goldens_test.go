@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -45,6 +46,12 @@ func TestScenarioGoldenStreamsHaveNotDrifted(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := captureNormalizedStream(t, name)
+			// Dice-derived values differ on every run, so they are masked on
+			// BOTH sides. Everything else still drifts-checks: event order,
+			// sequences, which events are emitted, and every non-dice field.
+			// The committed stream keeps its REAL dice, because the fold gate
+			// needs them to reproduce the hand-derived state.
+			got, want = maskDice(t, got), maskDice(t, want)
 			if !bytes.Equal(bytes.TrimSpace(got), bytes.TrimSpace(want)) {
 				t.Errorf("recorded stream differs from the committed golden.\n"+
 					"Either the server's emitted events changed (a real regression, or a "+
@@ -166,4 +173,49 @@ func goldenDirs(t *testing.T) []string {
 			"than vacuously pass")
 	}
 	return dirs
+}
+
+// diceFields are the values a roll decides. Masked in the drift comparison
+// only — never in the committed corpus.
+//
+// This is why goblin-fight is NOT in the corpus: a miss emits fewer events
+// than a hit, so its stream differs in SHAPE and no masking of values can
+// make it comparable. Measured at 519 vs 507 lines across two runs.
+// adventure-night and toy-brawl are shape-stable (208 = 208, 178 = 178) —
+// their abilities always resolve the same branch — so masking is sufficient.
+var diceFields = []string{"results", "total", "outcomeSummary", "delta", "newValue", "outcome"}
+
+// maskDice replaces dice-decided values with a constant, recursively.
+func maskDice(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("mask dice: %v", err)
+	}
+	var walk func(any) any
+	walk = func(n any) any {
+		switch x := n.(type) {
+		case map[string]any:
+			for k, val := range x {
+				if slices.Contains(diceFields, k) {
+					x[k] = "<dice>"
+					continue
+				}
+				x[k] = walk(val)
+			}
+			return x
+		case []any:
+			for i := range x {
+				x[i] = walk(x[i])
+			}
+			return x
+		default:
+			return n
+		}
+	}
+	out, err := json.MarshalIndent(walk(v), "", "  ")
+	if err != nil {
+		t.Fatalf("mask dice: %v", err)
+	}
+	return out
 }

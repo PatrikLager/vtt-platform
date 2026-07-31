@@ -1,0 +1,208 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "adventureLoaded": {
+      "adventureId": "goblin-ambush",
+      "name": "Goblin Ambush"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "ravine",
+      "name": "The Ravine Trail",
+      "gridWidth": 32,
+      "gridHeight": 32
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-archer",
+        "name": "Goblin Archer",
+        "attributes": {
+          "ac": 14,
+          "con": 1,
+          "dex": 4,
+          "fort": 11,
+          "max_hp": 6,
+          "ref": 15,
+          "str": 0,
+          "will": 11
+        },
+        "resources": {
+          "hp": {
+            "current": 6,
+            "max": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-cutter",
+        "name": "Goblin Cutter",
+        "attributes": {
+          "ac": 15,
+          "con": 1,
+          "dex": 3,
+          "fort": 12,
+          "max_hp": 8,
+          "ref": 14,
+          "str": 1,
+          "will": 11
+        },
+        "resources": {
+          "hp": {
+            "current": 8,
+            "max": 8
+          }
+        }
+      }
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-fighter",
+        "name": "Human Fighter",
+        "attributes": {
+          "ac": 17,
+          "con": 3,
+          "dex": 2,
+          "fort": 15,
+          "max_hp": 28,
+          "ref": 13,
+          "str": 4,
+          "will": 12
+        },
+        "resources": {
+          "flurry_uses": {
+            "current": 1,
+            "max": 1
+          },
+          "hp": {
+            "current": 28,
+            "max": 28
+          }
+        }
+      }
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-fighter",
+      "sceneId": "ravine",
+      "actorId": "act-fighter",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-cutter",
+      "sceneId": "ravine",
+      "actorId": "act-cutter",
+      "position": {
+        "x": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-archer",
+      "sceneId": "ravine",
+      "actorId": "act-archer",
+      "position": {
+        "x": 5
+      }
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteUpserted": {
+      "key": "ravine-trail-warning",
+      "title": "Trail Warning",
+      "text": "Crude markings are scratched into the rock near the ravine's mouth — a jagged little glyph, repeated three times. A warning, or a boast."
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "narrationAdded": {
+      "text": "The trail narrows into a ravine, stone walls rising steep on either side. Loose scree litters the ground underfoot, and somewhere above, a pebble skitters loose — dislodged by wind, or by something watching from the rocks."
+    }
+  },
+  {
+    "eventId": "evt-11",
+    "sequence": "11",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "abilityUsed": {
+      "actorId": "act-fighter",
+      "abilityId": "rally",
+      "targetIds": [
+        "act-fighter"
+      ],
+      "rolls": [
+        {
+          "expression": "(1d6 + @target.con)",
+          "results": [
+            6
+          ],
+          "total": 9
+        }
+      ],
+      "outcomeSummary": "Rally on act-fighter"
+    }
+  },
+  {
+    "eventId": "evt-12",
+    "sequence": "12",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "resourceChanged": {
+      "actorId": "act-fighter",
+      "resource": "hp",
+      "delta": 9,
+      "newValue": 28,
+      "reason": "ability:rally:effect"
+    }
+  }
+]
