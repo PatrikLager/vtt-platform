@@ -67,26 +67,26 @@ test("a stored token is reused on a later visit, and is the one that dials", () 
   session?.close();
 });
 
-test("a freshly pasted invite is IGNORED while an old token is stored", () => {
-  // KNOWN GAP, pinned deliberately rather than fixed here.
+test("a freshly pasted invite REPLACES a stored token", () => {
+  // Re-invitation has to work. Previously app.ts read
+  // `auth.get() ?? <url token>`, so a stored token won outright and the
+  // pasted one was discarded — never stored, never dialled — leaving a
+  // re-invited player connected as their OLD identity with no way out but
+  // clearing site data.
   //
-  // app.ts:31 is `auth.get() ?? <url token>`, so the stored token wins and
-  // the pasted one is discarded — never stored, never dialled. A re-invited
-  // player therefore stays connected as their OLD identity, and the only way
-  // out is clearing site data.
-  //
-  // The previous version of this test asserted `toBeTruthy()` on the stored
-  // key, which its own setItem on the line above already satisfied: it passed
-  // for tok-old, for tok-new, and for boot() doing nothing whatsoever. It
-  // described the hazard in a comment while being unable to detect it.
+  // The trade Patrik took (2026-07-31): a link now overrides a stored
+  // session, so on a SHARED machine whoever pastes a link last is who you
+  // are. That is the same authority the link already carries — it is a
+  // bearer credential — and it is recoverable, which the previous behaviour
+  // was not.
   localStorage.setItem("vtt.token", "tok-old");
   setURL("http://localhost/?token=tok-new");
   useFakeSocket();
 
   const session = boot(root());
-  expect(localStorage.getItem("vtt.token")).toBe("tok-old");
-  expect(FakeSocket.instances[0]!.url).toContain("token=tok-old");
-  expect(FakeSocket.instances[0]!.url).not.toContain("tok-new");
+  expect(localStorage.getItem("vtt.token")).toBe("tok-new");
+  expect(FakeSocket.instances[0]!.url).toContain("token=tok-new");
+  expect(FakeSocket.instances[0]!.url).not.toContain("tok-old");
   session?.close();
 });
 
