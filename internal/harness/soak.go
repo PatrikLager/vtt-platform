@@ -89,6 +89,19 @@ type SoakReport struct {
 	// Pass is true iff every checkpoint's fold-equality held AND no action
 	// outside the deliberate denied-attempt bucket ever came back denied.
 	Pass bool
+	// Report carries the human action log on a FAILING run, so that --json —
+	// the mode CI uses — can say which action or checkpoint failed.
+	//
+	// It exists because it was documented before it was real: errSoakFailed's
+	// comment in cmd/vtt/client_soak.go promised "--json's Report body ... is
+	// what names which action/checkpoint", while --json sent the progress
+	// writer to io.Discard and this struct had no such field. A soak failed on
+	// CI reporting `"Pass":false` and NOTHING ELSE — every FAIL line naming
+	// the cause had been thrown away at the one moment it mattered.
+	//
+	// Omitted on a passing run: the log is one line per action (500+ on the
+	// pinned keystone), and nobody needs it when everything held.
+	Report string `json:",omitempty"`
 }
 
 // SoakParticipants is the soak generator's fixed roster (task-5-brief.md:
