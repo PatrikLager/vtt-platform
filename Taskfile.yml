@@ -33,7 +33,11 @@ tasks:
       # would execute the whole suite twice per `task check` for no added
       # signal — a test failure in any pass still aborts the gate.
       - task: check:coverage
-      - bun test client/test contract contract-spike
+      # Same reasoning as check:coverage above: check:ts-coverage runs exactly
+      # `bun test client/test contract contract-spike`, with coverage on, so
+      # running the bare suite here as well would execute it twice for no
+      # added signal. A test failure there still aborts the gate.
+      - task: check:ts-coverage
       - task: client:typecheck
       - task: check:drift
       - task: check:breaking
@@ -191,6 +195,33 @@ tasks:
       # outright).
       - golangci-lint config verify
       - golangci-lint run ./...
+
+  check:ts-coverage:
+    desc: >
+      Per-FILE coverage floors for the TypeScript client, enforced. Same
+      ratchet as check:coverage (tools/ts-coverage-thresholds.txt): each file
+      is held to what it already earned, so 85% is the entry requirement for
+      a new file rather than the target everything sinks to.
+
+      The reason this is a separate gate and not a `coverageThreshold` line in
+      bunfig.toml: bun reports coverage ONLY for files a test imported, so an
+      unimported file is ABSENT from the report rather than counted as 0, and
+      leaves the denominator with it. When this gate was written that hid
+      app.ts, view/dm.ts and view/spectator.ts -- 660 lines, 30% of the
+      client -- behind a healthy-looking 89.78%. A single global threshold
+      would have been green over all of it. So the file list comes from the
+      SOURCE TREE and an unmeasured file is an error.
+
+      The checker's own boundary tests run first: it IS the gate, so a bug in
+      it makes every number below it a lie. They found one (a file both
+      EXCLUDED and given a floor passed silently), and the gate's first real
+      run found another (a floor rounded to 2dp landing above the measurement
+      it came from).
+    cmds:
+      # -q: the Go equivalent runs through run_quiet for the same reason —
+      # gate output stays legible, and a failure is what should be loud.
+      - python3 tools/check_ts_coverage_test.py -q
+      - python3 tools/check-ts-coverage.py tools/ts-coverage-thresholds.txt
 
   check:coverage:
     desc: >

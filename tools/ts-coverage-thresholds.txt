@@ -1,0 +1,38 @@
+# Per-file coverage floors for the TypeScript client, enforced by
+# task check:ts-coverage.
+#
+# Same rule as the Go side (tools/coverage-thresholds.txt): 85% is the ENTRY
+# requirement for a new file, not the target, and each file is held to what it
+# has already earned so it cannot rot back to the minimum while the gate stays
+# green.
+#
+# RAISING a floor is routine — do it whenever a file durably improves.
+# LOWERING one is a reviewed decision (CLAUDE.md rule 2: never weaken a gate to
+# pass it) and needs a reason recorded in the ledger.
+#
+# NO BUFFER, unlike the Go file. That file leaves each package a little room
+# because internal/harness genuinely varied 0.79pp across runs. The client was
+# measured the same way — three full runs — and every one of the fifteen files
+# had a spread of exactly 0.00, which is what you would expect from a fold and
+# a set of renderers with no clock, no network and no scheduler in the
+# measured path. Floors therefore sit exactly on the earned number. If that
+# ever cries wolf, the honest fix is to find out what became non-deterministic,
+# not to pad the number.
+#
+# client/src/state.ts is deliberately ABSENT: it is in the checker's EXCLUDED
+# list, which explains why. Adding it here is an error, on purpose.
+
+client/src/app.ts                95.83
+client/src/auth.ts              100.00
+client/src/commands.ts          100.00
+client/src/fold.ts               95.59
+client/src/metadata.ts          100.00
+client/src/player.ts            100.00
+client/src/session.ts            97.36
+client/src/undo.ts              100.00
+client/src/view/dm.ts            90.72
+client/src/view/feed.ts         100.00
+client/src/view/grid.ts         100.00
+client/src/view/player.ts        91.15
+client/src/view/spectator.ts     89.08
+client/src/wire.ts               97.50
