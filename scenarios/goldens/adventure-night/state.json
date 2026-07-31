@@ -1,0 +1,109 @@
+{
+  "Actors": {
+    "act-archer": {
+      "actor_id": "act-archer",
+      "name": "Goblin Archer",
+      "attributes": {
+        "ac": 14,
+        "con": 1,
+        "dex": 4,
+        "fort": 11,
+        "max_hp": 6,
+        "ref": 15,
+        "str": 0,
+        "will": 11
+      },
+      "resources": {
+        "hp": {
+          "current": 6,
+          "max": 6
+        }
+      }
+    },
+    "act-cutter": {
+      "actor_id": "act-cutter",
+      "name": "Goblin Cutter",
+      "attributes": {
+        "ac": 15,
+        "con": 1,
+        "dex": 3,
+        "fort": 12,
+        "max_hp": 8,
+        "ref": 14,
+        "str": 1,
+        "will": 11
+      },
+      "resources": {
+        "hp": {
+          "current": 8,
+          "max": 8
+        }
+      }
+    },
+    "act-fighter": {
+      "actor_id": "act-fighter",
+      "name": "Human Fighter",
+      "attributes": {
+        "ac": 17,
+        "con": 3,
+        "dex": 2,
+        "fort": 15,
+        "max_hp": 28,
+        "ref": 13,
+        "str": 4,
+        "will": 12
+      },
+      "resources": {
+        "flurry_uses": {
+          "current": 1,
+          "max": 1
+        },
+        "hp": {
+          "current": 28,
+          "max": 28
+        }
+      }
+    }
+  },
+  "Conditions": {},
+  "Notes": {
+    "ravine-trail-warning": {
+      "Title": "Trail Warning",
+      "Text": "Crude markings are scratched into the rock near the ravine's mouth — a jagged little glyph, repeated three times. A warning, or a boast.",
+      "UpdatedSeq": 9
+    }
+  },
+  "Scenes": {
+    "ravine": {
+      "ID": "ravine",
+      "Name": "The Ravine Trail",
+      "GridWidth": 32,
+      "GridHeight": 32
+    }
+  },
+  "Sessions": null,
+  "Tokens": {
+    "tok-archer": {
+      "ID": "tok-archer",
+      "SceneID": "ravine",
+      "ActorID": "act-archer",
+      "X": 5,
+      "Y": 0
+    },
+    "tok-cutter": {
+      "ID": "tok-cutter",
+      "SceneID": "ravine",
+      "ActorID": "act-cutter",
+      "X": 1,
+      "Y": 0
+    },
+    "tok-fighter": {
+      "ID": "tok-fighter",
+      "SceneID": "ravine",
+      "ActorID": "act-fighter",
+      "X": 0,
+      "Y": 0
+    }
+  },
+  "headSequence": 12
+}

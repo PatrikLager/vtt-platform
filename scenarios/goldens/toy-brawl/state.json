@@ -1,0 +1,79 @@
+{
+  "Actors": {
+    "act-brawler": {
+      "actor_id": "act-brawler",
+      "name": "Brawler",
+      "attributes": {
+        "brawn": 3,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-brawler"
+    },
+    "act-patron": {
+      "actor_id": "act-patron",
+      "name": "Patron",
+      "attributes": {
+        "brawn": 1,
+        "footing": 0,
+        "grit": 0
+      },
+      "resources": {
+        "drink": {
+          "current": 1,
+          "max": 3
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-patron"
+    }
+  },
+  "Conditions": {
+    "act-patron": []
+  },
+  "Notes": {},
+  "Scenes": {
+    "scn-tavern": {
+      "ID": "scn-tavern",
+      "Name": "The Rusty Flagon",
+      "GridWidth": 5,
+      "GridHeight": 5
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Toy Brawl",
+      "StartSeq": 1,
+      "EndSeq": 11
+    }
+  ],
+  "Tokens": {
+    "tok-brawler": {
+      "ID": "tok-brawler",
+      "SceneID": "scn-tavern",
+      "ActorID": "act-brawler",
+      "X": 0,
+      "Y": 0
+    },
+    "tok-patron": {
+      "ID": "tok-patron",
+      "SceneID": "scn-tavern",
+      "ActorID": "act-patron",
+      "X": 1,
+      "Y": 0
+    }
+  },
+  "headSequence": 11
+}

@@ -1,0 +1,178 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Toy Brawl"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-tavern",
+      "name": "The Rusty Flagon",
+      "gridWidth": 5,
+      "gridHeight": 5
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-brawler",
+        "name": "Brawler",
+        "attributes": {
+          "brawn": 3,
+          "grit": 1
+        },
+        "resources": {
+          "drink": {
+            "max": 4
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        },
+        "controllerId": "p-brawler"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-patron",
+        "name": "Patron",
+        "attributes": {
+          "brawn": 1,
+          "footing": 0,
+          "grit": 0
+        },
+        "resources": {
+          "drink": {
+            "max": 3
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        },
+        "controllerId": "p-patron"
+      }
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-brawler",
+      "sceneId": "scn-tavern",
+      "actorId": "act-brawler",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-patron",
+      "sceneId": "scn-tavern",
+      "actorId": "act-patron",
+      "position": {
+        "x": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-brawler",
+    "abilityUsed": {
+      "actorId": "act-brawler",
+      "abilityId": "fists",
+      "targetIds": [
+        "act-patron"
+      ],
+      "rolls": [
+        {
+          "expression": "1d20 + @caster.brawn",
+          "results": [
+            12
+          ],
+          "total": 15
+        }
+      ],
+      "outcomeSummary": "Fists on act-patron: hit (15 vs 0)"
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-brawler",
+    "resourceChanged": {
+      "actorId": "act-patron",
+      "resource": "drink",
+      "delta": 1,
+      "newValue": 1,
+      "reason": "ability:fists:hit"
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-brawler",
+    "conditionApplied": {
+      "actorId": "act-patron",
+      "conditionId": "dazed-by-ale",
+      "source": "threshold:drink"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "conditionRemoved": {
+      "actorId": "act-patron",
+      "conditionId": "dazed-by-ale",
+      "reason": "manual"
+    }
+  },
+  {
+    "eventId": "evt-11",
+    "sequence": "11",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionEnded": {}
+  }
+]
