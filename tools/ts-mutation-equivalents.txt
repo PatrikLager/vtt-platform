@@ -1,0 +1,41 @@
+# Adjudicated EQUIVALENT mutants in the TypeScript client: surviving
+# mutations that no test can kill, because the mutated code is observationally
+# identical to the original.
+#
+# Format:  <file> <line>:<col> <MUTATOR>
+# followed by an indented reason line. Both are required — a bare entry is a
+# parse error, and so is a reason with no entry above it.
+#
+# ------------------------------------------------------------------------
+# READ THIS BEFORE ADDING AN ENTRY.
+#
+# An "equivalent" verdict asserts that NO test can ever kill this mutant, so
+# it forecloses writing one. A wrong entry is therefore WORSE than an
+# unadjudicated survivor: it converts a real gap into a permanently excused
+# one, in writing, with a confident-sounding justification.
+#
+# That is not hypothetical — see tools/mutation-equivalents.txt, where four
+# mutants were adjudicated on the Go side and TWO were wrong. The reasoning
+# was about JSON marshalling when the actual observable was reflect.DeepEqual
+# over decoded structs, where nil map != empty map. A two-line fixture killed
+# both.
+#
+# The test to apply, learned from that mistake: do not ask "is the output the
+# same?" Ask "is there ANY observable — under deep equality, under identity,
+# under undefined-ness, under iteration order, under what reaches the DOM —
+# that distinguishes them?"
+#
+# An empty file is the GOAL STATE, not a problem. Prefer killing a mutant to
+# excusing it; reach for an entry only when the mutation genuinely cannot be
+# observed.
+#
+# Entries are keyed by file, line:col AND mutator, so two different mutations
+# at one location are two separate claims. A stale entry — one whose mutant no
+# longer survives, because it was killed or the line moved — is a hard error,
+# since it would otherwise pre-approve whatever mutant lands there next.
+
+client/src/undo.ts 39:26 EqualityOperator
+    `e.sequence > best` -> `>=` in lastUndoable. The two differ only when e.sequence equals best, and in that case the mutant's extra assignment writes the value best already holds. The guard `best === null ||` short-circuits before this operand on the first iteration, so the null case never reaches it. No observable: not the return value, not the number of iterations, not identity (BigInt is a value type).
+
+client/src/undo.ts 63:28 EqualityOperator
+    `e.sequence > head` -> `>=` when computing the head. Same shape as above: equality makes the assignment a no-op writing head's current value. head starts at 0n, so a sequence of 0 assigns 0n over 0n. Nothing downstream can distinguish them.

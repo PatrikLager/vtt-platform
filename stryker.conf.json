@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "See tools/check-ts-mutation.py for why this exists and how it is gated.",
+  "packageManager": "npm",
+  "reporters": [
+    "json",
+    "clear-text"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun test client/test"
+  },
+  "coverageAnalysis": "off",
+  "mutate": [
+    "client/src/undo.ts"
+  ],
+  "tempDirName": ".stryker-tmp",
+  "concurrency": 4,
+  "timeoutMS": 20000,
+  "ignorePatterns": [
+    "scenarios/testdata/**",
+    "test-results/**",
+    "playwright-report/**",
+    "client/e2e/.artifacts/**",
+    ".tscov/**",
+    "reports/**",
+    "dist/**",
+    "cmd/vtt/webdist/**",
+    "internal/**",
+    "cmd/**",
+    "tools/**",
+    "contract/gen/go/**",
+    "contract-spike/**/*.go",
+    "adventures/**",
+    "docs/**",
+    ".superpowers/**"
+  ]
+}

@@ -196,6 +196,37 @@ tasks:
       - golangci-lint config verify
       - golangci-lint run ./...
 
+  check:ts-mutation:
+    desc: >
+      Mutation testing over the TypeScript client. Gates on ZERO
+      UNADJUDICATED SURVIVORS (tools/ts-mutation-equivalents.txt), not on a
+      mutation-score percentage -- a score is a ratio, and enough newly-killed
+      mutants mask a new survivor.
+
+      This exists because check:ts-coverage cannot see the gap it finds.
+      undo.ts was at 100% line coverage and 78.75% mutation score, and the
+      survivors sat on the `>= from` / `<= to` comparisons -- the inclusive
+      [from,to] range that IS retraction. Every line ran; nothing checked the
+      boundary.
+
+      Stryker has no bun test-runner plugin, so it drives `bun test` as an
+      opaque command and reads the exit code; coverageAnalysis is off because
+      the command runner cannot do per-test filtering. Config is
+      stryker.conf.json -- note ignorePatterns, which excludes a symlinked
+      adventures directory that Stryker's sandbox copy cannot follow.
+
+      DELIBERATELY NOT PART OF `task check` YET, and tools/ts-mutation-scope.md
+      records exactly why with the numbers: the full client measures 63.89%
+      with 602 survivors, and `mutate` currently covers only the one file
+      worked down to zero. Wiring a gate over 1 of 14 files into `check` would
+      make `check` mean less than it does now while looking like it means
+      more. Same judgement, same reason, as internal/harness sitting outside
+      check:mutation on the Go side.
+    cmds:
+      - python3 tools/check_ts_mutation_test.py -q
+      - npx stryker run stryker.conf.json
+      - python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
+
   check:ts-coverage:
     desc: >
       Per-FILE coverage floors for the TypeScript client, enforced. Same
