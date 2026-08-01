@@ -17,6 +17,13 @@ export const CELL = 44;
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
+  // Stryker disable next-line ConditionalExpression: same case as view/dm.ts's
+  // el(). Removing the guard sets textContent to undefined, which a real
+  // browser stringifies to the word "undefined" above every container, while
+  // happy-dom coerces it to "" and creates no text node at all (measured).
+  // Observable in production, invisible to the harness — so NOT equivalent,
+  // and deliberately not filed in ts-mutation-equivalents.txt. The e2e in a
+  // real browser is where it would surface.
   if (text !== undefined) n.textContent = text;
   return n;
 }

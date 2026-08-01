@@ -19,6 +19,7 @@ for this gate existing.
 | `client/src/fold.ts` | 69.51% | 95.41% | 93 survivors -> 0; 14 adjudicated equivalent |
 | `client/src/view/dm.ts` | 40.71% | 99.64% | 166 survivors -> 0; 1 adjudicated, 1 disabled in source |
 | `client/src/player.ts` | 75.76% | 83.52% | 22 survivors -> 0; 15 adjudicated (sort comparators over unique map keys) |
+| `client/src/view/spectator.ts` | 71.62% | 99.55% | 63 survivors -> 0; 1 adjudicated, 1 disabled in source |
 
 fold.ts is worth reading about before doing the next file, because its 93
 survivors were not 93 different problems. 37 emptied an error MESSAGE and 35
@@ -58,7 +59,6 @@ unadjudicated survivors before it joins `mutate`.
 | file | survivors |
 |---|---|
 | `client/src/view/player.ts` | 89 |
-| `client/src/view/spectator.ts` | 63 |
 | `client/src/app.ts` | 48 |
 | `client/src/view/feed.ts` | 42 |
 | `client/src/wire.ts` | 22 |

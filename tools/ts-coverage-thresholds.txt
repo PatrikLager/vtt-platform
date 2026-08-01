@@ -34,5 +34,5 @@ client/src/view/dm.ts            100.00
 client/src/view/feed.ts         100.00
 client/src/view/grid.ts         100.00
 client/src/view/player.ts        91.15
-client/src/view/spectator.ts     96.55
+client/src/view/spectator.ts     100.00
 client/src/wire.ts               97.50

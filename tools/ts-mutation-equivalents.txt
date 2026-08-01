@@ -170,3 +170,14 @@ client/src/player.ts 69:34 ConditionalExpression false
 
 client/src/player.ts 69:34 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+# --- client/src/view/spectator.ts --------------------------------------------
+#
+# 63 survivors -> 0 by pinning the board's GEOMETRY (the click-to-cell mapping
+# and the board's size), describe()'s crash-safety on malformed events, and the
+# ordering of notes and scenes. One mutant is handled in the SOURCE with a
+# `// Stryker disable` and a stated reason — el()'s `text !== undefined` guard,
+# the same harness-blind case as view/dm.ts.
+
+client/src/view/spectator.ts 227:59 StringLiteral "Stryker was here!"
+    `Object.keys(st.Scenes).sort().at(-1) ?? ""` — the fallback value. It is reached ONLY when there are no scenes, because at(-1) returns undefined only for an empty key list. Whatever string it yields is then looked up in st.Scenes and missed, rendering "No scene yet." either way. A scene keyed by the sentinel string would distinguish them, which requires a scene id of "Stryker was here!" to exist. (A scene keyed "" is a different case and IS pinned by test — that key is returned by at(-1) directly, never via the fallback.)
