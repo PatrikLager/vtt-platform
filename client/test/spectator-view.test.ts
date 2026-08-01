@@ -14,6 +14,7 @@ import { renderSpectator, describe as describeEvent, CELL } from "../src/view/sp
 import { newState, type State } from "../src/state";
 import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
+import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 const env = (seq: number, payload: Envelope["payload"]): Envelope =>
   create(EnvelopeSchema, { eventId: `e${seq}`, sequence: BigInt(seq), payload });
@@ -176,10 +177,25 @@ const costly: Ability = {
   usage: { kind: "resource", resource: "vigor", cost: 99 },
 };
 
-function panel(st: State, abilities: Ability[], ui = { selectedActorId: "", selectedAbilityId: "" }) {
-  const sent: unknown[] = [];
-  const node = renderPlayerPanel(st, me, abilities, ui, (c) => sent.push(c), () => {});
-  return { node, sent, ui };
+function panel(
+  st: State,
+  abilities: Ability[],
+  ui = { selectedActorId: "", selectedAbilityId: "" },
+  who: Me = me,
+) {
+  const sent: ClientCommand[] = [];
+  // Rerenders are counted: a handler that mutates ui without asking for a
+  // repaint leaves the panel showing the old selection, which is the same
+  // symptom as not handling the click at all.
+  let repaints = 0;
+  const node = renderPlayerPanel(st, who, abilities, ui, (c) => sent.push(c), () => { repaints++; });
+  return {
+    node, sent, ui,
+    repaints: () => repaints,
+    button: (label: string) =>
+      Array.from(node.querySelectorAll("button")).find((b) => b.textContent === label)!,
+    input: (cls: string) => node.querySelector(`.${cls}`) as HTMLInputElement,
+  };
 }
 
 test("a participant controlling nothing is told so, not shown empty controls", () => {
@@ -505,4 +521,287 @@ test("omitted extras leave no trace, not the word 'undefined'", () => {
   renderSpectator(root, world(), [], "connected");
   expect(root.textContent).not.toContain("undefined");
   expect(root.querySelector(".my-panel")).toBeNull();
+});
+
+// --- the panel's selection state --------------------------------------------
+
+test("the selected actor's chip is marked, and the others are not", () => {
+  const st = world();
+  st.Actors["a2"] = {
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+  };
+  const p = panel(st, [atWill], { selectedActorId: "a2", selectedAbilityId: "" });
+  expect(p.button("Bran").className).toBe("chip sel");
+  expect(p.button("Lera").className).toBe("chip");
+});
+
+test("clicking an actor selects it, drops any armed ability, and repaints", () => {
+  const st = world();
+  st.Actors["a2"] = {
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+  };
+  const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  p.button("Bran").click();
+  expect(p.ui.selectedActorId).toBe("a2");
+  // Switching actor must disarm: the armed ability belonged to the old one.
+  expect(p.ui.selectedAbilityId).toBe("");
+  expect(p.repaints()).toBe(1);
+});
+
+test("an actor with no name falls back to its id on the chip", () => {
+  const st = world();
+  st.Actors["a1"]!.name = "";
+  expect(panel(st, [atWill]).button("a1")).toBeDefined();
+});
+
+test("clicking an ability arms it; clicking the armed one disarms", () => {
+  // `selectedAbilityId === ab.id ? "" : ab.id` is a TOGGLE, and both arms
+  // were free to be replaced by a constant.
+  const armed = panel(world(), [atWill], { selectedActorId: "a1", selectedAbilityId: "" });
+  armed.button("Swing").click();
+  expect(armed.ui.selectedAbilityId).toBe("swing");
+  expect(armed.repaints()).toBe(1);
+
+  const disarm = panel(world(), [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  disarm.button("Swing").click();
+  expect(disarm.ui.selectedAbilityId).toBe("");
+});
+
+test("the armed ability's chip is marked", () => {
+  const p = panel(world(), [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  expect(p.button("Swing").className).toBe("chip sel");
+});
+
+test("an at-will ability is enabled and says so on hover", () => {
+  const p = panel(world(), [atWill]);
+  expect(p.button("Swing").disabled).toBe(false);
+  expect(p.button("Swing").title).toBe("at will");
+});
+
+test("an affordable resource ability names its cost without the shortfall note", () => {
+  const cheap: Ability = {
+    id: "jab", name: "Jab", range: 1, maxTargets: 1,
+    usage: { kind: "resource", resource: "vigor", cost: 1 },
+  };
+  const p = panel(world(), [cheap]);
+  expect(p.button("Jab").disabled).toBe(false);
+  expect(p.button("Jab").title).toBe("vigor 1");
+});
+
+// --- no token on the board --------------------------------------------------
+
+test("an actor with no token is said so, and every ability is disabled", () => {
+  // `disabled = !can || tokenId === ""` — the second arm. An affordable
+  // ability with nowhere to act from must not look usable.
+  const st = world();
+  st.Tokens = {};
+  const p = panel(st, [atWill]);
+  expect(p.node.textContent).toContain("no token on the board");
+  expect(p.button("Swing").disabled).toBe(true);
+});
+
+test("with a token present the panel invites a board click instead", () => {
+  const p = panel(world(), [atWill]);
+  expect(p.node.querySelector(".hint")?.textContent).toBe("Click the board to move.");
+  expect(p.node.textContent).not.toContain("no token on the board");
+});
+
+test("with no token there is no move hint either", () => {
+  const st = world();
+  st.Tokens = {};
+  expect(panel(st, [atWill]).node.querySelector(".hint")).toBeNull();
+});
+
+// --- targets ----------------------------------------------------------------
+
+test("a target button sends the ability at that token, then disarms", () => {
+  const st = world();
+  st.Actors["a2"] = {
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them",
+  };
+  st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1 };
+  const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  p.button("Bran").click();
+  expect(p.sent).toHaveLength(1);
+  expect(p.sent[0]!.command.case).toBe("useAbility");
+  expect(p.sent[0]!.command.value).toEqual(
+    expect.objectContaining({ actorId: "a1", abilityId: "swing", targetIds: ["t2"] }),
+  );
+  expect(p.ui.selectedAbilityId).toBe("");
+  expect(p.repaints()).toBe(1);
+});
+
+test("a target with no actor name is labelled by its token id", () => {
+  const st = world();
+  st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "ghost", X: 3, Y: 1 };
+  const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  expect(p.button("t2")).toBeDefined();
+});
+
+test("the targets heading names the ability's range", () => {
+  const st = world();
+  const reach: Ability = { id: "poke", name: "Poke", range: 3, maxTargets: 1, usage: { kind: "atWill" } };
+  const p = panel(st, [reach], { selectedActorId: "a1", selectedAbilityId: "poke" });
+  expect(Array.from(p.node.querySelectorAll("h3")).some((n) => n.textContent === "Targets (range 3)")).toBe(true);
+});
+
+test("an armed ability always lists at least the actor's own square", () => {
+  // Worth stating plainly because it makes the "nothing in range" branch
+  // below effectively unreachable: targetableTokens filters by Chebyshev
+  // distance from the ACTING token, which is itself at distance 0, so any
+  // range >= 0 includes it.
+  const p = panel(world(), [{ id: "poke", name: "Poke", range: 0, maxTargets: 1, usage: { kind: "atWill" } }],
+                  { selectedActorId: "a1", selectedAbilityId: "poke" });
+  expect(p.node.querySelector(".empty")).toBeNull();
+  expect(p.button("Lera")).toBeDefined();
+});
+
+test("a NEGATIVE range is the only way to reach 'nothing in range'", () => {
+  // KNOWN ODDITY, pinned rather than fixed. `if (targets.length === 0)` is
+  // dead for every range a sane ruleset declares, because the acting token is
+  // always within range 0 of itself. A negative range is the only input that
+  // empties the list, and the panel does then say so instead of rendering a
+  // bare row. Flagged for the ruleset side: if range is constrained to >= 0
+  // there, this branch is unreachable and should be removed rather than left
+  // looking like a handled case.
+  const nonsense: Ability = { id: "void", name: "Void", range: -1, maxTargets: 1, usage: { kind: "atWill" } };
+  const p = panel(world(), [nonsense], { selectedActorId: "a1", selectedAbilityId: "void" });
+  expect(Array.from(p.node.querySelectorAll(".empty")).some((n) => n.textContent === "nothing in range")).toBe(true);
+});
+
+// --- saying something -------------------------------------------------------
+
+test("Send narrates the trimmed text, clears the box and repaints", () => {
+  const p = panel(world(), []);
+  p.input("text").value = "  The door groans.  ";
+  p.button("Send").click();
+  expect(p.sent).toHaveLength(1);
+  expect(p.sent[0]!.command.case).toBe("addNarration");
+  expect(p.sent[0]!.command.value).toEqual(expect.objectContaining({ text: "The door groans." }));
+  expect(p.input("text").value).toBe("");
+  expect(p.repaints()).toBe(1);
+});
+
+test("an in-character speaker is carried, and a blank one is omitted", () => {
+  const named = panel(world(), []);
+  named.input("as").value = "  Lera  ";
+  named.input("text").value = "Hold.";
+  named.button("Send").click();
+  expect(named.sent[0]!.command.value).toEqual(expect.objectContaining({ as: "Lera" }));
+
+  const anon = panel(world(), []);
+  anon.input("as").value = "   ";
+  anon.input("text").value = "ooc: brb";
+  anon.button("Send").click();
+  expect((anon.sent[0]!.command.value as Record<string, unknown>)["as"] ?? "").toBe("");
+});
+
+test("Enter in the text box sends; another key does not", () => {
+  // The keydown handler was free to be emptied, and its key check to be
+  // forced true — under which every keystroke fires a narration.
+  const p = panel(world(), []);
+  p.input("text").value = "Go.";
+  p.input("text").dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+  expect(p.sent).toHaveLength(0);
+  p.input("text").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  expect(p.sent).toHaveLength(1);
+});
+
+test("empty or whitespace-only text sends nothing", () => {
+  for (const v of ["", "   "]) {
+    const p = panel(world(), []);
+    p.input("text").value = v;
+    p.button("Send").click();
+    expect(p.sent).toHaveLength(0);
+    expect(p.repaints()).toBe(0);
+  }
+});
+
+test("with no abilities at all the panel omits the abilities section", () => {
+  const p = panel(world(), []);
+  expect(Array.from(p.node.querySelectorAll("h3")).some((n) => n.textContent === "Abilities")).toBe(false);
+  expect(p.node.querySelector(".player")).toBeNull();
+});
+
+test("the panel's structure carries the classes the stylesheet targets", () => {
+  const p = panel(world(), [atWill]);
+  expect(p.node.className).toBe("player");
+  expect(p.node.querySelectorAll(".row").length).toBeGreaterThan(0);
+  expect(p.input("as").className).toBe("as");
+  expect(p.input("text").className).toBe("text");
+  // Headings are built without a class; an always-assign writes the string
+  // "undefined" into className.
+  for (const h of Array.from(p.node.querySelectorAll("h2,h3"))) expect(h.className).toBe("");
+});
+
+test("the panel's headings say what each section is", () => {
+  const p = panel(world(), [atWill]);
+  expect(Array.from(p.node.querySelectorAll("h2")).map((n) => n.textContent)).toEqual(["Your turn"]);
+  const h3 = Array.from(p.node.querySelectorAll("h3")).map((n) => n.textContent);
+  expect(h3).toContain("Abilities");
+  expect(h3).toContain("Say something");
+});
+
+test("the empty-state messages are the ones a player can act on", () => {
+  const none = world();
+  none.Actors["a1"]!.controllerId = "someone-else";
+  expect(panel(none, [atWill]).node.querySelector(".empty")?.textContent)
+    .toBe("You do not control an actor yet.");
+
+  const noToken = world();
+  noToken.Tokens = {};
+  expect(panel(noToken, [atWill]).node.querySelector(".empty")?.textContent)
+    .toBe("That actor has no token on the board yet.");
+});
+
+test("an unarmed ability's chip is NOT marked selected", () => {
+  // `selectedAbilityId === ab.id ? "chip sel" : "chip"` -> always-selected
+  // marks every ability as armed at once.
+  const second: Ability = { id: "jab", name: "Jab", range: 1, maxTargets: 1, usage: { kind: "atWill" } };
+  const p = panel(world(), [atWill, second], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  expect(p.button("Swing").className).toBe("chip sel");
+  expect(p.button("Jab").className).toBe("chip");
+});
+
+test("a selection naming an actor that no longer exists renders nothing further", () => {
+  // `if (!actor) return wrap` — the actor can vanish between a click and the
+  // repaint that follows it. Continuing past this point reads resources off
+  // undefined and throws, taking the panel down.
+  const st = world();
+  const ui = { selectedActorId: "gone", selectedAbilityId: "" };
+  let node: HTMLElement | null = null;
+  expect(() => { node = renderPlayerPanel(st, me, [atWill], ui, () => {}, () => {}); }).not.toThrow();
+  expect(Array.from(node!.querySelectorAll("h3")).some((n) => n.textContent === "Abilities")).toBe(false);
+});
+
+test("an armed ability with no token on the board offers no targets", () => {
+  // `armed && tokenId !== ""` — the second arm. Offering target buttons for an
+  // actor with nowhere to act from sends a command the server will refuse.
+  const st = world();
+  st.Tokens = {};
+  const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  expect(Array.from(p.node.querySelectorAll("h3")).some((n) => n.textContent?.startsWith("Targets"))).toBe(false);
+});
+
+test("the panel's rows, form and chips carry their classes", () => {
+  const st = world();
+  st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a1", X: 3, Y: 1 };
+  const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
+  // Actor picker, abilities row, targets row.
+  expect(p.node.querySelectorAll(".row").length).toBeGreaterThanOrEqual(3);
+  expect(p.node.querySelector(".say")).not.toBeNull();
+  // Every button in the panel is a chip, including Send and the target ones.
+  for (const b of Array.from(p.node.querySelectorAll("button"))) {
+    expect(b.className.startsWith("chip")).toBe(true);
+  }
+  expect(p.button("Send").className).toBe("chip");
+});
+
+test("both say-something boxes carry a placeholder", () => {
+  // Presence, not wording — the same rule as the DM console: an unlabelled
+  // pair of boxes gives no clue which one is the speaker.
+  const p = panel(world(), []);
+  expect(p.input("as").placeholder.length).toBeGreaterThan(0);
+  expect(p.input("text").placeholder.length).toBeGreaterThan(0);
+  expect(p.input("as").placeholder).not.toBe(p.input("text").placeholder);
 });

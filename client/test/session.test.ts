@@ -11,6 +11,30 @@ import {
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { Session } from "../src/session";
 
+/**
+ * Wait until `ready()` holds, or fail loudly after `timeoutMs`.
+ *
+ * These tests replaced a fixed `await Bun.sleep(30)`, which was a guess at how
+ * long a real WebSocket takes to deliver a replay. It is enough on an idle
+ * machine and not enough on a busy one: under the load of a mutation run the
+ * suite failed 3 of 4, deterministically, and Stryker refuses to start when
+ * its initial test run fails — so a timing guess in one test file blocked the
+ * whole mutation gate.
+ *
+ * Polling for the CONDITION is both faster (it returns as soon as the frame
+ * lands, usually within a millisecond) and stable, because the timeout is a
+ * backstop rather than the thing being measured.
+ */
+async function until(ready: () => boolean, what: string, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ready()) return;
+    await Bun.sleep(1);
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+
+
 function env(seq: number, payload: any) {
   return toJson(
     EnvelopeSchema,
@@ -47,7 +71,7 @@ test("a session folds the replayed log into state", async () => {
   try {
     const s = new Session(gw.url, "tok");
     await s.start();
-    await Bun.sleep(30);
+    await until(() => s.head === 4n, "the replay to reach sequence 4");
 
     expect(s.head).toBe(4n);
     expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
@@ -71,7 +95,7 @@ test("a retraction arriving later UNDOES an earlier event", async () => {
   try {
     const s = new Session(gw.url, "tok");
     await s.start();
-    await Bun.sleep(40);
+    await until(() => s.head === 6n, "the replay to reach sequence 6");
 
     expect(s.head).toBe(6n);
     // Back at its placed position, not the retracted move's destination.
@@ -89,7 +113,7 @@ test("subscribers are notified when the state changes", async () => {
     let notifications = 0;
     s.onChange(() => notifications++);
     await s.start();
-    await Bun.sleep(30);
+    await until(() => notifications > 0, "a change notification");
     expect(notifications).toBeGreaterThan(0);
     s.close();
   } finally {
@@ -110,7 +134,7 @@ test("a fold error is surfaced instead of leaving a half-applied state", async (
     const errors: string[] = [];
     s.onError((e) => errors.push(e.message));
     await s.start();
-    await Bun.sleep(30);
+    await until(() => errors.length > 0, "the fold error to surface");
     expect(errors.length).toBeGreaterThan(0);
     s.close();
   } finally {
