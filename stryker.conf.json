@@ -15,7 +15,8 @@
   },
   "coverageAnalysis": "off",
   "mutate": [
-    "client/src/undo.ts"
+    "client/src/undo.ts",
+    "client/src/fold.ts"
   ],
   "tempDirName": ".stryker-tmp",
   "concurrency": 4,
