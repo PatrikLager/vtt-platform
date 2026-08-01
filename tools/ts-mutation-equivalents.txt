@@ -89,3 +89,16 @@ client/src/fold.ts 287:7 ConditionalExpression
 
 client/src/fold.ts 287:21 StringLiteral
     Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.
+
+# --- client/src/view/dm.ts --------------------------------------------------
+#
+# 166 survivors -> 1 by writing the messages, the payloads and the field
+# contract (client/test/dm-view.test.ts). One further mutant is handled in the
+# SOURCE with a `// Stryker disable` and a stated reason rather than here,
+# because it is NOT equivalent: dropping el()'s `text !== undefined` guard puts
+# the word "undefined" above every group in a real browser, while happy-dom
+# coerces it to "" and no test can see the difference. Claiming equivalence for
+# it would be the wrong-adjudication this file warns about.
+
+client/src/view/dm.ts 66:7 ConditionalExpression
+    `if (cls) i.className = cls` -> always-assign, in the input() helper. Unlike el()'s version of the same line, this parameter has a default of "" rather than being optional, so the mutated branch assigns the empty string — which is what className already holds. No element can tell the two apart, and there is no call site that passes undefined.

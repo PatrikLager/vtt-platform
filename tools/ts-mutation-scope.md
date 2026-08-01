@@ -17,6 +17,7 @@ for this gate existing.
 |---|---|---|---|
 | `client/src/undo.ts` | 78.75% | 97.50% | 17 survivors -> 0; 2 adjudicated equivalent |
 | `client/src/fold.ts` | 69.51% | 95.41% | 93 survivors -> 0; 14 adjudicated equivalent |
+| `client/src/view/dm.ts` | 40.71% | 99.64% | 166 survivors -> 0; 1 adjudicated, 1 disabled in source |
 
 fold.ts is worth reading about before doing the next file, because its 93
 survivors were not 93 different problems. 37 emptied an error MESSAGE and 35
@@ -28,6 +29,26 @@ message, and fold-dump.test.ts drives the omitempty arms of the dump that the
 golden corpus's six scenarios happen not to contain. Expect the same shape
 elsewhere: the untested part is the error path, not the happy path.
 
+view/dm.ts confirmed it and added a second pattern. It opened at 40.71%, the
+worst of the client, with 80 of 166 survivors emptying a string LITERAL and 20
+removing a `.trim()`. The console is nine near-identical forms, and what was
+untested was never the rendering — it was every refusal message, every field
+name, and every piece of input normalisation on the way to a command. The
+existing tests asserted with loose regexes (`/name/i`), which is exactly why
+blanking a message survived them.
+
+Three things worth copying to the next view file:
+
+* Assert the SENT COMMAND, not just that something was sent. A removed
+  `.trim()` is invisible until you look at the payload: the form still works
+  and the server quietly stores " s1 " as a distinct scene id.
+* Assert PRESENCE, not wording, for prose. Pinning placeholder text breaks on
+  every copy edit; asserting each box HAS one kills the `-> ""` mutants and
+  survives rewording.
+* Count the calls to a confirm/deny seam. "Nothing was sent" cannot tell a
+  validation refusal from a declined dialog, so a version that confirmed first
+  and validated second passes without a call counter.
+
 ## Measured, not yet gated
 
 Baseline taken 2026-07-31 on the full-client run. Each of these must reach zero
@@ -35,7 +56,6 @@ unadjudicated survivors before it joins `mutate`.
 
 | file | survivors |
 |---|---|
-| `client/src/view/dm.ts` | 166 |
 | `client/src/view/player.ts` | 89 |
 | `client/src/view/spectator.ts` | 63 |
 | `client/src/app.ts` | 48 |
