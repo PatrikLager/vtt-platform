@@ -121,10 +121,19 @@ client/src/view/dm.ts 66:7 ConditionalExpression true
 #
 #     (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 #
-# Every id here is an OBJECT KEY of st.Actors or st.Tokens, so duplicates
-# cannot exist. That one fact is what makes these unobservable. If ids ever
-# stop being map keys — a list of actors arriving as an array, say — these stop
-# being equivalent and must be re-derived, not carried forward.
+# Every id sorted here is UNIQUE, and that one fact is what makes these
+# unobservable. Stated precisely, because the loose version ("the ids are the
+# map keys") is not quite true and hid where the risk lives: a.actorId is a
+# FIELD, not the key. It is unique only because the fold stores each actor and
+# token under a key equal to its own id — fold.ts:77 and :87 — an invariant
+# maintained in a DIFFERENT FILE from the one these adjudications describe.
+#
+# That premise is now machine-checked, not merely asserted: see "every actor
+# and token is stored under a key equal to its own id" in
+# client/test/fold-dump.test.ts. If the fold ever stores an actor under some
+# other key, that test fails and these fifteen claims must be re-derived rather
+# than carried forward. The same applies if ids ever stop coming from a map at
+# all — a list of actors arriving as an array, say.
 
 client/src/player.ts 20:22 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
