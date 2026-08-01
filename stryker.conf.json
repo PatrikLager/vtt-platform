@@ -17,7 +17,8 @@
   "mutate": [
     "client/src/undo.ts",
     "client/src/fold.ts",
-    "client/src/view/dm.ts"
+    "client/src/view/dm.ts",
+    "client/src/player.ts"
   ],
   "tempDirName": ".stryker-tmp",
   "concurrency": 4,

@@ -2,8 +2,15 @@
 # mutations that no test can kill, because the mutated code is observationally
 # identical to the original.
 #
-# Format:  <file> <line>:<col> <MUTATOR>
-# followed by an indented reason line. Both are required — a bare entry is a
+# Format:  <file> <line>:<col> <MUTATOR> <replacement>
+# followed by an indented reason line. The replacement runs to end of line
+# because it can contain spaces.
+#
+# The REPLACEMENT is part of the key for a reason found the hard way: Stryker
+# emits both `-> true` and `-> false` for one ConditionalExpression at one
+# location, and without it those two collapse into a single entry — so
+# adjudicating the harmless one silently excuses the other. The gate's own
+# duplicate check caught that on client/src/player.ts:20:51. Both are required — a bare entry is a
 # parse error, and so is a reason with no entry above it.
 #
 # ------------------------------------------------------------------------
@@ -34,10 +41,10 @@
 # longer survives, because it was killed or the line moved — is a hard error,
 # since it would otherwise pre-approve whatever mutant lands there next.
 
-client/src/undo.ts 39:26 EqualityOperator
+client/src/undo.ts 39:26 EqualityOperator e.sequence >= best
     `e.sequence > best` -> `>=` in lastUndoable. The two differ only when e.sequence equals best, and in that case the mutant's extra assignment writes the value best already holds. The guard `best === null ||` short-circuits before this operand on the first iteration, so the null case never reaches it. No observable: not the return value, not the number of iterations, not identity (BigInt is a value type).
 
-client/src/undo.ts 63:28 EqualityOperator
+client/src/undo.ts 63:28 EqualityOperator e.sequence >= head
     `e.sequence > head` -> `>=` when computing the head. Same shape as above: equality makes the assignment a no-op writing head's current value. head starts at 0n, so a sequence of 0 assigns 0n over 0n. Nothing downstream can distinguish them.
 
 # --- client/src/fold.ts -----------------------------------------------------
@@ -48,46 +55,46 @@ client/src/undo.ts 63:28 EqualityOperator
 # observe. Each was checked against the "is there ANY observable?" rule rather
 # than "is the output the same?".
 
-client/src/fold.ts 37:9 ConditionalExpression
+client/src/fold.ts 37:9 ConditionalExpression false
     Deleting `if (env.payload.case === "eventsRetracted") continue;` in pass 2 lets a retraction MARKER reach apply(). apply()'s switch has no case for eventsRetracted, so it falls to `default: return`, and nothing before the switch has a side effect (it computes seq and reads payload). The marker is skipped either way — one by the guard, one by the default arm.
 
-client/src/fold.ts 37:30 StringLiteral
+client/src/fold.ts 37:30 StringLiteral ""
     Same line, same effect by another route: the case name becomes "", the comparison is false for every envelope, and markers reach apply()'s no-op default arm. A payload-less envelope has case undefined, not "", so it cannot collide with the emptied literal.
 
-client/src/fold.ts 125:48 ArrayDeclaration
+client/src/fold.ts 125:48 ArrayDeclaration ["Stryker was here"]
     `st.Conditions[v.actorId] ?? []` -> `?? ["Stryker was here"]` in conditionRemoved. The fallback fires only when the actor has NEVER had a condition (an emptied list is retained as [], which is not nullish). findIndex then compares `c.ID` on a string element — undefined — against the condition id, yielding -1, so the fold throws the same "not present" error it would have thrown. The assignment that would leak the sentinel is after that throw.
 
-client/src/fold.ts 154:19 OptionalChaining
+client/src/fold.ts 154:19 OptionalChaining actor.resources[v.resource]
     `actor.resources?.[v.resource]` -> `actor.resources[v.resource]`. Removing the guard only matters if a stored Actor can have undefined resources. It cannot: line 77 is the only writer to st.Actors and it always goes through copyActor, which builds `resources` as an object literal before returning.
 
-client/src/fold.ts 163:11 EqualityOperator
+client/src/fold.ts 163:11 EqualityOperator computed <= 0
     `computed < 0` -> `<= 0` in the resource clamp. The arms differ only at computed === 0, where the mutant assigns 0 over 0.
 
-client/src/fold.ts 164:26 EqualityOperator
+client/src/fold.ts 164:26 EqualityOperator computed >= res.max
     `computed > res.max` -> `>=`. Differ only at computed === res.max, where the mutant assigns max over max.
 
-client/src/fold.ts 195:10 StringLiteral
+client/src/fold.ts 195:10 StringLiteral ""
     `case "attackRolled":` -> `case "":`. The case body is a bare `return`, and an attackRolled event whose label no longer matches falls through to `default:`, which is also a bare `return`. A no-op reached two ways.
 
-client/src/fold.ts 196:10 StringLiteral
+client/src/fold.ts 196:10 StringLiteral ""
     `case "abilityUsed":` -> `case "":`, same no-op-vs-no-op as above.
 
-client/src/fold.ts 197:5 ConditionalExpression
+client/src/fold.ts 197:5 ConditionalExpression case "adventureLoaded":
     Rewrites the `case "adventureLoaded":` clause itself. Every arm involved returns without touching state, so no reordering of them is observable.
 
-client/src/fold.ts 197:10 StringLiteral
+client/src/fold.ts 197:10 StringLiteral ""
     `case "adventureLoaded":` -> `case "":`, same no-op-vs-no-op as above.
 
-client/src/fold.ts 199:5 ConditionalExpression
+client/src/fold.ts 199:5 ConditionalExpression default:
     Rewrites the `default:` clause. Its body is a bare `return`, shared with the three no-effect event kinds above it; nothing distinguishes reaching it from reaching them.
 
-client/src/fold.ts 246:34 EqualityOperator
+client/src/fold.ts 246:34 EqualityOperator Number(e.sequence) >= head
     `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".)
 
-client/src/fold.ts 287:7 ConditionalExpression
+client/src/fold.ts 287:7 ConditionalExpression true
     `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 77 is the only writer, and line 75 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true.
 
-client/src/fold.ts 287:21 StringLiteral
+client/src/fold.ts 287:21 StringLiteral "Stryker was here!"
     Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.
 
 # --- client/src/view/dm.ts --------------------------------------------------
@@ -100,5 +107,66 @@ client/src/fold.ts 287:21 StringLiteral
 # coerces it to "" and no test can see the difference. Claiming equivalence for
 # it would be the wrong-adjudication this file warns about.
 
-client/src/view/dm.ts 66:7 ConditionalExpression
+client/src/view/dm.ts 66:7 ConditionalExpression true
     `if (cls) i.className = cls` -> always-assign, in the input() helper. Unlike el()'s version of the same line, this parameter has a default of "" rather than being optional, so the mutated branch assigns the empty string — which is what className already holds. No element can tell the two apart, and there is no call site that passes undefined.
+
+# --- client/src/player.ts ----------------------------------------------------
+#
+# 22 survivors -> the comparators below, by pinning ORDER (client/test/
+# player.test.ts). The game rules here — Chebyshev range, affordability — were
+# already covered; what was unpinned was that every returned list is SORTED,
+# and a reshuffling panel moves the actor out from under a player's cursor.
+#
+# What remains is one shape, in three copies of the same comparator:
+#
+#     (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+#
+# Every id here is an OBJECT KEY of st.Actors or st.Tokens, so duplicates
+# cannot exist. That one fact is what makes these unobservable. If ids ever
+# stop being map keys — a list of actors arriving as an array, say — these stop
+# being equivalent and must be re-derived, not carried forward.
+
+client/src/player.ts 20:22 EqualityOperator a.actorId <= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 20:51 ConditionalExpression true
+    Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
+
+client/src/player.ts 20:51 ConditionalExpression false
+    Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
+
+client/src/player.ts 20:51 EqualityOperator a.actorId >= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 20:51 EqualityOperator a.actorId <= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 52:22 EqualityOperator a.ID <= b.ID
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 52:41 ConditionalExpression true
+    Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
+
+client/src/player.ts 52:41 ConditionalExpression false
+    Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
+
+client/src/player.ts 52:41 EqualityOperator a.ID <= b.ID
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 52:41 EqualityOperator a.ID >= b.ID
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 69:5 EqualityOperator a.actorId <= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 69:34 ConditionalExpression true
+    Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
+
+client/src/player.ts 69:34 EqualityOperator a.actorId >= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
+
+client/src/player.ts 69:34 ConditionalExpression false
+    Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
+
+client/src/player.ts 69:34 EqualityOperator a.actorId <= b.actorId
+    Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.

@@ -57,7 +57,7 @@ class EquivalentsError(Exception):
 
 
 def read_equivalents(path):
-    """{(file, "line:col", mutator): reason}.
+    """{(file, "line:col", mutator, replacement): reason}.
 
     A header line plus an indented reason. The reason is REQUIRED. An
     equivalence claim asserts that NO test can ever kill the mutant, so it
@@ -78,11 +78,22 @@ def read_equivalents(path):
             continue
         if pending is not None:
             raise EquivalentsError(f"{path}:{pending_line}: entry with no reason under it")
-        parts = line.split()
-        if len(parts) != 3:
+        # The REPLACEMENT is part of the key, and is the rest of the line
+        # because it can contain spaces (`a.id <= b.id`).
+        #
+        # Without it, two mutants at one location with one mutator — Stryker
+        # emits `-> true` AND `-> false` for the same ConditionalExpression —
+        # collapse to a single key, and adjudicating either silently excuses
+        # the other. Found by this file's own duplicate check on
+        # client/src/player.ts:20:51, where the two are genuinely different
+        # claims: forcing that branch to `true` returns what it would have
+        # returned anyway, while forcing it to `false` does not.
+        parts = line.split(maxsplit=3)
+        if len(parts) != 4:
             raise EquivalentsError(
-                f"{path}:{lineno}: want '<file> <line>:<col> <MUTATOR>', got {line.strip()!r}")
-        key = (parts[0], parts[1], parts[2])
+                f"{path}:{lineno}: want '<file> <line>:<col> <MUTATOR> <replacement>', "
+                f"got {line.strip()!r}")
+        key = (parts[0], parts[1], parts[2], parts[3])
         if key in entries:
             raise EquivalentsError(f"{path}:{lineno}: {key} listed twice")
         pending, pending_line = key, lineno
@@ -97,20 +108,23 @@ def mutants(report):
         for m in entry.get("mutants", []):
             start = m.get("location", {}).get("start", {})
             where = f"{start.get('line', '?')}:{start.get('column', '?')}"
-            yield path, where, m.get("mutatorName", "?"), m.get("status", "?")
+            # Replacement is normalised to one line: it is a key component, and
+            # Stryker emits multi-line replacements for block mutants.
+            replacement = " ".join(str(m.get("replacement", "")).split())
+            yield path, where, m.get("mutatorName", "?"), replacement, m.get("status", "?")
 
 
 def check(report, equivalents, out=sys.stdout, err=sys.stderr):
     survived, timed_out, killed, no_coverage, not_viable = [], [], 0, [], 0
-    for path, where, mutator, status in mutants(report):
+    for path, where, mutator, replacement, status in mutants(report):
         if status == KILLED:
             killed += 1
         elif status == SURVIVED:
-            survived.append((path, where, mutator))
+            survived.append((path, where, mutator, replacement))
         elif status == TIMEOUT:
-            timed_out.append((path, where, mutator))
+            timed_out.append((path, where, mutator, replacement))
         elif status == NO_COVERAGE:
-            no_coverage.append((path, where, mutator))
+            no_coverage.append((path, where, mutator, replacement))
         elif status in NOT_VIABLE:
             not_viable += 1
         else:
@@ -124,7 +138,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr):
     # runner that should be impossible — every mutant runs the whole suite —
     # so its appearance means the run was not configured the way this gate
     # assumes, and the numbers below do not mean what they say.
-    for path, where, mutator in no_coverage:
+    for path, where, mutator, _ in no_coverage:
         print(f"check:ts-mutation: {path}:{where} {mutator} reported NoCoverage, which "
               f"the command runner should never produce. The run is misconfigured.", file=err)
         fail = True
@@ -137,7 +151,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr):
 
     # Printed, always. These are the mutants the run did NOT actually evaluate;
     # discarding them silently is how a survivor disappears.
-    for path, where, mutator in timed_out:
+    for path, where, mutator, _ in timed_out:
         print(f"    timed out: {path}:{where} {mutator} — not evaluated; if this "
               f"persists, make the test that blocks under it fail fast", file=out)
 
@@ -149,16 +163,16 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr):
         fail = True
 
     unadjudicated = [m for m in survived if m not in equivalents]
-    for path, where, mutator in unadjudicated:
-        print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} — no test "
-              f"distinguishes the mutated code. Kill it, or adjudicate it equivalent "
+    for path, where, mutator, replacement in unadjudicated:
+        print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} (-> {replacement}) — no "
+              f"test distinguishes the mutated code. Kill it, or adjudicate it equivalent "
               f"with a stated observable.", file=err)
         fail = True
 
     # A stale adjudication excuses whatever later lands at that location.
     live = {m for m in survived}
     for key in sorted(set(equivalents) - live):
-        print(f"check:ts-mutation: {key[0]}:{key[1]} {key[2]} is adjudicated equivalent "
+        print(f"check:ts-mutation: {key[0]}:{key[1]} {key[2]} (-> {key[3]}) is adjudicated equivalent "
               f"but no longer survives — it was killed, moved, or the line shifted. "
               f"Remove the entry rather than let it pre-approve a future mutant.", file=err)
         fail = True
