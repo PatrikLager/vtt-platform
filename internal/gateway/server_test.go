@@ -803,16 +803,34 @@ func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 		f := newGWFixture(t)
 		conn := f.dial(f.dmToken, 4)
 
+		// Consume the catch-up head BEFORE provoking the close, and not
+		// after. Of the closes the READ LOOP can reach, this one is the
+		// odd one out: coder/websocket writes it from inside conn.Read
+		// itself (read.go's limitReader), so it never reaches shutdown(),
+		// and shutdown() is what drains the writer goroutine. Worse than a
+		// lost race — writeFrame LATCHES closeSentErr once a close goes
+		// out, so every later write returns net.ErrClosed before it even
+		// takes the write lock. The queued head is then never flushed at
+		// all and the client sees only StatusMessageTooBig. Reading first
+		// removes that ordering rather than hiding it: this connection
+		// drives no broadcasts, so until it sends the oversized frame
+		// there is nothing that can close it.
+		//
+		// Not a universal rule about the server. The malformed-frame case
+		// above deliberately keeps the opposite order, because the server
+		// owns that close and routes it through shutdown(), which drains
+		// outCh first. And the pump's overflow force-close (server.go's
+		// `if !closing.Load()` branch) bypasses shutdown() too, on a
+		// connection that merely read too SLOWLY rather than misbehaving —
+		// so a test that drives broadcasts cannot borrow this reasoning.
+		expectCatchUpHead(t, conn)
+
 		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer writeCancel()
 		oversized := []byte(strings.Repeat("x", 32769))
 		if err := conn.Write(writeCtx, websocket.MessageText, oversized); err != nil {
 			t.Fatalf("write oversized frame: %v", err)
 		}
-
-		// The connection opens with its catch-up head; the close we are
-		// asserting comes after it.
-		expectCatchUpHead(t, conn)
 
 		readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer readCancel()
