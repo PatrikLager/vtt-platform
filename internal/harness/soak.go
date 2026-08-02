@@ -426,8 +426,35 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 	if err != nil {
 		return fmt.Errorf("harness: soak: checkpoint %d: dial fresh catch-up connection: %w", rep.Checkpoints, err)
 	}
-	freshHistory := drainQuiescentEnvelopes(fresh.Events(), denialAbsenceWindow)
+	// Drain to a KNOWN HEAD, not to a silence.
+	//
+	// This used to be drainQuiescentEnvelopes(..., denialAbsenceWindow): stop
+	// once 300ms passes with no arrival, treating quiet as "catch-up
+	// finished". Mid-replay on a loaded CI runner a 300ms gap is ordinary, so
+	// the fresh history truncated — 257 envelopes against the observer's 480 —
+	// and the comparison below then reported
+	//
+	//     incremental fold (480 events) != fresh catch-up fold (257 events)
+	//
+	// which is this repo's KEYSTONE claim (rebuild == live) failing. It was
+	// not failing. A false alarm there is worse than a flake: it sends someone
+	// hunting a fold divergence that does not exist, and it discredits the one
+	// check the event-sourcing design rests on.
+	//
+	// The observer's own history gives a target the wire protocol does not:
+	// every sequence it has seen, the fresh connection must also see. So wait
+	// for THAT, and keep the silence window only as the signal that the tail
+	// after the target has settled.
+	target := highestSequence(incremental)
+	freshHistory, reached := drainToSequence(fresh.Events(), target, denialAbsenceWindow, freshCatchUpTimeout)
 	_ = fresh.Close()
+	if !reached {
+		// Reported as what it is. The fold comparison still runs below, but
+		// this line is what names the cause when it disagrees.
+		rep.Pass = false
+		fmt.Fprintf(report, "[checkpoint %d] FAIL: fresh catch-up never reached sequence %d within %s — drained %d envelopes (head %d), so any fold difference below is a TRUNCATED replay, not a divergence\n",
+			rep.Checkpoints, target, freshCatchUpTimeout, len(freshHistory), highestSequence(freshHistory))
+	}
 
 	freshState, err := Fold(freshHistory)
 	if err != nil {
@@ -444,23 +471,56 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 	return nil
 }
 
-// drainQuiescentEnvelopes collects every envelope from events until window
-// elapses with no new arrival, or the channel closes — soak.go's own copy
-// of cmd/vtt/state_dump.go's drainQuiescent (same window-based "catch-up
-// finished" signal, same reasoning: the wire protocol gives no explicit
-// end-of-catch-up marker). Deliberately re-declared here rather than
-// imported: cmd/vtt depends on harness, never the other way around.
-func drainQuiescentEnvelopes(events <-chan *vttv1.Envelope, window time.Duration) []*vttv1.Envelope {
+// freshCatchUpTimeout bounds the wait for a checkpoint's fresh connection to
+// replay up to the observer's head. Generous on purpose: it is a BACKSTOP
+// against a genuinely stuck replay, not a measurement, and a catch-up that
+// keeps up never reaches it. The value it replaced was an implicit 300ms —
+// the silence window — which is why a slow runner looked like a fold bug.
+const freshCatchUpTimeout = 30 * time.Second
+
+// highestSequence returns the largest sequence in a history, or 0 if empty.
+func highestSequence(envs []*vttv1.Envelope) int64 {
+	var head int64
+	for _, e := range envs {
+		if e.GetSequence() > head {
+			head = e.GetSequence()
+		}
+	}
+	return head
+}
+
+// drainToSequence collects envelopes until the history has reached `head` AND
+// then gone quiet for `window`, or until `timeout` elapses. The bool reports
+// whether `head` was reached.
+//
+// The two conditions are both needed. Waiting only for `head` would stop mid
+// tail and drop envelopes that arrive after it; waiting only for quiet is the
+// bug this replaced. A head of 0 (an empty observer history) is reached
+// immediately, which degrades this to the old quiescent drain — correctly, as
+// there is then nothing to catch up to.
+func drainToSequence(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
+	deadline := time.After(timeout)
+	reached := head == 0
 	for {
 		select {
 		case env, ok := <-events:
 			if !ok {
-				return out
+				return out, reached
 			}
 			out = append(out, env)
+			if env.GetSequence() >= head {
+				reached = true
+			}
 		case <-time.After(window):
-			return out
+			// Quiet. Done only if the target is already in hand; otherwise the
+			// replay is still coming and this is exactly the gap that used to
+			// end the drain early.
+			if reached {
+				return out, true
+			}
+		case <-deadline:
+			return out, reached
 		}
 	}
 }

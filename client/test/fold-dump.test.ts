@@ -135,3 +135,34 @@ test("removing one of several conditions removes the NAMED one", () => {
   ]);
   expect(st.Conditions["a1"]!.map((c) => c.ID)).toEqual(["prone"]);
 });
+
+test("every actor and token is stored under a key equal to its own id", () => {
+  // LOAD-BEARING INVARIANT, pinned here because something else depends on it
+  // from a distance: fifteen adjudications in tools/ts-mutation-equivalents.txt
+  // declare player.ts's sort comparators equivalent, and the whole argument is
+  // that the ids being sorted are UNIQUE. They are unique only because the map
+  // key equals the id field, which is maintained HERE — fold.ts:77 and :87 —
+  // not in the file those adjudications describe.
+  //
+  // Without this test, a fold that stored an actor under some other key would
+  // quietly invalidate those fifteen claims with nothing failing.
+  const st = fold([
+    started,
+    env(2, { actorAdded: { actor: { actorId: "a1", name: "A" } } }),
+    env(3, { actorAdded: { actor: { actorId: "a2", name: "B" } } }),
+    env(4, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
+    env(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(6, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 2, y: 2 } } }),
+    env(7, { tokenMoved: { tokenId: "t1", to: { x: 3, y: 3 } } }),
+  ]);
+
+  for (const [key, actor] of Object.entries(st.Actors)) expect(actor.actorId).toBe(key);
+  for (const [key, token] of Object.entries(st.Tokens)) expect(token.ID).toBe(key);
+
+  // And therefore the sorted ids are distinct, which is the property the
+  // adjudications actually rely on.
+  const actorIds = Object.values(st.Actors).map((a) => a.actorId);
+  const tokenIds = Object.values(st.Tokens).map((t) => t.ID);
+  expect(new Set(actorIds).size).toBe(actorIds.length);
+  expect(new Set(tokenIds).size).toBe(tokenIds.length);
+});

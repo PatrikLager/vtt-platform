@@ -23,12 +23,15 @@ _spec.loader.exec_module(ctm)
 
 
 def report(*mutants):
-    """mutants: (file, line, col, mutator, status)."""
+    """mutants: (file, line, col, mutator, status[, replacement])."""
     files = {}
-    for path, line, col, mutator, status in mutants:
+    for m in mutants:
+        path, line, col, mutator, status = m[:5]
+        replacement = m[5] if len(m) > 5 else "REP"
         files.setdefault(path, {"mutants": []})["mutants"].append({
             "mutatorName": mutator,
             "status": status,
+            "replacement": replacement,
             "location": {"start": {"line": line, "column": col}},
         })
     return {"files": files}
@@ -50,8 +53,8 @@ def equivalents_file(text):
 class Equivalents(unittest.TestCase):
     def test_an_entry_and_its_reason_parse(self):
         got = ctm.read_equivalents(equivalents_file(
-            "client/src/a.ts 10:5 EqualityOperator\n    same observable\n"))
-        self.assertEqual(got, {("client/src/a.ts", "10:5", "EqualityOperator"): "same observable"})
+            "client/src/a.ts 10:5 EqualityOperator a >= b\n    same observable\n"))
+        self.assertEqual(got, {("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"): "same observable"})
 
     def test_an_entry_without_a_reason_is_an_error(self):
         # An equivalence claim forecloses ever writing a test for that mutant.
@@ -71,7 +74,7 @@ class Equivalents(unittest.TestCase):
     def test_a_duplicate_entry_is_an_error(self):
         with self.assertRaises(ctm.EquivalentsError):
             ctm.read_equivalents(equivalents_file(
-                "client/src/a.ts 10:5 Eq\n    one\nclient/src/a.ts 10:5 Eq\n    two\n"))
+                "client/src/a.ts 10:5 Eq x\n    one\nclient/src/a.ts 10:5 Eq x\n    two\n"))
 
 
 class Gate(unittest.TestCase):
@@ -88,7 +91,7 @@ class Gate(unittest.TestCase):
     def test_an_adjudicated_survivor_passes(self):
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Survived")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral"): "no observable difference"})
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "no observable difference"})
         self.assertEqual(code, 0, msg)
 
     def test_an_adjudication_for_a_mutant_that_no_longer_survives_fails(self):
@@ -97,7 +100,7 @@ class Gate(unittest.TestCase):
         # the file.
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Killed")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral"): "stale"})
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "stale"})
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", msg)
 
@@ -106,9 +109,20 @@ class Gate(unittest.TestCase):
         # must not excuse the other.
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "EqualityOperator", "Survived")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral"): "different mutator"})
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "different mutator"})
         self.assertEqual(code, 1)
         self.assertIn("SURVIVED EqualityOperator", msg)
+
+    def test_two_mutants_at_one_location_are_two_separate_claims(self):
+        # Stryker emits `-> true` AND `-> false` for one ConditionalExpression.
+        # Before the replacement was part of the key these collapsed into one
+        # entry, so adjudicating the harmless one excused the other. Found by
+        # the duplicate check on client/src/player.ts:20:51.
+        rep = report(("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "true"),
+                     ("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false"))
+        code, msg = run(rep, {("client/src/a.ts", "20:51", "ConditionalExpression", "true"): "reached only when true"})
+        self.assertEqual(code, 1)
+        self.assertIn("-> false", msg)
 
     def test_a_timed_out_mutant_counts_as_a_kill_but_is_printed(self):
         code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed"),

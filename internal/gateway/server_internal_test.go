@@ -202,6 +202,23 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	// starve too, and unrelated concurrent identity DB queries could hit
 	// transient SQLite lock contention.
 	const commandCount = 40
+
+	// A BACKSTOP, not a measurement. These writes are the test's scaffolding —
+	// driverConn is healthy and every one of them is EXPECTED to succeed; the
+	// deadline exists only so a genuine wedge fails the suite instead of hanging
+	// it forever. That makes it categorically different from the victim-read
+	// deadlines below, where expiry is part of what is being asserted, and it is
+	// why this one can be generous at no cost: a write that succeeds promptly
+	// never touches it.
+	//
+	// It was 3s, and that failed DETERMINISTICALLY (5 of 5, always at write 14)
+	// on a developer machine under disk pressure — these writes drain through
+	// the server's SQLite-backed Append, so their latency tracks the disk, not
+	// the code. Raising the bound made the same test pass in 17.4s. CI, on a
+	// clean runner, never saw it. A scaffolding timeout tight enough to trip on
+	// a slow disk reports a logic failure that is not there, and it blocked a
+	// push for work in another language entirely.
+	const driverWriteBackstop = 30 * time.Second
 	for i := 0; i < commandCount; i++ {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
@@ -213,7 +230,7 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wctx, wcancel := context.WithTimeout(context.Background(), 3*time.Second)
+		wctx, wcancel := context.WithTimeout(context.Background(), driverWriteBackstop)
 		werr := driverConn.Write(wctx, websocket.MessageText, raw)
 		wcancel()
 		if werr != nil {

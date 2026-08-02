@@ -7,6 +7,26 @@ import {
 import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { Wire } from "../src/wire";
 
+/**
+ * Wait for a CONDITION rather than a fixed delay.
+ *
+ * These were `await Bun.sleep(20)`, a guess at how long a real WebSocket takes
+ * to deliver a frame. session.test.ts had the same guess at 30ms and it failed
+ * 3 of 4 under the load of a mutation run — and because Stryker refuses to
+ * start when its initial test run fails, a timing guess in a test file blocks
+ * the whole mutation gate. Polling returns as soon as the frame lands and
+ * treats the timeout as a backstop instead of a measurement.
+ */
+async function until(ready: () => boolean, what: string, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ready()) return;
+    await Bun.sleep(1);
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+
+
 // A fake gateway. Records every connection's query string so the tests can
 // assert the replay cursor, and lets each case script what it sends back.
 function fakeGateway(handler: (ws: any, raw: string) => void) {
@@ -56,7 +76,7 @@ test("connect replays from after=0 and delivers events", async () => {
     await wire.connect(0n);
 
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(1) }));
-    await Bun.sleep(20);
+    await until(() => seen.length > 0, "the event to arrive");
 
     expect(seen).toEqual([1n]);
     expect(gw.queries[0]).toContain("after=0");
@@ -75,10 +95,10 @@ test("a reconnect resumes from the last sequence seen, not from zero", async () 
     const wire = new Wire(gw.url, "tok-1");
     await wire.connect(0n);
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(7) }));
-    await Bun.sleep(20);
+    await until(() => wire.head === 7n, "the cursor to advance to 7");
 
     await wire.reconnect();
-    await Bun.sleep(20);
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
 
     expect(gw.queries.length).toBe(2);
     expect(gw.queries[1]).toContain("after=7");
@@ -176,7 +196,7 @@ test("status transitions are reported to the caller", async () => {
     wire.onStatus((s) => statuses.push(s));
     await wire.connect(0n);
     wire.close();
-    await Bun.sleep(20);
+    await until(() => statuses.includes("closed"), "the closed status");
     expect(statuses).toContain("connecting");
     expect(statuses).toContain("open");
     expect(statuses).toContain("closed");
