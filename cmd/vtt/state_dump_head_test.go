@@ -25,7 +25,7 @@ func TestDrainToHeadSurvivesAGapLongerThanTheQuietWindow(t *testing.T) {
 		ch <- envAt(3)
 	}()
 
-	got, reached := drainToHead(ch, 3, window, 5*time.Second)
+	got, reached := drainToHead(ch, 0, 3, window, 5*time.Second)
 	if !reached {
 		t.Fatalf("want head 3 reached across the gap, got reached=false with %d envelopes", len(got))
 	}
@@ -40,7 +40,7 @@ func TestDrainToHeadReportsAStalledReplayRatherThanReturningShort(t *testing.T) 
 	// exactly like a complete one.
 	ch := make(chan *vttv1.Envelope, 1)
 	ch <- envAt(1)
-	got, reached := drainToHead(ch, 99, 10*time.Millisecond, 120*time.Millisecond)
+	got, reached := drainToHead(ch, 0, 99, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
 		t.Fatal("want reached=false when the head never arrives")
 	}
@@ -61,7 +61,7 @@ func TestDrainToHeadCollectsTheLiveTailPastTheHead(t *testing.T) {
 		ch <- envAt(3) // live, already in flight
 	}()
 
-	got, reached := drainToHead(ch, 2, window, 5*time.Second)
+	got, reached := drainToHead(ch, 0, 2, window, 5*time.Second)
 	if !reached || len(got) != 3 {
 		t.Fatalf("want the tail collected too: reached=%v, %d envelopes", reached, len(got))
 	}
@@ -73,7 +73,7 @@ func TestDrainToHeadOnAnEmptyLogReturnsImmediatelyAtQuiet(t *testing.T) {
 	// it was never a guess.
 	ch := make(chan *vttv1.Envelope)
 	start := time.Now()
-	got, reached := drainToHead(ch, 0, 20*time.Millisecond, 5*time.Second)
+	got, reached := drainToHead(ch, 0, 0, 20*time.Millisecond, 5*time.Second)
 	if !reached {
 		t.Fatal("want head 0 treated as already reached")
 	}
@@ -88,5 +88,44 @@ func TestDrainToHeadOnAnEmptyLogReturnsImmediatelyAtQuiet(t *testing.T) {
 func TestHeadSequenceIsTheMaximum(t *testing.T) {
 	if got := headSequence([]*vttv1.Envelope{envAt(3), envAt(1), envAt(2)}); got != 3 {
 		t.Fatalf("want 3, got %d", got)
+	}
+}
+
+// TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp pins the general
+// already-caught-up predicate, `head <= after`, rather than the special case
+// `head == 0` it started as.
+//
+// Store.Subscribe answers with sub.lastSeq, which is the CURSOR ITSELF when
+// nothing newer exists. So a client dialing after=5 against a 5-event log is
+// told head=5 and will then wait forever for a Sequence >= 5 that cannot
+// come: everything at or below the cursor was excluded from its backlog by
+// definition. Reading only head==0 as "nothing to wait for" burns the entire
+// catch-up timeout and then REFUSES TO PRINT a state that was complete the
+// moment it connected — the failure mode inverted, a false alarm instead of a
+// silent truncation, but a caller stuck either way.
+//
+// `vtt state dump` itself always dials dumpAfter (0), so this is unreachable
+// from that command today. It is one flag away everywhere else: events_tail.go
+// and client_run.go already take a caller-supplied after.
+func TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp(t *testing.T) {
+	ch := make(chan *vttv1.Envelope) // nothing will ever arrive, and nothing should need to
+	got, reached := drainToHead(ch, 5, 5, 20*time.Millisecond, 150*time.Millisecond)
+	if !reached {
+		t.Fatal("want reached=true when the announced head is already at the dial cursor")
+	}
+	if len(got) != 0 {
+		t.Fatalf("want no envelopes, got %d", len(got))
+	}
+}
+
+// TestDrainToHeadStillWaitsForAHeadAheadOfTheCursor is the other side of the
+// same predicate: `head <= after` must not degenerate into "always caught up".
+// A cursor of 5 with an announced head of 8 has three envelopes owing, and
+// reporting success without them is the original truncation bug.
+func TestDrainToHeadStillWaitsForAHeadAheadOfTheCursor(t *testing.T) {
+	ch := make(chan *vttv1.Envelope)
+	got, reached := drainToHead(ch, 5, 8, 10*time.Millisecond, 120*time.Millisecond)
+	if reached {
+		t.Fatalf("want reached=false while sequences 6-8 are still owing, got %d envelopes", len(got))
 	}
 }

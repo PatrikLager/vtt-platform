@@ -49,6 +49,13 @@ func newStateCmd() *cobra.Command {
 // envelope sequence this dump actually received before folding — the
 // caller's staleness check (e.g. sub-project 6's LLM tools comparing it
 // against a sequence they already know about).
+// dumpAfter is the catch-up cursor `vtt state dump` always dials with: a dump
+// is a full snapshot from the beginning of the log, never a tail. Named rather
+// than written as a bare 0 at both call sites because drainToHead's
+// already-caught-up test is `head <= after` — the two have to agree, and a
+// literal in two places is how they would stop agreeing.
+const dumpAfter = 0
+
 func newStateDumpCmd() *cobra.Command {
 	var serverURL, token string
 
@@ -56,7 +63,7 @@ func newStateDumpCmd() *cobra.Command {
 		Use:   "dump",
 		Short: "Catch up, fold, and print derived state as JSON",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := harness.Dial(cmd.Context(), serverURL, token, 0)
+			c, err := harness.Dial(cmd.Context(), serverURL, token, dumpAfter)
 			if err != nil {
 				return fmt.Errorf("vtt state dump: %w", err)
 			}
@@ -67,7 +74,7 @@ func newStateDumpCmd() *cobra.Command {
 				return fmt.Errorf("vtt state dump: catch-up head: %w", err)
 			}
 
-			events, reached := drainToHead(c.Events(), head, dumpQuietWindow, dumpCatchUpTimeout)
+			events, reached := drainToHead(c.Events(), dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 			if !reached {
 				// FAIL, never print. A short dump that looks complete is the
 				// failure this whole path exists to prevent; the caller can
@@ -100,17 +107,23 @@ func newStateDumpCmd() *cobra.Command {
 //
 // Both conditions matter. Stopping at head alone would drop envelopes
 // broadcast live just behind it, which is a truncation from the other side;
-// stopping at quiet alone is the bug this replaced. A head of 0 means the log
-// was empty at subscribe time, so there is nothing to catch up to and the
-// quiet window is the only sensible signal — which is the old behaviour,
-// correctly scoped to the one case where it was never a guess.
+// stopping at quiet alone is the bug this replaced.
+//
+// `head <= after` means there was never anything to catch up to, so the quiet
+// window is the only sensible signal — the old behaviour, correctly scoped to
+// the case where it was never a guess. Note this is NOT just head == 0:
+// Store.Subscribe answers with the cursor ITSELF when nothing newer exists, so
+// a connection dialed at after=5 against a 5-event log is told head=5 and
+// would otherwise wait out the whole timeout for a Sequence >= 5 that cannot
+// arrive — everything at or below the cursor was excluded from its backlog by
+// definition.
 //
 // Deliberately a sibling of internal/harness/soak.go's drainToSequence rather
 // than an import: cmd/vtt depends on harness, never the reverse.
-func drainToHead(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+func drainToHead(events <-chan *vttv1.Envelope, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
-	reached := head == 0
+	reached := head <= after
 	for {
 		select {
 		case env, ok := <-events:

@@ -318,7 +318,14 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	rctx, rcancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer rcancel()
 	var frame vttv1.ServerFrame
-	for tries := 0; tries < 2 && frame.GetResult() == nil; tries++ {
+	// Budget, not a frame count: this connection is served a CatchUpHead
+	// first and its CommandResult second, so 2 is the exact requirement and
+	// would leave nothing for a third frame type added later. The loop's job
+	// is to skip whatever is not a result; give it room to, so a future frame
+	// shows up as a failure in the test that ADDED it rather than here, where
+	// the message ("want ok=true CommandResult") would misdirect.
+	const frameBudget = 5
+	for tries := 0; tries < frameBudget && frame.GetResult() == nil; tries++ {
 		_, respRaw, err := freshConn.Read(rctx)
 		if err != nil {
 			t.Fatalf("fresh connection read (try %d): %v", tries, err)
@@ -338,4 +345,66 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	<-healthyAlive
 	driverConn.CloseNow()
 	<-driverAlive
+}
+
+// TestCatchUpHeadEncodeFailureClosesTheConnection pins that a connection which
+// CANNOT announce its catch-up head is refused rather than served.
+//
+// The failure is unreachable in production — protojson does not fail on a
+// single int64 — which is exactly why it needs injecting: the handling is
+// otherwise a claim no test has ever checked. The stakes are what make it
+// worth checking at all. A connection left open but permanently silent about
+// its head is worse than a refused one, because harness.Client.CatchUpHead
+// blocks on its context and `vtt state dump` passes main.go's signal context,
+// which carries NO deadline. The dump would hang until Ctrl-C rather than
+// failing — the one outcome worse than the truncated print this whole frame
+// exists to prevent.
+//
+// Mirrors the subscribe-failure path directly above it in serve: close with
+// StatusInternalError, do not serve.
+func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
+	orig := encodeFrame
+	encodeFrame = func(*vttv1.ServerFrame) ([]byte, error) {
+		return nil, errors.New("gateway: injected encode failure")
+	}
+	t.Cleanup(func() { encodeFrame = orig })
+
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	httpSrv := httptest.NewServer(New(c, ids).Handler())
+	defer httpSrv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, httpSrv.URL+"/ws?token="+token+"&after=0", nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+
+	// A bounded read is the whole assertion: the server must hang up on its
+	// own. If it serves the connection instead, this blocks until the ctx
+	// deadline and the failure is the hang itself.
+	_, _, err = conn.Read(ctx)
+	if err == nil {
+		t.Fatal("want the connection closed when the catch-up head cannot be encoded, got a readable frame")
+	}
+	if status := websocket.CloseStatus(err); status != websocket.StatusInternalError {
+		t.Fatalf("close status = %v, want StatusInternalError (err=%v)", status, err)
+	}
 }

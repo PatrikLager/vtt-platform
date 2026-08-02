@@ -266,13 +266,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// A slow moment mid-replay then produced a silently TRUNCATED snapshot.
 	// Sent unconditionally, including head 0 for an empty log, so "no frame
 	// yet" never has to be interpreted.
-	if b, err := EncodeFrame(&vttv1.ServerFrame{
+	b, err := encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
-	}); err == nil {
-		select {
-		case outCh <- b:
-		case <-ctx.Done():
-		}
+	})
+	if err != nil {
+		// Fail closed, exactly like the subscribe failure above. Serving a
+		// connection that can never announce its head is worse than refusing
+		// it: harness.Client.CatchUpHead waits on its context, and `vtt state
+		// dump` hands it main.go's signal context, which has NO deadline — so
+		// the caller hangs until Ctrl-C instead of getting an error. Tear the
+		// writer down first (nothing else has started yet) so it cannot
+		// outlive the connection.
+		cancel()
+		close(outCh)
+		<-writerDone
+		_ = conn.Close(websocket.StatusInternalError, "gateway: encode catch-up head failed")
+		return
+	}
+	select {
+	case outCh <- b:
+	case <-ctx.Done():
 	}
 
 	var closing atomic.Bool

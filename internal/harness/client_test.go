@@ -41,6 +41,12 @@ type fakeServer struct {
 	lastQuery url.Values
 
 	onCommand func(conn *websocket.Conn, cmd *vttv1.ClientCommand)
+
+	// onConnect runs once per accepted connection, before the read loop, so
+	// a test can reproduce the real gateway's opening CatchUpHead frame (and,
+	// if it wants, hang up immediately afterwards). Set it before dialing;
+	// the dial is what starts the server goroutine that reads it.
+	onConnect func(conn *websocket.Conn)
 }
 
 func newFakeServer(t *testing.T, onCommand func(conn *websocket.Conn, cmd *vttv1.ClientCommand)) *fakeServer {
@@ -63,6 +69,10 @@ func (fs *fakeServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
+
+	if fs.onConnect != nil {
+		fs.onConnect(conn)
+	}
 
 	ctx := r.Context()
 	for {
@@ -440,5 +450,110 @@ func TestDialErrorNeverIncludesTheRawToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "[redacted]") {
 		t.Fatalf("Dial error does not show a redaction marker: %v", err)
+	}
+}
+
+// sendCatchUpHead writes the one frame every real gateway connection opens
+// with, so a fake server can reproduce the announcement CatchUpHead reads.
+func sendCatchUpHead(t *testing.T, conn *websocket.Conn, head int64) {
+	t.Helper()
+	sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_CatchUpHead{
+		CatchUpHead: &vttv1.CatchUpHead{HeadSequence: head},
+	}})
+}
+
+// TestCatchUpHeadReturnsAnnouncedHeadAfterConnectionEnds pins the precedence
+// between the two facts CatchUpHead can hold at once: the head WAS announced,
+// and the connection has SINCE ended. The announcement is a fact that outlives
+// the connection, so it must win — the close only matters when the head never
+// arrived at all.
+//
+// This is not hypothetical ordering pedantry. A server announces the head and
+// then hangs up (end of session, gateway restart, an overflowing subscription
+// force-closed); every caller that asks afterwards is entitled to the number.
+// Reporting "connection ended before the server announced its catch-up head"
+// for a head already in hand is a lie, and `vtt state dump` turns it into a
+// refusal to print a snapshot it could have printed.
+//
+// Both channels are permanently closed by the time the loop runs, so each
+// call independently re-samples any choice between them: a select that treats
+// them as equals picks uniformly, and 200 draws make surviving this by luck a
+// 2^-200 event. Close() is the synchronisation — it blocks on readerDone (see
+// client.go), so there is nothing timing-dependent here to guess at.
+func TestCatchUpHeadReturnsAnnouncedHeadAfterConnectionEnds(t *testing.T) {
+	// The server must not hang up until the client has actually taken the
+	// head off the wire. Closing straight after the write races handleWS's
+	// own `defer conn.CloseNow()`, which tears the TCP connection down
+	// abruptly and can strand the frame unread — the client then fails for
+	// a reason that has nothing to do with the precedence under test.
+	released := make(chan struct{})
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	fs.onConnect = func(conn *websocket.Conn) {
+		sendCatchUpHead(t, conn, 7)
+		<-released
+		_ = conn.Close(websocket.StatusNormalClosure, "fake: announced, now hanging up")
+	}
+
+	c := dial(t, fs, "tok", 0)
+
+	warmCtx, warmCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer warmCancel()
+	if head, err := c.CatchUpHead(warmCtx); err != nil || head != 7 {
+		t.Fatalf("setup: CatchUpHead on a live connection = (%d, %v), want (7, nil)", head, err)
+	}
+	close(released)
+
+	// Events() is closed by readLoop's teardown, so draining it to closure
+	// is the proof that the connection has really ended — no sleep, no
+	// silence window. Close() then waits on readerDone specifically.
+	for range c.Events() { //nolint:revive // draining to closure IS the wait
+	}
+	_ = c.Close()
+
+	for i := range 200 {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		head, err := c.CatchUpHead(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("call %d: CatchUpHead after the connection ended = error %v, want the announced head 7", i, err)
+		}
+		if head != 7 {
+			t.Fatalf("call %d: CatchUpHead = %d, want 7", i, head)
+		}
+	}
+}
+
+// TestCatchUpHeadReturnsAnnouncedHeadDespiteCanceledContext is the same
+// precedence question against the other competing signal: a caller whose ctx
+// is already dead asking for a head the client is already holding. No wire
+// access is needed to answer, so ctx expiry has nothing to abort — returning
+// ctx.Err() would discard a fact rather than avoid a wait.
+//
+// Same 200-draw argument as above; here the connection stays live, so the
+// only two ready signals are the announcement and the dead context.
+func TestCatchUpHeadReturnsAnnouncedHeadDespiteCanceledContext(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	fs.onConnect = func(conn *websocket.Conn) { sendCatchUpHead(t, conn, 42) }
+
+	c := dial(t, fs, "tok", 0)
+
+	// Establish that the announcement has landed before racing it against a
+	// dead context, so a failure below can only mean precedence.
+	warmCtx, warmCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer warmCancel()
+	if head, err := c.CatchUpHead(warmCtx); err != nil || head != 42 {
+		t.Fatalf("setup: CatchUpHead = (%d, %v), want (42, nil)", head, err)
+	}
+
+	dead, deadCancel := context.WithCancel(context.Background())
+	deadCancel()
+	for i := range 200 {
+		head, err := c.CatchUpHead(dead)
+		if err != nil {
+			t.Fatalf("call %d: CatchUpHead with a canceled ctx = error %v, want the known head 42", i, err)
+		}
+		if head != 42 {
+			t.Fatalf("call %d: CatchUpHead = %d, want 42", i, head)
+		}
 	}
 }

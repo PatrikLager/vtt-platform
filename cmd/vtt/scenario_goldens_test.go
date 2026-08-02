@@ -235,7 +235,7 @@ func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
 	if err != nil {
 		t.Fatalf("catch-up head: %v", err)
 	}
-	events, reached := drainToHead(c.Events(), head, dumpQuietWindow, dumpCatchUpTimeout)
+	events, reached := drainToHead(c.Events(), dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 	if !reached {
 		t.Fatalf("caught up only to sequence %d of %d — refusing to compare a truncated snapshot", headSequence(events), head)
 	}

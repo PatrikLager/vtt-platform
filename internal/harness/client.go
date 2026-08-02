@@ -401,7 +401,25 @@ func (c *Client) setCatchUpHead(head int64) {
 // it ends before the announcement (an old server that never sends the frame
 // looks exactly like that, which is the honest answer: this client cannot know
 // the boundary).
+//
+// An announced head OUTRANKS both of those, which is why it is checked on its
+// own first rather than as one arm of the select below. Once announced, the
+// head is a fact this client already holds: the connection is then free to end
+// and the caller's ctx free to expire, leaving two or three arms ready at
+// once — and a select over ready arms picks UNIFORMLY AT RANDOM. Sharing one
+// select made a caller roughly as likely to be told "connection ended before
+// the server announced its catch-up head" as to be told the head, for a head
+// sitting in the struct. Fail-closed, so it never truncated a dump, but it
+// turned `vtt state dump` into a coin flip and the error itself was a lie.
 func (c *Client) CatchUpHead(ctx context.Context) (int64, error) {
+	select {
+	case <-c.catchUpHeadKnown:
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.catchUpHead, nil
+	default:
+	}
+
 	select {
 	case <-c.catchUpHeadKnown:
 		c.mu.Lock()
