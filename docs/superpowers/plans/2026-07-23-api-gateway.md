@@ -26,11 +26,11 @@
 **Files:**
 - Modify: `contract/vtt/v1/events.proto` (Actor + Envelope fields), `contract/vtt/v1/commands.proto` (commands + frames)
 - Modify: `tools/toolgen/main.go` (map/list/Struct schema support + 6 manifest entries), `contract/testdata/expected_tools.json`
-- Modify: `contract/roundtrip_test.go`, `contract/events.test.ts`; Create: `contract/testdata/client_command.json`, `contract/testdata/server_frame_result.json`
+- Modify: `contract/roundtrip_test.go`, `contract/events.test.ts`; Create: `contract/testdata/client_command.json`, `contract/testdata/server_frame_result.json` (a third fixture, `server_frame_catch_up_head.json`, was added with the 2026-08-02 amendment)
 - Modify: `contract/gen/**` (regenerated)
 
 **Interfaces:**
-- Produces: `Actor.ControllerId`, `Envelope.ParticipantId`, `vttv1.ClientCommand` (oneof tags 10–16), `vttv1.ServerFrame{oneof: result|event}`, `vttv1.CommandResult`, six command messages `CreateScene/AddActor/PlaceToken/StartSession/EndSession/RetractEvents`; TS schemas for all. Tasks 4–7 depend on these exact names.
+- Produces: `Actor.ControllerId`, `Envelope.ParticipantId`, `vttv1.ClientCommand` (oneof tags 10–16), `vttv1.ServerFrame{oneof: result|event}` (a third case, `catch_up_head CatchUpHead`, was added additively on 2026-08-02 — see the spec's §3 amendment; it did not exist when this plan was executed), `vttv1.CommandResult`, six command messages `CreateScene/AddActor/PlaceToken/StartSession/EndSession/RetractEvents`; TS schemas for all. Tasks 4–7 depend on these exact names.
 
 - [ ] **Step 1: Branch** — `git checkout -b feat/api-gateway main`
 

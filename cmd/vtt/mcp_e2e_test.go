@@ -504,7 +504,7 @@ func decodeGenericJSON(t *testing.T, raw string) map[string]any {
 // observeStateIndependently is the "separate wire observation" the brief
 // requires get_state be checked against: a FRESH harness.Client dial
 // (after=0, nothing shared with the mcp.Server under test), drained to
-// quiescence (state_dump.go's drainQuiescent/dumpQuietWindow, reused
+// read to its announced catch-up head (state_dump.go's drainToHead, reused
 // as-is), folded (harness.Fold), and shaped exactly like `vtt state dump`
 // (state_dump.go's writeDump, also reused as-is) — the identical algorithm
 // internal/mcp/read_tools.go's marshalStateWithHead independently
@@ -520,7 +520,7 @@ func observeStateIndependently(t *testing.T, wsURL, token string) map[string]any
 	}
 	defer c.Close()
 
-	events := drainQuiescent(c.Events(), dumpQuietWindow)
+	events := drainToCatchUpHead(t, c)
 	st, err := harness.Fold(events)
 	if err != nil {
 		t.Fatalf("independent observation: Fold: %v", err)

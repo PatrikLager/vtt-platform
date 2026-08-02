@@ -62,7 +62,7 @@ func TestExitScenario(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 
-	ch, cancel, err := c.Subscribe(0, 32)
+	ch, cancel, _, err := c.Subscribe(0, 32)
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}

@@ -231,7 +231,7 @@ func TestCloseReopenStateDeepEquals(t *testing.T) {
 func TestSubscriberSeesAppendedEvents(t *testing.T) {
 	c := openTemp(t)
 
-	ch, cancel, err := c.Subscribe(0, 4)
+	ch, cancel, _, err := c.Subscribe(0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

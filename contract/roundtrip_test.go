@@ -84,6 +84,45 @@ func TestServerFrameErrorRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_error.json", &vttv1.ServerFrame{})
 }
 
+// TestServerFrameCatchUpHeadRoundTrip covers the third ServerFrame case, the
+// boundary marker every connection opens with. head_sequence is an int64, so
+// protojson carries it as a STRING on the wire ("12", not 12) — the same
+// convention Envelope.sequence uses, and the thing a hand-written client is
+// most likely to get wrong about this frame.
+func TestServerFrameCatchUpHeadRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_catch_up_head.json", &vttv1.ServerFrame{})
+}
+
+// TestCatchUpHeadZeroSerializesAsAnEmptyMessage pins the encoding of the empty
+// log, which is load-bearing rather than incidental: the gateway sends this
+// frame UNCONDITIONALLY, head 0 included, precisely so that a client never has
+// to interpret "no frame yet". head_sequence 0 is a proto3 zero value, so
+// protojson omits the field and the frame goes out as {"catchUpHead":{}}.
+//
+// A consumer that treats the absent key as "not a catch-up-head frame" —
+// rather than as head 0 — reintroduces the guess the frame was added to
+// remove, and does it exactly in the empty-campaign case where nothing else
+// will ever arrive to correct it.
+func TestCatchUpHeadZeroSerializesAsAnEmptyMessage(t *testing.T) {
+	raw, err := protojson.Marshal(&vttv1.ServerFrame{
+		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: 0}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back vttv1.ServerFrame
+	if err := protojson.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	head := back.GetCatchUpHead()
+	if head == nil {
+		t.Fatalf("want the catch_up_head case to survive a zero head, got %s", raw)
+	}
+	if head.GetHeadSequence() != 0 {
+		t.Fatalf("head_sequence = %d, want 0", head.GetHeadSequence())
+	}
+}
+
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")
 	var env vttv1.Envelope

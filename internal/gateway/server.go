@@ -232,7 +232,7 @@ func parseAfter(raw string) (int64, error) {
 func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
 	defer func() { _ = conn.CloseNow() }()
 
-	events, cancel, err := s.campaign.Subscribe(after, s.buffer)
+	events, cancel, catchUpHead, err := s.campaign.Subscribe(after, s.buffer)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -257,6 +257,37 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// this connection's own subscriber channel fills because the pump
 	// couldn't keep pumping — e.g. it was itself blocked sending to a full
 	// outCh). See the force-close below the loop.
+	// The catch-up head goes out FIRST, before any backlog, so a client knows
+	// what it is waiting for before it starts receiving it.
+	//
+	// Without it a client could not tell catch-up from live: this pump feeds
+	// backlog and live broadcast down one channel with no boundary, so
+	// `vtt state dump` stopped after 300ms of quiet and called that caught up.
+	// A slow moment mid-replay then produced a silently TRUNCATED snapshot.
+	// Sent unconditionally, including head 0 for an empty log, so "no frame
+	// yet" never has to be interpreted.
+	b, err := encodeFrame(&vttv1.ServerFrame{
+		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
+	})
+	if err != nil {
+		// Fail closed, exactly like the subscribe failure above. Serving a
+		// connection that can never announce its head is worse than refusing
+		// it: harness.Client.CatchUpHead waits on its context, and `vtt state
+		// dump` hands it main.go's signal context, which has NO deadline — so
+		// the caller hangs until Ctrl-C instead of getting an error. Tear the
+		// writer down first (nothing else has started yet) so it cannot
+		// outlive the connection.
+		cancel()
+		close(outCh)
+		<-writerDone
+		_ = conn.Close(websocket.StatusInternalError, "gateway: encode catch-up head failed")
+		return
+	}
+	select {
+	case outCh <- b:
+	case <-ctx.Done():
+	}
+
 	var closing atomic.Bool
 
 	pumpDone := make(chan struct{})

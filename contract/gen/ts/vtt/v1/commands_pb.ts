@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkiJQoNTG9hZEFkdmVudHVyZRIUCgxhZHZlbnR1cmVfaWQYASABKAki/gQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIABIvCg5sb2FkX2FkdmVudHVyZRgWIAEoCzIVLnZ0dC52MS5Mb2FkQWR2ZW50dXJlSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiYgoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAQgcKBWZyYW1lQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkiJQoNTG9hZEFkdmVudHVyZRIUCgxhZHZlbnR1cmVfaWQYASABKAki/gQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIABIvCg5sb2FkX2FkdmVudHVyZRgWIAEoCzIVLnZ0dC52MS5Mb2FkQWR2ZW50dXJlSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiJAoLQ2F0Y2hVcEhlYWQSFQoNaGVhZF9zZXF1ZW5jZRgBIAEoAyKQAQoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAEiwKDWNhdGNoX3VwX2hlYWQYAyABKAsyEy52dHQudjEuQ2F0Y2hVcEhlYWRIAEIHCgVmcmFtZUJCWkBnaXRodWIuY29tL1BhdHJpa0xhZ2VyL3Z0dC1wbGF0Zm9ybS9jb250cmFjdC9nZW4vZ28vdnR0L3YxO3Z0dHYxYgZwcm90bzM", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -486,6 +486,43 @@ export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 15);
 
 /**
+ * CatchUpHead is sent ONCE, first, on every connection: the highest sequence
+ * the server has already queued as this connection's catch-up backlog.
+ *
+ * It exists because a client had no way to know when catch-up ENDED. The
+ * server streams backlog straight into live broadcast on one channel, so
+ * `vtt state dump` guessed — it stopped after 300ms of silence and called that
+ * "caught up". Mid-replay a 300ms gap is ordinary, and the dump then printed a
+ * SILENTLY INCOMPLETE state, which is the worst possible failure for a command
+ * whose output the golden corpus and the TypeScript fold-parity keystone are
+ * compared against. The same guess, in the soak harness, once reported the
+ * fold itself as divergent.
+ *
+ * The server always knew this number: Store.Subscribe preloads the whole
+ * backlog synchronously under its lock, so the head is exact at that instant.
+ * It simply was never told to anyone.
+ *
+ * A client that wants a point-in-time snapshot reads until it has seen
+ * head_sequence; a client that wants a live tail can ignore this frame. A
+ * head_sequence of 0 means the log was empty at subscribe time.
+ *
+ * @generated from message vtt.v1.CatchUpHead
+ */
+export type CatchUpHead = Message<"vtt.v1.CatchUpHead"> & {
+  /**
+   * @generated from field: int64 head_sequence = 1;
+   */
+  headSequence: bigint;
+};
+
+/**
+ * Describes the message vtt.v1.CatchUpHead.
+ * Use `create(CatchUpHeadSchema)` to create a new message.
+ */
+export const CatchUpHeadSchema: GenMessage<CatchUpHead> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 16);
+
+/**
  * The server->client frame; the oneof key is the frame discriminator.
  * ServerFrame is everything the server sends on a connection.
  *
@@ -503,12 +540,19 @@ export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
  * field names the first event that command produced, which is what ties the
  * two streams together.
  *
+ * The ONE exception is catch_up_head, which is positional by definition: it
+ * is always the first frame on the connection. That is what makes it usable
+ * as a boundary at all — a client cannot decide when catch-up ended from a
+ * marker that might arrive mid-backlog.
+ *
  * This is not theoretical. The gateway's own tests read positionally, and it
  * cost two separate CI failure modes — a batch of events outrunning a
- * result, and one inversion desynchronising a connection permanently. See
- * frameQueue in internal/gateway/server_test.go for the shape a correct
- * reader takes: demultiplex the two kinds, never discard the one you were
- * not currently asking for.
+ * result, and one inversion desynchronising a connection permanently. Adding
+ * catch_up_head then cost a third, in a test that provoked a close before
+ * reading the frame the connection opens with. See frameQueue in
+ * internal/gateway/server_test.go for the shape a correct reader takes:
+ * demultiplex the kinds, never discard the one you were not currently
+ * asking for.
  *
  * @generated from message vtt.v1.ServerFrame
  */
@@ -528,6 +572,12 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
      */
     value: Envelope;
     case: "event";
+  } | {
+    /**
+     * @generated from field: vtt.v1.CatchUpHead catch_up_head = 3;
+     */
+    value: CatchUpHead;
+    case: "catchUpHead";
   } | { case: undefined; value?: undefined };
 };
 
@@ -536,5 +586,5 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 16);
+  messageDesc(file_vtt_v1_commands, 17);
 

@@ -99,6 +99,29 @@ message CommandResult {
   int64 sequence = 4;
 }
 
+// CatchUpHead is sent ONCE, first, on every connection: the highest sequence
+// the server has already queued as this connection's catch-up backlog.
+//
+// It exists because a client had no way to know when catch-up ENDED. The
+// server streams backlog straight into live broadcast on one channel, so
+// `vtt state dump` guessed — it stopped after 300ms of silence and called that
+// "caught up". Mid-replay a 300ms gap is ordinary, and the dump then printed a
+// SILENTLY INCOMPLETE state, which is the worst possible failure for a command
+// whose output the golden corpus and the TypeScript fold-parity keystone are
+// compared against. The same guess, in the soak harness, once reported the
+// fold itself as divergent.
+//
+// The server always knew this number: Store.Subscribe preloads the whole
+// backlog synchronously under its lock, so the head is exact at that instant.
+// It simply was never told to anyone.
+//
+// A client that wants a point-in-time snapshot reads until it has seen
+// head_sequence; a client that wants a live tail can ignore this frame. A
+// head_sequence of 0 means the log was empty at subscribe time.
+message CatchUpHead {
+  int64 head_sequence = 1;
+}
+
 // The server->client frame; the oneof key is the frame discriminator.
 // ServerFrame is everything the server sends on a connection.
 //
@@ -116,15 +139,23 @@ message CommandResult {
 // field names the first event that command produced, which is what ties the
 // two streams together.
 //
+// The ONE exception is catch_up_head, which is positional by definition: it
+// is always the first frame on the connection. That is what makes it usable
+// as a boundary at all — a client cannot decide when catch-up ended from a
+// marker that might arrive mid-backlog.
+//
 // This is not theoretical. The gateway's own tests read positionally, and it
 // cost two separate CI failure modes — a batch of events outrunning a
-// result, and one inversion desynchronising a connection permanently. See
-// frameQueue in internal/gateway/server_test.go for the shape a correct
-// reader takes: demultiplex the two kinds, never discard the one you were
-// not currently asking for.
+// result, and one inversion desynchronising a connection permanently. Adding
+// catch_up_head then cost a third, in a test that provoked a close before
+// reading the frame the connection opens with. See frameQueue in
+// internal/gateway/server_test.go for the shape a correct reader takes:
+// demultiplex the kinds, never discard the one you were not currently
+// asking for.
 message ServerFrame {
   oneof frame {
     CommandResult result = 1;
     Envelope event = 2;
+    CatchUpHead catch_up_head = 3;
   }
 }

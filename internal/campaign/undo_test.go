@@ -205,7 +205,7 @@ func TestUndoRetractsWholeAppendBatchRange(t *testing.T) {
 	}
 	lastSeq := envs[len(envs)-1].Sequence
 
-	ch, cancel, err := c.Subscribe(lastSeq, 4)
+	ch, cancel, _, err := c.Subscribe(lastSeq, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestUndoRetractsAdventureLoadBatch(t *testing.T) {
 func TestUndoSubscriberReceivesRetractionMarker(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 
-	ch, cancel, err := c.Subscribe(moveSeq, 4)
+	ch, cancel, _, err := c.Subscribe(moveSeq, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

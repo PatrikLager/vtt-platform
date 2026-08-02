@@ -184,7 +184,7 @@ func TestAppendBatchPersistsAcrossReopen(t *testing.T) {
 func TestAppendBatchThenNotifyDeliversContiguousToSubscriber(t *testing.T) {
 	s := openTemp(t)
 
-	ch, cancel, err := s.Subscribe(0, 8)
+	ch, cancel, _, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestAppendBatchThenNotifyDeliversContiguousToSubscriber(t *testing.T) {
 // must see nothing until the caller explicitly calls Notify.
 func TestAppendBatchDoesNotNotify(t *testing.T) {
 	s := openTemp(t)
-	ch, cancel, err := s.Subscribe(0, 8)
+	ch, cancel, _, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
