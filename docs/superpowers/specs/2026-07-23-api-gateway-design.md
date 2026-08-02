@@ -33,12 +33,32 @@ LLM's MCP tools all drive a live table through the same wire API.
   (wire-conventions doc governs; binary is a later optimization).
 - Frame kinds (new contract messages, all additive):
   - `ClientCommand{request_id, oneof command}` — client→server
-  - `ServerFrame{oneof: result CommandResult | event Envelope}` —
-    server→client; the oneof key is the frame discriminator (same
-    compiler-checked pattern as the envelope payload), so clients never
-    sniff fields. `CommandResult{request_id, ok, error, sequence}`;
-    `Envelope` frames carry the broadcast stream (every accepted event, to
-    every connected participant, spectators included)
+  - `ServerFrame{oneof: result CommandResult | event Envelope |
+    catch_up_head CatchUpHead}` — server→client; the oneof key is the frame
+    discriminator (same compiler-checked pattern as the envelope payload), so
+    clients never sniff fields. `CommandResult{request_id, ok, error,
+    sequence}`; `Envelope` frames carry the broadcast stream (every accepted
+    event, to every connected participant, spectators included)
+  - `CatchUpHead{head_sequence}` — **amended 2026-08-02** (Patrik approved;
+    landed with the `fix/state-dump-truncation` branch). Sent ONCE, as the
+    FIRST frame on every connection, naming the highest sequence the server
+    has already queued as that connection's catch-up backlog. Sent
+    unconditionally, including `head_sequence = 0` for an empty log, so a
+    client never has to interpret "no frame yet".
+
+    Why this was not in the original design: the spec assumed a client could
+    tell catch-up from live traffic, and it cannot — backlog streams straight
+    into live broadcast down one channel with no boundary. `vtt state dump`
+    therefore guessed, stopping after 300ms of wire silence. Mid-replay that
+    gap is ordinary, so the dump could print a SILENTLY INCOMPLETE state,
+    from the command whose output the golden corpus and the TypeScript
+    fold-parity keystone are compared against. The server always knew the
+    number — `Store.Subscribe` preloads the whole backlog under its lock —
+    it was simply never told to anyone.
+
+    `catch_up_head` is the ONE frame that is positional by definition; that
+    is what makes it usable as a boundary. Everything else in the ordering
+    contract below still holds.
 - Commands v1 (mirror the lifecycle 1:1): `MoveToken` (existing message) +
   new `CreateScene`, `AddActor`, `PlaceToken`, `StartSession`, `EndSession`,
   `RetractEvents`. Each is validated, role-gated, converted to its event,

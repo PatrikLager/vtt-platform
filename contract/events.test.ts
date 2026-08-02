@@ -23,6 +23,7 @@ const cases = [
   ["client_command.json", ClientCommandSchema],
   ["server_frame_result.json", ServerFrameSchema],
   ["server_frame_error.json", ServerFrameSchema],
+  ["server_frame_catch_up_head.json", ServerFrameSchema],
   ["ability_used_envelope.json", EnvelopeSchema],
   ["use_ability_command.json", ClientCommandSchema],
   ["narration_added_envelope.json", EnvelopeSchema],
