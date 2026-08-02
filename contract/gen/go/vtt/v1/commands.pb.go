@@ -1149,12 +1149,76 @@ func (x *CommandResult) GetSequence() int64 {
 // frameQueue in internal/gateway/server_test.go for the shape a correct
 // reader takes: demultiplex the two kinds, never discard the one you were
 // not currently asking for.
+// CatchUpHead is sent ONCE, first, on every connection: the highest sequence
+// the server has already queued as this connection's catch-up backlog.
+//
+// It exists because a client had no way to know when catch-up ENDED. The
+// server streams backlog straight into live broadcast on one channel, so
+// `vtt state dump` guessed — it stopped after 300ms of silence and called that
+// "caught up". Mid-replay a 300ms gap is ordinary, and the dump then printed a
+// SILENTLY INCOMPLETE state, which is the worst possible failure for a command
+// whose output the golden corpus and the TypeScript fold-parity keystone are
+// compared against. The same guess, in the soak harness, once reported the
+// fold itself as divergent.
+//
+// The server always knew this number: Store.Subscribe preloads the whole
+// backlog synchronously under its lock, so the head is exact at that instant.
+// It simply was never told to anyone.
+//
+// A client that wants a point-in-time snapshot reads until it has seen
+// head_sequence; a client that wants a live tail can ignore this frame. A
+// head_sequence of 0 means the log was empty at subscribe time.
+type CatchUpHead struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HeadSequence  int64                  `protobuf:"varint,1,opt,name=head_sequence,json=headSequence,proto3" json:"head_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CatchUpHead) Reset() {
+	*x = CatchUpHead{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatchUpHead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatchUpHead) ProtoMessage() {}
+
+func (x *CatchUpHead) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatchUpHead.ProtoReflect.Descriptor instead.
+func (*CatchUpHead) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CatchUpHead) GetHeadSequence() int64 {
+	if x != nil {
+		return x.HeadSequence
+	}
+	return 0
+}
+
 type ServerFrame struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Frame:
 	//
 	//	*ServerFrame_Result
 	//	*ServerFrame_Event
+	//	*ServerFrame_CatchUpHead
 	Frame         isServerFrame_Frame `protobuf_oneof:"frame"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1162,7 +1226,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	mi := &file_vtt_v1_commands_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1174,7 +1238,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	mi := &file_vtt_v1_commands_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1187,7 +1251,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{16}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServerFrame) GetFrame() isServerFrame_Frame {
@@ -1215,6 +1279,15 @@ func (x *ServerFrame) GetEvent() *Envelope {
 	return nil
 }
 
+func (x *ServerFrame) GetCatchUpHead() *CatchUpHead {
+	if x != nil {
+		if x, ok := x.Frame.(*ServerFrame_CatchUpHead); ok {
+			return x.CatchUpHead
+		}
+	}
+	return nil
+}
+
 type isServerFrame_Frame interface {
 	isServerFrame_Frame()
 }
@@ -1227,9 +1300,15 @@ type ServerFrame_Event struct {
 	Event *Envelope `protobuf:"bytes,2,opt,name=event,proto3,oneof"`
 }
 
+type ServerFrame_CatchUpHead struct {
+	CatchUpHead *CatchUpHead `protobuf:"bytes,3,opt,name=catch_up_head,json=catchUpHead,proto3,oneof"`
+}
+
 func (*ServerFrame_Result) isServerFrame_Frame() {}
 
 func (*ServerFrame_Event) isServerFrame_Frame() {}
+
+func (*ServerFrame_CatchUpHead) isServerFrame_Frame() {}
 
 var File_vtt_v1_commands_proto protoreflect.FileDescriptor
 
@@ -1323,10 +1402,13 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1a\n" +
-	"\bsequence\x18\x04 \x01(\x03R\bsequence\"q\n" +
+	"\bsequence\x18\x04 \x01(\x03R\bsequence\"2\n" +
+	"\vCatchUpHead\x12#\n" +
+	"\rhead_sequence\x18\x01 \x01(\x03R\fheadSequence\"\xac\x01\n" +
 	"\vServerFrame\x12/\n" +
 	"\x06result\x18\x01 \x01(\v2\x15.vtt.v1.CommandResultH\x00R\x06result\x12(\n" +
-	"\x05event\x18\x02 \x01(\v2\x10.vtt.v1.EnvelopeH\x00R\x05eventB\a\n" +
+	"\x05event\x18\x02 \x01(\v2\x10.vtt.v1.EnvelopeH\x00R\x05event\x129\n" +
+	"\rcatch_up_head\x18\x03 \x01(\v2\x13.vtt.v1.CatchUpHeadH\x00R\vcatchUpHeadB\a\n" +
 	"\x05frameBBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
@@ -1341,7 +1423,7 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_commands_proto_rawDescData
 }
 
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_vtt_v1_commands_proto_goTypes = []any{
 	(*MoveTokenRequest)(nil),  // 0: vtt.v1.MoveTokenRequest
 	(*MoveTokenResponse)(nil), // 1: vtt.v1.MoveTokenResponse
@@ -1359,17 +1441,18 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*LoadAdventure)(nil),     // 13: vtt.v1.LoadAdventure
 	(*ClientCommand)(nil),     // 14: vtt.v1.ClientCommand
 	(*CommandResult)(nil),     // 15: vtt.v1.CommandResult
-	(*ServerFrame)(nil),       // 16: vtt.v1.ServerFrame
-	(*GridPosition)(nil),      // 17: vtt.v1.GridPosition
-	(*TokenMoved)(nil),        // 18: vtt.v1.TokenMoved
-	(*Actor)(nil),             // 19: vtt.v1.Actor
-	(*Envelope)(nil),          // 20: vtt.v1.Envelope
+	(*CatchUpHead)(nil),       // 16: vtt.v1.CatchUpHead
+	(*ServerFrame)(nil),       // 17: vtt.v1.ServerFrame
+	(*GridPosition)(nil),      // 18: vtt.v1.GridPosition
+	(*TokenMoved)(nil),        // 19: vtt.v1.TokenMoved
+	(*Actor)(nil),             // 20: vtt.v1.Actor
+	(*Envelope)(nil),          // 21: vtt.v1.Envelope
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	17, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	18, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	19, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	17, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	18, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	19, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	20, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	18, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
 	0,  // 4: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
 	2,  // 5: vtt.v1.ClientCommand.create_scene:type_name -> vtt.v1.CreateScene
 	3,  // 6: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
@@ -1384,12 +1467,13 @@ var file_vtt_v1_commands_proto_depIdxs = []int32{
 	12, // 15: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
 	13, // 16: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
 	15, // 17: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	20, // 18: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	21, // 18: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	16, // 19: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -1414,9 +1498,10 @@ func file_vtt_v1_commands_proto_init() {
 		(*ClientCommand_DeleteNote)(nil),
 		(*ClientCommand_LoadAdventure)(nil),
 	}
-	file_vtt_v1_commands_proto_msgTypes[16].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[17].OneofWrappers = []any{
 		(*ServerFrame_Result)(nil),
 		(*ServerFrame_Event)(nil),
+		(*ServerFrame_CatchUpHead)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1424,7 +1509,7 @@ func file_vtt_v1_commands_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

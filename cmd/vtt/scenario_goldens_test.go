@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -105,7 +106,7 @@ func captureNormalizedStream(t *testing.T, scenario string) []byte {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	events := drainQuiescent(c.Events(), dumpQuietWindow)
+	events := drainToCatchUpHead(t, c)
 
 	idToName := make(map[string]string, len(boot.IDs))
 	for n, id := range boot.IDs {
@@ -218,4 +219,25 @@ func maskDice(t *testing.T, raw []byte) []byte {
 		t.Fatalf("mask dice: %v", err)
 	}
 	return out
+}
+
+// drainToCatchUpHead is the test-side companion to state_dump.go's
+// drainToHead: ask the connection for its announced catch-up head, then read
+// until that sequence has been seen. Both call sites below are SNAPSHOTS
+// compared against goldens or against get_state, so a short read here would
+// not fail loudly — it would produce a smaller, plausible state and fail the
+// comparison as if the fold or the tool were wrong.
+func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	head, err := c.CatchUpHead(ctx)
+	if err != nil {
+		t.Fatalf("catch-up head: %v", err)
+	}
+	events, reached := drainToHead(c.Events(), head, dumpQuietWindow, dumpCatchUpTimeout)
+	if !reached {
+		t.Fatalf("caught up only to sequence %d of %d — refusing to compare a truncated snapshot", headSequence(events), head)
+	}
+	return events
 }

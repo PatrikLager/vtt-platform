@@ -195,7 +195,7 @@ func TestSessionStampClearsClosedSessionIDOnSubsequentEvent(t *testing.T) {
 
 	must(t, c, cenv(nextID(), &vttv1.SessionEnded{}))
 
-	ch, cancel, err := c.Subscribe(0, 8)
+	ch, cancel, _, err := c.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestSessionStampUndoMarkerCarriesOpenSessionID(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 	sid := c.State().Sessions[0].ID
 
-	ch, cancel, err := c.Subscribe(moveSeq, 4)
+	ch, cancel, _, err := c.Subscribe(moveSeq, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

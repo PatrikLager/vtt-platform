@@ -103,6 +103,15 @@ type Client struct {
 	// waits on it so a caller never observes a "closed" Client whose
 	// goroutine is still unwinding.
 	readerDone chan struct{}
+
+	// catchUpHead is the highest sequence the server queued as this
+	// connection's catch-up backlog, announced once in a CatchUpHead frame
+	// before any of it (contract CatchUpHead). catchUpHeadKnown closes when it
+	// is set, so a caller wanting a point-in-time snapshot can wait for the
+	// number and then read until it sees that sequence — the boundary the
+	// wire otherwise does not express.
+	catchUpHead      int64
+	catchUpHeadKnown chan struct{}
 }
 
 // Dial connects to the gateway's /ws endpoint at wsURL with the given invite
@@ -149,6 +158,8 @@ func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error
 		events:     make(chan *vttv1.Envelope, eventBuffer),
 		pending:    make(map[string]chan *vttv1.CommandResult),
 		readerDone: make(chan struct{}),
+
+		catchUpHeadKnown: make(chan struct{}),
 	}
 	go c.readLoop()
 	return c, nil
@@ -272,6 +283,8 @@ func (c *Client) readLoop() {
 			if !c.deliverEvent(f.Event) {
 				return // overflow: deliverEvent already tore the connection down
 			}
+		case *vttv1.ServerFrame_CatchUpHead:
+			c.setCatchUpHead(f.CatchUpHead.GetHeadSequence())
 		default:
 			c.teardown(errors.New("harness: server frame has neither result nor event"))
 			_ = c.conn.Close(websocket.StatusUnsupportedData, "harness: empty frame")
@@ -358,4 +371,50 @@ func closeErrOrDefault(err error) error {
 		return errClientClosed
 	}
 	return err
+}
+
+// setCatchUpHead records the server's announced catch-up head. Idempotent:
+// the frame is sent once per connection, and a duplicate must not close an
+// already-closed channel.
+func (c *Client) setCatchUpHead(head int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	select {
+	case <-c.catchUpHeadKnown:
+		return // already announced
+	default:
+	}
+	c.catchUpHead = head
+	close(c.catchUpHeadKnown)
+}
+
+// CatchUpHead blocks until the server announces this connection's catch-up
+// head, and returns it. The server sends that frame FIRST, before any backlog,
+// so this resolves in one round trip on a healthy connection.
+//
+// A caller wanting a point-in-time snapshot reads Events() until it has seen
+// this sequence; that is the boundary between catch-up and live broadcast,
+// which the wire otherwise does not express. 0 means the log was empty at
+// subscribe time, and nothing needs to be waited for.
+//
+// Returns ctx.Err() if ctx expires first, or the connection's close error if
+// it ends before the announcement (an old server that never sends the frame
+// looks exactly like that, which is the honest answer: this client cannot know
+// the boundary).
+func (c *Client) CatchUpHead(ctx context.Context) (int64, error) {
+	select {
+	case <-c.catchUpHeadKnown:
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.catchUpHead, nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-c.readerDone:
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.closeErr != nil {
+			return 0, c.closeErr
+		}
+		return 0, errors.New("harness: connection ended before the server announced its catch-up head")
+	}
 }

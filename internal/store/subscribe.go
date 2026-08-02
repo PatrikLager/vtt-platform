@@ -31,16 +31,21 @@ type subscriber struct {
 // unrelated per-subscriber dedupe in notifyLocked, which would otherwise
 // mask the guard at the more "realistic" afterSeq=0. Clamping negative
 // afterSeq to 0 here would silently break that test's teeth.
-func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), error) {
+// The third return value is the CATCH-UP HEAD: the highest sequence preloaded
+// into the subscriber's buffer before Subscribe returned, or afterSeq when the
+// log had nothing newer. It is exact — computed under the same lock as the
+// preload — and it is the number a client needs to know when catch-up has
+// ENDED, which the wire could not previously express (contract CatchUpHead).
+func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), int64, error) {
 	if buffer < 0 {
-		return nil, nil, fmt.Errorf("store: negative subscribe buffer %d", buffer)
+		return nil, nil, 0, fmt.Errorf("store: negative subscribe buffer %d", buffer)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	history, err := s.readAfterLocked(afterSeq)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	sub := &subscriber{ch: make(chan *vttv1.Envelope, len(history)+buffer), lastSeq: afterSeq}
 	for _, env := range history {
@@ -61,7 +66,7 @@ func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, f
 		defer s.mu.Unlock()
 		s.dropLocked(sub)
 	}
-	return sub.ch, cancel, nil
+	return sub.ch, cancel, sub.lastSeq, nil
 }
 
 // notifyLocked delivers env to all live subscribers; callers hold s.mu.

@@ -12,18 +12,25 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
-// dumpQuietWindow is how long state dump waits for the NEXT envelope
-// before concluding the connection has caught up and gone quiet. The wire
-// protocol gives no explicit "catch-up finished" marker (the server just
-// keeps streaming catch-up backlog straight into live broadcast on the
-// same Events() channel — see internal/harness/client.go's Dial), so a
-// quiescence window is the only signal available to a client that wants a
-// point-in-time snapshot rather than an unbounded tail. 300ms mirrors
-// internal/harness/engine.go's own denialAbsenceWindow, which makes the
-// identical bet (a real gap this long, either in catch-up backlog or on a
-// live table between commands, is what this mode is FOR) for the same
-// wire, at the same LAN/loopback latency scale.
+// dumpQuietWindow bounds the wait for the TAIL: envelopes broadcast live
+// while the catch-up backlog was being read. It is no longer how the dump
+// decides it has caught up — see dumpCatchUpTimeout.
+//
+// It USED to be that decision, and it was a guess. The comment here said the
+// wire gives no explicit "catch-up finished" marker, which was true, so this
+// stopped after 300ms of silence and called it caught up. Mid-replay a 300ms
+// gap is ordinary, and the dump then printed a SILENTLY INCOMPLETE state —
+// indistinguishable from a correct one, from a command whose output the golden
+// corpus and the TypeScript fold-parity keystone are compared against.
+//
+// The marker exists now (contract CatchUpHead): the server announces the head
+// of this connection's backlog before sending any of it.
 const dumpQuietWindow = 300 * time.Millisecond
+
+// dumpCatchUpTimeout bounds the wait to reach the announced head. A BACKSTOP
+// against a stuck replay, not a measurement — a connection that keeps up never
+// reaches it.
+const dumpCatchUpTimeout = 30 * time.Second
 
 // newStateCmd is the `vtt state` command group: `dump` today.
 func newStateCmd() *cobra.Command {
@@ -55,7 +62,21 @@ func newStateDumpCmd() *cobra.Command {
 			}
 			defer c.Close()
 
-			events := drainQuiescent(c.Events(), dumpQuietWindow)
+			head, err := c.CatchUpHead(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("vtt state dump: catch-up head: %w", err)
+			}
+
+			events, reached := drainToHead(c.Events(), head, dumpQuietWindow, dumpCatchUpTimeout)
+			if !reached {
+				// FAIL, never print. A short dump that looks complete is the
+				// failure this whole path exists to prevent; the caller can
+				// retry, and a partial snapshot on stdout could not be told
+				// apart from a real one.
+				return fmt.Errorf("vtt state dump: caught up only to sequence %d of %d within %s — refusing to print a truncated state",
+					headSequence(events), head, dumpCatchUpTimeout)
+			}
+
 			st, err := harness.Fold(events)
 			if err != nil {
 				return fmt.Errorf("vtt state dump: %w", err)
@@ -73,19 +94,39 @@ func newStateDumpCmd() *cobra.Command {
 	return cmd
 }
 
-// drainQuiescent collects every envelope from events until window elapses
-// with no new arrival, or the channel closes.
-func drainQuiescent(events <-chan *vttv1.Envelope, window time.Duration) []*vttv1.Envelope {
+// drainToHead collects envelopes until the announced catch-up head has been
+// seen AND the stream has then been quiet for window, or until timeout. The
+// bool reports whether head was reached.
+//
+// Both conditions matter. Stopping at head alone would drop envelopes
+// broadcast live just behind it, which is a truncation from the other side;
+// stopping at quiet alone is the bug this replaced. A head of 0 means the log
+// was empty at subscribe time, so there is nothing to catch up to and the
+// quiet window is the only sensible signal — which is the old behaviour,
+// correctly scoped to the one case where it was never a guess.
+//
+// Deliberately a sibling of internal/harness/soak.go's drainToSequence rather
+// than an import: cmd/vtt depends on harness, never the reverse.
+func drainToHead(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
+	deadline := time.After(timeout)
+	reached := head == 0
 	for {
 		select {
 		case env, ok := <-events:
 			if !ok {
-				return out
+				return out, reached
 			}
 			out = append(out, env)
+			if env.Sequence >= head {
+				reached = true
+			}
 		case <-time.After(window):
-			return out
+			if reached {
+				return out, true
+			}
+		case <-deadline:
+			return out, reached
 		}
 	}
 }

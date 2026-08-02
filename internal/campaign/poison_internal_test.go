@@ -51,7 +51,7 @@ func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 		t.Fatalf("State on poisoned Campaign: got %+v, want nil", st)
 	}
 
-	if _, _, err := c.Subscribe(0, 4); !errors.Is(err, errPoisoned) {
+	if _, _, _, err := c.Subscribe(0, 4); !errors.Is(err, errPoisoned) {
 		t.Fatalf("Subscribe on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 }

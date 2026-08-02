@@ -505,12 +505,13 @@ func (c *Campaign) State() *engine.State {
 // Campaign to recover. The log itself remains intact and readable through a
 // fresh Campaign even while poisoned; only this in-process projection is
 // suspect.
-func (c *Campaign) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), error) {
+// The third return value is the catch-up head — see Store.Subscribe.
+func (c *Campaign) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), int64, error) {
 	c.mu.Lock()
 	poisoned := c.poisoned
 	c.mu.Unlock()
 	if poisoned {
-		return nil, nil, errPoisoned
+		return nil, nil, 0, errPoisoned
 	}
 	return c.log.Subscribe(afterSeq, buffer)
 }
