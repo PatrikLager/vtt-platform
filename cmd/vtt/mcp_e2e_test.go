@@ -875,45 +875,65 @@ func TestMCPAddNarrationWithAnchorsRoundTrips(t *testing.T) {
 		t.Fatalf("anchored add_narration sequence %d, want it to follow the first narration's sequence %d", anchoredSeq, firstSeq)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name:      "get_events_since",
-		Arguments: map[string]any{"afterSequence": int64(0), "limit": 200},
-	})
-	if err != nil {
-		t.Fatalf("get_events_since: CallTool: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("get_events_since: want IsError=false, got %+v", res)
-	}
-	text, ok := res.Content[0].(*mcpsdk.TextContent)
-	if !ok {
-		t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
-	}
-	var page struct {
-		Events []json.RawMessage `json:"events"`
-	}
-	if err := json.Unmarshal([]byte(text.Text), &page); err != nil {
-		t.Fatalf("get_events_since: response did not decode: %v (body: %s)", err, text.Text)
-	}
-
+	// POLLED, not read once.
+	//
+	// SendCommand returning does not mean that command's OWN broadcast has
+	// reached this session's event history — client.go's SendCommand doc
+	// comment says so, and get_events_since deliberately reports only what the
+	// session has SEEN (which is what headSequence exists to signal). Reading
+	// immediately races that propagation, and this test failed exactly that
+	// way under load: "no NarrationAdded event found at sequence 2 among 1
+	// events" — one event short, intermittently, on CI and on a loaded laptop.
+	//
+	// Waiting for the CONDITION is the fix, as it was for the soak checkpoint
+	// and for session.test.ts. The deadline is a backstop; a healthy round
+	// trip satisfies this on the first attempt.
 	var found *vttv1.NarrationAdded
-	for _, raw := range page.Events {
-		var env vttv1.Envelope
-		if err := protojson.Unmarshal(raw, &env); err != nil {
-			t.Fatalf("get_events_since: envelope did not decode as protojson: %v (body: %s)", err, raw)
+	lastCount := 0
+	deadline := time.Now().Add(10 * time.Second)
+	for attempt := 1; found == nil; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+			Name:      "get_events_since",
+			Arguments: map[string]any{"afterSequence": int64(0), "limit": 200},
+		})
+		cancel()
+		if err != nil {
+			t.Fatalf("get_events_since: CallTool: %v", err)
 		}
-		if env.GetSequence() != anchoredSeq {
-			continue
+		if res.IsError {
+			t.Fatalf("get_events_since: want IsError=false, got %+v", res)
 		}
-		if na := env.GetNarrationAdded(); na != nil {
-			found = na
-			break
+		text, ok := res.Content[0].(*mcpsdk.TextContent)
+		if !ok {
+			t.Fatalf("get_events_since: want text content, got %T", res.Content[0])
 		}
-	}
-	if found == nil {
-		t.Fatalf("get_events_since: no NarrationAdded event found at sequence %d among %d events", anchoredSeq, len(page.Events))
+		var page struct {
+			Events []json.RawMessage `json:"events"`
+		}
+		if err := json.Unmarshal([]byte(text.Text), &page); err != nil {
+			t.Fatalf("get_events_since: response did not decode: %v (body: %s)", err, text.Text)
+		}
+		lastCount = len(page.Events)
+		for _, raw := range page.Events {
+			var env vttv1.Envelope
+			if err := protojson.Unmarshal(raw, &env); err != nil {
+				t.Fatalf("get_events_since: envelope did not decode as protojson: %v (body: %s)", err, raw)
+			}
+			if env.GetSequence() != anchoredSeq {
+				continue
+			}
+			if na := env.GetNarrationAdded(); na != nil {
+				found = na
+				break
+			}
+		}
+		if found == nil && time.Now().After(deadline) {
+			t.Fatalf("get_events_since: no NarrationAdded at sequence %d after %d attempts (last page had %d events) — the session never observed its own narration", anchoredSeq, attempt, lastCount)
+		}
+		if found == nil {
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
 	if found.Text != anchoredText {
 		t.Fatalf("get_events_since: NarrationAdded.Text = %q, want %q", found.Text, anchoredText)
