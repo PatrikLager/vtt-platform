@@ -31,11 +31,16 @@ this gate existing, and closing it took two passes.
 | `client/src/session.ts` | — | 1 → 0 | 0 |
 | `client/src/state.ts` | — | 0 | 0 |
 
-### Seven of those "kills" are timeouts, not evaluated detections
+### Eleven of those "kills" are timeouts, not evaluated detections
 
-Measured 2026-08-03: 7 of 155 mutants over `wire.ts`, `grid.ts`, `auth.ts` and
-`feed.ts` resolve by hitting `timeoutMS: 20000` rather than by a test failing.
-Six are in `wire.ts`:
+The authoritative figure, from the first full-strength CI run (2026-08-03,
+ubuntu-latest): **1647 mutants, 1577 killed, 11 TIMED OUT, 59 adjudicated
+equivalent, zero unadjudicated survivors.** Eleven resolve by hitting
+`timeoutMS: 20000` rather than by a test failing.
+
+Seven of the eleven were localised first, over `wire.ts`, `grid.ts`, `auth.ts`
+and `feed.ts` (7 of 155 in that scope); the other four are elsewhere and have
+not been attributed. Six of the seven are in `wire.ts`:
 
 | mutant | mutator |
 |---|---|
