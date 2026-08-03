@@ -44,10 +44,15 @@ tasks:
       - task: check:invariants
       - task: check:arch
       - task: check:mutation
-      # Scoped to the files worked to zero unadjudicated survivors, NOT to the
-      # whole client -- tools/ts-mutation-scope.md lists the twelve that are
-      # measured and not yet gated, with counts. Same shape as check:mutation,
-      # which gates 8 Go packages and documents why internal/harness is out.
+      # Now covers EVERY file under client/src/ except the browser entry
+      # point -- the backlog that made this "scoped to two files" is closed,
+      # and tools/ts-mutation-scope.md records how it was worked down and what
+      # it cost. Same shape as check:mutation, which gates 8 Go packages and
+      # documents why internal/harness is out.
+      #
+      # RUNS ON LINUX ONLY. macOS 26's socket-accounting kernel bug
+      # (FB21686886) makes it arithmetically impossible locally; the task
+      # skips loudly there and CI is authoritative. Full detail in its desc.
       - task: check:ts-mutation
 
   # --- test tiers -----------------------------------------------------------
@@ -234,10 +239,88 @@ tasks:
       client measured 4m55s over 1667 mutants. If that becomes the wrong trade
       for the merge gate, move it to a pre-merge-only task -- do not narrow
       `mutate` to make it fast, which would weaken the gate to pass it.
+
+      LINUX-ONLY SINCE 2026-08-03 (Patrik's call), and the reason is a KERNEL
+      BUG, not a trade. macOS 26.x leaks socket memory accounting on every
+      close(): soclose_locked() -> sofree() -> sofreelastref(so, 0) passes
+      dealloc=0, skipping the sodealloc() that decrements the counters. Apple
+      DTS has REPRODUCED it -- Feedback FB21686886, discussion at
+      developer.apple.com/forums/thread/813116 -- with no fix in any release
+      or beta as of May 2026 and no workaround. OpenJDK disabled networking
+      tests over it. macOS 15.7.x and earlier are unaffected.
+
+      socket() starts returning ENOBUFS at ~161,000 creations per boot. This
+      gate costs 175 sockets per `bun test client/test` run (measured five
+      ways -- peak-sampled x3 and post-exit x2, all exactly 175) times 1667
+      mutants = ~292,000. That is 1.8x the entire machine budget, so on macOS
+      it CANNOT COMPLETE even from a cold boot, and the attempt takes DNS,
+      curl and every socket-opening Go test down with it for the rest of the
+      session -- looking exactly like a product bug. That is what happened on
+      2026-08-03, and it dates precisely to `mutate` expanding from two files
+      to the whole client.
+
+      THIS IS NOT THE GATE NARROWED TO PASS. `mutate` is untouched, no
+      threshold moved, and CI runs on ubuntu-latest
+      (.github/workflows/ci.yml:30) where the bug does not exist -- so the
+      gate is enforced at FULL STRENGTH on every push, and CI is
+      AUTHORITATIVE for it. What IS genuinely lost is local signal: a green
+      `task check` on a Mac has not proven this gate, which is why the skip
+      banner is loud rather than quiet.
+
+      DO NOT "fix" this by sharing Bun.serve per test file. Measured: only
+      ~27 of the 175 are listeners (the shareable part); the rest are
+      connections each test genuinely makes. Ceiling is ~15%, and 1667 x 148
+      is still far over budget. At 175/run everyday `bun test` gets ~920 runs
+      per boot and was never the problem -- only the 1667x multiplier is.
+
+      pcbcount IS NOT THE SIGNAL. It always drains (20,000 bare sockets take
+      it 25 -> 20,025 and back to 25 within 15s). The leaking counter is not
+      exported by any sysctl, so the machine reads healthy right up to the
+      wall. Do not check pcbcount to decide whether it is safe to run.
     cmds:
+      # ABOVE the platform guard deliberately: this is the gate-checker's own
+      # 18 unit tests, it opens no sockets, it runs in 0.092s, and it runs
+      # nowhere else in the repo. FB21686886 is no reason to stop proving the
+      # enforcement code -- check-ts-mutation.py's own header records that 8
+      # of 9 defects across five review rounds were in hand-rolled enforcement
+      # rather than in the thing being enforced.
       - python3 tools/check_ts_mutation_test.py -q
-      - npx stryker run stryker.conf.json
-      - python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
+      - |
+        set -e
+        # PLATFORM GUARD -- full rationale in this task's desc. Short version:
+        # macOS 26 kernel bug FB21686886 makes this gate arithmetically
+        # impossible locally (~292,000 sockets needed, ~161,000 available).
+        #
+        # Version-gated, NOT a blanket Darwin skip: macOS 15.7.x and earlier
+        # do not have the bug, and skipping there would take a working gate
+        # away for no reason. Darwin major 25 IS macOS 26 (25.2.0 = 26.2), so
+        # the test is >= 25. When Apple ships a fix, raise the ceiling here
+        # rather than deleting the guard -- the affected range is closed at
+        # the bottom and still open at the top.
+        DARWIN_MAJOR=0
+        if [ "$(uname -s)" = "Darwin" ]; then DARWIN_MAJOR="$(uname -r | cut -d. -f1)"; fi
+        if [ "$DARWIN_MAJOR" -ge 25 ] && [ "${VTT_FORCE_TS_MUTATION:-0}" != "1" ]; then
+          echo "==============================================================" >&2
+          echo "  check:ts-mutation SKIPPED -- macOS kernel bug FB21686886" >&2
+          echo "" >&2
+          echo "  Needs ~292,000 socket creations; macOS 26 allows ~161,000" >&2
+          echo "  per boot before socket() returns ENOBUFS. It cannot pass" >&2
+          echo "  here, and trying takes the machine's networking with it." >&2
+          echo "" >&2
+          echo "  CI (ubuntu-latest) runs this gate at FULL STRENGTH and is" >&2
+          echo "  AUTHORITATIVE. A green 'task check' on macOS has NOT" >&2
+          echo "  proven the mutation gate." >&2
+          echo "" >&2
+          echo "  Fresh-boot override: VTT_FORCE_TS_MUTATION=1 task check:ts-mutation" >&2
+          echo "==============================================================" >&2
+          exit 0
+        fi
+        # NO PIPES here, for the reason check:coverage and check:mutation both
+        # document: `cmd | tail` takes the pipeline's status without pipefail,
+        # so under `set -e` a failing gate ships green. A guard that swallows
+        # a real failure is worse than no guard at all.
+        npx stryker run stryker.conf.json
+        python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
 
   check:ts-coverage:
     desc: >
