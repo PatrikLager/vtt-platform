@@ -24,7 +24,13 @@ _spec = importlib.util.spec_from_file_location(
 ctc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ctc)
 
-EXCLUDED_FILE = next(iter(ctc.EXCLUDED))
+# Every exemption, not just the first. The helper below has to satisfy the
+# gate's staleness rule for ALL of them: an EXCLUDED entry naming a file that
+# is absent from the source tree or the report is itself an error, so a fixture
+# that supplied only one would fail the moment a second exemption was added —
+# which is exactly what happened when client/src/main.ts joined the list.
+EXCLUDED_FILES = list(ctc.EXCLUDED)
+EXCLUDED_FILE = EXCLUDED_FILES[0]
 
 
 def lcov(*records):
@@ -41,14 +47,14 @@ def lcov(*records):
 def run(lcov_text, thresholds, expected, with_excluded=True):
     """Run the gate.
 
-    with_excluded appends the EXCLUDED file to both the report and the
-    expected set, because the gate now requires an exemption to name a file
-    that still exists and is still measured. Tests about THAT rule pass
+    with_excluded appends EVERY EXCLUDED file to both the report and the
+    expected set, because the gate requires each exemption to name a file that
+    still exists and is still measured. Tests about THAT rule pass
     with_excluded=False.
     """
     if with_excluded:
-        lcov_text = lcov_text + lcov((EXCLUDED_FILE, [1, 1, 0]))
-        expected = list(expected) + [EXCLUDED_FILE]
+        lcov_text = lcov_text + lcov(*((f, [1, 1, 0]) for f in EXCLUDED_FILES))
+        expected = list(expected) + EXCLUDED_FILES
     err = io.StringIO()
     # Success output goes to a sink too: the gate's own tests must not print
     # "all files pass" lines into the gate's output, where they read as

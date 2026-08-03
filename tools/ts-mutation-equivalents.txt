@@ -190,3 +190,117 @@ client/src/player.ts 69:34 EqualityOperator a.actorId <= b.actorId
 
 client/src/view/spectator.ts 227:59 StringLiteral "Stryker was here!"
     `Object.keys(st.Scenes).sort().at(-1) ?? ""` — the fallback value. It is reached ONLY when there are no scenes, because at(-1) returns undefined only for an empty key list. Whatever string it yields is then looked up in st.Scenes and missed, rendering "No scene yet." either way. A scene keyed by the sentinel string would distinguish them, which requires a scene id of "Stryker was here!" to exist. (A scene keyed "" is a different case and IS pinned by test — that key is returned by at(-1) directly, never via the fallback.)
+
+# --- client/src/auth.ts -----------------------------------------------------
+
+client/src/auth.ts 37:12 ConditionalExpression false
+    `return t === null || t === "" ? null : t;` — the LEFT OPERAND only (cols 12-22 is `t === null`, not the whole condition; the whole-condition mutants at 12-34 are all killed by the existing tests). Forcing it false leaves `false || t === ""`, and every input lands on the same value: t===null returns t, which IS null, the same thing the then-branch yields; t==="" still matches the right operand and returns null; anything else returns t under both. get()'s only observable is its return value — no side effects, no store writes, nothing reaches the DOM — so there is no reading under which the two differ. Hand-applied the mutation and ran the full client suite to check the claim rather than only reasoning it: 333 pass, as predicted.
+
+# --- client/src/view/grid.ts ------------------------------------------------
+#
+# Two mutually-redundant fallbacks and five sort-comparator mutants. The
+# comparator group is the same shape already adjudicated on client/src/player.ts:
+# a three-way comparator over values that are MAP KEYS, so the equal case it
+# guards cannot occur.
+
+client/src/view/grid.ts 98:45 StringLiteral ""
+    `[...(name || tok.ActorID || "?")][0] ?? "?"` — the FIRST "?" only. It and the `??` fallback beside it are redundant with each other, so neither is observable alone. Blanking this one makes the spread source "" exactly when name and ActorID are both empty; the spread of "" is [], [0] is undefined, and the `?? "?"` then yields the same "?" the original produced directly. Every other input never reaches this operand at all. Identical string out, and initial is the only thing this expression feeds.
+
+client/src/view/grid.ts 98:57 StringLiteral ""
+    The `?? "?"` half of the same pair, and unreachable while the operand above is intact: `name || tok.ActorID || "?"` cannot evaluate to an empty string, because "?" is truthy and terminates the chain. So `[...s][0]` is always defined and the `??` branch never runs. It cannot be deleted despite that — `[...s][0]` is typed `string | undefined`, so the fallback is load-bearing for the TYPE even where it is unreachable at run time.
+
+client/src/view/grid.ts 108:32 EqualityOperator a.tokenId <= b.tokenId
+    `a.tokenId < b.tokenId ? -1 : ...` -> `<=`. The two differ only when the ids are EQUAL, and they cannot be: disc.tokenId comes from tok.ID for tokens read out of st.Tokens, which is keyed by that id, so two discs in one call always carry distinct ids.
+
+client/src/view/grid.ts 108:61 ConditionalExpression true
+    The second arm, `a.tokenId > b.tokenId ? 1 : 0`, forced to 1. It is only reached when the first arm was false, i.e. a >= b, and with equal ids impossible that means a > b — where the original also yields 1. No input reaches it with a different answer.
+
+client/src/view/grid.ts 108:61 ConditionalExpression false
+    The same arm forced to 0, so a > b returns 0 ("equal") instead of 1 ("after"). Not observable through Array.prototype.sort: both engines' sorts branch on `comparator(...) < 0`, never on the difference between 0 and a positive result, so "not less" is the only fact either value conveys. Checked rather than assumed — a 20-element reversed board, enough to leave insertion sort and enter the merge paths, still sorts correctly under this mutant. Note this holds because of how sort CONSULTS the comparator; a caller that used the comparator directly for a three-way answer would distinguish them, and none exists.
+
+client/src/view/grid.ts 108:61 EqualityOperator a.tokenId >= b.tokenId
+    Same arm, `>` -> `>=`: differs only on equal ids, which map keys make impossible.
+
+client/src/view/grid.ts 108:61 EqualityOperator a.tokenId <= b.tokenId
+    Same arm, `>` -> `<=`. Reached only when a >= b; with equality impossible, `a <= b` is false there and the arm yields 0 where the original yields 1 — the 0-versus-positive case shown above to be invisible to sort.
+
+# --- client/src/wire.ts -----------------------------------------------------
+
+client/src/wire.ts 128:13 EqualityOperator env.sequence >= this.lastSeq
+    `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. Equality makes the assignment write the value lastSeq already holds. Same shape as the two undo.ts entries above, and lastSeq's only consumer is reconnect's resume cursor, which sees an unchanged number either way.
+
+client/src/wire.ts 132:7 ConditionalExpression default:
+    Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
+
+# --- client/src/view/feed.ts ------------------------------------------------
+#
+# Three groups. (1) guards whose bypassed branch is neutralised downstream by
+# an undefined comparison or an empty result; (2) a filter that cannot observe
+# an empty entry because no code path creates one; (3) the same sort-comparator
+# shape adjudicated on player.ts and grid.ts.
+
+client/src/view/feed.ts 54:29 ConditionalExpression true
+    `for (const e of live) if (isMechanical(e)) groupOf.set(...)` forced true, adding narration sequences to groupOf as self-mappings. Nothing ever reads them: the two lookups are `groupOf.get(e.sequence)` guarded by isMechanical, and `groupOf.get(target.sequence)` where target comes from a find already filtered to mechanical events. Extra unread map entries, no rendered difference.
+
+client/src/view/feed.ts 59:34 ConditionalExpression false
+    The `n.anchorToSeq <= 0n` half of the half-specified-anchor guard, forced false. It changes only the from>0/to<=0 case, and that case falls through to a range filter of `c.sequence >= from && c.sequence <= 0n`, which no live sequence satisfies. inRange is empty and the next guard skips the narration anyway — the same outcome the guard produced directly.
+
+client/src/view/feed.ts 59:34 EqualityOperator n.anchorToSeq < 0n
+    Same operand, `<=` -> `<`: differs only at anchorToSeq === 0, which is exactly the case shown above to reach an empty range and be skipped one line later.
+
+client/src/view/feed.ts 63:9 ConditionalExpression false
+    `if (inRange.length === 0) continue` forced never to skip. The body it then runs is `const head = inRange[0]!` followed by `for (const seq of inRange) ...` — over an empty array, so head is undefined and the loop body never executes. Nothing is written to groupOf.
+
+client/src/view/feed.ts 91:46 ConditionalExpression true
+    The `n.anchorToSeq > 0n` half of `anchored`, forced true. For a half-specified anchor this makes anchored true, and the find it enables searches `c.sequence >= from && c.sequence <= 0n`, which matches nothing; target is undefined and the narration lands at its own sequence — where the unanchored path would have put it.
+
+client/src/view/feed.ts 91:46 EqualityOperator n.anchorToSeq >= 0n
+    Same operand, `>` -> `>=`: differs only at anchorToSeq === 0, the case above.
+
+client/src/view/feed.ts 104:10 MethodExpression [...bySeq.values()]
+    Removes `.filter(e => e.events.length > 0 || e.narrations.length > 0)`. No entry can fail that predicate: entryAt is called in exactly two places and each pushes onto the entry it just obtained, so an entry exists only because something was about to be added to it. Kept rather than deleted because it states the invariant at the point a future caller would break it, but it has nothing to filter today.
+
+client/src/view/feed.ts 105:20 ConditionalExpression true
+    The same filter's predicate forced true. Every entry already satisfies it, per the entry above.
+
+client/src/view/feed.ts 105:20 EqualityOperator e.events.length >= 0
+    `> 0` -> `>= 0` in that predicate: true for every non-negative length, and the predicate is already true for every entry that exists.
+
+client/src/view/feed.ts 105:43 EqualityOperator e.narrations.length >= 0
+    The narrations half of the same predicate, same reasoning.
+
+client/src/view/feed.ts 106:22 EqualityOperator a.seq <= b.seq
+    `a.seq < b.seq ? -1 : ...` -> `<=`. Differs only on equal seqs, and seq is a Map key: bySeq is keyed by it, so one call never yields two entries sharing one.
+
+client/src/view/feed.ts 106:43 ConditionalExpression true
+    Second arm `a.seq > b.seq ? 1 : 0` forced to 1; reached only when a >= b, and equality being impossible leaves a > b, where the original also yields 1.
+
+client/src/view/feed.ts 106:43 ConditionalExpression false
+    Same arm forced to 0, so a > b reports "equal" rather than "after". Array.prototype.sort branches on `comparator(...) < 0` and never distinguishes 0 from a positive value, so the ordering is unchanged — the same reasoning, and the same 20-element check, recorded for view/grid.ts:108:61.
+
+client/src/view/feed.ts 106:43 EqualityOperator a.seq >= b.seq
+    Same arm, `>` -> `>=`: differs only on equal seqs, impossible for map keys.
+
+client/src/view/feed.ts 106:43 EqualityOperator a.seq <= b.seq
+    Same arm, `>` -> `<=`: false wherever this arm is reached, yielding 0 where the original yields 1 — the 0-versus-positive case sort cannot see.
+
+# --- client/src/app.ts ------------------------------------------------------
+#
+# ONE entry: history.replaceState's title argument, which the runtime this
+# gate measures discards outright (happy-dom's signature is literally
+# replaceState(state, _unused, url)).
+#
+# This preamble said "two initial values" until 2026-08-03 and delivered one.
+# The second was app.ts 52:16, withdrawn by the review that found it wrong —
+# it claimed no test could observe the DOM between boot's two paints, and the
+# fetch stub boot() calls between them can. The entry went; the count did not.
+# Corrected here because a preamble promising an adjudication that does not
+# exist is the same failure this file's header warns about, in miniature.
+#
+# The module-level DOM bootstrap that used to sit at the foot of app.ts is NOT
+# here: it was untestable because of the HARNESS rather than because its
+# mutants were unobservable, so claiming equivalence would have been a lie.
+# It moved to client/src/main.ts, which is excluded from `mutate`.
+
+client/src/app.ts 49:30 StringLiteral "Stryker was here!"
+    `history.replaceState(null, "", location.pathname)` — the TITLE argument. The HTML specification says user agents must ignore it, and none of them implement it; the call is made for its third argument, which strips the bearer token from the address bar. No value passed here reaches the DOM, the history entry, or anything a test or a user can read.

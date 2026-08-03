@@ -116,7 +116,15 @@ export function renderPlayerPanel(
       });
       list.appendChild(b);
     }
-    if (targets.length === 0) list.appendChild(el("span", "empty", "nothing in range"));
+    // No empty-state here, deliberately: this list can never BE empty. The
+    // acting token is at Chebyshev distance 0 from itself and shares its own
+    // SceneID, so it passes both of targetableTokens' filters for any range
+    // >= 0 — and the ruleset compiler rejects a negative one outright
+    // (internal/rules/compile.go: "targeting.range must not be negative"), so
+    // no ability reaching this client can carry it. targetableTokens' other
+    // empty return, the missing acting token, is unreachable from here too:
+    // tokenId comes from tokenForActor, which only ever returns an ID it
+    // found IN st.Tokens, and the branch above requires it to be non-empty.
     wrap.appendChild(list);
   } else if (tokenId !== "") {
     wrap.appendChild(el("p", "hint", "Click the board to move."));
