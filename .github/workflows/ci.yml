@@ -28,7 +28,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 until 2026-08-03, when this job was CANCELLED at 30m38s with
+    # check:ts-mutation still running. Not a hang: the gate simply got bigger.
+    # Measured on that run -- setup ~2m30s, gates through check:arch ~4m30s,
+    # check:mutation (Go) 15m02s, check:ts-mutation 11m+ and unfinished, so
+    # ~40m is the real cost. The old 27m45s green run had `mutate` scoped to
+    # two files; it now covers the whole client at 1667 mutants.
+    #
+    # The two obvious ways to fit inside 30 are both barred, and deliberately:
+    # narrowing `mutate` is "weakening a gate to pass it" (CLAUDE.md rule 2,
+    # and check:ts-mutation's own desc says so outright), and splitting the
+    # mutation gates into a parallel job would grow the second definition of
+    # "green" this workflow's header exists to prevent. So the honest lever is
+    # the ceiling. Set well above the projection rather than just over it --
+    # mutation cost scales with the gated set, and a timeout that needs
+    # revisiting every time a file is added is a flake waiting to happen.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
