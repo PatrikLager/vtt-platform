@@ -54,15 +54,74 @@ drifted within an hour of this file being written.
 | package | survivors | not covered | runtime | why |
 |---|---|---|---|---|
 | `internal/rules` | **59** | **40** | 7m47s | backlog, no reason on record |
-| `internal/adventure` | **14** | **4** | 1m06s | backlog, no reason on record |
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
 | `cmd/vtt` | 0 of 77 evaluated | 7 | **~32m+** | **unresolvable (above)** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
 
-`internal/rules` and `internal/adventure` are outside the gate with **no
-recorded reason anywhere**, not excluded on an argument but never added. That
-`internal/adventure/conformance` was gated while `internal/adventure` was not
-is the signature of a list assembled from what happened to be measured.
+`internal/rules` is the last package outside the gate with **no recorded
+reason anywhere** — not excluded on an argument, just never added. Two of the
+three originally in that state have since been worked down and gated (below).
+That `internal/adventure/conformance` was gated while `internal/adventure` was
+not, for as long as it was, is the signature of a list assembled from what
+happened to be measured.
+
+### `internal/adventure` — worked down and gated 2026-08-04
+
+14 survivors + 4 NOT COVERED → **0 unadjudicated, 0 unreached** (96 killed, 1
+adjudicated equivalent). It is a validator, so almost every survivor was an
+inclusive limit nobody had tested ON.
+
+**Seven boundaries fell to one fixture.** `testdata/at-every-boundary` sits
+exactly on all of them at once and is entirely legal: 8192-byte narration and
+note text, a 128-byte key, a 256-byte title, a 1×1 grid, and a resource with
+`max: 0` (unlimited) and a non-zero current. Loosen any one comparison by a
+character and it stops loading. A fixture one byte *under* each limit would
+load either way and pin nothing — which is how all seven came to be unpinned.
+(The eighth boundary mutant, `p.Y >= GridHeight`, is killed by the y-fixture
+fix below. The fixture's placement at (0,0) is a deliberate redundant pin, not
+one of the seven: `p.X < 0` and `p.Y < 0` were already killed by
+`testdata/valid/scenes/gate.json`.)
+
+**A trap worth recording, because the answer is the opposite of the neighbour
+entry.** `compile.go:35` carries five `ARITHMETIC_BASE` mutants on a slice
+capacity hint, and `tools/mutation-equivalents.txt` already holds four
+adjudications saying capacity hints are unobservable. Those are **maps**. A
+negative *slice* capacity **panics**, and the campaign entry says so in its own
+caveat. Four of the five are killable and now killed by
+`TestCompileHandlesLopsidedAdventureShapes`, which builds adventures where one
+term dominates.
+
+The trailing `+1` looked equivalent — it floors at 0, so it never panics — and
+was adjudicated as such. **That was wrong, and review caught it.** A slice
+differs from a map in TWO ways, not one: a negative cap panics, *and a slice's
+capacity is a readable part of its value*. `Compile` returns the slice, so
+`cap(got) != len(got)` distinguishes them (14 vs 24 on a 12-scene adventure).
+The adjudication's reason — "nothing in this package reads `cap()`" — was a
+claim about today's callers, not about whether an observable exists, which is
+exactly the "true, and irrelevant" shape `mutation-equivalents.txt`'s header
+warns about. The entry is gone and the test asserts `cap == len`, which also
+pins what the expression is for: one exactly-sized allocation.
+
+So adjudicating by analogy would have excused four real gaps, and adjudicating
+the fifth on a survey of current callers excused a fifth.
+
+**An asymmetry between two sibling fixtures.** `placement-x-out-of-bounds` used
+`x=10` on a width-10 grid — exactly on the boundary, pinning `>=`.
+`placement-y-out-of-bounds` used `y=-1`, pinning the *lower* bound instead. So
+between the pair, `p.Y >= GridHeight` was never tested at all. The y fixture now
+mirrors x; the lower bound is pinned by `at-every-boundary`'s (0,0) placement.
+
+**The 4 NOT COVERED were four `must not be empty` rules with no fixture** —
+empty placement `token_id` and `actor_id`, empty note `key` and `text`. The
+catalogue had `note-key-too-long` but never `note-key-empty`. Since
+`check-mutation.py` does not fail on NOT COVERED, nothing in the gate was ever
+going to point at them.
+
+**Known gap, deliberately left:** with x and y both now pinned at the inclusive
+upper bound, no fixture asserts that a NEGATIVE placement coordinate is
+rejected. No gremlins mutator can produce `p.Y < -5`, so the gate will never
+report it — the same "nothing was going to point at them" argument as the
+NOT COVERED four. Recorded here rather than rediscovered.
 
 ### `internal/rules/conformance` — worked down and gated 2026-08-04
 

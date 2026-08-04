@@ -154,11 +154,24 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		{"duplicate-token-id", []string{"yard.json", `field "placements[1].token_id"`, `duplicate token id "tok-vim"`}},
 		{"duplicate-note-id", []string{"opening.json", `field "[1].key"`, `duplicate note key "yard-rumor"`}},
 		{"placement-unknown-actor", []string{"yard.json", `field "placements[0].actor_id"`, `unknown actor "ghost-actor"`}},
+		// The four "must not be empty" rules below had NO fixture until
+		// 2026-08-04. gremlins reported their error returns NOT COVERED --
+		// a category check-mutation.py does not fail on, so nothing in the
+		// gate was ever going to point at them.
+		{"placement-token-id-empty", []string{"yard.json", `field "placements[0].token_id"`, "must not be empty"}},
+		{"placement-actor-id-empty", []string{"yard.json", `field "placements[0].actor_id"`, "must not be empty"}},
+		{"note-key-empty", []string{"opening.json", `field "[0].key"`, "must not be empty"}},
+		{"note-text-empty", []string{"opening.json", `field "[0].text"`, "must not be empty"}},
 		{"empty-adventure", []string{"empty adventure"}},
 		{"grid-width-zero", []string{"yard.json", `field "grid_width"`}},
 		{"grid-height-zero", []string{"yard.json", `field "grid_height"`}},
-		{"placement-x-out-of-bounds", []string{"yard.json", `field "placements[0].x"`}},
-		{"placement-y-out-of-bounds", []string{"yard.json", `field "placements[0].y"`}},
+		// "got 10" is load-bearing, not decoration: these two fixtures are the
+		// ONLY pin for the INCLUSIVE upper bound (`p.X >= raw.GridWidth`), and
+		// they only pin it while they sit exactly on it. y used to be -1, which
+		// tested the lower bound instead and left `p.Y >= GridHeight` untested
+		// entirely. Asserting the coordinate stops that drifting back silently.
+		{"placement-x-out-of-bounds", []string{"yard.json", `field "placements[0].x"`, "got 10"}},
+		{"placement-y-out-of-bounds", []string{"yard.json", `field "placements[0].y"`, "got 10"}},
 		// Not part of the enumerated catalogue — pins the "Load: strict
 		// decode" clause the brief states separately from the numbered
 		// rules, mirroring internal/rules/testdata/invalid/unknown-field.
@@ -206,6 +219,8 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"duplicate-note-id", "placement-unknown-actor", "empty-adventure",
 		"grid-width-zero", "grid-height-zero", "placement-x-out-of-bounds",
 		"placement-y-out-of-bounds", "unknown-field",
+		"placement-token-id-empty", "placement-actor-id-empty",
+		"note-key-empty", "note-text-empty",
 	}
 	if len(want) != len(onDisk) {
 		t.Errorf("testdata/invalid has %d dirs, case table names %d", len(onDisk), len(want))
@@ -338,4 +353,64 @@ func copyFixtureDirExcluding(t *testing.T, srcDir string, skip ...string) string
 		t.Fatalf("copy fixture dir: %v", err)
 	}
 	return dst
+}
+
+// TestLoadAcceptsValuesExactlyOnEveryLimit pins that every limit load.go
+// checks is INCLUSIVE. testdata/at-every-boundary sits exactly on all of them
+// at once — 8192-byte narration and note text, a 128-byte note key, a
+// 256-byte title, a 1x1 grid, a placement at (0,0), and a resource with max 0
+// and a non-zero current — and every one of those is legal.
+//
+// One fixture rather than seven because the limits share a failure mode:
+// loosen any single comparison by one character (`>` to `>=`, `<` to `<=`) and
+// this adventure stops loading. A fixture one byte UNDER each limit would load
+// either way and pin nothing, which is how all seven boundaries came to be
+// unpinned in the first place.
+//
+// The placement at (0,0) is NOT one of the seven -- `p.X < 0` and `p.Y < 0`
+// were already killed by testdata/valid/scenes/gate.json, which has had a
+// (0,0) placement all along. It is kept as a deliberate redundant pin, so that
+// the lower bound does not depend on a single fixture the way the upper bound
+// turned out to (see placement-y-out-of-bounds above).
+//
+// The resource case is the odd one and worth naming: max 0 means UNLIMITED, so
+// `rv.Max > 0 && rv.Current > rv.Max` must skip the comparison entirely. Under
+// `rv.Max >= 0` it does not skip, and a current of 7 against a max of 0 reads
+// as an overflow that was never declared.
+func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
+	rs := loadFixtureRuleset(t)
+	adv, err := adventure.Load("testdata/at-every-boundary", rs)
+	if err != nil {
+		t.Fatalf("Load(at-every-boundary): every value here is exactly on a limit and legal: %v", err)
+	}
+
+	// Assert the boundary values survived the load rather than merely that it
+	// returned: a Load that silently dropped them would still be error-free.
+	if got := len(adv.OpeningNarration); got != 8192 {
+		t.Errorf("opening narration = %d bytes, want 8192 (exactly maxTextBytes)", got)
+	}
+	if len(adv.Scenes) != 1 || adv.Scenes[0].GridW != 1 || adv.Scenes[0].GridH != 1 {
+		t.Fatalf("want one 1x1 scene, got %+v", adv.Scenes)
+	}
+	if len(adv.Scenes[0].Placements) != 1 || adv.Scenes[0].Placements[0].X != 0 || adv.Scenes[0].Placements[0].Y != 0 {
+		t.Errorf("want one placement at (0,0), got %+v", adv.Scenes[0].Placements)
+	}
+	if len(adv.Notes) != 1 {
+		t.Fatalf("want one note, got %d", len(adv.Notes))
+	}
+	if got := len(adv.Notes[0].Key); got != 128 {
+		t.Errorf("note key = %d bytes, want 128 (exactly maxNoteKeyBytes)", got)
+	}
+	if got := len(adv.Notes[0].Title); got != 256 {
+		t.Errorf("note title = %d bytes, want 256 (exactly maxNoteTitleBytes)", got)
+	}
+	if got := len(adv.Notes[0].Text); got != 8192 {
+		t.Errorf("note text = %d bytes, want 8192 (exactly maxTextBytes)", got)
+	}
+	if len(adv.Actors) != 1 {
+		t.Fatalf("want one actor, got %d", len(adv.Actors))
+	}
+	if rv, ok := adv.Actors[0].Resources["focus"]; !ok || rv.Max != 0 || rv.Current != 7 {
+		t.Errorf("want focus current=7 max=0 (0 meaning unlimited), got %+v ok=%v", rv, ok)
+	}
 }

@@ -5,10 +5,10 @@
   "grid_height": 10,
   "placements": [
     {
-      "token_id": "tok-vim",
+      "token_id": "",
       "actor_id": "vim-fighter",
       "x": 2,
-      "y": 10
+      "y": 3
     },
     {
       "token_id": "tok-brace",
