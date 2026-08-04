@@ -315,11 +315,53 @@ def unresolvable_packages(packages, root="."):
     return bad
 
 
+def gremlins_args(pkg, packages=PACKAGES):
+    """The gremlins invocation for one package, excluding its GATED children.
+
+    `unleash ./internal/rules/` RECURSES into subdirectories and reports those
+    mutants relative to the package it was given — `conformance/conformance.go`
+    rather than `internal/rules/conformance/conformance.go`. With both the
+    parent and the child in PACKAGES that is wrong twice: the same mutant is
+    measured under two different keys, so an adjudication written for the child
+    does not match the parent's report and an already-excused survivor is
+    called unadjudicated; and it costs the runtime twice (internal/adventure's
+    run carried 23 of its child's mutants, internal/rules' carried 60).
+
+    Only GATED children are excluded. A subdirectory that is not separately in
+    PACKAGES is measured here or nowhere, and dropping it would trade a visible
+    gap for an invisible one — the failure this whole gate exists to prevent.
+
+    Exclusion goes through gremlins' own --exclude-files rather than filtering
+    its output, per this file's header: 8 of 9 defects across five review
+    rounds of the coverage gate lived in hand-rolled enforcement code, and the
+    fix was always to hand the job back to the toolchain.
+
+    THE REGEXP IS ANCHORED TO THE PACKAGE-RELATIVE PATH, which is what makes a
+    bare `^conformance/` correct and is the one thing here no unit test can
+    own -- it is a property of the pinned gremlins, not of this code. In
+    v0.6.0: engine.go:73 roots an os.DirFS at the directory unleash was given,
+    engine.go:104 walks it from ".", and exclusion/rules.go:43 does a plain
+    regexp MatchString against that relative path with no (?m), so `^` is
+    start-of-text. Consequently `conformance_helpers.go` cannot match (needs a
+    literal `/`) and `foo/conformance/bar.go` cannot either (not at position
+    0). RE-VERIFY THOSE THREE LINES ON A VERSION BUMP; the tests below assert
+    the argv, not gremlins' honouring of it.
+    """
+    args = ["go", "tool", "gremlins", "unleash", pkg,
+            "--workers", "1", "--timeout-coefficient", TIMEOUT_COEFFICIENT]
+    parent = pkg.strip("./").rstrip("/")
+    for other in packages:
+        child = other.strip("./").rstrip("/")
+        # Trailing slash on the prefix so internal/rulesets is not read as a
+        # child of internal/rules.
+        if child != parent and child.startswith(parent + "/"):
+            rel = child[len(parent) + 1:]
+            args += ["--exclude-files", f"^{re.escape(rel)}/"]
+    return args
+
+
 def default_runner(pkg):
-    proc = subprocess.run(
-        ["go", "tool", "gremlins", "unleash", pkg,
-         "--workers", "1", "--timeout-coefficient", TIMEOUT_COEFFICIENT],
-        capture_output=True, text=True)
+    proc = subprocess.run(gremlins_args(pkg), capture_output=True, text=True)
     return proc.stdout + proc.stderr
 
 

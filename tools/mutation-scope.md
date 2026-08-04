@@ -49,11 +49,50 @@ The guard is structural rather than sampled, for the reason above.
 Whatever is in `PACKAGES`. The count is deliberately not restated here — it
 drifted within an hour of this file being written.
 
+**A gated parent excludes its gated children.** `gremlins unleash
+./internal/rules/` RECURSES into subdirectories and reports those mutants
+relative to the package it was given — `conformance/conformance.go:207:11`
+rather than the child's own path. With both parent and child in `PACKAGES`
+that is wrong twice: the same mutant is measured under two different keys, so
+an adjudication written for the child does not match the parent's report and
+an already-excused survivor is reported as unadjudicated; and it costs the
+runtime twice. `internal/adventure`'s run carried **23** of its child's
+mutants, `internal/rules`' carried **60**.
+
+`gremlins_args` now passes `--exclude-files` for any gated child, verified
+against the real tool (23 → 0, with the parent's own 75 untouched). Only GATED
+children are excluded: a subdirectory not separately in `PACKAGES` is measured
+by its parent or nowhere, and dropping it would trade a visible gap for an
+invisible one.
+
+Found 2026-08-04 while measuring `internal/rules` — two survivors turned up in
+a file that is not in `internal/rules`. The gate had been double-measuring
+`internal/adventure/conformance` since the moment its parent was gated, and was
+green and honest the whole time, because that child happens to have no
+survivors to double-report. Nothing was ever going to point at it.
+`internal/adventure` ⊃ `internal/adventure/conformance` is the ONLY parent/child
+pair in `PACKAGES` today; the guard exists so the next one is not found the same
+way.
+
+**It had already contaminated a published number.** This table said
+`internal/rules` had **59** survivors. Ten of those were
+`conformance/conformance.go` — the already-gated child's, already adjudicated.
+Its own count is **49**, confirmed from both measurement runs (59−10 and 51−2,
+which agree). The NOT COVERED 40 was clean. So the defect this section
+describes had quietly overstated the last remaining backlog by 20%, in the file
+whose stated job is measured figures rather than impressions.
+
+**The rule that follows, stated once so it is not rediscovered:** a parent's
+published figure INCLUDES any UNGATED child's mutants, attributed to the parent.
+Only gated children are excluded, because an ungated subdirectory is measured by
+its parent or nowhere. There is no ungated child in the tree today, but when
+there is, that is what its parent's number means.
+
 ## Not gated
 
 | package | survivors | not covered | runtime | why |
 |---|---|---|---|---|
-| `internal/rules` | **59** | **40** | 7m47s | backlog, no reason on record |
+| `internal/rules` | **49** | **40** | 7m47s | backlog, no reason on record |
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
 | `cmd/vtt` | 0 of 77 evaluated | 7 | **~32m+** | **unresolvable (above)** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
@@ -223,8 +262,8 @@ survivor equivalent merely to get the gate green —
 `tools/mutation-equivalents.txt` opens with what that costs, having had two of
 four adjudications turn out wrong on 2026-07-27.
 
-Smallest first. `internal/rules/conformance` (10) is done; next
-`internal/adventure` (14) → `internal/rules` (59).
+Smallest first. `internal/rules/conformance` (10) and `internal/adventure`
+(14) are done; `internal/rules` (49) is what remains.
 
 ## Reproducing any number here
 
