@@ -203,7 +203,70 @@ tasks:
       # first draft (a dead linters-settings block, and an exclusion whose
       # text matched every `unused` message and so disabled that linter
       # outright).
-      - golangci-lint config verify
+      #
+      # THE FETCH IS RETRIED because `config verify` loads its JSON schema
+      # OVER THE NETWORK, from a URL pinned to the binary's own major.minor
+      # (golangci.v2.11.jsonschema.json for 2.11.x). A CDN blip therefore reds
+      # the whole gate with `compile schema: failing loading ... context
+      # deadline exceeded`, which looks nothing like a lint problem. Observed
+      # 2026-08-04 in CI run 30912947244: the fetch timed out in ~2s, and that
+      # 2s took a 2m02s run with it. A 2s failure is exactly what makes a
+      # retry cheap.
+      #
+      # THERE IS A HIDDEN `--schema` FLAG that accepts a local file, and it
+      # does work offline (verified against 2.11.4 with the network blocked:
+      # a valid config passes, `bogus-v1-key` and a numeric `version` both
+      # still fail). It is deliberately NOT used here, for two reasons that
+      # outrank the flake:
+      #   1. A vendored schema DRIFTS. Bump to 2.12 without re-vendoring and
+      #      .golangci.yml is validated against 2.11's schema -- silent
+      #      under-enforcement, which is the precise failure this step exists
+      #      to prevent (see .golangci.yml's header, point 1). Catching that
+      #      drift needs a version check nobody would write. The live fetch is
+      #      definitionally in sync with the binary.
+      #   2. `MarkHidden` is unsupported surface: a minor bump can drop it
+      #      with no changelog line, reddening the gate more confusingly than
+      #      the flake being fixed.
+      # NOT rejected as "hand-rolled enforcement code" -- with --schema you
+      # would vendor DATA and golangci-lint would still be the validator, so
+      # check-mutation.py's precedent about hand-rolled gates does not reach
+      # this alternative. The reason is drift, not authorship.
+      #
+      # Making the failure non-fatal was also rejected: an unverified config
+      # is the state this step prevents, so warning instead of failing would
+      # be weakening a gate to pass it (CLAUDE.md rule 2).
+      #
+      # A config verdict must not be retried; a failed FETCH must not be
+      # reported as a config verdict. "failing loading" is the discriminator
+      # (santhosh-tekuri/jsonschema's LoadURLError); it covers 404, TLS and
+      # proxy-error-page failures too. No pipes below, for the reason
+      # check:coverage and check:mutation both document: `cmd | tee` takes the
+      # PIPELINE's status, so `set -e` never fires and a failing gate ships
+      # green.
+      - |
+        set -e
+        LOG="$(mktemp -t lint-verify.XXXXXX)"
+        trap 'rm -f "$LOG"' EXIT
+        attempt=1
+        while :; do
+          if golangci-lint config verify > "$LOG" 2>&1; then
+            break
+          fi
+          if ! grep -q "failing loading" "$LOG"; then
+            cat "$LOG" >&2
+            [ -s "$LOG" ] || echo "lint: config verify failed but printed nothing" >&2
+            exit 1
+          fi
+          if [ "$attempt" -ge 3 ]; then
+            cat "$LOG" >&2
+            echo "lint: config verify could not FETCH its schema after 3 attempts." >&2
+            echo "lint: this is the network, not .golangci.yml -- the config was never checked." >&2
+            exit 1
+          fi
+          echo "lint: schema fetch failed (attempt $attempt/3), retrying..." >&2
+          attempt=$((attempt + 1))
+          sleep 3
+        done
       - golangci-lint run ./...
 
   check:ts-mutation:
