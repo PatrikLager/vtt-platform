@@ -1,0 +1,15 @@
+{
+  "actor_id": "grit-scout",
+  "name": "Grit Scout",
+  "attributes": {
+    "vim": 8,
+    "vigor": 16,
+    "brace": 8
+  },
+  "resources": {
+    "focus": {
+      "current": 6,
+      "max": 8
+    }
+  }
+}

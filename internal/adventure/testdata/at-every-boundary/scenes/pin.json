@@ -1,0 +1,14 @@
+{
+  "id": "pin",
+  "name": "Pin",
+  "grid_width": 1,
+  "grid_height": 1,
+  "placements": [
+    {
+      "token_id": "tok-pin",
+      "actor_id": "edge-actor",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}

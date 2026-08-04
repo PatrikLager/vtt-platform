@@ -261,3 +261,104 @@ func TestCompileCollisions(t *testing.T) {
 		})
 	}
 }
+
+// TestCompileHandlesLopsidedAdventureShapes drives Compile with adventures
+// where ONE part dominates: many scenes and nothing else, many actors, many
+// placements of a single actor, many notes.
+//
+// These are all legal adventures — a scene-setting chapter with no actors, a
+// roster with no map yet, a crowd scene reusing one statblock, a lore dump —
+// so Compile owes them an answer rather than a crash. The reason to write them
+// as one table is compile.go's envelope slice, whose capacity is
+// `1+len(Scenes)+len(Actors)+countPlacements(adv)+len(Notes)+1`. Every term
+// there is a mutation site, and `make([]T, 0, n)` PANICS for negative n
+// (unlike a map hint, which gc tolerates — see the campaign entries in
+// tools/mutation-equivalents.txt, which are maps and are genuinely
+// unobservable). A shape where one term dominates the rest drives the
+// corresponding mutant negative and turns a silent arithmetic slip into a
+// crash this test catches.
+//
+// CAPACITY IS ASSERTED, not just the count. A slice's cap is part of its
+// value and Compile returns the slice, so `cap == len` is directly observable
+// by any caller -- unlike a map's capacity hint, which is why the
+// internal/campaign entries in tools/mutation-equivalents.txt are genuinely
+// equivalent and this line's mutants are not. It also pins what the
+// expression is FOR: one exactly-sized allocation. Without it, a hint that is
+// wrong but still positive (the trailing `+1` flipped to `-1`, which floors at
+// 0 and so never panics) is invisible -- an earlier version of this test
+// asserted only the count and that mutant was adjudicated equivalent on the
+// strength of "nothing reads cap()". Nothing did; something can.
+//
+// A negative capacity panics rather than failing an assertion, which takes the
+// whole test binary down: a regression in one of the four dominating terms
+// surfaces as "the adventure package crashed", not as a named subtest.
+func TestCompileHandlesLopsidedAdventureShapes(t *testing.T) {
+	scene := func(i int, placements ...adventure.Placement) adventure.AdventureScene {
+		return adventure.AdventureScene{
+			ID: "s" + string(rune('a'+i)), Name: "S", GridW: 10, GridH: 10,
+			Placements: placements,
+		}
+	}
+	actor := func(i int) adventure.AdventureActor {
+		return adventure.AdventureActor{ID: "a" + string(rune('a'+i)), Name: "A"}
+	}
+
+	manyScenes := make([]adventure.AdventureScene, 0, 12)
+	for i := range 12 {
+		manyScenes = append(manyScenes, scene(i))
+	}
+	manyActors := make([]adventure.AdventureActor, 0, 12)
+	for i := range 12 {
+		manyActors = append(manyActors, actor(i))
+	}
+	manyNotes := make([]adventure.AdventureNote, 0, 12)
+	for i := range 12 {
+		manyNotes = append(manyNotes, adventure.AdventureNote{
+			Key: "k" + string(rune('a'+i)), Title: "T", Text: "x",
+		})
+	}
+	// Coordinates stay inside the 10x10 grid below: an adventure Load would
+	// reject is not one Compile "owes an answer to", and the comment above
+	// leans on these being legal shapes.
+	crowd := make([]adventure.Placement, 0, 12)
+	for i := range 12 {
+		crowd = append(crowd, adventure.Placement{
+			TokenID: "t" + string(rune('a'+i)), ActorID: "aa", X: int32(i % 10), Y: int32(i / 10),
+		})
+	}
+
+	cases := []struct {
+		name string
+		adv  *adventure.Adventure
+		// 1 AdventureLoaded + scenes + actors + placements + notes + 1 narration
+		wantEnvelopes int
+	}{
+		{"scenes dominate", &adventure.Adventure{Scenes: manyScenes}, 1 + 12 + 1},
+		{"actors dominate", &adventure.Adventure{Actors: manyActors}, 1 + 12 + 1},
+		{"notes dominate", &adventure.Adventure{Notes: manyNotes}, 1 + 12 + 1},
+		{"placements dominate", &adventure.Adventure{
+			Scenes: []adventure.AdventureScene{scene(0, crowd...)},
+			Actors: []adventure.AdventureActor{actor(0)},
+		}, 1 + 1 + 1 + 12 + 1},
+		{"everything empty", &adventure.Adventure{}, 1 + 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.adv.ID, tc.adv.Name = "adv", "Adv"
+			tc.adv.OpeningNarration = "it begins"
+			got, err := adventure.Compile(tc.adv, engine.NewState())
+			if err != nil {
+				t.Fatalf("Compile: unexpected error: %v", err)
+			}
+			if len(got) != tc.wantEnvelopes {
+				t.Errorf("Compile produced %d envelopes, want %d", len(got), tc.wantEnvelopes)
+			}
+			if cap(got) != len(got) {
+				t.Errorf("Compile returned cap %d for %d envelopes: the capacity hint is meant to be "+
+					"exact, so a mismatch means the expression no longer counts what it allocates",
+					cap(got), len(got))
+			}
+		})
+	}
+}

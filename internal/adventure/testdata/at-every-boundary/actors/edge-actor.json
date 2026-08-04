@@ -1,0 +1,15 @@
+{
+  "actor_id": "edge-actor",
+  "name": "Edge Actor",
+  "attributes": {
+    "vim": 10,
+    "vigor": 10,
+    "brace": 10
+  },
+  "resources": {
+    "focus": {
+      "current": 7,
+      "max": 0
+    }
+  }
+}

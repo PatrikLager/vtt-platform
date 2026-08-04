@@ -6,9 +6,9 @@
   "placements": [
     {
       "token_id": "tok-vim",
-      "actor_id": "vim-fighter",
+      "actor_id": "",
       "x": 2,
-      "y": 10
+      "y": 3
     },
     {
       "token_id": "tok-brace",
