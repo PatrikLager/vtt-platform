@@ -1,10 +1,12 @@
 package conformance_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 	"github.com/PatrikLager/vtt-platform/internal/rules/conformance"
 )
 
@@ -29,8 +31,12 @@ func TestRunLoadError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run(minimal-load-error): want error, got nil")
 	}
-	if !strings.Contains(err.Error(), "id") {
-		t.Errorf("Run(minimal-load-error) error = %q, want it to mention the missing %q field", err.Error(), "id")
+	// NOT a bare `Contains(err, "id")`: "invalid" contains "id", so essentially
+	// any schema complaint satisfied that, including ones that have nothing to
+	// do with the missing field this fixture exists to produce.
+	if !strings.Contains(err.Error(), `"id"`) {
+		t.Errorf("Run(minimal-load-error) error = %q, want it to name the missing %q FIELD — a bare "+
+			"substring check here passes on the word %q", err.Error(), "id", "invalid")
 	}
 }
 
@@ -46,6 +52,34 @@ func TestRunSmokeFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "big-move") {
 		t.Errorf("Run(minimal-smoke-fail) error = %q, want it to name the failing ability %q", err.Error(), "big-move")
 	}
+	// Naming the ability is NOT enough, and asserting only that was a hollow
+	// test: this fixture produces an error mentioning "big-move" by at least
+	// two different routes. If the fixture actor's resource max stops coming
+	// from default_max_expr and falls back to fixtureResourceFallbackMax
+	// (1000), big-move's cost of 5 becomes payable, the smoke pass SUCCEEDS,
+	// and Run then fails further on with `has no golden scenario` — still
+	// naming big-move, still "passing" this test, with the thing it exists to
+	// prove no longer happening at all. Four surviving mutants in
+	// buildResources lived behind exactly that gap.
+	//
+	// So pin the REASON. "have 1" is the whole point: 1 is focus's
+	// default_max_expr, and no fallback or clamp can produce it.
+	// "have 1" is the load-bearing half: 1 is focus's default_max_expr, and no
+	// fallback (1000) or clamp (MaxInt32) can produce it. The cost is NOT
+	// asserted — it comes straight off the ability manifest, no mutation here
+	// can move it, and pinning it would couple this test to resolve.go's exact
+	// "(have %d, need %d)" phrasing for nothing.
+	for _, want := range []string{
+		"failed to resolve against the generated fixture actor",
+		"insufficient",
+		"have 1",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Run(minimal-smoke-fail) error = %q, want it to contain %q — the smoke pass must fail "+
+				"because the fixture actor's max came from default_max_expr, not for some later reason",
+				err.Error(), want)
+		}
+	}
 }
 
 // TestRunGoldenMismatch proves golden comparison is exact, not vacuous: a
@@ -58,6 +92,15 @@ func TestRunGoldenMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "poke-hit-wrong") {
 		t.Errorf("Run(minimal-golden-mismatch) error = %q, want it to name the failing golden %q", err.Error(), "poke-hit-wrong")
+	}
+	// The golden's NAME is in its path, and runGoldens wraps that path into
+	// every failure for the file (`golden %s: %w`). So the assertion above
+	// passes for a decode error too — one typo'd key, given
+	// DisallowUnknownFields — while the exact want_events comparison this test
+	// exists to prove never runs. Pin the comparison itself.
+	if !strings.Contains(err.Error(), "event[1]") {
+		t.Errorf("Run(minimal-golden-mismatch) error = %q, want it to identify the mismatching event "+
+			"— naming the golden only proves the FILE was reached, not that its events were compared", err.Error())
 	}
 }
 
@@ -135,6 +178,93 @@ func TestRunCompiledGoldenMismatch(t *testing.T) {
 	if !strings.Contains(err.Error(), "drift") {
 		t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to call out the drift", err.Error())
 	}
+	// Naming the ability and saying "drift" does not distinguish the drift
+	// report from its FALLBACK. runCompiledGoldens re-dumps the compiled power
+	// to show got-vs-want, and if that dump fails it returns a different error
+	// that also names the ability and also says "drift" — so asserting only
+	// those two passes while the diagnostic half is gone. The whole value of
+	// this error to whoever hits it is the payload.
+	for _, want := range []string{"got:", "want:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Run(minimal-v2-compiled-golden-mismatch) error = %q, want it to carry %q — a drift "+
+				"report without the got/want dump tells the reader nothing they can act on", err.Error(), want)
+		}
+	}
+}
+
+// TestRunZeroDefaultMaxFallsBackRatherThanBuildingAnUnusableActor pins the
+// `v > 0` boundary in buildResources. A default_max_expr that evaluates to 0 is
+// not a usable maximum for a generic stand-in actor — every limited ability
+// would be unaffordable and the smoke pass would report failures that say
+// nothing about the ruleset. So 0 takes the fallback, exactly as a missing
+// expression does.
+//
+// The fixture makes that observable: `pool` declares default_max_expr "0" and
+// `poke` costs 1 of it. At `v >= 0` the actor is built with max 0, cannot pay,
+// and Run fails naming poke.
+func TestRunZeroDefaultMaxFallsBackRatherThanBuildingAnUnusableActor(t *testing.T) {
+	if err := conformance.Run(fixture("minimal-v2-zero-default-max")); err != nil {
+		t.Fatalf("Run(minimal-v2-zero-default-max): unexpected error: %v\n"+
+			"a default_max_expr of 0 must fall back to fixtureResourceFallbackMax; building the "+
+			"smoke actor with max 0 makes every limited ability unaffordable", err)
+	}
+}
+
+// TestRunGoldenWithNoRecordedRollsDegradesRatherThanPanicking pins
+// tableRoller.Roll's exhaustion guard at the exact-exhaustion boundary. A
+// golden that records fewer steps than Resolve evaluates is a broken FIXTURE,
+// and the contract is that it surfaces as an ordinary conformance failure
+// naming the golden — never as a panic out of the roller, which would blame the
+// platform for an authoring mistake and take the whole run down with it.
+//
+// The fixture records no rolls at all, so the first Roll call hits i == len(0).
+// At `r.i > len(r.steps)` that case slips past the guard and indexes an empty
+// slice. Run succeeding here is what separates >= from >.
+func TestRunGoldenWithNoRecordedRollsDegradesRatherThanPanicking(t *testing.T) {
+	// A panic in the roller would fail this test by crashing the process, which
+	// is the point: the assertion is that we reach a verdict at all.
+	if err := conformance.Run(fixture("minimal-v2-rolls-exhausted")); err != nil {
+		t.Fatalf("Run(minimal-v2-rolls-exhausted): unexpected error: %v\n"+
+			"an exhausted roll table must yield a zero roll, not an out-of-range index", err)
+	}
+}
+
+// TestDumpCompiledPowerSucceedsForARealCompiledPower pins the success path of
+// the golden-authoring helper. `goldens/compiled/<id>.json` files are produced
+// BY this function, so if it ever returns an error for an ordinary compiled
+// power, the documented authoring workflow ("run this, write the result
+// verbatim") stops working — and nothing else in the suite calls it outside
+// the drift-diagnostic path, where its error return is swallowed into a
+// message about diagnostics rather than surfaced.
+func TestDumpCompiledPowerSucceedsForARealCompiledPower(t *testing.T) {
+	rs, err := rules.Load(fixture("minimal-v2"))
+	if err != nil {
+		t.Fatalf("Load(minimal-v2): %v", err)
+	}
+	cp := rs.Compiled["poke"]
+	if cp == nil {
+		t.Fatal(`Load(minimal-v2): no compiled power for "poke"; the fixture changed shape`)
+	}
+
+	b, err := conformance.DumpCompiledPower(cp)
+	if err != nil {
+		t.Fatalf("DumpCompiledPower(poke): unexpected error: %v", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("DumpCompiledPower(poke): empty output")
+	}
+	if b[len(b)-1] != '\n' {
+		t.Error("DumpCompiledPower(poke): output must end in a newline — it is written verbatim to a file")
+	}
+	// Round-trips as JSON, which is what makes "write the result verbatim"
+	// safe: runCompiledGoldens decodes these files back.
+	var back map[string]any
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatalf("DumpCompiledPower(poke): output is not valid JSON: %v", err)
+	}
+	if back["id"] != "poke" {
+		t.Errorf(`DumpCompiledPower(poke): dumped id = %v, want "poke"`, back["id"])
+	}
 }
 
 // TestRunCompiledGoldenExemptForV1 (REMOVED, Task 4): proved the exemption
@@ -164,6 +294,13 @@ func TestRunMissingPerAbilityGolden(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "prod") {
 		t.Errorf("Run(minimal-missing-golden) error = %q, want it to name the uncovered ability %q", err.Error(), "prod")
+	}
+	// Naming the ability is not enough: make prod's cost exceed its resource
+	// and Run fails in the SMOKE pass instead, also naming prod, leaving F7's
+	// per-ability-golden rule never reached and this test still green.
+	if !strings.Contains(err.Error(), "has no golden scenario") {
+		t.Errorf("Run(minimal-missing-golden) error = %q, want it to fail for the MISSING GOLDEN "+
+			"specifically — any other failure mentioning %q would satisfy a bare name check", err.Error(), "prod")
 	}
 }
 

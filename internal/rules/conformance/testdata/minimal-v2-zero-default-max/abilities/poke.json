@@ -1,0 +1,28 @@
+{
+  "id": "poke",
+  "name": "Poke",
+  "usage": {
+    "limited": {
+      "resource": "pool",
+      "cost": 1
+    }
+  },
+  "compose": [
+    {
+      "atom": "melee-delivery",
+      "bind": {
+        "reach": 1
+      }
+    },
+    {
+      "atom": "strike-roll",
+      "bind": {
+        "attack_stat": "str"
+      }
+    },
+    {
+      "atom": "strike-damage",
+      "bind": {}
+    }
+  ]
+}

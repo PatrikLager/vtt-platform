@@ -227,5 +227,90 @@ class MutationGateTest(unittest.TestCase):
         self.assertIn("b.go:2:2", err)
 
 
+def _pkg_dir(root, rel, clause, with_test=True):
+    """Create <root>/<rel>/ containing a .go file declaring `package <clause>`."""
+    d = os.path.join(root, rel)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "thing.go"), "w") as fh:
+        fh.write(f"package {clause}\n\nfunc F() int {{ return 1 }}\n")
+    if with_test:
+        with open(os.path.join(d, "thing_test.go"), "w") as fh:
+            fh.write(f"package {clause}\n")
+    return d
+
+
+class PackageResolutionTest(unittest.TestCase):
+    """A package gremlins cannot resolve reports EVERY mutant as killed.
+
+    gremlins picks a mutant's test target by walking up from the mutated file
+    for a directory whose NAME equals the declared package name. A `package
+    main` in a directory not named `main` has no such ancestor, so it falls
+    back to the bare MODULE PATH — `go test github.com/owner/repo` — which
+    does not resolve. That exits 1, and exit 1 is exactly what gremlins scores
+    as KILLED. Every mutant becomes a false kill in ~11ms and the gate prints
+    a clean measurement for a run that never executed a single test.
+
+    Found 2026-08-04 by review, in a change that was ADDING cmd/vtt to the
+    gate on the strength of "91 killed, 0 lived, ~9s". `go test ./cmd/vtt/`
+    alone takes 29s, and a PROVABLY EQUIVALENT mutant (state_dump.go:153,
+    `>` -> `>=`, reassigning the same value) was reported KILLED. tools/toolgen
+    had the same shape and had been in the gated set all along.
+
+    Verifying a KILLABLE mutant cannot catch this — a constant "everything
+    dies" verdict passes that check too. Hence a structural guard rather than
+    a sampled one.
+    """
+
+    def test_a_package_whose_directory_matches_its_clause_is_resolvable(self):
+        with tempfile.TemporaryDirectory() as root:
+            _pkg_dir(root, "internal/identity", "identity")
+            self.assertEqual(cm.unresolvable_packages(["./internal/identity/"], root=root), [])
+
+    def test_package_main_in_a_mismatched_directory_is_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            _pkg_dir(root, "cmd/vtt", "main")
+            bad = cm.unresolvable_packages(["./cmd/vtt/"], root=root)
+            self.assertEqual(len(bad), 1, "package main in a dir not named 'main' is unresolvable")
+            self.assertEqual(bad[0][0], "./cmd/vtt/")
+            self.assertEqual(bad[0][1], "main", "the DECLARED package name")
+            self.assertEqual(bad[0][2], "vtt", "the DIRECTORY name that fails to match it")
+
+    def test_any_mismatch_counts_not_only_package_main(self):
+        # The failure is name inequality, not the word "main". A package
+        # deliberately named differently from its directory breaks identically.
+        with tempfile.TemporaryDirectory() as root:
+            _pkg_dir(root, "internal/rules", "ruleset")
+            self.assertEqual(len(cm.unresolvable_packages(["./internal/rules/"], root=root)), 1)
+
+    def test_the_gate_fails_and_explains_rather_than_reporting_a_clean_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            _pkg_dir(root, "cmd/vtt", "main")
+            eq = equivalents("")
+            buf_out, buf_err = io.StringIO(), io.StringIO()
+            code = cm.run(eq, packages=["./cmd/vtt/"], runner=runner_for({}),
+                          out=buf_out, err=buf_err, root=root)
+            os.unlink(eq)
+            self.assertEqual(code, 1, "an unmeasurable package must FAIL, never report ok")
+            self.assertIn("cmd/vtt", buf_err.getvalue())
+            self.assertNotIn("ok  cmd/vtt", buf_out.getvalue(),
+                             "the gate must not print a clean line for a package it cannot measure")
+
+    def test_test_only_package_clauses_are_ignored(self):
+        # An external test package (foo_test) sits beside the real one and must
+        # not be mistaken for the declaration.
+        with tempfile.TemporaryDirectory() as root:
+            d = _pkg_dir(root, "internal/store", "store")
+            with open(os.path.join(d, "zz_external_test.go"), "w") as fh:
+                fh.write("package store_test\n")
+            self.assertEqual(cm.unresolvable_packages(["./internal/store/"], root=root), [])
+
+    def test_every_gated_package_in_the_real_tree_is_resolvable(self):
+        # The guard pointed at the actual PACKAGES list. This is the assertion
+        # that would have stopped cmd/vtt and toolgen being gated at all.
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertEqual(cm.unresolvable_packages(cm.PACKAGES, root=repo), [],
+                         "every gated package must be one gremlins can actually resolve")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

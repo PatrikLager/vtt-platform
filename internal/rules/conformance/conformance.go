@@ -164,8 +164,12 @@ func smokeTest(rs *rules.Ruleset) error {
 // gets fixturePlaceholder on BOTH actors (a smoke test can't know which
 // role — attacker or target — any given ability expects of which actor,
 // so both carry every stat); every declared resource gets a max computed
-// from its default_max_expr when present (evaluated against the same
-// placeholder attributes) or fixtureResourceFallbackMax otherwise, with
+// from its default_max_expr when that expression is present AND evaluates
+// to a POSITIVE value (against the same placeholder attributes), or
+// fixtureResourceFallbackMax otherwise — 0 falls back exactly as a missing
+// expression does, since a stand-in actor with a max of 0 could afford no
+// limited ability and every smoke failure would say nothing about the
+// ruleset (pinned by minimal-v2-zero-default-max), with
 // current seeded to that max so at-will/limited usage costs and
 // resource_change outcomes have generous headroom. Both actors' tokens
 // share one grid cell, so every declared range (including 0) is
