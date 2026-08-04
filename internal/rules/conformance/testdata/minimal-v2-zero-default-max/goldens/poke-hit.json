@@ -1,0 +1,93 @@
+{
+  "name": "poke-hit",
+  "ability_id": "poke",
+  "actors": [
+    {
+      "id": "caster",
+      "x": 0,
+      "y": 0,
+      "attributes": {
+        "str": 3
+      },
+      "resources": {
+        "pool": {
+          "current": 3,
+          "max": 3
+        }
+      }
+    },
+    {
+      "id": "target",
+      "x": 1,
+      "y": 0,
+      "attributes": {
+        "def": 10
+      },
+      "resources": {
+        "pool": {
+          "current": 0,
+          "max": 0
+        }
+      }
+    }
+  ],
+  "actor_id": "caster",
+  "target_ids": [
+    "target"
+  ],
+  "rolls": [
+    {
+      "results": [
+        15
+      ]
+    }
+  ],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "caster",
+      "ability_id": "poke",
+      "target_ids": [
+        "target"
+      ],
+      "rolls": [
+        {
+          "expression": "1d20 + @caster.str",
+          "results": [
+            15
+          ],
+          "total": 18
+        }
+      ],
+      "outcome_summary": "Poke on target: hit (18 vs 10)"
+    },
+    {
+      "type": "ResourceChanged",
+      "actor_id": "caster",
+      "resource": "pool",
+      "delta": -1,
+      "new_value": 2,
+      "reason": "ability:poke:usage"
+    },
+    {
+      "type": "ResourceChanged",
+      "actor_id": "target",
+      "resource": "pool",
+      "delta": 1,
+      "new_value": 1,
+      "reason": "ability:poke:hit"
+    },
+    {
+      "type": "ConditionApplied",
+      "actor_id": "caster",
+      "condition_id": "marked",
+      "source": "threshold:pool"
+    },
+    {
+      "type": "ConditionApplied",
+      "actor_id": "target",
+      "condition_id": "marked",
+      "source": "threshold:pool"
+    }
+  ]
+}

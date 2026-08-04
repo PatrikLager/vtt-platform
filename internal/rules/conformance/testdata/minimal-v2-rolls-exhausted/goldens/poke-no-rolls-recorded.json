@@ -1,0 +1,53 @@
+{
+  "name": "poke-no-rolls-recorded",
+  "ability_id": "poke",
+  "actors": [
+    {
+      "id": "caster",
+      "x": 0,
+      "y": 0,
+      "attributes": {
+        "str": 3
+      }
+    },
+    {
+      "id": "target",
+      "x": 1,
+      "y": 0,
+      "attributes": {
+        "def": 10
+      },
+      "resources": {
+        "pool": {
+          "current": 0,
+          "max": 0
+        }
+      }
+    }
+  ],
+  "actor_id": "caster",
+  "target_ids": [
+    "target"
+  ],
+  "rolls": [],
+  "want_events": [
+    {
+      "type": "AbilityUsed",
+      "actor_id": "caster",
+      "ability_id": "poke",
+      "target_ids": [
+        "target"
+      ],
+      "rolls": [
+        {
+          "expression": "1d20 + @caster.str",
+          "results": [
+            0
+          ],
+          "total": 3
+        }
+      ],
+      "outcome_summary": "Poke on target: miss (3 vs 10)"
+    }
+  ]
+}

@@ -66,9 +66,10 @@ import sys
 #
 # What is NOT here, with measured survivor counts, is published in
 # tools/mutation-scope.md — so the narrowness is a number rather than an
-# impression. THREE packages turned out to be outside this list on 2026-08-04
-# with no recorded reason at all (internal/rules, internal/rules/conformance,
-# internal/adventure); cmd/vtt is excluded on the record by ADR-010:96-97.
+# impression. Three packages turned out to be outside this list on 2026-08-04
+# with no recorded reason at all; internal/rules/conformance has since been
+# worked to zero and gated, leaving internal/rules and internal/adventure.
+# cmd/vtt is excluded on the record by ADR-010:96-97.
 #
 # tools/toolgen was REMOVED from this list on 2026-08-04. It is `package main`
 # in a directory not named `main`, which gremlins cannot resolve — see
@@ -77,10 +78,12 @@ import sys
 # worktree it is genuinely 9 killed / 0 lived, but the gate was not producing
 # that answer and a green line that measures nothing is worse than a gap.
 PACKAGES = [
+    # Ascending by runtime: the gate fails as fast as it can.
     "./internal/identity/",                # ~16s
     "./internal/adventure/conformance/",   # ~19s
     "./internal/store/",                   # ~33s
     "./internal/engine/",                  # ~38s
+    "./internal/rules/conformance/",       # ~48s
     "./internal/gateway/",                 # ~57s
     "./internal/campaign/",                # ~91s
     "./internal/mcp/",                     # ~857s

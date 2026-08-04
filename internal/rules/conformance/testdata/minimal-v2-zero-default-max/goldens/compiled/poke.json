@@ -1,0 +1,32 @@
+{
+  "id": "poke",
+  "name": "Poke",
+  "usage": {
+    "limited": {
+      "resource": "pool",
+      "cost": 1
+    }
+  },
+  "targeting": {
+    "range": 1,
+    "max_targets": 1
+  },
+  "resolution": {
+    "roll": "1d20 + @caster.str",
+    "vs": "@target.def",
+    "branches": [
+      "hit",
+      "miss"
+    ]
+  },
+  "branch_outcomes": [
+    [
+      {
+        "kind": "resource_change",
+        "resource": "pool",
+        "delta_expr": "1"
+      }
+    ],
+    null
+  ]
+}

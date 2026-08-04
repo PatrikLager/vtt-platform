@@ -1,0 +1,24 @@
+{
+  "id": "minimal-v2-zero-default-max",
+  "name": "Minimal V2",
+  "format_version": "2",
+  "attributes": [
+    "str"
+  ],
+  "defenses": [
+    "def"
+  ],
+  "resources": [
+    {
+      "name": "pool",
+      "default_max_expr": "0",
+      "thresholds": [
+        {
+          "when": "#pool",
+          "apply_condition": "marked",
+          "remove_when_false": true
+        }
+      ]
+    }
+  ]
+}
