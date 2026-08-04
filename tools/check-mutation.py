@@ -24,6 +24,7 @@ hand-rolled enforcement code, and the fix was always to delete it in favour of
 the toolchain. Keep this file small enough that it cannot hide a bug.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -62,8 +63,20 @@ import sys
 #
 # Adding harness needs the race guard's effect made deterministic — not more
 # survivors killed.
+#
+# What is NOT here, with measured survivor counts, is published in
+# tools/mutation-scope.md — so the narrowness is a number rather than an
+# impression. THREE packages turned out to be outside this list on 2026-08-04
+# with no recorded reason at all (internal/rules, internal/rules/conformance,
+# internal/adventure); cmd/vtt is excluded on the record by ADR-010:96-97.
+#
+# tools/toolgen was REMOVED from this list on 2026-08-04. It is `package main`
+# in a directory not named `main`, which gremlins cannot resolve — see
+# unresolvable_packages() below — so every one of its mutants had been scored
+# a false kill for as long as it had been gated. Measured by hand in a renamed
+# worktree it is genuinely 9 killed / 0 lived, but the gate was not producing
+# that answer and a green line that measures nothing is worse than a gap.
 PACKAGES = [
-    "./tools/toolgen/",                    # ~5s
     "./internal/identity/",                # ~16s
     "./internal/adventure/conformance/",   # ~19s
     "./internal/store/",                   # ~33s
@@ -238,6 +251,65 @@ def run_package(pkg, runner):
 TIMEOUT_COEFFICIENT = "30"
 
 
+PACKAGE_CLAUSE_RE = re.compile(r"^package\s+(\w+)")
+
+
+def declared_package(pkg_dir):
+    """The package name declared by a directory's non-test .go files."""
+    try:
+        names = sorted(os.listdir(pkg_dir))
+    except OSError:
+        return None
+    for name in names:
+        if not name.endswith(".go") or name.endswith("_test.go"):
+            continue
+        with open(os.path.join(pkg_dir, name)) as fh:
+            for line in fh:
+                m = PACKAGE_CLAUSE_RE.match(line)
+                if m:
+                    return m.group(1)
+    return None
+
+
+def unresolvable_packages(packages, root="."):
+    """Gated packages gremlins cannot resolve a test target for.
+
+    gremlins picks a mutant's test target by walking UP from the mutated file
+    for a directory whose NAME equals the declared package name. A `package
+    main` in a directory not named `main` has no such ancestor, so gremlins
+    falls back to the bare MODULE PATH and runs `go test github.com/owner/repo`
+    — which does not resolve, exits 1, and exit 1 is precisely what gremlins
+    scores as KILLED. Every mutant becomes a false kill in ~11ms, and the gate
+    prints a clean measurement for a run that never executed a single test.
+
+    This is the gate holding itself to its own standard. It exists because the
+    failure is INVISIBLE from the outside: the output is indistinguishable from
+    a genuinely well-tested package, and sampling a killable mutant to check
+    cannot detect it — a constant "everything dies" verdict passes that check
+    too. Only a provably EQUIVALENT mutant reported as killed gives it away.
+
+    Found 2026-08-04 by review, in a change adding cmd/vtt to PACKAGES on the
+    strength of "91 killed, 0 lived, ~9s" — while `go test ./cmd/vtt/` alone
+    takes 29s. tools/toolgen had been in the gated set with the same defect,
+    never measured. tools/mutation-scope.md carries both, with the manual
+    measurements taken in their place.
+
+    Returns [(pkg, declared_name, directory_name), ...]; empty is good.
+    """
+    bad = []
+    for pkg in packages:
+        rel = pkg.strip("./").rstrip("/")
+        declared = declared_package(os.path.join(root, rel))
+        if declared is None:
+            # No Go source to read. run_package will fail on its own terms;
+            # inventing a second diagnosis here would only obscure that one.
+            continue
+        dirname = os.path.basename(rel)
+        if declared != dirname:
+            bad.append((pkg, declared, dirname))
+    return bad
+
+
 def default_runner(pkg):
     proc = subprocess.run(
         ["go", "tool", "gremlins", "unleash", pkg,
@@ -247,7 +319,21 @@ def default_runner(pkg):
 
 
 def run(equivalents_path, packages=PACKAGES, runner=default_runner,
-        out=sys.stdout, err=sys.stderr):
+        out=sys.stdout, err=sys.stderr, root="."):
+    # BEFORE anything is measured: a package gremlins cannot resolve reports
+    # every mutant as killed, so letting the loop below run would print `ok`
+    # lines that establish nothing.
+    unresolvable = unresolvable_packages(packages, root=root)
+    if unresolvable:
+        for pkg, declared, dirname in unresolvable:
+            print(f"check:mutation: {pkg} declares `package {declared}` in a directory named "
+                  f"`{dirname}`. gremlins resolves a test target by matching the directory name "
+                  f"to the package name, so it falls back to the bare module path, `go test` "
+                  f"exits 1 for an unresolvable package, and EVERY mutant is scored KILLED in "
+                  f"milliseconds. The measurement would be worthless. Remove it from PACKAGES "
+                  f"and record it in tools/mutation-scope.md.", file=err)
+        return 1
+
     try:
         equivalents = read_equivalents(equivalents_path)
     except (EquivalentsError, OSError) as exc:
