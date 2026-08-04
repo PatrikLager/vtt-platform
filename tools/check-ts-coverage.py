@@ -36,6 +36,15 @@ RAISE_BAND = 1.0
 # Excluded from the gate, with the reason each is exempt. Adding to this list
 # is a reviewed decision: an exemption is a permanent hole, not a TODO.
 EXCLUDED = {
+    # client/src/main.ts was here until 2026-08-03, exempted as "the only file
+    # no test imports — by design". That reason was verifiably FALSE:
+    # all-modules.test.ts walks client/src and imports every .ts file, main.ts
+    # included, so it was already in the lcov report at 100% the whole time —
+    # which this gate REQUIRES, since an EXCLUDED file absent from the report
+    # is a hard error below. It now carries a 100.00 floor like any other file.
+    # It remains excluded from stryker.conf.json's mutate list, where the
+    # argument is different and sound: its mutants are unobservable because of
+    # the harness, not because of the code.
     "client/src/state.ts": (
         "80 lines of type declarations, which erase at runtime, leaving THREE "
         "executable lines: newState's declaration, its body, and a class. Its "

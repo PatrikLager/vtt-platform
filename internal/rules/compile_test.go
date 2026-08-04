@@ -515,6 +515,7 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"undeclared-resource-in-contribution", []string{"bad.json", "no_such_pool"}},
 		{"attribute-defense-name-collision", []string{"ruleset.json", "brace"}},
 		{"negative-int-binding", []string{"bad.json", "must not be negative"}},
+		{"negative-targeting-range", []string{"bad.json", "targeting.range must not be negative"}},
 		{"compose-missing-bind", []string{"bad.json", "bind"}},
 	}
 

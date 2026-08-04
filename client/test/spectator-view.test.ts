@@ -646,27 +646,21 @@ test("the targets heading names the ability's range", () => {
 });
 
 test("an armed ability always lists at least the actor's own square", () => {
-  // Worth stating plainly because it makes the "nothing in range" branch
-  // below effectively unreachable: targetableTokens filters by Chebyshev
-  // distance from the ACTING token, which is itself at distance 0, so any
-  // range >= 0 includes it.
+  // This is why the panel has no empty-state for the target list. The acting
+  // token is at Chebyshev distance 0 from itself and shares its own SceneID,
+  // so it survives both of targetableTokens' filters for any range >= 0 —
+  // range 0, the tightest a ruleset can declare, still lists it.
+  //
+  // The former "nothing in range" branch was removed once the open question
+  // it was waiting on got an answer: the ruleset compiler REJECTS a negative
+  // range (internal/rules/compile.go, "targeting.range must not be
+  // negative"), so no ability that reaches this client can carry one. There
+  // is no reachable input that empties this list, and a rendered empty-state
+  // for an impossible case reads as a handled one.
   const p = panel(world(), [{ id: "poke", name: "Poke", range: 0, maxTargets: 1, usage: { kind: "atWill" } }],
                   { selectedActorId: "a1", selectedAbilityId: "poke" });
   expect(p.node.querySelector(".empty")).toBeNull();
   expect(p.button("Lera")).toBeDefined();
-});
-
-test("a NEGATIVE range is the only way to reach 'nothing in range'", () => {
-  // KNOWN ODDITY, pinned rather than fixed. `if (targets.length === 0)` is
-  // dead for every range a sane ruleset declares, because the acting token is
-  // always within range 0 of itself. A negative range is the only input that
-  // empties the list, and the panel does then say so instead of rendering a
-  // bare row. Flagged for the ruleset side: if range is constrained to >= 0
-  // there, this branch is unreachable and should be removed rather than left
-  // looking like a handled case.
-  const nonsense: Ability = { id: "void", name: "Void", range: -1, maxTargets: 1, usage: { kind: "atWill" } };
-  const p = panel(world(), [nonsense], { selectedActorId: "a1", selectedAbilityId: "void" });
-  expect(Array.from(p.node.querySelectorAll(".empty")).some((n) => n.textContent === "nothing in range")).toBe(true);
 });
 
 // --- saying something -------------------------------------------------------

@@ -141,3 +141,56 @@ test("a fold error is surfaced instead of leaving a half-applied state", async (
     gw.stop();
   }
 });
+
+test("reconnect redials and resumes from the last folded sequence", async () => {
+  // Session.reconnect is a one-line delegation to Wire.reconnect, and a
+  // delegation with nothing asserting it is indistinguishable from an empty
+  // body. That matters here more than the line count suggests: reconnect is
+  // the ONLY recovery path after a dropped socket, so a silently-empty one
+  // leaves a client that looks connected, never redials, and simply stops
+  // receiving events — the failure the wire's status handling exists to
+  // surface, arriving instead as an unexplained frozen board.
+  //
+  // The discriminator is a SECOND connection carrying an event the first one
+  // never sent, and the `after` cursor it resumes from, which is what makes
+  // this a resume rather than a fresh replay.
+  const seen: string[] = [];
+  let opened = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      seen.push(new URL(req.url).searchParams.get("after") ?? "");
+      if (srv.upgrade(req)) return undefined;
+      return new Response("expected websocket", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        opened += 1;
+        const frames = opened === 1
+          ? world
+          : [{ event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 3 } }) }) }];
+        for (const f of frames) ws.send(JSON.stringify(f));
+      },
+      message() {},
+    },
+  });
+  const url = `ws://localhost:${server.port}/ws`;
+  try {
+    const s = new Session(url, "tok");
+    await s.start();
+    await until(() => s.head === 4n, "the first connection's replay");
+
+    await s.reconnect();
+    await until(() => s.head === 5n, "the redialled connection's event");
+
+    expect(s.head).toBe(5n);
+    expect(s.state.Tokens["t1"]).toMatchObject({ X: 3, Y: 3 });
+    // Two connections, and the second asked to resume rather than replay.
+    expect(seen.length).toBe(2);
+    expect(seen[0]).toBe("0");
+    expect(seen[1]).toBe("4");
+    s.close();
+  } finally {
+    server.stop(true);
+  }
+});

@@ -19,8 +19,23 @@ test("an empty stored value reads as null", () => {
   expect(new Auth(store).get()).toBeNull();
 });
 
-test("storing an empty token is refused", () => {
-  expect(() => new Auth(memoryStore()).set("")).toThrow();
+test("storing an empty token is refused, and says why", () => {
+  // The MESSAGE is asserted, not just that it threw. This is the only place
+  // the refusal is explained, and a caller that hits it is holding an empty
+  // string it believed was a token — "Error" alone sends them looking at the
+  // store rather than at what they passed.
+  expect(() => new Auth(memoryStore()).set("")).toThrow("auth: refusing to store an empty token");
+});
+
+test("a refused empty token leaves any existing one intact", () => {
+  // set() must reject BEFORE writing. Otherwise a failed set is indistinguish-
+  // able from a successful one at the store, and a user who fumbles an empty
+  // paste is silently logged out.
+  const store = memoryStore();
+  const a = new Auth(store);
+  a.set("tok-1");
+  expect(() => a.set("")).toThrow();
+  expect(a.get()).toBe("tok-1");
 });
 
 test("clear actually removes it — closing the tab does not", () => {

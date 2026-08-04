@@ -204,3 +204,172 @@ test("status transitions are reported to the caller", async () => {
     gw.stop();
   }
 });
+
+// --- failure paths and the guards nothing was exercising ---------------------
+
+test("a connection that cannot be made rejects with a reason, and reports error status", async () => {
+  // Port 1 is not listenable by a normal process, so the handshake fails
+  // rather than hanging. Both halves matter: the promise must reject so the
+  // caller stops waiting, and the status must reach the UI so the user sees
+  // something other than a blank board.
+  const wire = new Wire("ws://127.0.0.1:1/ws", "tok");
+  const statuses: string[] = [];
+  wire.onStatus((s) => statuses.push(s));
+  await expect(wire.connect(0n)).rejects.toThrow("wire: connection failed");
+  expect(statuses).toContain("error");
+});
+
+test("a socket closing answers every in-flight command instead of hanging", async () => {
+  // The pending map is keyed by request id and resolved by an inbound result.
+  // If the socket dies first, nothing will ever resolve those promises — a UI
+  // awaiting one waits for the rest of the session. Each is answered with an
+  // explicit failure carrying ITS OWN request id, so a caller can tell which
+  // command it lost.
+  const gw = fakeGateway(() => {}); // never replies
+  const wire = new Wire(gw.url, "tok");
+  try {
+    await wire.connect(0n);
+    const inFlight = wire.send(create(ClientCommandSchema, { requestId: "mine-1" }));
+    await until(() => gw.sockets.length > 0, "the socket");
+    gw.sockets[0].close();
+
+    const res = await inFlight;
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("wire: connection closed before a result arrived");
+    expect(res.requestId).toBe("mine-1");
+  } finally {
+    gw.stop();
+  }
+});
+
+test("sending without a connection is refused, not thrown", async () => {
+  // send() is called from click handlers. Throwing would blank the console
+  // and leave the button looking like it worked; a resolved failure renders
+  // next to the control the user just pressed.
+  const wire = new Wire("ws://127.0.0.1:1/ws", "tok");
+  const res = await wire.send(create(ClientCommandSchema, { requestId: "r" }));
+  expect(res.ok).toBe(false);
+  expect(res.error).toBe("wire: not connected");
+});
+
+test("close and reconnect are safe before anything was ever connected", async () => {
+  // Both reach for this.ws optionally. A component torn down before its
+  // socket opened, or a retry that fires first, would otherwise throw on a
+  // property of undefined — during teardown, where it is least visible.
+  const wire = new Wire("ws://127.0.0.1:1/ws", "tok");
+  expect(() => wire.close()).not.toThrow();
+  await expect(wire.reconnect()).rejects.toThrow("wire: connection failed");
+});
+
+test("a result for an unknown request id is dropped, not fatal", async () => {
+  // It can legitimately belong to a command abandoned by a previous
+  // connection. Treating it as an error would kill a healthy socket over a
+  // late reply nobody is waiting for.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  try {
+    const seen: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+    await wire.connect(0n);
+    gw.sockets[0].send(JSON.stringify({ result: { requestId: "nobody-waits-for-this", ok: true } }));
+    // The socket must still be usable afterwards.
+    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(7) }));
+    await until(() => seen.length > 0, "the event after the stray result");
+    expect(seen).toEqual([7n]);
+  } finally {
+    gw.stop();
+  }
+});
+
+test("an unknown frame kind is ignored and the stream keeps working", async () => {
+  // Deliberate forward-compatibility: the server may add frame kinds, and an
+  // older client must not fall over. This is the client half of the property
+  // the Go harness client does NOT have — it tears the connection down on an
+  // unrecognised frame — and the disagreement is recorded in ServerFrame's
+  // ordering contract. Pinning it here keeps the client's half honest.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  try {
+    const seen: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+    await wire.connect(0n);
+    gw.sockets[0].send(JSON.stringify({ catchUpHead: { headSequence: "12" } }));
+    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(9) }));
+    await until(() => seen.length > 0, "the event after the unknown frame");
+    expect(seen).toEqual([9n]);
+  } finally {
+    gw.stop();
+  }
+});
+
+test("an out-of-order replay never walks the resume cursor backwards", async () => {
+  // lastSeq is what reconnect resumes from. Letting an older event lower it
+  // would make a redial re-request history already folded, and the session
+  // would double-apply it.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  try {
+    const seen: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+    await wire.connect(0n);
+    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(5) }));
+    await until(() => seen.length === 1, "the first event");
+    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(3) }));
+    await until(() => seen.length === 2, "the older event");
+
+    await wire.reconnect();
+    // Two connections: the redial must resume from 5, not from 3.
+    expect(gw.queries[1]).toContain("after=5");
+  } finally {
+    gw.stop();
+  }
+});
+
+test("a caller's request id is used as-is, and a missing one is generated cleanly", async () => {
+  // Correlation is by request id, so overwriting the caller's would strand
+  // their promise. A generated one has to be well-formed too: a counter
+  // running the wrong way yields "c--1", which reads as a different id scheme
+  // to anything parsing it.
+  const sent: string[] = [];
+  const gw = fakeGateway((ws, raw) => {
+    sent.push(JSON.parse(raw).requestId);
+    ws.send(JSON.stringify({ result: { requestId: JSON.parse(raw).requestId, ok: true } }));
+  });
+  const wire = new Wire(gw.url, "tok");
+  try {
+    await wire.connect(0n);
+    const mine = await wire.send(create(ClientCommandSchema, { requestId: "caller-chose-this" }));
+    expect(mine.ok).toBe(true);
+    expect(sent[0]).toBe("caller-chose-this");
+
+    await wire.send(create(ClientCommandSchema, { requestId: "" }));
+    expect(sent[1]).toMatch(/^c-\d+$/);
+  } finally {
+    gw.stop();
+  }
+});
+
+test("sending after the socket dropped is refused, not fired into a dead socket", async () => {
+  // Distinct from "never connected": here this.ws EXISTS, it is simply no
+  // longer OPEN. That is the ordinary case — the user clicks a moment after
+  // the gateway went away — and it is the readyState half of the guard that
+  // catches it. Without that half the command is written to a closed socket
+  // and the caller's promise is registered in a pending map nothing will ever
+  // resolve.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  try {
+    const statuses: string[] = [];
+    wire.onStatus((s) => statuses.push(s));
+    await wire.connect(0n);
+    await until(() => gw.sockets.length > 0, "the socket");
+    gw.sockets[0].close();
+    await until(() => statuses.includes("closed"), "the close to reach the client");
+
+    const res = await wire.send(create(ClientCommandSchema, { requestId: "after-the-drop" }));
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("wire: not connected");
+  } finally {
+    gw.stop();
+  }
+});

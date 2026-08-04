@@ -186,3 +186,71 @@ test("addActor from the form omits an empty controller rather than sending \"\""
   const pc = toJson(ClientCommandSchema, addActor("a2", "Lera", "p-1")) as Record<string, any>;
   expect(pc["addActor"]["actor"]["controllerId"]).toBe("p-1");
 });
+
+// --- the two rejection messages, and the id fallback -------------------------
+
+test("malformed JSON is reported AS malformed JSON, not as a bad actor", () => {
+  // Both failure arms return an Error, so "is an Error" cannot tell them
+  // apart — and they send the DM to different places. "not valid JSON" means
+  // look at the brackets; "not a valid actor" means the shape is wrong. An
+  // empty catch here silently falls through to the second arm and misreports
+  // every syntax error as a schema error.
+  const err = parseActorJSON("{not json") as Error;
+  expect(err).toBeInstanceOf(Error);
+  expect(err.message).toMatch(/^not valid JSON: /);
+});
+
+test("a well-formed non-actor is reported as a bad actor, and says why", () => {
+  // The other arm, asserted the same way: the underlying decoder's complaint
+  // is preserved after the prefix, because "not a valid actor" alone does not
+  // say WHICH field offended.
+  const err = parseActorJSON('{"actorId":"a1","hitPoints":10}') as Error;
+  expect(err).toBeInstanceOf(Error);
+  expect(err.message).toMatch(/^not a valid actor: /);
+  expect(err.message.length).toBeGreaterThan("not a valid actor: ".length);
+});
+
+test("request ids stay unique when crypto.randomUUID is unavailable", () => {
+  // The fallback exists for non-browser embedders, and nothing ever ran it —
+  // every test executes under Bun, where crypto is present. Uniqueness is the
+  // whole contract: Wire keys its pending map by request id, so a collision
+  // resolves the WRONG caller's promise, which is a bug that presents as one
+  // command's result appearing under another command.
+  const real = globalThis.crypto;
+  try {
+    // @ts-expect-error deliberately removing a global to reach the fallback
+    delete globalThis.crypto;
+    const ids = [
+      moveToken("t1", { x: 0, y: 0 }).requestId,
+      moveToken("t1", { x: 0, y: 0 }).requestId,
+      moveToken("t1", { x: 0, y: 0 }).requestId,
+    ];
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) {
+      // `req-` then base36 time, then base36 counter. Pinned as a shape
+      // because a counter running the wrong way injects a second `-` and
+      // makes the two components ambiguous to anything that splits on it.
+      expect(id).toMatch(/^req-[0-9a-z]+-[0-9a-z]+$/);
+    }
+  } finally {
+    Object.defineProperty(globalThis, "crypto", { value: real, configurable: true, writable: true });
+  }
+});
+
+test("crypto.randomUUID is used when it IS available", () => {
+  // The other side of the same branch. Without this, a condition forced to
+  // always-fallback looks identical to correct behaviour, and the platform
+  // UUID — the thing that makes collisions negligible rather than merely
+  // unlikely — silently stops being used.
+  const real = globalThis.crypto;
+  try {
+    Object.defineProperty(globalThis, "crypto", {
+      value: { randomUUID: () => "FIXED-UUID" },
+      configurable: true,
+      writable: true,
+    });
+    expect(moveToken("t1", { x: 0, y: 0 }).requestId).toBe("req-FIXED-UUID");
+  } finally {
+    Object.defineProperty(globalThis, "crypto", { value: real, configurable: true, writable: true });
+  }
+});

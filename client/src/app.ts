@@ -146,9 +146,3 @@ export function boot(root: HTMLElement): Session | null {
   void session.start();
   return session;
 }
-
-// Guarded so importing this module in a test does not require a DOM.
-if (typeof document !== "undefined") {
-  const root = document.getElementById("app");
-  if (root) boot(root);
-}
