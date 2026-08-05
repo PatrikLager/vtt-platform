@@ -1453,3 +1453,114 @@ func TestIdentifierCharsetBoundsAreInclusive(t *testing.T) {
 		})
 	}
 }
+
+// TestEvalDiceBoundsAtRuntime pins expr.go:604, the dice bounds check Eval
+// performs on an EVALUATED sides operand.
+//
+// The parser's copies (:861/:1036/:1065/:1080) only see literals. `1d(@faces)`
+// defers the value to evaluation, so this is the only guard standing between
+// an attribute-driven die and a roll it has no bounds for — and nothing
+// exercised it at either end, so its CONDITIONALS_BOUNDARY mutants lived.
+func TestEvalDiceBoundsAtRuntime(t *testing.T) {
+	e := mustParse(t, "1d(@faces)")
+
+	for _, faces := range []int{1, 1000} { // exactly the inclusive limits
+		if _, err := rules.Eval(e, map[string]int{"faces": faces}, nil, &queueRoller{queue: []int{1}}); err != nil {
+			t.Errorf("Eval with faces=%d = %v, want it accepted — the bounds are inclusive", faces, err)
+		}
+	}
+	for _, faces := range []int{0, 1001} { // one step outside each
+		_, err := rules.Eval(e, map[string]int{"faces": faces}, nil, &queueRoller{queue: []int{1}})
+		if err == nil {
+			t.Errorf("Eval with faces=%d succeeded, want it rejected", faces)
+			continue
+		}
+		if !strings.Contains(err.Error(), "out of bounds") {
+			t.Errorf("Eval with faces=%d = %v, want a dice BOUNDS rejection", faces, err)
+		}
+	}
+}
+
+// TestParseErrorsNameWhatWasFound pins describeTok (expr.go:913), whose
+// CONDITIONALS_NEGATION mutant swaps the two arms: end-of-input would be
+// reported as a quoted token and a real token as "end of input".
+//
+// Both halves are asserted because either alone passes under the swap — the
+// mutant does not stop producing an error, it produces the WRONG one, and an
+// error message is what a ruleset author has to debug from.
+func TestParseErrorsNameWhatWasFound(t *testing.T) {
+	_, err := rules.Parse("1 +")
+	if err == nil || !strings.Contains(err.Error(), "found end of input") {
+		t.Errorf(`Parse("1 +") = %v, want it to report "found end of input"`, err)
+	}
+	_, err = rules.Parse("1 + )")
+	if err == nil || !strings.Contains(err.Error(), `found ")"`) {
+		t.Errorf(`Parse("1 + )") = %v, want it to name the token it found`, err)
+	}
+}
+
+// TestScopedRefErrorsShowTheRefAsWritten pins refDisplay (expr.go:566, :569),
+// which reconstructs a reference for error messages.
+//
+// :566 chooses the SIGIL — "@" for an attribute, "#" for a resource — and its
+// negation swaps them. :569 chooses whether to include the scope. Neither was
+// asserted anywhere, so an error could name `#caster.vim` for `@caster.vim`
+// and point its reader at the wrong declaration entirely.
+func TestScopedRefErrorsShowTheRefAsWritten(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"@caster.nope", "@caster.nope"}, // attribute sigil, scope kept
+		{"#target.nope", "#target.nope"}, // resource sigil, scope kept
+	} {
+		e := mustParse(t, tc.src)
+		_, err := rules.Eval(e, nil, nil, nil)
+		if err == nil {
+			t.Errorf("Eval(%q) succeeded, want a scoped-reference rejection", tc.src)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("Eval(%q) = %v, want it to echo the reference as %q", tc.src, err, tc.want)
+		}
+	}
+}
+
+// TestIdentifierStartingWithDIsNotADiceOperator pins diceOpSuffix's digit scan
+// (expr.go:1126). Its CONDITIONALS_NEGATION mutant makes the loop body never
+// run, so the suffix is never checked for digits and any identifier beginning
+// with "d" is accepted as a dice operator — "dx" becomes a d-something roll.
+//
+// The distinguishing assertion is WHICH error: unchecked, "dx" reaches
+// strconv.Atoi and fails as an out-of-range integer literal instead of being
+// rejected as what it is, ordinary trailing input.
+func TestIdentifierStartingWithDIsNotADiceOperator(t *testing.T) {
+	for _, src := range []string{"(1)dx", "(1)d1x", "1 dx"} {
+		_, err := rules.Parse(src)
+		if err == nil {
+			t.Errorf("Parse(%q) succeeded, want it rejected", src)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unexpected trailing input") {
+			t.Errorf("Parse(%q) = %v, want it rejected as trailing input — a suffix that is not "+
+				"all digits is not a dice operator", src, err)
+		}
+	}
+}
+
+// TestFusedDiceErrorsPointAtTheSides pins expr.go:1075's `sidesPos := opPos+1`,
+// the POSITION reported for a fused "d"+digits operand. Its ARITHMETIC_BASE
+// mutant shifts the caret off the sides and onto the operator, or before it.
+//
+// Position is the whole value of a parse error to a ruleset author staring at
+// a long expression, and nothing asserted it for this branch.
+func TestFusedDiceErrorsPointAtTheSides(t *testing.T) {
+	// "(1)d99999999999999999999" — the fused suffix overflows an int, so this
+	// takes the strconv branch at :1077 whose ParseError carries sidesPos.
+	_, err := rules.Parse("(1)d99999999999999999999")
+	if err == nil {
+		t.Fatal("want an error for an out-of-range fused dice suffix")
+	}
+	// "(1)d" is 4 characters, so the "d" is at index 3 and its digits start at 4.
+	if !strings.Contains(err.Error(), "position 4") {
+		t.Errorf("Parse error = %v, want it to point at position 4 — the digits after the 'd', "+
+			"not the operator", err)
+	}
+}

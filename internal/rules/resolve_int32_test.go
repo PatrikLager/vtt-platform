@@ -50,6 +50,23 @@ func int32FixtureCompiled(t *testing.T) map[string]*rules.CompiledPower {
 			},
 			BranchOutcomes: [2][]rules.Outcome{{rc("1")}, nil},
 		},
+		// exactly-max / exactly-min: deltas landing EXACTLY on the int32
+		// bounds, which must be ACCEPTED. Every other ability here overflows,
+		// so the range was only ever tested from outside — int32Checked's two
+		// comparisons (`v < MinInt32`, `v > MaxInt32`) differ from `<=`/`>=`
+		// at precisely these two values and nowhere else.
+		"exactly-max": {
+			ID: "exactly-max", Name: "Exactly Max", Usage: rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			Effects:   []rules.Outcome{rc("2147483647")},
+		},
+		"exactly-min": {
+			ID: "exactly-min", Name: "Exactly Min", Usage: rules.Usage{AtWill: true},
+			Targeting: rules.Targeting{Range: 0, MaxTargets: 1},
+			// The grammar has no unary minus, so the literal is reached by
+			// subtraction.
+			Effects: []rules.Outcome{rc("0 - 2147483648")},
+		},
 		// creep: a self-effect whose delta itself fits int32 (2e9) but
 		// whose new_value (current 2e9 + 2e9) does not, on an uncapped
 		// resource — isolates the new_value bound from the delta bound.
@@ -155,4 +172,53 @@ func TestResolveRejectsOverflowVsTotal(t *testing.T) {
 	wantErr(t, err, "int32")
 	wantErr(t, err, "vs total") // pins that it is the VS bound specifically, not the roll or a delta
 	wantNoEvents(t, envs)
+}
+
+// TestResolveAcceptsDeltasExactlyOnTheInt32Bounds pins int32Checked's range as
+// INCLUSIVE (resolve.go:626).
+//
+// Every other test in this file drives a value OUTSIDE the range and asserts
+// the rejection, so both comparisons were only ever tested from one side —
+// `v < MinInt32` and `v <= MinInt32` agree everywhere except at MinInt32
+// itself, and likewise at the top. Both CONDITIONALS_BOUNDARY mutants survived
+// the whole suite.
+//
+// Under either mutant a delta of exactly ±2147483647/8 — a legal int32, the
+// widest a resource change can be — is refused as "outside the int32 wire
+// range", which is the opposite of true.
+func TestResolveAcceptsDeltasExactlyOnTheInt32Bounds(t *testing.T) {
+	for _, tc := range []struct {
+		ability string
+		current int32
+		want    int32
+	}{
+		// current 0 so new_value equals the delta and stays in range too.
+		{"exactly-max", 0, 2147483647},
+		{"exactly-min", 0, -2147483648},
+	} {
+		t.Run(tc.ability, func(t *testing.T) {
+			rs := int32Ruleset(t)
+			st := newTestState()
+			putActor(st, "a", map[string]int32{"brawn": 3}, map[string]*vttv1.Resource{"vigor": res(tc.current, 0)})
+			putToken(st, "ta", "s1", "a", 0, 0)
+
+			envs, err := rules.Resolve(rs, st, useAbility("a", tc.ability, "a"), &queueRoller{})
+			if err != nil {
+				t.Fatalf("Resolve(%s) = %v, want it accepted — %d is a legal int32", tc.ability, err, tc.want)
+			}
+			var got int32
+			var saw bool
+			for _, e := range envs {
+				if rc := e.GetResourceChanged(); rc != nil {
+					got, saw = rc.GetDelta(), true
+				}
+			}
+			if !saw {
+				t.Fatalf("Resolve(%s) produced no ResourceChanged", tc.ability)
+			}
+			if got != tc.want {
+				t.Errorf("delta = %d, want %d — the bound value must survive the conversion intact", got, tc.want)
+			}
+		})
+	}
 }

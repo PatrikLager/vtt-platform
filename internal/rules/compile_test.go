@@ -527,7 +527,11 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"scoped-ref-single-actor-position", []string{"ruleset.json", "scoped reference"}},
 		{"undeclared-resource-in-contribution", []string{"bad.json", "no_such_pool"}},
 		{"attribute-defense-name-collision", []string{"ruleset.json", "brace"}},
-		{"negative-int-binding", []string{"bad.json", "must not be negative"}},
+		// "(got -3)" pins the VALUE the message reports, not just that it
+		// complained. The fixture binds edge: -3, and two mutants sit on that
+		// interpolated number -- an error naming the wrong value sends its
+		// reader to the wrong bind.
+		{"negative-int-binding", []string{"bad.json", "must not be negative", "(got -3)"}},
 		{"negative-targeting-range", []string{"bad.json", "targeting.range must not be negative"}},
 		{"compose-missing-bind", []string{"bad.json", "must be set"}},
 	}
