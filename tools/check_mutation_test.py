@@ -312,5 +312,77 @@ class PackageResolutionTest(unittest.TestCase):
                          "every gated package must be one gremlins can actually resolve")
 
 
+class SubpackageRecursionTest(unittest.TestCase):
+    """A gated parent must not re-measure a gated child.
+
+    `gremlins unleash ./internal/rules/` RECURSES: it mutates files under
+    internal/rules/conformance/ too, and reports them relative to the package
+    it was pointed at — `conformance/conformance.go:207:11`. When BOTH are in
+    PACKAGES that is wrong twice over:
+
+      1. The same mutant is measured under two keys. An adjudication written
+         for ('internal/rules/conformance', 'conformance.go:207:11') does not
+         match ('internal/rules', 'conformance/conformance.go:207:11'), so the
+         gate reports an already-excused survivor as unadjudicated — and the
+         only way to green it would be a DUPLICATE entry that then drifts.
+      2. It is measured twice, costing the runtime twice. internal/adventure's
+         run carried 23 of its conformance child's mutants; internal/rules'
+         carried 60.
+
+    Found 2026-08-04 while measuring internal/rules: two survivors turned up in
+    a file that is not in internal/rules. The gate was green and honest
+    throughout — internal/adventure/conformance simply had no survivors to
+    double-report — which is exactly why nothing pointed at it.
+
+    Excluding via gremlins' own --exclude-files rather than filtering results
+    here is deliberate: check-mutation.py's header records that 8 of 9 defects
+    across five review rounds lived in hand-rolled enforcement code. Filtering
+    survivors by path would also silently drop mutants from subpackages that
+    are NOT separately gated, converting a visible gap into an invisible one.
+    """
+
+    def test_a_gated_child_is_excluded_from_its_parents_run(self):
+        args = cm.gremlins_args("./internal/rules/",
+                                ["./internal/rules/", "./internal/rules/conformance/"])
+        self.assertIn("--exclude-files", args)
+        self.assertIn("^conformance/", args, "the child's path RELATIVE to the parent")
+
+    def test_an_ungated_subdirectory_is_left_alone(self):
+        # Not gated separately => the parent is the only thing measuring it,
+        # so excluding it would drop those mutants silently.
+        args = cm.gremlins_args("./internal/rules/", ["./internal/rules/"])
+        self.assertNotIn("--exclude-files", args)
+
+    def test_a_sibling_is_not_mistaken_for_a_child(self):
+        args = cm.gremlins_args("./internal/rules/",
+                                ["./internal/rules/", "./internal/rulesets/"])
+        self.assertNotIn("--exclude-files", args,
+                         "internal/rulesets is NOT under internal/rules despite the prefix")
+
+    def test_a_parent_is_not_excluded_from_its_childs_run(self):
+        args = cm.gremlins_args("./internal/rules/conformance/",
+                                ["./internal/rules/", "./internal/rules/conformance/"])
+        self.assertNotIn("--exclude-files", args)
+
+    def test_every_gated_child_is_excluded_not_just_the_first(self):
+        args = cm.gremlins_args("./a/", ["./a/", "./a/b/", "./a/c/"])
+        self.assertIn("^b/", args)
+        self.assertIn("^c/", args)
+
+    def test_the_real_packages_list_excludes_its_real_children(self):
+        # DERIVED from PACKAGES, not hardcoded: a hardcoded
+        # ("./internal/adventure/", "^conformance/") pair keeps PASSING if
+        # internal/adventure is ever removed from PACKAGES, so the one
+        # assertion that would have caught this bug goes silently vacuous
+        # exactly when the list changes under it.
+        norm = [p.strip("./").rstrip("/") for p in cm.PACKAGES]
+        pairs = [(p, c) for p in norm for c in norm if c.startswith(p + "/")]
+        self.assertTrue(pairs, "no gated parent/child pair left in PACKAGES — this test is vacuous")
+        for parent, child in pairs:
+            args = cm.gremlins_args(f"./{parent}/", cm.PACKAGES)
+            self.assertIn(f"^{child[len(parent) + 1:]}/", args,
+                          f"{parent} must exclude its gated child {child}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
