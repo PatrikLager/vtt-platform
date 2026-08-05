@@ -80,14 +80,33 @@ func soakCommandKind(cmd *vttv1.ClientCommand) string {
 // exported function under test elsewhere in this package, reused here
 // exactly as a real client-side rebuild would).
 type soakWorld struct {
-	mu          sync.Mutex
-	st          *engine.State
-	history     []*vttv1.Envelope
-	seq         int64
-	roles       map[string]string // participant name -> role
-	ids         map[string]string // participant name -> id
-	conns       []*fakeConn       // every currently-live connection (broadcast targets)
-	dispatchLog []string          // protojson of every command received, in dispatch order
+	mu      sync.Mutex
+	st      *engine.State
+	history []*vttv1.Envelope
+	seq     int64
+	roles   map[string]string // participant name -> role
+	ids     map[string]string // participant name -> id
+	conns   []*fakeConn       // every currently-live connection (broadcast targets)
+	// dials counts calls to dial, so a test can single out the checkpoint's
+	// throwaway fresh-catch-up connection: every dial uses after=0, so the
+	// cursor alone cannot distinguish it from a participant's.
+	dials int
+	// overflowFreshCatchUpAfter, when > 0, makes a fresh-catch-up dial deliver
+	// that many envelopes and then die with ErrEventsOverflow, exactly as a
+	// real client does when its 256-envelope buffer fills. Consumed on use, so
+	// the resume that follows succeeds.
+	//
+	// overflowAfterDial gates WHICH dial it fires on, and is not optional.
+	// Every dial uses after=0 and the checkpoint re-dials the OBSERVER, which
+	// is also a participant (soakObserverName == soakDM), so neither the
+	// cursor nor the name distinguishes the checkpoint's throwaway connection
+	// from the participants dialed at start. Only the ordinal does. Getting
+	// this wrong produces a test that fires the overflow on a participant,
+	// passes with the resume disabled, and proves nothing — which is exactly
+	// what the first version of this did.
+	overflowAfterDial         int
+	overflowFreshCatchUpAfter int
+	dispatchLog               []string // protojson of every command received, in dispatch order
 	// dispatchIssuers is the participant that sent each dispatchLog entry, at
 	// the same index. The command JSON alone does not say who issued it (only
 	// addActor happens to embed a participant id), so without this the
@@ -137,10 +156,28 @@ func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
 	if _, known := w.roles[name]; !known {
 		return nil, fmt.Errorf("soakWorld: unknown participant %q", name)
 	}
+	w.dials++
 	c := newFakeConn(name)
 	c.events = make(chan *vttv1.Envelope, 8192)
+	// Scripted overflow: deliver a prefix, then end the way a real client ends
+	// when deliverEvent finds its buffer full. Consumed on use so the resume
+	// dial behaves normally.
+	cut := 0
+	if w.overflowFreshCatchUpAfter > 0 && w.dials > w.overflowAfterDial {
+		cut = w.overflowFreshCatchUpAfter
+		w.overflowFreshCatchUpAfter = 0
+	}
+	delivered := 0
 	for _, env := range w.history {
+		if cut > 0 && delivered >= cut {
+			c.closeErr = harness.ErrEventsOverflow
+			close(c.events)
+			c.closed = true
+			w.conns = append(w.conns, c)
+			return c, nil
+		}
 		if env.Sequence > after {
+			delivered++
 			// Non-blocking for the same reason trySend is: this send happens
 			// under w.mu, and blocking on a full buffer while holding a mutex
 			// stalls a synctest bubble with no diagnostic -- it just hangs to
@@ -715,4 +752,62 @@ func assertDenialDenialAccept(t *testing.T, log string) {
 	}
 	t.Fatalf("this seed no longer produces denied,denied,accepted in sequence, so the test no "+
 		"longer exercises a NON-FINAL denial; reseed via the probe. Log:\n%s", log)
+}
+
+// TestRunSoakKeystoneHoldsAcrossAnOverflowDisconnect is the end-to-end pin for
+// the thing that started this: rebuild == live must survive the fresh
+// catch-up being disconnected mid-replay.
+//
+// On 2026-08-04 a CI run reported
+//
+//	[checkpoint 5] FAIL: incremental fold (480 events) != fresh catch-up fold (257 events)
+//
+// which reads as the keystone claim of the whole event-sourcing design
+// failing. It was not. 257 = eventBuffer(256) + 1 in flight: the fresh
+// catch-up connection had been TORN DOWN for buffer overflow, and
+// runSoakCheckpoint folded the truncated history and compared it as if it were
+// complete. The recovery client.go's eventBuffer doc comment prescribes —
+// re-dial with a fresh `after` cursor — was never implemented.
+//
+// WHY THIS TEST AND NOT THE UNIT TEST ALONE. The unit tests around
+// drainFreshCatchUp pin the resume's SEQUENCE CONTIGUITY: right cursor, no
+// duplicates, no gaps. They cannot pin that the resulting history FOLDS EQUAL
+// to the incremental one, because they never fold anything. That equality is
+// the actual keystone, and it was the thing falsely reported broken — so it is
+// what has to be asserted, through the real RunSoak entry point.
+//
+// The overflow is scripted rather than provoked: a real one depends on
+// scheduler starvation and does not reproduce locally (forcing eventBuffer to
+// 32 and disabling the resume entirely still passes a 500-event soak on a
+// developer machine). soakWorld.dial owns the dial seam, so the disconnect can
+// be injected exactly where a real client's would occur.
+func TestRunSoakKeystoneHoldsAcrossAnOverflowDisconnect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const events = 120
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+
+		// Fire on the CHECKPOINT's dial, not a participant's. RunSoak dials
+		// every participant first (all with after=0, and the observer it
+		// re-dials IS one of them), so the ordinal is the only discriminator.
+		w.overflowAfterDial = len(harness.SoakParticipants())
+		w.overflowFreshCatchUpAfter = 20
+
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 3, Events: events, CheckEvery: events, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if rep.Checkpoints == 0 {
+			t.Fatal("no checkpoint ran — the test proves nothing about the catch-up")
+		}
+		if !rep.Pass {
+			t.Fatalf("soak FAILED across an overflow disconnect, but rebuild == live still holds:\n%s", rep.Report)
+		}
+		// The injection must actually have fired, or this is a green test of
+		// the ordinary path wearing an overflow's name.
+		if w.overflowFreshCatchUpAfter != 0 {
+			t.Error("the scripted overflow was never consumed — no fresh catch-up dial happened")
+		}
+	})
 }

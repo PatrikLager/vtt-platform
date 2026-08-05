@@ -342,6 +342,68 @@ const wantBufferedEvents = 256
 // wantBufferedEvents events that made it into the buffer, in order, before
 // closing — overflow must not drop or reorder what was already safely
 // buffered, only refuse the one event that didn't fit.
+// TestCloseErrNamesOverflowSoAReaderCanTellWhyEventsEnded pins the half of the
+// overflow contract that had no accessor at all.
+//
+// A consumer of Events() sees only a CLOSED CHANNEL. It cannot distinguish
+// "the server finished sending" from "I was disconnected for reading too
+// slowly" — and those demand opposite responses. That gap produced a real CI
+// failure on 2026-08-04: the soak keystone's fresh catch-up overflowed at 257
+// of 480 envelopes, and runSoakCheckpoint reported "never reached sequence 480
+// within 30s" for a connection that had died in under three seconds. It sent
+// the reader hunting slow CI while the cause was this buffer.
+//
+// SendCommand already surfaces the reason, but only to a caller who happens to
+// have a command in flight. A pure reader has no such caller.
+func TestCloseErrNamesOverflowSoAReaderCanTellWhyEventsEnded(t *testing.T) {
+	const flood = wantBufferedEvents + 1
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {
+		for i := 0; i < flood; i++ {
+			sendEvent(t, conn, fmt.Sprintf("ev-%d", i), int64(i+1))
+		}
+	})
+	c := dial(t, fs, "tok", 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = c.SendCommand(ctx, endSessionCommand())
+
+	// Drain to the close, exactly as a pure reader would.
+	for range c.Events() {
+	}
+
+	if err := c.CloseErr(); !errors.Is(err, harness.ErrEventsOverflow) {
+		t.Fatalf("CloseErr() = %v, want it to wrap harness.ErrEventsOverflow — a reader that "+
+			"only sees a closed channel cannot otherwise tell an overflow from a completed stream", err)
+	}
+}
+
+// TestCloseErrIsNilWhileTheConnectionIsHealthy is the other half: CloseErr must
+// not manufacture a reason where there is none.
+//
+// Named for what it actually pins. It does NOT cover "the stream ended
+// normally" — fakeServer loops back into conn.Read after onCommand returns, so
+// the connection is still OPEN here and closeErr is nil by construction. A
+// clean close on either side in fact reports NON-nil (the websocket read error
+// that ended the loop), which is why the useful question is
+// errors.Is(..., ErrEventsOverflow) and not a bare nil check.
+func TestCloseErrIsNilWhileTheConnectionIsHealthy(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {
+		sendEvent(t, conn, "ev-1", 1)
+		sendResult(t, conn, cmd.GetRequestId(), true, 1)
+	})
+	c := dial(t, fs, "tok", 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.SendCommand(ctx, endSessionCommand()); err != nil {
+		t.Fatalf("SendCommand: %v", err)
+	}
+	if err := c.CloseErr(); err != nil {
+		t.Errorf("CloseErr() = %v on a healthy connection, want nil", err)
+	}
+}
+
 func TestEventsBufferOverflowClosesConnectionAndErrorsSendCommand(t *testing.T) {
 	const flood = wantBufferedEvents + 1 // exactly one past capacity — the
 	// minimum that guarantees the overflow branch fires exactly once, so

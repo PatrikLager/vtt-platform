@@ -26,6 +26,10 @@ type fakeConn struct {
 	events chan *vttv1.Envelope
 	send   func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error)
 
+	// closeErr lets a test script WHY the stream ended, not merely that it
+	// did — see CloseErr below.
+	closeErr error
+
 	// mu guards closed AND the send on events, so Close can never close the
 	// channel out from under an in-flight broadcast.
 	mu     sync.Mutex
@@ -101,6 +105,11 @@ func (c *fakeConn) isClosed() bool {
 	defer c.mu.Unlock()
 	return c.closed
 }
+
+// closeErr, when set, is what CloseErr reports — so a test can script the
+// stream ending for a REASON (an overflow disconnect) rather than merely
+// ending, which is the distinction harness.Conn.CloseErr exists to make.
+func (f *fakeConn) CloseErr() error { return f.closeErr }
 
 var _ harness.Conn = (*fakeConn)(nil)
 

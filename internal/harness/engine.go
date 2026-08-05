@@ -23,6 +23,20 @@ import (
 type Conn interface {
 	SendCommand(ctx context.Context, cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error)
 	Events() <-chan *vttv1.Envelope
+	// CloseErr reports why the stream ended, or nil while healthy. Events()
+	// hands a consumer a closed channel and nothing else, so without this a
+	// pure reader cannot tell "the server finished" from "I was disconnected
+	// for reading too slowly" — opposite problems with opposite responses.
+	//
+	// Specifically errors.Is(CloseErr(), ErrEventsOverflow). A clean close
+	// also reports non-nil (the read error that ended the loop), so the bare
+	// nil check answers nothing the closed channel did not already.
+	//
+	// On the interface rather than behind a type assertion so a future fake
+	// cannot silently no-op it — but note most Events() consumers in this
+	// package still do not ask, and inherit the misdiagnosis this exists to
+	// fix.
+	CloseErr() error
 	Close() error
 }
 
