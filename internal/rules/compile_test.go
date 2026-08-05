@@ -2,6 +2,7 @@ package rules_test
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -494,14 +495,26 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"atom-unknown-param-kind", []string{"bad.json", "bogus"}},
 		{"binding-kind-mismatch", []string{"bad-bind.json", "nope"}},
 		{"atom-unknown-param-placeholder", []string{"bad.json", "nope"}},
+		// The bad placeholder is the SECOND one. Its sibling above puts the
+		// bad one first, so it cannot tell a scan of ALL matches from one that
+		// stops after the first — `FindAllStringSubmatch(raw, -1)`, where -1
+		// is what means "all".
+		{"second-placeholder-unknown", []string{"bad.json", "nope"}},
 		{"unsatisfied-consume", []string{"bad.json", "delivery"}},
 		{"doubly-provided-key", []string{"bad.json", "delivery"}},
-		{"dependency-cycle", []string{"bad.json", "cycle"}},
-		{"zero-targeting-atoms", []string{"bad.json", "targeting"}},
+		// NOT a bare "cycle": the FIXTURE DIRECTORY is named dependency-cycle, so that
+		// substring is in the path, and the path is in every error for this
+		// fixture — any rejection at all satisfied it. Under `pick := 1` the
+		// cycle goes undetected, compilation carries on, and it fails much
+		// later with "no atom contributes targeting"; that error still
+		// contains "cycle" via the path and the test stayed green while the
+		// cycle detector was doing nothing. Assert the MESSAGE.
+		{"dependency-cycle", []string{"bad.json", "dependency cycle"}},
+		{"zero-targeting-atoms", []string{"bad.json", "contributes targeting"}},
 		{"duplicate-targeting", []string{"bad.json", "more than one targeting"}},
 		{"resolution-branch-count", []string{"roll.json", "exactly 2"}},
 		{"outcome-branch-not-in-labels", []string{"bad.json", "miss", "not among"}},
-		{"always-outcome-nonnull-key", []string{"dmg.json", "always"}},
+		{"always-outcome-nonnull-key", []string{"dmg.json", "must be null when branch is"}},
 		{"resolution-key-not-provided", []string{"roll.json", "clash", "provides"}},
 		{"outcome-key-not-consumed", []string{"dmg.json", "clash", "consumes"}},
 		{"cross-phase-edge-inverted", []string{"bad.json", "primer", "effects", "branch-outcome"}},
@@ -509,14 +522,33 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"reserved-scope-word-attribute", []string{"ruleset.json", "caster", "reserved"}},
 		{"reserved-scope-word-condition", []string{"bad.json", "target", "reserved"}},
 		{"usage-undeclared-resource", []string{"bad.json", "no_such_pool"}},
-		{"reserved-branch-label-effect", []string{"roll.json", "effect", "reserved"}},
+		{"reserved-branch-label-effect", []string{"roll.json", "is reserved"}},
 		{"bare-ref-two-actor-position", []string{"bad.json", "bare reference"}},
 		{"scoped-ref-single-actor-position", []string{"ruleset.json", "scoped reference"}},
 		{"undeclared-resource-in-contribution", []string{"bad.json", "no_such_pool"}},
 		{"attribute-defense-name-collision", []string{"ruleset.json", "brace"}},
 		{"negative-int-binding", []string{"bad.json", "must not be negative"}},
 		{"negative-targeting-range", []string{"bad.json", "targeting.range must not be negative"}},
-		{"compose-missing-bind", []string{"bad.json", "bind"}},
+		{"compose-missing-bind", []string{"bad.json", "must be set"}},
+	}
+
+	// Catalogue completeness, checked from the SAME table the assertions use.
+	// internal/adventure has had this since its catalogue grew; internal/rules
+	// did not, so three directories added 2026-08-05 had nothing to satisfy.
+	// An orphaned fixture is worse than a missing one -- it looks like
+	// coverage in a directory listing while no test ever loads it.
+	named := map[string]bool{}
+	for _, c := range cases {
+		named[c.dir] = true
+	}
+	entries, err := os.ReadDir(filepath.Join("testdata", "invalid-v2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && !named[e.Name()] {
+			t.Errorf("testdata/invalid-v2/%s exists but no case names it -- nothing loads it", e.Name())
+		}
 	}
 
 	for _, tc := range cases {

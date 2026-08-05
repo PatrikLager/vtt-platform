@@ -219,17 +219,30 @@ func TestLoadInvalidFixtures(t *testing.T) {
 			dir:         "undeclared-attribute",
 			wantErrSubs: []string{"strike.json", "no_such_attr"},
 		},
+		// The two below reach checkExprRefs through its RESOURCE call sites
+		// (load.go:465, :470) rather than through an ability. Inverting its
+		// nil guard makes it skip every non-nil expression, and the whole
+		// suite still passed: undeclared-attribute and unknown-resource-ref
+		// above go through a different path entirely.
+		{
+			dir:         "resource-default-max-undeclared-ref",
+			wantErrSubs: []string{"ruleset.json", "default_max_expr", "nosuch"},
+		},
+		{
+			dir:         "threshold-when-undeclared-ref",
+			wantErrSubs: []string{"ruleset.json", "thresholds[0].when", "nosuch_pool"},
+		},
 		{
 			dir:         "bad-format-version",
 			wantErrSubs: []string{"ruleset.json", "format_version"},
 		},
 		{
 			dir:         "unknown-field",
-			wantErrSubs: []string{"ruleset.json"},
+			wantErrSubs: []string{"unknown field"},
 		},
 		{
 			dir:         "duplicate-ability-id",
-			wantErrSubs: []string{"strike"},
+			wantErrSubs: []string{"duplicate ability id"},
 		},
 		{
 			dir:         "malformed-expression",
@@ -245,7 +258,7 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		},
 		{
 			dir:         "duplicate-condition-id",
-			wantErrSubs: []string{"guarded"},
+			wantErrSubs: []string{"duplicate condition id"},
 		},
 		{
 			dir:         "outcome-undeclared-condition",
@@ -255,6 +268,31 @@ func TestLoadInvalidFixtures(t *testing.T) {
 			dir:         "hit-without-attack",
 			wantErrSubs: []string{"guard-stance.json", "no resolution contribution"},
 		},
+	}
+
+	// Catalogue completeness, checked from the SAME table the assertions use.
+	// internal/adventure has had this since its catalogue grew; internal/rules
+	// did not, so three directories added 2026-08-05 had nothing to satisfy.
+	// An orphaned fixture is worse than a missing one -- it looks like coverage
+	// in a directory listing while no test ever loads it.
+	named := map[string]bool{
+		// Loaded by its OWN test rather than through this table, because it
+		// asserts the format-v1 retirement message specifically. Listed here
+		// so the completeness check does not read it as an orphan -- and so
+		// that deleting that test makes this line the next thing to notice.
+		"format-version-1": true,
+	}
+	for _, tc := range cases {
+		named[tc.dir] = true
+	}
+	entries, err := os.ReadDir(filepath.Join("testdata", "invalid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && !named[e.Name()] {
+			t.Errorf("testdata/invalid/%s exists but no case names it -- nothing loads it", e.Name())
+		}
 	}
 
 	for _, tc := range cases {

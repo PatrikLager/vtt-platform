@@ -1,0 +1,16 @@
+{
+  "id": "apply-guarded",
+  "params": [],
+  "provides": [],
+  "consumes": [],
+  "contributes": [
+    {
+      "kind": "outcome",
+      "key": null,
+      "branch": "always",
+      "effects": [
+        { "apply_condition": { "id": "guarded" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "strike",
+  "name": "Strike",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "melee-delivery", "bind": { "reach": 1 } },
+    { "atom": "strike-roll", "bind": { "attack_stat": "brawn" } },
+    { "atom": "strike-damage", "bind": { "power": 1 } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "stand-down",
+  "name": "Stand Down",
+  "usage": "at_will",
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "remove-guarded", "bind": {} }
+  ]
+}
