@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -74,14 +75,21 @@ func newStateDumpCmd() *cobra.Command {
 				return fmt.Errorf("vtt state dump: catch-up head: %w", err)
 			}
 
-			events, reached := drainToHead(c.Events(), dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
+			events, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 			if !reached {
 				// FAIL, never print. A short dump that looks complete is the
 				// failure this whole path exists to prevent; the caller can
 				// retry, and a partial snapshot on stdout could not be told
 				// apart from a real one.
-				return fmt.Errorf("vtt state dump: caught up only to sequence %d of %d within %s — refusing to print a truncated state",
-					headSequence(events), head, dumpCatchUpTimeout)
+				//
+				// `why` rather than dumpCatchUpTimeout: this message used to
+				// name the 30s backstop unconditionally, including for a
+				// connection torn down in under three seconds because THIS
+				// process read too slowly. Wrapped with %w so a caller can ask
+				// errors.Is(err, harness.ErrEventsOverflow) instead of parsing
+				// the sentence.
+				return fmt.Errorf("vtt state dump: caught up only to sequence %d of %d — refusing to print a truncated state: %w",
+					headSequence(events), head, why)
 			}
 
 			st, err := harness.Fold(events)
@@ -103,7 +111,22 @@ func newStateDumpCmd() *cobra.Command {
 
 // drainToHead collects envelopes until the announced catch-up head has been
 // seen AND the stream has then been quiet for window, or until timeout. The
-// bool reports whether head was reached.
+// bool reports whether head was reached; the error, when it was not, reports
+// WHY — and closeErr is what makes that answerable.
+//
+// A short read has two causes that call for OPPOSITE responses. The deadline
+// expiring means the SERVER is slow or the head never came. The channel
+// closing early means harness.Client tore itself down because THIS process
+// could not drain Events() fast enough (ErrEventsOverflow at 256 buffered).
+// A closed channel looks identical either way, so this used to return the same
+// (events, false) for both and the caller blamed dumpCatchUpTimeout for every
+// short read — printing a 30s timeout for a connection that died in under
+// three seconds, and sending the next reader after gateway latency when the
+// fix was on the reading side. The same misdiagnosis cost a CI investigation
+// in internal/harness/soak.go before drainFreshCatchUp started asking.
+//
+// closeErr may be nil for callers holding a raw channel with no connection to
+// ask; they get errStreamClosed without a cause, which is still not the clock.
 //
 // Both conditions matter. Stopping at head alone would drop envelopes
 // broadcast live just behind it, which is a truncation from the other side;
@@ -120,7 +143,7 @@ func newStateDumpCmd() *cobra.Command {
 //
 // Deliberately a sibling of internal/harness/soak.go's drainToSequence rather
 // than an import: cmd/vtt depends on harness, never the reverse.
-func drainToHead(events <-chan *vttv1.Envelope, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+func drainToHead(events <-chan *vttv1.Envelope, closeErr func() error, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool, error) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
 	reached := head <= after
@@ -128,7 +151,10 @@ func drainToHead(events <-chan *vttv1.Envelope, after, head int64, window, timeo
 		select {
 		case env, ok := <-events:
 			if !ok {
-				return out, reached
+				if reached {
+					return out, true, nil
+				}
+				return out, false, streamClosedReason(closeErr)
 			}
 			out = append(out, env)
 			if env.Sequence >= head {
@@ -136,12 +162,46 @@ func drainToHead(events <-chan *vttv1.Envelope, after, head int64, window, timeo
 			}
 		case <-time.After(window):
 			if reached {
-				return out, true
+				return out, true, nil
 			}
 		case <-deadline:
-			return out, reached
+			if reached {
+				return out, true, nil
+			}
+			return out, false, fmt.Errorf("%w (%s)", errCatchUpDeadline, timeout)
 		}
 	}
+}
+
+// The two ways a catch-up read can end short. Both are sentinels so a caller
+// — or a test — can ask errors.Is instead of matching on the sentence: the
+// overflow side already had that lever (harness.ErrEventsOverflow) and the
+// timeout side did not, which made the only available assertion a
+// strings.Contains on wording that any rephrasing would break.
+var (
+	errCatchUpDeadline = errors.New("no envelope reaching head arrived before the catch-up deadline")
+	errStreamClosed    = errors.New("the event stream closed")
+)
+
+// streamClosedReason names why a closed Events() channel ended the read.
+//
+// The cause is wrapped, not summarised, because it carries the server's own
+// words — a clean close arrives here as `received close frame: status =
+// StatusNormalClosure and reason = "..."`, and that reason string is the most
+// actionable fragment in the message. Per Client.CloseErr's doc, NON-NIL DOES
+// NOT MEAN FAILURE: a clean close reports non-nil too, so the useful question
+// is errors.Is(err, harness.ErrEventsOverflow), never err != nil.
+//
+// Multi-%w so BOTH questions stay answerable: errors.Is(_, errStreamClosed)
+// for "the stream ended under me" and errors.Is(_, ErrEventsOverflow) for
+// "because I was too slow".
+func streamClosedReason(closeErr func() error) error {
+	if closeErr != nil {
+		if err := closeErr(); err != nil {
+			return fmt.Errorf("%w: %w", errStreamClosed, err)
+		}
+	}
+	return errStreamClosed
 }
 
 // headSequence returns the highest Sequence among events, or 0 if events

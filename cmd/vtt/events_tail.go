@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
@@ -42,7 +44,7 @@ func newEventsTailCmd() *cobra.Command {
 			}
 			defer c.Close()
 
-			return tailUntilDone(cmd, c)
+			return tailUntilDone(cmd, c.Events(), c.CloseErr)
 		},
 	}
 
@@ -55,16 +57,33 @@ func newEventsTailCmd() *cobra.Command {
 	return cmd
 }
 
-// tailUntilDone writes one protojson line per envelope to cmd's stdout
-// until either c's event channel closes (server/local close) or cmd's
-// context is canceled — the latter is a normal, non-error stop, not a
-// failure to report.
-func tailUntilDone(cmd *cobra.Command, c *harness.Client) error {
+// tailUntilDone writes one protojson line per envelope to cmd's stdout until
+// either the event channel closes or cmd's context is canceled. Cancellation
+// (Ctrl-C) and a clean server close are both normal, non-error stops.
+//
+// A close caused by OVERFLOW is not. harness.Client tears the channel down
+// when its 256-envelope buffer fills, and the slow party is usually this
+// command's own writer: pipe the tail into a consumer that stops reading and
+// fmt.Fprintln blocks on the 64KB pipe buffer while envelopes pile up behind
+// it. This used to `return nil` for that case too, so the stream ended
+// mid-campaign and the command exited 0 — a consumer diffing the output
+// against the log would find events missing with nothing to say why.
+//
+// That is the same silent truncation `vtt state dump` refuses to commit
+// (state_dump.go's drainToHead), in the sibling command reading the same
+// channel. closeErr is what tells the two closes apart; nil means no
+// connection to ask, and no evidence of truncation.
+func tailUntilDone(cmd *cobra.Command, events <-chan *vttv1.Envelope, closeErr func() error) error {
 	out := cmd.OutOrStdout()
 	for {
 		select {
-		case env, ok := <-c.Events():
+		case env, ok := <-events:
 			if !ok {
+				if closeErr != nil {
+					if err := closeErr(); errors.Is(err, harness.ErrEventsOverflow) {
+						return fmt.Errorf("vtt events tail: stream truncated after the events printed above: %w", err)
+					}
+				}
 				return nil
 			}
 			line, err := protojson.Marshal(env)
