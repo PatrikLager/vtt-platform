@@ -812,3 +812,101 @@ func TestResolveOutputFoldsCleanlyThroughEngine(t *testing.T) {
 		fold(t, st, envs)
 	})
 }
+
+// TestResolveTieHits pins a GAME RULE, not a code detail: an attack total that
+// exactly equals the defence HITS.
+//
+// resolve.go:294 is `hit := total >= vsTotal`, and its CONDITIONALS_BOUNDARY
+// mutant (`>`) survived the whole suite. Every existing hit test clears the
+// defence outright (18 vs 10) and every miss test falls short, so nothing
+// exercised equality — the one input where `>=` and `>` disagree. Flip it and
+// every tie in the game silently becomes a miss.
+//
+// 1d20 + @caster.brawn vs @target.guard: a roll of 7 with brawn 3 is exactly
+// 10 against a guard of 10. The assertion is the OUTCOME, not the summary
+// string: a tie must take the hit branch and apply its effect.
+func TestResolveTieHits(t *testing.T) {
+	rs := fixtureRuleset(t)
+	st := newTestState()
+	putActor(st, "a", map[string]int32{"brawn": 3}, nil)
+	putActor(st, "b", map[string]int32{"guard": 10}, map[string]*vttv1.Resource{"vigor": res(0, 0)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	putToken(st, "tb", "s1", "b", 1, 0)
+
+	envs, err := rules.Resolve(rs, st, useAbility("a", "jab", "b"), &queueRoller{queue: []int{7}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	// jab's hit branch raises vigor by 1; its miss branch does nothing. So the
+	// presence of the ResourceChanged is the branch verdict, independent of
+	// how the summary happens to be worded.
+	var sawResourceChange bool
+	for _, e := range envs {
+		if rc := e.GetResourceChanged(); rc != nil {
+			sawResourceChange = true
+			if rc.GetResource() != "vigor" || rc.GetDelta() != 1 {
+				t.Errorf("tie produced %s delta %d, want vigor +1 (jab's hit outcome)",
+					rc.GetResource(), rc.GetDelta())
+			}
+		}
+	}
+	if !sawResourceChange {
+		t.Error("a tie (total 10 vs guard 10) took the MISS branch — an attack that exactly " +
+			"equals the defence must hit")
+	}
+
+	// And the summary must say so, since that string is what a player reads.
+	if au := envs[0].GetAbilityUsed(); au == nil || !strings.Contains(au.GetOutcomeSummary(), "hit") {
+		t.Errorf("outcome summary = %q, want it to report a hit", au.GetOutcomeSummary())
+	}
+}
+
+// TestResolveRangeIsChebyshevInBothAxes pins that vertical distance counts.
+//
+// chebyshevDistance takes |dx| and |dy| and returns the larger. Seventeen of
+// the eighteen range tests place both tokens on y=0, so `if dy < 0 { dy = -dy }`
+// has effectively never run with a meaningful dy — its CONDITIONALS_NEGATION
+// mutant (`dy >= 0`, which NEGATES a positive dy) survived the whole suite.
+// Under it a target two squares NORTH reads as distance -2, every range check
+// passes, and reach becomes unlimited along one axis.
+//
+// The pairs below are diagonal and vertical rather than horizontal, so both
+// axes carry the verdict:
+//   - (0,0) -> (0,1): dy=1, dx=0. In range for a reach-1 ability.
+//   - (0,0) -> (0,2): dy=2, dx=0. Out of range, and the case a negated dy
+//     would wrongly admit.
+//   - (0,0) -> (1,1): the diagonal, distance 1 under Chebyshev (not 2).
+func TestResolveRangeIsChebyshevInBothAxes(t *testing.T) {
+	setup := func(tx, ty int32) ([]*vttv1.Envelope, error) {
+		rs := fixtureRuleset(t)
+		st := newTestState()
+		putActor(st, "a", map[string]int32{"brawn": 3}, nil)
+		putActor(st, "b", map[string]int32{"guard": 10}, map[string]*vttv1.Resource{"vigor": res(0, 0)})
+		putToken(st, "ta", "s1", "a", 0, 0)
+		putToken(st, "tb", "s1", "b", tx, ty)
+		return rules.Resolve(rs, st, useAbility("a", "jab", "b"), &queueRoller{queue: []int{18}})
+	}
+
+	t.Run("directly north at reach 1 is in range", func(t *testing.T) {
+		if _, err := setup(0, 1); err != nil {
+			t.Errorf("Resolve at (0,1) = %v, want it in range — dy counts as much as dx", err)
+		}
+	})
+
+	t.Run("the diagonal is distance 1, not 2", func(t *testing.T) {
+		if _, err := setup(1, 1); err != nil {
+			t.Errorf("Resolve at (1,1) = %v, want it in range — Chebyshev makes the diagonal 1", err)
+		}
+	})
+
+	t.Run("two squares north is out of range", func(t *testing.T) {
+		_, err := setup(0, 2)
+		if err == nil {
+			t.Fatal("Resolve at (0,2) succeeded, want out of range — a negated dy would admit this")
+		}
+		if !strings.Contains(err.Error(), "range") {
+			t.Errorf("Resolve at (0,2) = %v, want a RANGE rejection", err)
+		}
+	})
+}

@@ -250,6 +250,21 @@ adjudications must land in the same change that adds the package to `PACKAGES`.
 - **`expr.go:1298:15`** (`arity.min > 0`). `parseFuncCall` seeds `args` with
   `first`, so `len(args) >= 1` always and the guarded `len(args) < 0` is
   unreachable under `>= 0`.
+- **`resolve.go:691:8`, `:695:8` and `:698:8`** (`chebyshevDistance`). `dx < 0`
+  -> `<=` and `dy < 0` -> `<=` both negate ZERO, and `-0 == 0` for ints.
+  `dx > dy` -> `>=` returns `dx` where the original returns `dy`, and at
+  equality those are the same value. NOTE the CONDITIONALS_NEGATION siblings on
+  :691 and :695 are NOT equivalent and are both killed — the dy one only since
+  2026-08-05, because seventeen of eighteen range tests placed both tokens on
+  y=0 and dy was never meaningfully non-zero.
+- **`resolve.go:384:8`** (`nv < 0` -> `<=` in `applyDelta`). At `nv == 0` the
+  branch assigns 0, the value it already holds.
+
+**Second slice, 2026-08-05: 38 -> 36.** `resolve.go:294`
+(`hit := total >= vsTotal`) was the find worth having — a GAME RULE with no
+test. Every hit case cleared the defence outright (18 vs 10) and every miss
+fell short, so equality, the one input where `>=` and `>` disagree, was never
+exercised. Under the mutant every tie in the game silently becomes a miss.
 
 **`internal/rules` is the one that matters most.** It is the rules interpreter
 — `compile`, `expr`, `resolve`, `load`, `schema`, `format`, `crypto_roller`,
