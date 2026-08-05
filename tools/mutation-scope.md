@@ -208,6 +208,49 @@ manual run in a worktree with the directory renamed so resolution works: 85 of
 and **no genuine survivors among the 77 evaluated**. So its tests do look
 strong; the cost is the problem, not the quality.
 
+### `internal/rules` — in progress, 49 → 38 survivors
+
+First slice landed 2026-08-05: expr.go's dice bounds, depth guards and
+identifier charset. Eleven killed, each fault-injection proven.
+
+**The dice bounds are checked in THREE places** and a bare `NdM` literal
+reaches only one. The lexer folds `0d6` into a single token (`:861`/`:864`);
+the parser re-checks for separate nodes (`:1036`/`:1065`); a third handles a
+fused `d`+digits token after a separate count (`:1080`). `1d1`, `1d(1)` and
+`(1)d1` take three different code paths, and only the first had a test.
+
+**A method note worth keeping.** An early injection run reported all eight dice
+mutants surviving, and that was an artifact: the injections ran against ONE
+test (`go test -run ...`) while a mutant survives only if the WHOLE SUITE
+passes under it. Four of the eight were already dead to a `TestParseDiceBounds`
+900 lines up the same file. Run the suite, not the test — a narrow injection
+overstates the gap.
+
+**THREE EQUIVALENCES CONFIRMED, to be adjudicated when this package is gated.**
+They are recorded here rather than in `tools/mutation-equivalents.txt` because
+an entry with no matching survivor is a STALE ENTRY and fails the gate — the
+adjudications must land in the same change that adds the package to `PACKAGES`.
+
+- **`expr.go:923:13`** (`parseExpr`'s `p.depth > maxExprDepth`). Only
+  `parseExpr` and `parseFactor` increment depth, and the call graph forces
+  strict alternation: `Parse` enters `parseExpr` at 0→1, `parseTerm` (no
+  increment) reaches `parseFactor` at even, `parsePrimary`/`parseFuncCall`
+  re-enter `parseExpr` at odd. So `parseExpr` observes only ODD depths and
+  `maxExprDepth` is EVEN — the two comparisons cannot differ. Verified by
+  parity assertions over the suite and 4.4M fuzz executions.
+  **EXPIRES IF** a third function increments `depth`, or `maxExprDepth`
+  becomes odd.
+- **`expr.go:655:10` and `:663:10`** (the `max`/`min` clamps). At `v == m` the
+  branch assigns `m` the value it already holds; `v` and `m` are plain `int`s
+  with no pointer, map, nil-ness or identity to observe. Same shape as the
+  accepted `internal/engine apply.go:150:30`. NOTE the sibling
+  `CONDITIONALS_NEGATION` on each line is NOT equivalent and is already killed.
+  **EXPIRES IF** `vals` stops being `[]int` — with floats, NaN and −0.0 make
+  which duplicate wins observable.
+- **`expr.go:1298:15`** (`arity.min > 0`). `parseFuncCall` seeds `args` with
+  `first`, so `len(args) >= 1` always and the guarded `len(args) < 0` is
+  unreachable under `>= 0`.
+
 **`internal/rules` is the one that matters most.** It is the rules interpreter
 — `compile`, `expr`, `resolve`, `load`, `schema`, `format`, `crypto_roller`,
 4,224 lines — which is what ADR-002 ("rules as declarative data") rests on. Its

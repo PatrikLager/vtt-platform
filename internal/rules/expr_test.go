@@ -1245,3 +1245,211 @@ func TestExprScopedRefsNoRefs(t *testing.T) {
 		t.Fatalf("ScopedRefs() on ref-free expr = %+v, want empty", got)
 	}
 }
+
+// TestParseDiceBoundsAreInclusive pins every dice limit ON its limit, through
+// BOTH validation paths.
+//
+// minDiceCount=1, maxDiceCount=100, minDiceSides=1, maxDiceSides=1000 are all
+// INCLUSIVE. FOUR CONDITIONALS_BOUNDARY mutants survived here — expr.go:1036,
+// :1065 and :1080 (two on that line) — all of them on the PARSER's copies of
+// the checks. The lexer's copies at :861/:864 were already pinned by
+// TestParseDiceBounds, 900 lines above; this test deliberately repeats those
+// rows so that older test's coverage is visible next to the new work rather
+// than implied.
+//
+// THE BOUNDS ARE CHECKED THREE TIMES, in three places, and a test using only
+// the bare `NdM` form reaches just one of them. The LEXER folds `0d6` into a single
+// dice token and rejects it at expr.go:862/:865. The PARSER checks again at
+// :1037/:1066/:1081, for when the count or sides arrive as separate nodes —
+// `(1)d6`, `1 d 6`, `1d(6)` — because a bare integer is only subject to the
+// dice range when it is ACTUALLY used as a count (the same "500" is an
+// ordinary integer everywhere else in the grammar). And :1080 checks a THIRD
+// time for a fused "d"+digits token following a separate count — `(1)d1`,
+// which neither `1d1` nor `1d(1)` reaches.
+//
+// A first version of this test used only bare literals, and every dice mutant
+// appeared to survive it. That reading was WRONG in an instructive way: the
+// injections were run against THIS TEST ALONE (`go test -run
+// TestParseDiceBounds...`), while a mutant "survives" only if the WHOLE SUITE
+// passes under it. The lexer mutants were already dead to TestParseDiceBounds;
+// only the parser ones were ever live. The bare-literal gap was real — that
+// second path had no test — but the count was an artifact of a too-narrow
+// injection. Run the suite, not the test.
+//
+// Each case is paired: the legal extreme MUST parse, one step past it MUST
+// NOT. Rejections alone would pass with a bound shifted the permissive way;
+// acceptances alone would pass with it shifted the other way.
+func TestParseDiceBoundsAreInclusive(t *testing.T) {
+	legal := []string{
+		// Lexer path: a single dice token.
+		"1d1", "1d1000", "100d1", "100d1000",
+		// Parser path: count and/or sides as separate nodes.
+		"(1)d6", "(100)d6", "1 d 6", "1d(1)", "1d(1000)", "(100)d(1000)",
+		// THIRD path: a separate count followed by a FUSED "d"+digits token,
+		// which lexIdent consumes whole and expr.go:1080 re-checks on its own.
+		// `1d(1)` does not reach it — the parenthesised sides take :1065.
+		"(1)d1", "(1)d1000",
+	}
+	for _, src := range legal {
+		t.Run("legal/"+src, func(t *testing.T) {
+			if _, err := rules.Parse(src); err != nil {
+				t.Errorf("Parse(%q) = %v, want it accepted — the dice bounds are inclusive", src, err)
+			}
+		})
+	}
+
+	illegal := []string{
+		// Lexer path.
+		"0d6", "101d6", "1d0", "1d1001",
+		// Parser path — the one a bare-literal test cannot reach.
+		"(0)d6", "(101)d6", "1d(0)", "1d(1001)",
+		// Fused-sides path.
+		"(1)d0", "(1)d1001",
+	}
+	for _, src := range illegal {
+		t.Run("illegal/"+src, func(t *testing.T) {
+			// The REASON, not just the rejection: neutering each of the five
+			// bound guards showed no second guard backstops any of them today,
+			// so a bare err != nil is non-vacuous — but it would stop being so
+			// the moment one appeared, silently. "out of bounds" costs nothing
+			// and encodes what the assertion is actually for.
+			_, err := rules.Parse(src)
+			if err == nil {
+				t.Fatalf("Parse(%q) succeeded, want it rejected — one step outside an inclusive bound", src)
+			}
+			if !strings.Contains(err.Error(), "out of bounds") {
+				t.Errorf("Parse(%q) = %v, want a dice BOUNDS rejection — some other guard catching this "+
+					"would leave the bound itself untested", src, err)
+			}
+		})
+	}
+}
+
+// TestParseDepthAndArityBoundsAreInclusive pins the depth guards that survived
+// because nothing tested them at their limits, plus the arity minimum for
+// readability.
+//
+//   - maxExprDepth (200) is INCLUSIVE: `p.depth > maxExprDepth` at
+//     expr.go:923 and :1002. Exactly 200 must parse; 201 must not. Nothing
+//     nested anywhere near that deep existed.
+//   - `defer p.depth--` at :922 and :1001. Mutated to `p.depth++` the counter
+//     never unwinds, so depth accumulates across SIBLINGS as well as nesting
+//     and a long FLAT expression trips a limit meant only for nesting. No test
+//     was long enough to notice.
+//     NOTE the arity subtests below kill NOTHING new: `len(args) < arity.min`
+//     at :1298:32 was already dead to the existing max(3,7)/max(1) cases, and
+//     they are kept only as a readable statement of the inclusive minimum. The
+//     mutant that DOES survive on that line is :1298:15 (`arity.min > 0` ->
+//     `>= 0`), and it is EQUIVALENT: parseFuncCall seeds args with `first`, so
+//     len(args) >= 1 always and `len(args) < 0` is unreachable. Recorded in
+//     tools/mutation-scope.md for adjudication when this package is gated.
+func TestParseDepthAndArityBoundsAreInclusive(t *testing.T) {
+	// Nesting via parentheses: each pair costs one parseExpr and one
+	// parseFactor frame, so build to the limit and one past it.
+	nest := func(depth int) string {
+		return strings.Repeat("(", depth) + "1" + strings.Repeat(")", depth)
+	}
+
+	// 99 and 100 are MEASURED, not chosen: each paren level costs one
+	// parseExpr frame and one parseFactor frame, so 99 levels reach exactly
+	// maxExprDepth(200) and 100 exceed it. The pair has to sit ON that edge —
+	// an earlier version used 90 and 500, comfortably either side, and BOTH
+	// `>` -> `>=` mutants survived it because the two comparisons only differ
+	// at exactly 200.
+	//
+	// If the frames-per-level ever changes these numbers move with it. That is
+	// the point: the observable contract is how deep an expression may be, and
+	// a change to it should require someone to look.
+	t.Run("nesting exactly at the limit parses", func(t *testing.T) {
+		if _, err := rules.Parse(nest(99)); err != nil {
+			t.Errorf("Parse(99-deep) = %v, want it accepted — the depth limit is inclusive", err)
+		}
+	})
+
+	t.Run("nesting one past the limit is rejected", func(t *testing.T) {
+		_, err := rules.Parse(nest(100))
+		if err == nil {
+			t.Fatal("Parse(100-deep) succeeded, want the depth limit to bite one step past")
+		}
+		if !strings.Contains(err.Error(), "nested too deeply") {
+			t.Errorf("Parse(100-deep) = %v, want the DEPTH limit to be what rejects it", err)
+		}
+	})
+
+	t.Run("a long FLAT expression is not mistaken for a deep one", func(t *testing.T) {
+		// 300 terms, nesting depth ~3. This is the case that catches a depth
+		// counter which increments but never unwinds: it would accumulate
+		// past maxExprDepth on breadth alone and reject a perfectly ordinary
+		// expression as "nested too deeply".
+		flat := "1" + strings.Repeat("+1", 300)
+		if _, err := rules.Parse(flat); err != nil {
+			t.Errorf("Parse(301 flat terms) = %v, want it accepted — depth is about NESTING, not length", err)
+		}
+
+		// PARENTHESISED siblings, which is the shape that catches a leaked
+		// counter. Bare terms do not: parseExpr is entered ONCE for a flat
+		// sum and loops over the terms, so a leak in its own unwind never
+		// compounds. Each "(1)" is its own parseExpr/parseFactor pair, so 150
+		// of them leak 300 and trip a limit of 200 — while nesting stays at 2.
+		siblings := "(1)" + strings.Repeat("+(1)", 150)
+		if _, err := rules.Parse(siblings); err != nil {
+			t.Errorf("Parse(151 parenthesised siblings) = %v, want it accepted — "+
+				"151 shallow groups are not 300 levels of nesting", err)
+		}
+	})
+
+	t.Run("a function called with exactly its minimum arity is accepted", func(t *testing.T) {
+		for _, src := range []string{"max(1, 2)", "min(1, 2)"} {
+			if _, err := rules.Parse(src); err != nil {
+				t.Errorf("Parse(%q) = %v, want it accepted — the minimum is inclusive", src, err)
+			}
+		}
+	})
+
+	t.Run("a function called below its minimum arity is rejected", func(t *testing.T) {
+		for _, src := range []string{"max(1)", "min(1)"} {
+			if _, err := rules.Parse(src); err == nil {
+				t.Errorf("Parse(%q) succeeded, want it rejected — below the minimum arity", src)
+			}
+		}
+	})
+}
+
+// TestIdentifierCharsetBoundsAreInclusive pins isIdentStart's four range ends.
+//
+// `c >= 'A' && c <= 'Z'` and the same for lowercase (expr.go:724) each carry a
+// CONDITIONALS_BOUNDARY mutant. THREE survived — :24, :36 and :62. The fourth,
+// :50 (`c >= 'a'`), was already dead: every ruleset attribute beginning with
+// "a" kills it through isValidIdentName. The three that lived did so because
+// every identifier in the suite starts comfortably inside the ranges, where
+// `>=` and `>` agree. Loosen any one end by a character and
+// exactly one letter of the alphabet stops being a legal identifier start —
+// an attribute named "Zeal" or "armor" would fail to parse, and nothing would
+// have caught it.
+func TestIdentifierCharsetBoundsAreInclusive(t *testing.T) {
+	// The four range ends, each exactly on the bound.
+	for _, name := range []string{"A", "Z", "a", "z", "_"} {
+		t.Run("@"+name, func(t *testing.T) {
+			if _, err := rules.Parse("@" + name); err != nil {
+				t.Errorf("Parse(%q) = %v, want it accepted — %q is a legal identifier start",
+					"@"+name, err, name)
+			}
+		})
+	}
+
+	// One step outside each range, so a bound shifted the permissive way is
+	// caught too. '@' is 'A'-1, '[' is 'Z'+1, '`' is 'a'-1, '{' is 'z'+1.
+	//
+	// Three of these four bite. `@` does NOT: widen the bound to `c >= '@'`
+	// and "@@" lexes as ONE identifier, so the parse still fails — at
+	// "unexpected identifier", for an unrelated reason. Kept as documentation
+	// of the range, not as a pin.
+	for _, name := range []string{"@", "[", "`", "{"} {
+		t.Run("reject/"+name, func(t *testing.T) {
+			if _, err := rules.Parse("@" + name); err == nil {
+				t.Errorf("Parse(%q) succeeded, want it rejected — %q is not a letter",
+					"@"+name, name)
+			}
+		})
+	}
+}
