@@ -44,6 +44,67 @@ This was found on 2026-08-04 by review, inside a change that was ADDING
 (`unresolvable_packages`), with boundary tests in `check_mutation_test.py`.
 The guard is structural rather than sampled, for the reason above.
 
+## The second route to the same lie: a symlink the copy drops
+
+Found 2026-08-05 while testing whether `--integration` could gate `cmd/vtt`.
+
+gremlins copies the module before mutating it, and the copy DROPS symlinks.
+`copyPath` (`workdir.go:142`) switches on `mode.IsDir()` and `mode.IsRegular()`; a symlink is
+neither, so it falls through the switch and is skipped **with no error**. The
+path is simply absent from the copy. Any test that reads it fails there under
+every mutant, exiting 1 — and exit 1 is what gremlins scores as KILLED
+(`getTestFailedStatus`, `executor.go:257`). Perfect efficacy, nothing
+detected.
+
+`scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush` is the repo's only
+TRACKED symlink — the working tree carries 39, but the other 38 are under
+`node_modules`, which the guard does not walk. It exists because `serve --adventures-dir ./adventures` cannot boot —
+the two committed adventures declare different rulesets
+(`docs/superpowers/plans/2026-07-26-client.md:718`) — so it presents a
+single-ruleset view of one adventure without duplicating it. `cmd/vtt`'s
+scenario tests boot a server against that directory.
+
+**`--integration` does not rescue this; it is how the route was found.**
+Integration mode ignores the broken package resolution entirely — `cmd.Dir` is
+the copied module root and the target is `./...` (`executor.go:200`, `:236`) —
+so it looked like the fix. It is not, because its oracle is *the whole suite's
+exit code*, and the suite cannot pass in a copy with a dropped symlink. Measured
+on `internal/engine/apply.go`, which has two survivors already adjudicated
+equivalent: **48 killed, 0 lived** — both equivalents reported killed. The
+timing said the same thing independently: 8.7s per mutant against 29s for a real
+`go test ./...`.
+
+Note what this implies beyond the symlink. Integration mode's verdict is
+contaminated by ANY failure anywhere in `./...`, so a single flaky test in an
+unrelated package silently converts the gate to a constant. That is a worse
+foundation than per-package mode even once every symlink is gone.
+
+`dropped_symlinks()` guards it, with `ALLOWED_SYMLINKS` carrying a reason per
+entry that must name the packages the symlink makes unmeasurable. Five fault
+injections, each run against the WHOLE suite with a green baseline either side:
+
+| injection | fires |
+|---|---|
+| walk only `filenames`, missing symlinked DIRECTORIES | 5 tests |
+| `ALLOWED_SYMLINKS` emptied | `..._real_tree_carries_no_unrecorded_symlink`, `..._allowlist_is_not_vacuous` |
+| reason requirement removed | `..._entry_without_a_reason_is_fatal` |
+| `run()` no longer consults the guard | `..._gate_fails_and_names_the_symlink...` |
+| prune `UNWALKED_DIRS` BEFORE checking | `..._symlink_NAMED_like_a_vendored_dir...` |
+
+**A methodology trap worth keeping, because it silently faked two of those
+numbers first.** macOS system Python sets `sys.pycache_prefix`, so bytecode is
+cached in `~/Library/Caches/com.apple.python/...`, NOT in a `tools/__pycache__`
+you can see. Staleness is judged on (mtime, size). An injection that moves a
+line without changing the file's SIZE, restored by `cp` within the same second,
+leaves that cache valid — so the suite runs the INJECTED bytecode against
+restored source, and the result is unrelated to the file on disk. It presents as
+a test failing while the source is provably correct. Clear the cache, or run
+`python3 -B`, before trusting any fault-injection result on these tools.
+
+That is the same shape as the "run the suite, not the test" note further down:
+both are ways an injection reports a number about something other than the code
+being reviewed.
+
 ## Gated
 
 Whatever is in `PACKAGES`. The count is deliberately not restated here — it
@@ -95,17 +156,25 @@ there is, that is what its parent's number means.
 | package | survivors | not covered | runtime | why |
 |---|---|---|---|---|
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
-| `cmd/vtt` | 0 of 77 evaluated | 7 | **~32m+** | **unresolvable (above)** |
+| `cmd/vtt` | **never measured** | unknown | unknown | **unresolvable + symlink** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
+
+`cmd/vtt`'s row held "0 of 77 evaluated" until 2026-08-05. It was retracted, not
+recomputed: every run of it so far has been a constant-KILLED oracle, by one of
+two independent routes (below). `tools/toolgen`'s 0 stands — its tests pass in a
+symlink-free copy, which is what makes its renamed-worktree measurement clean
+and `cmd/vtt`'s not.
 
 **No package remains outside the gate on no argument.** All three that were in
 that state on 2026-08-04 — `internal/rules/conformance`, `internal/adventure`
 and `internal/rules` — have been worked to zero unadjudicated survivors and
 gated (below). What is left out is left out for a stated reason: `harness`
 because its last survivor is killed only ~60% of the time and a probabilistic
-gate is a flaky one; `cmd/vtt` and `tools/toolgen` because gremlins cannot
-resolve `package main` in a mismatched directory and scores every mutant a
-false kill.
+gate is a flaky one; `tools/toolgen` because gremlins cannot resolve `package
+main` in a mismatched directory and scores every mutant a false kill; `cmd/vtt`
+for that reason AND, independently, because its scenario tests read a symlink
+the workdir copy drops (below) — fixing either one alone leaves the other
+producing the same constant verdict.
 
 That `internal/adventure/conformance` was gated while `internal/adventure` was
 not, for as long as it was, remains the signature of how the list was
@@ -209,11 +278,28 @@ header; it has been rewritten twice and each version was true when written.
 
 `cmd/vtt` is NOT an unrecorded omission — ADR-010:96-97 excludes it explicitly
 ("unmeasured for the same reason (~40s per test run) and carries the same
-obligation"), revisited at ADR-010:156-160. Its numbers above come from a
-manual run in a worktree with the directory renamed so resolution works: 85 of
-100 mutants in **32 minutes**, of which 75 killed, 2 timed out, 7 not covered,
-and **no genuine survivors among the 77 evaluated**. So its tests do look
-strong; the cost is the problem, not the quality.
+obligation"), revisited at ADR-010:156-160.
+
+**RETRACTED 2026-08-05: "75 killed, no genuine survivors among the 77
+evaluated, so its tests do look strong" was a THIRD instance of the same
+artifact.** That figure came from a manual run in a worktree with the directory
+renamed so resolution works — which fixed the resolution and left a second,
+independent constant-KILLED oracle in place. `cmd/vtt`'s scenario tests boot a
+server against `scenarios/testdata/dnd45e-minimal-adventures`, whose only entry
+is a SYMLINK, and gremlins' workdir copy drops symlinks silently
+(`copyPath`, `workdir.go:142`, switches on `IsDir()`/`IsRegular()`; a symlink is neither and
+falls through with no error). In the copy that directory is empty, `vtt serve`
+reports "adventures dir ... contains no adventures", and the suite fails under
+every mutant. Reproduced directly: `go test ./cmd/vtt/` in a symlink-free copy
+fails in **23.7s**, matching the renamed-worktree run's ~22s per mutant.
+
+Nothing is currently known about the strength of `cmd/vtt`'s tests. The honest
+statement is that it has never been measured — three times now.
+
+`dropped_symlinks()` guards this, structurally, the same way
+`unresolvable_packages()` guards the first route. Its allowlist entry for this
+symlink names the consequence, so gating `cmd/vtt` is refused in writing rather
+than discovered again.
 
 ### `internal/rules` — worked down and gated 2026-08-05
 
