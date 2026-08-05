@@ -70,7 +70,13 @@ import sys
 # with no recorded reason at all. All three -- internal/rules/conformance,
 # internal/adventure and internal/rules -- have since been worked to zero
 # unadjudicated survivors and gated. NONE remains outside on no argument.
-# cmd/vtt is excluded on the record by ADR-010:96-97.
+# cmd/vtt is excluded on the record by ADR-010:96-97, and carries a SECOND,
+# independent blocker found 2026-08-05: its scenario tests boot against a
+# directory whose only entry is a symlink, and gremlins' workdir copy drops
+# symlinks silently — see dropped_symlinks() below. Resolving the package name
+# does NOT make it gateable; both routes produce the same constant KILLED
+# verdict, and its published "no genuine survivors among the 77 evaluated" was
+# retracted for exactly that reason.
 #
 # tools/toolgen was REMOVED from this list on 2026-08-04. It is `package main`
 # in a directory not named `main`, which gremlins cannot resolve — see
@@ -316,6 +322,80 @@ def unresolvable_packages(packages, root="."):
     return bad
 
 
+# Symlinks that exist in the tree and are accounted for. The value is the
+# REASON, and a reason must name which packages the symlink makes unmeasurable
+# — that is the entire point of recording it. A bare "we know about this one"
+# would let the next person gate a package this entry already forbids.
+ALLOWED_SYMLINKS = {
+    "scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush":
+        "Points at adventures/goblin-ambush so a single-ruleset adventures dir "
+        "exists without duplicating the adventure (docs/superpowers/plans/"
+        "2026-07-26-client.md:718: `serve --adventures-dir ./adventures` cannot "
+        "boot, the two committed adventures declare different rulesets). "
+        "CONSEQUENCE: cmd/vtt CANNOT be gated while this stands. Its scenario "
+        "tests boot a server against this directory, which is EMPTY in the "
+        "copy, so they fail under every mutant and every mutant is scored "
+        "KILLED. No package under internal/ reads this path, which is why the "
+        "ten gated packages are unaffected — verified 2026-08-05, not assumed.",
+}
+
+# Not part of the Go module, and node_modules is full of symlinks: walking it
+# would make this guard both slow and permanently red.
+UNWALKED_DIRS = {".git", "node_modules"}
+
+
+def dropped_symlinks(root=".", allowed=None):
+    """Symlinks in the tree that are not recorded in ALLOWED_SYMLINKS.
+
+    gremlins copies the module before mutating it, and that copy DROPS
+    symlinks: `copyPath` (workdir.go:142) switches on `mode.IsDir()` and
+    `mode.IsRegular()`, a symlink is neither, so it falls through the switch
+    and is skipped with no error. The path is simply absent from the copy.
+
+    A test that reads it then fails in the copy for EVERY mutant, exiting 1 —
+    and exit 1 is precisely what gremlins scores as KILLED
+    (getTestFailedStatus, executor.go:257). So the package reports perfect
+    efficacy having detected nothing. Same constant verdict as
+    unresolvable_packages() above, reached by a different route, and just as
+    invisible from the output.
+
+    Only exit 1 does this. Exit 2 is NOT VIABLE and every OTHER non-zero exit
+    is scored LIVED, so the neighbouring failure inverts: a suite killed by a
+    signal yields false SURVIVORS rather than false kills. The distinction is
+    worth keeping straight — the two mistakes have opposite symptoms.
+
+    Found 2026-08-05: cmd/vtt's published "75 killed, no genuine survivors
+    among the 77 evaluated" was this, not a well-tested package. Its scenario
+    tests boot against scenarios/testdata/dnd45e-minimal-adventures, whose only
+    entry is a symlink, and in the copy that directory is empty.
+
+    Returns repo-relative paths, sorted; empty is good.
+    """
+    if allowed is None:
+        allowed = ALLOWED_SYMLINKS
+    for path, reason in sorted(allowed.items()):
+        if not reason or not reason.strip():
+            raise EquivalentsError(
+                f"ALLOWED_SYMLINKS[{path!r}] has no reason. An excuse with no argument is how "
+                f"a real gap becomes a permanent one in writing — the reason must name which "
+                f"packages this symlink makes unmeasurable.")
+
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Check BEFORE pruning. A symlink NAMED `node_modules` is a dropped
+        # symlink like any other, and skipping it for its name would give the
+        # guard a hole shaped exactly like its own exclusion list.
+        for name in list(dirnames) + filenames:
+            full = os.path.join(dirpath, name)
+            if not os.path.islink(full):
+                continue
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            if rel not in allowed:
+                found.append(rel)
+        dirnames[:] = [d for d in dirnames if d not in UNWALKED_DIRS]
+    return sorted(found)
+
+
 def gremlins_args(pkg, packages=PACKAGES):
     """The gremlins invocation for one package, excluding its GATED children.
 
@@ -380,6 +460,24 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
                   f"exits 1 for an unresolvable package, and EVERY mutant is scored KILLED in "
                   f"milliseconds. The measurement would be worthless. Remove it from PACKAGES "
                   f"and record it in tools/mutation-scope.md.", file=err)
+        return 1
+
+    # Also before anything is measured: a symlink gremlins drops silently makes
+    # every test that reads it fail in the copy, under every mutant.
+    try:
+        stray = dropped_symlinks(root=root)
+    except EquivalentsError as exc:
+        print(f"check:mutation: {exc}", file=err)
+        return 1
+    if stray:
+        for path in stray:
+            print(f"check:mutation: {path} is a symlink. gremlins' workdir copy switches on "
+                  f"IsDir()/IsRegular() and drops symlinks with no error, so any test that reads "
+                  f"this path fails in the copy under EVERY mutant — and exit 1 is what gremlins "
+                  f"scores as KILLED. Replace it with a real file or directory. If it must stay "
+                  f"AND it is committed, record it in ALLOWED_SYMLINKS with the packages it makes "
+                  f"unmeasurable — never record an untracked local one, which would red the gate "
+                  f"for every other clone.", file=err)
         return 1
 
     try:

@@ -48,7 +48,14 @@ def equivalents(text):
 class MutationGateTest(unittest.TestCase):
     def gate(self, eq_path, mapping, packages=("./p/",)):
         out, err = io.StringIO(), io.StringIO()
-        code = cm.run(eq_path, list(packages), runner_for(mapping), out=out, err=err)
+        # A hermetic root, NOT the default ".". run()'s pre-flight guards walk
+        # the tree they are given, so leaving this at the process cwd makes
+        # every test below depend on what happens to sit in it — a stray
+        # symlink anywhere under the working directory short-circuits run()
+        # and reds all of them with a diagnosis from the wrong subsystem.
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq_path, list(packages), runner_for(mapping),
+                          out=out, err=err, root=root)
         return code, out.getvalue(), err.getvalue()
 
     # --- the property the gate exists for ---
@@ -382,6 +389,128 @@ class SubpackageRecursionTest(unittest.TestCase):
             args = cm.gremlins_args(f"./{parent}/", cm.PACKAGES)
             self.assertIn(f"^{child[len(parent) + 1:]}/", args,
                           f"{parent} must exclude its gated child {child}")
+
+
+class DroppedSymlinkTest(unittest.TestCase):
+    """gremlins SILENTLY drops symlinks, and a test that needs one then fails
+    for a reason that has nothing to do with the mutation.
+
+    gremlins copies the module before mutating it. That copy is a filepath.Walk
+    whose handler `copyPath` (workdir.go:142) switches on `mode.IsDir()` and
+    `mode.IsRegular()` — a symlink is NEITHER, so it falls through the switch
+    and is skipped without an error. In the copy the path simply is not there.
+
+    Any test that reads it then fails in the copy, ALWAYS, for every mutant,
+    exiting 1 — and exit 1 is what gremlins scores as KILLED, so the package
+    reports 100% efficacy having detected nothing. This is the same
+    constant-verdict failure
+    as PackageResolutionTest above, reached by a different route, and it is
+    equally invisible: the output is indistinguishable from a well-tested
+    package.
+
+    Found 2026-08-05 while testing whether --integration could gate cmd/vtt.
+    It could not, and neither could the renamed-worktree measurement that
+    tools/mutation-scope.md had published as "75 killed, no genuine survivors
+    among the 77 evaluated". Both were this artifact:
+    scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush is a symlink,
+    cmd/vtt's scenario tests boot a server against that directory, and in the
+    copy it is empty -- "adventures dir ... contains no adventures".
+
+    The allowlist takes a REASON per entry, and the reason names which packages
+    the symlink makes unmeasurable. That is the whole point of recording it:
+    a bare "we know about this one" would let the next person gate a package
+    the entry already forbids.
+    """
+
+    def _tree(self, root, link_at, target="target"):
+        os.makedirs(os.path.join(root, "adventures", target), exist_ok=True)
+        link = os.path.join(root, link_at)
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(os.path.join(root, "adventures", target), link)
+        return link
+
+    def test_a_symlink_outside_the_allowlist_is_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "scenarios/testdata/fixture/goblin")
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed={}),
+                             ["scenarios/testdata/fixture/goblin"])
+
+    def test_an_allowlisted_symlink_is_accepted(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "scenarios/testdata/fixture/goblin")
+            allowed = {"scenarios/testdata/fixture/goblin": "recorded, with its consequence"}
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed=allowed), [])
+
+    def test_a_symlink_to_a_DIRECTORY_is_reported(self):
+        # The real case, and the one os.walk is most likely to hide: a
+        # symlinked directory lands in dirnames, not filenames.
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "scenarios/link-to-dir")
+            self.assertTrue(os.path.isdir(os.path.join(root, "scenarios/link-to-dir")))
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed={}),
+                             ["scenarios/link-to-dir"])
+
+    def test_a_regular_file_is_not_reported(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "pkg"))
+            with open(os.path.join(root, "pkg", "real.go"), "w") as fh:
+                fh.write("package pkg\n")
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed={}), [])
+
+    def test_vendored_and_git_trees_are_not_walked(self):
+        # node_modules is full of symlinks and is not part of the Go module;
+        # walking it would make the guard both slow and permanently red.
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "node_modules/.bin/tsc")
+            self._tree(root, ".git/annex/link")
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed={}), [])
+
+    def test_a_symlink_NAMED_like_a_vendored_dir_is_still_reported(self):
+        # The pruning must not shadow the check: a symlink named node_modules
+        # is a dropped symlink like any other, and skipping it because of its
+        # name is how a guard grows a hole shaped like its own exclusion list.
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "node_modules")
+            self.assertEqual(cm.dropped_symlinks(root=root, allowed={}), ["node_modules"])
+
+    def test_an_allowlist_entry_without_a_reason_is_fatal(self):
+        # Same rule as tools/mutation-equivalents.txt: an excuse with no
+        # argument is how a real gap becomes a permanent one in writing.
+        with tempfile.TemporaryDirectory() as root:
+            self._tree(root, "scenarios/x/link")
+            with self.assertRaises(cm.EquivalentsError):
+                cm.dropped_symlinks(root=root, allowed={"scenarios/x/link": "   "})
+
+    def test_the_gate_fails_and_names_the_symlink_rather_than_measuring(self):
+        with tempfile.TemporaryDirectory() as root:
+            _pkg_dir(root, "internal/thing", "thing")
+            self._tree(root, "scenarios/x/link")
+            eq = equivalents("")
+            buf_out, buf_err = io.StringIO(), io.StringIO()
+            code = cm.run(eq, packages=["./internal/thing/"], runner=runner_for({}),
+                          out=buf_out, err=buf_err, root=root)
+            os.unlink(eq)
+            self.assertEqual(code, 1, "an unrecorded symlink must FAIL the gate")
+            self.assertIn("scenarios/x/link", buf_err.getvalue())
+            self.assertNotIn("zero unadjudicated survivors", buf_out.getvalue(),
+                             "the gate must not report a clean run it cannot vouch for")
+
+    def test_the_real_tree_carries_no_unrecorded_symlink(self):
+        # The live assertion. If someone adds a symlink, this fails until they
+        # record which packages it makes unmeasurable.
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertEqual(cm.dropped_symlinks(root=repo), [],
+                         "a symlink gremlins drops must be recorded with its consequence")
+
+    def test_the_allowlist_is_not_vacuous(self):
+        # Guards against the entry being deleted along with the symlink and the
+        # test above quietly becoming an assertion about nothing.
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        found = cm.dropped_symlinks(root=repo, allowed={})
+        self.assertEqual(sorted(found), sorted(cm.ALLOWED_SYMLINKS),
+                         "ALLOWED_SYMLINKS must list exactly the symlinks that exist — if one "
+                         "was removed, delete its entry too, or a prohibition nobody can satisfy "
+                         "stays in writing")
 
 
 if __name__ == "__main__":
