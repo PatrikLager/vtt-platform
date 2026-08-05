@@ -1341,8 +1341,8 @@ func TestParseDiceBoundsAreInclusive(t *testing.T) {
 //     they are kept only as a readable statement of the inclusive minimum. The
 //     mutant that DOES survive on that line is :1298:15 (`arity.min > 0` ->
 //     `>= 0`), and it is EQUIVALENT: parseFuncCall seeds args with `first`, so
-//     len(args) >= 1 always and `len(args) < 0` is unreachable. Recorded in
-//     tools/mutation-scope.md for adjudication when this package is gated.
+//     len(args) >= 1 always and `len(args) < 0` is unreachable. Adjudicated in
+//     tools/mutation-equivalents.txt.
 func TestParseDepthAndArityBoundsAreInclusive(t *testing.T) {
 	// Nesting via parentheses: each pair costs one parseExpr and one
 	// parseFactor frame, so build to the limit and one past it.

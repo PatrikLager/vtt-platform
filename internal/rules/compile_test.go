@@ -517,6 +517,10 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"always-outcome-nonnull-key", []string{"dmg.json", "must be null when branch is"}},
 		{"resolution-key-not-provided", []string{"roll.json", "clash", "provides"}},
 		{"outcome-key-not-consumed", []string{"dmg.json", "clash", "consumes"}},
+		// Asserts "provides key" and "in the earlier" -- NOT "resolution",
+		// "key" or "targeting", all of which are words in this fixture's own
+		// directory name and therefore free from the path.
+		{"resolution-key-consumed-at-targeting", []string{"bad.json", "provides key", "in the earlier"}},
 		{"cross-phase-edge-inverted", []string{"bad.json", "primer", "effects", "branch-outcome"}},
 		{"scope-position-placeholder", []string{"bad.json", "scope position"}},
 		{"reserved-scope-word-attribute", []string{"ruleset.json", "caster", "reserved"}},
@@ -527,11 +531,14 @@ func TestLoadInvalidV2Fixtures(t *testing.T) {
 		{"scoped-ref-single-actor-position", []string{"ruleset.json", "scoped reference"}},
 		{"undeclared-resource-in-contribution", []string{"bad.json", "no_such_pool"}},
 		{"attribute-defense-name-collision", []string{"ruleset.json", "brace"}},
-		// "(got -3)" pins the VALUE the message reports, not just that it
-		// complained. The fixture binds edge: -3, and two mutants sit on that
-		// interpolated number -- an error naming the wrong value sends its
-		// reader to the wrong bind.
-		{"negative-int-binding", []string{"bad.json", "must not be negative", "(got -3)"}},
+		// Pins BOTH interpolated numbers. The fixture binds edge: -3, and the
+		// message both reports the value and suggests the fix: `must not be
+		// negative (got -3) ... write the "0 - 3" idiom`. The second argument
+		// is -n, the POSITIVE form, and its two mutants sit there -- inverted,
+		// the error advises `write the "0 - -3" idiom`, which is not valid in
+		// a grammar that has no unary minus. Advice a reader would follow into
+		// another parse failure is worse than no advice.
+		{"negative-int-binding", []string{"bad.json", "must not be negative", "(got -3)", `"0 - 3"`}},
 		{"negative-targeting-range", []string{"bad.json", "targeting.range must not be negative"}},
 		{"compose-missing-bind", []string{"bad.json", "must be set"}},
 	}

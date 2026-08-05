@@ -1,0 +1,19 @@
+{
+  "id": "bad",
+  "name": "Bad",
+  "usage": "at_will",
+  "compose": [
+    {
+      "atom": "reach",
+      "bind": {}
+    },
+    {
+      "atom": "strike-roll",
+      "bind": {}
+    },
+    {
+      "atom": "spender",
+      "bind": {}
+    }
+  ]
+}

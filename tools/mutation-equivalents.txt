@@ -79,3 +79,58 @@ internal/rules/conformance  conformance.go:361:11  CONDITIONALS_NEGATION
 
 internal/adventure  load.go:78:58  ARITHMETIC_BASE
     Map CAPACITY HINT: `make(map[string]bool, len(rs.Attributes)+len(rs.Defenses))`. Same as the internal/campaign entries above and equivalent for the same reason — the hint affects only initial allocation, maps grow as needed, and no read distinguishes a different starting capacity. The negative-hint caveat carries too: this can go negative with an ordinary ruleset (more defenses than attributes), the Go SPEC says a negative size panics, and gc does not implement that for maps. Verdict holds on gc and only on gc.
+
+# --- internal/rules -----------------------------------------------------------
+#
+# Sixteen entries, every one verified by injecting the mutant and running the
+# WHOLE suite. Four shapes only, and each is stated with what would END it --
+# an equivalence is a claim about the code as it stands, not a permanent
+# licence.
+
+internal/rules  expr.go:655:10  CONDITIONALS_BOUNDARY
+    `v > m` -> `>=` inside max(): at v == m the branch assigns m the value it already holds. v and m are plain ints returned as an int, with no pointer, map, nil-ness or identity to observe. Same shape as internal/engine apply.go:150:30. NOTE the CONDITIONALS_NEGATION sibling on this line is NOT equivalent and IS killed (max(3, 7) pins it). EXPIRES IF vals stops being []int -- with floats, -0.0 makes which duplicate wins observable (max(-0.0, +0.0) returns +0.0 under `>` and -0.0 under `>=`, distinguishable by signbit). NaN does NOT distinguish them: every NaN comparison is false under both.
+
+internal/rules  expr.go:663:10  CONDITIONALS_BOUNDARY
+    `v < m` -> `<=` inside min(). Same reasoning and the same expiry as :655 above.
+
+internal/rules  expr.go:683:20  CONDITIONALS_BOUNDARY
+    floorDiv's `a%b != 0 && (a < 0) != (b < 0)`, the `a < 0` arm -> `a <= 0`. The two differ only at a == 0, and a == 0 makes a%b == 0, which short-circuits before this arm is ever evaluated. Unreachable, not merely untested.
+
+internal/rules  expr.go:683:31  CONDITIONALS_BOUNDARY
+    Same line, the `b < 0` arm -> `b <= 0`. Differs only at b == 0, and floorDiv's own `a / b` panics on a zero divisor before reaching this expression.
+
+internal/rules  expr.go:923:13  CONDITIONALS_BOUNDARY
+    parseExpr's `p.depth > maxExprDepth` -> `>=`. Only parseExpr and parseFactor increment depth, and the call graph forces strict alternation (Parse enters parseExpr at 0->1; parseTerm does not increment; parsePrimary and parseFuncCall re-enter parseExpr only from parseFactor), so parseExpr observes ODD depths exclusively. maxExprDepth is 200, EVEN, so the two comparisons can never differ. Verified by parity assertions over the suite and 4.4M fuzz executions. NOTE parseFactor's copy at :1002 is NOT equivalent and IS killed by nest(99)/nest(100). EXPIRES IF a third function increments depth, or maxExprDepth becomes odd, or the parseExpr->parseTerm->parseFactor->parsePrimary cycle stops having length 2. That last one is the likeliest and the easiest to miss: parseFactor does not currently call ITSELF, and unary minus -- a grammar gap compile.go:227 already names -- is naturally implemented as exactly that. It would break the parity without touching either of the other two conditions.
+
+internal/rules  expr.go:1125:15  CONDITIONALS_BOUNDARY
+    diceOpSuffix's `len(text) > 1 && text[0] == 'd'` -> `>= 1`. The two differ only at len(text) == 1, and the single one-character text that reaches here, "d", returned three lines above. Any other one-character text fails the `text[0] == 'd'` conjunct identically under both.
+
+internal/rules  expr.go:1298:15  CONDITIONALS_BOUNDARY
+    `arity.min > 0 && len(args) < arity.min` -> `>= 0`. parseFuncCall seeds args with `first` before this check, so len(args) >= 1 always and the guarded `len(args) < 0` is unreachable. NOTE both `len(args) < arity.min` siblings at :1298:32 are NOT equivalent and both ARE killed, but by DIFFERENT cases, and the distinction is the point: max/min have min 2, so the negation `>=` dies to max(1) (1 >= 2 is false, so the mutant accepts a call the original rejects) while the boundary `<=` survives max(1) -- 1 < 2 and 1 <= 2 both error -- and dies only to the two-argument cases, where 2 < 2 is false and 2 <= 2 is not.
+
+internal/rules  resolve.go:311:27  CONDITIONALS_BOUNDARY
+    `len(ability.Effects) > 0` -> `>= 0`. At length 0 the mutant calls applyOutcomes with an empty slice, which iterates nothing and returns (nil, nil, nil) -- identical to skipping it. COUPLED: this depends on applyOutcomes having NO observable statement before its loop. Today the only one is `reason := fmt.Sprintf(...)`, which is pure and discarded when the loop body never runs. A phase-start event, a counter, or any touch of resolveState added above that loop makes this mutant killable, and nothing in resolve.go:311 will say so.
+
+internal/rules  resolve.go:384:8  CONDITIONALS_BOUNDARY
+    applyDelta's `nv < 0 { nv = 0 }` -> `<=`. At nv == 0 the branch assigns 0, the value it already holds.
+
+internal/rules  resolve.go:387:60  CONDITIONALS_BOUNDARY
+    `nv > upper` -> `>=` in the same clamp. At nv == upper the branch assigns upper, the value it already holds. NOTE the `upper > 0` guard earlier on this line is NOT equivalent and IS killed -- max 0 means UNLIMITED, and `>= 0` makes it clamp to zero instead.
+
+internal/rules  resolve.go:691:8  CONDITIONALS_BOUNDARY
+    chebyshevDistance's `dx < 0 { dx = -dx }` -> `<=`. At dx == 0 the branch assigns -0, and -0 == 0 for ints. NOTE the CONDITIONALS_NEGATION sibling is NOT equivalent and IS killed.
+
+internal/rules  resolve.go:695:8  CONDITIONALS_BOUNDARY
+    The dy arm of the same absolute value. Same reasoning. NOTE its CONDITIONALS_NEGATION sibling is NOT equivalent and was killed only on 2026-08-05 -- seventeen of eighteen range tests placed both tokens on y=0, so a positive dy had effectively never been exercised.
+
+internal/rules  resolve.go:698:8  CONDITIONALS_BOUNDARY
+    `if dx > dy { return dx }; return dy` -> `>=`. At dx == dy the mutant returns dx where the original returns dy, and those are the same value.
+
+internal/rules  compile.go:58:52  ARITHMETIC_BASE
+    Map CAPACITY HINT: `make(map[string]bool, len(attrSet)+len(defSet))`. The hint affects only initial allocation -- maps grow as needed and no read distinguishes a different starting capacity. The negative-hint caveat from the internal/campaign entries carries: the Go SPEC says a negative size panics, gc does not implement that for maps, so this verdict holds on gc and only on gc. CONTRAST internal/adventure compile.go:35, a SLICE hint, where a negative capacity DOES panic and four of five mutants there are killed.
+
+internal/rules  compile.go:395:36  CONDITIONALS_BOUNDARY
+    producePhaseForKey's `p > phase { phase = p }` -> `>=`, taking a maximum. At p == phase the branch assigns the value phase already holds.
+
+internal/rules  compile.go:409:35  CONDITIONALS_BOUNDARY
+    consumePhaseForAtom's `p < phase { phase = p }` -> `<=`, taking a minimum. Same reasoning as :395.

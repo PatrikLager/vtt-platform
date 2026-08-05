@@ -1,0 +1,15 @@
+{
+  "id": "reach",
+  "params": [],
+  "provides": [],
+  "consumes": [
+    "strike"
+  ],
+  "contributes": [
+    {
+      "kind": "targeting",
+      "range": 1,
+      "max_targets": 1
+    }
+  ]
+}
