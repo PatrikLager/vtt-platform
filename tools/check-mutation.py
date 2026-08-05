@@ -67,9 +67,9 @@ import sys
 # What is NOT here, with measured survivor counts, is published in
 # tools/mutation-scope.md — so the narrowness is a number rather than an
 # impression. Three packages turned out to be outside this list on 2026-08-04
-# with no recorded reason at all; internal/rules/conformance and
-# internal/adventure have since been worked to zero and gated, leaving
-# internal/rules.
+# with no recorded reason at all. All three -- internal/rules/conformance,
+# internal/adventure and internal/rules -- have since been worked to zero
+# unadjudicated survivors and gated. NONE remains outside on no argument.
 # cmd/vtt is excluded on the record by ADR-010:96-97.
 #
 # tools/toolgen was REMOVED from this list on 2026-08-04. It is `package main`
@@ -88,6 +88,7 @@ PACKAGES = [
     "./internal/gateway/",                 # ~57s
     "./internal/adventure/",               # ~60s
     "./internal/campaign/",                # ~91s
+    "./internal/rules/",                   # ~393s -- the interpreter, 553 mutants
     "./internal/mcp/",                     # ~857s
 ]
 

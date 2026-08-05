@@ -70,9 +70,11 @@ a file that is not in `internal/rules`. The gate had been double-measuring
 `internal/adventure/conformance` since the moment its parent was gated, and was
 green and honest the whole time, because that child happens to have no
 survivors to double-report. Nothing was ever going to point at it.
-`internal/adventure` ⊃ `internal/adventure/conformance` is the ONLY parent/child
-pair in `PACKAGES` today; the guard exists so the next one is not found the same
-way.
+`internal/adventure` ⊃ `internal/adventure/conformance` was the only such pair
+when the guard was written, and the second one — `internal/rules` ⊃
+`internal/rules/conformance` — arrived a day later, which is why the guard is
+the thing that finds them rather than this sentence. Enumerate the pairs from
+`PACKAGES` rather than trusting a count written here.
 
 **It had already contaminated a published number.** This table said
 `internal/rules` had **59** survivors. Ten of those were
@@ -92,17 +94,22 @@ there is, that is what its parent's number means.
 
 | package | survivors | not covered | runtime | why |
 |---|---|---|---|---|
-| `internal/rules` | **49** | **40** | 7m47s | backlog, no reason on record |
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
 | `cmd/vtt` | 0 of 77 evaluated | 7 | **~32m+** | **unresolvable (above)** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
 
-`internal/rules` is the last package outside the gate with **no recorded
-reason anywhere** — not excluded on an argument, just never added. Two of the
-three originally in that state have since been worked down and gated (below).
+**No package remains outside the gate on no argument.** All three that were in
+that state on 2026-08-04 — `internal/rules/conformance`, `internal/adventure`
+and `internal/rules` — have been worked to zero unadjudicated survivors and
+gated (below). What is left out is left out for a stated reason: `harness`
+because its last survivor is killed only ~60% of the time and a probabilistic
+gate is a flaky one; `cmd/vtt` and `tools/toolgen` because gremlins cannot
+resolve `package main` in a mismatched directory and scores every mutant a
+false kill.
+
 That `internal/adventure/conformance` was gated while `internal/adventure` was
-not, for as long as it was, is the signature of a list assembled from what
-happened to be measured.
+not, for as long as it was, remains the signature of how the list was
+originally assembled — from whatever happened to have been measured.
 
 ### `internal/adventure` — worked down and gated 2026-08-04
 
@@ -208,16 +215,55 @@ manual run in a worktree with the directory renamed so resolution works: 85 of
 and **no genuine survivors among the 77 evaluated**. So its tests do look
 strong; the cost is the problem, not the quality.
 
-### `internal/rules` — in progress, 49 → 38 survivors
+### `internal/rules` — worked down and gated 2026-08-05
 
-First slice landed 2026-08-05: expr.go's dice bounds, depth guards and
-identifier charset. Eleven killed, each fault-injection proven.
+49 survivors → **16, all adjudicated equivalent**, out of 553 mutants (38 not
+covered, 1 timed out). The interpreter ADR-002 rests on is now gated. The killed
+count is the one figure here NOT worth quoting: two runs a day apart gave 496
+and 498, because a mutant that times out in one run is evaluated in the next.
+The survivor count did not move.
 
-**The dice bounds are checked in THREE places** and a bare `NdM` literal
-reaches only one. The lexer folds `0d6` into a single token (`:861`/`:864`);
-the parser re-checks for separate nodes (`:1036`/`:1065`); a third handles a
-fused `d`+digits token after a separate count (`:1080`). `1d1`, `1d(1)` and
-`(1)d1` take three different code paths, and only the first had a test.
+The sixteen reduce to THREE shapes: assigns-a-value-already-held (9); the
+distinguishing input is unreachable (5 — two by short-circuit, one by parity,
+one by an earlier return, one because the slice is seeded before the check);
+the call has no observable effect (2 — a map capacity hint, and a call with an
+empty slice).
+
+Five of the sixteen have a NOT-equivalent sibling on their own line, and each of
+those five names it, so nobody generalises from the verdict to the line — that
+distinction nearly cost four real gaps in `internal/adventure`. The other eleven
+name nothing because there is nothing to name; two point at a related mutant
+elsewhere (`expr.go:923` at `:1002`, `compile.go:58` at the contrasting SLICE
+hint in `internal/adventure`). Absence of a sibling note is not evidence that
+the line is wholly equivalent — read the line.
+
+**Two GAME RULES had no test at all.** `resolve.go:294`'s `hit := total >=
+vsTotal` — every hit case cleared the defence outright and every miss fell
+short, so equality, the one input where `>=` and `>` disagree, was never
+exercised; the mutant turns every tie in the game into a miss. And
+`chebyshevDistance`'s `dy` arm: seventeen of eighteen range tests placed both
+tokens on y=0, so negating a positive dy makes a target two squares north read
+as distance −2 and reach becomes unlimited along one axis.
+
+**The dice bounds are checked in THREE places** and a bare `NdM` literal reaches
+only one. The lexer folds `0d6` into a single token (`:861`/`:864`); the parser
+re-checks for separate nodes (`:1036`/`:1065`); a third handles a fused
+`d`+digits token after a separate count (`:1080`). `1d1`, `1d(1)` and `(1)d1`
+take three different code paths and only the first had a test. A fourth check,
+in `Eval`, sees the RUNTIME value and is reachable only through `1d(@faces)`.
+
+**`int32Checked`'s range was only ever tested from outside.** Every existing
+case drove a value past the bound; a delta of exactly ±2147483647/8 — legal,
+and the widest a resource change can be — would have been refused.
+
+**Errors that mislead rather than fail:** `refDisplay` picks `@` vs `#` and
+whether to show the scope (swapped, it names `#caster.vim` for `@caster.vim`);
+`describeTok` swapped reports end-of-input as a token and vice versa; and
+`compile.go:227` suggests the FIX — `write the "0 - 3" idiom` — where the
+inverted mutant advises `"0 - -3"`, invalid in a grammar with no unary minus.
+
+Worked in slices, for the record. The first was expr.go's dice bounds, depth
+guards and identifier charset — eleven killed, each fault-injection proven.
 
 **A method note worth keeping.** An early injection run reported all eight dice
 mutants surviving, and that was an artifact: the injections ran against ONE
@@ -226,59 +272,31 @@ passes under it. Four of the eight were already dead to a `TestParseDiceBounds`
 900 lines up the same file. Run the suite, not the test — a narrow injection
 overstates the gap.
 
-**THREE EQUIVALENCES CONFIRMED, to be adjudicated when this package is gated.**
-They are recorded here rather than in `tools/mutation-equivalents.txt` because
-an entry with no matching survivor is a STALE ENTRY and fails the gate — the
-adjudications must land in the same change that adds the package to `PACKAGES`.
-
-- **`expr.go:923:13`** (`parseExpr`'s `p.depth > maxExprDepth`). Only
-  `parseExpr` and `parseFactor` increment depth, and the call graph forces
-  strict alternation: `Parse` enters `parseExpr` at 0→1, `parseTerm` (no
-  increment) reaches `parseFactor` at even, `parsePrimary`/`parseFuncCall`
-  re-enter `parseExpr` at odd. So `parseExpr` observes only ODD depths and
-  `maxExprDepth` is EVEN — the two comparisons cannot differ. Verified by
-  parity assertions over the suite and 4.4M fuzz executions.
-  **EXPIRES IF** a third function increments `depth`, or `maxExprDepth`
-  becomes odd.
-- **`expr.go:655:10` and `:663:10`** (the `max`/`min` clamps). At `v == m` the
-  branch assigns `m` the value it already holds; `v` and `m` are plain `int`s
-  with no pointer, map, nil-ness or identity to observe. Same shape as the
-  accepted `internal/engine apply.go:150:30`. NOTE the sibling
-  `CONDITIONALS_NEGATION` on each line is NOT equivalent and is already killed.
-  **EXPIRES IF** `vals` stops being `[]int` — with floats, NaN and −0.0 make
-  which duplicate wins observable.
-- **`expr.go:1298:15`** (`arity.min > 0`). `parseFuncCall` seeds `args` with
-  `first`, so `len(args) >= 1` always and the guarded `len(args) < 0` is
-  unreachable under `>= 0`.
-- **`resolve.go:691:8`, `:695:8` and `:698:8`** (`chebyshevDistance`). `dx < 0`
-  -> `<=` and `dy < 0` -> `<=` both negate ZERO, and `-0 == 0` for ints.
-  `dx > dy` -> `>=` returns `dx` where the original returns `dy`, and at
-  equality those are the same value. NOTE the CONDITIONALS_NEGATION siblings on
-  :691 and :695 are NOT equivalent and are both killed — the dy one only since
-  2026-08-05, because seventeen of eighteen range tests placed both tokens on
-  y=0 and dy was never meaningfully non-zero.
-- **`resolve.go:384:8`** (`nv < 0` -> `<=` in `applyDelta`). At `nv == 0` the
-  branch assigns 0, the value it already holds.
-
-**Second slice, 2026-08-05: 38 -> 36.** `resolve.go:294`
-(`hit := total >= vsTotal`) was the find worth having — a GAME RULE with no
-test. Every hit case cleared the defence outright (18 vs 10) and every miss
-fell short, so equality, the one input where `>=` and `>` disagree, was never
-exercised. Under the mutant every tie in the game silently becomes a miss.
+**The equivalences this section used to hold in escrow now live in
+`tools/mutation-equivalents.txt`**, where the gate reads them. They were staged
+here first because an entry with no matching survivor is a STALE ENTRY and fails
+the gate, so an adjudication cannot exist before its package is in `PACKAGES` —
+the two have to land in one change, and they did. Do not re-add adjudication
+text here: one of them would be edited and the other would not.
 
 **`internal/rules` is the one that matters most.** It is the rules interpreter
 — `compile`, `expr`, `resolve`, `load`, `schema`, `format`, `crypto_roller`,
 4,224 lines — which is what ADR-002 ("rules as declarative data") rests on. Its
-40 NOT COVERED mutants are consistent with its 89.0% coverage floor and break
+38 NOT COVERED mutants are consistent with its 89.0% coverage floor and break
 no gate, but "10% of the rules interpreter is unreached by any test" is the
 legible form of that number, and a coverage percentage is exactly what ADR-010
 says cannot answer the question mutation answers.
 
 ## NOT COVERED is measured here but not enforced anywhere
 
-**83** mutants across the table above sit in code no test reaches (40 + 4 +
-32 + 7 + 0). `check-mutation.py` has no regex for `NOT COVERED` and no check on
-it, so the gate passes with them present.
+**39** mutants across the table above sit in code no test reaches (32 + 7 + 0),
+and a further **38** sit inside a GATED package, `internal/rules` — gating a
+package drives its survivors to zero, not its unreached code.
+`check-mutation.py` has no regex for `NOT COVERED` and no check on it, so the
+gate passes with all 77 present.
+
+(This total has been wrong once already, by carrying rows that had since been
+gated. Re-add from the table rather than editing the sum.)
 
 That is a deliberate open question, not an oversight to fix in passing:
 `check:coverage` already enforces per-package line floors, so making NOT
@@ -295,7 +313,10 @@ treatment.
 ## Some of the gated packages' "kills" are timeouts, not evaluated detections
 
 Two gate runs on 2026-08-04 over IDENTICAL code: `internal/gateway` 5 then 6,
-`internal/campaign` 2 both times, `internal/mcp` 1 then 3. Do not quote a
+`internal/campaign` 2 both times, `internal/mcp` 1 then 3. `internal/rules`
+joined them on gating with 1 (`INCREMENT_DECREMENT at expr.go:796:8`), so its
+gate line prints a TIMED OUT count too; that is expected, not a regression. Do
+not quote a
 single run's figure as the count — the variance is the finding, and it is the
 same cache-driven timeout effect described at the foot of this file, where
 `testExecutionTime = coverage_elapsed × coefficient` makes every mutant's

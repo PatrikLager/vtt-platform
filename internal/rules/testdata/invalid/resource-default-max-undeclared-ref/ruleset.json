@@ -1,0 +1,25 @@
+{
+  "id": "resource-default-max-undeclared-ref",
+  "name": "Test Ruleset",
+  "format_version": "2",
+  "attributes": [
+    "brawn",
+    "grit"
+  ],
+  "defenses": [
+    "guard"
+  ],
+  "resources": [
+    {
+      "name": "pool_a",
+      "default_max_expr": "10 + @nosuch",
+      "thresholds": [
+        {
+          "when": "#pool_a",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
+      ]
+    }
+  ]
+}

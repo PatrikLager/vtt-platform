@@ -1,0 +1,25 @@
+{
+  "id": "threshold-when-undeclared-ref",
+  "name": "Test Ruleset",
+  "format_version": "2",
+  "attributes": [
+    "brawn",
+    "grit"
+  ],
+  "defenses": [
+    "guard"
+  ],
+  "resources": [
+    {
+      "name": "pool_a",
+      "default_max_expr": "10 + @brawn",
+      "thresholds": [
+        {
+          "when": "#nosuch_pool",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
+      ]
+    }
+  ]
+}

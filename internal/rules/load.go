@@ -423,10 +423,16 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 // --- cross-reference validation (spec §5) ---
 
 // checkExprRefs validates every attribute/resource ref e.Refs() finds
-// against attrSet/resSet, naming path/field on the first miss. Shared by
-// crossValidateResources and compile.go's v2 cross-reference checks (spec
-// §5's "v1-style cross-ref rules carried over" requirement) so both
-// report undeclared names identically.
+// against attrSet/resSet, naming path/field on the first miss.
+//
+// Called from crossValidateResources ONLY, at exactly two sites: a resource's
+// default_max_expr and a threshold's when. An earlier version of this comment
+// claimed compile.go's v2 cross-reference checks shared it; they do not, and
+// the difference matters -- for a long time NO fixture carried an undeclared
+// name through either of these two sites, so inverting the nil guard below
+// (which makes this skip every non-nil expression) left the whole suite green.
+// testdata/invalid/{resource-default-max-undeclared-ref,threshold-when-undeclared-ref}
+// exist for that.
 func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool) error {
 	if e == nil {
 		return nil

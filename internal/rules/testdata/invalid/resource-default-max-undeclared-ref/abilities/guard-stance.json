@@ -1,0 +1,9 @@
+{
+  "id": "guard-stance",
+  "name": "Guard Stance",
+  "usage": { "limited": { "resource": "pool_a", "cost": 1 } },
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "apply-guarded", "bind": {} }
+  ]
+}
