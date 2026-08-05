@@ -325,6 +325,29 @@ func (c *Client) deliverEvent(env *vttv1.Envelope) bool {
 	}
 }
 
+// CloseErr reports WHY this connection ended, or nil while it is healthy.
+//
+// Events() gives a consumer a closed channel and nothing else, so a pure
+// reader — one with no SendCommand in flight to carry the error back — cannot
+// tell "the server finished sending" from "I was disconnected for reading too
+// slowly". Those call for opposite responses, and conflating them cost a real
+// CI failure: the soak keystone's fresh catch-up overflowed at 257 of 480
+// envelopes and the report blamed a 30s timeout for a connection that died in
+// under three seconds, sending the reader after slow CI instead of this
+// buffer.
+//
+// NON-NIL DOES NOT MEAN FAILURE. A clean close from either side surfaces here
+// as the websocket read error that ended the loop ("status =
+// StatusNormalClosure and reason = ..."), so nil-vs-non-nil separates nothing
+// useful. errors.Is(c.CloseErr(), ErrEventsOverflow) is the specific question
+// worth asking after a short read, and the only one this accessor answers
+// better than the closed channel already does.
+func (c *Client) CloseErr() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeErr
+}
+
 // teardown marks the client closed (idempotent: only the first call takes
 // effect) and unblocks every pending SendCommand call with err.
 func (c *Client) teardown(err error) {

@@ -17,6 +17,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -422,10 +423,6 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 		return fmt.Errorf("harness: soak: checkpoint %d: fold incremental history: %w", rep.Checkpoints, err)
 	}
 
-	fresh, err := dial(soakObserverName, 0)
-	if err != nil {
-		return fmt.Errorf("harness: soak: checkpoint %d: dial fresh catch-up connection: %w", rep.Checkpoints, err)
-	}
 	// Drain to a KNOWN HEAD, not to a silence.
 	//
 	// This used to be drainQuiescentEnvelopes(..., denialAbsenceWindow): stop
@@ -446,14 +443,20 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 	// for THAT, and keep the silence window only as the signal that the tail
 	// after the target has settled.
 	target := highestSequence(incremental)
-	freshHistory, reached := drainToSequence(fresh.Events(), target, denialAbsenceWindow, freshCatchUpTimeout)
-	_ = fresh.Close()
+	freshHistory, reached := drainFreshCatchUp(dial, target, denialAbsenceWindow, freshCatchUpTimeout)
 	if !reached {
 		// Reported as what it is. The fold comparison still runs below, but
 		// this line is what names the cause when it disagrees.
+		//
+		// WHY, not just THAT. A closed Events() channel looks identical to a
+		// finished replay, so this used to print the 30s timeout for every
+		// short read — including a connection torn down for buffer overflow in
+		// under three seconds, which sent the reader after slow CI while the
+		// real cause was that this consumer could not keep up. CloseErr is the
+		// only thing that can tell them apart.
 		rep.Pass = false
-		fmt.Fprintf(report, "[checkpoint %d] FAIL: fresh catch-up never reached sequence %d within %s — drained %d envelopes (head %d), so any fold difference below is a TRUNCATED replay, not a divergence\n",
-			rep.Checkpoints, target, freshCatchUpTimeout, len(freshHistory), highestSequence(freshHistory))
+		fmt.Fprintf(report, "[checkpoint %d] FAIL: fresh catch-up never reached sequence %d within %s total across up to %d dials — drained %d envelopes (head %d), so any fold difference below is a TRUNCATED replay, not a divergence\n",
+			rep.Checkpoints, target, freshCatchUpTimeout, freshCatchUpAttempts, len(freshHistory), highestSequence(freshHistory))
 	}
 
 	freshState, err := Fold(freshHistory)
@@ -478,6 +481,11 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 // the silence window — which is why a slow runner looked like a fold bug.
 const freshCatchUpTimeout = 30 * time.Second
 
+// freshCatchUpAttempts bounds the overflow-resume loop. Each attempt must make
+// forward progress or the loop stops anyway, so this is a backstop against a
+// connection that overflows instantly and forever, not a retry budget.
+const freshCatchUpAttempts = 8
+
 // highestSequence returns the largest sequence in a history, or 0 if empty.
 func highestSequence(envs []*vttv1.Envelope) int64 {
 	var head int64
@@ -498,6 +506,74 @@ func highestSequence(envs []*vttv1.Envelope) int64 {
 // bug this replaced. A head of 0 (an empty observer history) is reached
 // immediately, which degrades this to the old quiescent drain — correctly, as
 // there is then nothing to catch up to.
+// drainFreshCatchUp replays the whole log into a fresh connection, RESUMING
+// across the overflow disconnects the client is designed to produce.
+//
+// eventBuffer bounds Events() at the same 256 the gateway uses, and
+// deliverEvent tears the connection down rather than blocking when it fills —
+// deliberately, since this side cannot tell the server to slow down. The
+// documented recovery is the CALLER'S: "Dial again with a fresh `after`
+// cursor." This is the soak implementing that contract. NOTE it covers the
+// CLIENT-side overflow only: a store/gateway-side overflow closes the socket
+// outright and surfaces as a plain read error, which this deliberately does
+// not resume from. Unreachable here (Store.Subscribe sizes its channel to
+// len(history)+buffer, and the soak's main loop is blocked during a
+// checkpoint), but the distinction is real.
+//
+// It did not, before 2026-08-04. It dialled once, was disconnected at 257
+// envelopes of 480 (the buffer plus the one in flight), and reported the short
+// history as "incremental fold (480) != fresh catch-up fold (257)" — rebuild
+// != live, the keystone claim of the whole event-sourcing design, appearing to
+// fail when it had not. A false alarm there is worse than a flake: it sends
+// someone hunting a fold divergence that does not exist.
+//
+// The resume cursor is the last sequence actually RECEIVED, not the target:
+// re-dialling from 0 would double-count and from anything ahead would lose
+// envelopes silently. Attempts are bounded so a connection that overflows
+// immediately, forever, fails as a real failure rather than spinning.
+func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+	var all []*vttv1.Envelope
+	after := int64(0)
+	// ONE budget for the whole catch-up, not one per attempt. Per-attempt,
+	// eight attempts could spend 8*30s inside a single checkpoint and five
+	// checkpoints could exceed `go test`'s 10-minute package default -- which
+	// would replace an honest "[checkpoint N] FAIL" line with `panic: test
+	// timed out` and no SoakReport at all, the same class of confusing failure
+	// this function exists to remove. The attempt cap is the backstop; the
+	// clock is the bound.
+	deadline := time.Now().Add(timeout)
+	for attempt := 0; attempt < freshCatchUpAttempts; attempt++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return all, false
+		}
+		conn, err := dial(soakObserverName, after)
+		if err != nil {
+			return all, false
+		}
+		got, reached := drainToSequence(conn.Events(), target, window, remaining)
+		overflowed := errors.Is(conn.CloseErr(), ErrEventsOverflow)
+		_ = conn.Close()
+
+		all = append(all, got...)
+		if reached {
+			return all, true
+		}
+		if !overflowed {
+			// Ended for some other reason (or simply ran out of time); a
+			// re-dial would not change that and would only mask it.
+			return all, false
+		}
+		next := highestSequence(all)
+		if next <= after {
+			// No forward progress — re-dialling the same cursor would spin.
+			return all, false
+		}
+		after = next
+	}
+	return all, false
+}
+
 func drainToSequence(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
