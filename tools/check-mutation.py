@@ -327,16 +327,16 @@ def unresolvable_packages(packages, root="."):
 # — that is the entire point of recording it. A bare "we know about this one"
 # would let the next person gate a package this entry already forbids.
 ALLOWED_SYMLINKS = {
-    "scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush":
-        "Points at adventures/goblin-ambush so a single-ruleset adventures dir "
-        "exists without duplicating the adventure (docs/superpowers/plans/"
-        "2026-07-26-client.md:718: `serve --adventures-dir ./adventures` cannot "
-        "boot, the two committed adventures declare different rulesets). "
-        "CONSEQUENCE: cmd/vtt CANNOT be gated while this stands. Its scenario "
-        "tests boot a server against this directory, which is EMPTY in the "
-        "copy, so they fail under every mutant and every mutant is scored "
-        "KILLED. No package under internal/ reads this path, which is why the "
-        "ten gated packages are unaffected — verified 2026-08-05, not assumed.",
+    # Empty, and that is the healthy state. The repo carried exactly one
+    # tracked symlink — scenarios/testdata/dnd45e-minimal-adventures/
+    # goblin-ambush — which existed only because `serve --adventures-dir
+    # ./adventures` could not boot a mixed-ruleset library. loadAdventuresDir
+    # now selects by ruleset, so the fixture is gone and cmd/vtt's tests no
+    # longer depend on a path gremlins drops.
+    #
+    # An entry here must name which packages the symlink makes unmeasurable;
+    # that is the whole point of recording one rather than merely tolerating
+    # it. Prefer removing the symlink to adding an entry.
 }
 
 # Not part of the Go module, and node_modules is full of symlinks: walking it

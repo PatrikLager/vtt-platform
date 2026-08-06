@@ -44,11 +44,13 @@ func goblinAmbushAdventureDir(t *testing.T) string {
 // symlinks), not DirEntry.IsDir() alone (which reports a symlink's OWN
 // type, ModeSymlink, never ModeDir, even when it points at a real
 // directory — confirmed against Go's os.ReadDir semantics). This is the
-// mechanism scenarios/adventure-night.json's own adventures dir
-// (scenarios/testdata/dnd45e-minimal-adventures/) relies on: a per-table,
-// single-ruleset adventures directory built from symlinks into the real,
-// single committed adventures/ tree — no content duplication, no risk of a
+// mechanism an operator uses to compose a per-table adventures directory
+// from symlinks into a shared tree — no content duplication, no risk of a
 // forked copy drifting from the source of truth.
+//
+// This repo no longer ships such a fixture (loadAdventuresDir selects by
+// ruleset instead, 2026-08-06), so the behaviour is pinned here rather than
+// exercised incidentally by scenarios/adventure-night.json.
 func TestLoadAdventuresDirFollowsSymlinkedAdventureDirectories(t *testing.T) {
 	rs := loadDnd45eMinimalForCmd(t)
 	realDir := goblinAmbushAdventureDir(t)
@@ -166,39 +168,6 @@ func TestLoadAdventuresDirDuplicateManifestIDIsBootError(t *testing.T) {
 	}
 }
 
-// TestLoadAdventuresDirRulesetMismatchFailsLoud covers the boot-time
-// binding: a subdirectory declaring a DIFFERENT ruleset than the one
-// passed in fails the whole call, naming the file+field (adventure.Load's
-// own error, propagated verbatim — see loadAdventuresDir's doc comment).
-func TestLoadAdventuresDirRulesetMismatchFailsLoud(t *testing.T) {
-	root, err := findRepoRoot()
-	if err != nil {
-		t.Fatalf("findRepoRoot: %v", err)
-	}
-	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
-	if err != nil {
-		t.Fatalf("resolveRulesetDir: %v", err)
-	}
-	rs, err := rules.Load(rulesetDir)
-	if err != nil {
-		t.Fatalf("rules.Load: %v", err)
-	}
-
-	dir := t.TempDir()
-	// cellar-rats declares ruleset "tavern-brawl", not "dnd45e-minimal".
-	if err := os.Symlink(filepath.Join(root, "adventures", "cellar-rats"), filepath.Join(dir, "cellar-rats")); err != nil {
-		t.Fatalf("Symlink: %v", err)
-	}
-
-	_, err = loadAdventuresDir(dir, rs)
-	if err == nil {
-		t.Fatal("want an error loading an adventure that declares a different ruleset")
-	}
-	if !strings.Contains(err.Error(), "ruleset") {
-		t.Fatalf("error = %q, want it to name the ruleset mismatch", err.Error())
-	}
-}
-
 // TestLoadAdventureGuidesReadsRealGuideContent proves loadAdventureGuides
 // reads each adventure's guide.md content, keyed by adventure id.
 func TestLoadAdventureGuidesReadsRealGuideContent(t *testing.T) {
@@ -267,5 +236,117 @@ func TestLoadAdventureGuidesRejectsEmptyGuide(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("error = %q, want it to name the empty guide", err.Error())
+	}
+}
+
+// --- selecting by ruleset ---------------------------------------------------
+//
+// AMENDED BINDING (Patrik, 2026-08-06). The P12 plan bound this the other way:
+// "adventures with a DIFFERENT ruleset id than served: boot error too — the
+// dir is for THIS table". In practice that made the repo's own ./adventures
+// unbootable — cellar-rats declares tavern-brawl, goblin-ambush declares
+// dnd45e-minimal — so a symlinked single-ruleset fixture existed purely to
+// work around it, and THAT symlink is dropped by gremlins' workdir copy, which
+// is what made cmd/vtt unmeasurable (tools/mutation-scope.md).
+//
+// The dir is now a library: serve what is for this table, skip what is not.
+// The property fix-wave F4 protects is kept — zero adventures loaded is still
+// a boot error — so the silent case is narrowed to "some matched", never "none
+// did", and the error names the served ruleset so the operator can see why.
+
+func TestLoadAdventuresDirServesOnlyWhatIsForThisTable(t *testing.T) {
+	rs := loadDnd45eMinimalForCmd(t)
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("findRepoRoot: %v", err)
+	}
+
+	// The REAL committed library, which is genuinely mixed: goblin-ambush
+	// declares dnd45e-minimal, cellar-rats declares tavern-brawl. This is the
+	// exact directory the "serve --adventures-dir ./adventures cannot boot"
+	// carry-forward was about.
+	advs, err := loadAdventuresDir(filepath.Join(root, "adventures"), rs)
+	if err != nil {
+		t.Fatalf("loadAdventuresDir: %v — a mixed library must serve its matching adventures, not refuse to boot", err)
+	}
+	if len(advs) != 1 {
+		t.Fatalf("got %d adventures, want only the dnd45e-minimal one: %v", len(advs), advs)
+	}
+	if _, ok := advs["goblin-ambush"]; !ok {
+		t.Fatalf("want goblin-ambush served, got %v", advs)
+	}
+	if _, ok := advs["cellar-rats"]; ok {
+		t.Fatal("cellar-rats declares tavern-brawl and must NOT be served to a dnd45e-minimal table")
+	}
+}
+
+func TestLoadAdventuresDirFailsLoudWhenNothingIsForThisTable(t *testing.T) {
+	// The F4 property, preserved. Skipping is a library affordance, not a
+	// licence to boot a table with nothing on it — and the message must say
+	// WHICH ruleset found no adventures, or the operator sees only "no
+	// adventures" for a directory that visibly contains some.
+	rs := loadDnd45eMinimalForCmd(t)
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("findRepoRoot: %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(root, "adventures", "cellar-rats"), filepath.Join(dir, "cellar-rats")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	_, err = loadAdventuresDir(dir, rs)
+	if err == nil {
+		t.Fatal("want a boot error: nothing in the dir is for the served ruleset")
+	}
+	if !strings.Contains(err.Error(), "dnd45e-minimal") {
+		t.Fatalf("error = %q, want it to name the served ruleset that matched nothing", err)
+	}
+	// Naming the ruleset is not enough on its own: the PROPAGATED mismatch
+	// error also contains "dnd45e-minimal" ("...but the served ruleset is
+	// ..."), so without this the test passes just as happily when the skip
+	// never happened and the mismatch simply bubbled up. Pin the branch, not
+	// a substring both branches share.
+	if !strings.Contains(err.Error(), "skipped:") {
+		t.Fatalf("error = %q — that is the mismatch propagating, not the empty-library branch; "+
+			"the F4 property this test claims to pin was never exercised", err)
+	}
+}
+
+func TestLoadAdventuresDirStillFailsLoudOnAMalformedAdventure(t *testing.T) {
+	// The distinction the sentinel exists for, and the one a weaker test
+	// misses: the library ALSO contains a perfectly good adventure, so a
+	// "skip everything that fails to load" bug would boot happily serving it
+	// while the broken one vanished. Asserting merely "an error" cannot see
+	// that — an empty library errors too, for an entirely different reason.
+	rs := loadDnd45eMinimalForCmd(t)
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("findRepoRoot: %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(root, "adventures", "goblin-ambush"),
+		filepath.Join(dir, "goblin-ambush")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	broken := filepath.Join(dir, "broken")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "adventure.json"),
+		[]byte(`{"ruleset":"dnd45e-minimal"`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err = loadAdventuresDir(dir, rs)
+	if err == nil {
+		t.Fatal("want a boot error: a malformed adventure must not be silently skipped " +
+			"just because another adventure loaded fine")
+	}
+	if strings.Contains(err.Error(), "no adventures") {
+		t.Fatalf("error = %q — that is the EMPTY-library message; the malformed adventure "+
+			"was skipped rather than reported", err)
 	}
 }

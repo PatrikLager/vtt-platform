@@ -35,7 +35,6 @@
   "concurrency": 4,
   "timeoutMS": 20000,
   "ignorePatterns": [
-    "scenarios/testdata/**",
     "test-results/**",
     "playwright-report/**",
     "client/e2e/.artifacts/**",

@@ -188,14 +188,20 @@ func TestServeEmptyAdventuresDirFailsLoudBeforeListening(t *testing.T) {
 	}
 }
 
-// TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening
-// covers the spec §7 binding literally: "adventures declaring a different
-// ruleset than served = boot error too — the dir is for THIS table." The
-// real, committed adventures/cellar-rats declares ruleset "tavern-brawl";
-// serving with --ruleset dnd45e-minimal must reject it at boot, naming the
-// mismatch (adventure.Load's own ruleset-id-match error, propagated
-// verbatim through loadAdventuresDir/composeServer).
-func TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening(t *testing.T) {
+// TestServeBootsAMixedAdventuresDirServingOnlyThisTable replaces a test that
+// asserted the OPPOSITE, and the reversal is deliberate.
+//
+// The P12 plan bound it: "adventures with a DIFFERENT ruleset id than served:
+// boot error too — the dir is for THIS table". In practice that made the
+// repo's own ./adventures unbootable (cellar-rats declares tavern-brawl,
+// goblin-ambush declares dnd45e-minimal), which is why a symlinked
+// single-ruleset fixture existed at all — and that symlink is the one
+// gremlins' workdir copy drops, which is what made cmd/vtt unmeasurable.
+//
+// AMENDED by Patrik 2026-08-06: an adventures dir is a LIBRARY. Serve what is
+// written for this table, skip what is not, and still fail loud when nothing
+// matches (loadAdventuresDir's own tests cover that side).
+func TestServeBootsAMixedAdventuresDirServingOnlyThisTable(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 	rulesetDir, err := resolveRulesetDir("dnd45e-minimal")
 	if err != nil {
@@ -206,13 +212,18 @@ func TestServeAdventureDeclaringDifferentRulesetFailsLoudBeforeListening(t *test
 		t.Fatalf("findRepoRoot: %v", err)
 	}
 
-	_, err = runCLI(t, "serve", "--campaign", campaignPath, "--ruleset", rulesetDir,
-		"--adventures-dir", filepath.Join(root, "adventures"))
-	if err == nil {
-		t.Fatal("want error serving --adventures-dir adventures/ (mixed rulesets) against --ruleset dnd45e-minimal")
+	// Port 0: compose and tear down without ever occupying a real port. An
+	// earlier version of this test drove the full `serve` command, which
+	// under the amended binding no longer fails — so it BOOTED and blocked
+	// the suite on :8080 until it was killed.
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir,
+		filepath.Join(root, "adventures"))
+	if err != nil {
+		t.Fatalf("composeServer against the real mixed adventures/ = %v; "+
+			"a library holding one adventure for another table must still boot", err)
 	}
-	if !strings.Contains(err.Error(), "ruleset") {
-		t.Fatalf("error = %q, want it to name the ruleset mismatch", err.Error())
+	if err := closeFn(); err != nil {
+		t.Fatalf("closeFn: %v", err)
 	}
 }
 

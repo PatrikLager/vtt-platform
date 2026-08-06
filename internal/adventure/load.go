@@ -2,6 +2,7 @@ package adventure
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,8 +60,13 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		return nil, err
 	}
 	if manifest.Ruleset != rs.ID {
-		return nil, fieldErr(filepath.Join(dir, "adventure.json"), "ruleset",
-			fmt.Sprintf("declares ruleset %q, but the served ruleset is %q", manifest.Ruleset, rs.ID))
+		// The existing wording is preserved verbatim — it is what a boot
+		// failure prints — and ErrRulesetMismatch is appended so a caller
+		// reading a MULTI-TABLE directory can skip this adventure without
+		// matching on the sentence. Every other error from Load means the
+		// adventure is malformed and must still fail loud.
+		return nil, fmt.Errorf("adventure: %s: field %q: declares ruleset %q, but the served ruleset is %q (%w)",
+			filepath.Join(dir, "adventure.json"), "ruleset", manifest.Ruleset, rs.ID, ErrRulesetMismatch)
 	}
 	if len(manifest.OpeningNarration) == 0 {
 		return nil, fieldErr(filepath.Join(dir, "adventure.json"), "opening_narration", "must not be empty")
@@ -385,6 +391,10 @@ func decodeStrict(path string, v any) error {
 func decodeStrictSlice(path string, v any) error {
 	return decodeStrict(path, v)
 }
+
+// ErrRulesetMismatch marks the one load failure a caller may act on rather
+// than surface: the adventure is well-formed but written for another table.
+var ErrRulesetMismatch = errors.New("not written for the served ruleset")
 
 // fieldErr builds a load error naming both the offending file and field.
 func fieldErr(path, field, msg string) error {

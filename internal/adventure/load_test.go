@@ -1,6 +1,7 @@
 package adventure_test
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -412,5 +413,96 @@ func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	}
 	if rv, ok := adv.Actors[0].Resources["focus"]; !ok || rv.Max != 0 || rv.Current != 7 {
 		t.Errorf("want focus current=7 max=0 (0 meaning unlimited), got %+v ok=%v", rv, ok)
+	}
+}
+
+// A ruleset mismatch is the one load failure a CALLER may reasonably want to
+// act on rather than surface. `vtt serve --adventures-dir` reads a directory
+// that can legitimately hold adventures for several tables, and needs to tell
+// "this one is not for the served ruleset" apart from "this one is broken" —
+// every other load error means the adventure itself is malformed.
+//
+// Without a sentinel the only way to make that distinction is matching on the
+// message text, which is how a reword quietly turns a skip into a boot failure
+// or, worse, the reverse.
+func TestRulesetMismatchIsDistinguishableFromAMalformedAdventure(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, `{
+		"id": "elsewhere",
+		"name": "Elsewhere",
+		"format_version": "1",
+		"ruleset": "some-other-table",
+		"opening_narration": "Not for this table."
+	}`)
+
+	_, err := adventure.Load(dir, loadFixtureRuleset(t))
+	if err == nil {
+		t.Fatal("want an error: the manifest names a different ruleset")
+	}
+	if !errors.Is(err, adventure.ErrRulesetMismatch) {
+		t.Fatalf("want errors.Is(err, ErrRulesetMismatch), got %v", err)
+	}
+	// The sentinel is for callers; the text is for whoever reads the boot
+	// failure, and must keep naming BOTH sides.
+	if !strings.Contains(err.Error(), "some-other-table") || !strings.Contains(err.Error(), "proving-grounds-mini") {
+		t.Fatalf("want both ruleset ids in the message, got %q", err)
+	}
+}
+
+func TestAMalformedAdventureIsNotReportedAsARulesetMismatch(t *testing.T) {
+	// The other side, and the one that matters: a caller that SKIPS mismatches
+	// must not thereby skip broken adventures. If the sentinel leaked onto
+	// unrelated failures, a corrupt adventure would vanish from the table
+	// instead of failing the boot.
+	dir := t.TempDir()
+	writeManifest(t, dir, `{"id": "", "ruleset": "proving-grounds-mini"}`)
+
+	_, err := adventure.Load(dir, loadFixtureRuleset(t))
+	if err == nil {
+		t.Fatal("want an error for a malformed manifest")
+	}
+	if errors.Is(err, adventure.ErrRulesetMismatch) {
+		t.Fatalf("a malformed manifest is not a ruleset mismatch, got %v", err)
+	}
+}
+
+// An adventure that FORGETS to declare a ruleset must not be mistaken for one
+// written for another table.
+//
+// loadManifest's `raw.Ruleset == ""` guard is what separates them, and that
+// guard only became load-bearing when callers started SKIPPING mismatches: an
+// empty string compares unequal to every real ruleset id, so without the guard
+// a manifest missing the key produces the sentinel and gets silently dropped
+// from the library at boot — the one outcome selecting-by-ruleset must never
+// produce. Before the skip existed, deleting the guard was cosmetic (both
+// paths were boot errors differing only in wording), so nothing pinned it.
+func TestAMissingRulesetKeyIsAMalformedAdventureNotAMismatch(t *testing.T) {
+	for name, body := range map[string]string{
+		"key absent":  `{"id": "nameless", "name": "Nameless", "format_version": "1", "opening_narration": "x"}`,
+		"empty value": `{"id": "nameless", "name": "Nameless", "format_version": "1", "ruleset": "", "opening_narration": "x"}`,
+		"null value":  `{"id": "nameless", "name": "Nameless", "format_version": "1", "ruleset": null, "opening_narration": "x"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeManifest(t, dir, body)
+
+			_, err := adventure.Load(dir, loadFixtureRuleset(t))
+			if err == nil {
+				t.Fatal("want an error: the manifest declares no ruleset")
+			}
+			if errors.Is(err, adventure.ErrRulesetMismatch) {
+				t.Fatalf("an undeclared ruleset is MALFORMED, not a mismatch — as a mismatch it "+
+					"would be skipped and vanish from the library. got %v", err)
+			}
+		})
+	}
+}
+
+// writeManifest drops a bare adventure.json into dir — enough to reach Load's
+// ruleset check, which runs immediately after the manifest decodes.
+func writeManifest(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "adventure.json"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 }

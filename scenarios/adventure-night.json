@@ -1,7 +1,7 @@
 {
   "name": "adventure-night",
   "ruleset": "dnd45e-minimal",
-  "adventures": "scenarios/testdata/dnd45e-minimal-adventures",
+  "adventures": "adventures",
   "participants": [
     {"name": "dm", "role": "dm"},
     {"name": "player", "role": "player"},
