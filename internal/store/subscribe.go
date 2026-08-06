@@ -28,9 +28,25 @@ import (
 // and `pending` has no cap: measured during review, such a consumer was still
 // live after 9m40s holding 380 undelivered events. That is the intended
 // SEMANTIC — a slow-but-alive client must not be severed, which is the whole
-// point — but it is not a memory bound, and this comment previously claimed it
-// was. A ceiling sized by memory (far above any adventure) is the missing
-// piece; it is deliberately not a ceiling sized by content.
+// point — but it is not a memory bound, and an earlier version of this comment
+// wrongly claimed it was.
+//
+// ADJUDICATED 2026-08-06 (Patrik): leave it. No ceiling, and the timer keeps
+// measuring time-since-last-delivery rather than time-since-last-caught-up.
+// The gap is theoretical. Production is human table actions — a few commands
+// per second at peak against envelopes whose text fields cap at 8192 bytes —
+// so a client that cannot drain a few KB/s is not a slow link but an app that
+// has stopped working while its socket stays open, and THAT case this timer
+// already reaps. The cost if one existed is small besides: `pending` holds
+// shared *vttv1.Envelope pointers, the same ones every other subscriber was
+// handed, so a stalled client costs 8 bytes per event plus keeping those
+// envelopes alive.
+//
+// Do not add a cap here without a measured case. A threshold defending against
+// a client profile that does not occur is how the ceiling this whole change
+// removed got there in the first place. If the policy ever becomes "we do not
+// accept clients that cannot keep up", the change is to time how long the
+// queue has been continuously NON-EMPTY — not to bound its size.
 //
 // 30s, chosen against the closest prior art: MapTool
 // (net.rptools.clientserver) settles the same question the same way — an
