@@ -50,16 +50,16 @@ internal/engine  apply.go:147:15  CONDITIONALS_BOUNDARY
 internal/engine  apply.go:150:30  CONDITIONALS_BOUNDARY
     `computed > int64(res.Max)` -> `>=`: when computed == Max the branch assigns Max, the value it already holds. Same reasoning as above. NOTE the sibling `res.Max > 0` on this line is NOT equivalent and IS killed — apply_test.go pins "max == 0 means unlimited".
 
-internal/campaign  campaign.go:447:55  ARITHMETIC_BASE
+internal/campaign  campaign.go:448:55  ARITHMETIC_BASE
     Map CAPACITY HINT: `make(map[int64]bool, len(already)+int(to-from)+1)`. The hint affects only initial allocation — maps grow as needed and no read distinguishes a different starting capacity. NOTE these mutations can make the hint NEGATIVE with ordinary inputs (len(already)=0, from=1, to=10 gives -8): the Go SPEC says a negative size panics at run time, but gc does not implement that for maps (verified: make(map[int64]bool, -1000) is fine) though it does for slices. So this verdict holds on gc and only on gc.
 
-internal/campaign  campaign.go:447:62  ARITHMETIC_BASE
+internal/campaign  campaign.go:448:62  ARITHMETIC_BASE
     Same capacity hint, different operand. Unobservable for the same reason, including the negative-hint caveat above.
 
-internal/campaign  campaign.go:447:62  INVERT_NEGATIVES
+internal/campaign  campaign.go:448:62  INVERT_NEGATIVES
     Same capacity hint. Unobservable for the same reason, including the negative-hint caveat above.
 
-internal/campaign  campaign.go:447:68  ARITHMETIC_BASE
+internal/campaign  campaign.go:448:68  ARITHMETIC_BASE
     Same capacity hint, the trailing `+1` (can reach -1 when from==to). Unobservable for the same reason, including the negative-hint caveat above.
 
 internal/mcp  read_tools.go:218:11  CONDITIONALS_BOUNDARY

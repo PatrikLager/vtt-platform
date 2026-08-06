@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -507,13 +508,20 @@ func (c *Campaign) State() *engine.State {
 // suspect.
 // The third return value is the catch-up head — see Store.Subscribe.
 func (c *Campaign) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), int64, error) {
+	return c.SubscribeWithNoProgressTimeout(afterSeq, buffer, 0)
+}
+
+// SubscribeWithNoProgressTimeout is Subscribe with an explicit liveness budget
+// — see store.Store.SubscribeWithNoProgressTimeout. A non-positive noProgress
+// means the store's default.
+func (c *Campaign) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (<-chan *vttv1.Envelope, func(), int64, error) {
 	c.mu.Lock()
 	poisoned := c.poisoned
 	c.mu.Unlock()
 	if poisoned {
 		return nil, nil, 0, errPoisoned
 	}
-	return c.log.Subscribe(afterSeq, buffer)
+	return c.log.SubscribeWithNoProgressTimeout(afterSeq, buffer, noProgress)
 }
 
 func (c *Campaign) Close() error {

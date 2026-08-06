@@ -2,9 +2,11 @@ package store_test
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
 func recv(t *testing.T, ch <-chan *vttv1.Envelope) *vttv1.Envelope {
@@ -42,35 +44,67 @@ func TestSubscribeCatchUpThenLive(t *testing.T) {
 	}
 }
 
-func TestSubscribeOverflowClosesThatSubscriberOnly(t *testing.T) {
-	s := openTemp(t)
-	small, cancelSmall, _, _ := s.Subscribe(0, 1)
-	defer cancelSmall()
-	big, cancelBig, _, _ := s.Subscribe(0, 16)
-	defer cancelBig()
+// TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber is the successor to
+// TestSubscribeOverflowClosesThatSubscriberOnly, which asserted the same
+// isolation property under a trigger that no longer exists.
+//
+// That test filled a cap-1 channel and expected the subscriber closed within
+// two seconds, because ANY live event finding the channel full dropped it
+// immediately. Depth is no longer the trigger — a batch bigger than the buffer
+// used to sever even a subscriber reading as fast as it possibly could, since
+// notifyLocked delivers under the store lock and leaves no window to drain.
+// The isolation claim survives verbatim; only the reason a subscriber is cut
+// loose has changed, from "is behind" to "is not reading".
+func TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := openTemp(t)
+		wedged, cancelWedged, _, _ := s.Subscribe(0, 1)
+		defer cancelWedged()
+		healthy, cancelHealthy, _, _ := s.Subscribe(0, 16)
+		defer cancelHealthy()
 
-	for i := 0; i < 4; i++ {
-		env := newEnv(string(rune('a' + i)))
+		for i := range 4 {
+			env := newEnv(string(rune('a' + i)))
+			s.Append(env)
+			s.Notify(env)
+		}
+
+		// The healthy subscriber reads everything, and reading is progress —
+		// so it must survive however long the wedged one takes to be reaped.
+		for i := range 4 {
+			if got := recv(t, healthy); got.EventId != string(rune('a'+i)) {
+				t.Fatalf("healthy event %d = %q", i, got.EventId)
+			}
+		}
+
+		time.Sleep(store.SubscriberNoProgressTimeout + time.Second)
+		synctest.Wait()
+
+		closed := false
+		for range 16 {
+			select {
+			case _, ok := <-wedged:
+				if !ok {
+					closed = true
+				}
+			default:
+			}
+			if closed {
+				break
+			}
+		}
+		if !closed {
+			t.Fatal("the subscriber that never read must be dropped once the no-progress timeout elapses")
+		}
+
+		// And the healthy one is still live afterwards.
+		env := newEnv("after")
 		s.Append(env)
 		s.Notify(env)
-	}
-	// small (cap 1, never drained) must end CLOSED; drain to find closure.
-	deadline := time.After(2 * time.Second)
-	closed := false
-	for !closed {
-		select {
-		case _, ok := <-small:
-			if !ok {
-				closed = true
-			}
-		case <-deadline:
-			t.Fatal("small subscriber never closed on overflow")
+		if got := recv(t, healthy); got.EventId != "after" {
+			t.Fatalf("healthy subscriber = %q, want it still delivering after its peer was reaped", got.EventId)
 		}
-	}
-	// big subscriber unaffected: sees all 4.
-	for i := 0; i < 4; i++ {
-		recv(t, big)
-	}
+	})
 }
 
 // TestSubscribeAcceptsZeroBuffer pins the boundary of Subscribe's guard:

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -18,20 +19,35 @@ import (
 )
 
 // gatewayBuffer is Server.buffer's default (New sets it; see that field's
-// doc comment for the test-only override seam). It bounds the live portion
-// of every connection's campaign.Subscribe channel, beyond whatever
-// catch-up backlog that connection's `after` cursor requires
-// (store.Store.Subscribe sizes the channel to len(history)+buffer). It also
-// sizes the per-connection outbound byte channel in serve, for the same
-// reason. A connection that falls more than buffer live events behind has
-// ONLY ITS OWN channel closed by the store (internal/store/subscribe.go's
-// notifyLocked overflow branch) — no other connection is affected — and
-// serve force-closes that connection's socket in turn (see the pump
+// doc comment for the test-only override seam). It sizes the hand-off channel
+// store.Store.Subscribe hands back, and the per-connection outbound byte
+// channel in serve.
+//
+// It is NOT a limit on how far behind a connection may fall — that reading was
+// the bug. The store used to drop any subscriber whose channel filled, which
+// an atomic batch larger than this could trigger regardless of how fast the
+// client was reading, making this constant a ceiling on adventure size. The
+// store now queues per subscriber and drops only on no progress
+// (gatewayNoProgress). This is slack for bursty readers, nothing more (see the pump
 // goroutine below) so the client observes the disconnect and can reconnect
 // with a fresh `after` cursor; the log is always the source of truth for
 // whatever was missed. 256 is generous headroom for one connection's
 // fan-out lag under normal load.
 const gatewayBuffer = 256
+
+// gatewayNoProgress is Server.noProgress's default: how long a connection may
+// fail to accept a frame before the server stops waiting on it.
+//
+// It bounds the store's per-subscriber queue
+// (store.SubscriberNoProgressTimeout — kept numerically in step with this
+// deliberately; gateway does not import store). Once that budget elapses the
+// store closes the subscription, and the pump below force-closes the socket.
+//
+// Prior art: MapTool (net.rptools.clientserver) bounds its per-connection
+// queue not at all and detects a departed client purely with a socket timeout
+// — one minute, against a 20s client heartbeat. We have no such deadline on
+// conn.Write; see the pump's note on the window that leaves open.
+const gatewayNoProgress = 30 * time.Second
 
 // maxWSFrameBytes is the per-connection websocket message read limit,
 // pinned explicitly via conn.SetReadLimit in handleWS below (amendment-
@@ -65,6 +81,29 @@ type Server struct {
 	// to make the overflow-closes-the-socket behavior deterministically
 	// testable without appending gatewayBuffer+ events.
 	buffer int
+
+	// noProgress is how long a connection may fail to consume a waiting
+	// envelope before the store cuts its subscription loose — after which
+	// serveWS force-closes the socket rather than leaving a zombie. Zero means
+	// store.SubscriberNoProgressTimeout. Unexported and settable like buffer,
+	// because the gateway's own tests need a budget shorter than a wall-clock
+	// half-minute.
+	noProgress time.Duration
+
+	// writeTimeout bounds a single conn.Write. SEPARATE from noProgress on
+	// purpose: they are different policies at different layers, and conflating
+	// them makes the socket path untestable. noProgress governs the store's
+	// queue ("is this subscriber consuming?"); writeTimeout governs the socket
+	// ("can this client still take bytes?"). With one knob the store always
+	// drops first, so the write path can never be exercised in isolation —
+	// which is exactly how its absence went unnoticed.
+	writeTimeout time.Duration
+
+	// onServeDone, when set, fires as each connection's serve returns. Nil in
+	// production; it exists because "the server tore this connection down" is
+	// otherwise unobservable from a client that is deliberately not reading —
+	// and not reading is the whole precondition of the case it pins.
+	onServeDone func()
 
 	// ruleset/roller are OPTIONAL server config (ruleset-interpreter Task
 	// 6): nil ruleset is today's behavior, unchanged — every command this
@@ -105,7 +144,7 @@ type Server struct {
 // done serving). No ruleset is loaded — use_ability commands are rejected
 // with a clean "no ruleset loaded" error until WithRuleset is called.
 func New(c *campaign.Campaign, ids *identity.DB) *Server {
-	return &Server{campaign: c, ids: ids, buffer: gatewayBuffer}
+	return &Server{campaign: c, ids: ids, buffer: gatewayBuffer, noProgress: gatewayNoProgress, writeTimeout: gatewayNoProgress}
 }
 
 // WithRuleset configures s to resolve use_ability commands against rs,
@@ -231,8 +270,11 @@ func parseAfter(raw string) (int64, error) {
 // interleaved results/events is whatever order they arrive at outCh.
 func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
 	defer func() { _ = conn.CloseNow() }()
+	if s.onServeDone != nil {
+		defer s.onServeDone()
+	}
 
-	events, cancel, catchUpHead, err := s.campaign.Subscribe(after, s.buffer)
+	events, cancel, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(after, s.buffer, s.noProgress)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -243,7 +285,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	go func() {
 		defer close(writerDone)
 		for b := range outCh {
-			if conn.Write(ctx, websocket.MessageText, b) != nil {
+			// Bounded, and load-bearing. A client that stops reading backs
+			// the socket up; without a deadline this parks forever while the
+			// command loop still waits in conn.Read — a connection that is
+			// gone but looks alive, leaking its goroutines and socket.
+			//
+			// It is not belt-and-braces with the pump's post-loop close
+			// below: under the store's no-progress policy a subscriber is
+			// only dropped after making ZERO progress, which means this
+			// writer is parked, which means the pump is parked handing off to
+			// outCh — so by construction the pump is NOT ranging `events`
+			// when they close, and that close cannot be observed. This
+			// deadline is what unwinds it. shutdown() depends on it too: it
+			// waits on pumpDone, which can only come after this returns.
+			//
+			// MapTool does the same thing and only this thing — a socket
+			// timeout, never queue depth (net.rptools.clientserver).
+			wctx, wcancel := context.WithTimeout(ctx, s.writeTimeout)
+			err := conn.Write(wctx, websocket.MessageText, b)
+			wcancel()
+			if err != nil {
 				return
 			}
 		}
@@ -251,12 +312,10 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 
 	// closing is set (by shutdown, below) immediately before it cancels the
 	// subscription as part of a normal, intentional teardown. The pump
-	// goroutine checks it once `events` closes so it can tell that apart
-	// from the store closing `events` UNILATERALLY on overflow
-	// (internal/store/subscribe.go's notifyLocked overflow branch, when
-	// this connection's own subscriber channel fills because the pump
-	// couldn't keep pumping — e.g. it was itself blocked sending to a full
-	// outCh). See the force-close below the loop.
+	// goroutine checks it once `events` closes so it can tell that apart from
+	// the store closing `events` UNILATERALLY — which now means this
+	// connection made no progress for its whole no-progress budget, not that
+	// it briefly fell behind. See the force-close below the loop.
 	// The catch-up head goes out FIRST, before any backlog, so a client knows
 	// what it is waiting for before it starts receiving it.
 	//
@@ -293,6 +352,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
+
 		for env := range events {
 			// Marshaled per connection, deliberately: each pump encodes
 			// straight off its own subscription channel with no shared
@@ -313,13 +373,19 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 				return
 			}
 		}
-		// `events` is closed. If shutdown() didn't do it, the store closed
-		// it unilaterally on overflow — this connection fell behind and
-		// will never receive another broadcast, but the command loop below
-		// is still blocked in conn.Read, unaware anything happened, and
-		// would otherwise sit there looking alive while broadcasts are
-		// silently dead forever. Force the connection closed so that Read
-		// errors out and drives the normal shutdown() path.
+		// `events` is closed. If shutdown() didn't do it, the store dropped
+		// this subscription — this connection will never receive another
+		// broadcast, but the command loop below is still blocked in
+		// conn.Read, unaware anything happened, and would otherwise sit there
+		// looking alive while broadcasts are silently dead forever. Force the
+		// connection closed so that Read errors out and drives the normal
+		// shutdown() path.
+		//
+		// Reached when the pump was IDLE at the close — a client that kept up
+		// until its subscription ended. A WEDGED one exits through the writer
+		// path instead, and needs nothing here: coder/websocket fails the
+		// connection when a write errors, so conn.Read below returns and
+		// serve unwinds on its own. Verified by injection, not assumed.
 		if !closing.Load() {
 			_ = conn.CloseNow()
 		}
