@@ -17,7 +17,11 @@ import (
 // binding, mirroring the MCP flag precedent — cmd/vtt/mcp.go requires the
 // same pairing for get_adventure_guide): every adventure declares the
 // ruleset id it was written for, and Load validates that declaration
-// against "the served ruleset" (spec §7 — "the dir is for THIS table"). With
+// against "the served ruleset" (spec §7, "Load-time validation"). The
+// pairing requirement is unchanged; the phrase this used to cite — "the dir
+// is for THIS table" — lived in the PLAN, not the spec, and is the half of
+// that binding retired on 2026-08-06 when loadAdventuresDir began selecting
+// by ruleset rather than refusing to boot. With
 // no ruleset configured for serve at all, there is no served ruleset to
 // validate against, so the pairing is required rather than silently
 // skipping validation.

@@ -7,22 +7,37 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// loadAdventuresDir loads and validates EVERY immediate subdirectory of dir
-// as an adventure against rs (adventure-format spec §7: "All available
-// adventures load+validate at BOOT... fail loud at startup, not at the
-// table"): a subdirectory that fails to load for any reason — including one
-// declaring a different ruleset id than rs (adventure.Load's own
-// ruleset-id-match check) — fails the WHOLE call, naming the file+field
-// adventure.Load's own error already names. os.ReadDir returns entries
-// sorted by filename, so this walk is deterministic.
+// loadAdventuresDir loads and validates every immediate subdirectory of dir
+// as an adventure against rs (adventure-format spec §7: "All adventures FOR
+// THE SERVED RULESET load+validate at BOOT... fail loud at startup, not at
+// the table").
+//
+// A subdirectory that fails to load fails the WHOLE call, naming the
+// file+field adventure.Load's own error already names — with ONE exception:
+// an adventure declaring a different ruleset id than rs is SKIPPED. The dir
+// is a library, and a library may hold books for other tables.
+//
+// AMENDED 2026-08-06 by Patrik. The original binding (plan
+// 2026-07-26-adventure-format.md:60) made any mismatch a boot error — "the
+// dir is for THIS table" — which left this repo's own ./adventures
+// unbootable and forced a symlinked single-ruleset fixture that gremlins'
+// workdir copy silently drops. Do not "restore consistency" by deleting the
+// skip below: that reinstates both problems. Per-adventure Load still
+// rejects a mismatch outright, because asking for THAT adventure is a
+// mistake; only a directory scan tolerates one.
+//
+// os.ReadDir returns entries sorted by filename, so this walk — and the
+// skipped list in the empty-library error — is deterministic.
 //
 // Each entry's directory-ness is resolved via os.Stat, which FOLLOWS
 // symlinks — deliberately, not os.ReadDir's own DirEntry.IsDir() (which
@@ -31,10 +46,16 @@ import (
 // be composed of symlinks into a shared, single-source-of-truth adventure
 // tree without content duplication — e.g. a per-table adventures directory
 // scoped to one ruleset, built from symlinks into a repo-wide adventures/
-// tree that itself holds adventures for MULTIPLE rulesets (this repo's own
-// scenarios/testdata/dnd45e-minimal-adventures/ fixture, used by
-// scenarios/adventure-night.json, is exactly this shape). A non-directory
-// entry (stray file, or a symlink resolving to one) is silently skipped,
+// tree that itself holds adventures for MULTIPLE rulesets. This repo had
+// exactly such a fixture until 2026-08-06; it is gone, because selecting by
+// ruleset (below) removed the need for it — and because gremlins' workdir
+// copy DROPS symlinks silently, so cmd/vtt's mutants were all false kills for
+// as long as its tests depended on one (tools/mutation-scope.md). The symlink
+// support itself stays: an operator composing a per-table dir this way is a
+// legitimate shape.
+//
+// A non-directory entry (stray file, or a symlink resolving to one) is
+// silently skipped,
 // matching adventure.Load's own jsonFilesIn precedent of ignoring
 // non-matching entries rather than erroring on them; a broken symlink
 // (os.Stat itself failing) is a boot error, same as any other unreadable
@@ -54,6 +75,7 @@ func loadAdventuresDir(dir string, rs *rules.Ruleset) (map[string]*adventure.Adv
 	}
 	out := make(map[string]*adventure.Adventure, len(entries))
 	dirOf := make(map[string]string, len(entries))
+	var skipped []string
 	for _, e := range entries {
 		sub := filepath.Join(dir, e.Name())
 		info, err := os.Stat(sub) // follows symlinks, unlike e.IsDir()
@@ -65,6 +87,19 @@ func loadAdventuresDir(dir string, rs *rules.Ruleset) (map[string]*adventure.Adv
 		}
 		adv, err := adventure.Load(sub, rs)
 		if err != nil {
+			if errors.Is(err, adventure.ErrRulesetMismatch) {
+				// Not for this table. An adventures dir is a LIBRARY, and a
+				// library may hold books for several tables — serve the ones
+				// written for the served ruleset and leave the rest alone.
+				//
+				// Only this error is skippable, and that is the whole reason
+				// internal/adventure exports a sentinel for it: every other
+				// failure means the adventure is MALFORMED, and swallowing
+				// those would drop a broken adventure out of the library
+				// silently instead of failing the boot.
+				skipped = append(skipped, e.Name())
+				continue
+			}
 			return nil, err
 		}
 		if prior, dup := dirOf[adv.ID]; dup {
@@ -81,6 +116,16 @@ func loadAdventuresDir(dir string, rs *rules.Ruleset) (map[string]*adventure.Adv
 	// configured — inconsistent with the NONEXISTENT-dir case just above,
 	// which already fails loud via os.ReadDir's own error.
 	if len(out) == 0 {
+		// Still a boot error (fix-wave F4, spec §7 "fail loud at startup, not
+		// at the table"). Selecting by ruleset narrows the silent case to
+		// "some matched"; it never licenses booting a table with nothing on
+		// it. When entries were skipped, say which ruleset matched none of
+		// them — otherwise the operator reads "contains no adventures" about
+		// a directory they can see is full.
+		if len(skipped) > 0 {
+			return nil, fmt.Errorf("adventures dir %s has no adventures for ruleset %q (skipped: %s)",
+				dir, rs.ID, strings.Join(skipped, ", "))
+		}
 		return nil, fmt.Errorf("adventures dir %s contains no adventures", dir)
 	}
 	return out, nil

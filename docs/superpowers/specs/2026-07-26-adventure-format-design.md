@@ -105,8 +105,14 @@ flees at half hp).
 ## 7. Wiring
 
 - serve: `--adventures-dir` (optional; without it, load_adventure →
-  clean "no adventures available"). All available adventures load+
-  validate at BOOT (fail loud at startup, not at the table).
+  clean "no adventures available"). All adventures FOR THE SERVED RULESET
+  load+validate at BOOT (fail loud at startup, not at the table);
+  adventures declaring another ruleset are skipped, and a directory that
+  yields none for this table is still a boot error naming the ruleset
+  (amended 2026-08-06 — the dir is a library that may hold books for
+  several tables; per-adventure load still rejects a mismatch outright,
+  §"Load-time validation" above, since asking for THAT adventure is a
+  mistake).
 - Gateway authz: load_adventure — dm/agent only (13 commands × 4 roles).
 - MCP: load_adventure auto-appears; `get_adventure_guide{adventure_id}`
   via `vtt mcp --adventures-dir` (startup snapshot, the ruleset-guide

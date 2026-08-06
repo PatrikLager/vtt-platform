@@ -23,11 +23,12 @@ export interface Fixture {
 // specs run under Playwright's Node runner.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
-// Point at the SINGLE-RULESET adventures dir, not ./adventures. The committed
-// adventures declare different rulesets (cellar-rats → tavern-brawl,
-// goblin-ambush → dnd45e-minimal) and loadAdventuresDir rightly refuses the
-// mismatch, so `serve --adventures-dir ./adventures` cannot boot at all.
-const ADVENTURES = join(REPO, "scenarios", "testdata", "dnd45e-minimal-adventures");
+// The real committed library. It holds adventures for more than one table
+// (cellar-rats → tavern-brawl, goblin-ambush → dnd45e-minimal) and
+// loadAdventuresDir serves the ones written for the served ruleset, skipping
+// the rest — so this boots and offers goblin-ambush. It used to point at a
+// symlinked single-ruleset fixture, because the loader refused any mismatch.
+const ADVENTURES = join(REPO, "adventures");
 const RULESET = join(REPO, "rulesets", "dnd45e-minimal");
 
 const STATE = join(tmpdir(), "vtt-e2e-state.json");

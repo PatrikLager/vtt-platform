@@ -23,19 +23,19 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// adventuresFixtureDir resolves the repo's own scenarios/testdata/
-// dnd45e-minimal-adventures/ fixture (a per-table, single-ruleset
-// adventures directory built from a symlink into the real, single
-// committed adventures/goblin-ambush — see adventures.go's
-// loadAdventuresDir doc comment, and scenarios/adventure-night.json which
-// relies on the exact same fixture directory for its own boot).
+// adventuresFixtureDir resolves the repo's real adventures/ library. It is
+// deliberately MIXED — cellar-rats declares tavern-brawl, goblin-ambush
+// declares dnd45e-minimal — so pointing the MCP fixture at it also exercises
+// loadAdventuresDir's ruleset selection on the way in. It used to resolve a
+// symlinked single-ruleset fixture, which existed only because the loader
+// refused any mismatch (see adventures.go's loadAdventuresDir doc comment).
 func adventuresFixtureDir(t *testing.T) string {
 	t.Helper()
 	root, err := findRepoRoot()
 	if err != nil {
 		t.Fatalf("findRepoRoot: %v", err)
 	}
-	return filepath.Join(root, "scenarios", "testdata", "dnd45e-minimal-adventures")
+	return filepath.Join(root, "adventures")
 }
 
 // startMCPFixtureWithRulesetAndAdventures is startMCPFixtureWithRuleset's

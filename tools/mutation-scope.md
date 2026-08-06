@@ -56,9 +56,11 @@ every mutant, exiting 1 — and exit 1 is what gremlins scores as KILLED
 (`getTestFailedStatus`, `executor.go:257`). Perfect efficacy, nothing
 detected.
 
-`scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush` is the repo's only
-TRACKED symlink — the working tree carries 39, but the other 38 are under
-`node_modules`, which the guard does not walk. It exists because `serve --adventures-dir ./adventures` cannot boot —
+`scenarios/testdata/dnd45e-minimal-adventures/goblin-ambush` was the repo's
+only TRACKED symlink. **It was deleted on 2026-08-06** and the tree now has
+none outside `node_modules`, which the guard does not walk — so
+`ALLOWED_SYMLINKS` is empty and `dropped_symlinks` guards a property that
+currently holds rather than excusing a violation. It existed because `serve --adventures-dir ./adventures` could not boot —
 the two committed adventures declare different rulesets
 (`docs/superpowers/plans/2026-07-26-client.md:718`) — so it presents a
 single-ruleset view of one adventure without duplicating it. `cmd/vtt`'s
@@ -80,13 +82,18 @@ unrelated package silently converts the gate to a constant. That is a worse
 foundation than per-package mode even once every symlink is gone.
 
 `dropped_symlinks()` guards it, with `ALLOWED_SYMLINKS` carrying a reason per
-entry that must name the packages the symlink makes unmeasurable. Five fault
+entry that must name the packages the symlink makes unmeasurable. The
+allowlist is EMPTY today: rather than excuse the one symlink, `loadAdventuresDir`
+was changed to select adventures by ruleset (plan amended 2026-08-06), which
+removed the fixture the symlink existed for. Removing a symlink beats
+recording one — an entry is a standing admission that some package cannot be
+measured. Five fault
 injections, each run against the WHOLE suite with a green baseline either side:
 
 | injection | fires |
 |---|---|
 | walk only `filenames`, missing symlinked DIRECTORIES | 5 tests |
-| `ALLOWED_SYMLINKS` emptied | `..._real_tree_carries_no_unrecorded_symlink`, `..._allowlist_is_not_vacuous` |
+| `ALLOWED_SYMLINKS` emptied (2026-08-05, when the tree still had a symlink) | `..._real_tree_carries_no_unrecorded_symlink`, `..._allowlist_is_not_vacuous` — **no longer reproduces**: the symlink was deleted 2026-08-06 and both sides of that comparison are now empty, so emptying the allowlist changes nothing. The row is kept as the evidence that WAS taken, not as a claim about today |
 | reason requirement removed | `..._entry_without_a_reason_is_fatal` |
 | `run()` no longer consults the guard | `..._gate_fails_and_names_the_symlink...` |
 | prune `UNWALKED_DIRS` BEFORE checking | `..._symlink_NAMED_like_a_vendored_dir...` |
@@ -172,9 +179,13 @@ gated (below). What is left out is left out for a stated reason: `harness`
 because its last survivor is killed only ~60% of the time and a probabilistic
 gate is a flaky one; `tools/toolgen` because gremlins cannot resolve `package
 main` in a mismatched directory and scores every mutant a false kill; `cmd/vtt`
-for that reason AND, independently, because its scenario tests read a symlink
-the workdir copy drops (below) — fixing either one alone leaves the other
-producing the same constant verdict.
+for that reason alone as of 2026-08-06. It had TWO independent blockers and
+the second is gone: its scenario tests used to read a symlink the workdir copy
+drops (below), which was fixed by making `loadAdventuresDir` select by ruleset
+so the symlinked fixture could be deleted outright. **`cmd/vtt` is still NOT
+gateable** — `package main` in a directory named `vtt` still resolves to the
+bare module path and scores every mutant a false kill. Fixing one blocker
+never made it measurable; it removed one of two reasons it was not.
 
 That `internal/adventure/conformance` was gated while `internal/adventure` was
 not, for as long as it was, remains the signature of how the list was
@@ -297,9 +308,11 @@ Nothing is currently known about the strength of `cmd/vtt`'s tests. The honest
 statement is that it has never been measured — three times now.
 
 `dropped_symlinks()` guards this, structurally, the same way
-`unresolvable_packages()` guards the first route. Its allowlist entry for this
-symlink names the consequence, so gating `cmd/vtt` is refused in writing rather
-than discovered again.
+`unresolvable_packages()` guards the first route. `ALLOWED_SYMLINKS` is EMPTY:
+rather than record an entry excusing this symlink, the symlink itself was
+removed (2026-08-06). That is the better outcome of the two — an entry is a
+standing admission that some package cannot be measured, and it only stays
+true while nobody edits around it.
 
 ### `internal/rules` — worked down and gated 2026-08-05
 
