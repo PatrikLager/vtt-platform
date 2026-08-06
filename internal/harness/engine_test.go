@@ -721,3 +721,232 @@ func sequencedSend(world map[string]*fakeConn, results []scriptedResult) func(*v
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: r.seq}, nil
 	}
 }
+
+// --- a dead stream is not evidence -----------------------------------------
+
+// A denial passes on ABSENCE: nothing was broadcast to anyone within
+// denialAbsenceWindow. That inference holds only for connections that could
+// have received something. A participant torn down for overflow is silent for
+// an unrelated reason, and counting its silence as proof lets the assertion
+// pass vacuously — under exactly the CI load that makes overflows happen.
+func TestRunScenarioDenialIsUnprovableWhenAParticipantsStreamDied(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		dm.send = denySend("not authorized: token has no controller", world, nil)
+
+		// player was disconnected for reading too slowly before the denial
+		// ran. It is deliberately NOT participant 0: that one is the freshness
+		// probe, which now refuses to run against a dead stream of its own
+		// accord, and this test is about the denial assertion specifically.
+		player.closeErr = harness.ErrEventsOverflow
+		_ = player.Close()
+
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
+					Expect: &harness.Expect{DeniedContaining: "not authorized"}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, but player could not have received anything — " +
+				"its silence proves nothing about what the denied command broadcast")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "player") {
+			t.Fatalf("Steps[0].Detail = %q, want it to name the participant whose stream ended", rep.Steps[0].Detail)
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "unprovable") {
+			t.Fatalf("Steps[0].Detail = %q, want it to say the assertion is unprovable rather than "+
+				"reporting a leak that did not happen", rep.Steps[0].Detail)
+		}
+	})
+}
+
+// The accepted-step twin: "not observed matching by: dm" sends the reader
+// after a broadcast that may have been perfect. The stream ending is a
+// different fault with a different fix, so it is reported as one.
+func TestRunScenarioSaysUnobservableRatherThanNotObservedWhenAStreamDied(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		dm.send = okSend(world, 1, sessionStartedEnv("e-1"), "dm", "player")
+
+		// The dead one is an OBSERVER, not participant 0 (the freshness probe).
+		player.closeErr = harness.ErrEventsOverflow
+		_ = player.Close()
+
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
+					Expect: &harness.Expect{OK: true}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false: player's stream was gone")
+		}
+		if !strings.Contains(rep.Steps[0].Detail, "unobservable") {
+			t.Fatalf("Steps[0].Detail = %q, want the ended stream named as such rather than "+
+				"a plain 'not observed'", rep.Steps[0].Detail)
+		}
+	})
+}
+
+// The reconnect catch-up's short-read report said "before timing out" for a
+// stream that had CLOSED — the misdiagnosis written into a variable name
+// (`timedOut = true` on !ok). A redial whose connection dies mid-replay is a
+// different fault from a server that stopped sending, and observeTimeout is
+// not what elapsed.
+func TestRunScenarioReconnectCatchUpNamesADeadStreamNotATimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		env1 := sessionStartedEnv("ev-1")
+		env2 := sceneCreatedEnv("ev-2")
+		dm.send = sequencedSend(world, []scriptedResult{
+			{seq: 1, env: env1, to: []string{"dm", "player"}},
+			{seq: 2, env: env2, to: []string{"dm", "player"}},
+		})
+
+		// The redial replays the first event, then the stream is torn down
+		// for overflow before the second.
+		reconnected := newFakeConn("player-reconnected")
+		reconnected.events <- env1
+		reconnected.closeErr = harness.ErrEventsOverflow
+		_ = reconnected.Close()
+
+		dial := func(name string, after int64) (harness.Conn, error) {
+			if name == "player" && after == 0 && player.isClosed() {
+				return reconnected, nil
+			}
+			return fixedDialer(world)(name, after)
+		}
+
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false: the catch-up never delivered event 2")
+		}
+		detail := rep.Steps[2].Detail
+		if strings.Contains(detail, "timing out") {
+			t.Fatalf("Steps[2].Detail = %q — nothing timed out; the stream was torn down", detail)
+		}
+		if !strings.Contains(detail, "overflow") {
+			t.Fatalf("Steps[2].Detail = %q, want the overflow named", detail)
+		}
+	})
+}
+
+// A reconnect at the current head has an EMPTY `want`: it asserts "nothing
+// replays". That is another proof by absence, and the catch-up loop only
+// consults CloseErr from inside `for range want` — which never runs. The tail
+// check then reads a closed channel as `ok == false`, i.e. "nothing extra
+// arrived", and certifies the assertion against a socket that was already
+// dead.
+func TestRunScenarioReconnectAtHeadStillNoticesADeadRedial(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		env1 := sessionStartedEnv("ev-1")
+		dm.send = sequencedSend(world, []scriptedResult{
+			{seq: 1, env: env1, to: []string{"dm", "player"}},
+		})
+
+		// Redialled at the head, so nothing is owed — and torn down anyway.
+		reconnected := newFakeConn("player-reconnected")
+		reconnected.closeErr = harness.ErrEventsOverflow
+		_ = reconnected.Close()
+
+		dial := func(name string, after int64) (harness.Conn, error) {
+			if name == "player" && player.isClosed() {
+				return reconnected, nil
+			}
+			return fixedDialer(world)(name, after)
+		}
+
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps: []harness.Step{
+				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 1}},
+			},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true — 'nothing replayed' was certified by a dead socket, " +
+				"which cannot replay anything by construction")
+		}
+		if !strings.Contains(rep.Steps[1].Detail, "overflow") {
+			t.Fatalf("Steps[1].Detail = %q, want the ended stream named", rep.Steps[1].Detail)
+		}
+	})
+}
+
+// Every trailing denial rests its absence claim on the SAME dead participant,
+// so every one of them is equally unproven. Marking only the first — the shape
+// markLeaked correctly uses, because a leak provably came from exactly one
+// denied step — would leave the rest printing pass=true on evidence that does
+// not exist. scenarios/denials.json has 14 trailing denials in a row.
+func TestRunScenarioMarksEveryTrailingDenialUnprovableNotJustTheFirst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dm := newFakeConn("dm")
+		player := newFakeConn("player")
+		world := map[string]*fakeConn{"dm": dm, "player": player}
+		dm.send = denySend("not authorized: token has no controller", world, nil)
+
+		player.closeErr = harness.ErrEventsOverflow
+		_ = player.Close()
+
+		denied := harness.Step{
+			By:      "dm",
+			Command: rawCmd(t, `{"moveToken":{"tokenId":"t","to":{"x":1,"y":1}}}`),
+			Expect:  &harness.Expect{DeniedContaining: "not authorized"},
+		}
+		sc := &harness.Scenario{
+			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
+			Steps:        []harness.Step{denied, denied, denied},
+		}
+		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if rep.Pass {
+			t.Fatal("Report.Pass = true, want false")
+		}
+		for i, sr := range rep.Steps {
+			if sr.Pass {
+				t.Fatalf("Steps[%d].Pass = true — its absence claim rests on the same dead "+
+					"participant as Steps[0]'s, so it is exactly as unproven", i)
+			}
+			if !strings.Contains(sr.Detail, "unprovable") {
+				t.Fatalf("Steps[%d].Detail = %q, want it to say the claim is unprovable", i, sr.Detail)
+			}
+		}
+	})
+}
