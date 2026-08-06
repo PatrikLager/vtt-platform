@@ -235,9 +235,15 @@ func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
 	if err != nil {
 		t.Fatalf("catch-up head: %v", err)
 	}
-	events, reached := drainToHead(c.Events(), dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
+	events, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 	if !reached {
-		t.Fatalf("caught up only to sequence %d of %d — refusing to compare a truncated snapshot", headSequence(events), head)
+		// `why`, not just the shortfall. This helper backs the golden corpus
+		// and mcp_e2e's independent observer — CI, which is exactly the
+		// audience the soak misdiagnosis cost an investigation. A slow runner
+		// overflowing at 257 of 480 must say so, not leave the same dead end
+		// one file over.
+		t.Fatalf("caught up only to sequence %d of %d — refusing to compare a truncated snapshot: %v",
+			headSequence(events), head, why)
 	}
 	return events
 }
