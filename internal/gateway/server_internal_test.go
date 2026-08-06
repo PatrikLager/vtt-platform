@@ -84,12 +84,29 @@ func tinyRecvBufClient() *http.Client {
 // broadcast SceneCreated) so the command carrying it is still accepted.
 var bigSceneName = strings.Repeat("x", 28*1024)
 
-// TestOverflowForcesSocketClosedAndOthersKeepServing is the Fix 2
-// regression test: a connection whose store-level subscribe channel
-// overflows (because its client stopped reading) must have its socket
-// force-closed by the server itself — not sit there silently zombied — and
-// every other connection must be completely unaffected.
-func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
+// TestAWedgedConnectionIsTornDownAndOthersKeepServing succeeds
+// TestOverflowForcesSocketClosedAndOthersKeepServing, which asserted the same
+// property through a trigger that was itself the bug.
+//
+// That test relied on the store dropping a subscriber whose channel filled.
+// Filling it never required the client to be STALLED — notifyLocked pushed a
+// burst under the store lock faster than any pump could drain, so the victim
+// was severed by scheduling. Measured after the fix, that same victim
+// completes its 28KB writes in ~100ms and absorbs every one: slow, alive, and
+// now correctly kept. The scenario could no longer produce a wedged client at
+// all.
+//
+// So the property is split. The store's half — a subscriber that stops
+// consuming is cut loose once the budget elapses — is pinned deterministically
+// on a fake clock in internal/store/backpressure_test.go. THIS test keeps the
+// gateway's half: a connection the server can no longer write to is torn down
+// rather than left looking alive, and its peers are untouched.
+//
+// The victim gets its OWN Server so the aggressive budget applies to it alone.
+// That is what makes this deterministic rather than a race: healthy peers are
+// unaffected BY CONSTRUCTION, not by winning a timing margin against the
+// victim. Both servers share one campaign, so the broadcast path is real.
+func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
 	if err != nil {
@@ -115,19 +132,38 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The healthy side. noProgress is set EXPLICITLY and generously rather
+	// than left at the 30s default: this test is documented below as having
+	// taken 17.4s on a machine under disk pressure, and its healthy readers
+	// are background goroutines. A starved reader tripping a 30s budget would
+	// drop a healthy subscriber and report a logic failure that is not there.
 	srv := New(c, ids)
-	srv.buffer = 2 // tiny: a stalled reader overflows after just a couple of missed live events
-
+	srv.noProgress = 10 * time.Minute
 	httpSrv := httptest.NewUnstartedServer(srv.Handler())
 	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
 	httpSrv.Start()
 	defer httpSrv.Close()
 
-	dial := func(token string, after int64, client *http.Client) *websocket.Conn {
+	// The victim's side, on the same campaign. buffer 0 removes every slot the
+	// writer could hide behind, and the budget is two orders of magnitude
+	// below a stall this test GUARANTEES structurally: bigSceneName (28KB)
+	// cannot fit the pinned 8KB socket buffers, so a peer that never reads
+	// forces the write to park. The threshold is not standing in for the
+	// condition — the condition is arranged, and 5ms only has to be shorter
+	// than a park measured at ~100ms.
+	victimSrv := New(c, ids)
+	victimSrv.buffer = 0
+	victimSrv.noProgress = 5 * time.Millisecond
+	victimHTTP := httptest.NewUnstartedServer(victimSrv.Handler())
+	victimHTTP.Listener = &sndbufListener{Listener: victimHTTP.Listener}
+	victimHTTP.Start()
+	defer victimHTTP.Close()
+
+	dialTo := func(base, token string, after int64, client *http.Client) *websocket.Conn {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		u := httpSrv.URL + "/ws?token=" + token + "&after=" + strconv.FormatInt(after, 10)
+		u := base + "/ws?token=" + token + "&after=" + strconv.FormatInt(after, 10)
 		var opts *websocket.DialOptions
 		if client != nil {
 			opts = &websocket.DialOptions{HTTPClient: client}
@@ -137,6 +173,10 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 			t.Fatalf("dial %s: %v", token, err)
 		}
 		return conn
+	}
+	dial := func(token string, after int64, client *http.Client) *websocket.Conn {
+		t.Helper()
+		return dialTo(httpSrv.URL, token, after, client)
 	}
 
 	// Every connection that might legitimately RECEIVE bigSceneName-sized
@@ -150,12 +190,12 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	healthyConn := dial(healthyToken, 0, nil)
 	defer healthyConn.CloseNow()
 	healthyConn.SetReadLimit(readLimit)
-	victimConn := dial(victimToken, 0, tinyRecvBufClient())
+	victimConn := dialTo(victimHTTP.URL, victimToken, 0, tinyRecvBufClient())
 	defer victimConn.CloseNow()
 	victimConn.SetReadLimit(readLimit)
 
 	// healthyConn and driverConn both actively drain everything in the
-	// background for the whole test, so NEITHER ever overflows itself
+	// background for the whole test, so NEITHER ever stops making progress
 	// (driver receives its own CommandResults and its own broadcast echoes
 	// too) regardless of how fast the burst below fires — draining
 	// concurrently, rather than synchronously between writes, is what lets
@@ -187,12 +227,12 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	}()
 
 	// victimConn: deliberately never read here until after the drive loop
-	// below — it is the stalled subscriber this test overflows.
+	// below — it is the stalled subscriber this test wedges.
 
 	// Burst oversized broadcast events (see bigSceneName) — no interleaved
 	// read wait on driverConn (that's the background goroutine's job
 	// above) — so the victim (buffer=2, SO_RCVBUF pinned tiny, never
-	// reading) overflows within a handful of commands. A small pacing
+	// reading) falls far behind within a handful of commands. A small pacing
 	// sleep between writes keeps this a burst (still far faster than
 	// victim's writer, which can genuinely stall indefinitely once stuck —
 	// verified empirically) while giving the background reader goroutines
@@ -248,7 +288,7 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 
 	// NOW check the victim: these are its first-ever Read calls. Even
 	// though the server force-closed the connection server-side partway
-	// through the drive loop above (the overflow this test exercises),
+	// through the drive loop above (the no-progress drop this test exercises),
 	// victimConn's own kernel receive buffer may still hold a small number
 	// of complete messages that made it through before the close — so
 	// drain up to a generous bound and require the closure to surface
@@ -282,7 +322,7 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 	// The healthy connection (and driver's own connection) must be
 	// completely unaffected: both are still alive and still actively
 	// draining broadcasts (neither background reader goroutine has
-	// exited), despite the exact same burst that overflowed the victim.
+	// exited), despite the exact same burst that wedged the victim.
 	select {
 	case <-healthyAlive:
 		t.Fatal("want healthy connection's reader still running, but it exited")
@@ -336,7 +376,7 @@ func TestOverflowForcesSocketClosedAndOthersKeepServing(t *testing.T) {
 		}
 	}
 	if frame.GetResult() == nil || !frame.GetResult().Ok {
-		t.Fatalf("want ok=true CommandResult on a fresh connection after the overflow, got %v", &frame)
+		t.Fatalf("want ok=true CommandResult on a fresh connection after the victim was reaped, got %v", &frame)
 	}
 
 	// Stop the background readers before the test (and its deferred
@@ -406,5 +446,122 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 	}
 	if status := websocket.CloseStatus(err); status != websocket.StatusInternalError {
 		t.Fatalf("close status = %v, want StatusInternalError (err=%v)", status, err)
+	}
+}
+
+// TestAClientThatStopsReadingEntirelyIsTornDown pins the only mechanism that
+// can still tear down a wedged connection — and it is a mechanism the store
+// change made load-bearing rather than redundant.
+//
+// The pump force-closes the socket when `events` closes. Under the store's
+// no-progress policy a subscriber is dropped only after ZERO progress, which
+// means this connection's writer is parked in conn.Write, which means the pump
+// is parked handing off to outCh — so by construction the pump is NOT ranging
+// `events` at the moment they close, and never observes it. The post-loop
+// close is unreachable for exactly the case it was written for.
+//
+// Without conn.Write's deadline the result is a permanent leak: serve stuck in
+// conn.Read, the writer in conn.Write, the pump on outCh, the client believing
+// it is connected and receiving nothing, forever. shutdown() cannot rescue it
+// either — it waits on pumpDone, which waits on the writer.
+//
+// Observed through onServeDone because the client must NOT read: reading is
+// progress, and progress is the precondition being excluded. Reading to detect
+// the close would destroy the state under test.
+func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deafToken, _, err := ids.CreateInvite("Deaf", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The DM drives on an ordinary server so its own writes are never subject
+	// to the aggressive budget below.
+	driverSrv := New(c, ids)
+	driverHTTP := httptest.NewServer(driverSrv.Handler())
+	defer driverHTTP.Close()
+
+	served := make(chan struct{}, 4)
+	deafSrv := New(c, ids)
+	deafSrv.buffer = 0
+	// The store budget stays LONG so it cannot drop this subscriber first —
+	// that is what isolates the socket path. Only the write deadline is
+	// aggressive, and it is the mechanism under test.
+	deafSrv.noProgress = 30 * time.Second
+	deafSrv.writeTimeout = 25 * time.Millisecond
+	deafSrv.onServeDone = func() { served <- struct{}{} }
+	deafHTTP := httptest.NewUnstartedServer(deafSrv.Handler())
+	deafHTTP.Listener = &sndbufListener{Listener: deafHTTP.Listener}
+	deafHTTP.Start()
+	defer deafHTTP.Close()
+
+	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dcancel()
+	driverConn, _, err := websocket.Dial(dctx, driverHTTP.URL+"/ws?token="+dmToken+"&after=0", nil)
+	if err != nil {
+		t.Fatalf("dial driver: %v", err)
+	}
+	defer driverConn.CloseNow()
+	driverConn.SetReadLimit(200 * 1024)
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			_, _, rerr := driverConn.Read(ctx)
+			cancel()
+			if rerr != nil {
+				return
+			}
+		}
+	}()
+
+	deafConn, _, err := websocket.Dial(dctx, deafHTTP.URL+"/ws?token="+deafToken+"&after=0",
+		&websocket.DialOptions{HTTPClient: tinyRecvBufClient()})
+	if err != nil {
+		t.Fatalf("dial deaf: %v", err)
+	}
+	defer deafConn.CloseNow()
+	// Deliberately never read from deafConn. That is the whole scenario.
+
+	// Enough oversized broadcasts that 28KB cannot fit the pinned 8KB socket
+	// buffers — the writer is structurally forced to park, not merely slowed.
+	for i := range 40 {
+		cmd := &vttv1.ClientCommand{
+			RequestId: strconv.Itoa(i),
+			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
+			}},
+		}
+		raw, merr := protojson.Marshal(cmd)
+		if merr != nil {
+			t.Fatal(merr)
+		}
+		wctx, wcancel := context.WithTimeout(context.Background(), 30*time.Second)
+		werr := driverConn.Write(wctx, websocket.MessageText, raw)
+		wcancel()
+		if werr != nil {
+			t.Fatalf("driver write %d: %v", i, werr)
+		}
+	}
+
+	select {
+	case <-served:
+	case <-time.After(20 * time.Second):
+		t.Fatal("a client that stopped reading entirely was never torn down — serve() is still " +
+			"parked, leaking its goroutines and socket, with the client believing it is connected")
 	}
 }
