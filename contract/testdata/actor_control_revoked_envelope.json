@@ -1,0 +1,12 @@
+{
+  "eventId": "evt-revoke-1",
+  "sequence": "43",
+  "occurredAt": "2026-08-06T10:01:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "player",
+  "participantId": "p-player",
+  "actorControlRevoked": {
+    "actorId": "act-thorn",
+    "participantId": "p-player"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "eventId": "evt-grant-1",
+  "sequence": "42",
+  "occurredAt": "2026-08-06T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "actorControlGranted": {
+    "actorId": "act-thorn",
+    "participantId": "p-player"
+  }
+}

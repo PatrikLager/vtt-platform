@@ -1,0 +1,7 @@
+{
+  "presenceChanged": {
+    "participantId": "p-player",
+    "displayName": "Thorn's player",
+    "state": "PRESENCE_STATE_DISCONNECTED"
+  }
+}

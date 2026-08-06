@@ -619,3 +619,50 @@ func TestCatchUpHeadReturnsAnnouncedHeadDespiteCanceledContext(t *testing.T) {
 		}
 	}
 }
+
+// TestUnknownServerFrameIsIgnoredNotFatal pins forward compatibility, which
+// this client used to lack in a way that made every contract addition a
+// breaking change for it.
+//
+// ServerFrame's oneof grows (ADR-007 is additive precisely so old readers
+// survive), and until 2026-08-06 any arm this switch did not recognise hit a
+// default that tore the connection down with "server frame has neither result
+// nor event". The presence arms added by the contract task would therefore
+// have killed every soak run, scenario and `vtt client run` at connect time —
+// on their FIRST broadcast, with an error naming the wrong cause.
+//
+// A presence frame is the real instance, so it is what this sends: unknown to
+// this switch, known to the wire.
+func TestUnknownServerFrameIsIgnoredNotFatal(t *testing.T) {
+	fs := newFakeServer(t, func(*websocket.Conn, *vttv1.ClientCommand) {})
+	fs.onConnect = func(conn *websocket.Conn) {
+		sendCatchUpHead(t, conn, 0)
+		// An arm the harness does not handle, between two things it does.
+		sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_PresenceSnapshot{
+			PresenceSnapshot: &vttv1.PresenceSnapshot{Present: []*vttv1.PresenceChanged{
+				{ParticipantId: "p-dm", DisplayName: "DM", State: vttv1.PresenceState_PRESENCE_STATE_CONNECTED},
+			}},
+		}})
+		sendFrame(t, conn, &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{
+			Event: &vttv1.Envelope{EventId: "after-presence", Sequence: 1},
+		}})
+	}
+
+	c, err := harness.Dial(context.Background(), fs.wsURL(), "tok", 0)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer c.Close()
+
+	select {
+	case env, ok := <-c.Events():
+		if !ok {
+			t.Fatalf("connection torn down by a frame it merely did not recognise: %v", c.CloseErr())
+		}
+		if env.GetEventId() != "after-presence" {
+			t.Fatalf("got event %q, want the one sent AFTER the unknown frame", env.GetEventId())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no event after an unknown frame — the frame was not skipped")
+	}
+}

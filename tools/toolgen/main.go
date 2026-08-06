@@ -74,12 +74,13 @@ var manifest = []toolSpec{
 			"vtt.v1.Actor": {
 				requiredOverride: []string{"actorId"},
 				fieldDocs: map[string]string{
-					"name":         "Optional display label for the actor.",
-					"controllerId": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player.",
-					"moduleId":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
-					"attributes":   "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
-					"resources":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
-					"moduleData":   "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+					"name":          "Optional display label for the actor.",
+					"controllerId":  "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player. Use EITHER this or controllerIds, never both — if they disagree, controllerIds wins and this is overwritten with its first entry.",
+					"controllerIds": "Optional; omit. Authoritative if set — controllerId is derived from it, so do not set both. The full set of participants who may act as this actor — control is normally granted AFTER creation with grant_actor_control, not seeded here. Setting it seeds the set; leaving it empty means DM/agent only, exactly as an empty controllerId does.",
+					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+					"moduleData":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 				},
 			},
 		},
@@ -187,6 +188,22 @@ var manifest = []toolSpec{
 		// legitimately omittable. The derived required list (["adventureId"],
 		// since the field is not proto3 `optional`) is already semantically
 		// honest, so no override is needed here.
+	},
+	{
+		message:     "vtt.v1.GrantActorControl",
+		name:        "grant_actor_control",
+		description: "Give a participant control of an actor, so they may move its token and use its abilities. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
+		descriptor:  (&vttv1.GrantActorControl{}).ProtoReflect().Descriptor(),
+		// Both fields are genuinely required — there is no meaning to
+		// granting control of nothing, or to nobody — so the derived
+		// required list is honest and needs no override (same check as
+		// load_adventure above).
+	},
+	{
+		message:     "vtt.v1.RevokeActorControl",
+		name:        "revoke_actor_control",
+		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
+		descriptor:  (&vttv1.RevokeActorControl{}).ProtoReflect().Descriptor(),
 	},
 }
 

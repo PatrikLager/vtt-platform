@@ -2,8 +2,8 @@
 // @generated from file vtt/v1/commands.proto (package vtt.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Actor, Envelope, GridPosition, TokenMoved } from "./events_pb";
 import { file_vtt_v1_events } from "./events_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkiJQoNTG9hZEFkdmVudHVyZRIUCgxhZHZlbnR1cmVfaWQYASABKAki/gQKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIABIvCg5sb2FkX2FkdmVudHVyZRgWIAEoCzIVLnZ0dC52MS5Mb2FkQWR2ZW50dXJlSABCCQoHY29tbWFuZCJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiJAoLQ2F0Y2hVcEhlYWQSFQoNaGVhZF9zZXF1ZW5jZRgBIAEoAyKQAQoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAEiwKDWNhdGNoX3VwX2hlYWQYAyABKAsyEy52dHQudjEuQ2F0Y2hVcEhlYWRIAEIHCgVmcmFtZUJCWkBnaXRodWIuY29tL1BhdHJpa0xhZ2VyL3Z0dC1wbGF0Zm9ybS9jb250cmFjdC9nZW4vZ28vdnR0L3YxO3Z0dHYxYgZwcm90bzM", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiVgoLQ3JlYXRlU2NlbmUSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIigKCEFkZEFjdG9yEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImoKClBsYWNlVG9rZW4SEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIhwKDFN0YXJ0U2Vzc2lvbhIMCgRuYW1lGAEgASgJIgwKCkVuZFNlc3Npb24iSwoNUmV0cmFjdEV2ZW50cxIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjYKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGQoKRGVsZXRlTm90ZRILCgNrZXkYASABKAkiJQoNTG9hZEFkdmVudHVyZRIUCgxhZHZlbnR1cmVfaWQYASABKAki9AUKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIrCgxjcmVhdGVfc2NlbmUYCyABKAsyEy52dHQudjEuQ3JlYXRlU2NlbmVIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASLwoOcmV0cmFjdF9ldmVudHMYECABKAsyFS52dHQudjEuUmV0cmFjdEV2ZW50c0gAEikKC3VzZV9hYmlsaXR5GBEgASgLMhIudnR0LnYxLlVzZUFiaWxpdHlIABIzChByZW1vdmVfY29uZGl0aW9uGBIgASgLMhcudnR0LnYxLlJlbW92ZUNvbmRpdGlvbkgAEi0KDWFkZF9uYXJyYXRpb24YEyABKAsyFC52dHQudjEuQWRkTmFycmF0aW9uSAASKQoLdXBzZXJ0X25vdGUYFCABKAsyEi52dHQudjEuVXBzZXJ0Tm90ZUgAEikKC2RlbGV0ZV9ub3RlGBUgASgLMhIudnR0LnYxLkRlbGV0ZU5vdGVIABIvCg5sb2FkX2FkdmVudHVyZRgWIAEoCzIVLnZ0dC52MS5Mb2FkQWR2ZW50dXJlSAASOAoTZ3JhbnRfYWN0b3JfY29udHJvbBgXIAEoCzIZLnZ0dC52MS5HcmFudEFjdG9yQ29udHJvbEgAEjoKFHJldm9rZV9hY3Rvcl9jb250cm9sGBggASgLMhoudnR0LnYxLlJldm9rZUFjdG9yQ29udHJvbEgAQgkKB2NvbW1hbmQiPQoRR3JhbnRBY3RvckNvbnRyb2wSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPgoSUmV2b2tlQWN0b3JDb250cm9sEhAKCGFjdG9yX2lkGAEgASgJEhYKDnBhcnRpY2lwYW50X2lkGAIgASgJIlAKDUNvbW1hbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcnJvchgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoAyIkCgtDYXRjaFVwSGVhZBIVCg1oZWFkX3NlcXVlbmNlGAEgASgDIvwBCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSAASLAoNY2F0Y2hfdXBfaGVhZBgDIAEoCzITLnZ0dC52MS5DYXRjaFVwSGVhZEgAEjUKEXByZXNlbmNlX3NuYXBzaG90GAQgASgLMhgudnR0LnYxLlByZXNlbmNlU25hcHNob3RIABIzChBwcmVzZW5jZV9jaGFuZ2VkGAUgASgLMhcudnR0LnYxLlByZXNlbmNlQ2hhbmdlZEgAQgcKBWZyYW1lImUKD1ByZXNlbmNlQ2hhbmdlZBIWCg5wYXJ0aWNpcGFudF9pZBgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSJAoFc3RhdGUYAyABKA4yFS52dHQudjEuUHJlc2VuY2VTdGF0ZSI8ChBQcmVzZW5jZVNuYXBzaG90EigKB3ByZXNlbnQYASADKAsyFy52dHQudjEuUHJlc2VuY2VDaGFuZ2VkKm4KDVByZXNlbmNlU3RhdGUSHgoaUFJFU0VOQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIcChhQUkVTRU5DRV9TVEFURV9DT05ORUNURUQQARIfChtQUkVTRU5DRV9TVEFURV9ESVNDT05ORUNURUQQAkJCWkBnaXRodWIuY29tL1BhdHJpa0xhZ2VyL3Z0dC1wbGF0Zm9ybS9jb250cmFjdC9nZW4vZ28vdnR0L3YxO3Z0dHYxYgZwcm90bzM", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -443,6 +443,18 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
      */
     value: LoadAdventure;
     case: "loadAdventure";
+  } | {
+    /**
+     * @generated from field: vtt.v1.GrantActorControl grant_actor_control = 23;
+     */
+    value: GrantActorControl;
+    case: "grantActorControl";
+  } | {
+    /**
+     * @generated from field: vtt.v1.RevokeActorControl revoke_actor_control = 24;
+     */
+    value: RevokeActorControl;
+    case: "revokeActorControl";
   } | { case: undefined; value?: undefined };
 };
 
@@ -452,6 +464,61 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
  */
 export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 14);
+
+/**
+ * GrantActorControl adds participant_id to actor_id's controller set.
+ * DM and agent only: a player may not hand their character to someone else,
+ * nor claim one.
+ *
+ * @generated from message vtt.v1.GrantActorControl
+ */
+export type GrantActorControl = Message<"vtt.v1.GrantActorControl"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string participant_id = 2;
+   */
+  participantId: string;
+};
+
+/**
+ * Describes the message vtt.v1.GrantActorControl.
+ * Use `create(GrantActorControlSchema)` to create a new message.
+ */
+export const GrantActorControlSchema: GenMessage<GrantActorControl> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 15);
+
+/**
+ * RevokeActorControl removes participant_id from actor_id's controller set.
+ * DM and agent may revoke anyone; a player may revoke ONLY THEMSELVES — that
+ * is releasing a character you hold, not taking one from someone else.
+ *
+ * @generated from message vtt.v1.RevokeActorControl
+ */
+export type RevokeActorControl = Message<"vtt.v1.RevokeActorControl"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * Both fields genuinely required, same check as GrantActorControl above:
+   * there is no meaning to revoking control of nothing, or from nobody.
+   *
+   * @generated from field: string participant_id = 2;
+   */
+  participantId: string;
+};
+
+/**
+ * Describes the message vtt.v1.RevokeActorControl.
+ * Use `create(RevokeActorControlSchema)` to create a new message.
+ */
+export const RevokeActorControlSchema: GenMessage<RevokeActorControl> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 16);
 
 /**
  * @generated from message vtt.v1.CommandResult
@@ -483,7 +550,7 @@ export type CommandResult = Message<"vtt.v1.CommandResult"> & {
  * Use `create(CommandResultSchema)` to create a new message.
  */
 export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 15);
+  messageDesc(file_vtt_v1_commands, 17);
 
 /**
  * CatchUpHead is sent ONCE, first, on every connection: the highest sequence
@@ -520,7 +587,7 @@ export type CatchUpHead = Message<"vtt.v1.CatchUpHead"> & {
  * Use `create(CatchUpHeadSchema)` to create a new message.
  */
 export const CatchUpHeadSchema: GenMessage<CatchUpHead> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 16);
+  messageDesc(file_vtt_v1_commands, 18);
 
 /**
  * The server->client frame; the oneof key is the frame discriminator.
@@ -578,6 +645,18 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
      */
     value: CatchUpHead;
     case: "catchUpHead";
+  } | {
+    /**
+     * @generated from field: vtt.v1.PresenceSnapshot presence_snapshot = 4;
+     */
+    value: PresenceSnapshot;
+    case: "presenceSnapshot";
+  } | {
+    /**
+     * @generated from field: vtt.v1.PresenceChanged presence_changed = 5;
+     */
+    value: PresenceChanged;
+    case: "presenceChanged";
   } | { case: undefined; value?: undefined };
 };
 
@@ -586,5 +665,105 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 17);
+  messageDesc(file_vtt_v1_commands, 19);
+
+/**
+ * PresenceChanged reports one participant joining or leaving.
+ *
+ * A FRAME, never an Envelope: who happened to be online is not campaign
+ * history. Appending it would make every replay reconstruct session noise and
+ * change what `vtt state dump` prints, for a fact that is true only while a
+ * socket is open. MapTool draws the same line -- PlayerDisconnectedMsg is a
+ * message, never campaign state.
+ *
+ * DISCONNECTED is emitted when a participant's LAST connection goes, not
+ * their first: invite tokens are reusable, so one participant may hold two
+ * (a second tab, a phone beside a laptop), and closing one must not tell the
+ * table they left.
+ *
+ * @generated from message vtt.v1.PresenceChanged
+ */
+export type PresenceChanged = Message<"vtt.v1.PresenceChanged"> & {
+  /**
+   * @generated from field: string participant_id = 1;
+   */
+  participantId: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: vtt.v1.PresenceState state = 3;
+   */
+  state: PresenceState;
+};
+
+/**
+ * Describes the message vtt.v1.PresenceChanged.
+ * Use `create(PresenceChangedSchema)` to create a new message.
+ */
+export const PresenceChangedSchema: GenMessage<PresenceChanged> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 20);
+
+/**
+ * PresenceSnapshot is the full present-set, sent once immediately after
+ * CatchUpHead. Sent unconditionally, including when empty, so a joining
+ * client never has to infer who is online from SILENCE -- the same reasoning
+ * as CatchUpHead itself, and the same failure this repo has hit repeatedly by
+ * reading absence as evidence.
+ *
+ * @generated from message vtt.v1.PresenceSnapshot
+ */
+export type PresenceSnapshot = Message<"vtt.v1.PresenceSnapshot"> & {
+  /**
+   * @generated from field: repeated vtt.v1.PresenceChanged present = 1;
+   */
+  present: PresenceChanged[];
+};
+
+/**
+ * Describes the message vtt.v1.PresenceSnapshot.
+ * Use `create(PresenceSnapshotSchema)` to create a new message.
+ */
+export const PresenceSnapshotSchema: GenMessage<PresenceSnapshot> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 21);
+
+/**
+ * PresenceState is an ENUM rather than a bool, and that is deliberate.
+ *
+ * protojson omits zero values, so `bool connected = 3` would serialise a
+ * DISCONNECT as a frame with no connected field at all — making "this
+ * participant left" a fact carried by ABSENCE. That is the failure mode this
+ * repo keeps rediscovering (a denial "proved" by a dead connection, a batch
+ * read as complete because the stream went quiet, a mutant scored killed
+ * because a command exited non-zero). With an enum, both meaningful states are
+ * non-zero and always on the wire, and an absent field is UNSPECIFIED — an
+ * error a reader can detect, never a state it can misread.
+ *
+ * @generated from enum vtt.v1.PresenceState
+ */
+export enum PresenceState {
+  /**
+   * @generated from enum value: PRESENCE_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PRESENCE_STATE_CONNECTED = 1;
+   */
+  CONNECTED = 1,
+
+  /**
+   * @generated from enum value: PRESENCE_STATE_DISCONNECTED = 2;
+   */
+  DISCONNECTED = 2,
+}
+
+/**
+ * Describes the enum vtt.v1.PresenceState.
+ */
+export const PresenceStateSchema: GenEnum<PresenceState> = /*@__PURE__*/
+  enumDesc(file_vtt_v1_commands, 0);
 

@@ -1,226 +1,384 @@
 [
   {
-    "name": "move_token",
     "description": "Move a token to a new grid position on its scene.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "tokenId": { "type": "string" },
-        "to": {
-          "type": "object",
-          "properties": {
-            "x": { "type": "integer" },
-            "y": { "type": "integer" }
-          },
-          "required": ["x", "y"]
+        "reason": {
+          "type": "string"
         },
-        "reason": { "type": "string" }
-      },
-      "required": ["tokenId", "to"]
-    }
-  },
-  {
-    "name": "create_scene",
-    "description": "Create a new scene with a grid.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "sceneId": { "type": "string" },
-        "name": { "type": "string" },
-        "gridWidth": { "type": "integer" },
-        "gridHeight": { "type": "integer" }
-      },
-      "required": ["sceneId", "name", "gridWidth", "gridHeight"]
-    }
-  },
-  {
-    "name": "add_actor",
-    "description": "Add an actor to the campaign.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "actor": {
-          "type": "object",
+        "to": {
           "properties": {
-            "actorId": { "type": "string" },
-            "name": {
-              "type": "string",
-              "description": "Optional display label for the actor."
+            "x": {
+              "type": "integer"
             },
-            "moduleId": {
-              "type": "string",
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
-            },
-            "attributes": {
-              "type": "object",
-              "additionalProperties": { "type": "integer" },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
-            },
-            "resources": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "current": { "type": "integer" },
-                  "max": { "type": "integer" }
-                },
-                "required": ["current", "max"]
-              },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
-            },
-            "moduleData": {
-              "type": "object",
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque."
-            },
-            "controllerId": {
-              "type": "string",
-              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player."
+            "y": {
+              "type": "integer"
             }
           },
-          "required": ["actorId"]
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "tokenId": {
+          "type": "string"
         }
       },
-      "required": ["actor"]
-    }
+      "required": [
+        "tokenId",
+        "to"
+      ],
+      "type": "object"
+    },
+    "name": "move_token"
   },
   {
-    "name": "place_token",
+    "description": "Create a new scene with a grid.",
+    "inputSchema": {
+      "properties": {
+        "gridHeight": {
+          "type": "integer"
+        },
+        "gridWidth": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sceneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sceneId",
+        "name",
+        "gridWidth",
+        "gridHeight"
+      ],
+      "type": "object"
+    },
+    "name": "create_scene"
+  },
+  {
+    "description": "Add an actor to the campaign.",
+    "inputSchema": {
+      "properties": {
+        "actor": {
+          "properties": {
+            "actorId": {
+              "type": "string"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "type": "object"
+            },
+            "controllerId": {
+              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player. Use EITHER this or controllerIds, never both — if they disagree, controllerIds wins and this is overwritten with its first entry.",
+              "type": "string"
+            },
+            "controllerIds": {
+              "description": "Optional; omit. Authoritative if set — controllerId is derived from it, so do not set both. The full set of participants who may act as this actor — control is normally granted AFTER creation with grant_actor_control, not seeded here. Setting it seeds the set; leaving it empty means DM/agent only, exactly as an empty controllerId does.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "moduleData": {
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "type": "object"
+            },
+            "moduleId": {
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Optional display label for the actor.",
+              "type": "string"
+            },
+            "resources": {
+              "additionalProperties": {
+                "properties": {
+                  "current": {
+                    "type": "integer"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "current",
+                  "max"
+                ],
+                "type": "object"
+              },
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "actorId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "actor"
+      ],
+      "type": "object"
+    },
+    "name": "add_actor"
+  },
+  {
     "description": "Place an actor's token on a scene's grid.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "tokenId": { "type": "string" },
-        "sceneId": { "type": "string" },
-        "actorId": { "type": "string" },
+        "actorId": {
+          "type": "string"
+        },
         "position": {
-          "type": "object",
           "properties": {
-            "x": { "type": "integer" },
-            "y": { "type": "integer" }
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
           },
-          "required": ["x", "y"]
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "sceneId": {
+          "type": "string"
+        },
+        "tokenId": {
+          "type": "string"
         }
       },
-      "required": ["tokenId", "sceneId", "actorId", "position"]
-    }
+      "required": [
+        "tokenId",
+        "sceneId",
+        "actorId",
+        "position"
+      ],
+      "type": "object"
+    },
+    "name": "place_token"
   },
   {
-    "name": "start_session",
     "description": "Start a new play session.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "name": { "type": "string" }
-      },
-      "required": ["name"]
-    }
-  },
-  {
-    "name": "end_session",
-    "description": "End the current play session.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {},
-      "required": []
-    }
-  },
-  {
-    "name": "retract_events",
-    "description": "Retract a range of events from the record with a stated reason.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "fromSequence": { "type": "integer" },
-        "toSequence": { "type": "integer" },
-        "reason": { "type": "string" }
-      },
-      "required": ["fromSequence", "toSequence", "reason"]
-    }
-  },
-  {
-    "name": "use_ability",
-    "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "actorId": { "type": "string" },
-        "abilityId": { "type": "string" },
-        "targetIds": { "type": "array", "items": { "type": "string" } }
-      },
-      "required": ["actorId", "abilityId", "targetIds"]
-    }
-  },
-  {
-    "name": "remove_condition",
-    "description": "Remove a named condition from an actor (DM-ended durations).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "actorId": { "type": "string" },
-        "conditionId": { "type": "string" }
-      },
-      "required": ["actorId", "conditionId"]
-    }
-  },
-  {
-    "name": "add_narration",
-    "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "text": { "type": "string" },
-        "as": {
-          "type": "string",
-          "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk)."
-        },
-        "anchorFromSeq": {
-          "type": "integer",
-          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other."
-        },
-        "anchorToSeq": {
-          "type": "integer",
-          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other."
+        "name": {
+          "type": "string"
         }
       },
-      "required": ["text"]
-    }
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "start_session"
   },
   {
-    "name": "upsert_note",
+    "description": "End the current play session.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "end_session"
+  },
+  {
+    "description": "Retract a range of events from the record with a stated reason.",
+    "inputSchema": {
+      "properties": {
+        "fromSequence": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "toSequence": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromSequence",
+        "toSequence",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "name": "retract_events"
+  },
+  {
+    "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
+    "inputSchema": {
+      "properties": {
+        "abilityId": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "targetIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "actorId",
+        "abilityId",
+        "targetIds"
+      ],
+      "type": "object"
+    },
+    "name": "use_ability"
+  },
+  {
+    "description": "Remove a named condition from an actor (DM-ended durations).",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "conditionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "conditionId"
+      ],
+      "type": "object"
+    },
+    "name": "remove_condition"
+  },
+  {
+    "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+    "inputSchema": {
+      "properties": {
+        "anchorFromSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+          "type": "integer"
+        },
+        "anchorToSeq": {
+          "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+          "type": "integer"
+        },
+        "as": {
+          "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "add_narration"
+  },
+  {
     "description": "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "key": { "type": "string" },
-        "title": {
-          "type": "string",
-          "description": "Optional; may be empty."
+        "key": {
+          "type": "string"
         },
-        "text": { "type": "string" }
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "description": "Optional; may be empty.",
+          "type": "string"
+        }
       },
-      "required": ["key", "text"]
-    }
+      "required": [
+        "key",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "upsert_note"
   },
   {
-    "name": "delete_note",
     "description": "Delete a world note by key.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "key": { "type": "string" }
+        "key": {
+          "type": "string"
+        }
       },
-      "required": ["key"]
-    }
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "delete_note"
   },
   {
-    "name": "load_adventure",
     "description": "Load a prepared adventure into the campaign — compiles its scenes, statblocks, notes, and opening narration into one atomic batch of setup events. DM/agent only.",
     "inputSchema": {
-      "type": "object",
       "properties": {
-        "adventureId": { "type": "string" }
+        "adventureId": {
+          "type": "string"
+        }
       },
-      "required": ["adventureId"]
-    }
+      "required": [
+        "adventureId"
+      ],
+      "type": "object"
+    },
+    "name": "load_adventure"
+  },
+  {
+    "description": "Give a participant control of an actor, so they may move its token and use its abilities. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "participantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "participantId"
+      ],
+      "type": "object"
+    },
+    "name": "grant_actor_control"
+  },
+  {
+    "description": "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "participantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "participantId"
+      ],
+      "type": "object"
+    },
+    "name": "revoke_actor_control"
   }
 ]

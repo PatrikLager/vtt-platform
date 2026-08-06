@@ -248,19 +248,20 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 	}
 }
 
-// TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools covers the
-// top-level contract: get_state, get_events_since, get_ruleset_guide, and
-// get_adventure_guide land in the SAME tool table as the thirteen generic
-// command tools (wantCommandToolNames, tools_test.go — grew from 7 to 9
-// with use_ability/remove_condition, ruleset-interpreter sub-project 5a
-// Task 1; 9 to 12 with add_narration/upsert_note/delete_note, world-layer
-// sub-project 8 P11 Task 1; 12 to 13 with load_adventure, adventure-format
-// sub-project 9 P12 Task 1), bringing list_tools to exactly 17
-// (adventure-format sub-project 9: P12 Task 1's load_adventure bumped
-// 15->16; P12 Task 4's get_adventure_guide bumped 16->17 — same
-// pre-authorized fix-forward pattern as Task 1's own 15->16 bump, P11 Task
-// 1's precedent bump from 12 to 15).
-func TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools(t *testing.T) {
+// TestListToolsReturnsEveryCommandAndReadTool covers the top-level contract:
+// get_state, get_events_since, get_ruleset_guide and get_adventure_guide land
+// in the SAME tool table as every generic command tool
+// (wantCommandToolNames, tools_test.go).
+//
+// The total is asserted as len(wantCommandToolNames)+4 rather than as a
+// literal, and this test is no longer named for the number. It was
+// TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools, and its
+// comment had accumulated a six-entry history of past bumps (7->9, 9->12,
+// 12->13, 15->16, 16->17) — each one a rename that had to touch the
+// identifier, the comment, and every other file naming the count. P12 shipped
+// the same stale number three times on one such rename. Derive the count from
+// the list; the list is the assertion.
+func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	cs, cleanup := startSession(t, fs.wsURL())
 	defer cleanup()
@@ -276,11 +277,10 @@ func TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools(t *testing.T) 
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	// wantCommandToolNames already carries all 13 generic command tools
-	// (including add_narration/upsert_note/delete_note/load_adventure —
-	// fix-wave F5 grew the pin to match the oneof itself); only the four
-	// read/guide tools registered separately (read_tools.go, guide_tool.go,
-	// adventure_guide_tool.go) are appended here.
+	// wantCommandToolNames carries every generic command tool — fix-wave F5
+	// grew that pin to match the oneof itself, so it needs no separate
+	// maintenance here. Only the four read/guide tools registered separately
+	// (read_tools.go, guide_tool.go, adventure_guide_tool.go) are appended.
 	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "get_adventure_guide")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
