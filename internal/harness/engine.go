@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -33,9 +34,29 @@ type Conn interface {
 	// nil check answers nothing the closed channel did not already.
 	//
 	// On the interface rather than behind a type assertion so a future fake
-	// cannot silently no-op it — but note most Events() consumers in this
-	// package still do not ask, and inherit the misdiagnosis this exists to
-	// fix.
+	// cannot silently no-op it.
+	//
+	// As of 2026-08-06 every Events() consumer in this package accounts for a
+	// closed channel. Directly: drainPreExisting, the reconnect catch-up loop
+	// AND its trailing "nothing extra arrived" check, observeOnAll,
+	// recvWithin (so collectBatchRun), drainAllForSilence, and
+	// soakHistories.start. Indirectly: soak.go's drainToSequence takes a raw
+	// channel and cannot ask, so its caller drainFreshCatchUp does it instead.
+	// Verified by grepping every Events() use rather than by recollection —
+	// an earlier version of this comment claimed the conversion was complete
+	// while soakHistories.start, the evidence base for RunSoak's own denial
+	// assertion, still had the hole.
+	//
+	// FOUR of those were returning a WRONG VERDICT, not merely a vague
+	// message: a batch truncated by a teardown counted as complete; a
+	// scenario denial "proved" by the silence of a participant that could no
+	// longer hear; a soak denial proved the same way through histories that
+	// had stopped growing; and a reconnect-at-head certifying "nothing
+	// replayed" against a socket that could not replay. All four PASSED.
+	//
+	// The rule that follows, for anything added later: a bounded wait proves
+	// a negative only against a LIVE connection. If silence is your evidence,
+	// ask this first.
 	CloseErr() error
 	Close() error
 }
@@ -149,18 +170,22 @@ func errFreshCampaignRequired(n int) error {
 // is empty, so this window elapses in silence and returns 0 (the same
 // "bounded wait proves a negative" reasoning denialAbsenceWindow's own doc
 // comment already relies on for the denial assertion).
-func drainPreExisting(conn Conn, window time.Duration) int {
+// The error separates "heard nothing on a live stream" (a fresh campaign, the
+// negative this is meant to prove) from "heard nothing because the stream was
+// already gone" (no evidence either way). Silence proves freshness only from a
+// connection that could have spoken.
+func drainPreExisting(conn Conn, window time.Duration) (int, error) {
 	n := 0
 	deadline := time.After(window)
 	for {
 		select {
 		case _, ok := <-conn.Events():
 			if !ok {
-				return n
+				return n, streamEndReason(conn)
 			}
 			n++
 		case <-deadline:
-			return n
+			return n, nil
 		}
 	}
 }
@@ -268,7 +293,11 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	// (Fold's own probe evaluation below makes the same "participant 0
 	// stands in for the group" choice).
 	if len(sc.Participants) > 0 {
-		if n := drainPreExisting(conns[sc.Participants[0].Name], denialAbsenceWindow); n > 0 {
+		n, err := drainPreExisting(conns[sc.Participants[0].Name], denialAbsenceWindow)
+		if err != nil {
+			return nil, fmt.Errorf("harness: cannot confirm a fresh campaign: %w", err)
+		}
+		if n > 0 {
 			return nil, errFreshCampaignRequired(n)
 		}
 	}
@@ -344,8 +373,16 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	// denials can reach this, so the cost is paid once per scenario rather
 	// than once per denial.
 	if len(pending) > 0 {
-		if leaked := drainAllForSilence(conns, history, denialAbsenceWindow); len(leaked) > 0 {
+		leaked, ended := drainAllForSilence(conns, history, denialAbsenceWindow)
+		switch {
+		case len(leaked) > 0:
 			markLeaked(rep, pending, leaked)
+		case len(ended) > 0:
+			// Silence from a dead stream is not evidence of anything. Failing
+			// here rather than passing is the whole point: this assertion is
+			// PROVED BY ABSENCE, so a participant that could no longer receive
+			// makes the proof void, not satisfied.
+			markUnprovableSilence(rep, pending, ended)
 		}
 	}
 	printFinal(len(rep.Steps))
@@ -394,6 +431,30 @@ func markLeaked(rep *Report, pending []pendingDenial, leaked []string) {
 	}
 	rep.Steps[first.idx].Pass = false
 	rep.Steps[first.idx].Detail = detail
+	rep.Pass = false
+}
+
+// markUnprovableSilence fails the denial the same way markLeaked does, but for
+// the opposite evidence: nothing was heard AND at least one participant could
+// not have heard anything. denialAbsenceWindow's doc justifies proving the
+// negative by silence on the grounds that "a connection that truly never
+// broadcasts stays silent no matter how long the window is" — which holds for
+// a LIVE connection and not for a torn-down one.
+func markUnprovableSilence(rep *Report, pending []pendingDenial, ended []string) {
+	// EVERY pending denial, unlike markLeaked's first-only. That asymmetry is
+	// the point: a leak provably came from exactly one denied step and which
+	// one is unknowable, so blaming the first is the honest summary. Here
+	// there is no single culprit — every outstanding denial rests its absence
+	// claim on the SAME dead participant, so every one of them is equally
+	// unproven. Marking one would leave the rest printing pass=true on
+	// evidence that does not exist (scenarios/denials.json has 14 in a row).
+	detail := fmt.Sprintf(
+		"denial unprovable: the stream ended for %s, so their silence is not evidence that "+
+			"the denied command broadcast nothing", strings.Join(ended, ", "))
+	for _, d := range pending {
+		rep.Steps[d.idx].Pass = false
+		rep.Steps[d.idx].Detail = detail
+	}
 	rep.Pass = false
 }
 
@@ -518,9 +579,20 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	}
 
 	sr.firstSeq = result.Sequence
-	missing := observeOnAll(conns, history, result.Sequence, observeTimeout)
-	if len(missing) > 0 {
-		sr.Detail = fmt.Sprintf("event (sequence %d) not observed matching by: %s", result.Sequence, strings.Join(missing, ", "))
+	missing, ended := observeOnAll(conns, history, result.Sequence, observeTimeout)
+	if len(ended) > 0 || len(missing) > 0 {
+		// Both facts, never one instead of the other: "did not observe" sends
+		// the reader after a broadcast that may have been perfect, and a
+		// participant whose stream died says nothing about one that genuinely
+		// missed it. Reporting only the first found would hide the second.
+		parts := make([]string, 0, 2)
+		if len(ended) > 0 {
+			parts = append(parts, fmt.Sprintf("unobservable — stream ended for: %s", strings.Join(ended, ", ")))
+		}
+		if len(missing) > 0 {
+			parts = append(parts, fmt.Sprintf("not observed matching by: %s", strings.Join(missing, ", ")))
+		}
+		sr.Detail = fmt.Sprintf("event (sequence %d) %s", result.Sequence, strings.Join(parts, "; "))
 		return sr
 	}
 	sr.Pass = true
@@ -579,29 +651,40 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 
 	got := make([]*vttv1.Envelope, 0, len(want))
 	timedOut := false
+	// Tracked apart from timedOut. Setting that flag on a channel close is the
+	// misdiagnosis this separation exists to stop: it reported "before timing
+	// out" for a redial whose stream was torn down in milliseconds, naming an
+	// observeTimeout that never elapsed.
+	var streamEnd error
 	for range want {
 		select {
 		case env, ok := <-newConn.Events():
 			if !ok {
-				timedOut = true
+				streamEnd = streamEndReason(newConn)
 			} else {
 				got = append(got, env)
 			}
 		case <-time.After(observeTimeout):
 			timedOut = true
 		}
-		if timedOut {
+		if timedOut || streamEnd != nil {
 			break
 		}
 	}
 
 	extra := false
-	if !timedOut {
+	if !timedOut && streamEnd == nil {
 		select {
 		case env, ok := <-newConn.Events():
 			if ok {
 				got = append(got, env)
 				extra = true
+			} else {
+				// "Nothing extra arrived" is another proof by ABSENCE, and a
+				// dead socket satisfies it by construction. Reachable with an
+				// EMPTY want (a reconnect at the head, asserting nothing
+				// replays), where the loop above never runs and so never asks.
+				streamEnd = streamEndReason(newConn)
 			}
 		case <-time.After(denialAbsenceWindow):
 		}
@@ -610,6 +693,9 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 	history[name] = append(append([]*vttv1.Envelope{}, prefix...), got...)
 
 	switch {
+	case streamEnd != nil:
+		sr.Detail = fmt.Sprintf("catch-up: got %d/%d events before the stream ended: %v", len(got), len(want), streamEnd)
+		return sr
 	case timedOut:
 		sr.Detail = fmt.Sprintf("catch-up: got %d/%d events before timing out", len(got), len(want))
 		return sr
@@ -635,11 +721,12 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 // history regardless of outcome, and returns the names of participants that
 // either didn't see anything in time or saw an event with the wrong
 // Sequence.
-func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, wantSeq int64, timeout time.Duration) []string {
+func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, wantSeq int64, timeout time.Duration) (missingNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
-		name string
-		ok   bool
+		name  string
+		ok    bool
+		ended bool
 	}
 	results := make(chan outcome, len(names))
 	var mu sync.Mutex
@@ -650,28 +737,35 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 			select {
 			case env, chOK := <-conn.Events():
 				if !chOK {
-					results <- outcome{name, false}
+					// Did not observe it, but because the stream was gone —
+					// a different fault with a different fix than a broadcast
+					// that never arrived.
+					results <- outcome{name: name, ended: true}
 					return
 				}
 				mu.Lock()
 				history[name] = append(history[name], env)
 				mu.Unlock()
-				results <- outcome{name, env.Sequence == wantSeq}
+				results <- outcome{name: name, ok: env.Sequence == wantSeq}
 			case <-time.After(timeout):
-				results <- outcome{name, false}
+				results <- outcome{name: name}
 			}
 		}()
 	}
 
-	var missing []string
+	var missing, ended []string
 	for range names {
 		r := <-results
-		if !r.ok {
+		switch {
+		case r.ended:
+			ended = append(ended, r.name)
+		case !r.ok:
 			missing = append(missing, r.name)
 		}
 	}
 	sort.Strings(missing)
-	return missing
+	sort.Strings(ended)
+	return missing, ended
 }
 
 // observeBatchOnAll asserts every participant observes the FULL batch a
@@ -792,8 +886,14 @@ func collectBatchRun(name string, conn Conn, history map[string][]*vttv1.Envelop
 		mu.Unlock()
 	}
 
-	first, ok := recvWithin(conn, firstTimeout)
+	first, ok, why := recvWithin(conn, firstTimeout)
 	if !ok {
+		if why != nil {
+			// The subscriber was gone, not the broadcast missing. Without
+			// this the reader goes looking for an event that was probably
+			// sent, to a connection that could no longer receive it.
+			return batchOutcome{name: name, err: fmt.Sprintf("no event observed: %v", why)}
+		}
 		return batchOutcome{name: name, err: "no event observed"}
 	}
 	record(first)
@@ -804,8 +904,16 @@ func collectBatchRun(name string, conn Conn, history map[string][]*vttv1.Envelop
 	envs := []*vttv1.Envelope{first}
 	last := first.Sequence
 	for {
-		next, ok := recvWithin(conn, quietWindow)
+		next, ok, why := recvWithin(conn, quietWindow)
 		if !ok {
+			if why != nil {
+				// NOT "batch complete". The stream died mid-run, so whether
+				// more events were owed is unknowable — and returning a clean
+				// outcome here let a truncated observation satisfy a scenario
+				// assertion about a longer batch.
+				return batchOutcome{name: name, envs: envs, err: fmt.Sprintf(
+					"batch truncated after %d event(s): %v", len(envs), why)}
+			}
 			return batchOutcome{name: name, envs: envs} // quiet window elapsed: batch complete.
 		}
 		record(next)
@@ -818,17 +926,40 @@ func collectBatchRun(name string, conn Conn, history map[string][]*vttv1.Envelop
 	}
 }
 
-// recvWithin reads one event from conn within timeout, or returns
-// (nil, false) on timeout or channel closure.
-func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool) {
+// errStreamEnded marks the reason a read failed because the Events() channel
+// was torn down, as opposed to nothing having arrived in time. Callers ask
+// errors.Is(why, errStreamEnded) for "the stream went away" and
+// errors.Is(why, ErrEventsOverflow) for "because I was too slow".
+var errStreamEnded = errors.New("the event stream ended")
+
+// streamEndReason names why conn's Events() channel closed, wrapping the
+// connection's own CloseErr so the cause survives errors.Is.
+func streamEndReason(conn Conn) error {
+	if err := conn.CloseErr(); err != nil {
+		return fmt.Errorf("%w: %w", errStreamEnded, err)
+	}
+	return errStreamEnded
+}
+
+// recvWithin reads one event from conn within timeout. ok=false means no event
+// arrived, and the error separates the two ways that happens: nil when the
+// window merely elapsed on a live stream, non-nil when the stream was TORN
+// DOWN under the read.
+//
+// Those are opposite facts. A window elapsing on an open stream is how a
+// finished batch looks — the ordinary success path. A channel closing means
+// the rest of the batch is unobservable, and reporting that as "the batch
+// ended" turns a truncated observation into a passing assertion. This used to
+// return the same (nil, false) for both.
+func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool, error) {
 	select {
 	case env, ok := <-conn.Events():
 		if !ok {
-			return nil, false
+			return nil, false, streamEndReason(conn)
 		}
-		return env, true
+		return env, true, nil
 	case <-time.After(timeout):
-		return nil, false
+		return nil, false, nil
 	}
 }
 
@@ -837,11 +968,12 @@ func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool) {
 // window*count) and returns the names of any that received an event —
 // recording whatever arrived into history either way, since it really was
 // received over the wire.
-func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envelope, window time.Duration) []string {
+func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envelope, window time.Duration) (leakedNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
-		name string
-		env  *vttv1.Envelope
+		name  string
+		env   *vttv1.Envelope
+		ended bool
 	}
 	results := make(chan outcome, len(names))
 	var mu sync.Mutex
@@ -855,25 +987,32 @@ func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envel
 					mu.Lock()
 					history[name] = append(history[name], env)
 					mu.Unlock()
-					results <- outcome{name, env}
+					results <- outcome{name: name, env: env}
 				} else {
-					results <- outcome{name, nil}
+					// Silent, but NOT evidence. This used to report the same
+					// outcome as a live quiet stream, which is what let a
+					// torn-down participant satisfy a denial assertion.
+					results <- outcome{name: name, ended: true}
 				}
 			case <-time.After(window):
-				results <- outcome{name, nil}
+				results <- outcome{name: name}
 			}
 		}()
 	}
 
-	var leaked []string
+	var leaked, ended []string
 	for range names {
 		r := <-results
-		if r.env != nil {
+		switch {
+		case r.env != nil:
 			leaked = append(leaked, r.name)
+		case r.ended:
+			ended = append(ended, r.name)
 		}
 	}
 	sort.Strings(leaked)
-	return leaked
+	sort.Strings(ended)
+	return leaked, ended
 }
 
 func sortedParticipantNames(conns map[string]Conn) []string {

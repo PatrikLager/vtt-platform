@@ -218,8 +218,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	// drain goroutines below start consuming Events() — every participant's
 	// after=0 catch-up replays the same history, so one representative
 	// check is sufficient.
-	if n := drainPreExisting(conns[soakObserverName], denialAbsenceWindow); n > 0 {
-		return nil, errFreshCampaignRequired(n)
+	preExisting, err := drainPreExisting(conns[soakObserverName], denialAbsenceWindow)
+	if err != nil {
+		return nil, fmt.Errorf("harness: soak: cannot confirm a fresh campaign: %w", err)
+	}
+	if preExisting > 0 {
+		return nil, errFreshCampaignRequired(preExisting)
 	}
 
 	histories := newSoakHistories()
@@ -366,10 +370,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	// they fall back to the original bounded wait. Only a TRAILING RUN of
 	// denials can reach this, so the wait is paid once per soak.
 	if len(pending) > 0 {
-		if leaked := histories.grewSince(pending[0].lens, denialAbsenceWindow); len(leaked) > 0 {
-			rep.Pass = false
-			fmt.Fprint(report, deniedLeakLine(pending, leaked))
-		}
+		settleTrailingDenials(rep, histories, pending, report)
 	}
 
 	if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, report); err != nil {
@@ -383,6 +384,30 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 // Nothing orders consecutive denials relative to each other — they produce no
 // events — so the EARLIEST carries the failure and the line discloses the
 // range instead of implying the leak was pinned to one action.
+// settleTrailingDenials resolves the denials that have no accepted action
+// after them, the only ones that fall back to a bounded wait. Extracted from
+// RunSoak rather than inlined: the second case below pushed that function past
+// the gocyclo limit, and a quality gate is not weakened to fit a change.
+//
+// Three outcomes, not two. A history that GREW is a leak. A history that
+// stopped growing because its stream ENDED is not evidence of anything —
+// grewSince cannot tell that from a quiet connection by length alone, which is
+// why it reports the two separately. Proving a negative by silence requires a
+// connection that could have spoken.
+func settleTrailingDenials(rep *SoakReport, histories *soakHistories, pending []*deniedPending, report io.Writer) {
+	leaked, ended := histories.grewSince(pending[0].lens, denialAbsenceWindow)
+	switch {
+	case len(leaked) > 0:
+		rep.Pass = false
+		fmt.Fprint(report, deniedLeakLine(pending, leaked))
+	case len(ended) > 0:
+		rep.Pass = false
+		fmt.Fprintf(report, "[soak] FAIL: denial absence unprovable — the stream ended for %s, "+
+			"so their silence is not evidence that the %d trailing denied command(s) broadcast nothing\n",
+			strings.Join(ended, ", "), len(pending))
+	}
+}
+
 func deniedLeakLine(pending []*deniedPending, leaked []string) string {
 	first := pending[0]
 	line := fmt.Sprintf("[action %d] by=%s kind=%s FAIL: unexpected broadcast observed by %s after a denied command",
@@ -655,10 +680,18 @@ func statesEqual(a, b *engine.State) bool {
 type soakHistories struct {
 	mu   sync.Mutex
 	data map[string][]*vttv1.Envelope
+	// ended records, per participant, why its drain goroutine stopped. A
+	// participant whose stream is gone contributes SILENCE to every later
+	// absence check, and silence from a dead connection is not evidence —
+	// see grewSince.
+	ended map[string]error
 }
 
 func newSoakHistories() *soakHistories {
-	return &soakHistories{data: map[string][]*vttv1.Envelope{}}
+	return &soakHistories{
+		data:  map[string][]*vttv1.Envelope{},
+		ended: map[string]error{},
+	}
 }
 
 // start launches the one goroutine that drains name's connection for as
@@ -671,6 +704,13 @@ func (h *soakHistories) start(name string, c Conn) {
 			h.data[name] = append(h.data[name], env)
 			h.mu.Unlock()
 		}
+		// The range ended, so the stream is gone. Recorded rather than merely
+		// returned: this participant's history can no longer grow, and an
+		// absence check that reads that stillness as "nothing was broadcast"
+		// is proving a negative against a connection that could not speak.
+		h.mu.Lock()
+		h.ended[name] = streamEndReason(c)
+		h.mu.Unlock()
 	}()
 }
 
@@ -726,7 +766,7 @@ func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64) []s
 // drainAllForSilence semantics, reused here over the histories this type
 // already continuously maintains instead of a fresh per-call goroutine
 // race.
-func (h *soakHistories) grewSince(before map[string]int, window time.Duration) []string {
+func (h *soakHistories) grewSince(before map[string]int, window time.Duration) (grewNames, endedNames []string) {
 	time.Sleep(window)
 	after := h.lengths()
 	var grew []string
@@ -736,7 +776,18 @@ func (h *soakHistories) grewSince(before map[string]int, window time.Duration) [
 		}
 	}
 	sort.Strings(grew)
-	return grew
+
+	// Independent of `before`: a torn-down participant invalidates the
+	// absence claim whether or not it had accumulated history first.
+	h.mu.Lock()
+	ended := make([]string, 0, len(h.ended))
+	for name := range h.ended {
+		ended = append(ended, name)
+	}
+	h.mu.Unlock()
+	sort.Strings(ended)
+
+	return grew, ended
 }
 
 // waitFor blocks (bounded by timeout) until name's history contains an
