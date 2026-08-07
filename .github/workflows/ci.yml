@@ -12,10 +12,22 @@
 
 name: check
 
+# TRIGGERS NARROWED 2026-08-07, Patrik's call: the GitHub Actions allowance is
+# exhausted until 1 September, and `pull_request` was spending it fastest — a
+# full run is 45-60 minutes and it fired on EVERY push to a branch, 755 minutes
+# in a single day.
+#
+# What replaces it: `task check:ts-mutation:docker` runs the ONE gate that
+# cannot run on macOS (FB21686886) inside a Linux container, locally, for no
+# minutes at all. Every other gate in `task check` already ran natively. So the
+# signal is not lost, it moved — and main is still verified on every merge.
+#
+# RESTORE `pull_request:` once the allowance resets. It is worth having: CI on a
+# clean checkout catches what a developer's tree hides, and it was CI that
+# caught the ts-mutation survivors this branch shipped.
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
