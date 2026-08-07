@@ -295,3 +295,61 @@ func TestToEventUnknownCommandErrors(t *testing.T) {
 		t.Fatalf("want error for an empty/unset command, got envelope %v", env)
 	}
 }
+
+// TestEveryClientCommandConverts is the gate that would have caught the defect
+// this test was written for, and it is the reason it exists rather than just
+// two more cases below.
+//
+// grant_actor_control and revoke_actor_control shipped ADVERTISED and DEAD:
+// the contract carried them, both folds applied their events, the 60-cell
+// authz matrix permitted them, and cmd/vtt/tools.json offered them to agents
+// as MCP tools — but ToEvent had no arm, so every one returned
+// ErrUnknownCommand. Eight commits and a green `task check` later, the
+// feature's primary flow (spec §3.1, "actors are assigned afterwards") could
+// not happen at all.
+//
+// Nothing noticed because the authz tests stop at Authorize and never cross
+// into conversion, and the MCP tests dispatch against a fake server that
+// always replies ok. A per-command test would have missed the NEXT command the
+// same way; this iterates the oneof, so a variant joins the gate by existing.
+// internal/mcp/tools.go:56 and tools/toolgen already do exactly this — the
+// gateway was the layer without it.
+func TestEveryClientCommandConverts(t *testing.T) {
+	// Commands that deliberately do NOT convert here, each with its reason.
+	// Adding a name to this list is a decision; forgetting one is a failure.
+	notConverted := map[string]string{
+		"use_ability":    "resolved through the ruleset, which emits its own events (server.go)",
+		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
+		"retract_events": "a retraction range, not a single event (handleRetraction)",
+	}
+
+	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")
+	if oneof == nil {
+		t.Fatal("vttv1.ClientCommand has no \"command\" oneof")
+	}
+	p := &identity.Participant{ID: "p-dm", Name: "DM", Role: identity.RoleDM}
+
+	for i := range oneof.Fields().Len() {
+		fd := oneof.Fields().Get(i)
+		name := string(fd.Name())
+		t.Run(name, func(t *testing.T) {
+			if why, skip := notConverted[name]; skip {
+				t.Logf("not converted here: %s", why)
+				return
+			}
+			// Build the command with only the oneof arm set. ToEvent must not
+			// need a populated payload to know which event it becomes.
+			cmd := &vttv1.ClientCommand{RequestId: "r-" + name}
+			cmd.ProtoReflect().Set(fd, cmd.ProtoReflect().NewField(fd))
+
+			env, err := gateway.ToEvent(cmd, p)
+			if err != nil {
+				t.Fatalf("%s does not convert: %v — it is reachable from the wire and from "+
+					"MCP, so this command is advertised and dead", name, err)
+			}
+			if env.GetPayload() == nil {
+				t.Fatalf("%s converted to an envelope with no payload", name)
+			}
+		})
+	}
+}

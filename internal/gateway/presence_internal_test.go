@@ -209,7 +209,17 @@ func TestBroadcastWaitsForAConnectionThatIsMerelyBusy(t *testing.T) {
 
 	r.broadcast(nil, []byte("frame"))
 
-	if len(busy.out) != 1 {
+	// CONTENT, not depth. `len(busy.out) == 1` is satisfied by the leftover
+	// "backlog" frame under an instant drop, so a depth assertion passes under
+	// the exact defect this test is named for — measured: the drop leaves all
+	// ten registry tests green and only the runtime changes, 0.02s to 0.00s.
+	select {
+	case got := <-busy.out:
+		if string(got) != "frame" {
+			t.Fatalf("channel holds %q, want the announcement — it was dropped, and the "+
+				"backlog frame satisfied a depth check in its place", got)
+		}
+	default:
 		t.Fatal("a connection that drains a moment later must still receive the announcement")
 	}
 }
@@ -229,5 +239,60 @@ func TestLeaveStopsDelivery(t *testing.T) {
 	}
 	if len(stays.out) != 1 {
 		t.Fatal("the remaining connection must still receive announcements")
+	}
+}
+
+// TestBroadcastNeverTouchesAConnectionThatHasLeft pins the ORDERING that
+// serve's teardown depends on: leave() must complete before outCh is closed.
+//
+// Nothing pinned it before. Moving leavePresence() back below <-writerDone —
+// the exact pre-fix state — left the whole Go suite green across 96 executions
+// while producing 16 "send on closed channel" panics, because `go test` hides a
+// passing package's output and net/http's handler recovers the panic. The
+// consequence is not the crash: map iteration order is random, so a panic
+// mid-broadcast delivers the departure to SOME connections and never to the
+// rest, leaving a permanent ghost.
+//
+// This works at the registry level, where the ordering actually lives: a
+// broadcast that is holding the lock must not still be handing frames to a
+// connection whose leave() has returned. Deliberately not a race-detector test
+// — the gate runs no -race, so a regression pin that only fails under -race
+// would not fail anything.
+func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
+	r := newPresenceRegistry()
+	r.sendBudget = time.Second
+
+	// `leaver` never drains, so a broadcast to it parks under the lock — the
+	// window in which serve would otherwise be closing its channel.
+	leaver := conn("p-1", "Ada", 0)
+	stays := conn("p-2", "Bo", 1)
+	join(r, leaver)
+	join(r, stays)
+
+	left := make(chan struct{})
+	go func() {
+		defer close(left)
+		r.leave(leaver) // blocks until the broadcast releases r.mu
+		// Standing in for serve's close(outCh): only reached once leave has
+		// returned, and by then no broadcast may hold this connection.
+		close(leaver.out)
+	}()
+
+	r.broadcast(nil, []byte("frame"))
+
+	select {
+	case <-left:
+	case <-time.After(5 * time.Second):
+		t.Fatal("leave never returned — broadcast is holding the registry lock indefinitely")
+	}
+
+	// A second broadcast must not send to the departed connection. Without the
+	// leave-before-close ordering this is a send on a closed channel, which
+	// panics rather than failing, and takes the announcement to `stays` with it.
+	r.broadcast(nil, []byte("second"))
+
+	if len(stays.out) == 0 {
+		t.Fatal("the remaining connection lost its announcement — a panic mid-broadcast " +
+			"delivers to some connections and never to the rest")
 	}
 }

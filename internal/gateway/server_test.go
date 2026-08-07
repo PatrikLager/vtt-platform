@@ -35,6 +35,11 @@ type gwFixture struct {
 	dmToken, agentToken, spectatorToken string
 	playerToken, otherPlayerToken       string
 	playerID                            string
+
+	// campaign is exposed so a test can assert on FOLDED STATE rather than on
+	// the result frame alone. A command can answer ok=true and still not mean
+	// what the test claims; the state is what the table actually sees.
+	campaign *campaign.Campaign
 }
 
 // mustAppend seeds one event directly on the campaign (bypassing the
@@ -120,6 +125,7 @@ func newGWFixture(t *testing.T) *gwFixture {
 		t: t, srv: httpSrv,
 		dmToken: dmToken, agentToken: agentToken, spectatorToken: spectatorToken,
 		playerToken: playerToken, otherPlayerToken: otherPlayerToken, playerID: playerID,
+		campaign: c,
 	}
 }
 
@@ -1008,4 +1014,65 @@ func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 
 	_ = leaver.Close(websocket.StatusNormalClosure, "bye")
 	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
+}
+
+// TestDMGrantsControlOverTheWire is the branch's motivating flow, end to end:
+// a DM hands a second character to a player, and the player ends up genuinely
+// controlling both (spec §3.1, §8's demo).
+//
+// It exists because that flow was IMPOSSIBLE for eight commits. The contract
+// carried the command, both folds applied its event, the 60-cell authz matrix
+// permitted it and the MCP tool list advertised it — and ToEvent had no arm,
+// so the server answered "unknown or empty command" every time. The authz
+// tests stopped at Authorize and never crossed into conversion, so nothing
+// noticed. A test that ends at the permission check is not evidence the
+// command works.
+func TestDMGrantsControlOverTheWire(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	// a1 is seeded controlled by the player; grant it to a SECOND participant.
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "grant-1",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "a1", ParticipantId: "p-second",
+		}},
+	})
+	res := readResult(t, dm)
+	if !res.GetOk() {
+		t.Fatalf("grant_actor_control refused: %q — the command is authorized and advertised, "+
+			"so a refusal here means the feature does not exist", res.GetError())
+	}
+
+	st := f.campaign.State()
+	actor, ok := st.Actors["a1"]
+	if !ok {
+		t.Fatal("actor a1 vanished")
+	}
+	ids := actor.GetControllerIds()
+	if len(ids) != 2 || ids[1] != "p-second" {
+		t.Fatalf("controller_ids = %v, want the original controller plus p-second", ids)
+	}
+	// The mirror still points at the FIRST controller: granting a second one
+	// must not silently move the character away from the first.
+	if actor.GetControllerId() != ids[0] {
+		t.Fatalf("controller_id = %q, want the mirror of controller_ids[0] = %q",
+			actor.GetControllerId(), ids[0])
+	}
+
+	// And revoke takes it back off.
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "revoke-1",
+		Command: &vttv1.ClientCommand_RevokeActorControl{RevokeActorControl: &vttv1.RevokeActorControl{
+			ActorId: "a1", ParticipantId: "p-second",
+		}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("revoke_actor_control refused: %q", res.GetError())
+	}
+	if ids := f.campaign.State().Actors["a1"].GetControllerIds(); len(ids) != 1 {
+		t.Fatalf("controller_ids = %v, want the grant undone", ids)
+	}
 }
