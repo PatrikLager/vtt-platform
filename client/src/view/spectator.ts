@@ -8,6 +8,7 @@
 // an assertion could.
 
 import type { State } from "../state";
+import type { Participant } from "../session";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
@@ -188,13 +189,36 @@ function renderTicker(log: Envelope[]): HTMLElement {
   return wrap;
 }
 
-function renderStatus(st: State, status: string): HTMLElement {
+function renderStatus(st: State, status: string, extras: ViewExtras): HTMLElement {
   const open = st.Sessions.find((s) => s.EndSeq === 0);
   const wrap = el("header", "status");
   wrap.appendChild(el("span", "conn", status));
   wrap.appendChild(
     el("span", "session", open ? `session: ${open.Name}` : `sessions: ${st.Sessions.length}`),
   );
+
+  // Shown at ANY size, including one. Hiding a single-entry list would make
+  // "nobody else is here" indistinguishable from "presence is broken", which
+  // is the reading a player reaches for the moment they are unexpectedly
+  // alone.
+  const who = el("span", "present");
+  for (const p of extras.participants ?? []) {
+    who.appendChild(el("span", "participant", p.displayName));
+  }
+  wrap.appendChild(who);
+
+  // MANUAL reconnect (spec §3.4). No timer and no backoff: the server cannot
+  // know when someone's network came back, so a guess either hammers a dead
+  // link or rejoins a session the person has left. Offered ONLY when the
+  // connection is actually closed — a button present on a healthy session
+  // just drops it for no reason.
+  if (status === "closed" && extras.onReconnect) {
+    const btn = document.createElement("button");
+    btn.className = "reconnect";
+    btn.textContent = "Reconnect";
+    btn.addEventListener("click", extras.onReconnect);
+    wrap.appendChild(btn);
+  }
   return wrap;
 }
 
@@ -212,6 +236,10 @@ export interface ViewExtras {
   onCell?: ((c: { x: number; y: number }) => void) | undefined;
   /** Transient message from the last command. */
   toast?: string | undefined;
+  /** Who is currently at the table (T5). */
+  participants?: Participant[] | undefined;
+  /** Redial, offered only while the connection is closed. */
+  onReconnect?: (() => void) | undefined;
 }
 
 export function renderSpectator(
@@ -227,7 +255,7 @@ export function renderSpectator(
   const sceneId = Object.keys(st.Scenes).sort().at(-1) ?? "";
 
   const nodes: HTMLElement[] = [
-    renderStatus(st, status),
+    renderStatus(st, status, extras),
     renderGrid(st, sceneId, extras.onCell),
     renderFeed(buildFeed(log)),
     renderNotes(st),

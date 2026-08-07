@@ -26,6 +26,7 @@ import {
   ClientCommandSchema,
   CommandResultSchema,
   ServerFrameSchema,
+  PresenceState,
   type ClientCommand,
   type CommandResult,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -33,11 +34,27 @@ import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/even
 
 export type WireStatus = "connecting" | "open" | "closed" | "error";
 
+/**
+ * One participant's presence, flattened out of the two wire frames that carry
+ * it — a snapshot entry and a delta have the same shape and the same meaning,
+ * so a consumer needs one handler, not two.
+ *
+ * `state` is narrowed to the two states that can appear: UNSPECIFIED exists on
+ * the wire only to catch a sender that forgot to set it, and is dropped here
+ * rather than passed on as a third case every consumer must then handle.
+ */
+export interface PresenceEvent {
+  participantId: string;
+  displayName: string;
+  state: "CONNECTED" | "DISCONNECTED";
+}
+
 export class Wire {
   private ws: WebSocket | null = null;
   private readonly pending = new Map<string, (r: CommandResult) => void>();
   private eventHandlers: ((e: Envelope) => void)[] = [];
   private statusHandlers: ((s: WireStatus) => void)[] = [];
+  private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private lastSeq = 0n;
   private nextID = 0;
 
@@ -57,6 +74,36 @@ export class Wire {
 
   onStatus(fn: (s: WireStatus) => void): void {
     this.statusHandlers.push(fn);
+  }
+
+  /**
+   * Subscribe to presence.
+   *
+   * `replace` distinguishes a SNAPSHOT from a delta, and that distinction is
+   * load-bearing rather than informational. A snapshot is the complete table,
+   * so its meaning is as much in who is ABSENT as in who is listed; the server
+   * sends one on every connection, reconnects included. Flattening it into
+   * individual arrivals discards the absence, and a client that reconnects
+   * after someone left keeps showing them forever — the ghost this whole
+   * feature exists to prevent.
+   */
+  onPresence(fn: (batch: PresenceEvent[], replace: boolean) => void): void {
+    this.presenceHandlers.push(fn);
+  }
+
+  /** Narrow one wire record, or drop it. */
+  private one(participantId: string, displayName: string, state: PresenceState): PresenceEvent | null {
+    // UNSPECIFIED is dropped, not guessed. Treating it as CONNECTED would add
+    // a phantom to the table and treating it as DISCONNECTED would evict a
+    // real one; both are worse than ignoring a frame a correct server never
+    // sends.
+    if (state === PresenceState.CONNECTED) return { participantId, displayName, state: "CONNECTED" };
+    if (state === PresenceState.DISCONNECTED) return { participantId, displayName, state: "DISCONNECTED" };
+    return null;
+  }
+
+  private emitPresence(batch: PresenceEvent[], replace: boolean): void {
+    for (const fn of this.presenceHandlers) fn(batch, replace);
   }
 
   private status(s: WireStatus): void {
@@ -127,6 +174,26 @@ export class Wire {
         const env = frame.frame.value;
         if (env.sequence > this.lastSeq) this.lastSeq = env.sequence;
         for (const fn of this.eventHandlers) fn(env);
+        return;
+      }
+      case "presenceSnapshot": {
+        // Deliberately NOT advancing lastSeq: presence is not an event and
+        // carries no sequence. lastSeq is the replay cursor reconnect resumes
+        // from, so touching it here would skip real events on the next redial.
+        const batch: PresenceEvent[] = [];
+        for (const e of frame.frame.value.present) {
+          const one = this.one(e.participantId, e.displayName, e.state);
+          if (one) batch.push(one);
+        }
+        // replace=true even when the batch is EMPTY: a table that emptied is a
+        // fact, and skipping the call would leave the previous list standing.
+        this.emitPresence(batch, true);
+        return;
+      }
+      case "presenceChanged": {
+        const p = frame.frame.value;
+        const one = this.one(p.participantId, p.displayName, p.state);
+        if (one) this.emitPresence([one], false);
         return;
       }
       default:

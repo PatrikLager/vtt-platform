@@ -278,3 +278,49 @@ test("a resource ability naming no resource is not affordable", () => {
   };
   expect(affordable(malformed, st.Actors["a1"]!)).toBe(true);
 });
+
+test("a shared actor is listed for every participant who controls it", () => {
+  // The carry-in from T2. controlledActors filtered on controllerId, which
+  // holds only controllerIds[0] — so the SECOND controller of a shared
+  // character could not see it at all, and the DM granting a character to a
+  // player who already had one silently hid it from them.
+  //
+  // Gateway authorization already reads the set (T3), so before this the
+  // client refused to SHOW a character the server would happily let the
+  // player move.
+  const st = newState();
+  st.Actors["shared"] = {
+    actorId: "shared", name: "SHARED", moduleId: "",
+    attributes: {}, resources: {},
+    controllerId: "p-first", // mirrors controllerIds[0]
+    controllerIds: ["p-first", "p-second"],
+  };
+
+  expect(controlledActors(st, "p-first").map((a) => a.actorId)).toEqual(["shared"]);
+  expect(controlledActors(st, "p-second").map((a) => a.actorId)).toEqual(["shared"]);
+  expect(controlledActors(st, "p-third")).toEqual([]);
+});
+
+test("an empty participant matches nothing, even against an empty id in the set", () => {
+  // The TS twin of gateway's TestAuthorizeEmptyParticipantMatchesNothing.
+  //
+  // Built DIRECTLY, because both folds filter "" out of controllerIds and so
+  // this state should be unreachable through them — which is exactly why the
+  // guard is defence in depth rather than redundant. If an empty id ever
+  // reached state by a route the folds do not own, an unidentified viewer
+  // would be shown as controlling it.
+  //
+  // The world() fixture cannot exercise this: its unowned NPCs carry an EMPTY
+  // set, so [].includes("") is already false and the guard never runs.
+  const st = newState();
+  st.Actors["ghost"] = {
+    actorId: "ghost", name: "GHOST", moduleId: "",
+    attributes: {}, resources: {},
+    controllerId: "",
+    controllerIds: [""],
+  };
+
+  const got = controlledActors(st, "");
+  expect(got).toHaveLength(0);
+  expect(got.map((a) => a.actorId)).toEqual([]);
+});

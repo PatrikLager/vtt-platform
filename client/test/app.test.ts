@@ -800,3 +800,29 @@ test("the board is painted with a status before any metadata request goes out", 
     globalThis.fetch = realFetch;
   }
 });
+
+test("clicking Reconnect redials from the last folded sequence", () => {
+  // The whole T5 wiring end to end: status "closed" surfaces the control, the
+  // click reaches session.reconnect(), and the redial resumes at
+  // after=<lastSeq> instead of replaying the campaign from zero.
+  //
+  // Without this the app.ts handler body could be emptied and every other test
+  // still passed — the button existed and did nothing.
+  localStorage.setItem("vtt.token", "tok-1");
+  useFakeSocket();
+  const r = root();
+  const session = boot(r);
+
+  const first = FakeSocket.instances[0]!;
+  first.open();
+  first.deliver(envelope(7, { sessionStarted: { name: "S" } }));
+  first.close(); // the network drops; status becomes "closed"
+
+  const btn = r.querySelector(".reconnect") as HTMLButtonElement | null;
+  expect(btn).not.toBeNull();
+  btn!.click();
+
+  expect(FakeSocket.instances).toHaveLength(2);
+  expect(FakeSocket.instances[1]!.url).toContain("after=7");
+  session?.close();
+});

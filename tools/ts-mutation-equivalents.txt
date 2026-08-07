@@ -135,49 +135,49 @@ client/src/view/dm.ts 66:7 ConditionalExpression true
 # than carried forward. The same applies if ids ever stop coming from a map at
 # all — a list of actors arriving as an array, say.
 
-client/src/player.ts 20:22 EqualityOperator a.actorId <= b.actorId
+client/src/player.ts 26:22 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 20:51 ConditionalExpression true
+client/src/player.ts 26:51 ConditionalExpression true
     Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
 
-client/src/player.ts 20:51 ConditionalExpression false
+client/src/player.ts 26:51 ConditionalExpression false
     Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
 
-client/src/player.ts 20:51 EqualityOperator a.actorId >= b.actorId
+client/src/player.ts 26:51 EqualityOperator a.actorId >= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 20:51 EqualityOperator a.actorId <= b.actorId
+client/src/player.ts 26:51 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 52:22 EqualityOperator a.ID <= b.ID
+client/src/player.ts 58:22 EqualityOperator a.ID <= b.ID
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 52:41 ConditionalExpression true
+client/src/player.ts 58:41 ConditionalExpression true
     Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
 
-client/src/player.ts 52:41 ConditionalExpression false
+client/src/player.ts 58:41 ConditionalExpression false
     Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
 
-client/src/player.ts 52:41 EqualityOperator a.ID <= b.ID
+client/src/player.ts 58:41 EqualityOperator a.ID <= b.ID
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 52:41 EqualityOperator a.ID >= b.ID
+client/src/player.ts 58:41 EqualityOperator a.ID >= b.ID
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 69:5 EqualityOperator a.actorId <= b.actorId
+client/src/player.ts 75:5 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 69:34 ConditionalExpression true
+client/src/player.ts 75:34 ConditionalExpression true
     Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer.
 
-client/src/player.ts 69:34 EqualityOperator a.actorId >= b.actorId
+client/src/player.ts 75:34 EqualityOperator a.actorId >= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
-client/src/player.ts 69:34 ConditionalExpression false
+client/src/player.ts 75:34 ConditionalExpression false
     Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle and the sort reaches the same order from the negative signal alone; verified identical to the full comparator at n = 3, 5, 10 and 20 on deliberately unsorted ids, rather than assumed.
 
-client/src/player.ts 69:34 EqualityOperator a.actorId <= b.actorId
+client/src/player.ts 75:34 EqualityOperator a.actorId <= b.actorId
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
 # --- client/src/view/spectator.ts --------------------------------------------
@@ -188,7 +188,7 @@ client/src/player.ts 69:34 EqualityOperator a.actorId <= b.actorId
 # `// Stryker disable` and a stated reason — el()'s `text !== undefined` guard,
 # the same harness-blind case as view/dm.ts.
 
-client/src/view/spectator.ts 227:59 StringLiteral "Stryker was here!"
+client/src/view/spectator.ts 255:59 StringLiteral "Stryker was here!"
     `Object.keys(st.Scenes).sort().at(-1) ?? ""` — the fallback value. It is reached ONLY when there are no scenes, because at(-1) returns undefined only for an empty key list. Whatever string it yields is then looked up in st.Scenes and missed, rendering "No scene yet." either way. A scene keyed by the sentinel string would distinguish them, which requires a scene id of "Stryker was here!" to exist. (A scene keyed "" is a different case and IS pinned by test — that key is returned by at(-1) directly, never via the fallback.)
 
 # --- client/src/auth.ts -----------------------------------------------------
@@ -226,10 +226,10 @@ client/src/view/grid.ts 108:61 EqualityOperator a.tokenId <= b.tokenId
 
 # --- client/src/wire.ts -----------------------------------------------------
 
-client/src/wire.ts 128:13 EqualityOperator env.sequence >= this.lastSeq
+client/src/wire.ts 175:13 EqualityOperator env.sequence >= this.lastSeq
     `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. Equality makes the assignment write the value lastSeq already holds. Same shape as the two undo.ts entries above, and lastSeq's only consumer is reconnect's resume cursor, which sees an unchanged number either way.
 
-client/src/wire.ts 132:7 ConditionalExpression default:
+client/src/wire.ts 199:7 ConditionalExpression default:
     Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
 
 # --- client/src/view/feed.ts ------------------------------------------------

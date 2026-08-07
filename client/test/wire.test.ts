@@ -373,3 +373,143 @@ test("sending after the socket dropped is refused, not fired into a dead socket"
     gw.stop();
   }
 });
+
+// --- presence (T5) ---------------------------------------------------------
+
+test("a presence snapshot and its deltas reach the presence handler in order", async () => {
+  // Wire's job is DISPATCH, not bookkeeping: it forwards frames and keeps no
+  // participant list of its own. Ordering is what the server's snapshot-inside-
+  // the-lock guarantees (T4), so a handler applying snapshot-then-deltas is
+  // correct only if this preserves arrival order.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const seen: string[] = [];
+  wire.onPresence((batch) => { for (const p of batch) seen.push(`${p.state}:${p.participantId}`); });
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({
+    presenceSnapshot: {
+      present: [
+        { participantId: "p-1", displayName: "Ada", state: "PRESENCE_STATE_CONNECTED" },
+        { participantId: "p-2", displayName: "Bo", state: "PRESENCE_STATE_CONNECTED" },
+      ],
+    },
+  }));
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-3", displayName: "Cy", state: "PRESENCE_STATE_CONNECTED" },
+  }));
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-1", displayName: "Ada", state: "PRESENCE_STATE_DISCONNECTED" },
+  }));
+
+  await until(() => seen.length === 4, `4 presence events, saw ${seen.length}`);
+  expect(seen).toEqual([
+    "CONNECTED:p-1",
+    "CONNECTED:p-2",
+    "CONNECTED:p-3",
+    "DISCONNECTED:p-1",
+  ]);
+  wire.close();
+  gw.stop();
+});
+
+test("a presence frame does not advance the replay cursor", async () => {
+  // lastSeq drives reconnect's after=<seq>. Presence is NOT an event and
+  // carries no sequence; letting it touch the cursor would skip real events
+  // on the next redial.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const seen: string[] = [];
+  wire.onPresence((batch) => { for (const p of batch) seen.push(p.participantId); });
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(4) }));
+  await until(() => wire.head === 4n, "event 4");
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-9", displayName: "Zed", state: "PRESENCE_STATE_CONNECTED" },
+  }));
+  await until(() => seen.length === 1, "presence frame");
+
+  expect(wire.head).toBe(4n);
+  wire.close();
+  gw.stop();
+});
+
+test("a presence frame with no state is dropped, not guessed", async () => {
+  // An absent `state` decodes to PRESENCE_STATE_UNSPECIFIED — the realistic
+  // shape, since protojson omits zero values, so a sender that forgot to set
+  // it produces exactly this frame.
+  //
+  // Dropping is the only safe reading. Treating it as CONNECTED puts a phantom
+  // at the table; treating it as DISCONNECTED evicts someone who is really
+  // there. The enum exists (rather than a bool) precisely so this case is
+  // representable and can be refused instead of guessed.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const seen: string[] = [];
+  wire.onPresence((batch) => { for (const p of batch) seen.push(`${p.state}:${p.participantId}`); });
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-nostate", displayName: "Mystery" },
+  }));
+  // A well-formed frame AFTER it, so the assertion is about the first being
+  // dropped rather than about nothing having arrived yet.
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-1", displayName: "Ada", state: "PRESENCE_STATE_CONNECTED" },
+  }));
+
+  await until(() => seen.length > 0, "the well-formed frame");
+  expect(seen).toEqual(["CONNECTED:p-1"]);
+  wire.close();
+  gw.stop();
+});
+
+test("a snapshot is flagged as a replacement; a delta is not", async () => {
+  // The distinction Session needs to clear its map. A snapshot is the COMPLETE
+  // table, so whoever it omits has left — and after a manual reconnect that is
+  // the only way this client can ever learn it, because the DISCONNECTED
+  // broadcast went out while it was not connected to receive it.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const calls: { ids: string[]; replace: boolean }[] = [];
+  wire.onPresence((batch, replace) => calls.push({ ids: batch.map((p) => p.participantId), replace }));
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({
+    presenceSnapshot: {
+      present: [{ participantId: "p-1", displayName: "Ada", state: "PRESENCE_STATE_CONNECTED" }],
+    },
+  }));
+  gw.sockets[0].send(JSON.stringify({
+    presenceChanged: { participantId: "p-2", displayName: "Bo", state: "PRESENCE_STATE_CONNECTED" },
+  }));
+  await until(() => calls.length === 2, "both frames");
+
+  expect(calls[0]).toEqual({ ids: ["p-1"], replace: true });
+  expect(calls[1]).toEqual({ ids: ["p-2"], replace: false });
+  wire.close();
+  gw.stop();
+});
+
+test("an EMPTY snapshot still replaces", async () => {
+  // A table that emptied is a fact. Skipping the call for an empty batch would
+  // leave the previous list standing — the same ghost, arrived at by an
+  // optimisation rather than an oversight.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const calls: { n: number; replace: boolean }[] = [];
+  wire.onPresence((batch, replace) => calls.push({ n: batch.length, replace }));
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({ presenceSnapshot: {} }));
+  await until(() => calls.length === 1, "the empty snapshot");
+  expect(calls[0]).toEqual({ n: 0, replace: true });
+  wire.close();
+  gw.stop();
+});

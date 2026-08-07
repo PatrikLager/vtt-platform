@@ -11,12 +11,18 @@ import type { Point } from "./commands";
 
 /** The actors this participant controls. */
 export function controlledActors(st: State, participantId: string): Actor[] {
-  // An empty participantId matches nothing: an uncontrolled actor also has an
-  // empty controllerId, and letting those compare equal would show an
-  // unidentified viewer as controlling every NPC on the board.
+  // An empty participantId matches nothing: an uncontrolled actor has an EMPTY
+  // control set, and an empty id must never be treated as a member of it, or
+  // an unidentified viewer would appear to control every NPC on the board.
+  // Mirrors gateway/authz.go's controls(), which makes the same refusal.
   if (participantId === "") return [];
   return Object.values(st.Actors)
-    .filter((a) => a.controllerId === participantId)
+    // MEMBERSHIP, not equality with the mirror. controllerId holds only
+    // controllerIds[0], so comparing against it hid a SHARED character from
+    // its second controller entirely — while the gateway (T3) would happily
+    // let that same player move it. The client refused to show a character
+    // the server had already authorised.
+    .filter((a) => a.controllerIds.includes(participantId))
     .sort((a, b) => (a.actorId < b.actorId ? -1 : a.actorId > b.actorId ? 1 : 0));
 }
 

@@ -576,10 +576,8 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 // present forever. A ghost at the table is worse than no presence at all,
 // because it is indistinguishable from someone who is genuinely there.
 //
-// Both connections live on ONE server: the registry is per-Server, so the
-// two-server arrangement the tear-down test uses cannot observe across it. The
-// watcher reads continuously and so keeps making progress, which is what keeps
-// the aggressive write budget off its back.
+// The watcher reads continuously and so keeps making progress, which is what
+// keeps the aggressive write budget off its back.
 func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -602,7 +600,28 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// TWO servers over one campaign, SHARING the presence registry.
+	//
+	// The watcher cannot live on the deaf client's server. That server needs
+	// buffer=0 and a 25ms write budget to wedge the deaf client, and those are
+	// server-wide — so the watcher's own outCh becomes unbuffered too, and
+	// every presence send to it needs a rendezvous with a writer that is busy
+	// pushing 28KB frames through an 8KB socket buffer. It passed 20/20 here
+	// and still failed on CI at the full timeout, because "usually finds a
+	// rendezvous" is a race, not a guarantee, and a slower machine loses it.
+	//
+	// Splitting the servers isolates the two postures: the deaf client keeps
+	// the aggressive budgets that force the tear-down under test, and the
+	// watcher gets ordinary ones so observing it is not itself a race. The
+	// shared registry is what lets one see the other — presence is per-Server
+	// state, so this assignment is the whole reason a two-server arrangement
+	// works here at all.
+	watchSrv := New(c, ids)
+	watchHTTP := httptest.NewServer(watchSrv.Handler())
+	defer watchHTTP.Close()
+
 	srv := New(c, ids)
+	srv.presence = watchSrv.presence
 	srv.buffer = 0
 	// Long store budget, short socket budget: isolates the SOCKET path, the
 	// one that produces a client gone without a goodbye.
@@ -616,7 +635,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer dcancel()
 
-	watcherConn, _, err := websocket.Dial(dctx, httpSrv.URL+"/ws?token="+dmToken+"&after=0", nil)
+	watcherConn, _, err := websocket.Dial(dctx, watchHTTP.URL+"/ws?token="+dmToken+"&after=0", nil)
 	if err != nil {
 		t.Fatalf("dial watcher: %v", err)
 	}
