@@ -610,9 +610,10 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Both connections open with their catch-up head; the close asserted
-	// below comes after badConn's.
+	// Both connections open with their catch-up head and presence snapshot;
+	// the close asserted below comes after badConn's handshake.
 	expectCatchUpHead(t, badConn)
+	expectPresenceSnapshot(t, badConn)
 
 	// badConn must be closed by the server.
 	readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -824,6 +825,7 @@ func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 		// connection that merely read too SLOWLY rather than misbehaving —
 		// so a test that drives broadcasts cannot borrow this reasoning.
 		expectCatchUpHead(t, conn)
+		expectPresenceSnapshot(t, conn)
 
 		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer writeCancel()
@@ -910,4 +912,100 @@ func expectCatchUpHead(t *testing.T, conn *websocket.Conn) int64 {
 		t.Fatalf("want CatchUpHead as the first frame, got %T (raw=%s)", f.GetFrame(), raw)
 	}
 	return h.GetHeadSequence()
+}
+
+// expectPresenceSnapshot consumes the PresenceSnapshot that every connection
+// receives immediately after its catch-up head (spec §4), returning the
+// participant ids it lists.
+//
+// It exists so tests that assert on what comes NEXT stay honest about the
+// handshake rather than tolerating "some frame". Two tests began failing when
+// presence was added precisely because they asserted the frame after the head
+// was a CLOSE — that was a real change to the opening sequence, and the fix is
+// to name the new frame, not to loosen the assertion.
+func expectPresenceSnapshot(t *testing.T, conn *websocket.Conn) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, raw, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read presence snapshot frame: %v", err)
+	}
+	var f vttv1.ServerFrame
+	if err := protojson.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("presence snapshot frame did not decode: %v (raw=%s)", err, raw)
+	}
+	snap := f.GetPresenceSnapshot()
+	if snap == nil {
+		t.Fatalf("want PresenceSnapshot right after the catch-up head, got %T (raw=%s)", f.GetFrame(), raw)
+	}
+	ids := make([]string, 0, len(snap.GetPresent()))
+	for _, e := range snap.GetPresent() {
+		ids = append(ids, e.GetParticipantId())
+	}
+	return ids
+}
+
+// expectPresenceChanged reads frames until it sees a PresenceChanged for
+// participantID, skipping anything else (events and results interleave freely
+// on this channel). Fails if the deadline passes without one.
+func expectPresenceChanged(t *testing.T, conn *websocket.Conn, participantID string, want vttv1.PresenceState) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := conn.Read(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("waiting for presence %v of %q: %v", want, participantID, err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		pc := f.GetPresenceChanged()
+		if pc == nil || pc.GetParticipantId() != participantID {
+			continue
+		}
+		if pc.GetState() != want {
+			t.Fatalf("presence of %q = %v, want %v", participantID, pc.GetState(), want)
+		}
+		return
+	}
+	t.Fatalf("no PresenceChanged{%v} for %q before the deadline", want, participantID)
+}
+
+// TestPresenceAnnouncesAnArrival: the table learns when someone joins.
+func TestPresenceAnnouncesAnArrival(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, watcher)
+	if ids := expectPresenceSnapshot(t, watcher); len(ids) != 1 {
+		t.Fatalf("the first connection's snapshot should hold only itself, got %v", ids)
+	}
+
+	joiner := f.dial(f.playerToken, 0)
+	defer joiner.CloseNow()
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	// And the joiner's own snapshot sees the table it walked into, itself
+	// included — two participants, not one.
+	expectCatchUpHead(t, joiner)
+	if ids := expectPresenceSnapshot(t, joiner); len(ids) != 2 {
+		t.Fatalf("the joiner's snapshot should list everyone present, got %v", ids)
+	}
+}
+
+// TestPresenceAnnouncesACleanDeparture: the ordinary "I closed the tab" path.
+func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, watcher)
+	expectPresenceSnapshot(t, watcher)
+
+	leaver := f.dial(f.playerToken, 0)
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	_ = leaver.Close(websocket.StatusNormalClosure, "bye")
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
 }

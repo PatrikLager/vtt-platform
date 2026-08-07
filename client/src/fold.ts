@@ -261,11 +261,16 @@ function copyActor(a: {
     // is the empty string — indistinguishable from an unowned actor, and
     // unremovable, since revoke rejects an empty participant.
     //
-    // `?? []` matches the `?? {}` its two neighbours already use. protobuf-es
-    // always decodes a repeated field to [], so this cannot fire from the wire
-    // — it guards the hand-built fixtures that reach copyActor in tests.
+    // NOT `?? []`, unlike the two neighbours above. Review flagged the
+    // asymmetry and I added the guard; CI's mutation gate then showed it
+    // SURVIVING, and the reason is that it is unreachable: every fold path
+    // decodes through protobuf-es, which always materialises a repeated field
+    // as [], and copyActor is not exported. Nothing can pass undefined, so
+    // nothing can test it — and an adjudication for dead code is worse than
+    // not writing the dead code. The asymmetry is the honest state: those
+    // guards predate this change and carry their own adjudications.
     ...mirrorControl(
-      (a.controllerIds ?? []).length > 0
+      a.controllerIds.length > 0
         ? a.controllerIds.filter((id) => id !== "")
         : a.controllerId !== ""
           ? [a.controllerId]

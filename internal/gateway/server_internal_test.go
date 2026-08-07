@@ -565,3 +565,282 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 			"parked, leaking its goroutines and socket, with the client believing it is connected")
 	}
 }
+
+// TestAForceClosedClientIsAnnouncedGone is the teardown path the plan warned
+// would be forgotten, and it is the one that matters most to a table.
+//
+// A client that stops reading never says goodbye. It is torn down by the
+// WRITER'S DEADLINE (TestAClientThatStopsReadingEntirelyIsTornDown above owns
+// that mechanism), not by any close handshake — so a presence implementation
+// that deregisters on a clean quit alone leaves that participant listed as
+// present forever. A ghost at the table is worse than no presence at all,
+// because it is indistinguishable from someone who is genuinely there.
+//
+// Both connections live on ONE server: the registry is per-Server, so the
+// two-server arrangement the tear-down test uses cannot observe across it. The
+// watcher reads continuously and so keeps making progress, which is what keeps
+// the aggressive write budget off its back.
+func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deafToken, deafID, err := ids.CreateInvite("Deaf", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New(c, ids)
+	srv.buffer = 0
+	// Long store budget, short socket budget: isolates the SOCKET path, the
+	// one that produces a client gone without a goodbye.
+	srv.noProgress = 30 * time.Second
+	srv.writeTimeout = 25 * time.Millisecond
+	httpSrv := httptest.NewUnstartedServer(srv.Handler())
+	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
+	httpSrv.Start()
+	defer httpSrv.Close()
+
+	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dcancel()
+
+	watcherConn, _, err := websocket.Dial(dctx, httpSrv.URL+"/ws?token="+dmToken+"&after=0", nil)
+	if err != nil {
+		t.Fatalf("dial watcher: %v", err)
+	}
+	defer watcherConn.CloseNow()
+	watcherConn.SetReadLimit(200 * 1024)
+
+	// The watcher reads continuously; presence frames for the deaf client are
+	// forwarded out for the assertion below.
+	gone := make(chan struct{})
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			_, raw, rerr := watcherConn.Read(ctx)
+			cancel()
+			if rerr != nil {
+				return
+			}
+			var f vttv1.ServerFrame
+			if protojson.Unmarshal(raw, &f) != nil {
+				continue
+			}
+			pc := f.GetPresenceChanged()
+			if pc != nil && pc.GetParticipantId() == deafID &&
+				pc.GetState() == vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED {
+				close(gone)
+				return
+			}
+		}
+	}()
+
+	deafConn, _, err := websocket.Dial(dctx, httpSrv.URL+"/ws?token="+deafToken+"&after=0",
+		&websocket.DialOptions{HTTPClient: tinyRecvBufClient()})
+	if err != nil {
+		t.Fatalf("dial deaf: %v", err)
+	}
+	defer deafConn.CloseNow()
+	// Never read from deafConn. That is the scenario.
+
+	// Force the writer to park: more bytes than the pinned socket buffers can
+	// hold, so the deadline is reached structurally rather than by timing.
+	for i := range 40 {
+		cmd := &vttv1.ClientCommand{
+			RequestId: strconv.Itoa(i),
+			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
+			}},
+		}
+		raw, merr := protojson.Marshal(cmd)
+		if merr != nil {
+			t.Fatal(merr)
+		}
+		wctx, wcancel := context.WithTimeout(context.Background(), 30*time.Second)
+		werr := watcherConn.Write(wctx, websocket.MessageText, raw)
+		wcancel()
+		if werr != nil {
+			t.Fatalf("driver write %d: %v", i, werr)
+		}
+	}
+
+	select {
+	case <-gone:
+	case <-time.After(25 * time.Second):
+		t.Fatal("a client force-closed by the write deadline was never announced gone — " +
+			"it stays listed at the table forever, indistinguishable from someone present")
+	}
+}
+
+// TestASecondDeviceIsNotASecondArrivalOrDeparture is the reference count doing
+// its job end to end (spec §4): one person on two devices is ONE seat at the
+// table, so the second connection announces nothing and closing it announces
+// nothing.
+//
+// Asserting that NOTHING happens is the hard part, and the first version of
+// this test got it wrong in a way worth recording. It closed the second
+// device, then closed the first and waited for DISCONNECTED — which a
+// PREMATURE disconnect satisfies just as well as the correct one. Injecting
+// "announce DISCONNECTED on every close" fired no test at all.
+//
+// The fix is a MARKER, not a timeout. onServeDone tells us the phone's serve
+// has fully returned, so any frame that teardown would emit is already queued
+// ahead of what we send next; a command issued after that point therefore
+// arrives strictly later. Reading up to the marker and finding no presence
+// frame is then a real negative, not a race we happened to win.
+func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	served := make(chan struct{}, 8)
+	srv := New(c, ids)
+	srv.onServeDone = func() { served <- struct{}{} }
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	dial := func(token string) *websocket.Conn {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		conn, _, derr := websocket.Dial(ctx, httpSrv.URL+"/ws?token="+token+"&after=0", nil)
+		if derr != nil {
+			t.Fatalf("dial: %v", derr)
+		}
+		conn.SetReadLimit(200 * 1024)
+		return conn
+	}
+
+	watcher := dial(dmToken)
+	defer watcher.CloseNow()
+
+	laptop := dial(playerToken)
+	defer laptop.CloseNow()
+
+	// The laptop's arrival is LEGITIMATE and must be consumed before we can
+	// assert silence — the participant's first connection is a real arrival.
+	// Leaving it in the stream made the first version of this test fail on
+	// the very frame it exists to allow.
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, b, rerr := watcher.Read(ctx)
+		cancel()
+		if rerr != nil {
+			t.Fatalf("waiting for the laptop's arrival: %v", rerr)
+		}
+		var f vttv1.ServerFrame
+		if protojson.Unmarshal(b, &f) != nil {
+			continue
+		}
+		if pc := f.GetPresenceChanged(); pc != nil && pc.GetParticipantId() == playerID {
+			if pc.GetState() != vttv1.PresenceState_PRESENCE_STATE_CONNECTED {
+				t.Fatalf("first connection = %v, want CONNECTED", pc.GetState())
+			}
+			break
+		}
+	}
+
+	phone := dial(playerToken) // same invite, second device
+
+	// Close the second device and WAIT for its serve to return, so anything
+	// its teardown emits is already queued.
+	_ = phone.Close(websocket.StatusNormalClosure, "put the phone down")
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the phone's serve never returned")
+	}
+
+	// The marker: a command whose event must reach the watcher.
+	raw, err := protojson.Marshal(&vttv1.ClientCommand{
+		RequestId: "marker",
+		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+			SceneId: "marker-scene", Name: "Marker", GridWidth: 1, GridHeight: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wctx, wcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if werr := watcher.Write(wctx, websocket.MessageText, raw); werr != nil {
+		t.Fatalf("marker write: %v", werr)
+	}
+	wcancel()
+
+	// Read up to the marker. ANY presence frame for the player in this window
+	// is a spurious announcement: neither the phone's arrival nor its
+	// departure may be visible, because the laptop never left.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("the marker event never arrived")
+		}
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, b, rerr := watcher.Read(ctx)
+		cancel()
+		if rerr != nil {
+			t.Fatalf("read: %v", rerr)
+		}
+		var f vttv1.ServerFrame
+		if protojson.Unmarshal(b, &f) != nil {
+			continue
+		}
+		if pc := f.GetPresenceChanged(); pc != nil && pc.GetParticipantId() == playerID {
+			t.Fatalf("a second device produced a spurious PresenceChanged{%v} — the participant "+
+				"never left, so the table must hear nothing", pc.GetState())
+		}
+		if ev := f.GetEvent(); ev != nil && ev.GetSceneCreated().GetSceneId() == "marker-scene" {
+			break
+		}
+	}
+
+	// And the LAST connection closing is a real departure.
+	_ = laptop.Close(websocket.StatusNormalClosure, "bye")
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, b, rerr := watcher.Read(ctx)
+		cancel()
+		if rerr != nil {
+			t.Fatalf("waiting for the real departure: %v", rerr)
+		}
+		var f vttv1.ServerFrame
+		if protojson.Unmarshal(b, &f) != nil {
+			continue
+		}
+		if pc := f.GetPresenceChanged(); pc != nil && pc.GetParticipantId() == playerID {
+			if pc.GetState() != vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED {
+				t.Fatalf("last connection closing = %v, want DISCONNECTED", pc.GetState())
+			}
+			return
+		}
+	}
+}
