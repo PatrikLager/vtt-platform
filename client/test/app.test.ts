@@ -826,3 +826,46 @@ test("clicking Reconnect redials from the last folded sequence", () => {
   expect(FakeSocket.instances[1]!.url).toContain("after=7");
   session?.close();
 });
+
+test("presence reaches the DM console's grant dropdown", async () => {
+  // The SEAM. Everything either side of it is tested — Session keeps the
+  // participant list, the console renders whatever it is handed — but the one
+  // line joining them was covered by nothing. Replacing it with `[]` left all
+  // 438 tests green while making the panel decorative: every controller shows
+  // as a raw uuid and the DM can never grant to anybody.
+  //
+  // That is this branch's own recurring shape: complete everywhere except the
+  // seam. The gateway's ToEvent arm was the same bug one layer down.
+  localStorage.setItem("vtt.token", "tok-dm");
+  stubMetadata({
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+
+  const r = root();
+  const session = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night One" } }));
+  sock.deliver(envelope(2, { actorAdded: { actor: { actorId: "act-warden", name: "Warden" } } }));
+  sock.deliver({
+    presenceSnapshot: {
+      present: [{ participantId: "p-lera", displayName: "Lera", state: "PRESENCE_STATE_CONNECTED" }],
+    },
+  });
+  await settle();
+
+  const target = r.querySelector(".grant-target") as HTMLSelectElement | null;
+  expect(target).not.toBeNull();
+  expect(Array.from(target!.querySelectorAll("option")).map((o) => o.textContent))
+    .toEqual(["choose a participant", "Lera"]);
+
+  // The OTHER participants seam, one line over in app.ts: the status header's
+  // presence list. It shipped with T5 uncovered by the same omission, and
+  // emptying it left every test green — the table would simply look deserted.
+  expect(Array.from(r.querySelectorAll(".participant")).map((n) => n.textContent))
+    .toEqual(["Lera"]);
+  session?.close();
+});

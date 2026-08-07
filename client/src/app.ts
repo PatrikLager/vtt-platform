@@ -86,6 +86,7 @@ export function boot(root: HTMLElement): Session | null {
         ? renderDMConsole({
             st: session.state,
             log: [...session.events],
+            participants: session.participants,
             adventures,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
             send: act,

@@ -123,3 +123,11 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit;
 }
 .dm .chip:hover { border-color: var(--accent); }
+
+/* One actor per line. Without this each .control-actor is a flex item in
+   .row and several actors flow side by side with nothing marking where one
+   ends — unreadable exactly when a table has enough characters to need the
+   panel. */
+.control-actor { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.control-name { font-weight: 600; }
+.held { display: inline-flex; gap: 4px; align-items: center; }

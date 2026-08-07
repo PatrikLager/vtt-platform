@@ -10,7 +10,11 @@ import { EnvelopeSchema, TokenMovedSchema, type Envelope } from "../../contract/
 function harness(
   st: State = newState(),
   log: Envelope[] = [],
-  opts: { adventures?: { id: string; name: string }[]; guide?: string | null } = {},
+  opts: {
+    adventures?: { id: string; name: string }[];
+    guide?: string | null;
+    participants?: { participantId: string; displayName: string }[];
+  } = {},
 ) {
   const sent: ClientCommand[] = [];
   const notices: string[] = [];
@@ -25,6 +29,7 @@ function harness(
     log,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
+    participants: opts.participants ?? [],
     send: (c) => sent.push(c),
     notify: (m) => notices.push(m),
     confirm: (m: string) => {
@@ -146,6 +151,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
   let confirmCalls = 0;
   const st = newState();
   const node = renderDMConsole({
+    participants: [],
     st, log: [moved(1)], adventures: [],
     guideFor: async () => null,
     send: () => {},
@@ -788,4 +794,221 @@ test("every box carries a placeholder saying what belongs in it", () => {
 
 test("the console is titled", () => {
   expect(harness().node.querySelector("h2")!.textContent).toBe("DM console");
+});
+
+// --- handing a character over (T7) -----------------------------------------
+//
+// The DM console is where a character is assigned. Without this the whole
+// actor-control feature is reachable only by an agent over MCP: the contract,
+// both folds and authz all carry it, and no human at the table can use it.
+
+function tableWithActor(): State {
+  const st = newState();
+  st.Actors["act-warden"] = {
+    actorId: "act-warden", name: "Warden", moduleId: "",
+    attributes: {}, resources: {},
+    controllerId: "p-ana", controllerIds: ["p-ana"],
+  };
+  return st;
+}
+
+test("the DM can hand a character to another participant", () => {
+  const h = harness(tableWithActor(), [], {
+    participants: [
+      { participantId: "p-ana", displayName: "Ana" },
+      { participantId: "p-bo", displayName: "Bo" },
+    ],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  expect(row).not.toBeNull();
+
+  const target = row.querySelector(".grant-target") as HTMLSelectElement;
+  target.value = "p-bo";
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.case).toBe("grantActorControl");
+  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "act-warden", participantId: "p-bo" });
+});
+
+test("each current controller can be revoked individually", () => {
+  const st = tableWithActor();
+  st.Actors["act-warden"]!.controllerIds = ["p-ana", "p-bo"];
+  const h = harness(st, [], {
+    participants: [
+      { participantId: "p-ana", displayName: "Ana" },
+      { participantId: "p-bo", displayName: "Bo" },
+    ],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  const revokes = row.querySelectorAll(".revoke");
+  expect(revokes).toHaveLength(2);
+  // The label and the wrapper class: a blank button is clickable and tells the
+  // DM nothing, and .held is the hook the layout hangs on.
+  expect((revokes[0] as HTMLElement).textContent).toBe("Revoke");
+  expect(row.querySelectorAll(".held")).toHaveLength(2);
+  // BOTH labels, in order. querySelector(".held-who") reads only the first
+  // match, so a lookup that ignored the controller id and always named
+  // participants[0] passed every other assertion here — and then the LABEL and
+  // the Revoke button disagree, which is worse than either error alone.
+  expect(Array.from(row.querySelectorAll(".held-who")).map((n) => n.textContent))
+    .toEqual(["Ana", "Bo"]);
+
+  (revokes[1] as HTMLButtonElement).click();
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.case).toBe("revokeActorControl");
+  // The SECOND controller, not the first: a per-controller button that always
+  // revokes controller_ids[0] would look right and take the wrong character
+  // away from the wrong person.
+  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "act-warden", participantId: "p-bo" });
+});
+
+test("an unowned actor shows no revoke controls but can still be granted", () => {
+  const st = tableWithActor();
+  st.Actors["act-warden"]!.controllerId = "";
+  st.Actors["act-warden"]!.controllerIds = [];
+  const h = harness(st, [], { participants: [{ participantId: "p-bo", displayName: "Bo" }] });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  expect(row.querySelectorAll(".revoke")).toHaveLength(0);
+  expect(row.querySelector(".grant")).not.toBeNull();
+});
+
+test("the current controllers are shown by DISPLAY NAME, not by id", () => {
+  // A uuid tells the DM nothing about who is holding a character.
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-ana", displayName: "Ana" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  // Scoped to .held-who, NOT the row's whole textContent: the grant dropdown
+  // lists every participant by display name, so a row-wide assertion is
+  // satisfied by an <option> and passes even when the CONTROLLER is rendered
+  // as a raw id. Measured — that is exactly what it did.
+  expect(row.querySelector(".held-who")?.textContent).toBe("Ana");
+  // The ACTOR's name too: a nameless row still carries Grant and Revoke, so
+  // the DM cannot tell which character the buttons act on.
+  expect(row.querySelector(".control-name")?.textContent).toBe("Warden");
+});
+
+test("an actor with no name falls back to its id rather than rendering blank", () => {
+  const st = tableWithActor();
+  st.Actors["act-warden"]!.name = "";
+  const h = harness(st, [], { participants: [] });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  expect(row.querySelector(".control-name")?.textContent).toBe("act-warden");
+});
+
+test("a controller who is not connected is still shown, by id", () => {
+  // Control is campaign-scoped and presence is connection-scoped (spec §3.1),
+  // so someone can hold a character while offline. Rendering only the
+  // participants we can name would silently drop them from the list and make
+  // the character look unowned.
+  const h = harness(tableWithActor(), [], { participants: [] });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  // Same scoping, for the same reason.
+  expect(row.querySelector(".held-who")?.textContent).toBe("p-ana");
+  expect(row.querySelectorAll(".revoke")).toHaveLength(1);
+});
+
+test("granting with nobody selected sends nothing", () => {
+  const h = harness(tableWithActor(), [], { participants: [] });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices.join(" ")).toContain("nobody");
+});
+
+test("the grant dropdown labels every participant, and leads with the blank", () => {
+  // o.value is asserted by the grant test; o.textContent was not, so the
+  // dropdown could label every participant identically while still sending the
+  // right id — the DM picks blind.
+  const h = harness(tableWithActor(), [], {
+    participants: [
+      { participantId: "p-ana", displayName: "Ana" },
+      { participantId: "p-bo", displayName: "Bo" },
+    ],
+  });
+  const target = h.node.querySelector(".grant-target") as HTMLSelectElement;
+  expect(Array.from(target.querySelectorAll("option")).map((o) => o.textContent))
+    .toEqual(["choose a participant", "Ana", "Bo"]);
+  expect(target.value).toBe("");
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  expect((row.querySelector(".grant") as HTMLElement).textContent).toBe("Grant");
+});
+
+test("each actor remembers its OWN grant choice", () => {
+  // The draft key is per-actor. A shared key would let a choice made for one
+  // character reappear pre-selected on another — and the DM would grant the
+  // wrong one without ever touching the dropdown.
+  const st = tableWithActor();
+  st.Actors["act-adder"] = {
+    actorId: "act-adder", name: "Adder", moduleId: "",
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+  };
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const warden = first.node.querySelector('.control-actor[data-actor="act-warden"] .grant-target') as HTMLSelectElement;
+  warden.value = "p-bo";
+  warden.dispatchEvent(new Event("change"));
+
+  const second = harness(st, [], { participants: parts });
+  expect((second.node.querySelector('.control-actor[data-actor="act-warden"] .grant-target') as HTMLSelectElement).value).toBe("p-bo");
+  expect((second.node.querySelector('.control-actor[data-actor="act-adder"] .grant-target') as HTMLSelectElement).value).toBe("");
+});
+
+test("the control panel's order does not depend on insertion order", () => {
+  // The MIRROR of the test below, inserting the other way round. A comparator
+  // that always returns -1 happens to produce the right answer for one
+  // insertion order and the wrong one for the other, so one test cannot see
+  // it — measured, it survived the container gate. Same trap as the
+  // participant comparator in session.ts.
+  const st = newState();
+  const mk = (id: string) => ({
+    actorId: id, name: id, moduleId: "",
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[],
+  });
+  st.Actors["act-adder"] = mk("act-adder");
+  st.Actors["act-warden"] = mk("act-warden");
+  const h = harness(st, [], { participants: [] });
+  expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
+    .toEqual(["act-adder", "act-warden"]);
+});
+
+test("the control panel lists actors in a stable order", () => {
+  // Insertion order is whatever the log happened to do. A panel that reshuffles
+  // as events arrive moves the Revoke button out from under the DM's cursor.
+  const st = tableWithActor();
+  st.Actors["act-adder"] = {
+    actorId: "act-adder", name: "Adder", moduleId: "",
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+  };
+  const h = harness(st, [], { participants: [] });
+  expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
+    .toEqual(["act-adder", "act-warden"]);
+});
+
+const hasControlPanel = (n: HTMLElement) =>
+  Array.from(n.querySelectorAll("h3")).some((x) => x.textContent === "Who controls what");
+
+test("a campaign with no actors shows no control panel at all", () => {
+  expect(hasControlPanel(harness().node)).toBe(false);
+});
+
+test("a campaign with an actor shows the control panel", () => {
+  expect(hasControlPanel(harness(tableWithActor()).node)).toBe(true);
+});
+
+test("the DM's choice of participant survives a re-render", () => {
+  // The console is rebuilt on every event. Without a draft buffer the DM picks
+  // a name, a token moves, and Grant then reports "choose a participant first"
+  // — which reads as the DM's mistake. Found for the text inputs by the e2e;
+  // this is the same mechanism for the select.
+  const st = tableWithActor();
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const sel = first.node.querySelector(".grant-target") as HTMLSelectElement;
+  sel.value = "p-bo";
+  sel.dispatchEvent(new Event("change"));
+
+  const second = harness(st, [], { participants: parts });
+  expect((second.node.querySelector(".grant-target") as HTMLSelectElement).value).toBe("p-bo");
 });
