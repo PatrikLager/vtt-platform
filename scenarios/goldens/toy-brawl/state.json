@@ -16,7 +16,10 @@
           "max": 2
         }
       },
-      "controller_id": "p-brawler"
+      "controller_id": "p-brawler",
+      "controller_ids": [
+        "p-brawler"
+      ]
     },
     "act-patron": {
       "actor_id": "act-patron",
@@ -36,7 +39,10 @@
           "max": 2
         }
       },
-      "controller_id": "p-patron"
+      "controller_id": "p-patron",
+      "controller_ids": [
+        "p-patron"
+      ]
     }
   },
   "Conditions": {

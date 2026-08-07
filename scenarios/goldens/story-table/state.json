@@ -3,7 +3,10 @@
     "act-hero": {
       "actor_id": "act-hero",
       "name": "Lera",
-      "controller_id": "p-player"
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
     }
   },
   "Conditions": {},

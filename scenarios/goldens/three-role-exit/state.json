@@ -3,7 +3,10 @@
     "act-lera": {
       "actor_id": "act-lera",
       "name": "Lera",
-      "controller_id": "p-player"
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
     },
     "act-ursus": {
       "actor_id": "act-ursus",

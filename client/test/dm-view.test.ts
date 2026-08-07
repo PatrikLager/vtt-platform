@@ -166,7 +166,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
 test("a condition on an actor gets a removal button that sends removeCondition", () => {
   const st = newState();
   st.Actors["a1"] = {
-    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "",
+    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [],
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);

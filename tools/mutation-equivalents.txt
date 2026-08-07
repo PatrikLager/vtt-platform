@@ -44,10 +44,10 @@
 # of its entries down by six.
 # ------------------------------------------------------------------------
 
-internal/engine  apply.go:147:15  CONDITIONALS_BOUNDARY
+internal/engine  apply.go:206:15  CONDITIONALS_BOUNDARY
     `computed < 0` -> `<=`: when computed is 0 the branch assigns 0, the value it already holds. computed is a local int64 whose only uses are a value comparison, a %d format and an int32() conversion — no pointer, no map, no nil-ness, so nothing can observe the assignment.
 
-internal/engine  apply.go:150:30  CONDITIONALS_BOUNDARY
+internal/engine  apply.go:209:30  CONDITIONALS_BOUNDARY
     `computed > int64(res.Max)` -> `>=`: when computed == Max the branch assigns Max, the value it already holds. Same reasoning as above. NOTE the sibling `res.Max > 0` on this line is NOT equivalent and IS killed — apply_test.go pins "max == 0 means unlimited".
 
 internal/campaign  campaign.go:448:55  ARITHMETIC_BASE

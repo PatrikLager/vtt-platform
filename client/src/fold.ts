@@ -77,6 +77,19 @@ function apply(st: State, env: Envelope): void {
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
+    case "actorControlGranted": {
+      const v = p.value;
+      const a = requireControlTarget(st, v.actorId, v.participantId, "actor control granted");
+      if (a.controllerIds.includes(v.participantId)) return; // idempotent
+      Object.assign(a, mirrorControl([...a.controllerIds, v.participantId]));
+      return;
+    }
+    case "actorControlRevoked": {
+      const v = p.value;
+      const a = requireControlTarget(st, v.actorId, v.participantId, "actor control revoked");
+      Object.assign(a, mirrorControl(a.controllerIds.filter((id) => id !== v.participantId)));
+      return;
+    }
     case "tokenPlaced": {
       const v = p.value;
       // Error ORDER matters: Go checks duplicate, scene, actor, position.
@@ -203,6 +216,20 @@ function apply(st: State, env: Envelope): void {
   }
 }
 
+/**
+ * requireControlTarget resolves the actor a control event names, rejecting an
+ * unknown actor and an empty participant — the same two rejections
+ * internal/engine's controlTarget makes, for the same reasons: an event naming
+ * something absent leaves the log meaning nothing, and "" in the set would make
+ * controllerIds non-empty while controllerId mirrors an empty string.
+ */
+function requireControlTarget(st: State, actorId: string, participantId: string, what: string): Actor {
+  if (participantId === "") throw new FoldError(`${what} requires a participant id`);
+  const a = st.Actors[actorId];
+  if (!a) throw new FoldError(`${what} names unknown actor "${actorId}"`);
+  return a;
+}
+
 function checkLen(what: string, s: string, min: number, max: number): void {
   const n = new TextEncoder().encode(s).length; // BYTE length, as Go measures
   if (n < min) throw new FoldError(`${what} is shorter than ${min} bytes`);
@@ -216,6 +243,7 @@ function copyActor(a: {
   attributes: Record<string, number>;
   resources: Record<string, { current: number; max: number }>;
   controllerId: string;
+  controllerIds: string[];
 }): Actor {
   const resources: Record<string, Resource> = {};
   for (const [k, v] of Object.entries(a.resources ?? {})) {
@@ -227,8 +255,38 @@ function copyActor(a: {
     moduleId: a.moduleId,
     attributes: { ...(a.attributes ?? {}) },
     resources,
-    controllerId: a.controllerId,
+    // Empty ids are dropped here, matching internal/engine's fold: the
+    // grant/revoke guard does not cover ActorAdded, so a payload carrying
+    // controllerIds:[""] would otherwise create a non-empty set whose mirror
+    // is the empty string — indistinguishable from an unowned actor, and
+    // unremovable, since revoke rejects an empty participant.
+    //
+    // `?? []` matches the `?? {}` its two neighbours already use. protobuf-es
+    // always decodes a repeated field to [], so this cannot fire from the wire
+    // — it guards the hand-built fixtures that reach copyActor in tests.
+    ...mirrorControl(
+      (a.controllerIds ?? []).length > 0
+        ? a.controllerIds.filter((id) => id !== "")
+        : a.controllerId !== ""
+          ? [a.controllerId]
+          : [],
+    ),
   };
+}
+
+/**
+ * mirrorControl derives controllerId from the set, matching internal/engine's
+ * fold exactly: controllerIds[0] when non-empty, "" when empty.
+ *
+ * Both folds must agree byte-for-byte — scenarios/goldens is compared against
+ * BOTH (client/test/fold-parity.test.ts and internal/harness's
+ * TestFoldGoldenCorpus), which is the keystone this project rests on. A
+ * divergence here is not a display bug; it is the two implementations
+ * disagreeing about who controls a character.
+ */
+function mirrorControl(ids: string[]): { controllerId: string; controllerIds: string[] } {
+  const first = ids[0];
+  return { controllerId: first ?? "", controllerIds: ids };
 }
 
 /**
@@ -297,5 +355,6 @@ function actorJSON(a: Actor): Record<string, unknown> {
     });
   }
   if (a.controllerId !== "") out["controller_id"] = a.controllerId;
+  if (a.controllerIds.length > 0) out["controller_ids"] = a.controllerIds;
   return out;
 }

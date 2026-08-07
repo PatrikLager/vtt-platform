@@ -60,7 +60,17 @@ export interface Actor {
   moduleId: string;
   attributes: Record<string, number>;
   resources: Record<string, Resource>;
+  /**
+   * Mirror of controllerIds[0], or "" when nobody controls this actor.
+   *
+   * Kept because ActorAdded events carrying it exist in real campaign logs and
+   * readers predating the set still consult it. NOT blanked when an actor has
+   * several controllers: an empty controllerId already means DM/agent-only, so
+   * a shared actor would be indistinguishable from an unowned one.
+   */
   controllerId: string;
+  /** Every participant who may act as this actor. Authoritative. */
+  controllerIds: string[];
 }
 
 export interface State {

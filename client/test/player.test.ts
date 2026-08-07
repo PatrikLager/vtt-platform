@@ -9,7 +9,13 @@ function world(): State {
   const actor = (id: string, controller: string, resources = {}) => {
     st.Actors[id] = {
       actorId: id, name: id.toUpperCase(), moduleId: "",
+      // An UNOWNED actor gets an EMPTY set, never [""]. A set holding only the
+      // empty string is the state both folds filter out at ActorAdded and
+      // controlTarget refuses to create — non-empty, yet mirroring "". Built
+      // here it would quietly defeat T3, where "your actors" becomes a set
+      // membership test and an unowned NPC would match a participant id of "".
       attributes: {}, resources, controllerId: controller,
+      controllerIds: controller === "" ? [] : [controller],
     };
   };
   actor("mine", "p-me", { vigor: { current: 2, max: 10 } });
@@ -188,7 +194,10 @@ function unsorted(): State {
   const actor = (id: string, controller: string) => {
     st.Actors[id] = {
       actorId: id, name: id.toUpperCase(), moduleId: "",
+      // Same empty-set rule as world() above. No caller passes "" today; the
+      // guard is here so adding one cannot quietly build a [""] set.
       attributes: {}, resources: {}, controllerId: controller,
+      controllerIds: controller === "" ? [] : [controller],
     };
   };
   // Inserted z, m, a — sorted is a, m, z.
@@ -236,7 +245,7 @@ test("sorting is by id, and does not fall back to insertion for equal-looking id
   st.Scenes["s1"] = { ID: "s1", Name: "H", GridWidth: 4, GridHeight: 4 };
   for (const id of ["a10", "a9", "a1"]) {
     st.Actors[id] = {
-      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
     };
   }
   // Lexicographic, not numeric: "a1" < "a10" < "a9".
@@ -262,7 +271,7 @@ test("a resource ability naming no resource is not affordable", () => {
   const st = newState();
   st.Actors["a1"] = {
     actorId: "a1", name: "A", moduleId: "", attributes: {},
-    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me",
+    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me", controllerIds: ["p-me"],
   };
   const malformed: Ability = {
     id: "x", name: "X", range: 1, maxTargets: 1, usage: { kind: "resource" },
