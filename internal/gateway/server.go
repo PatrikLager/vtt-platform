@@ -99,6 +99,11 @@ type Server struct {
 	// which is exactly how its absence went unnoticed.
 	writeTimeout time.Duration
 
+	// encodeFrame is EncodeFrame behind a per-Server seam, so a test can force
+	// an encode failure without reaching across into another Server's
+	// connections. See codec.go for why this is not a package global.
+	encodeFrame func(*vttv1.ServerFrame) ([]byte, error)
+
 	// presence tracks who is connected RIGHT NOW. Wire state, never appended
 	// to the log — replaying a campaign must not resurrect a session
 	// (spec §4). See presence.go.
@@ -152,7 +157,8 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 	return &Server{
 		campaign: c, ids: ids,
 		buffer: gatewayBuffer, noProgress: gatewayNoProgress, writeTimeout: gatewayNoProgress,
-		presence: newPresenceRegistry(),
+		presence:    newPresenceRegistry(),
+		encodeFrame: EncodeFrame,
 	}
 }
 
@@ -334,7 +340,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// A slow moment mid-replay then produced a silently TRUNCATED snapshot.
 	// Sent unconditionally, including head 0 for an empty log, so "no frame
 	// yet" never has to be interpreted.
-	b, err := encodeFrame(&vttv1.ServerFrame{
+	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
 	})
 	if err != nil {
@@ -373,7 +379,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// participant it was just told had left — a ghost, permanently, on a
 	// client that applies snapshot-then-deltas.
 	firstConnection := s.presence.joinAndSend(pc, func(present []*vttv1.PresenceChanged) []byte {
-		b, err := encodeFrame(&vttv1.ServerFrame{
+		b, err := s.encodeFrame(&vttv1.ServerFrame{
 			Frame: &vttv1.ServerFrame_PresenceSnapshot{
 				PresenceSnapshot: &vttv1.PresenceSnapshot{Present: present},
 			},
@@ -601,7 +607,7 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 // learn where catch-up ends cannot function, and one that misses a presence
 // blip can.
 func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
-	b, err := encodeFrame(&vttv1.ServerFrame{
+	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_PresenceChanged{
 			PresenceChanged: &vttv1.PresenceChanged{
 				ParticipantId: pc.participantID,

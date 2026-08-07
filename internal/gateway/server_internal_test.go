@@ -403,12 +403,6 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 // Mirrors the subscribe-failure path directly above it in serve: close with
 // StatusInternalError, do not serve.
 func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
-	orig := encodeFrame
-	encodeFrame = func(*vttv1.ServerFrame) ([]byte, error) {
-		return nil, errors.New("gateway: injected encode failure")
-	}
-	t.Cleanup(func() { encodeFrame = orig })
-
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
 	if err != nil {
@@ -426,7 +420,17 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	httpSrv := httptest.NewServer(New(c, ids).Handler())
+	// The seam is swapped on THIS Server, not on a package global. It used to
+	// be global, and presence made that a data race: encodeFrame became
+	// reachable from a connection's TEARDOWN, so this swap raced other tests'
+	// connections unwinding after they had returned. Confirmed by review with
+	// `go test -race -count=4 -cpu=1,4,8`; a per-Server field cannot reach
+	// across.
+	srv := New(c, ids)
+	srv.encodeFrame = func(*vttv1.ServerFrame) ([]byte, error) {
+		return nil, errors.New("gateway: injected encode failure")
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
 	defer httpSrv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
