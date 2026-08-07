@@ -234,8 +234,29 @@ test("the participant list starts from the snapshot and follows the deltas", asy
 });
 
 test("participants sharing a display name are ordered by id", async () => {
-  // The tie-break arm. No test reached it before, so every mutant in it
-  // survived by unreachability rather than by equivalence.
+  // The tie-break arm. DELIVERY ORDER IS THE POINT, and it is why there are
+  // two of these: a comparator that always returns -1 happens to produce the
+  // right answer for one arrival order and the wrong one for the other, so a
+  // single test cannot see it. Measured — the first version of this test used
+  // the order that the broken comparator gets right, and the mutant survived
+  // CI.
+  const gw = gatewayServing([
+    pFrame("p-2", "Sam", "PRESENCE_STATE_CONNECTED"),
+    pFrame("p-9", "Sam", "PRESENCE_STATE_CONNECTED"),
+  ]);
+  try {
+    const s = new Session(gw.url, "tok");
+    await s.start();
+    await until(() => s.participants.length === 2, "both Sams");
+    expect(s.participants.map((p) => p.participantId)).toEqual(["p-2", "p-9"]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+test("the display-name tie-break holds whichever order they arrive in", async () => {
+  // The mirror of the above, arriving reversed. Kills the "always 1" half.
   const gw = gatewayServing([
     pFrame("p-9", "Sam", "PRESENCE_STATE_CONNECTED"),
     pFrame("p-2", "Sam", "PRESENCE_STATE_CONNECTED"),
@@ -245,6 +266,29 @@ test("participants sharing a display name are ordered by id", async () => {
     await s.start();
     await until(() => s.participants.length === 2, "both Sams");
     expect(s.participants.map((p) => p.participantId)).toEqual(["p-2", "p-9"]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+test("a DISCONNECTED delta removes that participant", async () => {
+  // The ordinary departure — someone closes their tab while this client is
+  // connected to hear about it. Rewriting the sort test earlier deleted the
+  // only case that drove this path, and CI caught it: emptying the delete
+  // branch survived the whole suite.
+  const gw = gatewayServing([
+    pFrame("p-1", "Ada", "PRESENCE_STATE_CONNECTED"),
+    pFrame("p-2", "Bo", "PRESENCE_STATE_CONNECTED"),
+    pFrame("p-1", "Ada", "PRESENCE_STATE_DISCONNECTED"),
+  ]);
+  try {
+    const s = new Session(gw.url, "tok");
+    let changes = 0;
+    s.onChange(() => changes++);
+    await s.start();
+    await until(() => changes >= 3, "all three frames");
+    expect(s.participants.map((p) => p.participantId)).toEqual(["p-2"]);
     s.close();
   } finally {
     gw.stop();

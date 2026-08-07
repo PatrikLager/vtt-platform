@@ -58,7 +58,11 @@ export class Session {
   get participants(): Participant[] {
     return [...this.present.values()].sort((a, b) =>
       a.displayName === b.displayName
-        ? (a.participantId < b.participantId ? -1 : a.participantId > b.participantId ? 1 : 0)
+        // Two arms, not three. A `? 1 : 0` tail would carry an UNREACHABLE
+        // "equal" case: participantId is this map's KEY, so two entries can
+        // never share one, and the mutants on that arm are unkillable by
+        // construction. Same shape as the displayName comparison below.
+        ? (a.participantId < b.participantId ? -1 : 1)
         : (a.displayName < b.displayName ? -1 : 1),
     );
   }

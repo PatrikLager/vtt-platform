@@ -1,11 +1,12 @@
 # Presence and actor control — design
 
-**Status: PROPOSED.** Not yet accepted. Written 2026-08-07, after Tasks 1 and 2
-had already been built and reviewed, to close a real gap: the plan
-(`docs/superpowers/plans/2026-08-06-presence-and-actor-control.md`) cited this
-document as "Accepted, Patrik 2026-08-06" and it did not exist. The design below
-is the one actually agreed in conversation and implemented; nothing here is new
-invention. It carries no approval until Patrik gives one.
+**Status: ACCEPTED — Patrik, 2026-08-07.**
+
+Written 2026-08-07, after Tasks 1 and 2 had already been built and reviewed, to
+close a real gap: the plan cited this document as "Accepted, Patrik 2026-08-06"
+and it did not exist. The design below is the one actually agreed in
+conversation and implemented; nothing here was new invention at the time of
+writing. It was reviewed and accepted on 2026-08-07.
 
 Where an already-shipped decision is recorded, this document says so and points
 at the code, so a reader can check the claim rather than trust it.
@@ -100,6 +101,28 @@ two connections (a tab and a phone). Closing one must not tell the table that
 person left; `DISCONNECTED` is emitted only when the last connection for that
 participant goes.
 
+### 4.1 Delivery is best-effort, with a bounded wait
+
+**Ratified by Patrik 2026-08-07.** A presence broadcast waits up to
+`presenceSendBudget` (3s) for each connection and then DROPS that frame.
+
+The wait exists because an instant drop was wrong: a connection's outbound
+queue is filled by the CATCH-UP BACKLOG on every fresh connect, so a full queue
+usually means "replaying a large campaign", not "wedged". Measured during
+review, a healthy client draining 400 backlogged events missed a joiner's
+arrival outright, and nothing re-sends it — reconnection is manual (§3.4), so
+the table stayed wrong until the user acted.
+
+The bound exists because an unbounded wait would let ONE stalled reader hold
+an announcement hostage for everyone — the fan-out wedge the store's
+per-subscriber queue was built to prevent, reintroduced a layer up.
+
+So a frame IS still lost if a client does not drain for three seconds. That
+client is being torn down anyway under the write deadline, and its replacement
+connection opens with a fresh snapshot — which, per §4's replace semantics, is
+also what repairs any list that drifted. Presence is soft state: it is repaired
+by the next snapshot, never by the log.
+
 **Both teardown paths must be covered**, and the second is the one that gets
 forgotten:
 
@@ -134,8 +157,8 @@ reader would silently reclassify a shared character as unowned. With
 `controller_ids[0]` an old reader is *incomplete but never wrong*: it sees one
 of the controllers instead of all of them.
 
-*(Note: the plan's Task 2 section still describes the rejected rule. Amending
-it is part of accepting this document.)*
+*(The plan's Task 2 section described the rejected rule; it was amended to match
+on 2026-08-07, Patrik's call, with the reasoning above recorded there too.)*
 
 ### 5.2 States that must be unrepresentable
 

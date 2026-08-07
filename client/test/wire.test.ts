@@ -513,3 +513,29 @@ test("an EMPTY snapshot still replaces", async () => {
   wire.close();
   gw.stop();
 });
+
+test("a snapshot entry with no state is skipped, and the rest still arrive", async () => {
+  // The snapshot path's own guard. The delta path had a test for this; the
+  // snapshot loop did not, so dropping its check survived CI — a malformed
+  // entry would have been pushed through as a null and then crashed or
+  // corrupted whoever applied the batch.
+  const gw = fakeGateway(() => {});
+  const wire = new Wire(gw.url, "tok");
+  const calls: string[][] = [];
+  wire.onPresence((batch) => calls.push(batch.map((p) => p.participantId)));
+  await wire.connect(0n);
+  await until(() => gw.sockets.length > 0, "socket");
+
+  gw.sockets[0].send(JSON.stringify({
+    presenceSnapshot: {
+      present: [
+        { participantId: "p-bad", displayName: "Mystery" },
+        { participantId: "p-1", displayName: "Ada", state: "PRESENCE_STATE_CONNECTED" },
+      ],
+    },
+  }));
+  await until(() => calls.length === 1, "the snapshot");
+  expect(calls[0]).toEqual(["p-1"]);
+  wire.close();
+  gw.stop();
+});
