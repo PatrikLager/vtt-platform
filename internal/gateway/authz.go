@@ -47,6 +47,15 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// (an adventure load is not scoped to any actor a participant
 	// controls).
 	"load_adventure": {identity.RoleDM: true, identity.RoleAgent: true},
+	// grant/revoke_actor_control (presence-and-actor-control Task 3, spec
+	// §5.3). Handing a character to someone is the DM's call, so grant has
+	// no player row at all. Revoke does: a player may put a character DOWN,
+	// naming ONLY themselves — the additional self-check in Authorize, the
+	// same shape as the ownership helpers. Neither is gated by ownership
+	// for dm/agent, which is what keeps §3.2 true: the DM can take an actor
+	// a player is holding without first revoking them.
+	"grant_actor_control":  {identity.RoleDM: true, identity.RoleAgent: true},
+	"revoke_actor_control": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -73,40 +82,89 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 		return authorizeActorOwnership(p, cmd.GetUseAbility().GetActorId(), st)
 	case "remove_condition":
 		return authorizeActorOwnership(p, cmd.GetRemoveCondition().GetActorId(), st)
+	case "revoke_actor_control":
+		return authorizeSelfRevoke(p, cmd.GetRevokeActorControl(), st)
 	}
 	return nil
 }
 
-// authorizeTokenOwnership enforces the player-only ownership rule: the
-// token must exist, its actor must exist, and that actor's ControllerId
-// must equal p.ID. A controllerless actor (empty ControllerId) is DM/agent
-// only (spec: Actor.controller_id doc comment) and so is denied to players.
+// authorizeTokenOwnership enforces the player-only ownership rule: the token
+// must exist, its actor must exist, and p.ID must be a MEMBER of that actor's
+// ControllerIds. An actor with an EMPTY control set is DM/agent only (spec
+// §5.3) and so is denied to players.
+//
+// Membership, not equality with the mirror: controller_id holds only
+// controller_ids[0], so reading it here would deny every controller of a
+// SHARED actor except the first.
 func authorizeTokenOwnership(p *identity.Participant, req *vttv1.MoveTokenRequest, st *engine.State) error {
 	tok, ok := st.Tokens[req.GetTokenId()]
 	if !ok {
 		return fmt.Errorf("%w: unknown token %q", ErrUnauthorized, req.GetTokenId())
 	}
 	actor, ok := st.Actors[tok.ActorID]
-	if !ok || actor.GetControllerId() == "" || actor.GetControllerId() != p.ID {
+	if !ok || !controls(actor, p.ID) {
 		return fmt.Errorf("%w: token %q is not controlled by participant %q", ErrUnauthorized, req.GetTokenId(), p.ID)
 	}
 	return nil
 }
 
 // authorizeActorOwnership enforces the player-only ownership rule for
-// use_ability and remove_condition: the actor named by the command's own
-// actor_id must exist and be controlled by this participant. This is the
-// SAME shape as authorizeTokenOwnership above, just checked directly
-// against Actor.controller_id instead of resolving through a token first —
-// use_ability/remove_condition name their acting actor directly, with no
-// token indirection (a controllerless actor, empty ControllerId, is
-// DM/agent only, exactly as move_token's ownership check treats it).
+// use_ability, remove_condition and a player's own revoke_actor_control: the
+// actor named by the command must exist and count this participant among its
+// controllers. Same shape as authorizeTokenOwnership above, checked against
+// the actor directly instead of resolving through a token first — these
+// commands name their acting actor with no token indirection (an actor with
+// an EMPTY control set is DM/agent only, exactly as move_token's ownership
+// check treats it).
 func authorizeActorOwnership(p *identity.Participant, actorID string, st *engine.State) error {
 	actor, ok := st.Actors[actorID]
-	if !ok || actor.GetControllerId() == "" || actor.GetControllerId() != p.ID {
+	if !ok || !controls(actor, p.ID) {
 		return fmt.Errorf("%w: actor %q is not controlled by participant %q", ErrUnauthorized, actorID, p.ID)
 	}
 	return nil
+}
+
+// controls reports whether participantID is in actor's control set.
+//
+// controller_ids is the authority; controller_id is only its mirror, so
+// reading the scalar here would see one of several controllers and deny the
+// rest. An EMPTY set keeps the meaning the scalar's empty string had: nobody
+// controls this actor, so it is DM/agent only.
+//
+// The empty participantID guard is not redundant with the fold's. This runs
+// on a Participant from a verified invite, but an empty id must never match
+// an empty entry should one ever reach state by a route the fold does not
+// own — matching would hand a stranger every unowned actor at the table.
+//
+// It is also the LAST line of defence on the revoke path: authorizeSelfRevoke
+// compares participant_id to p.ID, and for an empty participant that
+// comparison is "" != "", which passes vacuously. This guard is then the only
+// thing that denies.
+func controls(actor *vttv1.Actor, participantID string) bool {
+	if participantID == "" {
+		return false
+	}
+	for _, id := range actor.GetControllerIds() {
+		if id == participantID {
+			return true
+		}
+	}
+	return false
+}
+
+// authorizeSelfRevoke enforces the player half of revoke_actor_control: a
+// player may only give up control they THEMSELVES hold (spec §5.3).
+//
+// Two conditions, and both are load-bearing. Naming someone else is taking a
+// character, not putting one down. Naming yourself on an actor you do not
+// control is a no-op the fold would happily append, so it is refused here
+// rather than written to a log that is append-only.
+func authorizeSelfRevoke(p *identity.Participant, req *vttv1.RevokeActorControl, st *engine.State) error {
+	if req.GetParticipantId() != p.ID {
+		return fmt.Errorf("%w: player %q may only revoke their OWN control, not %q's",
+			ErrUnauthorized, p.ID, req.GetParticipantId())
+	}
+	return authorizeActorOwnership(p, req.GetActorId(), st)
 }
 
 // commandName returns the oneof field name for cmd's set command, matching
@@ -139,6 +197,10 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "delete_note"
 	case *vttv1.ClientCommand_LoadAdventure:
 		return "load_adventure"
+	case *vttv1.ClientCommand_GrantActorControl:
+		return "grant_actor_control"
+	case *vttv1.ClientCommand_RevokeActorControl:
+		return "revoke_actor_control"
 	default:
 		return ""
 	}

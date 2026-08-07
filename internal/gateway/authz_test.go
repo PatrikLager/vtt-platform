@@ -24,6 +24,12 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 	switch name {
 	case "move_token":
 		return moveTokenCmd("t1")
+	case "grant_actor_control":
+		return grantActorControlCmd("p-2")
+	case "revoke_actor_control":
+		// Names "p-1", which is who the table test runs as — so the player
+		// row exercises the SELF case, the only one a player may issue.
+		return revokeActorControlCmd("p-1")
 	case "create_scene":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{
 			CreateScene: &vttv1.CreateScene{SceneId: "s1", Name: "Cave"},
@@ -119,7 +125,23 @@ func removeConditionCmd(actorID string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 13 commands x 4 roles authorization matrix.
+// grantActorControlCmd builds a GrantActorControl naming participantID as the
+// participant GAINING control of actor "a1".
+func grantActorControlCmd(participantID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_GrantActorControl{
+		GrantActorControl: &vttv1.GrantActorControl{ActorId: "a1", ParticipantId: participantID},
+	}}
+}
+
+// revokeActorControlCmd builds a RevokeActorControl naming participantID as the
+// participant LOSING control of actor "a1".
+func revokeActorControlCmd(participantID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RevokeActorControl{
+		RevokeActorControl: &vttv1.RevokeActorControl{ActorId: "a1", ParticipantId: participantID},
+	}}
+}
+
+// authzCase is one cell of the 15 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -129,7 +151,8 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 52-cell matrix (spec §4/§7, grown from 48 by
+// authzCases is the full 60-cell matrix (spec §4/§7, grown from 52 by
+// presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
 // 28 by ruleset-interpreter Task 6's use_ability/remove_condition rows):
@@ -210,6 +233,25 @@ var authzCases = []authzCase{
 	{"load_adventure", identity.RoleAgent, true},
 	{"load_adventure", identity.RolePlayer, false},
 	{"load_adventure", identity.RoleSpectator, false},
+
+	// grant/revoke_actor_control (presence-and-actor-control Task 3, spec
+	// §5.3). Handing a character to someone is the DM's, so grant has NO
+	// player row. Revoke DOES: a player may put a character DOWN, naming
+	// only THEMSELVES — you cannot take one from someone else. That is an
+	// additional self-check, the same shape as the ownership helpers, and
+	// the player cell below is true only because commandFor names "p-1",
+	// which is the participant the table test runs as.
+	// TestAuthorizePlayerRevokeOtherParticipantDenied proves the other half
+	// independently — a row that only ever says yes is not a guard.
+	{"grant_actor_control", identity.RoleDM, true},
+	{"grant_actor_control", identity.RoleAgent, true},
+	{"grant_actor_control", identity.RolePlayer, false},
+	{"grant_actor_control", identity.RoleSpectator, false},
+
+	{"revoke_actor_control", identity.RoleDM, true},
+	{"revoke_actor_control", identity.RoleAgent, true},
+	{"revoke_actor_control", identity.RolePlayer, true},
+	{"revoke_actor_control", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -218,14 +260,22 @@ var authzCases = []authzCase{
 // come out true.
 func ownershipFixture() *engine.State {
 	st := engine.NewState()
-	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "p-1"}
+	// Both fields, exactly as engine.Apply would leave them: the set is
+	// authoritative and controller_id mirrors controller_ids[0]. Setting only
+	// the scalar would build a state the fold cannot produce, and would make
+	// this fixture disagree with production the moment authz reads the set.
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1",
+		ControllerIds: []string{"p-1"},
+	}
 	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
 	return st
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 52 {
-		t.Fatalf("authzCases has %d entries, want 52 (13 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 60 {
+		t.Fatalf("authzCases has %d entries, want 60 (15 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -252,7 +302,15 @@ func TestAuthorizePlayerOwnTokenOK(t *testing.T) {
 
 func TestAuthorizePlayerOtherTokenDenied(t *testing.T) {
 	st := engine.NewState()
-	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "someone-else"}
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		// The SET too, not the scalar alone. controls() reads only the set,
+		// so a scalar-only fixture is denied for being UNOWNED — which makes
+		// this a duplicate of the controllerless test and silently unpins
+		// "another participant controls it".
+		ControllerId:  "someone-else",
+		ControllerIds: []string{"someone-else"},
+	}
 	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
@@ -293,7 +351,15 @@ func TestAuthorizePlayerUseAbilityOwnActorOK(t *testing.T) {
 
 func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
 	st := engine.NewState()
-	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "someone-else"}
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		// The SET too, not the scalar alone. controls() reads only the set,
+		// so a scalar-only fixture is denied for being UNOWNED — which makes
+		// this a duplicate of the controllerless test and silently unpins
+		// "another participant controls it".
+		ControllerId:  "someone-else",
+		ControllerIds: []string{"someone-else"},
+	}
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err == nil {
 		t.Fatal("want error using an ability as an actor controlled by another participant")
@@ -327,7 +393,15 @@ func TestAuthorizePlayerRemoveConditionOwnActorOK(t *testing.T) {
 
 func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
 	st := engine.NewState()
-	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: "someone-else"}
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		// The SET too, not the scalar alone. controls() reads only the set,
+		// so a scalar-only fixture is denied for being UNOWNED — which makes
+		// this a duplicate of the controllerless test and silently unpins
+		// "another participant controls it".
+		ControllerId:  "someone-else",
+		ControllerIds: []string{"someone-else"},
+	}
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, removeConditionCmd("a1"), st); err == nil {
 		t.Fatal("want error removing a condition from an actor controlled by another participant")
@@ -347,5 +421,154 @@ func TestAuthorizeUnknownCommandDeniedForEveryRole(t *testing.T) {
 				t.Fatalf("want error for empty command, role %s", role)
 			}
 		})
+	}
+}
+
+// --- Task 3: control is a SET -------------------------------------------
+//
+// The tests below are the ones that would have passed for the wrong reason
+// under the old scalar check. Each names a state only a SET can express.
+
+// TestAuthorizeSecondControllerMayMoveTheToken is the point of the whole
+// change. Under the scalar rule this participant was denied, because
+// controller_id can only ever hold ONE of the two.
+func TestAuthorizeSecondControllerMayMoveTheToken(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1", // mirrors controller_ids[0]
+		ControllerIds: []string{"p-1", "p-2"},
+	}
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+
+	for _, id := range []string{"p-1", "p-2"} {
+		p := &identity.Participant{ID: id, Role: identity.RolePlayer}
+		if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err != nil {
+			t.Fatalf("participant %q is in controller_ids and must be allowed: %v", id, err)
+		}
+	}
+}
+
+// TestAuthorizeNonControllerStillDeniedWhenActorIsShared guards the direction
+// that matters more: widening to a set must not widen to EVERYONE.
+func TestAuthorizeNonControllerStillDeniedWhenActorIsShared(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1",
+		ControllerIds: []string{"p-1", "p-2"},
+	}
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+
+	p := &identity.Participant{ID: "p-3", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
+		t.Fatal("a participant absent from controller_ids must be denied")
+	}
+}
+
+// TestAuthorizeDMMayActOnAnActorAPlayerControls pins the property Patrik
+// called out as non-negotiable: the DM can always grab a character token,
+// even while a player controls it, WITHOUT revoking that player's control.
+//
+// It holds because ownership is consulted for RolePlayer only. That is easy
+// to break by "tidying" the ownership check to run for every role, which
+// reads like a tightening and would silently lock the DM out of every
+// assigned character mid-session.
+func TestAuthorizeDMMayActOnAnActorAPlayerControls(t *testing.T) {
+	st := ownershipFixture() // a1 controlled by p-1
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
+		p := &identity.Participant{ID: "someone-else", Role: role}
+		if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err != nil {
+			t.Fatalf("%s must be able to act on a player-controlled actor: %v", role, err)
+		}
+		if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err != nil {
+			t.Fatalf("%s must be able to act AS a player-controlled actor: %v", role, err)
+		}
+	}
+	// And the player keeps control throughout — grabbing is not a transfer.
+	if ids := st.Actors["a1"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-1" {
+		t.Fatalf("controller_ids = %v, want [p-1] untouched by the DM acting", ids)
+	}
+}
+
+// TestAuthorizePlayerRevokeSelfOK: a player may put a character down.
+func TestAuthorizePlayerRevokeSelfOK(t *testing.T) {
+	st := ownershipFixture()
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, revokeActorControlCmd("p-1"), st); err != nil {
+		t.Fatalf("a player naming THEMSELVES must be allowed to revoke: %v", err)
+	}
+}
+
+// TestAuthorizePlayerRevokeOtherParticipantDenied is the other half, and the
+// half that makes the player row a guard rather than an opening: a player may
+// not take a character from someone else.
+func TestAuthorizePlayerRevokeOtherParticipantDenied(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1",
+		ControllerIds: []string{"p-1", "p-2"},
+	}
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, revokeActorControlCmd("p-2"), st); err == nil {
+		t.Fatal("a player naming ANOTHER participant must be denied — that is taking, not putting down")
+	}
+}
+
+// TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied closes the gap
+// between "names themselves" and "has anything to give up". Without it, the
+// self-check alone would let any player issue revoke against any actor.
+func TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied(t *testing.T) {
+	st := ownershipFixture() // a1 controlled by p-1, NOT p-9
+	p := &identity.Participant{ID: "p-9", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, revokeActorControlCmd("p-9"), st); err == nil {
+		t.Fatal("a player must not revoke control they never held")
+	}
+}
+
+// TestAuthorizeEmptyParticipantMatchesNothing pins the guard in controls().
+//
+// Defence in depth, deliberately: T2's fold filters empty ids out of
+// controller_ids, so this state should be unreachable through engine.Apply.
+// It is built DIRECTLY here because that is the point — if an empty id ever
+// reached state by a route the fold does not own, an empty participant id
+// matching it would hand a stranger every such actor at the table. The two
+// guards are independent, and this one is authz's own.
+func TestAuthorizeEmptyParticipantMatchesNothing(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerIds: []string{""}, // only the fold's failure could produce this
+	}
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+
+	p := &identity.Participant{ID: "", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
+		t.Fatal("an empty participant id must never match an empty entry in controller_ids")
+	}
+}
+
+// TestAuthorizeDMMayRevokeAnotherParticipantsControl is the half of §3.2 that
+// the ownership tests cannot reach: grant/revoke route through
+// authorizeSelfRevoke, not through the ownership helpers.
+//
+// The motivating case from spec §1 — a player leaves and the DM reclaims their
+// character — needs the DM to name SOMEONE ELSE on an actor the DM does not
+// control. Both those things are exactly what the player self-check forbids,
+// so the DM's bypass of that check is load-bearing, and until this test existed
+// it could be removed with the whole suite still green: every role in the
+// matrix test runs as "p-1", so the DM and agent revoke cells passed the
+// self-check VACUOUSLY rather than by bypassing it.
+func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
+	st := ownershipFixture() // a1 controlled by p-1
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
+		p := &identity.Participant{ID: "someone-else", Role: role}
+		if err := gateway.Authorize(p, revokeActorControlCmd("p-1"), st); err != nil {
+			t.Fatalf("%s must be able to revoke ANOTHER participant's control: %v", role, err)
+		}
+		if err := gateway.Authorize(p, grantActorControlCmd("p-2"), st); err != nil {
+			t.Fatalf("%s must be able to grant control of a player-held actor: %v", role, err)
+		}
 	}
 }
