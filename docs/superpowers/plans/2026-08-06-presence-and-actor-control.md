@@ -1,7 +1,14 @@
 # Presence and actor control — plan
 
 **Spec:** `docs/superpowers/specs/2026-08-06-presence-and-actor-control-design.md`
-(Accepted, Patrik 2026-08-06). **Status:** DRAFT, awaiting sign-off.
+— **PROPOSED, not yet accepted.**
+
+This header previously claimed the spec was "Accepted, Patrik 2026-08-06". It
+was not: the file did not exist and had never been committed, so for Tasks 1 and
+2 the citation pointed at nothing and "specs are truth" had nothing to check
+against. Found by review 2026-08-07. The spec has since been written from the
+decisions actually taken and implemented, and is awaiting Patrik's approval —
+which is due before this branch merges, not before the next task starts.
 
 **Goal.** Peers learn when someone joins or leaves; actor control can be
 granted, released and held by more than one participant. Nothing about the
@@ -63,11 +70,21 @@ idempotent: granting twice is not an error and does not duplicate, revoking a
 participant who does not hold control is a no-op. `AddActor`'s existing
 `controller_id` seeds the set with one element.
 
-`controller_id` mirrors the set: the single element when there is exactly one,
-empty otherwise. **The two must never disagree**, and that is the load-bearing
-assertion — it needs a fault-injection proof, because a reader that trusts the
-mirror while the set says otherwise is precisely how a player would silently
-gain or lose a character.
+`controller_id` mirrors `controller_ids[0]`, and is empty ONLY when the set is
+empty. **The two must never disagree**, and that is the load-bearing assertion —
+it needs a fault-injection proof, because a reader that trusts the mirror while
+the set says otherwise is precisely how a player would silently gain or lose a
+character.
+
+AMENDED 2026-08-07, Patrik's call, at the merge gate per CLAUDE.md rule 7. This
+paragraph previously read "the single element when there is exactly one, empty
+otherwise". That is the alternative the design REJECTED, and shipping it would
+have been a real defect: protojson omits empty strings, so blanking the scalar
+for a SHARED actor makes it byte-identical on the wire to an UNOWNED one — and
+empty already means DM/agent-only at `internal/gateway/authz.go:90`. Every
+reader predating the set would silently reclassify a shared character as
+unowned. With `controller_ids[0]` such a reader is incomplete but never wrong.
+See spec §5.1.
 
 Only `engine.Apply` writes state (rule 4). No second fold.
 
