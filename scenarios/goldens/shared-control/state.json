@@ -1,0 +1,53 @@
+{
+  "Actors": {
+    "act-herald": {
+      "actor_id": "act-herald",
+      "name": "Herald",
+      "controller_id": "p-eli",
+      "controller_ids": [
+        "p-eli"
+      ]
+    },
+    "act-scout": {
+      "actor_id": "act-scout",
+      "name": "Scout"
+    },
+    "act-warden": {
+      "actor_id": "act-warden",
+      "name": "Warden",
+      "controller_id": "p-bo",
+      "controller_ids": [
+        "p-bo",
+        "p-cy"
+      ]
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-keep": {
+      "ID": "scn-keep",
+      "Name": "The Keep",
+      "GridWidth": 8,
+      "GridHeight": 8
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Shared Control",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {
+    "tok-warden": {
+      "ID": "tok-warden",
+      "SceneID": "scn-keep",
+      "ActorID": "act-warden",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 13
+}

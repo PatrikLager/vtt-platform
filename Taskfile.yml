@@ -453,6 +453,13 @@ tasks:
           -c 'set -e
               apt-get update -qq && apt-get install -y -qq python3 nodejs npm procps >/dev/null
               bun install --frozen-lockfile
+              # Stryker sandboxes carry a SYMLINKED node_modules, and a crashed
+              # run leaves them behind in the repo. check_mutation_test.py
+              # then fails the whole gate on "a symlink gremlins drops must be
+              # recorded with its consequence" — correctly, since an
+              # unrecorded symlink in the tree is exactly what that guard
+              # exists to catch. Clean up on the way out, whatever happened.
+              trap "rm -rf /repo/.stryker-tmp" EXIT
               npx stryker run stryker.conf.json
               python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt'
 

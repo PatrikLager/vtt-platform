@@ -1,0 +1,26 @@
+{
+  "name": "shared-control",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "ana", "role": "player", "controls": ["act-warden"]},
+    {"name": "bo", "role": "player"},
+    {"name": "cy", "role": "player"},
+    {"name": "dee", "role": "player", "controls": ["act-scout"]},
+    {"name": "eli", "role": "player"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Shared Control"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "scn-keep", "name": "The Keep", "gridWidth": 8, "gridHeight": 8}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-warden", "name": "Warden", "controllerId": "{{id:ana}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"placeToken": {"tokenId": "tok-warden", "sceneId": "scn-keep", "actorId": "act-warden", "position": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-scout", "name": "Scout", "controllerId": "{{id:dee}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:bo}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:bo}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"revokeActorControl": {"actorId": "act-warden", "participantId": "{{id:ana}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"revokeActorControl": {"actorId": "act-warden", "participantId": "{{id:cy}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:cy}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"revokeActorControl": {"actorId": "act-scout", "participantId": "{{id:dee}}"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-herald", "name": "Herald"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-herald", "participantId": "{{id:eli}}"}}, "expect": {"ok": true}}
+  ]
+}
