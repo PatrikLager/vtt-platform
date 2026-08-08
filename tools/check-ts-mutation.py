@@ -162,7 +162,42 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr):
               f"good one — fix what hangs before trusting this.", file=err)
         fail = True
 
+    # An edit ABOVE an adjudicated mutant shifts its line, and the gate used to
+    # report that as two unrelated failures — a stale entry here, an
+    # unadjudicated survivor there — with nothing saying they were the same
+    # mutant. The obvious response to "no longer survives, remove it" is then
+    # to DELETE a reasoned adjudication and leave the survivor unexplained.
+    # Measured: that happened four times in one day, across both gates.
+    #
+    # A move is only claimed when the pairing is UNAMBIGUOUS: same file, same
+    # mutator, same replacement text, exactly one stale entry and exactly one
+    # unadjudicated survivor to match it. Anything less and both are reported
+    # the old way — guessing would re-key an adjudication onto a mutant nobody
+    # judged, which is the failure this gate exists to prevent, arrived at by a
+    # convenience.
+    live = set(survived)
+    stale_keys = sorted(set(equivalents) - live)
     unadjudicated = [m for m in survived if m not in equivalents]
+
+    def _sig(key):
+        return (key[0], key[2], key[3])  # file, mutator, replacement
+
+    moved = {}
+    for key in stale_keys:
+        cands = [m for m in unadjudicated if _sig(m) == _sig(key)]
+        rivals = [k for k in stale_keys if _sig(k) == _sig(key)]
+        if len(cands) == 1 and len(rivals) == 1:
+            moved[key] = cands[0]
+
+    for was, now in sorted(moved.items()):
+        print(f"check:ts-mutation: ADJUDICATION MOVED {was[0]} {was[2]} (-> {was[3]}): "
+              f"{was[1]} -> {now[1]}. Same mutator and same mutation, so an edit shifted "
+              f"it. RE-KEY the entry to the new line; do NOT delete it, or its reasoning "
+              f"is lost and the survivor is left unexplained.", file=err)
+        fail = True
+
+    unadjudicated = [m for m in unadjudicated if m not in moved.values()]
+    stale_keys = [k for k in stale_keys if k not in moved]
     for path, where, mutator, replacement in unadjudicated:
         print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} (-> {replacement}) — no "
               f"test distinguishes the mutated code. Kill it, or adjudicate it equivalent "
@@ -170,8 +205,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr):
         fail = True
 
     # A stale adjudication excuses whatever later lands at that location.
-    live = {m for m in survived}
-    for key in sorted(set(equivalents) - live):
+    for key in stale_keys:
         print(f"check:ts-mutation: {key[0]}:{key[1]} {key[2]} (-> {key[3]}) is adjudicated equivalent "
               f"but no longer survives — it was killed, moved, or the line shifted. "
               f"Remove the entry rather than let it pre-approve a future mutant.", file=err)
