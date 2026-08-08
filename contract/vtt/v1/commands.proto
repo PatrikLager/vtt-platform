@@ -89,7 +89,27 @@ message ClientCommand {
     UpsertNote upsert_note = 20;
     DeleteNote delete_note = 21;
     LoadAdventure load_adventure = 22;
+    GrantActorControl grant_actor_control = 23;
+    RevokeActorControl revoke_actor_control = 24;
   }
+}
+
+// GrantActorControl adds participant_id to actor_id's controller set.
+// DM and agent only: a player may not hand their character to someone else,
+// nor claim one.
+message GrantActorControl {
+  string actor_id = 1;
+  string participant_id = 2;
+}
+
+// RevokeActorControl removes participant_id from actor_id's controller set.
+// DM and agent may revoke anyone; a player may revoke ONLY THEMSELVES — that
+// is releasing a character you hold, not taking one from someone else.
+message RevokeActorControl {
+  string actor_id = 1;
+  string participant_id = 2;
+  // Both fields genuinely required, same check as GrantActorControl above:
+  // there is no meaning to revoking control of nothing, or from nobody.
 }
 
 message CommandResult {
@@ -157,5 +177,50 @@ message ServerFrame {
     CommandResult result = 1;
     Envelope event = 2;
     CatchUpHead catch_up_head = 3;
+    PresenceSnapshot presence_snapshot = 4;
+    PresenceChanged presence_changed = 5;
   }
+}
+
+// PresenceState is an ENUM rather than a bool, and that is deliberate.
+//
+// protojson omits zero values, so `bool connected = 3` would serialise a
+// DISCONNECT as a frame with no connected field at all — making "this
+// participant left" a fact carried by ABSENCE. That is the failure mode this
+// repo keeps rediscovering (a denial "proved" by a dead connection, a batch
+// read as complete because the stream went quiet, a mutant scored killed
+// because a command exited non-zero). With an enum, both meaningful states are
+// non-zero and always on the wire, and an absent field is UNSPECIFIED — an
+// error a reader can detect, never a state it can misread.
+enum PresenceState {
+  PRESENCE_STATE_UNSPECIFIED = 0;
+  PRESENCE_STATE_CONNECTED = 1;
+  PRESENCE_STATE_DISCONNECTED = 2;
+}
+
+// PresenceChanged reports one participant joining or leaving.
+//
+// A FRAME, never an Envelope: who happened to be online is not campaign
+// history. Appending it would make every replay reconstruct session noise and
+// change what `vtt state dump` prints, for a fact that is true only while a
+// socket is open. MapTool draws the same line -- PlayerDisconnectedMsg is a
+// message, never campaign state.
+//
+// DISCONNECTED is emitted when a participant's LAST connection goes, not
+// their first: invite tokens are reusable, so one participant may hold two
+// (a second tab, a phone beside a laptop), and closing one must not tell the
+// table they left.
+message PresenceChanged {
+  string participant_id = 1;
+  string display_name = 2;
+  PresenceState state = 3;
+}
+
+// PresenceSnapshot is the full present-set, sent once immediately after
+// CatchUpHead. Sent unconditionally, including when empty, so a joining
+// client never has to infer who is online from SILENCE -- the same reasoning
+// as CatchUpHead itself, and the same failure this repo has hit repeatedly by
+// reading absence as evidence.
+message PresenceSnapshot {
+  repeated PresenceChanged present = 1;
 }

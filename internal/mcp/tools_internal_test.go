@@ -20,10 +20,15 @@ import (
 	"testing"
 )
 
-// theThirteenCommandTools is the tools.json ↔ oneof agreement, spelled out.
+// theCommandTools is the tools.json ↔ oneof agreement, spelled out.
+//
+// Deliberately NOT named for its length. It was theThirteenCommandTools until
+// 2026-08-06, and a count in an identifier has to be renamed by every change
+// that adds a command — P12 shipped the same stale number three separate
+// times on one rename. The list is the assertion; its size is not.
 // Adding a ClientCommand variant means adding it here too — that is the
 // point.
-var theThirteenCommandTools = []string{
+var theCommandTools = []string{
 	"move_token",
 	"create_scene",
 	"add_actor",
@@ -37,6 +42,8 @@ var theThirteenCommandTools = []string{
 	"upsert_note",
 	"delete_note",
 	"load_adventure",
+	"grant_actor_control",
+	"revoke_actor_control",
 }
 
 func TestParseToolsJSONRejectsMalformedInput(t *testing.T) {
@@ -72,14 +79,14 @@ func TestParseToolsJSONAcceptsAWellFormedEntry(t *testing.T) {
 }
 
 func TestBuildDispatchAcceptsExactAgreement(t *testing.T) {
-	dispatch, err := buildDispatch(theThirteenCommandTools)
+	dispatch, err := buildDispatch(theCommandTools)
 	if err != nil {
 		t.Fatalf("the committed tool names must agree with the oneof: %v", err)
 	}
-	if len(dispatch) != len(theThirteenCommandTools) {
-		t.Fatalf("dispatch has %d entries, want %d", len(dispatch), len(theThirteenCommandTools))
+	if len(dispatch) != len(theCommandTools) {
+		t.Fatalf("dispatch has %d entries, want %d", len(dispatch), len(theCommandTools))
 	}
-	for _, name := range theThirteenCommandTools {
+	for _, name := range theCommandTools {
 		if _, ok := dispatch[name]; !ok {
 			t.Errorf("dispatch is missing %q", name)
 		}
@@ -90,7 +97,7 @@ func TestBuildDispatchAcceptsExactAgreement(t *testing.T) {
 // direction: the embedded copy names a command this vttv1 build does not
 // have.
 func TestBuildDispatchRejectsToolNameWithNoOneofField(t *testing.T) {
-	names := append(append([]string{}, theThirteenCommandTools...), "summon_kraken")
+	names := append(append([]string{}, theCommandTools...), "summon_kraken")
 	_, err := buildDispatch(names)
 	if err == nil {
 		t.Fatal("want error when tools.json names a command the oneof lacks")
@@ -104,26 +111,31 @@ func TestBuildDispatchRejectsToolNameWithNoOneofField(t *testing.T) {
 // the contract gained a command and the embedded tools.json never learned
 // about it. Without this check the command would be silently unreachable.
 func TestBuildDispatchRejectsOneofFieldWithNoToolEntry(t *testing.T) {
-	names := theThirteenCommandTools[:len(theThirteenCommandTools)-1] // drop load_adventure
+	// The dropped name is DERIVED, not spelled out. Naming it meant this test
+	// had to be edited by every change that appends a command — the same
+	// coupling that put a count in theCommandTools' old identifier.
+	dropped := theCommandTools[len(theCommandTools)-1]
+	names := theCommandTools[:len(theCommandTools)-1]
 	_, err := buildDispatch(names)
 	if err == nil {
 		t.Fatal("want error when the oneof has a field tools.json never names")
 	}
-	if !strings.Contains(err.Error(), "load_adventure") {
-		t.Errorf("error must name the unreachable command, got: %v", err)
+	if !strings.Contains(err.Error(), dropped) {
+		t.Errorf("error must name the unreachable command %q, got: %v", dropped, err)
 	}
 }
 
 // TestBuildDispatchReportsBothDirectionsAtOnce pins that a manifest wrong in
 // both directions surfaces both lists, rather than stopping at the first.
 func TestBuildDispatchReportsBothDirectionsAtOnce(t *testing.T) {
-	names := append(append([]string{}, theThirteenCommandTools[:len(theThirteenCommandTools)-1]...), "summon_kraken")
+	dropped := theCommandTools[len(theCommandTools)-1]
+	names := append(append([]string{}, theCommandTools[:len(theCommandTools)-1]...), "summon_kraken")
 	_, err := buildDispatch(names)
 	if err == nil {
 		t.Fatal("want error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "summon_kraken") || !strings.Contains(msg, "load_adventure") {
-		t.Errorf("error must report both directions, got: %v", msg)
+	if !strings.Contains(msg, "summon_kraken") || !strings.Contains(msg, dropped) {
+		t.Errorf("error must report both directions (%q and summon_kraken), got: %v", dropped, msg)
 	}
 }

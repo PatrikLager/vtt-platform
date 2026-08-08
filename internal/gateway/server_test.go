@@ -35,6 +35,11 @@ type gwFixture struct {
 	dmToken, agentToken, spectatorToken string
 	playerToken, otherPlayerToken       string
 	playerID                            string
+
+	// campaign is exposed so a test can assert on FOLDED STATE rather than on
+	// the result frame alone. A command can answer ok=true and still not mean
+	// what the test claims; the state is what the table actually sees.
+	campaign *campaign.Campaign
 }
 
 // mustAppend seeds one event directly on the campaign (bypassing the
@@ -120,6 +125,7 @@ func newGWFixture(t *testing.T) *gwFixture {
 		t: t, srv: httpSrv,
 		dmToken: dmToken, agentToken: agentToken, spectatorToken: spectatorToken,
 		playerToken: playerToken, otherPlayerToken: otherPlayerToken, playerID: playerID,
+		campaign: c,
 	}
 }
 
@@ -610,9 +616,10 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Both connections open with their catch-up head; the close asserted
-	// below comes after badConn's.
+	// Both connections open with their catch-up head and presence snapshot;
+	// the close asserted below comes after badConn's handshake.
 	expectCatchUpHead(t, badConn)
+	expectPresenceSnapshot(t, badConn)
 
 	// badConn must be closed by the server.
 	readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -824,6 +831,7 @@ func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 		// connection that merely read too SLOWLY rather than misbehaving —
 		// so a test that drives broadcasts cannot borrow this reasoning.
 		expectCatchUpHead(t, conn)
+		expectPresenceSnapshot(t, conn)
 
 		writeCtx, writeCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer writeCancel()
@@ -910,4 +918,161 @@ func expectCatchUpHead(t *testing.T, conn *websocket.Conn) int64 {
 		t.Fatalf("want CatchUpHead as the first frame, got %T (raw=%s)", f.GetFrame(), raw)
 	}
 	return h.GetHeadSequence()
+}
+
+// expectPresenceSnapshot consumes the PresenceSnapshot that every connection
+// receives immediately after its catch-up head (spec §4), returning the
+// participant ids it lists.
+//
+// It exists so tests that assert on what comes NEXT stay honest about the
+// handshake rather than tolerating "some frame". Two tests began failing when
+// presence was added precisely because they asserted the frame after the head
+// was a CLOSE — that was a real change to the opening sequence, and the fix is
+// to name the new frame, not to loosen the assertion.
+func expectPresenceSnapshot(t *testing.T, conn *websocket.Conn) []string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, raw, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read presence snapshot frame: %v", err)
+	}
+	var f vttv1.ServerFrame
+	if err := protojson.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("presence snapshot frame did not decode: %v (raw=%s)", err, raw)
+	}
+	snap := f.GetPresenceSnapshot()
+	if snap == nil {
+		t.Fatalf("want PresenceSnapshot right after the catch-up head, got %T (raw=%s)", f.GetFrame(), raw)
+	}
+	ids := make([]string, 0, len(snap.GetPresent()))
+	for _, e := range snap.GetPresent() {
+		ids = append(ids, e.GetParticipantId())
+	}
+	return ids
+}
+
+// expectPresenceChanged reads frames until it sees a PresenceChanged for
+// participantID, skipping anything else (events and results interleave freely
+// on this channel). Fails if the deadline passes without one.
+func expectPresenceChanged(t *testing.T, conn *websocket.Conn, participantID string, want vttv1.PresenceState) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := conn.Read(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("waiting for presence %v of %q: %v", want, participantID, err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		pc := f.GetPresenceChanged()
+		if pc == nil || pc.GetParticipantId() != participantID {
+			continue
+		}
+		if pc.GetState() != want {
+			t.Fatalf("presence of %q = %v, want %v", participantID, pc.GetState(), want)
+		}
+		return
+	}
+	t.Fatalf("no PresenceChanged{%v} for %q before the deadline", want, participantID)
+}
+
+// TestPresenceAnnouncesAnArrival: the table learns when someone joins.
+func TestPresenceAnnouncesAnArrival(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, watcher)
+	if ids := expectPresenceSnapshot(t, watcher); len(ids) != 1 {
+		t.Fatalf("the first connection's snapshot should hold only itself, got %v", ids)
+	}
+
+	joiner := f.dial(f.playerToken, 0)
+	defer joiner.CloseNow()
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	// And the joiner's own snapshot sees the table it walked into, itself
+	// included — two participants, not one.
+	expectCatchUpHead(t, joiner)
+	if ids := expectPresenceSnapshot(t, joiner); len(ids) != 2 {
+		t.Fatalf("the joiner's snapshot should list everyone present, got %v", ids)
+	}
+}
+
+// TestPresenceAnnouncesACleanDeparture: the ordinary "I closed the tab" path.
+func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, watcher)
+	expectPresenceSnapshot(t, watcher)
+
+	leaver := f.dial(f.playerToken, 0)
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	_ = leaver.Close(websocket.StatusNormalClosure, "bye")
+	expectPresenceChanged(t, watcher, f.playerID, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
+}
+
+// TestDMGrantsControlOverTheWire is the branch's motivating flow, end to end:
+// a DM hands a second character to a player, and the player ends up genuinely
+// controlling both (spec §3.1, §8's demo).
+//
+// It exists because that flow was IMPOSSIBLE for eight commits. The contract
+// carried the command, both folds applied its event, the 60-cell authz matrix
+// permitted it and the MCP tool list advertised it — and ToEvent had no arm,
+// so the server answered "unknown or empty command" every time. The authz
+// tests stopped at Authorize and never crossed into conversion, so nothing
+// noticed. A test that ends at the permission check is not evidence the
+// command works.
+func TestDMGrantsControlOverTheWire(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	// a1 is seeded controlled by the player; grant it to a SECOND participant.
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "grant-1",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "a1", ParticipantId: "p-second",
+		}},
+	})
+	res := readResult(t, dm)
+	if !res.GetOk() {
+		t.Fatalf("grant_actor_control refused: %q — the command is authorized and advertised, "+
+			"so a refusal here means the feature does not exist", res.GetError())
+	}
+
+	st := f.campaign.State()
+	actor, ok := st.Actors["a1"]
+	if !ok {
+		t.Fatal("actor a1 vanished")
+	}
+	ids := actor.GetControllerIds()
+	if len(ids) != 2 || ids[1] != "p-second" {
+		t.Fatalf("controller_ids = %v, want the original controller plus p-second", ids)
+	}
+	// The mirror still points at the FIRST controller: granting a second one
+	// must not silently move the character away from the first.
+	if actor.GetControllerId() != ids[0] {
+		t.Fatalf("controller_id = %q, want the mirror of controller_ids[0] = %q",
+			actor.GetControllerId(), ids[0])
+	}
+
+	// And revoke takes it back off.
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "revoke-1",
+		Command: &vttv1.ClientCommand_RevokeActorControl{RevokeActorControl: &vttv1.RevokeActorControl{
+			ActorId: "a1", ParticipantId: "p-second",
+		}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("revoke_actor_control refused: %q", res.GetError())
+	}
+	if ids := f.campaign.State().Actors["a1"].GetControllerIds(); len(ids) != 1 {
+		t.Fatalf("controller_ids = %v, want the grant undone", ids)
+	}
 }

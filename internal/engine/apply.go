@@ -79,7 +79,66 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if _, dup := st.Actors[a.ActorId]; dup {
 			return fmt.Errorf("engine: actor %q already exists", a.ActorId)
 		}
-		st.Actors[a.ActorId] = proto.Clone(a).(*vttv1.Actor)
+		stored := proto.Clone(a).(*vttv1.Actor)
+		// Seed the set from the declared controller, then mirror. Without the
+		// seed, mirrorControl below sees an empty set and blanks ControllerId
+		// AT CREATION — the declared controller is erased on the spot, not on
+		// some later grant.
+		if stored.GetControllerId() != "" && len(stored.GetControllerIds()) == 0 {
+			stored.ControllerIds = []string{stored.GetControllerId()}
+		}
+		// Drop empty ids the payload may carry. The guard in controlTarget
+		// only covers grant/revoke, so without this an ActorAdded carrying
+		// controller_ids:[""] creates a NON-EMPTY set whose mirror is the
+		// empty string — the "is this shared or unowned?" ambiguity the whole
+		// rule exists to remove — and revoke then refuses to remove it,
+		// permanently, in an append-only log. Reachable: gateway/convert.go
+		// passes the client's Actor through verbatim.
+		kept := make([]string, 0, len(stored.GetControllerIds()))
+		for _, id := range stored.GetControllerIds() {
+			if id != "" {
+				kept = append(kept, id)
+			}
+		}
+		stored.ControllerIds = kept
+		mirrorControl(stored)
+		st.Actors[a.ActorId] = stored
+		return nil
+
+	case *vttv1.Envelope_ActorControlGranted:
+		g := p.ActorControlGranted
+		actor, err := controlTarget(st, g.GetActorId(), g.GetParticipantId(), "actor_control_granted")
+		if err != nil {
+			return err
+		}
+		for _, id := range actor.GetControllerIds() {
+			if id == g.GetParticipantId() {
+				return nil // idempotent: already controls it
+			}
+		}
+		actor.ControllerIds = append(actor.ControllerIds, g.GetParticipantId())
+		mirrorControl(actor)
+		return nil
+
+	case *vttv1.Envelope_ActorControlRevoked:
+		r := p.ActorControlRevoked
+		actor, err := controlTarget(st, r.GetActorId(), r.GetParticipantId(), "actor_control_revoked")
+		if err != nil {
+			return err
+		}
+		// A fresh slice rather than the in-place [:0] trick: sets here are one
+		// to three elements, so the allocation is free, and aliasing the
+		// backing array would corrupt any caller holding the old slice across
+		// this Apply. Nothing does today — every escape path proto.Clones —
+		// but that is a property of today's callers, not of this code.
+		kept := make([]string, 0, len(actor.GetControllerIds()))
+		for _, id := range actor.GetControllerIds() {
+			if id != r.GetParticipantId() {
+				kept = append(kept, id)
+			}
+		}
+		actor.ControllerIds = kept
+		mirrorControl(actor)
 		return nil
 
 	case *vttv1.Envelope_TokenPlaced:
@@ -247,4 +306,49 @@ func Apply(st *State, env *vttv1.Envelope) error {
 	default:
 		return fmt.Errorf("%w: %T", ErrUnknownVariant, env.Payload)
 	}
+}
+
+// controlTarget resolves the actor a control event names, rejecting an unknown
+// actor and an empty participant.
+//
+// Unknown actor is an error rather than a no-op for the same reason
+// ConditionApplied/Removed reject one: an event that names something absent
+// leaves the log meaning nothing, and a silent skip makes the divergence
+// surface later, somewhere unrelated.
+//
+// Empty participant is rejected because "" in the set would make
+// controller_ids non-empty while controller_id mirrors an empty string —
+// reintroducing exactly the "is this shared or unowned?" ambiguity the mirror
+// rule exists to prevent.
+func controlTarget(st *State, actorID, participantID, event string) (*vttv1.Actor, error) {
+	if participantID == "" {
+		return nil, fmt.Errorf("engine: %s requires a participant id", event)
+	}
+	actor, ok := st.Actors[actorID]
+	if !ok {
+		return nil, fmt.Errorf("engine: %s names unknown actor %q", event, actorID)
+	}
+	return actor, nil
+}
+
+// mirrorControl restores the invariant every reader depends on:
+// controller_id == controller_ids[0] when the set is non-empty, and empty
+// only when the set is empty.
+//
+// The mirror exists because controller_id persists in ActorAdded events
+// already written, and readers predating the set still consult it —
+// internal/gateway/authz.go, client/src/player.ts's "your actors" filter,
+// `vtt state dump`, MCP get_state. Letting the two disagree silently grants or
+// removes a character for someone.
+//
+// controller_ids[0] rather than "empty when shared": protojson omits empty
+// strings, so blanking it for a shared actor would be byte-identical on the
+// wire to an UNOWNED one, and empty already means DM/agent-only. This way an
+// old reader is incomplete but never wrong.
+func mirrorControl(a *vttv1.Actor) {
+	if len(a.GetControllerIds()) == 0 {
+		a.ControllerId = ""
+		return
+	}
+	a.ControllerId = a.GetControllerIds()[0]
 }

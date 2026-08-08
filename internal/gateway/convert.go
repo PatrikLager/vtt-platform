@@ -122,6 +122,21 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{
 			Key: c.DeleteNote.GetKey(),
 		}}
+	case *vttv1.ClientCommand_GrantActorControl:
+		// presence-and-actor-control Task 3. Plain single-Envelope conversion,
+		// the same shape as remove_condition: the fold owns every rule about
+		// what a control set may contain (unknown actor, empty participant,
+		// idempotent re-grant), and authz has already decided this participant
+		// may issue it. Nothing left to validate here.
+		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId:       c.GrantActorControl.GetActorId(),
+			ParticipantId: c.GrantActorControl.GetParticipantId(),
+		}}
+	case *vttv1.ClientCommand_RevokeActorControl:
+		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
+			ActorId:       c.RevokeActorControl.GetActorId(),
+			ParticipantId: c.RevokeActorControl.GetParticipantId(),
+		}}
 	default:
 		return nil, ErrUnknownCommand
 	}

@@ -211,3 +211,26 @@ export function addActor(actorId: string, name: string, controllerId?: string): 
     },
   });
 }
+
+/**
+ * Hand control of an actor to a participant (spec §5.3, dm/agent only).
+ *
+ * Additive: the server ADDS to controller_ids rather than replacing, so
+ * granting does not take the character away from whoever already holds it.
+ * That is what makes a character shareable, and it is why there is no
+ * "transfer" builder — a transfer is a grant and a revoke, two decisions.
+ */
+export function grantActorControl(actorId: string, participantId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "grantActorControl", value: { actorId, participantId } },
+  });
+}
+
+/** Take one participant's control of an actor away (spec §5.3). */
+export function revokeActorControl(actorId: string, participantId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "revokeActorControl", value: { actorId, participantId } },
+  });
+}

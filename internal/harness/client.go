@@ -285,10 +285,27 @@ func (c *Client) readLoop() {
 			}
 		case *vttv1.ServerFrame_CatchUpHead:
 			c.setCatchUpHead(f.CatchUpHead.GetHeadSequence())
-		default:
-			c.teardown(errors.New("harness: server frame has neither result nor event"))
+		case nil:
+			// A frame with NO arm set is malformed — the server sent an empty
+			// oneof, which no encoder here produces. Still fatal.
+			c.teardown(errors.New("harness: server frame has no payload set"))
 			_ = c.conn.Close(websocket.StatusUnsupportedData, "harness: empty frame")
 			return
+		default:
+			// An arm this build does not know is IGNORED, not fatal.
+			//
+			// It used to tear the connection down, which made every contract
+			// addition a breaking change for this client: ServerFrame gained
+			// presence arms in the 2026-08-06 contract task, and the first
+			// presence broadcast would have killed every soak run, scenario
+			// and `vtt client run` at connect time — with an error naming the
+			// wrong cause ("neither result nor event"). ADR-007 makes the
+			// contract additive precisely so old readers survive new frames;
+			// a reader that dies on one throws that away.
+			//
+			// client/src/wire.ts already does this and says so. This is the Go
+			// side catching up.
+			continue
 		}
 	}
 }

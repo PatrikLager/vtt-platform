@@ -1,0 +1,159 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Shared Control"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "scn-keep",
+      "name": "The Keep",
+      "gridWidth": 8,
+      "gridHeight": 8
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-warden",
+        "name": "Warden",
+        "controllerId": "p-ana"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-warden",
+      "sceneId": "scn-keep",
+      "actorId": "act-warden",
+      "position": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-scout",
+        "name": "Scout",
+        "controllerId": "p-dee"
+      }
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-bo"
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-bo"
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlRevoked": {
+      "actorId": "act-warden",
+      "participantId": "p-ana"
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlRevoked": {
+      "actorId": "act-warden",
+      "participantId": "p-cy"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-cy"
+    }
+  },
+  {
+    "eventId": "evt-11",
+    "sequence": "11",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlRevoked": {
+      "actorId": "act-scout",
+      "participantId": "p-dee"
+    }
+  },
+  {
+    "eventId": "evt-12",
+    "sequence": "12",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-herald",
+        "name": "Herald"
+      }
+    }
+  },
+  {
+    "eventId": "evt-13",
+    "sequence": "13",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-herald",
+      "participantId": "p-eli"
+    }
+  }
+]

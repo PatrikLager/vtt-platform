@@ -9,7 +9,13 @@ function world(): State {
   const actor = (id: string, controller: string, resources = {}) => {
     st.Actors[id] = {
       actorId: id, name: id.toUpperCase(), moduleId: "",
+      // An UNOWNED actor gets an EMPTY set, never [""]. A set holding only the
+      // empty string is the state both folds filter out at ActorAdded and
+      // controlTarget refuses to create — non-empty, yet mirroring "". Built
+      // here it would quietly defeat T3, where "your actors" becomes a set
+      // membership test and an unowned NPC would match a participant id of "".
       attributes: {}, resources, controllerId: controller,
+      controllerIds: controller === "" ? [] : [controller],
     };
   };
   actor("mine", "p-me", { vigor: { current: 2, max: 10 } });
@@ -188,7 +194,10 @@ function unsorted(): State {
   const actor = (id: string, controller: string) => {
     st.Actors[id] = {
       actorId: id, name: id.toUpperCase(), moduleId: "",
+      // Same empty-set rule as world() above. No caller passes "" today; the
+      // guard is here so adding one cannot quietly build a [""] set.
       attributes: {}, resources: {}, controllerId: controller,
+      controllerIds: controller === "" ? [] : [controller],
     };
   };
   // Inserted z, m, a — sorted is a, m, z.
@@ -236,7 +245,7 @@ test("sorting is by id, and does not fall back to insertion for equal-looking id
   st.Scenes["s1"] = { ID: "s1", Name: "H", GridWidth: 4, GridHeight: 4 };
   for (const id of ["a10", "a9", "a1"]) {
     st.Actors[id] = {
-      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
     };
   }
   // Lexicographic, not numeric: "a1" < "a10" < "a9".
@@ -262,10 +271,56 @@ test("a resource ability naming no resource is not affordable", () => {
   const st = newState();
   st.Actors["a1"] = {
     actorId: "a1", name: "A", moduleId: "", attributes: {},
-    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me",
+    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me", controllerIds: ["p-me"],
   };
   const malformed: Ability = {
     id: "x", name: "X", range: 1, maxTargets: 1, usage: { kind: "resource" },
   };
   expect(affordable(malformed, st.Actors["a1"]!)).toBe(true);
+});
+
+test("a shared actor is listed for every participant who controls it", () => {
+  // The carry-in from T2. controlledActors filtered on controllerId, which
+  // holds only controllerIds[0] — so the SECOND controller of a shared
+  // character could not see it at all, and the DM granting a character to a
+  // player who already had one silently hid it from them.
+  //
+  // Gateway authorization already reads the set (T3), so before this the
+  // client refused to SHOW a character the server would happily let the
+  // player move.
+  const st = newState();
+  st.Actors["shared"] = {
+    actorId: "shared", name: "SHARED", moduleId: "",
+    attributes: {}, resources: {},
+    controllerId: "p-first", // mirrors controllerIds[0]
+    controllerIds: ["p-first", "p-second"],
+  };
+
+  expect(controlledActors(st, "p-first").map((a) => a.actorId)).toEqual(["shared"]);
+  expect(controlledActors(st, "p-second").map((a) => a.actorId)).toEqual(["shared"]);
+  expect(controlledActors(st, "p-third")).toEqual([]);
+});
+
+test("an empty participant matches nothing, even against an empty id in the set", () => {
+  // The TS twin of gateway's TestAuthorizeEmptyParticipantMatchesNothing.
+  //
+  // Built DIRECTLY, because both folds filter "" out of controllerIds and so
+  // this state should be unreachable through them — which is exactly why the
+  // guard is defence in depth rather than redundant. If an empty id ever
+  // reached state by a route the folds do not own, an unidentified viewer
+  // would be shown as controlling it.
+  //
+  // The world() fixture cannot exercise this: its unowned NPCs carry an EMPTY
+  // set, so [].includes("") is already false and the guard never runs.
+  const st = newState();
+  st.Actors["ghost"] = {
+    actorId: "ghost", name: "GHOST", moduleId: "",
+    attributes: {}, resources: {},
+    controllerId: "",
+    controllerIds: [""],
+  };
+
+  const got = controlledActors(st, "");
+  expect(got).toHaveLength(0);
+  expect(got.map((a) => a.actorId)).toEqual([]);
 });

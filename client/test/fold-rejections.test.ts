@@ -294,3 +294,39 @@ test("an event kind the fold does not know is skipped, not fatal", () => {
   expect(st.Sessions).toHaveLength(1);
   expect(Object.keys(st.Actors)).toHaveLength(0);
 });
+
+// --- actor control ----------------------------------------------------------
+//
+// The TS fold has to reject exactly what internal/engine's fold rejects, for
+// the same reasons — an unknown actor leaves the log meaning nothing, and an
+// empty participant would put "" in the set, making controllerIds non-empty
+// while controllerId mirrors an empty string. That is the "shared or unowned?"
+// ambiguity the mirror rule exists to remove.
+
+test("actor control granted names an unknown actor", () => {
+  rejects(
+    [started, env(2, { actorControlGranted: { actorId: "ghost", participantId: "p-1" } })],
+    'actor control granted names unknown actor "ghost"',
+  );
+});
+
+test("actor control revoked names an unknown actor", () => {
+  rejects(
+    [started, env(2, { actorControlRevoked: { actorId: "ghost", participantId: "p-1" } })],
+    'actor control revoked names unknown actor "ghost"',
+  );
+});
+
+test("actor control granted with no participant", () => {
+  rejects(
+    [started, actor(2, "a1"), env(3, { actorControlGranted: { actorId: "a1", participantId: "" } })],
+    "actor control granted requires a participant id",
+  );
+});
+
+test("actor control revoked with no participant", () => {
+  rejects(
+    [started, actor(2, "a1"), env(3, { actorControlRevoked: { actorId: "a1", participantId: "" } })],
+    "actor control revoked requires a participant id",
+  );
+});

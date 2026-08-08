@@ -99,6 +99,16 @@ type Server struct {
 	// which is exactly how its absence went unnoticed.
 	writeTimeout time.Duration
 
+	// encodeFrame is EncodeFrame behind a per-Server seam, so a test can force
+	// an encode failure without reaching across into another Server's
+	// connections. See codec.go for why this is not a package global.
+	encodeFrame func(*vttv1.ServerFrame) ([]byte, error)
+
+	// presence tracks who is connected RIGHT NOW. Wire state, never appended
+	// to the log — replaying a campaign must not resurrect a session
+	// (spec §4). See presence.go.
+	presence *presenceRegistry
+
 	// onServeDone, when set, fires as each connection's serve returns. Nil in
 	// production; it exists because "the server tore this connection down" is
 	// otherwise unobservable from a client that is deliberately not reading —
@@ -144,7 +154,12 @@ type Server struct {
 // done serving). No ruleset is loaded — use_ability commands are rejected
 // with a clean "no ruleset loaded" error until WithRuleset is called.
 func New(c *campaign.Campaign, ids *identity.DB) *Server {
-	return &Server{campaign: c, ids: ids, buffer: gatewayBuffer, noProgress: gatewayNoProgress, writeTimeout: gatewayNoProgress}
+	return &Server{
+		campaign: c, ids: ids,
+		buffer: gatewayBuffer, noProgress: gatewayNoProgress, writeTimeout: gatewayNoProgress,
+		presence:    newPresenceRegistry(),
+		encodeFrame: EncodeFrame,
+	}
 }
 
 // WithRuleset configures s to resolve use_ability commands against rs,
@@ -325,7 +340,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// A slow moment mid-replay then produced a silently TRUNCATED snapshot.
 	// Sent unconditionally, including head 0 for an empty log, so "no frame
 	// yet" never has to be interpreted.
-	b, err := encodeFrame(&vttv1.ServerFrame{
+	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
 	})
 	if err != nil {
@@ -345,6 +360,47 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	select {
 	case outCh <- b:
 	case <-ctx.Done():
+	}
+
+	// Presence joins AFTER the catch-up head and BEFORE the snapshot, so the
+	// joining client sees itself in its own snapshot (spec §4: a picture of
+	// the table, not of everyone else).
+	//
+	// Deregistration hangs off serve returning, which is what makes BOTH
+	// teardown paths one path: a clean quit and a client force-closed by the
+	// writer's deadline each unwind through here. The second is the one that
+	// gets forgotten, and it is the one that matters — a wedged client that
+	// never says goodbye would otherwise sit in the table's list forever.
+	pc := &presenceConn{participantID: p.ID, displayName: p.Name, out: outCh}
+	// The snapshot is built AND enqueued inside join's critical section, so no
+	// delta can slip between this connection being registered and the snapshot
+	// that describes the table it joined. Enqueued after, a DISCONNECTED could
+	// overtake it and the joiner would then apply a snapshot still listing the
+	// participant it was just told had left — a ghost, permanently, on a
+	// client that applies snapshot-then-deltas.
+	firstConnection := s.presence.joinAndSend(pc, func(present []*vttv1.PresenceChanged) []byte {
+		b, err := s.encodeFrame(&vttv1.ServerFrame{
+			Frame: &vttv1.ServerFrame_PresenceSnapshot{
+				PresenceSnapshot: &vttv1.PresenceSnapshot{Present: present},
+			},
+		})
+		if err != nil {
+			return nil
+		}
+		return b
+	})
+
+	leavePresence := func() {
+		if last := s.presence.leave(pc); last {
+			s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
+		}
+	}
+	defer leavePresence()
+
+	// Only the participant's FIRST connection is an arrival. A second device
+	// must not announce someone who is already at the table.
+	if firstConnection {
+		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
 	}
 
 	var closing atomic.Bool
@@ -400,6 +456,24 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// pump has already force-closed the connection on overflow: cancel,
 	// CloseNow, and channel-close are all idempotent here.
 	shutdown := func() {
+		// Presence FIRST, before close(outCh). leave takes the registry lock,
+		// and broadcast holds that same lock while it sends — so once leave
+		// returns, no broadcast can still be holding this connection, and
+		// none can acquire it again. Without this ordering the registry keeps
+		// handing frames to a channel this function has already closed:
+		// "send on closed channel", raised inside a teardown that is often
+		// already unwinding, and caught only by net/http's handler recover.
+		//
+		// The consequence was worse than the crash. Map iteration order is
+		// random, so a panic mid-broadcast delivers the departure to SOME
+		// connections and never to the rest — a permanent ghost at the table,
+		// which is the exact failure presence exists to prevent, arriving
+		// silently. Found by review under -race; `task check` does not run
+		// the gateway with -race and did not see it.
+		//
+		// The deferred leave below stays, as an idempotent backstop for the
+		// return paths that never reach shutdown.
+		leavePresence()
 		closing.Store(true)
 		cancel()
 		<-pumpDone
@@ -520,4 +594,30 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 	// command; it also remains visible on the broadcast Envelope frame
 	// itself, to every connection including this one.
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
+}
+
+// announcePresence tells everyone EXCEPT pc that pc's participant arrived or
+// left.
+//
+// An encode failure is dropped rather than escalated: presence is soft state,
+// every client is re-synced by the snapshot it gets on connect, and tearing a
+// healthy connection down because someone else's status frame would not
+// marshal would turn a cosmetic fault into an outage. That is the opposite of
+// the catch-up head, which fails the connection closed — a client that cannot
+// learn where catch-up ends cannot function, and one that misses a presence
+// blip can.
+func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
+	b, err := s.encodeFrame(&vttv1.ServerFrame{
+		Frame: &vttv1.ServerFrame_PresenceChanged{
+			PresenceChanged: &vttv1.PresenceChanged{
+				ParticipantId: pc.participantID,
+				DisplayName:   pc.displayName,
+				State:         state,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	s.presence.broadcast(pc, b)
 }

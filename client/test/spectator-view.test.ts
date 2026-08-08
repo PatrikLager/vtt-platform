@@ -16,6 +16,13 @@ import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
+/** Move an actor's control to someone else, mirror and set together. */
+function reassign(a: { controllerId: string; controllerIds: string[] }, to: string): void {
+  a.controllerId = to;
+  a.controllerIds = [to];
+}
+
+
 const env = (seq: number, payload: Envelope["payload"]): Envelope =>
   create(EnvelopeSchema, { eventId: `e${seq}`, sequence: BigInt(seq), payload });
 
@@ -24,7 +31,7 @@ function world(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "The Hall", GridWidth: 6, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {},
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me",
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"],
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
@@ -200,7 +207,11 @@ function panel(
 
 test("a participant controlling nothing is told so, not shown empty controls", () => {
   const st = world();
-  st.Actors["a1"]!.controllerId = "someone-else";
+  // BOTH fields, as the fold leaves them. Reassigning the mirror alone no
+  // longer means "someone else controls this": controlledActors reads the
+  // SET now, so the original controller would still be listed and this test
+  // would silently stop testing what it names.
+  reassign(st.Actors["a1"]!, "someone-else");
   expect(panel(st, [atWill]).node.textContent).toContain("do not control");
 });
 
@@ -528,7 +539,7 @@ test("omitted extras leave no trace, not the word 'undefined'", () => {
 test("the selected actor's chip is marked, and the others are not", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
   };
   const p = panel(st, [atWill], { selectedActorId: "a2", selectedAbilityId: "" });
   expect(p.button("Bran").className).toBe("chip sel");
@@ -538,7 +549,7 @@ test("the selected actor's chip is marked, and the others are not", () => {
 test("clicking an actor selects it, drops any armed ability, and repaints", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me",
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
   };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
   p.button("Bran").click();
@@ -617,7 +628,7 @@ test("with no token there is no move hint either", () => {
 test("a target button sends the ability at that token, then disarms", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them",
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"],
   };
   st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1 };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
@@ -738,7 +749,7 @@ test("the panel's headings say what each section is", () => {
 
 test("the empty-state messages are the ones a player can act on", () => {
   const none = world();
-  none.Actors["a1"]!.controllerId = "someone-else";
+  reassign(none.Actors["a1"]!, "someone-else");
   expect(panel(none, [atWill]).node.querySelector(".empty")?.textContent)
     .toBe("You do not control an actor yet.");
 
@@ -798,4 +809,68 @@ test("both say-something boxes carry a placeholder", () => {
   expect(p.input("as").placeholder.length).toBeGreaterThan(0);
   expect(p.input("text").placeholder.length).toBeGreaterThan(0);
   expect(p.input("as").placeholder).not.toBe(p.input("text").placeholder);
+});
+
+// --- presence and manual reconnect (T5) ------------------------------------
+
+test("the status header lists who is at the table", () => {
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", {
+    participants: [
+      { participantId: "p-1", displayName: "Ada" },
+      { participantId: "p-2", displayName: "Bo" },
+    ],
+  });
+  expect(root.querySelector(".present")).not.toBeNull();
+  const names = Array.from(root.querySelectorAll(".participant")).map((n) => n.textContent);
+  expect(names).toEqual(["Ada", "Bo"]);
+});
+
+test("a table of one still shows the list rather than hiding it", () => {
+  // Hiding at one would make "nobody else is here" indistinguishable from
+  // "presence is broken", which is the reading a player will reach for the
+  // moment they are alone unexpectedly.
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", {
+    participants: [{ participantId: "p-1", displayName: "Ada" }],
+  });
+  expect(Array.from(root.querySelectorAll(".participant")).map((n) => n.textContent)).toEqual(["Ada"]);
+});
+
+test("a closed connection offers a reconnect control", () => {
+  // Reconnection is MANUAL by spec §3.4: the server cannot know when someone's
+  // network came back, so the client offers the action and the person decides.
+  const root = document.createElement("div");
+  let clicked = 0;
+  renderSpectator(root, world(), [], "closed", { onReconnect: () => clicked++ });
+  const btn = root.querySelector(".reconnect") as HTMLButtonElement | null;
+  expect(btn).not.toBeNull();
+  // The LABEL too: a blank button is clickable and passes a presence-only
+  // assertion, while telling the player nothing.
+  expect(btn!.textContent).toBe("Reconnect");
+  btn!.click();
+  expect(clicked).toBe(1);
+});
+
+test("an open connection offers no reconnect control", () => {
+  // Otherwise the button is always there, and clicking it drops a healthy
+  // session for no reason.
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "open", { onReconnect: () => {} });
+  expect(root.querySelector(".reconnect")).toBeNull();
+});
+
+test("a closed connection with no handler shows no dead button", () => {
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "closed");
+  expect(root.querySelector(".reconnect")).toBeNull();
+});
+
+test("with no participants supplied the list renders empty, not fabricated", () => {
+  // Pins the `?? []` default. Without an assertion here, replacing it with a
+  // non-empty array renders a participant nobody sent.
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected");
+  expect(root.querySelector(".present")).not.toBeNull();
+  expect(root.querySelectorAll(".participant")).toHaveLength(0);
 });

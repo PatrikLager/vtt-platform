@@ -77,8 +77,15 @@
               "type": "object"
             },
             "controllerId": {
-              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player.",
+              "description": "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player. Use EITHER this or controllerIds, never both — if they disagree, controllerIds wins and this is overwritten with its first entry.",
               "type": "string"
+            },
+            "controllerIds": {
+              "description": "Optional; omit. Authoritative if set — controllerId is derived from it, so do not set both. The full set of participants who may act as this actor — control is normally granted AFTER creation with grant_actor_control, not seeded here. Setting it seeds the set; leaving it empty means DM/agent only, exactly as an empty controllerId does.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "moduleData": {
               "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
@@ -335,5 +342,43 @@
       "type": "object"
     },
     "name": "load_adventure"
+  },
+  {
+    "description": "Give a participant control of an actor, so they may move its token and use its abilities. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "participantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "participantId"
+      ],
+      "type": "object"
+    },
+    "name": "grant_actor_control"
+  },
+  {
+    "description": "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "participantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "participantId"
+      ],
+      "type": "object"
+    },
+    "name": "revoke_actor_control"
   }
 ]

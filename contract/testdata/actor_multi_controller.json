@@ -1,0 +1,7 @@
+{
+  "actorId": "act-thorn",
+  "name": "Thorn",
+  "moduleId": "dnd45e-minimal",
+  "controllerId": "p-player",
+  "controllerIds": ["p-player", "p-second"]
+}

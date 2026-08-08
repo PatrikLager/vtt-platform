@@ -8,12 +8,14 @@
 // Invite management is deliberately absent: it stays CLI (spec §4 non-goal).
 
 import type { State } from "../state";
+import type { Participant } from "../session";
 import type { AdventureMeta } from "../metadata";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, createScene, placeToken, loadAdventure,
   upsertNote, deleteNote, removeCondition, retractEvents, parseActorJSON, addActor,
+  grantActorControl, revokeActorControl,
 } from "../commands";
 import { lastUndoable, retractableRange } from "../undo";
 
@@ -88,6 +90,16 @@ function group(title: string, ...nodes: HTMLElement[]): HTMLElement {
 export interface DMDeps {
   st: State;
   log: Envelope[];
+  /**
+   * Who is at the table, for the control panel's grant target.
+   *
+   * Presence is connection-scoped and control is campaign-scoped (spec §3.1),
+   * so this list is a CONVENIENCE for naming people, never the authority on
+   * who holds a character. A controller who is offline appears in no entry
+   * here and must still be rendered — by id — or a character they hold looks
+   * unowned to the DM.
+   */
+  participants: Participant[];
   adventures: AdventureMeta[];
   guideFor: (id: string) => Promise<string | null>;
   send: (c: ClientCommand) => void;
@@ -283,6 +295,81 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     }),
   );
   wrap.appendChild(group("Undo", ...undoRow));
+
+  // --- who controls what -------------------------------------------------
+  //
+  // The DM's half of spec §3.1: a campaign starts with nobody holding
+  // anything, and characters are assigned afterwards. Without this the whole
+  // control feature is reachable only by an agent over MCP.
+  const controlRows: HTMLElement[] = [];
+  for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
+    const row = el("div", "control-actor");
+    row.dataset["actor"] = a.actorId;
+    row.appendChild(el("span", "control-name", a.name !== "" ? a.name : a.actorId));
+
+    // Every current controller, named where we can and by id where we cannot.
+    // Iterating controllerIds rather than the participant list is what keeps an
+    // OFFLINE controller visible: presence is connection-scoped, control is not,
+    // so someone can hold a character while away and the DM still needs to see
+    // it — otherwise the character reads as unowned and gets handed out twice.
+    for (const id of a.controllerIds) {
+      const who = d.participants.find((p) => p.participantId === id);
+      const held = el("span", "held");
+      held.appendChild(el("span", "held-who", who ? who.displayName : id));
+      const off = document.createElement("button");
+      off.className = "chip revoke";
+      off.textContent = "Revoke";
+      // The id is captured per BUTTON, not read back from the row: a handler
+      // that recomputed it would revoke controllerIds[0] every time, which
+      // looks right and takes the wrong character from the wrong person.
+      off.addEventListener("click", () => d.send(revokeActorControl(a.actorId, id)));
+      held.appendChild(off);
+      row.appendChild(held);
+    }
+
+    const target = document.createElement("select");
+    target.className = "grant-target";
+    const field = `grant-${a.actorId}`;
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "choose a participant";
+    target.appendChild(blank);
+    for (const p of d.participants) {
+      const o = document.createElement("option");
+      o.value = p.participantId;
+      o.textContent = p.displayName;
+      target.appendChild(o);
+    }
+    // Remembered ACROSS RE-RENDERS, exactly like the text inputs above and for
+    // the same reason: the console is rebuilt on every event, and at a live
+    // table events arrive constantly. Without this the DM picks a name, a
+    // token moves, and the Grant button then reports "choose a participant
+    // first" — a failure that reads as the DM's mistake. Set AFTER the options
+    // exist, or the value has nothing to match.
+    target.value = draft[field] ?? "";
+    target.addEventListener("change", () => {
+      draft[field] = target.value;
+    });
+    row.appendChild(target);
+
+    const give = document.createElement("button");
+    give.className = "chip grant";
+    give.textContent = "Grant";
+    give.addEventListener("click", () => {
+      // Refused HERE rather than sent and bounced: the server rejects an empty
+      // participant (gateway authz, engine controlTarget), and a toast saying
+      // what the DM did wrong beats one relaying a protocol error.
+      if (target.value === "") {
+        d.notify("Grant to nobody: choose a participant first.");
+        return;
+      }
+      d.send(grantActorControl(a.actorId, target.value));
+      clearDraft(field);
+    });
+    row.appendChild(give);
+    controlRows.push(row);
+  }
+  if (controlRows.length > 0) wrap.appendChild(group("Who controls what", ...controlRows));
 
   return wrap;
 }

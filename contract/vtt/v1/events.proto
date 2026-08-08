@@ -55,7 +55,53 @@ message Actor {
   map<string, Resource> resources = 5;
   google.protobuf.Struct module_data = 6;
   // Participant who may act as this actor; empty = DM/agent only.
+  //
+  // SUPERSEDED IN MEANING by controller_ids below, but NOT removed and never
+  // will be: ActorAdded events carrying this field already exist in campaign
+  // logs, and you cannot reinterpret history you have written.
+  //
+  // It is now a MIRROR: controller_ids[0] whenever the set is non-empty, and
+  // empty ONLY when the set is empty. That rule is chosen so an old reader is
+  // INCOMPLETE BUT NEVER WRONG — it sees one real controller and misses the
+  // rest, which fails closed.
+  //
+  // The obvious alternative (empty whenever the set has more than one) is
+  // wrong, and wrong in the way this contract elsewhere refuses. protojson
+  // omits empty strings, so "no controller_id because two people share this
+  // actor" and "no controller_id because nobody controls it" are BYTE
+  // IDENTICAL on the wire — and empty already means DM/agent-only. A shared
+  // actor would read as unowned: dropped from its own player's list in the
+  // web client, and denied to BOTH controllers by any reader still checking
+  // this field. That is a fact carried by ABSENCE, which is exactly what
+  // PresenceState in commands.proto exists to avoid.
   string controller_id = 7;
+  // Every participant who may act as this actor. Authoritative. Empty means
+  // DM/agent only, exactly as an empty controller_id did.
+  //
+  // A set, because one character can be shared (a player running a companion
+  // alongside their own, a second player covering while someone is away).
+  // Ownership gates PLAYERS ONLY — DM and agent are outside it entirely
+  // (internal/gateway/authz.go), so the DM acts on any actor without anyone
+  // being granted or revoked anything.
+  repeated string controller_ids = 8;
+}
+
+// ActorControlGranted adds a participant to an actor's controller set.
+// Idempotent: granting to a participant who already holds control is not an
+// error and does not duplicate them.
+message ActorControlGranted {
+  string actor_id = 1;
+  string participant_id = 2;
+}
+
+// ActorControlRevoked removes a participant from an actor's controller set.
+// Idempotent: revoking from a participant who does not hold control is a
+// no-op. Revocation exists to REASSIGN a character — it is never needed for
+// the DM to act, since DM authority is orthogonal to control, not a stronger
+// form of it.
+message ActorControlRevoked {
+  string actor_id = 1;
+  string participant_id = 2;
 }
 
 message SceneCreated {
@@ -163,5 +209,7 @@ message Envelope {
     NoteUpserted note_upserted = 23;
     NoteDeleted note_deleted = 24;
     AdventureLoaded adventure_loaded = 25;
+    ActorControlGranted actor_control_granted = 26;
+    ActorControlRevoked actor_control_revoked = 27;
   }
 }

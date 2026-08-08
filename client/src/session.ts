@@ -13,26 +13,58 @@
 // session is thousands of events, not millions) and the alternative is a
 // client whose undo silently disagrees with the server's.
 
-import { Wire, type WireStatus } from "./wire";
+import { Wire, type WireStatus, type PresenceEvent } from "./wire";
 import { fold } from "./fold";
 import { newState, type State } from "./state";
 import type { Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../contract/gen/ts/vtt/v1/commands_pb";
+
+/** Someone currently at the table. */
+export interface Participant {
+  participantId: string;
+  displayName: string;
+}
 
 export class Session {
   private readonly wire: Wire;
   private readonly log: Envelope[] = [];
   private derived: State = newState();
   private changeHandlers: (() => void)[] = [];
+  // Keyed by participant id, NOT a list: a client that reconnects receives a
+  // fresh snapshot on top of whatever it already had, and the server announces
+  // an arrival only on a participant's FIRST connection. Appending would list
+  // the same person twice and never correct itself.
+  private present = new Map<string, Participant>();
   private errorHandlers: ((e: Error) => void)[] = [];
 
   constructor(url: string, token: string) {
     this.wire = new Wire(url, token);
     this.wire.onEvent((e) => this.ingest(e));
+    this.wire.onPresence((batch, replace) => this.presence(batch, replace));
   }
 
   get state(): State {
     return this.derived;
+  }
+
+  /**
+   * Who is at the table, sorted by display name.
+   *
+   * Sorted rather than in arrival order: arrival order is a property of the
+   * network, and a list that reshuffles whenever anyone joins or leaves is
+   * hard to read and impossible to test stably. Ties break on participant id
+   * so two people sharing a display name still have a fixed order.
+   */
+  get participants(): Participant[] {
+    return [...this.present.values()].sort((a, b) =>
+      a.displayName === b.displayName
+        // Two arms, not three. A `? 1 : 0` tail would carry an UNREACHABLE
+        // "equal" case: participantId is this map's KEY, so two entries can
+        // never share one, and the mutants on that arm are unkillable by
+        // construction. Same shape as the displayName comparison below.
+        ? (a.participantId < b.participantId ? -1 : 1)
+        : (a.displayName < b.displayName ? -1 : 1),
+    );
   }
 
   get head(): bigint {
@@ -77,6 +109,35 @@ export class Session {
 
   close(): void {
     this.wire.close();
+  }
+
+  /**
+   * Apply a presence batch and redraw.
+   *
+   * `replace` means this was a SNAPSHOT: the complete table, so whoever it
+   * omits is no longer here. Clearing first is what makes a reconnect correct
+   * — the server sends a snapshot on every connection, and anyone who left
+   * while this client was disconnected appears in no frame it will ever
+   * receive. Merging instead of replacing leaves them listed forever.
+   *
+   * onChange fires once per FRAME, including a frame that changes nothing.
+   * Notifying unconditionally keeps this total: the alternative is diffing
+   * before and after, and a view that misses a redraw shows a stale table,
+   * which is worse than a redundant redraw. Presence frames are rare.
+   */
+  private presence(batch: PresenceEvent[], replace: boolean): void {
+    if (replace) this.present.clear();
+    for (const p of batch) {
+      if (p.state === "CONNECTED") {
+        this.present.set(p.participantId, {
+          participantId: p.participantId,
+          displayName: p.displayName,
+        });
+      } else {
+        this.present.delete(p.participantId);
+      }
+    }
+    for (const fn of this.changeHandlers) fn();
   }
 
   private ingest(e: Envelope): void {

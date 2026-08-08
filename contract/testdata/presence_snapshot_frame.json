@@ -1,0 +1,16 @@
+{
+  "presenceSnapshot": {
+    "present": [
+      {
+        "participantId": "p-dm",
+        "displayName": "DM",
+        "state": "PRESENCE_STATE_CONNECTED"
+      },
+      {
+        "participantId": "p-player",
+        "displayName": "Thorn's player",
+        "state": "PRESENCE_STATE_CONNECTED"
+      }
+    ]
+  }
+}

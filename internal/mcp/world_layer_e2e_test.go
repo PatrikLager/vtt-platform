@@ -13,9 +13,8 @@ package mcp_test
 // protoreflect-driven dispatch — there is no per-command code anywhere in
 // this package (tools.go's own doc comment) — so this test's payoff is
 // proving that genericity actually covers the three new commands
-// end-to-end, not just by name (TestListToolsReturnsSeventeenToolsIncluding
-// ReadAndGuideTools, read_tools_test.go, already covers the name-only
-// case).
+// end-to-end, not just by name (TestListToolsReturnsEveryCommandAndReadTool,
+// read_tools_test.go, already covers the name-only case).
 
 import (
 	"context"

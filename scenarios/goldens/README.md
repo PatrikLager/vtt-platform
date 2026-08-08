@@ -46,7 +46,22 @@ drift gate could never have gone green.
 
 ## Coverage
 
-Six scenarios, covering **all thirteen** command types.
+Seven scenarios, covering **all fifteen** command types.
+
+`shared-control` was added 2026-08-07 with `grant_actor_control` and
+`revoke_actor_control`, and it exists because the corpus was SILENT on both:
+this gate is the branch's own stated defence against a Go/TS fold divergence,
+and a divergence on the grant arm had already shipped and been caught elsewhere.
+Injecting the mirror-drop into either fold's grant OR revoke arm produced ZERO
+failures here before it, and 1 (TS parity) / 2 (Go corpus) after.
+
+Getting it to bite took a second pass worth recording. A grant only moves
+`controller_id` when the set was EMPTY — the mirror is `controller_ids[0]` and
+a grant APPENDS, so on an already-owned actor the mirror does not move and
+dropping it is invisible. The scenario therefore grants onto an unowned actor
+(`act-herald`) as well as onto a shared one, and revokes the set's HEAD so the
+mirror has to slide. Idempotent re-grant, revoking a non-controller, and
+revoking the last controller back to unowned are all in the same stream.
 
 `adventure-night` and `toy-brawl` roll dice, and are here because their event
 streams are shape-STABLE: the same events in the same order every run, with

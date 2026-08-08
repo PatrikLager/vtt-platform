@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { fromJson } from "@bufbuild/protobuf";
 import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
-import { fold } from "../src/fold";
+import { fold, foldToDumpJSON } from "../src/fold";
 import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant: three of the seven
@@ -165,4 +165,143 @@ test("tokenMoved ignores the event's from and sceneId entirely", () => {
     env(5, { tokenMoved: { tokenId: "t1", sceneId: "does-not-exist", from: { x: 7, y: 7 }, to: { x: 2, y: 3 } } }),
   ]);
   expect(st.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 2, Y: 3 });
+});
+
+// --- actor control is a SET, and controllerId mirrors it ---------------------
+//
+// This mirrors internal/engine/actor_control_test.go. Both folds
+// are compared against scenarios/goldens, so a divergence here is not a display
+// bug — it is the two implementations disagreeing about who controls a
+// character. The mirror rule is controllerIds[0], never "blank when shared":
+// an empty controllerId already means DM/agent-only, so blanking it for a
+// shared actor would make it indistinguishable from an unowned one and drop it
+// from its own player's list.
+
+test("adding an actor with a controller seeds the set", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1"]);
+  expect(st.Actors["a1"]!.controllerId).toBe("p-1");
+});
+
+test("adding an actor with no controller leaves the set empty", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1" } } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual([]);
+  expect(st.Actors["a1"]!.controllerId).toBe("");
+});
+
+test("granting a second controller keeps the first in controllerId", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+    env(3, { actorControlGranted: { actorId: "a1", participantId: "p-2" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1", "p-2"]);
+  // The case the rejected rule got wrong: p-1 must still see this as theirs.
+  expect(st.Actors["a1"]!.controllerId).toBe("p-1");
+});
+
+test("granting to an actor with no controller fills controllerId", () => {
+  // The ONLY grant shape where the mirror is observable: every other grant
+  // test starts from a non-empty set, where controllerId does not change, so
+  // dropping the mirror call from the grant arm goes unnoticed. It did — a
+  // fault injection removing it left the whole client suite green while Go
+  // failed two tests, which is a Go/TS divergence about who controls a
+  // character, shipping green through both fold gates.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1" } } }),
+    env(3, { actorControlGranted: { actorId: "a1", participantId: "p-1" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1"]);
+  expect(st.Actors["a1"]!.controllerId).toBe("p-1");
+});
+
+test("granting is idempotent", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+    env(3, { actorControlGranted: { actorId: "a1", participantId: "p-2" } }),
+    env(4, { actorControlGranted: { actorId: "a1", participantId: "p-2" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1", "p-2"]);
+});
+
+test("revoking the first controller promotes the next", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+    env(3, { actorControlGranted: { actorId: "a1", participantId: "p-2" } }),
+    env(4, { actorControlRevoked: { actorId: "a1", participantId: "p-1" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-2"]);
+  expect(st.Actors["a1"]!.controllerId).toBe("p-2");
+});
+
+test("revoking the last controller empties both", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+    env(3, { actorControlRevoked: { actorId: "a1", participantId: "p-1" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual([]);
+  expect(st.Actors["a1"]!.controllerId).toBe("");
+});
+
+test("revoking someone who has no control is a no-op", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+    env(3, { actorControlRevoked: { actorId: "a1", participantId: "p-stranger" } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1"]);
+});
+
+test("the dump carries controller_ids alongside controller_id", () => {
+  // The dump shape is what scenarios/goldens pins and what BOTH folds are
+  // compared against, so this is the parity surface rather than an internal.
+  const dumped = JSON.parse(
+    foldToDumpJSON([
+      env(1, { sessionStarted: { name: "S" } }),
+      env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-1" } } }),
+      env(3, { actorControlGranted: { actorId: "a1", participantId: "p-2" } }),
+    ]),
+  ) as { Actors: Record<string, Record<string, unknown>> };
+  expect(dumped.Actors["a1"]!["controller_id"]).toBe("p-1");
+  expect(dumped.Actors["a1"]!["controller_ids"]).toEqual(["p-1", "p-2"]);
+});
+
+test("adding an actor drops empty ids from the control set", () => {
+  // The TS twin of TestAddActorDropsEmptyIdsFromTheControlSet. The
+  // grant/revoke guard does not cover actorAdded, and an empty id in the set
+  // would give a non-empty set an empty mirror — unowned to every reader, and
+  // unremovable, since revoke rejects an empty participant.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerIds: ["", "p-1", ""] } } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-1"]);
+  expect(st.Actors["a1"]!.controllerId).toBe("p-1");
+});
+
+// The TS twin of TestAddActorLetsTheSetOverrideTheDeclaredController. Without
+// it, flipping copyActor's ternary to prefer the scalar leaves every TS test
+// green while Go fails — a live divergence about who controls a character.
+test("adding an actor lets the set override the declared controller", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1", controllerId: "p-a", controllerIds: ["p-b"] } } }),
+    env(3, { actorAdded: { actor: { actorId: "a2", controllerId: "p-a", controllerIds: [""] } } }),
+  ]);
+  expect(st.Actors["a1"]!.controllerIds).toEqual(["p-b"]);
+  expect(st.Actors["a1"]!.controllerId).toBe("p-b");
+  // A set of only empty ids erases control rather than falling back to the
+  // scalar: fails closed, and a later grant restores it.
+  expect(st.Actors["a2"]!.controllerIds).toEqual([]);
+  expect(st.Actors["a2"]!.controllerId).toBe("");
 });

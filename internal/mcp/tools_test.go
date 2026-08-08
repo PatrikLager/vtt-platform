@@ -37,13 +37,14 @@ var wantCommandToolNames = []string{
 	"use_ability", "remove_condition",
 	"add_narration", "upsert_note", "delete_note",
 	"load_adventure",
+	"grant_actor_control", "revoke_actor_control",
 }
 
 // This test scopes itself to "the command tools are present by name" — it
 // deliberately does NOT assert the total tool count, since P7 Task 2
 // (read_tools.go) and Task 6 register four more (get_state,
 // get_events_since, get_ruleset_guide, get_adventure_guide) into the SAME
-// tool table; TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools
+// tool table; TestListToolsReturnsEveryCommandAndReadTool
 // (read_tools_test.go) owns the total-count assertion for the full,
 // current contract.
 func TestListToolsReturnsAllCommandToolsByName(t *testing.T) {

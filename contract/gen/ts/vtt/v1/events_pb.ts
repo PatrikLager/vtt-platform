@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi2gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIlcKDFNjZW5lQ3JlYXRlZBIQCghzY2VuZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCmdyaWRfd2lkdGgYAyABKAUSEwoLZ3JpZF9oZWlnaHQYBCABKAUiKgoKQWN0b3JBZGRlZBIcCgVhY3RvchgBIAEoCzINLnZ0dC52MS5BY3RvciJrCgtUb2tlblBsYWNlZBIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHgoOU2Vzc2lvblN0YXJ0ZWQSDAoEbmFtZRgBIAEoCSIOCgxTZXNzaW9uRW5kZWQiTQoPRXZlbnRzUmV0cmFjdGVkEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIsUBCgtBYmlsaXR5VXNlZBIQCghhY3Rvcl9pZBgBIAEoCRISCgphYmlsaXR5X2lkGAIgASgJEhIKCnRhcmdldF9pZHMYAyADKAkSJwoFcm9sbHMYBCADKAsyGC52dHQudjEuQWJpbGl0eVVzZWQuUm9sbBIXCg9vdXRjb21lX3N1bW1hcnkYBSABKAkaOgoEUm9sbBISCgpleHByZXNzaW9uGAEgASgJEg8KB3Jlc3VsdHMYAiADKAUSDQoFdG90YWwYAyABKAUiZwoPUmVzb3VyY2VDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg0KBWRlbHRhGAMgASgFEhEKCW5ld192YWx1ZRgEIAEoBRIOCgZyZWFzb24YBSABKAkiSgoQQ29uZGl0aW9uQXBwbGllZBIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkSDgoGc291cmNlGAMgASgJIkoKEENvbmRpdGlvblJlbW92ZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJaCg5OYXJyYXRpb25BZGRlZBIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDIjgKDE5vdGVVcHNlcnRlZBILCgNrZXkYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEdGV4dBgDIAEoCSIaCgtOb3RlRGVsZXRlZBILCgNrZXkYASABKAkiNQoPQWR2ZW50dXJlTG9hZGVkEhQKDGFkdmVudHVyZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJIrYHCghFbnZlbG9wZRIQCghldmVudF9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoAxIvCgtvY2N1cnJlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKc2Vzc2lvbl9pZBgEIAEoCRISCgphY3Rvcl9yb2xlGAUgASgJEhYKDnBhcnRpY2lwYW50X2lkGAYgASgJEikKC3Rva2VuX21vdmVkGAogASgLMhIudnR0LnYxLlRva2VuTW92ZWRIABItCg1hdHRhY2tfcm9sbGVkGAsgASgLMhQudnR0LnYxLkF0dGFja1JvbGxlZEgAEi0KDXNjZW5lX2NyZWF0ZWQYDCABKAsyFC52dHQudjEuU2NlbmVDcmVhdGVkSAASKQoLYWN0b3JfYWRkZWQYDSABKAsyEi52dHQudjEuQWN0b3JBZGRlZEgAEisKDHRva2VuX3BsYWNlZBgOIAEoCzITLnZ0dC52MS5Ub2tlblBsYWNlZEgAEjEKD3Nlc3Npb25fc3RhcnRlZBgPIAEoCzIWLnZ0dC52MS5TZXNzaW9uU3RhcnRlZEgAEi0KDXNlc3Npb25fZW5kZWQYECABKAsyFC52dHQudjEuU2Vzc2lvbkVuZGVkSAASMwoQZXZlbnRzX3JldHJhY3RlZBgRIAEoCzIXLnZ0dC52MS5FdmVudHNSZXRyYWN0ZWRIABIrCgxhYmlsaXR5X3VzZWQYEiABKAsyEy52dHQudjEuQWJpbGl0eVVzZWRIABIzChByZXNvdXJjZV9jaGFuZ2VkGBMgASgLMhcudnR0LnYxLlJlc291cmNlQ2hhbmdlZEgAEjUKEWNvbmRpdGlvbl9hcHBsaWVkGBQgASgLMhgudnR0LnYxLkNvbmRpdGlvbkFwcGxpZWRIABI1ChFjb25kaXRpb25fcmVtb3ZlZBgVIAEoCzIYLnZ0dC52MS5Db25kaXRpb25SZW1vdmVkSAASMQoPbmFycmF0aW9uX2FkZGVkGBYgASgLMhYudnR0LnYxLk5hcnJhdGlvbkFkZGVkSAASLQoNbm90ZV91cHNlcnRlZBgXIAEoCzIULnZ0dC52MS5Ob3RlVXBzZXJ0ZWRIABIrCgxub3RlX2RlbGV0ZWQYGCABKAsyEy52dHQudjEuTm90ZURlbGV0ZWRIABIzChBhZHZlbnR1cmVfbG9hZGVkGBkgASgLMhcudnR0LnYxLkFkdmVudHVyZUxvYWRlZEgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSJXCgxTY2VuZUNyZWF0ZWQSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSKyCAoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSABCCQoHcGF5bG9hZEJCWkBnaXRodWIuY29tL1BhdHJpa0xhZ2VyL3Z0dC1wbGF0Zm9ybS9jb250cmFjdC9nZW4vZ28vdnR0L3YxO3Z0dHYxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -226,9 +226,42 @@ export type Actor = Message<"vtt.v1.Actor"> & {
   /**
    * Participant who may act as this actor; empty = DM/agent only.
    *
+   * SUPERSEDED IN MEANING by controller_ids below, but NOT removed and never
+   * will be: ActorAdded events carrying this field already exist in campaign
+   * logs, and you cannot reinterpret history you have written.
+   *
+   * It is now a MIRROR: controller_ids[0] whenever the set is non-empty, and
+   * empty ONLY when the set is empty. That rule is chosen so an old reader is
+   * INCOMPLETE BUT NEVER WRONG — it sees one real controller and misses the
+   * rest, which fails closed.
+   *
+   * The obvious alternative (empty whenever the set has more than one) is
+   * wrong, and wrong in the way this contract elsewhere refuses. protojson
+   * omits empty strings, so "no controller_id because two people share this
+   * actor" and "no controller_id because nobody controls it" are BYTE
+   * IDENTICAL on the wire — and empty already means DM/agent-only. A shared
+   * actor would read as unowned: dropped from its own player's list in the
+   * web client, and denied to BOTH controllers by any reader still checking
+   * this field. That is a fact carried by ABSENCE, which is exactly what
+   * PresenceState in commands.proto exists to avoid.
+   *
    * @generated from field: string controller_id = 7;
    */
   controllerId: string;
+
+  /**
+   * Every participant who may act as this actor. Authoritative. Empty means
+   * DM/agent only, exactly as an empty controller_id did.
+   *
+   * A set, because one character can be shared (a player running a companion
+   * alongside their own, a second player covering while someone is away).
+   * Ownership gates PLAYERS ONLY — DM and agent are outside it entirely
+   * (internal/gateway/authz.go), so the DM acts on any actor without anyone
+   * being granted or revoked anything.
+   *
+   * @generated from field: repeated string controller_ids = 8;
+   */
+  controllerIds: string[];
 };
 
 /**
@@ -237,6 +270,60 @@ export type Actor = Message<"vtt.v1.Actor"> & {
  */
 export const ActorSchema: GenMessage<Actor> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 6);
+
+/**
+ * ActorControlGranted adds a participant to an actor's controller set.
+ * Idempotent: granting to a participant who already holds control is not an
+ * error and does not duplicate them.
+ *
+ * @generated from message vtt.v1.ActorControlGranted
+ */
+export type ActorControlGranted = Message<"vtt.v1.ActorControlGranted"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string participant_id = 2;
+   */
+  participantId: string;
+};
+
+/**
+ * Describes the message vtt.v1.ActorControlGranted.
+ * Use `create(ActorControlGrantedSchema)` to create a new message.
+ */
+export const ActorControlGrantedSchema: GenMessage<ActorControlGranted> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 7);
+
+/**
+ * ActorControlRevoked removes a participant from an actor's controller set.
+ * Idempotent: revoking from a participant who does not hold control is a
+ * no-op. Revocation exists to REASSIGN a character — it is never needed for
+ * the DM to act, since DM authority is orthogonal to control, not a stronger
+ * form of it.
+ *
+ * @generated from message vtt.v1.ActorControlRevoked
+ */
+export type ActorControlRevoked = Message<"vtt.v1.ActorControlRevoked"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string participant_id = 2;
+   */
+  participantId: string;
+};
+
+/**
+ * Describes the message vtt.v1.ActorControlRevoked.
+ * Use `create(ActorControlRevokedSchema)` to create a new message.
+ */
+export const ActorControlRevokedSchema: GenMessage<ActorControlRevoked> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 8);
 
 /**
  * @generated from message vtt.v1.SceneCreated
@@ -268,7 +355,7 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
  * Use `create(SceneCreatedSchema)` to create a new message.
  */
 export const SceneCreatedSchema: GenMessage<SceneCreated> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 7);
+  messageDesc(file_vtt_v1_events, 9);
 
 /**
  * @generated from message vtt.v1.ActorAdded
@@ -285,7 +372,7 @@ export type ActorAdded = Message<"vtt.v1.ActorAdded"> & {
  * Use `create(ActorAddedSchema)` to create a new message.
  */
 export const ActorAddedSchema: GenMessage<ActorAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 8);
+  messageDesc(file_vtt_v1_events, 10);
 
 /**
  * @generated from message vtt.v1.TokenPlaced
@@ -317,7 +404,7 @@ export type TokenPlaced = Message<"vtt.v1.TokenPlaced"> & {
  * Use `create(TokenPlacedSchema)` to create a new message.
  */
 export const TokenPlacedSchema: GenMessage<TokenPlaced> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 9);
+  messageDesc(file_vtt_v1_events, 11);
 
 /**
  * @generated from message vtt.v1.SessionStarted
@@ -334,7 +421,7 @@ export type SessionStarted = Message<"vtt.v1.SessionStarted"> & {
  * Use `create(SessionStartedSchema)` to create a new message.
  */
 export const SessionStartedSchema: GenMessage<SessionStarted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 10);
+  messageDesc(file_vtt_v1_events, 12);
 
 /**
  * @generated from message vtt.v1.SessionEnded
@@ -347,7 +434,7 @@ export type SessionEnded = Message<"vtt.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 11);
+  messageDesc(file_vtt_v1_events, 13);
 
 /**
  * Compensating undo marker (spec §6). Retraction events cannot themselves
@@ -377,7 +464,7 @@ export type EventsRetracted = Message<"vtt.v1.EventsRetracted"> & {
  * Use `create(EventsRetractedSchema)` to create a new message.
  */
 export const EventsRetractedSchema: GenMessage<EventsRetracted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 12);
+  messageDesc(file_vtt_v1_events, 14);
 
 /**
  * @generated from message vtt.v1.AbilityUsed
@@ -414,7 +501,7 @@ export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
  * Use `create(AbilityUsedSchema)` to create a new message.
  */
 export const AbilityUsedSchema: GenMessage<AbilityUsed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13);
+  messageDesc(file_vtt_v1_events, 15);
 
 /**
  * @generated from message vtt.v1.AbilityUsed.Roll
@@ -441,7 +528,7 @@ export type AbilityUsed_Roll = Message<"vtt.v1.AbilityUsed.Roll"> & {
  * Use `create(AbilityUsed_RollSchema)` to create a new message.
  */
 export const AbilityUsed_RollSchema: GenMessage<AbilityUsed_Roll> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13, 0);
+  messageDesc(file_vtt_v1_events, 15, 0);
 
 /**
  * @generated from message vtt.v1.ResourceChanged
@@ -478,7 +565,7 @@ export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
  * Use `create(ResourceChangedSchema)` to create a new message.
  */
 export const ResourceChangedSchema: GenMessage<ResourceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 14);
+  messageDesc(file_vtt_v1_events, 16);
 
 /**
  * @generated from message vtt.v1.ConditionApplied
@@ -505,7 +592,7 @@ export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
  * Use `create(ConditionAppliedSchema)` to create a new message.
  */
 export const ConditionAppliedSchema: GenMessage<ConditionApplied> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 15);
+  messageDesc(file_vtt_v1_events, 17);
 
 /**
  * @generated from message vtt.v1.ConditionRemoved
@@ -532,7 +619,7 @@ export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
  * Use `create(ConditionRemovedSchema)` to create a new message.
  */
 export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 16);
+  messageDesc(file_vtt_v1_events, 18);
 
 /**
  * @generated from message vtt.v1.NarrationAdded
@@ -564,7 +651,7 @@ export type NarrationAdded = Message<"vtt.v1.NarrationAdded"> & {
  * Use `create(NarrationAddedSchema)` to create a new message.
  */
 export const NarrationAddedSchema: GenMessage<NarrationAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 17);
+  messageDesc(file_vtt_v1_events, 19);
 
 /**
  * @generated from message vtt.v1.NoteUpserted
@@ -591,7 +678,7 @@ export type NoteUpserted = Message<"vtt.v1.NoteUpserted"> & {
  * Use `create(NoteUpsertedSchema)` to create a new message.
  */
 export const NoteUpsertedSchema: GenMessage<NoteUpserted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 18);
+  messageDesc(file_vtt_v1_events, 20);
 
 /**
  * @generated from message vtt.v1.NoteDeleted
@@ -608,7 +695,7 @@ export type NoteDeleted = Message<"vtt.v1.NoteDeleted"> & {
  * Use `create(NoteDeletedSchema)` to create a new message.
  */
 export const NoteDeletedSchema: GenMessage<NoteDeleted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19);
+  messageDesc(file_vtt_v1_events, 21);
 
 /**
  * Pure testimony (AbilityUsed's pattern — engine no-op): the compile
@@ -635,7 +722,7 @@ export type AdventureLoaded = Message<"vtt.v1.AdventureLoaded"> & {
  * Use `create(AdventureLoadedSchema)` to create a new message.
  */
 export const AdventureLoadedSchema: GenMessage<AdventureLoaded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 20);
+  messageDesc(file_vtt_v1_events, 22);
 
 /**
  * @generated from message vtt.v1.Envelope
@@ -772,6 +859,18 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: AdventureLoaded;
     case: "adventureLoaded";
+  } | {
+    /**
+     * @generated from field: vtt.v1.ActorControlGranted actor_control_granted = 26;
+     */
+    value: ActorControlGranted;
+    case: "actorControlGranted";
+  } | {
+    /**
+     * @generated from field: vtt.v1.ActorControlRevoked actor_control_revoked = 27;
+     */
+    value: ActorControlRevoked;
+    case: "actorControlRevoked";
   } | { case: undefined; value?: undefined };
 };
 
@@ -780,5 +879,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 21);
+  messageDesc(file_vtt_v1_events, 23);
 

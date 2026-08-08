@@ -123,10 +123,11 @@ func TestMCPCommandMissingTokenErrorsViaRunCLI(t *testing.T) {
 // Stdin/Stdout pipes (mcpsdk.IOTransport) — proving cmd/vtt/mcp.go's real
 // RunE(ctx, &mcpsdk.StdioTransport{}) path actually works end to end, not
 // just the in-memory-transport substitute TestMCPSpecSevenExitCriteria
-// uses below. list_tools must report all 17 tools (adventure-format P12
-// Task 1 contract addition — load_adventure — bumped this from 15 to 16;
-// P12 Task 4 adds get_adventure_guide itself, bumping 16->17; both
-// fix-forwards pre-authorized by their own task briefs); closing the client
+// uses below. list_tools must report every command tool in the embedded
+// manifest plus the four read/guide tools. The command count is DERIVED
+// from the embedded manifest rather than written down, since a hand-kept
+// number is a second copy of a fact tools.json already holds; only the four
+// Go-registered read/guide tools remain a literal; closing the client
 // session then closes the subprocess's stdin, which is enough to let the
 // process exit on its own (asserted via a bounded Wait, Kill as the
 // fallback safety net matching this package's established subprocess-test
@@ -169,8 +170,30 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools over real stdio: %v (stderr: %s)", err, stderr.String())
 	}
-	if len(res.Tools) != 17 {
-		t.Fatalf("ListTools over real stdio: got %d tools, want 17: %v", len(res.Tools), res.Tools)
+	// DERIVED from the embedded manifest, not a literal. A count written down
+	// by hand has to be edited by every contract addition, and this repo has
+	// four separate sites that each carried their own copy of "17" — the
+	// adventure-format sub-project shipped a stale one three times on a single
+	// rename. The embedded tools.json is the same bytes the binary serves, so
+	// this asserts the real relationship: every command tool, plus the four
+	// read/guide tools registered separately.
+	var manifest []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(toolsJSON, &manifest); err != nil {
+		t.Fatalf("parse embedded tools.json: %v", err)
+	}
+	// The four read/guide tools are registered in Go rather than generated,
+	// so this one IS written down — there is no manifest to derive it from.
+	const readAndGuideTools = 4 // get_state, get_events_since, get_ruleset_guide, get_adventure_guide
+	want := len(manifest) + readAndGuideTools
+	if len(res.Tools) != want {
+		names := make([]string, 0, len(res.Tools))
+		for _, tl := range res.Tools {
+			names = append(names, tl.Name)
+		}
+		t.Fatalf("ListTools over real stdio: got %d tools, want %d (%d command + %d read/guide): %v",
+			len(res.Tools), want, len(manifest), readAndGuideTools, names)
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.

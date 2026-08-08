@@ -322,13 +322,23 @@ tasks:
       2026-08-03, and it dates precisely to `mutate` expanding from two files
       to the whole client.
 
-      THIS IS NOT THE GATE NARROWED TO PASS. `mutate` is untouched, no
-      threshold moved, and CI runs on ubuntu-latest
-      (.github/workflows/ci.yml:30) where the bug does not exist -- so the
-      gate is enforced at FULL STRENGTH on every push, and CI is
-      AUTHORITATIVE for it. What IS genuinely lost is local signal: a green
-      `task check` on a Mac has not proven this gate, which is why the skip
-      banner is loud rather than quiet.
+      THIS IS NOT THE GATE NARROWED TO PASS. `mutate` is untouched and no
+      threshold moved; only the KERNEL it runs on changes.
+
+      Run it with `task check:ts-mutation:docker`, which executes this exact
+      gate inside a Linux container on the same machine — same config, same
+      mutate list, same adjudication file, same checker. Measured 2026-08-07:
+      1772 mutants, 1692 killed, 19 timed out, 61 adjudicated, zero
+      unadjudicated survivors. So the local signal is NOT lost on a Mac; it
+      just is not this task that provides it.
+
+      CI (.github/workflows/ci.yml, ubuntu-latest) still runs it on every push
+      to main. It stopped running per-PR on 2026-08-07 when the Actions
+      allowance was exhausted until 1 September — the container is what covers
+      the gap, and it is why that was an acceptable trade rather than a hole.
+
+      A green `task check` on a Mac has still not proven THIS gate. That is
+      what the skip banner says, and it stays loud.
 
       DO NOT "fix" this by sharing Bun.serve per test file. Measured: only
       ~27 of the 175 are listeners (the shareable part); the rest are
@@ -374,6 +384,9 @@ tasks:
           echo "  AUTHORITATIVE. A green 'task check' on macOS has NOT" >&2
           echo "  proven the mutation gate." >&2
           echo "" >&2
+          echo "  RUN IT ANYWAY, on Linux, in a container, same strength:" >&2
+          echo "    task check:ts-mutation:docker" >&2
+          echo "" >&2
           echo "  Fresh-boot override: VTT_FORCE_TS_MUTATION=1 task check:ts-mutation" >&2
           echo "==============================================================" >&2
           exit 0
@@ -384,6 +397,71 @@ tasks:
         # a real failure is worse than no guard at all.
         npx stryker run stryker.conf.json
         python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
+
+  check:ts-mutation:docker:
+    desc: >
+      check:ts-mutation, run on LINUX inside a container, from a Mac.
+
+      This exists because the gate above cannot run on macOS 26.x — FB21686886
+      leaks socket accounting per close(), so the ~292,000 sockets a full run
+      costs exceed the machine's ~161,000-per-boot budget and take DNS, curl
+      and every socket-opening test down with it. CI on ubuntu-latest was the
+      only place the gate spoke.
+
+      A container closes that hole: Docker Desktop on macOS runs a Linux VM, so
+      sockets created in here are LINUX sockets and the kernel bug simply does
+      not apply. Verified by running the gate and watching it complete rather
+      than by reasoning about it.
+
+      The gate is NOT narrowed to fit: same stryker.conf.json, same `mutate`
+      list, same adjudication file, same checker. Only the kernel underneath
+      changes. That is what makes this a substitute for CI rather than a
+      weaker stand-in.
+
+      BOTH Node and Bun are installed, and that is not redundancy. Stryker
+      itself runs under NODE — `bunx stryker` fails with "generator is not a
+      function", because Stryker is not Bun-compatible as a RUNTIME. Bun is
+      still required because stryker.conf.json's command runner shells out to
+      `bun test`. So Node runs the mutator and Bun runs the tests, exactly as
+      the native task does with `npx`.
+
+      The Go toolchain is NOT needed, because this runs ONE gate.
+      Every other gate in `task check` already runs natively on macOS; this is
+      the single exception, which is exactly why it is worth containerising.
+
+      node_modules is installed INSIDE the container, into an anonymous volume
+      over the mounted one. Bun's macOS binaries would otherwise be visible to
+      a Linux process and fail to load.
+
+      Requires the Docker daemon (start Docker Desktop). Costs no GitHub
+      Actions minutes, which is the point while the allowance is exhausted.
+    cmds:
+      - |
+        set -e
+        if ! docker info >/dev/null 2>&1; then
+          echo "check:ts-mutation:docker: the Docker daemon is not running — start Docker Desktop" >&2
+          exit 1
+        fi
+        # NO PIPES, same reason the native task documents: a pipeline hides the
+        # exit status and a failing gate would ship green.
+        docker run --rm \
+          -v "$PWD":/repo \
+          -v /repo/node_modules \
+          -w /repo \
+          --entrypoint bash \
+          oven/bun:1.3.10-debian \
+          -c 'set -e
+              apt-get update -qq && apt-get install -y -qq python3 nodejs npm procps >/dev/null
+              bun install --frozen-lockfile
+              # Stryker sandboxes carry a SYMLINKED node_modules, and a crashed
+              # run leaves them behind in the repo. check_mutation_test.py
+              # then fails the whole gate on "a symlink gremlins drops must be
+              # recorded with its consequence" — correctly, since an
+              # unrecorded symlink in the tree is exactly what that guard
+              # exists to catch. Clean up on the way out, whatever happened.
+              trap "rm -rf /repo/.stryker-tmp" EXIT
+              npx stryker run stryker.conf.json
+              python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt'
 
   check:ts-coverage:
     desc: >

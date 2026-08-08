@@ -86,6 +86,7 @@ export function boot(root: HTMLElement): Session | null {
         ? renderDMConsole({
             st: session.state,
             log: [...session.events],
+            participants: session.participants,
             adventures,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
             send: act,
@@ -105,6 +106,12 @@ export function boot(root: HTMLElement): Session | null {
           }
         : undefined,
       toast: toast || undefined,
+      participants: session.participants,
+      // Redial from the last sequence already folded, so a reconnect resumes
+      // rather than replaying the whole campaign. Manual by spec §3.4.
+      onReconnect: () => {
+        void session.reconnect();
+      },
     });
   };
 
