@@ -468,8 +468,11 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// random, so a panic mid-broadcast delivers the departure to SOME
 		// connections and never to the rest — a permanent ghost at the table,
 		// which is the exact failure presence exists to prevent, arriving
-		// silently. Found by review under -race; `task check` does not run
-		// the gateway with -race and did not see it.
+		// silently. Found by review under -race, at a time when `task check`
+		// ran no -race anywhere and so could not see it. check:race closes
+		// that (2026-08-08) — and reinstating this ordering is the fault
+		// injection that proved the new gate has teeth: `ok` without -race,
+		// DATA RACE with it, same code and same tests.
 		//
 		// The deferred leave below stays, as an idempotent backstop for the
 		// return paths that never reach shutdown.

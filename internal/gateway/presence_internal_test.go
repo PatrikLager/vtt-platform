@@ -255,9 +255,13 @@ func TestLeaveStopsDelivery(t *testing.T) {
 //
 // This works at the registry level, where the ordering actually lives: a
 // broadcast that is holding the lock must not still be handing frames to a
-// connection whose leave() has returned. Deliberately not a race-detector test
-// — the gate runs no -race, so a regression pin that only fails under -race
-// would not fail anything.
+// connection whose leave() has returned. Deliberately not a race-detector
+// test, and the reason has CHANGED for the better: the gate ran no -race at
+// all when this was written, so a pin that only failed under -race would not
+// have failed anything. check:race fixed that on 2026-08-08. This stays as
+// it is on the stronger argument — it is DETERMINISTIC where a race pin is
+// probabilistic, failing every run rather than only the runs where the
+// scheduler happens to cooperate.
 func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
 	r := newPresenceRegistry()
 	r.sendBudget = time.Second

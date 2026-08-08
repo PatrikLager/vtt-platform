@@ -43,6 +43,10 @@ tasks:
       - task: check:breaking
       - task: check:invariants
       - task: check:arch
+      # BEFORE the mutation gates: ~53s against their minutes, so a race
+      # failing here saves the long wait. NOT claimed to be first-cheapest
+      # overall — check:coverage above runs the whole Go suite before this.
+      - task: check:race
       - task: check:mutation
       # Now covers EVERY file under client/src/ except the browser entry
       # point -- the backlog that made this "scoped to two files" is closed,
@@ -590,6 +594,64 @@ tasks:
         run_quiet go tool covdata textfmt -i="$D_MERGED" -o="$PROFILE"
 
         python3 tools/check-coverage.py tools/coverage-thresholds.txt "$PROFILE" "$EXPECT"
+
+  check:race:
+    desc: >
+      The Go race detector over every package that RUNS GOROUTINES.
+
+      It exists because `task check` had no -race anywhere, and that is not a
+      theoretical gap: it passed a working tree containing a genuine data race
+      AND a "send on closed channel" panic in internal/gateway (presence
+      broadcasting into a channel shutdown had already closed). `go test -race`
+      on the same tree reported it immediately, on two pre-existing tests. The
+      panic was recovered by net/http's handler, so it only LOGGED — and
+      because Go map iteration order is random, it delivered a departure
+      broadcast to some connections and never to the rest, leaving a permanent
+      ghost at the table. Silently.
+
+      A second race followed within the day: a package-global encode seam that
+      presence made reachable from a connection's TEARDOWN, so one test's swap
+      raced another test's unwinding connection. Two in one branch is the
+      argument.
+
+      EVERY package, by EXCLUSION rather than by a list of the concurrent ones.
+      The first draft named six packages explicitly, and review caught that as
+      the exact trap this gate exists to close: anything not named is uncovered
+      AND silently green — a new package, or a subpackage, since
+      ./internal/gateway/ does not match internal/gateway/registry/. An
+      honour-system "remember to add it here" is precisely the thing whose
+      failure this repo keeps rediscovering. check:coverage (:572) and
+      test:unit (:97) both already do it this way round.
+
+      Broader AND cheaper, measured: the six-package version cost 58.5s and
+      covered 6 packages; this covers all 24 in 52.7s.
+
+      MEASURED before adoption (2026-08-08, Patrik's call), because the
+      objection to -race is always runtime and it deserved a number rather than
+      a fear. The FLAG costs about 1.3x (internal/gateway 8.11s -> 9.60s; the
+      five others 38.35s -> 49.79s). The GATE costs its whole runtime, ~53s,
+      because `check` contains no other bare run of these packages —
+      check:coverage supplies the instrumented one and the bare suite was
+      deliberately removed (:30-35). So this is ~53 additional seconds against
+      a 45-60 minute CI run, not the ~13s the flag's marginal cost suggests.
+      The 2-10x figure that kept -race out is not what this repo costs either
+      way.
+
+      -p 1 ONLY on the second line, and only because gateway/mcp/cmd/vtt open
+      real sockets and subprocesses — the same resource reason check:coverage
+      gives, applied to the same three packages it applies it to. The rest run
+      in parallel; serializing them would cost wall time for nothing. -p is
+      package-level, so in-package t.Parallel() is untouched either way and
+      this is not a race-hiding knob.
+
+      BLIND SPOT, recorded rather than fixed: cmd/vtt's e2e builds the binary
+      with a plain `go build`, so the SUBPROCESS is uninstrumented. This
+      race-checks the test/client side, not the server it drives — that server
+      code is covered in-process by internal/gateway. cmd/vtt is the largest
+      single cost here for the least race signal.
+    cmds:
+      - go test -race -count=1 $(go list ./... | grep -v -E '/(internal/(gateway|mcp)|cmd/vtt)(/|$)')
+      - go test -race -count=1 -p 1 ./internal/gateway/... ./internal/mcp/... ./cmd/vtt/...
 
   check:mutation:
     desc: >
