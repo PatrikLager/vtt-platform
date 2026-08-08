@@ -172,5 +172,69 @@ class Gate(unittest.TestCase):
         self.assertIn("Refusing to guess", msg)
 
 
+
+class MovedAdjudication(unittest.TestCase):
+    """An edit above an adjudicated mutant shifts its line, and the gate used to
+    report that as TWO unrelated failures: a stale entry, and an unadjudicated
+    survivor somewhere else. Nothing said they were the same mutant.
+
+    That framing is actively dangerous. The obvious response to "this entry no
+    longer survives — remove it" is to delete it, which throws away a reasoned
+    adjudication AND leaves the survivor unexplained. Measured: this happened
+    four separate times in one day's work, across both the Go and TS gates.
+    """
+
+    def test_a_moved_adjudication_is_reported_as_a_move_with_its_new_key(self):
+        code, msg = run(
+            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+        self.assertEqual(code, 1)
+        self.assertIn("ADJUDICATION MOVED", msg)
+        self.assertIn("9:5", msg)   # where it was
+        self.assertIn("42:5", msg)  # where it is now
+        # And NOT as the two separate failures it used to be, because that is
+        # what makes deleting a real adjudication look like the fix.
+        self.assertNotIn("no longer survives", msg)
+        self.assertNotIn("SURVIVED", msg)
+
+    def test_a_move_still_fails_the_gate(self):
+        # It is a re-key, not a pass. An entry pointing at the wrong line would
+        # pre-approve whatever later lands there.
+        code, _ = run(
+            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+        self.assertEqual(code, 1)
+
+    def test_a_different_replacement_is_not_a_move(self):
+        # Same mutator and file, DIFFERENT mutation: two distinct claims, and
+        # pairing them would re-key an adjudication onto a mutant nobody judged.
+        code, msg = run(
+            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "true")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+        self.assertEqual(code, 1)
+        self.assertIn("no longer survives", msg)
+        self.assertIn("SURVIVED", msg)
+
+    def test_a_move_across_files_is_not_a_move(self):
+        # Same mutator and replacement in a different file is a different
+        # mutant. Pairing across files would silently excuse it.
+        code, msg = run(
+            report(("client/src/b.ts", 9, 5, "BooleanLiteral", "Survived", "false")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+        self.assertEqual(code, 1)
+        self.assertNotIn("ADJUDICATION MOVED", msg)
+
+    def test_two_candidates_at_once_are_not_paired(self):
+        # Ambiguous: two survivors match one stale entry equally well. Guessing
+        # which is the move would re-key onto a mutant nobody judged, so report
+        # them the old way and let a human decide.
+        code, msg = run(
+            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false"),
+                   ("client/src/a.ts", 77, 5, "BooleanLiteral", "Survived", "false")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+        self.assertEqual(code, 1)
+        self.assertNotIn("ADJUDICATION MOVED", msg)
+        self.assertIn("no longer survives", msg)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
