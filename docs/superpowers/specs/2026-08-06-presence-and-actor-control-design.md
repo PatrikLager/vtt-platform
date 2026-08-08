@@ -52,6 +52,44 @@ different things and must not be "hard melded" together.
   through **one** connection.
 - Losing a connection must never destroy the assignment. Presence is
   connection-scoped; control is campaign-scoped and lives in the event log.
+  See §3.1a: this REVERSES the original manual-disconnect-releases scenario,
+  adjudicated 2026-08-08.
+
+### 3.1a Disconnecting does NOT release a character
+
+**Adjudicated 2026-08-08, Patrik's call.** This REVERSES the scenario that
+prompted the feature, so it is recorded rather than left implicit.
+
+The original ask was: a manual disconnect should release the character so any
+other player, DM or agent can take it over. What shipped keeps control until
+somebody revokes it. Both readings survived into this document unnoticed —
+§3.1's "losing a connection must never destroy the assignment" contradicted the
+scenario, and the spec was accepted with the contradiction in it.
+
+Three reasons the shipped behaviour won:
+
+1. **A clean quit and a dropped network are the same event to a server.** It
+   cannot tell them apart unless the client announces it, which is why
+   MapTool's `releaseClientConnection` handles both through one path. Releasing
+   on any disconnect means dropped wifi hands your character to the table.
+2. **It is what MapTool does.** `Token.ownerList` is a `Set<String>` persisted
+   with the campaign, and the only callers of `removeOwner`/`clearAllOwners`
+   are two UI dialogs — the edit dialog and the token popup menu. No disconnect
+   path touches ownership; a human takes a character away, or nobody does.
+3. **Handover has a home now.** The DM console's "Who controls what" panel
+   (T7) does deliberately what an automatic release would do by accident, and
+   §3.2 already lets the DM act on a held character without revoking anyone.
+
+How a returning player gets their characters back: the invite TOKEN. Verify
+hashes it to a stable participant id, the browser keeps it in localStorage, and
+control is keyed on that id — so the same credential resolves to the same
+person across any number of disconnects. Stronger than MapTool, which keys
+ownership on a player-name STRING typed at connect time.
+
+Still open, and deliberately not built here: spec §5.3 already lets a PLAYER
+revoke their own control, and no client offers it. That is the piece which
+would give the original scenario its intent — putting a character down on
+purpose — without making a network blip do it for you.
 
 ### 3.2 The DM can always take an actor
 
