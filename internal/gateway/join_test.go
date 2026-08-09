@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,6 +26,11 @@ type joinFixture struct {
 	t   *testing.T
 	srv *httptest.Server
 	ids *identity.DB
+
+	// path is the campaign file, so a test can count ROWS. The endpoint's
+	// refusal properties are about what it did NOT create, and a decoded
+	// reply cannot witness that — see post's comment for how that went wrong.
+	path string
 }
 
 func newJoinFixture(t *testing.T) *joinFixture {
@@ -43,7 +49,22 @@ func newJoinFixture(t *testing.T) *joinFixture {
 
 	srv := httptest.NewServer(gateway.New(c, ids).Handler())
 	t.Cleanup(srv.Close)
-	return &joinFixture{t: t, srv: srv, ids: ids}
+	return &joinFixture{t: t, srv: srv, ids: ids, path: path}
+}
+
+// count returns the number of rows in table, straight from the file.
+func (f *joinFixture) count(table string) int {
+	f.t.Helper()
+	raw, err := sql.Open("sqlite", f.path)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer raw.Close()
+	var n int
+	if err := raw.QueryRow(`SELECT count(*) FROM ` + table).Scan(&n); err != nil {
+		f.t.Fatal(err)
+	}
+	return n
 }
 
 type joinReply struct {
@@ -153,25 +174,66 @@ func TestAClosedDoorAndAWrongSecretAreRefusedIDENTICALLY(t *testing.T) {
 }
 
 func TestAClosedDoorMintsNobody(t *testing.T) {
-	// Not just refused — no row. A refusal that still created a participant
-	// would make this endpoint a way to fill the table's database.
+	// Not just refused — NO ROW. A refusal that still created a participant
+	// would make this unauthenticated endpoint a way for any stranger to fill
+	// the table's database.
+	//
+	// THE FIRST VERSION OF THIS TEST COULD NOT FAIL, and it is the same defect
+	// post's comment describes one screen above. It asserted on the DECODED
+	// reply, but http.Error writes plain text: got.Token was always "", so the
+	// first assertion was a tautology and the second was Verify(""), which
+	// errors unconditionally. Injection proved it — minting a participant on
+	// every refused join failed nothing in this package OR in identity. The
+	// rows are the only honest witness to a claim about what was not created.
 	f := newJoinFixture(t)
 	secret, err := f.ids.JoinSecret()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, got, _ := f.post(secret, "Kim")
-	if got.Token != "" {
-		t.Fatal("a refused join must not return a credential")
+	before := f.count("participants")
+	resp, _, _ := f.post(secret, "Kim")
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("a closed door must refuse even the correct secret")
 	}
-	if _, err := f.ids.Verify(got.Token); err == nil {
-		t.Fatal("a refused join must not have minted a participant")
+	if after := f.count("participants"); after != before {
+		t.Fatalf("a refused join minted %d participant(s) anyway", after-before)
+	}
+}
+
+func TestARefusedJoinWritesNothingAtAll(t *testing.T) {
+	// Spec §2 rests its case against rate limiting entirely on the closed door
+	// leaving "no standing endpoint to hammer" — the link is INERT. That is a
+	// claim about writes, not just about credentials, and it has to be checked
+	// HERE rather than only in identity: identity.JoinAllows can be perfectly
+	// read-only while this handler still reaches the minting path. That seam
+	// is precisely the shape this plan was built around.
+	//
+	// Nothing below asks for the secret first: JoinSecret() MINTS the row, so
+	// a fixture that warms it up cannot see this.
+	f := newJoinFixture(t)
+	if n := f.count("join_access"); n != 0 {
+		t.Fatalf("fixture is not fresh: %d join_access row(s) before any request", n)
+	}
+	resp, _, _ := f.post("a stranger's guess", "Kim")
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("a campaign whose door was never opened must refuse")
+	}
+	if n := f.count("join_access"); n != 0 {
+		t.Fatalf("an anonymous, REFUSED request wrote %d row(s) — it takes SQLite's write "+
+			"lock on the file internal/store appends every event to, on the one path a "+
+			"stranger controls", n)
 	}
 }
 
 func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	// It is what the whole table sees. Blank, or whitespace pretending to be
 	// blank, is not a name.
+	//
+	// Refused DISTINCTLY, and asserted as such: this is the joiner's own
+	// mistake and saying so leaks nothing about the door or the secret. The
+	// earlier version asserted only "not 200", so collapsing this into the
+	// shared refusal failed nothing — and that would tell somebody who simply
+	// forgot to type their name that the link is closed.
 	f := newJoinFixture(t)
 	secret, err := f.ids.JoinSecret()
 	if err != nil {
@@ -181,10 +243,70 @@ func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"", "   ", "\t\n"} {
-		resp, _, _ := f.post(secret, name)
-		if resp.StatusCode == http.StatusOK {
-			t.Fatalf("display name %q was accepted", name)
+		resp, _, body := f.post(secret, name)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("display name %q: status %d, want %d", name, resp.StatusCode, http.StatusBadRequest)
 		}
+		if strings.Contains(body, "not accepting anyone") {
+			t.Fatalf("display name %q was refused with the DOOR's message (%q) — a joiner who "+
+				"forgot their name would be told the link is closed", name, strings.TrimSpace(body))
+		}
+	}
+}
+
+func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
+	// An UNAUTHENTICATED caller chooses this string, and every client at the
+	// table then renders it in every presence frame. Length and control
+	// characters are two different ways for a stranger to decide what everyone
+	// else's screen does — the client escapes with textContent, so this is not
+	// XSS, but "not XSS" is not the same as "bounded".
+	//
+	// Refused distinctly, like the blank name and for the same reason: it is
+	// the joiner's own input and telling them says nothing about the door.
+	f := newJoinFixture(t)
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		strings.Repeat("a", 65),             // bounded only by the body cap
+		strings.Repeat("\u00e5", 200),       // and bounded by RUNES, not bytes
+		"Kim\u001b[31m",                     // an ANSI escape, for anything that logs it
+		"Kim\nDM: everyone roll initiative", // a newline, to forge a second line
+		"Kim\u202emiK",                      // a BIDI override, so the name reads as somebody else
+		"Kim\u0000",                         // a NUL, for anything that is not Go
+	} {
+		resp, _, _ := f.post(secret, name)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("display name %q: status %d, want %d", name, resp.StatusCode, http.StatusBadRequest)
+		}
+	}
+	// And an ordinary name with non-ASCII in it still gets in — a bound that
+	// only accepts ASCII would lock out most of the people who might play.
+	resp, got, _ := f.post(secret, "Åsa Örn")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("a perfectly ordinary name was refused: %d", resp.StatusCode)
+	}
+	if got.Name != "Åsa Örn" {
+		t.Fatalf("display name came back as %q", got.Name)
+	}
+
+	// THE BOUNDARY ITSELF, from both sides. 65 above is refused; exactly the
+	// cap must be ACCEPTED, or the limit is quietly 63 and the only person who
+	// finds out is the one whose name is that long.
+	//
+	// The mutation gate caught this gap: > became >= and every test still
+	// passed, because nothing sat on the boundary. 64 is written literally
+	// rather than read from the constant — this is the external test package,
+	// and a test that recomputes the bound from the same expression it is
+	// checking cannot catch the bound being wrong.
+	resp, _, _ = f.post(secret, strings.Repeat("n", 64))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("a name of exactly the documented 64-rune limit was refused (%d) — the limit "+
+			"is off by one", resp.StatusCode)
 	}
 }
 

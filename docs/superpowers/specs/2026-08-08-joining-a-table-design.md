@@ -63,6 +63,16 @@ than an oversight.** Rate limits bound how fast an open endpoint can be abused;
 a closed door means there is no endpoint to abuse. If the door ever becomes
 default-open, limits become required in the same change.
 
+**AMENDED 2026-08-09, review of J2.** "Inert" is a claim about WRITES, and the
+first implementation did not honour it: the endpoint answered a guess through
+`JoinSecret`, which MINTS the row on a campaign that has never had one. So a
+refused, anonymous, unauthenticated request performed an INSERT — taking
+SQLite's write lock on the file `internal/store` writes to inside a transaction
+on every event append, on the one path a stranger controls. The argument above
+was sound; the code did not implement it. `identity.JoinAllows` now answers
+from a single read and never writes, and a gateway test counts rows rather than
+trusting the refusal.
+
 ## 3. Promotion, which is the hard part
 
 Q1 and Q2 together REQUIRE a way to change a participant's role. There isn't
@@ -151,6 +161,32 @@ Two things follow, and the second is the serious one:
 connection.** A role change and a revocation both take effect on the very next
 thing that person does. No reconnect, no dropped socket, no waiting.
 
+**AMENDED 2026-08-09, review of J4, and this half is the one that matters
+here.** Per-command re-resolution does not reach a SPECTATOR. `commandRoles`
+has no spectator row anywhere — a spectator may issue no command at all — so
+the lookup never fires for one. And §2 mints nothing but spectators. The hole
+was therefore exactly the population this feature creates: a stranger who
+found a leaked link and was then revoked kept watching the entire session.
+
+So the participant is re-resolved **on delivery as well as on command**.
+Delivery is where a watcher meets the server, so delivery is where revocation
+bites: on the next thing the table would have shown them. Not on a timer, and
+not at their next connect.
+
+A note on why the obvious fix is not available: `vtt revoke` is a SEPARATE
+PROCESS against the same SQLite file, so there is no in-process event for the
+gateway to hook — closing the revoked participant's sockets from the presence
+registry works for `promote_participant` and cannot work for revocation at all.
+Re-resolution is not merely the cheaper option here; it is the only one that
+covers both.
+
+**Only an invalid credential ends a connection.** An operational failure — a
+busy file, a driver error, a corrupt row — is not a fact about anybody's
+credential. It refuses the command and keeps the connection, exactly as a
+campaign that cannot answer already does. Closing on it would tell a player in
+good standing that their credential is no longer valid, which is false, and
+throw them out of a live table over a transient.
+
 The objection is cost — a database read on the hot path of every command, and
 `Authorize`'s doc comment says it does no I/O. That comment describes the
 current design, not a law, and the read is a local SQLite lookup by primary
@@ -185,6 +221,15 @@ invalidation hook is the fallback, not a reconnect.
 - The join endpoint is **unauthenticated by construction** — that is its whole
   point — so it must be impossible to reach any other capability through it.
   It mints a spectator and returns a token; it does nothing else.
+- **The display name is bounded and printable** (added 2026-08-09, review of
+  J2). It is the one string an unauthenticated caller gets to put on everybody
+  else's screen, and it travels in every presence frame to every client, the
+  CLI and the MCP surface — none of which escape anything. Capped at 64 RUNES
+  (not bytes, so a name in Swedish or Japanese gets the same room), and control
+  characters and bidi overrides are refused: a newline forges a second line, an
+  ANSI escape recolours a terminal, and U+202E makes a name read as somebody
+  else's. Refused DISTINCTLY from the door, because it is the joiner's own
+  input and saying so leaks nothing.
 
 ## 6. Deliberately out of scope
 

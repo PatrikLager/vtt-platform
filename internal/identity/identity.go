@@ -155,6 +155,45 @@ func (d *DB) JoinSecret() (string, error) {
 	return d.ensureJoinRow()
 }
 
+// JoinAllows reports whether candidate opens the door: it must be OPEN and the
+// secret must match. IT NEVER WRITES, and that is a security property rather
+// than a tidiness one.
+//
+// This is the only call in this package an UNAUTHENTICATED stranger can drive
+// (the join endpoint, spec §5), and spec §2 rests its whole case against rate
+// limiting on a closed door leaving nothing to hammer. Answering through
+// JoinSecret does not leave it inert: that mints the row on a campaign which
+// has never had one, so a REFUSED anonymous request took SQLite's write lock
+// on the file internal/store writes to inside a transaction on every event
+// append — the exact hazard ensureJoinRow's read-first path was restructured
+// to avoid for the DM console, reintroduced on the one path a stranger drives.
+//
+// Both halves come from ONE query and the compare runs unconditionally, so a
+// closed door and a wrong secret cost the same work as well as returning the
+// same answer. The && below short-circuits on an already-computed bool, so it
+// cannot reintroduce a timing difference between the two.
+//
+// The comparison lives here, not in the gateway, so the secret never leaves
+// this package to be checked. An empty stored secret admits NOBODY:
+// ConstantTimeCompare("", "") returns 1 and a request body omitting the field
+// decodes to "", so the degenerate row would otherwise admit the world.
+func (d *DB) JoinAllows(candidate string) (bool, error) {
+	var (
+		secret string
+		open   int
+	)
+	err := d.db.QueryRow(`SELECT secret, open FROM join_access WHERE id = 1`).Scan(&secret, &open)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Never touched, so closed — and answered without creating anything.
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("identity: read join access: %w", err)
+	}
+	match := subtle.ConstantTimeCompare([]byte(secret), []byte(candidate)) == 1
+	return open == 1 && secret != "" && match, nil
+}
+
 // RotateJoinSecret replaces the secret and returns the new one.
 //
 // This closes a leaked link to NEWCOMERS and touches nobody already through
@@ -396,7 +435,11 @@ func (d *DB) Lookup(id string) (*Participant, error) {
 	}
 	role, err := ParseRole(roleStr)
 	if err != nil {
-		return nil, err
+		// Named and wrapped like every other failure here. Verify says
+		// "stored role invalid" for the same row; a bare ParseRole error
+		// would be the one Lookup path that told an operator neither what
+		// went wrong nor whose row it was.
+		return nil, fmt.Errorf("identity: lookup %s: stored role invalid: %w", id, err)
 	}
 	var controls []string
 	if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {

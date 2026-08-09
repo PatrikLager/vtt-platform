@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +41,11 @@ type gwFixture struct {
 	// IDENTITY, not campaign state, so the only place its effect is visible is
 	// the participants table.
 	ids *identity.DB
+
+	// path is the campaign file. A test that needs to break identity
+	// OPERATIONALLY (rather than revoke somebody, which is a credential fact)
+	// reaches the table through here.
+	path string
 
 	// campaign is exposed so a test can assert on FOLDED STATE rather than on
 	// the result frame alone. A command can answer ok=true and still not mean
@@ -132,6 +138,7 @@ func newGWFixture(t *testing.T) *gwFixture {
 		playerToken: playerToken, otherPlayerToken: otherPlayerToken, playerID: playerID,
 		campaign: c,
 		ids:      ids,
+		path:     path,
 	}
 }
 
@@ -1228,6 +1235,8 @@ func TestRevokingRemovesSomebodyWhoIsStillConnected(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	before := f.head(t)
+
 	// Their very next action must not land.
 	sendCommand(t, conn, &vttv1.ClientCommand{
 		RequestId: "after-revoke",
@@ -1255,6 +1264,170 @@ func TestRevokingRemovesSomebodyWhoIsStillConnected(t *testing.T) {
 		if websocket.CloseStatus(err) == -1 {
 			t.Fatalf("the connection did not close — a revoked participant is still being "+
 				"served (read ended with %v, not a websocket close)", err)
+		}
+		break
+	}
+
+	// AND THE COMMAND ITSELF NEVER LANDED. The doc comment above claims "their
+	// very next action must not land", and until this the test only checked
+	// that the socket eventually closed — so failing open (run the command
+	// with the cached participant, THEN close) passed, with the revoked
+	// player's narration appended to the permanent log on the way out. Closing
+	// the door after somebody has already walked through it is not a lock.
+	//
+	// The LOG is the witness, not folded state: NarrationAdded deliberately
+	// does not mutate state, so campaign.State() cannot tell these apart.
+	if after := f.head(t); after != before {
+		t.Fatalf("the revoked participant's command was APPENDED anyway (log head %d → %d): "+
+			"they were cut off, but only after their action had landed permanently", before, after)
+	}
+}
+
+// head reads the campaign's current log head through a throwaway connection.
+//
+// It exists because NarrationAdded does NOT mutate folded state, so
+// campaign.State() cannot answer "did that command actually land?". The log
+// can, and the catch-up head is the log's sequence in one frame.
+func (f *gwFixture) head(t *testing.T) int64 {
+	t.Helper()
+	c := f.dial(f.dmToken, 0)
+	defer c.Close(websocket.StatusNormalClosure, "")
+	return expectCatchUpHead(t, c)
+}
+
+// TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody separates the
+// two things a failed Lookup can mean.
+//
+// Re-resolving per command put identity I/O on a path that previously had
+// none — and so it put identity's FAILURE MODES there too. Revoked and unknown
+// are facts about a credential and end the connection. A database that cannot
+// answer is not a fact about anybody's credential: closing on it tells a
+// player in good standing "your credential is no longer valid", which is
+// false, and throws them out of a live table over a transient. identity.go's
+// own comment records this exact shared file blocking the full busy_timeout(5000)
+// and then failing under another handle's write transaction, so the contention
+// case is measured behaviour in this repo, not a hypothetical.
+//
+// The precedent is already in handleCommand one screen below: a campaign that
+// cannot answer produces ok=false and leaves the connection open.
+func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.playerToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	// OPERATIONAL, not a credential fact — nobody was revoked, and the row is
+	// still there. Only the table it lives in has moved out from under the
+	// query, which is what an unhealthy database looks like from here.
+	raw, err := sql.Open("sqlite", f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`ALTER TABLE participants RENAME TO participants_elsewhere`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "while-unwell",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "one"}},
+	})
+	res := readResult(t, conn)
+	if res.GetOk() {
+		t.Fatal("a command must not be authorized while identity cannot say who the caller is")
+	}
+
+	// AND THEY ARE STILL AT THE TABLE. This is the half that fails when an
+	// operational error is misread as a revocation: readResult reports a
+	// closed connection rather than timing out, so the failure names itself.
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "still-here",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "two"}},
+	})
+	if res := readResult(t, conn); res.GetOk() {
+		t.Fatal("the command must still be refused while identity is unwell")
+	}
+
+	// AND THE TABLE STILL REACHES THEM. Delivery re-resolves as well, so the
+	// same distinction has to hold there: dropping frames — or the connection
+	// — on an unhealthy database would make a transient look like everyone
+	// being thrown out at once. Losing an event is worse than a moment's delay
+	// in removing somebody, and the very next event catches a revoked watcher.
+	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{SceneId: "attic", Name: "Attic", GridWidth: 4, GridHeight: 4},
+	})
+	// This connection dialed at 0, so the seeded history is queued ahead of it.
+	// readEvent fails the test outright if the connection ends instead.
+	for i := 0; ; i++ {
+		if i == 8 {
+			t.Fatal("the event appended while identity was unreadable never arrived")
+		}
+		if readEvent(t, conn).GetEventId() == "while-unwell" {
+			return
+		}
+	}
+}
+
+// TestARevokedSpectatorStopsSeeingTheTable closes the half of revocation that
+// re-resolving per COMMAND cannot reach, and it is the half this branch
+// created.
+//
+// commandRoles has no spectator row anywhere: a spectator may issue NO command
+// at all. So the command loop's Lookup never fires for one, and the shared
+// join link mints nothing BUT spectators. A stranger who got in through a
+// leaked link and was then revoked kept watching the entire session — the
+// branch's own headline, that a leaked link can be closed and the stranger
+// removed, had a hole exactly in the population the branch creates.
+//
+// DELIVERY is where a spectator meets the server, so delivery is where it has
+// to bite. Not on a timer and not on connect: on the next thing the table
+// would have shown them.
+func TestARevokedSpectatorStopsSeeingTheTable(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The table plays on, which is the only way a watcher is a watcher.
+	mustAppend(t, f.campaign, "after-revoke", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{SceneId: "vault", Name: "Vault", GridWidth: 5, GridHeight: 5},
+	})
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, data, err := conn.Read(ctx)
+		timedOut := ctx.Err() != nil // captured BEFORE cancel, which overwrites it
+		cancel()
+		if err == nil {
+			// Anything already queued may still be written on the way down,
+			// but NOT this: it was appended after the revocation.
+			if strings.Contains(string(data), "after-revoke") {
+				t.Fatal("a revoked spectator was delivered an event that happened AFTER they " +
+					"were thrown out")
+			}
+			continue
+		}
+		// A TIMEOUT is not a close, and conflating the two is what made the
+		// sibling test below pass under an injection that did nothing. But the
+		// witness here cannot be a close FRAME: the pump force-closes with
+		// CloseNow, deliberately — it cannot run the full shutdown from inside
+		// itself, so it drops the connection and lets conn.Read unwind serve.
+		// The client sees an abrupt end, not a status. So: anything except the
+		// deadline expiring means the connection ended.
+		if timedOut {
+			t.Fatal("the connection did not end — a revoked spectator is still being served, " +
+				"and no command of theirs can be refused instead, because they can issue none")
 		}
 		return
 	}

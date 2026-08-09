@@ -414,6 +414,31 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		defer close(pumpDone)
 
 		for env := range events {
+			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
+			// cover. commandRoles has no spectator row anywhere, so a
+			// spectator may issue NO command — the lookup down there never
+			// fires for one. And every joiner through the shared link arrives
+			// as a spectator. So a revoked stranger who found a leaked link
+			// kept watching the whole session: the one thing a spectator does
+			// is exactly the thing revocation was not reaching.
+			//
+			// Delivery is where a watcher meets the server, so delivery is
+			// where it bites — on the next thing the table would have shown
+			// them, not on a timer and not at their next connect.
+			//
+			// ErrInvalidToken ONLY. An operational failure must not silently
+			// drop an event: losing a frame is worse than a moment's delay in
+			// removing somebody, and the very next event catches them anyway.
+			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
+				// The same force-close the end of this loop uses, not a second
+				// teardown route: conn.Read errors, serve unwinds, and presence
+				// deregisters through the one path it already had.
+				if !closing.Load() {
+					_ = conn.CloseNow()
+				}
+				return
+			}
+
 			// Marshaled per connection, deliberately: each pump encodes
 			// straight off its own subscription channel with no shared
 			// cache. At table scale (a handful of participants, not
@@ -515,8 +540,12 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		//
 		// Measured at 15.5µs against a 40-participant table, on a path that
 		// already folds state, appends to SQLite and writes a socket frame.
+		//
+		// THIS IS HALF OF IT. A spectator issues no commands at all, so the
+		// pump above re-resolves on DELIVERY for the same reason. Change one
+		// and you almost certainly mean to change the other.
 		now, err := s.ids.Lookup(p.ID)
-		if err != nil {
+		if errors.Is(err, identity.ErrInvalidToken) {
 			// Revoked, or gone. Close rather than refuse-and-continue: their
 			// credential is no longer valid, so there is nothing left for this
 			// connection to be allowed to do.
@@ -525,7 +554,30 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			return
 		}
 
-		result := s.handleCommand(now, cmd)
+		// ANY OTHER ERROR IS OPERATIONAL, and must not be read as a
+		// revocation. Putting a database read on this path also put its
+		// failure modes here: a busy file, a corrupt row, a driver error. None
+		// of those is a fact about this person's credential, and closing on
+		// them tells a player in good standing that theirs is no longer valid
+		// — a lie, and one that throws them out of a live table over a
+		// transient. identity's own comment records this shared file blocking
+		// the full busy_timeout and then failing under another handle's write
+		// transaction, so it is measured, not hypothetical.
+		//
+		// Refuse the command and keep the connection, exactly as handleCommand
+		// already does for a campaign that cannot answer. Still fail-closed
+		// where it counts: nothing is authorized while we cannot say who is
+		// asking.
+		var result *vttv1.CommandResult
+		if err != nil {
+			result = &vttv1.CommandResult{
+				RequestId: cmd.GetRequestId(),
+				Ok:        false,
+				Error:     "gateway: identity unavailable",
+			}
+		} else {
+			result = s.handleCommand(now, cmd)
+		}
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue
