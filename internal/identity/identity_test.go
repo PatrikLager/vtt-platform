@@ -231,3 +231,293 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 		t.Fatalf("Verify after store use: p=%v err=%v", p, err)
 	}
 }
+
+// --- the join door (joining-a-table T1) -------------------------------------
+
+// TestJoinIsClosedOnAnExistingCampaign is the test this task exists for, and
+// the first version of it was VACUOUS — deleting the entire join_access CREATE
+// left it green, because its "existing" campaign was built by the NEW schema.
+// It stood in for an upgrade that never met an un-upgraded database.
+//
+// This one builds the OLD schema by hand, through a raw handle, so the table
+// genuinely does not exist when identity.Open runs. That is what makes it able
+// to fail: Open() applies the schema with CREATE TABLE IF NOT EXISTS, so a new
+// COLUMN on participants would never reach an existing campaign — a new TABLE
+// does. Closed-by-default is the security property (spec §2), and getting it
+// wrong would open joining on exactly the campaigns that already have players.
+//
+// The JoinSecret() assertion in the middle is load-bearing: without it the test
+// passes whether the table was created or not, because JoinOpen() answers false
+// down its error path either way.
+func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The schema as it stood BEFORE this feature: participants only.
+	if _, err := raw.Exec(`CREATE TABLE participants (
+		id TEXT PRIMARY KEY, display_name TEXT, role TEXT, controls TEXT,
+		token_hash BLOB UNIQUE, revoked INTEGER DEFAULT 0);`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked)
+		 VALUES ('p-old', 'DM', 'dm', '[]', X'00', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatalf("opening a campaign that predates this feature: %v", err)
+	}
+	defer d.Close()
+
+	if d.JoinOpen() {
+		t.Fatal("an existing campaign must come up with the door CLOSED")
+	}
+	// Proves the table was actually CREATED, not merely absent.
+	if _, err := d.JoinSecret(); err != nil {
+		t.Fatalf("the migration did not reach an existing campaign: %v", err)
+	}
+	if d.JoinOpen() {
+		t.Fatal("minting the secret on an upgraded campaign must not open the door")
+	}
+}
+
+func TestJoinIsClosedOnAFreshCampaign(t *testing.T) {
+	d, _ := openTemp(t)
+	if d.JoinOpen() {
+		t.Fatal("a new campaign must come up with the door closed")
+	}
+}
+
+func TestTheDoorOpensAndClosesAgain(t *testing.T) {
+	d, _ := openTemp(t)
+	if err := d.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	if !d.JoinOpen() {
+		t.Fatal("opening the door must take effect")
+	}
+	if err := d.SetJoinOpen(false); err != nil {
+		t.Fatal(err)
+	}
+	if d.JoinOpen() {
+		t.Fatal("closing it again must take effect — a door that only opens is not a door")
+	}
+}
+
+func TestTheDoorSurvivesAReopen(t *testing.T) {
+	// It is operational state, but it is PERSISTENT operational state: a DM
+	// who opens the door and restarts the server has not closed it.
+	d, path := openTemp(t)
+	if err := d.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if !again.JoinOpen() {
+		t.Fatal("the door's state must survive a restart")
+	}
+}
+
+func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
+	// Stable, because the DM shares it — a secret that changed per call would
+	// invalidate the link the moment anyone looked at it.
+	d, _ := openTemp(t)
+	first, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" {
+		t.Fatal("a join secret must exist")
+	}
+	second, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Fatal("reading the secret twice must give the same value")
+	}
+}
+
+func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
+	// The property spec §2 calls close to required: a leaked link must be
+	// closable WITHOUT re-inviting anyone already in.
+	d, _ := openTemp(t)
+	old, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := d.RotateJoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh == old {
+		t.Fatal("rotating must produce a different secret, or a leaked link stays valid")
+	}
+	now, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now != fresh {
+		t.Fatal("after rotating, the secret in use must be the new one")
+	}
+}
+
+func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
+	// The other half of the same property: rotating closes the door to
+	// NEWCOMERS and touches nobody already through it.
+	d, _ := openTemp(t)
+	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.RotateJoinSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Verify(token); err != nil {
+		t.Fatalf("rotating the join link must not invalidate an existing participant: %v", err)
+	}
+}
+
+// TestReadingTheLinkDoesNotOpenTheDoor pins the value the row is CREATED with,
+// which nothing above actually reached.
+//
+// The two closed-by-default tests pass while no join_access row exists at all:
+// JoinOpen's query finds nothing, errors, and fails closed. Correct, but it
+// means the STORED value was never exercised — injection proved it, flipping
+// both the column DEFAULT and the INSERT literal to 1 failed nothing.
+//
+// This is the shape a DM actually produces: look at the link (which mints the
+// row) before deciding to let anyone in. The door must still be shut.
+func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
+	d, _ := openTemp(t)
+	if _, err := d.JoinSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if d.JoinOpen() {
+		t.Fatal("minting the join secret must not admit anybody — reading the link is not " +
+			"a decision to open the door")
+	}
+}
+
+// TestTheDoorRefusesWhenTheDatabaseIsUnusable covers the error paths, and they
+// are worth covering rather than merely counting: this is the case where
+// failing in the wrong direction is expensive.
+//
+// A closed handle stands in for "the database cannot be read" generally. Every
+// write must report the failure rather than pretend it worked, and JoinOpen
+// must answer FALSE — it gates an unauthenticated, row-minting endpoint, so a
+// database it cannot read must keep people OUT.
+func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
+	d, _ := openTemp(t)
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if d.JoinOpen() {
+		t.Fatal("an unreadable database must answer CLOSED — failing open here admits " +
+			"strangers on exactly the fault nobody is watching")
+	}
+	if _, err := d.JoinSecret(); err == nil {
+		t.Fatal("reading the secret from a dead handle must report the failure")
+	}
+	if _, err := d.RotateJoinSecret(); err == nil {
+		t.Fatal("rotating against a dead handle must report the failure, or a DM believes " +
+			"a leaked link was closed when it was not")
+	}
+	if err := d.SetJoinOpen(true); err == nil {
+		t.Fatal("opening the door against a dead handle must report the failure")
+	}
+}
+
+// TestRotatingTheSecretLeavesTheDoorAlone pins the independence of the two
+// controls. They are separate decisions and the code claims to keep them
+// separate; injection showed nothing was checking.
+//
+// The closed case is the security-relevant one: a DM who rotates a leaked link
+// while the table is shut must not thereby open it. The open case matters too —
+// rotating mid-session should not lock out the people still arriving.
+func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
+	for _, open := range []bool{false, true} {
+		d, _ := openTemp(t)
+		if err := d.SetJoinOpen(open); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.RotateJoinSecret(); err != nil {
+			t.Fatal(err)
+		}
+		if d.JoinOpen() != open {
+			t.Fatalf("rotating the link changed the door from open=%v to open=%v — they are "+
+				"separate decisions, and rotating a leaked link must never admit anybody",
+				open, d.JoinOpen())
+		}
+	}
+}
+
+// TestTheDoorOpensOnACampaignThatAlreadyHasALink covers SetJoinOpen's CONFLICT
+// branch, which nothing reached: every SetJoinOpen(true) in this file ran on a
+// database with no row, so `true` only ever exercised the INSERT.
+//
+// Measured by review: `DO UPDATE SET open = excluded.open` -> `SET open = 0`
+// passed the whole package. The failing input is the ordinary one — the DM
+// reads the link, THEN opens the door — and the door would never open again
+// for the life of that campaign.
+func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
+	d, _ := openTemp(t)
+	if _, err := d.JoinSecret(); err != nil { // mints the row, closed
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	if !d.JoinOpen() {
+		t.Fatal("opening the door on a campaign that already has a link must work — " +
+			"reading the link first is the ordinary order, not an edge case")
+	}
+}
+
+// TestOpeningTheDoorFirstStillMintsARealSecret pins the secret SetJoinOpen
+// writes when it is the call that creates the row.
+//
+// Measured by review: `VALUES (1, ?, ?)` -> `VALUES (1, ”, ?)` survived the
+// whole suite, because every other secret assertion runs on a row minted by
+// ensureJoinRow. A DM who opens the door before ever looking at the link would
+// get an EMPTY secret — and the join endpoint would then compare an
+// attacker-suppliable "" against a stored "".
+func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
+	a, _ := openTemp(t)
+	if err := a.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := a.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret == "" {
+		t.Fatal("opening the door must mint a real secret, not an empty one")
+	}
+	b, _ := openTemp(t)
+	if err := b.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	other, err := b.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other == secret {
+		t.Fatal("two campaigns must not share a join secret")
+	}
+}
