@@ -17,6 +17,7 @@
 import { create } from "@bufbuild/protobuf";
 import {
   ClientCommandSchema,
+  JoinDoor,
   type ClientCommand,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { ActorSchema } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -232,5 +233,46 @@ export function revokeActorControl(actorId: string, participantId: string): Clie
   return create(ClientCommandSchema, {
     requestId: requestId(),
     command: { case: "revokeActorControl", value: { actorId, participantId } },
+  });
+}
+
+/**
+ * Open or close the table's shared join link (joining-a-table spec §2).
+ *
+ * The boolean is this function's ARGUMENT, never the wire's. protojson omits
+ * zero values, so a `bool open` field would carry CLOSED as an absent field
+ * and make "shut the door" indistinguishable from a client that forgot to say
+ * — which is why the contract carries an enum the server refuses to guess at.
+ */
+export function setJoinDoor(open: boolean): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: {
+      case: "setJoinDoor",
+      value: { door: open ? JoinDoor.OPEN : JoinDoor.CLOSED },
+    },
+  });
+}
+
+/** Replace the join link's secret, locking out a link that has leaked. */
+export function rotateJoinLink(): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "rotateJoinLink", value: {} },
+  });
+}
+
+/**
+ * Change what a participant is allowed to do (spec §3.1a).
+ *
+ * Only "player" and "spectator" are reachable: a shared link mints spectators,
+ * so letting promotion reach dm or agent would make the link a route to full
+ * authority in two steps. The server enforces that too — this signature is the
+ * near reminder, not the guard.
+ */
+export function promoteParticipant(participantId: string, role: "player" | "spectator"): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "promoteParticipant", value: { participantId, role } },
   });
 }

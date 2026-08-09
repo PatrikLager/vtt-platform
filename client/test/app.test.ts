@@ -1031,3 +1031,291 @@ test("Enter while a join is in flight does not mint a second you", async () => {
   await settle();
   FakeSocket.instances[0]?.close();
 });
+
+test("a DM's roster learns about somebody who joins after the console loaded", async () => {
+  // The gap the e2e found, and the only test that could: every layer worked —
+  // /join minted the spectator, presence announced them, the console rendered
+  // a roster — and the roster was read ONCE at boot, so the one person who
+  // needed a promote button was the one person who never had one.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  let rosterCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: true, secret: "s3cret" });
+    if (path === "/api/participants") {
+      rosterCalls++;
+      // FIRST read predates the joiner, exactly as at a real table.
+      return Response.json(
+        rosterCalls === 1
+          ? [{ participantId: "p-dm", name: "Ari", role: "dm" }]
+          : [
+              { participantId: "p-dm", name: "Ari", role: "dm" },
+              { participantId: "p-new", name: "Robin", role: "spectator" },
+            ],
+      );
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  await settle();
+  expect(rosterCalls).toBe(1);
+
+  // Somebody arrives. Presence is the ONLY signal — no event is appended,
+  // because joining is not campaign history.
+  sock.deliver({
+    presenceChanged: { participantId: "p-new", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(rosterCalls).toBe(2);
+  expect(r.querySelector('[data-action="promote-p-new"]')).not.toBeNull();
+
+  // And it does NOT re-read on every subsequent frame: a console that fetched
+  // per event would put a request behind every token move at the table.
+  const after = rosterCalls;
+  sock.deliver(envelope(9, { sceneCreated: { sceneId: "s9", name: "Vault", gridWidth: 4, gridHeight: 4 } }));
+  await settle();
+  expect(rosterCalls).toBe(after);
+
+  session?.close();
+});
+
+test("a promoted spectator's own screen catches up without reconnecting", async () => {
+  // The half of promotion that live re-resolution does NOT reach. The server
+  // starts accepting this person's commands the moment the DM promotes them —
+  // and their browser read its role once, at connect. Without this they can
+  // act and their own client offers them nothing to act with: the server says
+  // yes to a screen with no controls on it.
+  //
+  // The server re-announces a promoted participant for exactly this reason, so
+  // a presence frame naming ME means "read your role again". Watching the
+  // participant LIST cannot serve: they were already present, so it does not
+  // change.
+  setURL("http://localhost/?token=tok-watcher");
+  useFakeSocket();
+  let role = "spectator";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  await settle();
+  expect(r.querySelector(".player")).toBeNull(); // a spectator watches
+
+  // The DM promotes them elsewhere; the server nudges this connection.
+  role = "player";
+  sock.deliver({
+    presenceChanged: { participantId: "p-me", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(r.querySelector(".player")).not.toBeNull();
+
+  session?.close();
+});
+
+test("only a DM or agent reads the join link, and a refusal does not become an unhandled rejection", async () => {
+  // Two properties, both about the routes that are role-gated server-side.
+  //
+  // A player must not ASK: the request would 403, and getJSON turns a 403 into
+  // a thrown error rather than an absence — so asking would cost an unhandled
+  // rejection for a panel the player was never going to see.
+  setURL("http://localhost/?token=tok-player");
+  useFakeSocket();
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    asked.push(path);
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-1", name: "Lera", role: "player", controls: [] });
+    }
+    if (path === "/api/join-link" || path === "/api/participants") {
+      return new Response("gateway: not authorized", { status: 403 });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const session = boot(root());
+  await settle();
+  // And still not when presence churns — including a frame naming the player
+  // THEMSELVES, which is what a promotion sends. Re-reading your own role is
+  // right; asking for a link you may not have is not.
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-1", displayName: "Lera", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  sock.deliver({
+    presenceChanged: { participantId: "p-2", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(asked).toContain("/api/me");
+  expect(asked).not.toContain("/api/join-link");
+  expect(asked).not.toContain("/api/participants");
+  session?.close();
+});
+
+test("a DM whose credential is pulled mid-session loses the panels, not the page", async () => {
+  // The refusal path that IS reachable: a DM asks legitimately, and by the
+  // time the request lands they have been revoked. getJSON throws; without a
+  // catch that is an unhandled rejection, and the console keeps rendering a
+  // link nobody can use.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  let allowed = true;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") {
+      return allowed
+        ? Response.json({ open: true, secret: "s3cret" })
+        : new Response("gateway: not authorized", { status: 403 });
+    }
+    if (path === "/api/participants") {
+      return allowed
+        ? Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }])
+        : new Response("gateway: not authorized", { status: 403 });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  allowed = false;
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  // Names the DM THEMSELVES, so the self-role re-read runs too and its own
+  // follow-up refresh is exercised rather than skipped.
+  sock.deliver({
+    presenceChanged: { participantId: "p-dm", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  // The panel is gone and the page is still a page.
+  expect(r.querySelector('[data-field="join-link"]')).toBeNull();
+  expect(r.querySelector(".conn")).not.toBeNull();
+  session?.close();
+});
+
+test("an AGENT gets the sharing panel too, and a presence frame keeps the roster fresh", async () => {
+  // Agents are dm-equivalent for the door and the roster (spec §5), and the
+  // role check is written once — so this is the case that proves "once" means
+  // both, rather than "dm" with an unreached second clause.
+  setURL("http://localhost/?token=tok-agent");
+  useFakeSocket();
+  let rosterCalls = 0;
+  let meCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      meCalls++;
+      return Response.json({ participantId: "p-a", name: "Aide", role: "agent", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: false, secret: "s3cret" });
+    if (path === "/api/participants") {
+      rosterCalls++;
+      return Response.json([{ participantId: "p-a", name: "Aide", role: "agent" }]);
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+  expect(rosterCalls).toBe(1);
+
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  // A batch naming SOMEBODY ELSE. The roster still has to be re-read — that is
+  // the whole newcomer case — even though nothing about this agent changed.
+  sock.deliver({
+    presenceChanged: { participantId: "p-new", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(rosterCalls).toBe(2);
+  // But NOT a re-read of this agent's own role: the frame names somebody else,
+  // and my role cannot have changed because theirs did. A client that re-read
+  // /api/me on every presence frame would put a request behind every arrival
+  // and departure at the table, for an answer it already has.
+  expect(meCalls).toBe(1);
+
+  // And an ordinary EVENT does not: onChange fires per frame, and a roster
+  // read behind every token move at the table is not a feature.
+  const before = rosterCalls;
+  sock.deliver(envelope(4, { sceneCreated: { sceneId: "s4", name: "Attic", gridWidth: 3, gridHeight: 3 } }));
+  await settle();
+  expect(rosterCalls).toBe(before);
+
+  session?.close();
+});
+
+test("a batch naming me AND somebody else still re-reads my own role", async () => {
+  // The snapshot every connection gets names everyone, and a promotion's
+  // re-announcement can arrive batched with an arrival. A check that only
+  // acted when the batch named ME ALONE would skip exactly those.
+  setURL("http://localhost/?token=tok-watcher");
+  useFakeSocket();
+  let meCalls = 0;
+  let role = "spectator";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      meCalls++;
+      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  await settle();
+  const before = meCalls;
+
+  role = "player";
+  sock.deliver({
+    presenceSnapshot: {
+      present: [
+        { participantId: "p-other", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+        { participantId: "p-me", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+      ],
+    },
+  });
+  await settle();
+
+  expect(meCalls).toBe(before + 1);
+  expect(r.querySelector(".player")).not.toBeNull();
+  // Promoted to PLAYER, not to dm — so the re-read must not go on to ask for
+  // the sharing panel. A role change is a reason to re-check what you may do,
+  // not a reason to assume it grew.
+  expect(r.querySelector('[data-field="join-link"]')).toBeNull();
+  session?.close();
+});

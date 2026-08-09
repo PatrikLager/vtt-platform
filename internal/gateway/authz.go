@@ -60,6 +60,11 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// NO player row: a shared join link mints spectators, so a player able to
 	// promote would make that link a route to authority in two steps.
 	"promote_participant": {identity.RoleDM: true, identity.RoleAgent: true},
+	// The shared join door (joining-a-table spec §5). DM/agent only by the
+	// same argument that gates grant_actor_control: an open door MINTS
+	// PARTICIPANTS, and rotation is the only way to close a leaked link.
+	"set_join_door":    {identity.RoleDM: true, identity.RoleAgent: true},
+	"rotate_join_link": {identity.RoleDM: true, identity.RoleAgent: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -205,6 +210,10 @@ func authorizePromotionTarget(req *vttv1.PromoteParticipant) error {
 // the proto field names used as commandRoles keys ("" for unset/unknown).
 func commandName(cmd *vttv1.ClientCommand) string {
 	switch cmd.GetCommand().(type) {
+	case *vttv1.ClientCommand_SetJoinDoor:
+		return "set_join_door"
+	case *vttv1.ClientCommand_RotateJoinLink:
+		return "rotate_join_link"
 	case *vttv1.ClientCommand_MoveToken:
 		return "move_token"
 	case *vttv1.ClientCommand_CreateScene:

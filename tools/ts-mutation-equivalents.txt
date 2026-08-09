@@ -107,7 +107,7 @@ client/src/fold.ts 350:21 StringLiteral "Stryker was here!"
 # coerces it to "" and no test can see the difference. Claiming equivalence for
 # it would be the wrong-adjudication this file warns about.
 
-client/src/view/dm.ts 68:7 ConditionalExpression true
+client/src/view/dm.ts 71:7 ConditionalExpression true
     `if (cls) i.className = cls` -> always-assign, in the input() helper. Unlike el()'s version of the same line, this parameter has a default of "" rather than being optional, so the mutated branch assigns the empty string — which is what className already holds. No element can tell the two apart, and there is no call site that passes undefined.
 
 # --- client/src/player.ts ----------------------------------------------------
@@ -305,18 +305,18 @@ client/src/view/feed.ts 106:43 EqualityOperator a.seq <= b.seq
 # mutants were unobservable, so claiming equivalence would have been a lie.
 # It moved to client/src/main.ts, which is excluded from `mutate`.
 
-client/src/app.ts 49:32 StringLiteral "Stryker was here!"
+client/src/app.ts 64:32 StringLiteral "Stryker was here!"
     `history.replaceState(null, "", location.pathname)` on the INVITE path — the TITLE argument. The HTML specification says user agents must ignore it, and none implement it; the call is made for its third argument, which strips the bearer token from the address bar. No value passed here reaches the DOM, the history entry, or anything a test or a user can read. (Was keyed 49:30 until 2026-08-09; the column moved when boot's token handling gained an `if`.)
 
-client/src/app.ts 112:32 StringLiteral "Stryker was here!"
+client/src/app.ts 127:32 StringLiteral "Stryker was here!"
     The SAME argument at the join path's call, which strips the join secret rather than a token. Two entries rather than one covering both, deliberately: the file header's rule is that an equivalence claim is about a specific call site, and these two strip different credentials for different reasons even though the argument is ignored identically.
 
-client/src/session.ts 65:12 EqualityOperator a.participantId <= b.participantId
+client/src/session.ts 66:12 EqualityOperator a.participantId <= b.participantId
     Tie-break on participant id, reached only when two participants share a display name. `<` -> `<=` differs ONLY when the two ids are equal, and they cannot be: participantId is the KEY of the `present` map (session.ts, `this.present.set(p.participantId, ...)`), so two distinct entries never carry the same one, and Array.prototype.sort never compares an element with itself. The premise is stronger than the equivalent adjudications on player.ts, which depend on uniqueness established in another file: here the key and the field are assigned together, four lines apart, in this file.
-client/src/session.ts 66:12 EqualityOperator a.displayName <= b.displayName
+client/src/session.ts 67:12 EqualityOperator a.displayName <= b.displayName
     Display-name comparison, reached ONLY on the else branch of `a.displayName === b.displayName` — so by construction the two names differ, and `<` and `<=` agree on every input that reaches it. Not a claim about names being unique (they are not, which is why the tie-break above exists); a claim about which branch this expression lives on.
 
-client/src/view/dm.ts 305:62 EqualityOperator x.actorId <= y.actorId
+client/src/view/dm.ts 342:62 EqualityOperator x.actorId <= y.actorId
     Ordering the control panel by actorId. `<` -> `<=` differs ONLY when the two ids are equal, and they cannot be: actorId is the key of State.Actors (a Record), so two entries never carry the same one, and Array.prototype.sort never compares an element with itself. Same premise as the session.ts participant comparator, and for the same structural reason — the key and the field are the same value.
-client/src/view/dm.ts 349:36 StringLiteral "Stryker was here!"
+client/src/view/dm.ts 386:36 StringLiteral "Stryker was here!"
     The `?? ""` fallback when the DM has no remembered choice for this actor. Assigning ANY string with no matching <option> is normalised by the DOM to "" with selectedIndex -1 (HTML spec: setting select.value selects the matching option, or none). So the mutant and the original leave the element in the identical observable state, and the test that asserts a fresh dropdown reads "" passes under both. Not a claim that the fallback is pointless — it is what restores a remembered choice; a claim that its SENTINEL value is unobservable.

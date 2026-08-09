@@ -11,7 +11,11 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./client/e2e",
   outputDir: "./client/e2e/.artifacts",
-  fullyParallel: false, // one shared server and one campaign; order matters
+  // Sequential, but no longer because the specs share a table: each spec file
+  // gets its own server and campaign (client/e2e/setup.ts). Kept at one worker
+  // because several real `vtt serve` processes plus browsers is a lot of
+  // machine for a suite that finishes in 25 seconds.
+  fullyParallel: false,
   workers: 1,
   retries: 0,
   reporter: [["list"], ["html", { outputFolder: "client/e2e/.report", open: "never" }]],

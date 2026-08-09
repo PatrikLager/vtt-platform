@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
@@ -493,5 +494,153 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 
 	if code, _ := f.get("/api/me", "garbage"); code != http.StatusUnauthorized {
 		t.Errorf("/api/me with a bad token: status = %d, want 401", code)
+	}
+}
+
+// TestJoinLinkIsDMOnlyAndLiteralPerRole guards a route that hands out a
+// SHARED SECRET.
+//
+// Everything else behind /api is readable by whoever holds a credential — a
+// player may read the ruleset, a spectator may list adventures. This one is
+// different in kind: the secret it returns admits ANYBODY who has it, so a
+// spectator who could read it could hand the table to strangers, and the
+// spectator default (spec §2) would be decoration.
+//
+// Written as four literal rows rather than derived from joinLinkRoles, for the
+// reason authz_test.go's binding note gives: a table built from the map would
+// assert only that the map equals itself, and would keep passing if somebody
+// widened it.
+func TestJoinLinkIsDMOnlyAndLiteralPerRole(t *testing.T) {
+	f := newMetaFixture(t, true)
+
+	for _, tc := range []struct {
+		role  string
+		token string
+		want  int
+	}{
+		{"dm", f.dmToken, http.StatusOK},
+		{"agent", f.agentToken, http.StatusOK},
+		{"player", f.playerToken, http.StatusForbidden},
+		{"spectator", f.spectatorToken, http.StatusForbidden},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			code, body := f.get("/api/join-link", tc.token)
+			if code != tc.want {
+				t.Fatalf("%s: status = %d, want %d (body %s)", tc.role, code, tc.want, body)
+			}
+			if tc.want != http.StatusOK {
+				// And the secret is not in the refusal. A 403 that still
+				// carried the value would be a lock on an open door.
+				if strings.Contains(string(body), "secret") {
+					t.Fatalf("%s: a refusal must not carry the link: %s", tc.role, body)
+				}
+			}
+		})
+	}
+}
+
+func TestJoinLinkReportsTheDoorAndTheSecret(t *testing.T) {
+	// The DM console cannot read identity's SQLite, so this route is the only
+	// way the browser learns whether the door is open or what to share. Both
+	// halves are asserted: a console that showed the link but not the door
+	// would have a DM confidently sending out a link that admits nobody.
+	f := newMetaFixture(t, true)
+
+	code, body := f.get("/api/join-link", f.dmToken)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d: %s", code, body)
+	}
+	var got struct {
+		Open   bool   `json:"open"`
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if got.Open {
+		t.Fatal("a campaign must report its door CLOSED until somebody opens it")
+	}
+	if got.Secret == "" {
+		t.Fatal("the DM must be able to see the link before opening the door — otherwise " +
+			"the only order of operations is open-then-look, which is a window with the " +
+			"door open and nobody told where to go")
+	}
+
+	if err := f.ids.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	_, body = f.get("/api/join-link", f.dmToken)
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Open {
+		t.Fatal("opening the door must be visible here — this is the console's only mirror")
+	}
+}
+
+// TestParticipantsIsDMOnlyAndLiteralPerRole gates the roster.
+//
+// Reusing joinLinkRoles would be wrong even though the values match today: who
+// may see a shared SECRET and who may see the table's roster are two
+// questions, and one map answering both means widening either widens the
+// other. The literal rows below are the whole point (authz_test.go's binding
+// note).
+func TestParticipantsIsDMOnlyAndLiteralPerRole(t *testing.T) {
+	f := newMetaFixture(t, true)
+
+	for _, tc := range []struct {
+		role  string
+		token string
+		want  int
+	}{
+		{"dm", f.dmToken, http.StatusOK},
+		{"agent", f.agentToken, http.StatusOK},
+		{"player", f.playerToken, http.StatusForbidden},
+		{"spectator", f.spectatorToken, http.StatusForbidden},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			code, body := f.get("/api/participants", tc.token)
+			if code != tc.want {
+				t.Fatalf("%s: status = %d, want %d (body %s)", tc.role, code, tc.want, body)
+			}
+		})
+	}
+}
+
+func TestParticipantsNamesEveryoneAndTheirRole(t *testing.T) {
+	// What the promote control is built on: the DM has to be able to see WHO
+	// is only watching. A roster without roles would make promotion a guess.
+	//
+	// And it must never carry a token or a hash — the roster is a list of
+	// people, not of credentials.
+	f := newMetaFixture(t, true)
+
+	code, body := f.get("/api/participants", f.dmToken)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d: %s", code, body)
+	}
+	var got []struct {
+		ParticipantID string `json:"participantId"`
+		Name          string `json:"name"`
+		Role          string `json:"role"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+
+	roles := map[string]string{}
+	for _, p := range got {
+		if p.ParticipantID == "" {
+			t.Fatalf("a participant with no id cannot be promoted: %+v", p)
+		}
+		roles[p.Name] = p.Role
+	}
+	for name, want := range map[string]string{"DM": "dm", "Agent": "agent", "Lera": "player", "Watcher": "spectator"} {
+		if roles[name] != want {
+			t.Fatalf("%s has role %q, want %q (roles: %v)", name, roles[name], want, roles)
+		}
+	}
+	if strings.Contains(string(body), "token") || strings.Contains(string(body), "hash") {
+		t.Fatalf("the roster must not carry credentials: %s", body)
 	}
 }

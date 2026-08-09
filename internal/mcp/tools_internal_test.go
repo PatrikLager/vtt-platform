@@ -45,6 +45,8 @@ var theCommandTools = []string{
 	"grant_actor_control",
 	"revoke_actor_control",
 	"promote_participant",
+	"set_join_door",
+	"rotate_join_link",
 }
 
 func TestParseToolsJSONRejectsMalformedInput(t *testing.T) {

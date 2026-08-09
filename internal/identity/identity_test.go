@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -861,5 +862,170 @@ func TestAnEmptyStoredSecretAdmitsNobody(t *testing.T) {
 		if allowed {
 			t.Fatalf("an empty stored secret must admit nobody, but %q got in", offer)
 		}
+	}
+}
+
+// TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo backs the DM console's
+// promote control.
+//
+// The console cannot answer "who is a spectator?" from presence: presence
+// frames carry a display name and a connection state, deliberately, because
+// presence is CONNECTION-scoped while a role is campaign-scoped. Putting the
+// role in a presence frame would make the answer go stale the moment somebody
+// was promoted without reconnecting — which is precisely what J4 made possible.
+//
+// So the console reads the source of truth (spec §3.1) instead.
+func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
+	d, _ := openTemp(t)
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, dmID, err := d.CreateInvite("Ari", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, goneID, err := d.CreateInvite("Mal", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Revoke(goneID); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := d.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// REVOKED PARTICIPANTS ARE OMITTED. They cannot act and cannot connect, so
+	// a console listing them offers the DM promote buttons for people who are
+	// gone — and worse, makes a revoked name look like somebody still at the
+	// table.
+	if len(list) != 2 {
+		t.Fatalf("got %d participants, want 2 (the revoked one must not be listed): %+v", len(list), list)
+	}
+	// Sorted by display name, so the list does not reshuffle under the DM's
+	// cursor between renders.
+	if list[0].Name != "Ari" || list[1].Name != "Zoe" {
+		t.Fatalf("want Ari then Zoe, got %q then %q", list[0].Name, list[1].Name)
+	}
+	if list[0].ID != dmID {
+		t.Fatalf("participant id = %q, want %q", list[0].ID, dmID)
+	}
+	if list[0].Role != identity.RoleDM || list[1].Role != identity.RoleSpectator {
+		t.Fatalf("roles = %q, %q; want dm, spectator", list[0].Role, list[1].Role)
+	}
+}
+
+func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
+	// DUPLICATE DISPLAY NAMES ARE THIS FEATURE'S ORDINARY TRAFFIC, not an edge
+	// case: a shared link lets anybody type any name, and two strangers both
+	// answering "Kim" is a Tuesday. Without the id tie-break, SQLite may return
+	// them in either order between reads, and the roster reshuffles under the
+	// DM's cursor — the exact thing sorting is there to prevent.
+	//
+	// The names above are all distinct, so `ORDER BY display_name, id` could
+	// lose its second column and nothing would notice. Nothing else covers it
+	// either: the Go mutation gate cannot mutate SQL text.
+	d, _ := openTemp(t)
+	var ids []string
+	for range 4 {
+		_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	// Read TWICE, and require both the documented order and that it is stable:
+	// a single read could match by luck.
+	for attempt := range 2 {
+		list, err := d.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 4 {
+			t.Fatalf("got %d participants, want 4", len(list))
+		}
+		for i, want := range ids {
+			if list[i].ID != want {
+				t.Fatalf("attempt %d: position %d is %q, want %q — four people called Kim "+
+					"must come back in a fixed order", attempt, i, list[i].ID, want)
+			}
+		}
+	}
+}
+
+func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
+	// Same posture as Lookup: an unparseable role must not become a
+	// participant whose authorization nobody can account for. Unreachable
+	// through this package's own writers, which is why it earns a test — a
+	// hand-edited database must fail loudly, not quietly show somebody as
+	// whatever Role("") happens to mean downstream.
+	d, path := openTemp(t)
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`UPDATE participants SET role = 'overlord'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.List(); err == nil {
+		t.Fatal("a stored role that is not a role must be an error, not a listed participant")
+	}
+
+	// The same posture for the OTHER column this decodes. Controls is JSON in
+	// a text column, so it can be malformed independently of the role, and a
+	// participant listed with silently-empty controls would read to a DM as
+	// somebody holding nothing.
+	raw, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`UPDATE participants SET role = 'spectator', controls = '{not json'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.List(); err == nil {
+		t.Fatal("controls that are not JSON must be an error, not a participant holding nothing")
+	}
+}
+
+func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
+	// An OPERATIONAL failure, distinct from a corrupt row: the storage cannot
+	// answer at all. It must surface rather than come back as an empty table,
+	// because "nobody is here" is a perfectly ordinary answer and a DM reading
+	// it would have no reason to doubt it.
+	d, path := openTemp(t)
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`ALTER TABLE participants RENAME TO participants_elsewhere`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := d.List()
+	if err == nil {
+		t.Fatalf("unreadable storage must be an error, got %d participant(s)", len(got))
+	}
+	if got != nil {
+		t.Fatal("an error must not also return a list somebody might render")
 	}
 }

@@ -217,6 +217,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/ruleset", s.handleRuleset)
 	mux.HandleFunc("GET /api/ruleset/guide", s.handleRulesetGuide)
+	mux.HandleFunc("GET /api/join-link", s.handleJoinLink)
+	mux.HandleFunc("GET /api/participants", s.handleParticipants)
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 
@@ -626,6 +628,12 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
 		return s.handlePromotion(requestID, pp.PromoteParticipant)
 	}
+	if d, ok := cmd.GetCommand().(*vttv1.ClientCommand_SetJoinDoor); ok {
+		return s.handleJoinDoor(requestID, d.SetJoinDoor)
+	}
+	if _, ok := cmd.GetCommand().(*vttv1.ClientCommand_RotateJoinLink); ok {
+		return s.handleRotateJoinLink(requestID)
+	}
 
 	env, err := ToEvent(cmd, p)
 	if err != nil {
@@ -710,6 +718,92 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 	s.presence.broadcast(pc, b)
 }
 
+// announcePromotion re-announces a promoted participant to the whole table,
+// their own connections included.
+//
+// The frame carries no NEW presence information — they were already connected
+// and still are. It exists as a NUDGE, and it closes the half of promotion
+// that live re-resolution does not reach: the server now lets a promoted
+// spectator act on their existing socket, but their own browser read its role
+// once at connect (/api/me) and nothing ever told it that role moved. So they
+// could act and their client offered them nothing to act with — the server
+// said yes to a screen with no controls on it.
+//
+// Sent to everyone rather than just to them, because a stale role is a stale
+// role: the DM's console lists roles too.
+//
+// Found by the e2e. No unit test could see it — every layer was correct, and
+// what was wrong was a browser's idea of itself.
+func (s *Server) announcePromotion(participantID string) {
+	name, ok := s.presence.displayName(participantID)
+	if !ok {
+		// Not connected. Nothing to nudge, and nothing is lost: they read
+		// their role fresh the moment they next arrive.
+		return
+	}
+	b, err := s.encodeFrame(&vttv1.ServerFrame{
+		Frame: &vttv1.ServerFrame_PresenceChanged{
+			PresenceChanged: &vttv1.PresenceChanged{
+				ParticipantId: participantID,
+				DisplayName:   name,
+				State:         vttv1.PresenceState_PRESENCE_STATE_CONNECTED,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	// nil, not a connection to skip: the promoted participant is the one who
+	// most needs this.
+	s.presence.broadcast(nil, b)
+}
+
+// handleJoinDoor opens or closes the shared join link (joining-a-table §2).
+//
+// Authorize has already bounded WHO may issue this (dm/agent, authz.go), so
+// this applies it. It appends NOTHING: the door is operational state, like
+// presence, and replaying a campaign must never reopen a door somebody closed.
+func (s *Server) handleJoinDoor(requestID string, req *vttv1.SetJoinDoor) *vttv1.CommandResult {
+	var open bool
+	switch req.GetDoor() {
+	case vttv1.JoinDoor_JOIN_DOOR_OPEN:
+		open = true
+	case vttv1.JoinDoor_JOIN_DOOR_CLOSED:
+		open = false
+	default:
+		// REFUSED, not defaulted, and this is why the contract carries an enum
+		// rather than a bool: protojson omits zero values, so `bool open`
+		// would put CLOSED on the wire as an absent field and make a sender
+		// that forgot to set it indistinguishable from one asking to shut the
+		// door. Both guesses are bad in their own direction — guess open and a
+		// bug admits strangers, guess closed and a bug locks the table out
+		// mid-session — so neither is made.
+		return &vttv1.CommandResult{
+			RequestId: requestID,
+			Ok:        false,
+			Error:     "gateway: set_join_door must say open or closed",
+		}
+	}
+	if err := s.ids.SetJoinOpen(open); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
+// handleRotateJoinLink mints a new join secret, closing a LEAKED link to
+// newcomers without touching anybody already through it.
+func (s *Server) handleRotateJoinLink(requestID string) *vttv1.CommandResult {
+	if _, err := s.ids.RotateJoinSecret(); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	// The new secret is deliberately NOT returned here. CommandResult carries
+	// no payload, and adding one to smuggle a credential back would put a
+	// shared secret on the channel every participant's frames travel. The DM
+	// reads it from GET /api/join-link instead, which is authenticated and
+	// dm/agent only.
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
 // handlePromotion applies an authorized role change.
 //
 // Authorize has already bounded WHO may issue this and WHAT role it may name
@@ -718,8 +812,32 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 // nothing: the whole point of keeping role identity-side is that there is one
 // source of truth, and writing an event beside it would create a second.
 func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant) *vttv1.CommandResult {
+	// A PROMOTION MAY NOT UNMAKE A DM OR AN AGENT.
+	//
+	// Authorize bounds what a promotion may promote TO (authz.go: player or
+	// spectator only, spec §3.1a). It cannot bound who may be promoted FROM,
+	// because that is a fact about the target's CURRENT row and Authorize does
+	// no I/O — so the check lives here, where the lookup is.
+	//
+	// Without it, promote_participant(dm_id, "spectator") names a permitted
+	// role and goes through. Nobody left at the table could undo it: promotion
+	// cannot reach dm by design, so it would take host access and `vtt invite`.
+	// Agents are authorized to promote, which is the sharp end — one agent
+	// having a bad day could lock every human out of their own campaign.
+	target, err := s.ids.Lookup(req.GetParticipantId())
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	if target.Role == identity.RoleDM || target.Role == identity.RoleAgent {
+		return &vttv1.CommandResult{
+			RequestId: requestID,
+			Ok:        false,
+			Error:     "gateway: not authorized: a dm or agent cannot be demoted by a promotion",
+		}
+	}
 	if err := s.ids.SetRole(req.GetParticipantId(), identity.Role(req.GetRole())); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	s.announcePromotion(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }

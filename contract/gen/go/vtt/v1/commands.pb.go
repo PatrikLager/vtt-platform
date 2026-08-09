@@ -21,6 +21,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// JoinDoor is the state of the shared join link (joining-a-table spec §2).
+//
+// An ENUM rather than a bool, for the reason the presence contract was amended
+// for: protojson omits zero values, so `bool open` would carry CLOSED as an
+// ABSENT FIELD — making "shut the door" a silence, and indistinguishable from
+// a sender that forgot to set it. Here that is the security-relevant
+// direction, so UNSPECIFIED is refused rather than guessed at.
+type JoinDoor int32
+
+const (
+	JoinDoor_JOIN_DOOR_UNSPECIFIED JoinDoor = 0
+	JoinDoor_JOIN_DOOR_OPEN        JoinDoor = 1
+	JoinDoor_JOIN_DOOR_CLOSED      JoinDoor = 2
+)
+
+// Enum value maps for JoinDoor.
+var (
+	JoinDoor_name = map[int32]string{
+		0: "JOIN_DOOR_UNSPECIFIED",
+		1: "JOIN_DOOR_OPEN",
+		2: "JOIN_DOOR_CLOSED",
+	}
+	JoinDoor_value = map[string]int32{
+		"JOIN_DOOR_UNSPECIFIED": 0,
+		"JOIN_DOOR_OPEN":        1,
+		"JOIN_DOOR_CLOSED":      2,
+	}
+)
+
+func (x JoinDoor) Enum() *JoinDoor {
+	p := new(JoinDoor)
+	*p = x
+	return p
+}
+
+func (x JoinDoor) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (JoinDoor) Descriptor() protoreflect.EnumDescriptor {
+	return file_vtt_v1_commands_proto_enumTypes[0].Descriptor()
+}
+
+func (JoinDoor) Type() protoreflect.EnumType {
+	return &file_vtt_v1_commands_proto_enumTypes[0]
+}
+
+func (x JoinDoor) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use JoinDoor.Descriptor instead.
+func (JoinDoor) EnumDescriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{0}
+}
+
 // PresenceState is an ENUM rather than a bool, and that is deliberate.
 //
 // protojson omits zero values, so `bool connected = 3` would serialise a
@@ -64,11 +120,11 @@ func (x PresenceState) String() string {
 }
 
 func (PresenceState) Descriptor() protoreflect.EnumDescriptor {
-	return file_vtt_v1_commands_proto_enumTypes[0].Descriptor()
+	return file_vtt_v1_commands_proto_enumTypes[1].Descriptor()
 }
 
 func (PresenceState) Type() protoreflect.EnumType {
-	return &file_vtt_v1_commands_proto_enumTypes[0]
+	return &file_vtt_v1_commands_proto_enumTypes[1]
 }
 
 func (x PresenceState) Number() protoreflect.EnumNumber {
@@ -77,7 +133,7 @@ func (x PresenceState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PresenceState.Descriptor instead.
 func (PresenceState) EnumDescriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{0}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{1}
 }
 
 type MoveTokenRequest struct {
@@ -872,6 +928,8 @@ type ClientCommand struct {
 	//	*ClientCommand_GrantActorControl
 	//	*ClientCommand_RevokeActorControl
 	//	*ClientCommand_PromoteParticipant
+	//	*ClientCommand_SetJoinDoor
+	//	*ClientCommand_RotateJoinLink
 	Command       isClientCommand_Command `protobuf_oneof:"command"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1065,6 +1123,24 @@ func (x *ClientCommand) GetPromoteParticipant() *PromoteParticipant {
 	return nil
 }
 
+func (x *ClientCommand) GetSetJoinDoor() *SetJoinDoor {
+	if x != nil {
+		if x, ok := x.Command.(*ClientCommand_SetJoinDoor); ok {
+			return x.SetJoinDoor
+		}
+	}
+	return nil
+}
+
+func (x *ClientCommand) GetRotateJoinLink() *RotateJoinLink {
+	if x != nil {
+		if x, ok := x.Command.(*ClientCommand_RotateJoinLink); ok {
+			return x.RotateJoinLink
+		}
+	}
+	return nil
+}
+
 type isClientCommand_Command interface {
 	isClientCommand_Command()
 }
@@ -1133,6 +1209,14 @@ type ClientCommand_PromoteParticipant struct {
 	PromoteParticipant *PromoteParticipant `protobuf:"bytes,25,opt,name=promote_participant,json=promoteParticipant,proto3,oneof"`
 }
 
+type ClientCommand_SetJoinDoor struct {
+	SetJoinDoor *SetJoinDoor `protobuf:"bytes,26,opt,name=set_join_door,json=setJoinDoor,proto3,oneof"`
+}
+
+type ClientCommand_RotateJoinLink struct {
+	RotateJoinLink *RotateJoinLink `protobuf:"bytes,27,opt,name=rotate_join_link,json=rotateJoinLink,proto3,oneof"`
+}
+
 func (*ClientCommand_MoveToken) isClientCommand_Command() {}
 
 func (*ClientCommand_CreateScene) isClientCommand_Command() {}
@@ -1165,6 +1249,104 @@ func (*ClientCommand_RevokeActorControl) isClientCommand_Command() {}
 
 func (*ClientCommand_PromoteParticipant) isClientCommand_Command() {}
 
+func (*ClientCommand_SetJoinDoor) isClientCommand_Command() {}
+
+func (*ClientCommand_RotateJoinLink) isClientCommand_Command() {}
+
+// SetJoinDoor opens or closes the shared join link.
+//
+// DM and agent only (spec §5), by the same argument that gates
+// grant_actor_control: an open door mints participants, and a spectator who
+// could open one could staff the table with strangers.
+//
+// It produces NO EVENT. The door is operational state, like presence — a
+// replay of a campaign must not reopen a door somebody closed (spec §4).
+type SetJoinDoor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Door          JoinDoor               `protobuf:"varint,1,opt,name=door,proto3,enum=vtt.v1.JoinDoor" json:"door,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetJoinDoor) Reset() {
+	*x = SetJoinDoor{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetJoinDoor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetJoinDoor) ProtoMessage() {}
+
+func (x *SetJoinDoor) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetJoinDoor.ProtoReflect.Descriptor instead.
+func (*SetJoinDoor) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SetJoinDoor) GetDoor() JoinDoor {
+	if x != nil {
+		return x.Door
+	}
+	return JoinDoor_JOIN_DOOR_UNSPECIFIED
+}
+
+// RotateJoinLink mints a new join secret and returns nothing.
+//
+// This closes a LEAKED link to newcomers while touching nobody already through
+// it — the property that makes a leak survivable without re-inviting the whole
+// table. Deliberately independent of the door: rotating says nothing about
+// whether the link is open (spec §2).
+type RotateJoinLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateJoinLink) Reset() {
+	*x = RotateJoinLink{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateJoinLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateJoinLink) ProtoMessage() {}
+
+func (x *RotateJoinLink) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateJoinLink.ProtoReflect.Descriptor instead.
+func (*RotateJoinLink) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{16}
+}
+
 // GrantActorControl adds participant_id to actor_id's controller set.
 // DM and agent only: a player may not hand their character to someone else,
 // nor claim one.
@@ -1178,7 +1360,7 @@ type GrantActorControl struct {
 
 func (x *GrantActorControl) Reset() {
 	*x = GrantActorControl{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	mi := &file_vtt_v1_commands_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1372,7 @@ func (x *GrantActorControl) String() string {
 func (*GrantActorControl) ProtoMessage() {}
 
 func (x *GrantActorControl) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[15]
+	mi := &file_vtt_v1_commands_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1385,7 @@ func (x *GrantActorControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantActorControl.ProtoReflect.Descriptor instead.
 func (*GrantActorControl) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{15}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GrantActorControl) GetActorId() string {
@@ -1233,7 +1415,7 @@ type RevokeActorControl struct {
 
 func (x *RevokeActorControl) Reset() {
 	*x = RevokeActorControl{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	mi := &file_vtt_v1_commands_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1427,7 @@ func (x *RevokeActorControl) String() string {
 func (*RevokeActorControl) ProtoMessage() {}
 
 func (x *RevokeActorControl) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[16]
+	mi := &file_vtt_v1_commands_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1440,7 @@ func (x *RevokeActorControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeActorControl.ProtoReflect.Descriptor instead.
 func (*RevokeActorControl) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{16}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RevokeActorControl) GetActorId() string {
@@ -1300,7 +1482,7 @@ type PromoteParticipant struct {
 
 func (x *PromoteParticipant) Reset() {
 	*x = PromoteParticipant{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[17]
+	mi := &file_vtt_v1_commands_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1312,7 +1494,7 @@ func (x *PromoteParticipant) String() string {
 func (*PromoteParticipant) ProtoMessage() {}
 
 func (x *PromoteParticipant) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[17]
+	mi := &file_vtt_v1_commands_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1325,7 +1507,7 @@ func (x *PromoteParticipant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteParticipant.ProtoReflect.Descriptor instead.
 func (*PromoteParticipant) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{17}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PromoteParticipant) GetParticipantId() string {
@@ -1354,7 +1536,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[18]
+	mi := &file_vtt_v1_commands_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1366,7 +1548,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[18]
+	mi := &file_vtt_v1_commands_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1379,7 +1561,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{18}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CommandResult) GetRequestId() string {
@@ -1438,7 +1620,7 @@ type CatchUpHead struct {
 
 func (x *CatchUpHead) Reset() {
 	*x = CatchUpHead{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[19]
+	mi := &file_vtt_v1_commands_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1450,7 +1632,7 @@ func (x *CatchUpHead) String() string {
 func (*CatchUpHead) ProtoMessage() {}
 
 func (x *CatchUpHead) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[19]
+	mi := &file_vtt_v1_commands_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1463,7 +1645,7 @@ func (x *CatchUpHead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatchUpHead.ProtoReflect.Descriptor instead.
 func (*CatchUpHead) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{19}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CatchUpHead) GetHeadSequence() int64 {
@@ -1519,7 +1701,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[20]
+	mi := &file_vtt_v1_commands_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1531,7 +1713,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[20]
+	mi := &file_vtt_v1_commands_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1544,7 +1726,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{20}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ServerFrame) GetFrame() isServerFrame_Frame {
@@ -1656,7 +1838,7 @@ type PresenceChanged struct {
 
 func (x *PresenceChanged) Reset() {
 	*x = PresenceChanged{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[21]
+	mi := &file_vtt_v1_commands_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1850,7 @@ func (x *PresenceChanged) String() string {
 func (*PresenceChanged) ProtoMessage() {}
 
 func (x *PresenceChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[21]
+	mi := &file_vtt_v1_commands_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1863,7 @@ func (x *PresenceChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceChanged.ProtoReflect.Descriptor instead.
 func (*PresenceChanged) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{21}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PresenceChanged) GetParticipantId() string {
@@ -1719,7 +1901,7 @@ type PresenceSnapshot struct {
 
 func (x *PresenceSnapshot) Reset() {
 	*x = PresenceSnapshot{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[22]
+	mi := &file_vtt_v1_commands_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1731,7 +1913,7 @@ func (x *PresenceSnapshot) String() string {
 func (*PresenceSnapshot) ProtoMessage() {}
 
 func (x *PresenceSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[22]
+	mi := &file_vtt_v1_commands_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1744,7 +1926,7 @@ func (x *PresenceSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceSnapshot.ProtoReflect.Descriptor instead.
 func (*PresenceSnapshot) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{22}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PresenceSnapshot) GetPresent() []*PresenceChanged {
@@ -1816,7 +1998,7 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"DeleteNote\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"2\n" +
 	"\rLoadAdventure\x12!\n" +
-	"\fadventure_id\x18\x01 \x01(\tR\vadventureId\"\x9e\b\n" +
+	"\fadventure_id\x18\x01 \x01(\tR\vadventureId\"\x9d\t\n" +
 	"\rClientCommand\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x129\n" +
@@ -1842,8 +2024,13 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\x0eload_adventure\x18\x16 \x01(\v2\x15.vtt.v1.LoadAdventureH\x00R\rloadAdventure\x12K\n" +
 	"\x13grant_actor_control\x18\x17 \x01(\v2\x19.vtt.v1.GrantActorControlH\x00R\x11grantActorControl\x12N\n" +
 	"\x14revoke_actor_control\x18\x18 \x01(\v2\x1a.vtt.v1.RevokeActorControlH\x00R\x12revokeActorControl\x12M\n" +
-	"\x13promote_participant\x18\x19 \x01(\v2\x1a.vtt.v1.PromoteParticipantH\x00R\x12promoteParticipantB\t\n" +
-	"\acommand\"U\n" +
+	"\x13promote_participant\x18\x19 \x01(\v2\x1a.vtt.v1.PromoteParticipantH\x00R\x12promoteParticipant\x129\n" +
+	"\rset_join_door\x18\x1a \x01(\v2\x13.vtt.v1.SetJoinDoorH\x00R\vsetJoinDoor\x12B\n" +
+	"\x10rotate_join_link\x18\x1b \x01(\v2\x16.vtt.v1.RotateJoinLinkH\x00R\x0erotateJoinLinkB\t\n" +
+	"\acommand\"3\n" +
+	"\vSetJoinDoor\x12$\n" +
+	"\x04door\x18\x01 \x01(\x0e2\x10.vtt.v1.JoinDoorR\x04door\"\x10\n" +
+	"\x0eRotateJoinLink\"U\n" +
 	"\x11GrantActorControl\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12%\n" +
 	"\x0eparticipant_id\x18\x02 \x01(\tR\rparticipantId\"V\n" +
@@ -1873,7 +2060,11 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12+\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x15.vtt.v1.PresenceStateR\x05state\"E\n" +
 	"\x10PresenceSnapshot\x121\n" +
-	"\apresent\x18\x01 \x03(\v2\x17.vtt.v1.PresenceChangedR\apresent*n\n" +
+	"\apresent\x18\x01 \x03(\v2\x17.vtt.v1.PresenceChangedR\apresent*O\n" +
+	"\bJoinDoor\x12\x19\n" +
+	"\x15JOIN_DOOR_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eJOIN_DOOR_OPEN\x10\x01\x12\x14\n" +
+	"\x10JOIN_DOOR_CLOSED\x10\x02*n\n" +
 	"\rPresenceState\x12\x1e\n" +
 	"\x1aPRESENCE_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18PRESENCE_STATE_CONNECTED\x10\x01\x12\x1f\n" +
@@ -1891,71 +2082,77 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_commands_proto_rawDescData
 }
 
-var file_vtt_v1_commands_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_vtt_v1_commands_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_vtt_v1_commands_proto_goTypes = []any{
-	(PresenceState)(0),         // 0: vtt.v1.PresenceState
-	(*MoveTokenRequest)(nil),   // 1: vtt.v1.MoveTokenRequest
-	(*MoveTokenResponse)(nil),  // 2: vtt.v1.MoveTokenResponse
-	(*CreateScene)(nil),        // 3: vtt.v1.CreateScene
-	(*AddActor)(nil),           // 4: vtt.v1.AddActor
-	(*PlaceToken)(nil),         // 5: vtt.v1.PlaceToken
-	(*StartSession)(nil),       // 6: vtt.v1.StartSession
-	(*EndSession)(nil),         // 7: vtt.v1.EndSession
-	(*RetractEvents)(nil),      // 8: vtt.v1.RetractEvents
-	(*UseAbility)(nil),         // 9: vtt.v1.UseAbility
-	(*RemoveCondition)(nil),    // 10: vtt.v1.RemoveCondition
-	(*AddNarration)(nil),       // 11: vtt.v1.AddNarration
-	(*UpsertNote)(nil),         // 12: vtt.v1.UpsertNote
-	(*DeleteNote)(nil),         // 13: vtt.v1.DeleteNote
-	(*LoadAdventure)(nil),      // 14: vtt.v1.LoadAdventure
-	(*ClientCommand)(nil),      // 15: vtt.v1.ClientCommand
-	(*GrantActorControl)(nil),  // 16: vtt.v1.GrantActorControl
-	(*RevokeActorControl)(nil), // 17: vtt.v1.RevokeActorControl
-	(*PromoteParticipant)(nil), // 18: vtt.v1.PromoteParticipant
-	(*CommandResult)(nil),      // 19: vtt.v1.CommandResult
-	(*CatchUpHead)(nil),        // 20: vtt.v1.CatchUpHead
-	(*ServerFrame)(nil),        // 21: vtt.v1.ServerFrame
-	(*PresenceChanged)(nil),    // 22: vtt.v1.PresenceChanged
-	(*PresenceSnapshot)(nil),   // 23: vtt.v1.PresenceSnapshot
-	(*GridPosition)(nil),       // 24: vtt.v1.GridPosition
-	(*TokenMoved)(nil),         // 25: vtt.v1.TokenMoved
-	(*Actor)(nil),              // 26: vtt.v1.Actor
-	(*Envelope)(nil),           // 27: vtt.v1.Envelope
+	(JoinDoor)(0),              // 0: vtt.v1.JoinDoor
+	(PresenceState)(0),         // 1: vtt.v1.PresenceState
+	(*MoveTokenRequest)(nil),   // 2: vtt.v1.MoveTokenRequest
+	(*MoveTokenResponse)(nil),  // 3: vtt.v1.MoveTokenResponse
+	(*CreateScene)(nil),        // 4: vtt.v1.CreateScene
+	(*AddActor)(nil),           // 5: vtt.v1.AddActor
+	(*PlaceToken)(nil),         // 6: vtt.v1.PlaceToken
+	(*StartSession)(nil),       // 7: vtt.v1.StartSession
+	(*EndSession)(nil),         // 8: vtt.v1.EndSession
+	(*RetractEvents)(nil),      // 9: vtt.v1.RetractEvents
+	(*UseAbility)(nil),         // 10: vtt.v1.UseAbility
+	(*RemoveCondition)(nil),    // 11: vtt.v1.RemoveCondition
+	(*AddNarration)(nil),       // 12: vtt.v1.AddNarration
+	(*UpsertNote)(nil),         // 13: vtt.v1.UpsertNote
+	(*DeleteNote)(nil),         // 14: vtt.v1.DeleteNote
+	(*LoadAdventure)(nil),      // 15: vtt.v1.LoadAdventure
+	(*ClientCommand)(nil),      // 16: vtt.v1.ClientCommand
+	(*SetJoinDoor)(nil),        // 17: vtt.v1.SetJoinDoor
+	(*RotateJoinLink)(nil),     // 18: vtt.v1.RotateJoinLink
+	(*GrantActorControl)(nil),  // 19: vtt.v1.GrantActorControl
+	(*RevokeActorControl)(nil), // 20: vtt.v1.RevokeActorControl
+	(*PromoteParticipant)(nil), // 21: vtt.v1.PromoteParticipant
+	(*CommandResult)(nil),      // 22: vtt.v1.CommandResult
+	(*CatchUpHead)(nil),        // 23: vtt.v1.CatchUpHead
+	(*ServerFrame)(nil),        // 24: vtt.v1.ServerFrame
+	(*PresenceChanged)(nil),    // 25: vtt.v1.PresenceChanged
+	(*PresenceSnapshot)(nil),   // 26: vtt.v1.PresenceSnapshot
+	(*GridPosition)(nil),       // 27: vtt.v1.GridPosition
+	(*TokenMoved)(nil),         // 28: vtt.v1.TokenMoved
+	(*Actor)(nil),              // 29: vtt.v1.Actor
+	(*Envelope)(nil),           // 30: vtt.v1.Envelope
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	24, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	25, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	26, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	24, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
-	1,  // 4: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
-	3,  // 5: vtt.v1.ClientCommand.create_scene:type_name -> vtt.v1.CreateScene
-	4,  // 6: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
-	5,  // 7: vtt.v1.ClientCommand.place_token:type_name -> vtt.v1.PlaceToken
-	6,  // 8: vtt.v1.ClientCommand.start_session:type_name -> vtt.v1.StartSession
-	7,  // 9: vtt.v1.ClientCommand.end_session:type_name -> vtt.v1.EndSession
-	8,  // 10: vtt.v1.ClientCommand.retract_events:type_name -> vtt.v1.RetractEvents
-	9,  // 11: vtt.v1.ClientCommand.use_ability:type_name -> vtt.v1.UseAbility
-	10, // 12: vtt.v1.ClientCommand.remove_condition:type_name -> vtt.v1.RemoveCondition
-	11, // 13: vtt.v1.ClientCommand.add_narration:type_name -> vtt.v1.AddNarration
-	12, // 14: vtt.v1.ClientCommand.upsert_note:type_name -> vtt.v1.UpsertNote
-	13, // 15: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
-	14, // 16: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
-	16, // 17: vtt.v1.ClientCommand.grant_actor_control:type_name -> vtt.v1.GrantActorControl
-	17, // 18: vtt.v1.ClientCommand.revoke_actor_control:type_name -> vtt.v1.RevokeActorControl
-	18, // 19: vtt.v1.ClientCommand.promote_participant:type_name -> vtt.v1.PromoteParticipant
-	19, // 20: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	27, // 21: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	20, // 22: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
-	23, // 23: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
-	22, // 24: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
-	0,  // 25: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
-	22, // 26: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	27, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	28, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	29, // 2: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	27, // 3: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	2,  // 4: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
+	4,  // 5: vtt.v1.ClientCommand.create_scene:type_name -> vtt.v1.CreateScene
+	5,  // 6: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
+	6,  // 7: vtt.v1.ClientCommand.place_token:type_name -> vtt.v1.PlaceToken
+	7,  // 8: vtt.v1.ClientCommand.start_session:type_name -> vtt.v1.StartSession
+	8,  // 9: vtt.v1.ClientCommand.end_session:type_name -> vtt.v1.EndSession
+	9,  // 10: vtt.v1.ClientCommand.retract_events:type_name -> vtt.v1.RetractEvents
+	10, // 11: vtt.v1.ClientCommand.use_ability:type_name -> vtt.v1.UseAbility
+	11, // 12: vtt.v1.ClientCommand.remove_condition:type_name -> vtt.v1.RemoveCondition
+	12, // 13: vtt.v1.ClientCommand.add_narration:type_name -> vtt.v1.AddNarration
+	13, // 14: vtt.v1.ClientCommand.upsert_note:type_name -> vtt.v1.UpsertNote
+	14, // 15: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
+	15, // 16: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
+	19, // 17: vtt.v1.ClientCommand.grant_actor_control:type_name -> vtt.v1.GrantActorControl
+	20, // 18: vtt.v1.ClientCommand.revoke_actor_control:type_name -> vtt.v1.RevokeActorControl
+	21, // 19: vtt.v1.ClientCommand.promote_participant:type_name -> vtt.v1.PromoteParticipant
+	17, // 20: vtt.v1.ClientCommand.set_join_door:type_name -> vtt.v1.SetJoinDoor
+	18, // 21: vtt.v1.ClientCommand.rotate_join_link:type_name -> vtt.v1.RotateJoinLink
+	0,  // 22: vtt.v1.SetJoinDoor.door:type_name -> vtt.v1.JoinDoor
+	22, // 23: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	30, // 24: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	23, // 25: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
+	26, // 26: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
+	25, // 27: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
+	1,  // 28: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
+	25, // 29: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -1982,8 +2179,10 @@ func file_vtt_v1_commands_proto_init() {
 		(*ClientCommand_GrantActorControl)(nil),
 		(*ClientCommand_RevokeActorControl)(nil),
 		(*ClientCommand_PromoteParticipant)(nil),
+		(*ClientCommand_SetJoinDoor)(nil),
+		(*ClientCommand_RotateJoinLink)(nil),
 	}
-	file_vtt_v1_commands_proto_msgTypes[20].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[22].OneofWrappers = []any{
 		(*ServerFrame_Result)(nil),
 		(*ServerFrame_Event)(nil),
 		(*ServerFrame_CatchUpHead)(nil),
@@ -1995,8 +2194,8 @@ func file_vtt_v1_commands_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   23,
+			NumEnums:      2,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

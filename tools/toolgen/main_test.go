@@ -324,3 +324,46 @@ func TestStructSpecialCaseFiresOnNestedValue(t *testing.T) {
 		t.Fatalf("moduleData special-case mismatch:\nwant %v\ngot  %v", want, moduleData)
 	}
 }
+
+// TestEnumFieldOffersOnlyTheChoicesThatCanSucceed pins the schema for the
+// first ENUM ever to appear in a ClientCommand (SetJoinDoor.door).
+//
+// toolgen PANICKED on it rather than guessing — "unhandled kind enum" — which
+// is the right instinct and is why this is a test rather than a bug report: a
+// generator that invented a plausible schema for a kind it had never seen
+// would have advertised something no server accepts.
+//
+// The zero value is left OUT. JOIN_DOOR_UNSPECIFIED exists so the wire can
+// tell "shut the door" from "forgot to say", and the server refuses it — so
+// offering it to a model is offering a choice that can only fail. It is
+// dropped only when it is BOTH number 0 and named _UNSPECIFIED, so an enum
+// with a meaningful zero would still be advertised in full rather than
+// silently losing a value.
+func TestEnumFieldOffersOnlyTheChoicesThatCanSucceed(t *testing.T) {
+	schema := schemaFor((&vttv1.SetJoinDoor{}).ProtoReflect().Descriptor())
+
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("no properties in %#v", schema)
+	}
+	door, ok := props["door"].(map[string]any)
+	if !ok {
+		t.Fatalf("no door property in %#v", props)
+	}
+	if door["type"] != "string" {
+		t.Fatalf("door type = %v, want string — protojson carries enum VALUES as names", door["type"])
+	}
+	got, ok := door["enum"].([]any)
+	if !ok {
+		t.Fatalf("door has no enum list: %#v", door)
+	}
+	want := []any{"JOIN_DOOR_OPEN", "JOIN_DOOR_CLOSED"}
+	if len(got) != len(want) {
+		t.Fatalf("enum = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("enum = %v, want %v", got, want)
+		}
+	}
+}

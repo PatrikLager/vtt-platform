@@ -1,9 +1,12 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
-import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { ClientCommandSchema, JoinDoor } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { moveToken, useAbility, addNarration, upsertNote } from "../src/commands";
+import {
+  moveToken, useAbility, addNarration, upsertNote,
+  setJoinDoor, rotateJoinLink, promoteParticipant,
+} from "../src/commands";
 
 // Commands are asserted against the COMMITTED protojson fixtures in
 // contract/testdata — the same files the Go and TS contract round-trip tests
@@ -253,4 +256,38 @@ test("crypto.randomUUID is used when it IS available", () => {
   } finally {
     Object.defineProperty(globalThis, "crypto", { value: real, configurable: true, writable: true });
   }
+});
+
+test("the door commands name themselves and carry an EXPLICIT open/closed", () => {
+  // The enum is the point. protojson omits zero values, so a bool field would
+  // put CLOSED on the wire as an absent field — making "shut the door"
+  // indistinguishable from a client that forgot to say. The server refuses
+  // UNSPECIFIED rather than guessing, so the builder must never produce it.
+  const open = setJoinDoor(true);
+  expect(open.command.case).toBe("setJoinDoor");
+  expect(open.command.value).toMatchObject({ door: JoinDoor.OPEN });
+
+  const shut = setJoinDoor(false);
+  expect(shut.command.case).toBe("setJoinDoor");
+  expect(shut.command.value).toMatchObject({ door: JoinDoor.CLOSED });
+  // Asserted explicitly: OPEN and CLOSED must differ, and neither may be the
+  // zero value. A builder that produced UNSPECIFIED for one of them would be
+  // refused by the server every time, and the console would look broken.
+  expect(JoinDoor.CLOSED).not.toBe(JoinDoor.UNSPECIFIED);
+  expect(JoinDoor.OPEN).not.toBe(JoinDoor.UNSPECIFIED);
+});
+
+test("rotating the link is its own command, carrying nothing", () => {
+  const cmd = rotateJoinLink();
+  expect(cmd.command.case).toBe("rotateJoinLink");
+  expect(cmd.requestId).not.toBe("");
+});
+
+test("promotion names the participant and the role", () => {
+  // The client half of promote_participant, which shipped without one: the
+  // command reached the contract, authz and the MCP tool list in J3 and no
+  // console could issue it.
+  const cmd = promoteParticipant("p-7", "player");
+  expect(cmd.command.case).toBe("promoteParticipant");
+  expect(cmd.command.value).toMatchObject({ participantId: "p-7", role: "player" });
 });

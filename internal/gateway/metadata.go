@@ -49,6 +49,34 @@ var adventureGuideRoles = map[identity.Role]bool{
 	identity.RoleAgent: true,
 }
 
+// joinLinkRoles gates GET /api/join-link (joining-a-table spec §5).
+//
+// This route is different in kind from everything else behind /api. A player
+// may read the ruleset and a spectator may list adventures — those are facts
+// about the table. This one hands back a SHARED SECRET that admits ANYBODY who
+// holds it, so a spectator who could read it could staff the table with
+// strangers, and the spectator default the whole design rests on would be
+// decoration.
+//
+// Same shape as adventureGuideRoles, and NOT a cell of commandRoles for the
+// same stated reason: that table's keys are ClientCommand oneof field names
+// and its cell count is asserted literally.
+var joinLinkRoles = map[identity.Role]bool{
+	identity.RoleDM:    true,
+	identity.RoleAgent: true,
+}
+
+// participantRoles gates GET /api/participants — the table's roster.
+//
+// A SEPARATE map from joinLinkRoles even though the values match today. "Who
+// may read a secret that admits anybody" and "who may see who is at this
+// table" are two questions, and one map answering both means widening either
+// one silently widens the other.
+var participantRoles = map[identity.Role]bool{
+	identity.RoleDM:    true,
+	identity.RoleAgent: true,
+}
+
 // WithAdventureGuides supplies the markdown served by
 // /api/adventures/{id}/guide, keyed by adventure id. Boot-time only, like
 // WithAdventures: the map is never mutated per request.
@@ -266,4 +294,83 @@ func (s *Server) handleAdventureGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"guide": guide})
+}
+
+// --- /api/join-link --------------------------------------------------------
+
+type joinLinkJSON struct {
+	Open   bool   `json:"open"`
+	Secret string `json:"secret"`
+}
+
+// handleJoinLink reports the shared join link and whether the door is open.
+//
+// The browser cannot read identity's SQLite, so this is the DM console's only
+// mirror of both facts. BOTH are returned together on purpose: a console that
+// showed the link without the door would have a DM confidently sending out a
+// URL that admits nobody, and one that showed the door without the link would
+// leave them nothing to send.
+//
+// The secret is readable BEFORE the door is opened, deliberately. The
+// alternative ordering — open first, then look — means the only way to get the
+// link is to have the door already standing open while you go and find someone
+// to send it to.
+func (s *Server) handleJoinLink(w http.ResponseWriter, r *http.Request) {
+	p := s.authed(w, r)
+	if p == nil {
+		return
+	}
+	if !joinLinkRoles[p.Role] {
+		http.Error(w, "gateway: not authorized", http.StatusForbidden)
+		return
+	}
+	secret, err := s.ids.JoinSecret()
+	if err != nil {
+		http.Error(w, "gateway: join link unavailable", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, joinLinkJSON{Open: s.ids.JoinOpen(), Secret: secret})
+}
+
+// --- /api/participants -----------------------------------------------------
+
+type participantJSON struct {
+	ParticipantID string `json:"participantId"`
+	Name          string `json:"name"`
+	Role          string `json:"role"`
+}
+
+// handleParticipants lists everyone who can still act at this table.
+//
+// This is what the DM console's promote control is built on, and it reads
+// identity rather than presence on purpose: presence answers "who is connected
+// right now", which is connection-scoped and carries no role, while promotion
+// is a question about what somebody is ALLOWED to do. Folding a role into a
+// presence frame would go stale the moment somebody was promoted without
+// reconnecting — which is exactly what live re-resolution made possible.
+//
+// It returns names, ids and roles: no token, no hash. The roster is a list of
+// people, not of credentials.
+func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
+	p := s.authed(w, r)
+	if p == nil {
+		return
+	}
+	if !participantRoles[p.Role] {
+		http.Error(w, "gateway: not authorized", http.StatusForbidden)
+		return
+	}
+	list, err := s.ids.List()
+	if err != nil {
+		http.Error(w, "gateway: participants unavailable", http.StatusInternalServerError)
+		return
+	}
+	// Built as a non-nil slice so an empty table serializes as [] rather than
+	// null — a client that does list.map() on null gets an exception, and
+	// "nobody is here" is a perfectly ordinary state.
+	out := make([]participantJSON, 0, len(list))
+	for _, q := range list {
+		out = append(out, participantJSON{ParticipantID: q.ID, Name: q.Name, Role: string(q.Role)})
+	}
+	writeJSON(w, out)
 }

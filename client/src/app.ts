@@ -16,7 +16,8 @@ import { renderSpectator } from "./view/spectator";
 import { renderPlayerPanel, moveCommandFor, type PlayerUIState } from "./view/player";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide,
-  type Ability, type AdventureMeta, type Me,
+  fetchJoinLink, fetchParticipants,
+  type Ability, type AdventureMeta, type Me, type JoinLink, type Roster,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
 import { requestJoin } from "./join";
@@ -26,6 +27,20 @@ import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 function gatewayURL(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/ws`;
+}
+
+/**
+ * Whether this role may read the join link and the roster.
+ *
+ * One definition rather than the three copies this grew: the answer is the
+ * same question every time — the routes are gated dm/agent server-side — and
+ * three copies is three places for it to drift out of step with the server.
+ */
+function mayShare(who: Me): boolean {
+  // Takes a Me, not a Me | null. Every caller has already established that it
+  // has one — a null check here would be a branch no call site can reach, and
+  // an unreachable branch is a claim no test can check.
+  return who.role === "dm" || who.role === "agent";
 }
 
 export function boot(root: HTMLElement): Session | null {
@@ -123,17 +138,54 @@ function startSession(root: HTMLElement, token: string): Session {
   let me: Me | null = null;
   let abilities: Ability[] = [];
   let adventures: AdventureMeta[] = [];
+  let joinLink: JoinLink | null = null;
+  let roster: Roster[] | null = null;
   let toast = "";
+
+  // Re-read the door, the link and the roster.
+  //
+  // Needed because these commands produce NO EVENT, deliberately: a role and a
+  // door are identity state, not campaign history (spec §3.1, §4). Nothing
+  // broadcasts, so nothing re-renders — without this the DM opens the door and
+  // the console goes on saying "closed" until something unrelated happens, and
+  // promotes a spectator who stays listed as one.
+  //
+  // Fired unconditionally rather than only for dm/agent: the routes are
+  // role-gated server-side and answer null for anyone else, so a player's
+  // console simply keeps no sharing panel.
+  const refreshSharing = () => {
+    // CAUGHT, both of them. getJSON THROWS on 401/403 rather than answering
+    // null, and while this is only called for a role the routes admit, a
+    // revocation mid-session turns the next refresh into a rejection with
+    // nobody listening. Falling back to null is the honest degradation: the
+    // console drops the panels rather than showing a link it could not read.
+    void fetchJoinLink(location.origin, token)
+      .catch(() => null)
+      .then((l) => {
+        joinLink = l;
+        paint();
+      });
+    void fetchParticipants(location.origin, token)
+      .catch(() => null)
+      .then((r) => {
+        roster = r;
+        paint();
+      });
+  };
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "" };
 
-  const act = (cmd: ClientCommand) => {
-    void session.send(cmd).then((res) => {
+  // Returns the promise rather than swallowing it, so a caller that must read
+  // server state back AFTER a command lands can wait for it. The DM console
+  // does: the door and role commands produce no event, so an HTTP re-read
+  // issued beside the command races it on a different transport and can repaint
+  // the panel with the state the command was about to change.
+  const act = (cmd: ClientCommand): Promise<void> =>
+    session.send(cmd).then((res) => {
       // The result is shown verbatim on failure. A player who is told "not
       // authorized" can act on that; a silent no-op looks like a broken UI.
       toast = res.ok ? "" : `refused: ${res.error}`;
       paint();
     });
-  };
 
   const paint = () => {
     if (failure !== "") {
@@ -158,6 +210,10 @@ function startSession(root: HTMLElement, token: string): Session {
             participants: session.participants,
             adventures,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
+            joinLink,
+            roster,
+            origin: location.origin,
+            refreshSharing,
             send: act,
             notify: (m) => {
               toast = m;
@@ -192,6 +248,56 @@ function startSession(root: HTMLElement, token: string): Session {
     failure = e.message;
     paint();
   });
+  // TWO THINGS FOLLOW FROM A PRESENCE FRAME, and both are invisible without
+  // one because neither produces an event.
+  //
+  // Hooked to presence rather than to onChange, which fires per FRAME — a
+  // table in play is a frame a second, and a roster read behind every token
+  // move is not a feature. An earlier version watched onChange and kept a key
+  // of the participant set to tell a real change from an event; the key, its
+  // sort and its separator were all machinery for a question presence already
+  // answers.
+  //
+  // MY OWN ROLE CAN MOVE WHILE I AM SITTING HERE.
+  //
+  // /api/me is read once at connect, and a promotion changes what this person
+  // may do without changing anything they can see: the server starts accepting
+  // their commands and their screen still offers none. The server re-announces
+  // a promoted participant for exactly this reason, so a presence batch naming
+  // ME means "read your role again".
+  //
+  // Watching the participant LIST cannot serve here: a promotion re-announces
+  // somebody already present, so the list does not change.
+  session.onPresence((batch) => {
+    if (me === null) return;
+
+    // WHO ELSE IS HERE HAS CHANGED, so the roster the console renders is out
+    // of date — a joiner with no promote button beside their name, or a
+    // revoked participant still offered one. Fires on any presence frame,
+    // including the re-announcement a promotion sends.
+    if (mayShare(me)) refreshSharing();
+
+    // AND MY OWN ROLE MAY HAVE MOVED. /api/me is read once at connect, and a
+    // promotion changes what this person may do without changing anything
+    // they can see: the server starts accepting their commands and their
+    // screen still offers none. The server re-announces a promoted
+    // participant for exactly this reason, so a batch naming ME means "read
+    // your role again".
+    const mine = me.participantId;
+    if (!batch.some((p) => p.participantId === mine)) return;
+    void fetchMe(location.origin, token).then((m) => {
+      me = m;
+      paint();
+      // NO refresh here. A promotion is bounded to player and spectator
+      // (spec §3.1a) and the server refuses a target who is currently dm or
+      // agent, so re-reading a role can never WIDEN what this person may
+      // read: whenever the new role could see the sharing panel, the old one
+      // already could, and the refresh above has already run. A second call
+      // guarded on the new role would be a branch no supported transition can
+      // reach.
+    });
+  });
+
   session.onChange(paint);
 
   paint();
@@ -203,6 +309,16 @@ function startSession(root: HTMLElement, token: string): Session {
     .then((m) => {
       me = m;
       paint();
+      // As soon as the ROLE is known, and deliberately not later in this
+      // chain. It sat after the ruleset and adventure fetches at first, which
+      // meant a table with no ruleset — a perfectly ordinary state this client
+      // already degrades gracefully for — threw before reaching it, and the DM
+      // silently never got a sharing panel or a promote control. Found by the
+      // test below, not by reading it.
+      //
+      // Gated on the role so a player never asks for a link the server would
+      // refuse them.
+      if (mayShare(me)) refreshSharing();
       return fetchRuleset(location.origin, token);
     })
     .then((rs) => {

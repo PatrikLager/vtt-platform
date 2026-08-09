@@ -9,7 +9,20 @@ import { fixture } from "./setup";
 // them the remote demo medium, because reviewing from a phone means "what
 // does each role see" has to be an artifact rather than an instruction.
 
-const { base, tokens, ids } = fixture();
+const { base, tokens, ids } = fixture("table");
+
+// Leave the table as this file found it: it opens a session, and a rerun of
+// this same file would otherwise find "End session" where it expects "Start".
+// See joining.spec.ts for the measurement.
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`${base}/?token=${tokens.dm}`);
+  await page.locator(".dm").waitFor({ timeout: 15_000 });
+  const end = page.locator('[data-action="end-session"]');
+  if ((await end.count()) > 0) await end.click();
+  await ctx.close();
+});
 const shot = (name: string) => ({ path: `client/e2e/.artifacts/${name}.png`, fullPage: true });
 
 /**

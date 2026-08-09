@@ -164,6 +164,20 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 	return false
 }
 
+// displayName returns the name one of participantID's live connections is
+// registered under, and whether any is connected at all.
+func (r *presenceRegistry) displayName(participantID string) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for conn := range r.conns {
+		if conn.participantID == participantID {
+			return conn.displayName, true
+		}
+	}
+	return "", false
+}
+
 // broadcast hands b to every registered connection EXCEPT except, bounded per
 // connection by presenceSendBudget so one slow reader cannot stall the table.
 //

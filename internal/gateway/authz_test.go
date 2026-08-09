@@ -28,6 +28,20 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return grantActorControlCmd("p-2")
 	case "promote_participant":
 		return promoteCmd("p-2", "player")
+	case "set_join_door":
+		return &vttv1.ClientCommand{
+			RequestId: "r-door",
+			Command: &vttv1.ClientCommand_SetJoinDoor{
+				SetJoinDoor: &vttv1.SetJoinDoor{Door: vttv1.JoinDoor_JOIN_DOOR_OPEN},
+			},
+		}
+	case "rotate_join_link":
+		return &vttv1.ClientCommand{
+			RequestId: "r-rotate",
+			Command: &vttv1.ClientCommand_RotateJoinLink{
+				RotateJoinLink: &vttv1.RotateJoinLink{},
+			},
+		}
 	case "revoke_actor_control":
 		// Names "p-1", which is who the table test runs as — so the player
 		// row exercises the SELF case, the only one a player may issue.
@@ -161,7 +175,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 64-cell matrix (spec §4/§7, grown from 52 by
+// authzCases is the full 72-cell matrix (spec §4/§7, grown from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
@@ -268,6 +282,26 @@ var authzCases = []authzCase{
 	// player able to promote would make that link a path to authority in two
 	// steps. TestASpectatorCannotPromoteItself covers the case the default
 	// exists to prevent.
+	// set_join_door / rotate_join_link (joining-a-table J6, spec §5). DM and
+	// agent only, by the same argument that gates grant_actor_control: an OPEN
+	// DOOR MINTS PARTICIPANTS. A spectator who could open one — and every
+	// joiner through the shared link arrives as a spectator — could staff the
+	// table with strangers, which is the exact thing admitting-as-spectator
+	// exists to prevent.
+	//
+	// Rotation is gated for the mirror-image reason: it is the only way to
+	// close a leaked link, so anyone who can rotate can also lock the DM's own
+	// link out from under them mid-session.
+	{"set_join_door", identity.RoleDM, true},
+	{"set_join_door", identity.RoleAgent, true},
+	{"set_join_door", identity.RolePlayer, false},
+	{"set_join_door", identity.RoleSpectator, false},
+
+	{"rotate_join_link", identity.RoleDM, true},
+	{"rotate_join_link", identity.RoleAgent, true},
+	{"rotate_join_link", identity.RolePlayer, false},
+	{"rotate_join_link", identity.RoleSpectator, false},
+
 	{"promote_participant", identity.RoleDM, true},
 	{"promote_participant", identity.RoleAgent, true},
 	{"promote_participant", identity.RolePlayer, false},
@@ -294,8 +328,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 64 {
-		t.Fatalf("authzCases has %d entries, want 64 (16 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 72 {
+		t.Fatalf("authzCases has %d entries, want 72 (18 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -631,5 +665,41 @@ func TestASpectatorCannotPromoteItself(t *testing.T) {
 	if err := gateway.Authorize(me, promoteCmd("p-self", "player"), st); err == nil {
 		t.Fatal("a spectator promoting ITSELF must be refused — anyone through the shared " +
 			"link could otherwise make themselves a player")
+	}
+}
+
+// TestEveryClientCommandHasRoleCells is the authz twin of
+// TestEveryClientCommandConverts, and it exists because commandName and
+// commandRoles are both HAND-WRITTEN LISTS over a oneof that grows.
+//
+// The failure mode is quieter than a missing conversion arm and so easier to
+// ship: an unlisted command resolves to the empty name, misses commandRoles,
+// and is denied for EVERY role. Fail-closed, which is the right direction —
+// but the command is then advertised on the wire and through MCP while being
+// impossible for anyone to issue, and the only symptom is a DM being told they
+// "may not issue \"\"".
+//
+// The 72-cell table beside this cannot catch it: its count is a literal, so a
+// command added without cells leaves the count untouched and every existing
+// case still passes. Reflection over the oneof is what makes forgetting
+// impossible rather than merely unlikely.
+func TestEveryClientCommandHasRoleCells(t *testing.T) {
+	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")
+	if oneof == nil {
+		t.Fatal("vttv1.ClientCommand has no \"command\" oneof")
+	}
+	for i := range oneof.Fields().Len() {
+		name := string(oneof.Fields().Get(i).Name())
+		t.Run(name, func(t *testing.T) {
+			// The name must round-trip through commandName, or authorization
+			// is deciding about a command it cannot identify.
+			if got := gateway.CommandNameForTest(commandFor(t, name)); got != name {
+				t.Fatalf("commandName resolved %q to %q — an unlisted arm is denied for "+
+					"every role, so this command is advertised and unusable", name, got)
+			}
+			if !gateway.HasRoleCellsForTest(name) {
+				t.Fatalf("%q has no row in commandRoles, so no role may issue it", name)
+			}
+		})
 	}
 }

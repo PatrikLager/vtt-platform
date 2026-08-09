@@ -14,7 +14,20 @@ import { fixture } from "./setup";
 // The screenshots are the deliverable as much as the assertions: Patrik
 // reviews from a phone, so "what did each person see" has to be an artifact.
 
-const { base, tokens, ids } = fixture();
+const { base, tokens, ids } = fixture("handover");
+
+// Leave the table as this file found it: it opens a session, and a rerun of
+// this same file would otherwise find "End session" where it expects "Start".
+// See joining.spec.ts for the measurement.
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`${base}/?token=${tokens.dm}`);
+  await page.locator(".dm").waitFor({ timeout: 15_000 });
+  const end = page.locator('[data-action="end-session"]');
+  if ((await end.count()) > 0) await end.click();
+  await ctx.close();
+});
 const shot = (name: string) => ({ path: `client/e2e/.artifacts/${name}.png`, fullPage: true });
 
 async function expectNoRefusal(page: Page, step: string) {

@@ -324,6 +324,12 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",
+		"set_join_door": "operational state, like presence — a replay must not reopen a " +
+			"door somebody closed, so the door lives in identity and not in the log " +
+			"(joining-a-table spec §2, §4)",
+		"rotate_join_link": "mints a new shared secret in identity; the same reasoning as " +
+			"set_join_door, and putting a secret in the permanent log would be worse " +
+			"than useless (joining-a-table spec §2, §4)",
 	}
 
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")

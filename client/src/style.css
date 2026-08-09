@@ -132,6 +132,15 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .control-name { font-weight: 600; }
 .held { display: inline-flex; gap: 4px; align-items: center; }
 
+/* The roster and the sharing panel (plan J6). Same flex-basis contract as
+   .control-actor above, and for the same reason: without it every row is an
+   inline item in .row and the panel renders as one run-on line —
+   "Robinspectator Make player" reads as somebody's name. */
+.roster-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.roster-row .who { font-weight: 600; }
+.roster-row .role { opacity: 0.7; font-size: 0.9em; }
+.door-state { flex-basis: 100%; font-weight: 600; }
+
 /* The join form (plan J5): the only screen somebody sees before they have a
    credential, so it is deliberately a single question on an otherwise empty
    page rather than a panel inside the table's chrome. */

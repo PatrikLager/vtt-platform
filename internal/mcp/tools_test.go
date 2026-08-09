@@ -39,6 +39,7 @@ var wantCommandToolNames = []string{
 	"load_adventure",
 	"grant_actor_control", "revoke_actor_control",
 	"promote_participant",
+	"set_join_door", "rotate_join_link",
 }
 
 // This test scopes itself to "the command tools are present by name" — it

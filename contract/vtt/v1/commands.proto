@@ -92,8 +92,43 @@ message ClientCommand {
     GrantActorControl grant_actor_control = 23;
     RevokeActorControl revoke_actor_control = 24;
     PromoteParticipant promote_participant = 25;
+    SetJoinDoor set_join_door = 26;
+    RotateJoinLink rotate_join_link = 27;
   }
 }
+
+// JoinDoor is the state of the shared join link (joining-a-table spec §2).
+//
+// An ENUM rather than a bool, for the reason the presence contract was amended
+// for: protojson omits zero values, so `bool open` would carry CLOSED as an
+// ABSENT FIELD — making "shut the door" a silence, and indistinguishable from
+// a sender that forgot to set it. Here that is the security-relevant
+// direction, so UNSPECIFIED is refused rather than guessed at.
+enum JoinDoor {
+  JOIN_DOOR_UNSPECIFIED = 0;
+  JOIN_DOOR_OPEN = 1;
+  JOIN_DOOR_CLOSED = 2;
+}
+
+// SetJoinDoor opens or closes the shared join link.
+//
+// DM and agent only (spec §5), by the same argument that gates
+// grant_actor_control: an open door mints participants, and a spectator who
+// could open one could staff the table with strangers.
+//
+// It produces NO EVENT. The door is operational state, like presence — a
+// replay of a campaign must not reopen a door somebody closed (spec §4).
+message SetJoinDoor {
+  JoinDoor door = 1;
+}
+
+// RotateJoinLink mints a new join secret and returns nothing.
+//
+// This closes a LEAKED link to newcomers while touching nobody already through
+// it — the property that makes a leak survivable without re-inviting the whole
+// table. Deliberately independent of the door: rotating says nothing about
+// whether the link is open (spec §2).
+message RotateJoinLink {}
 
 // GrantActorControl adds participant_id to actor_id's controller set.
 // DM and agent only: a player may not hand their character to someone else,

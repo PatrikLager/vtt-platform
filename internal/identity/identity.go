@@ -448,6 +448,59 @@ func (d *DB) Lookup(id string) (*Participant, error) {
 	return &Participant{ID: id, Name: name, Role: role, Controls: controls}, nil
 }
 
+// List returns everyone who can still act at this table, ordered by display
+// name.
+//
+// It exists because the DM console has to answer "who is a spectator, and can
+// I promote them?" and presence cannot answer it. Presence frames carry a
+// display name and a connection state, deliberately: presence is
+// CONNECTION-scoped, a role is campaign-scoped, and a role folded into a
+// presence frame would go stale the moment somebody was promoted without
+// reconnecting — exactly what live re-resolution made possible (spec §3.2).
+// So this reads the one source of truth for roles (spec §3.1) instead.
+//
+// REVOKED PARTICIPANTS ARE OMITTED. They cannot connect and cannot act, so
+// listing them would offer a DM promote controls for people who are gone, and
+// would make a revoked name look like somebody still at the table.
+//
+// Ordered by name in SQL rather than by the caller, so two consumers cannot
+// disagree about it and a console does not reshuffle under the DM's cursor
+// between renders. Ties break on id, which is unique, so the order is total.
+func (d *DB) List() ([]*Participant, error) {
+	rows, err := d.db.Query(
+		`SELECT id, display_name, role, controls FROM participants
+		 WHERE revoked = 0 ORDER BY display_name, id`)
+	if err != nil {
+		return nil, fmt.Errorf("identity: list participants: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*Participant
+	for rows.Next() {
+		var id, name, roleStr, controlsJSON string
+		if err := rows.Scan(&id, &name, &roleStr, &controlsJSON); err != nil {
+			return nil, fmt.Errorf("identity: list participants: %w", err)
+		}
+		role, err := ParseRole(roleStr)
+		if err != nil {
+			// Refused, not skipped and not defaulted. A stored role that is
+			// not a role means this table's authorization data is wrong, and
+			// answering with a shorter list would hide that while a console
+			// quietly showed the wrong people.
+			return nil, fmt.Errorf("identity: list %s: stored role invalid: %w", id, err)
+		}
+		var controls []string
+		if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {
+			return nil, fmt.Errorf("identity: list %s: controls: %w", id, err)
+		}
+		out = append(out, &Participant{ID: id, Name: name, Role: role, Controls: controls})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("identity: list participants: %w", err)
+	}
+	return out, nil
+}
+
 // Revoke permanently flips the revoked flag for participant id. This is a
 // direct table mutation, not a logged event — it cannot be undone by any
 // game-log/retraction mechanism (spec §5).
