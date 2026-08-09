@@ -210,6 +210,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws", s.handleWS)
 	// Read-only metadata (metadata.go). Method-qualified patterns, so a POST
 	// to a read endpoint is a clean 405 rather than a silent success.
+	// The shared join link. POST-only and unauthenticated by construction —
+	// see join.go for why its refusals are deliberately indistinguishable.
+	mux.HandleFunc("POST /join", s.handleJoin)
+
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/ruleset", s.handleRuleset)
 	mux.HandleFunc("GET /api/ruleset/guide", s.handleRulesetGuide)
