@@ -356,6 +356,55 @@ func (d *DB) Verify(token string) (*Participant, error) {
 	return &Participant{ID: id, Name: name, Role: role, Controls: controls}, nil
 }
 
+// Lookup resolves a participant by id, as they are NOW.
+//
+// This is the LIVE half of identity; Verify is the connection-time half.
+// Authentication happens once — you present a token and we learn who you are.
+// Authorization is a live fact: what you may do can change while you are
+// connected, so the gateway re-resolves through here on every command instead
+// of trusting the answer it got at connect (joining-a-table spec §3.2).
+//
+// Two things that used to require a reconnect now take effect on the very next
+// action: a promotion, and a REVOCATION. The second was a real hole — the only
+// Verify in the WS path ran at connect, so a revoked participant kept playing
+// until they chose to disconnect, and throwing someone out of a table did
+// nothing without their cooperation.
+//
+// A revoked participant does not resolve, and revoked and unknown share one
+// error — the same posture Verify already takes, for the same reason.
+//
+// MEASURED before adopting, because the objection to doing this per command
+// was cost: 15.5µs against a table of 40 participants, on a path that already
+// folds state, appends to SQLite and writes a socket frame. Microseconds
+// against milliseconds.
+func (d *DB) Lookup(id string) (*Participant, error) {
+	var (
+		name, roleStr, controlsJSON string
+		revoked                     int
+	)
+	err := d.db.QueryRow(
+		`SELECT display_name, role, controls, revoked FROM participants WHERE id = ?`, id,
+	).Scan(&name, &roleStr, &controlsJSON, &revoked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrInvalidToken
+	}
+	if err != nil {
+		return nil, fmt.Errorf("identity: lookup %s: %w", id, err)
+	}
+	if revoked != 0 {
+		return nil, ErrInvalidToken
+	}
+	role, err := ParseRole(roleStr)
+	if err != nil {
+		return nil, err
+	}
+	var controls []string
+	if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {
+		return nil, fmt.Errorf("identity: lookup %s: controls: %w", id, err)
+	}
+	return &Participant{ID: id, Name: name, Role: role, Controls: controls}, nil
+}
+
 // Revoke permanently flips the revoked flag for participant id. This is a
 // direct table mutation, not a logged event — it cannot be undone by any
 // game-log/retraction mechanism (spec §5).

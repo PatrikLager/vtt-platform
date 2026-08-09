@@ -118,34 +118,45 @@ separately, not by relocating the data. Options for the spec to choose from:
 The first is enough for a table. The second is a different requirement and
 should be named as such before being built.
 
-### 3.2 A promotion does not reach a live connection
+### 3.2 Role and connection are separate, and the code conflates them
+
+**Rewritten 2026-08-09 on Patrik's call.** The earlier version of this section
+treated "a promotion does not reach a live connection" as a constraint to work
+around, and recommended closing the promoted participant's sockets so they
+reconnect. That was wrong, and the reason it was wrong is worth keeping.
 
 `handleWS` calls `identity.Verify` **once**, before the WebSocket upgrade, and
-the resulting `*identity.Participant` is held for the connection's entire life —
-every `Authorize(p, cmd, st)` reads that one struct. Nothing re-reads the
-database.
+holds the resulting `*identity.Participant` for the connection's entire life.
+Every `Authorize(p, cmd, st)` reads that one struct. Nothing re-reads the
+database. So the server answers "who is this, and what may they do?" once, at
+connect time, and treats the answer as fixed.
 
-So promoting someone who is connected changes the row and **nothing happens**
-until they reconnect. A DM clicking "make Kim a player" and watching Kim stay
-unable to act is the kind of silence this project keeps finding and disliking.
+**Authentication is a connection-time fact. Authorization is a live one.**
+Conflating them is the defect; a reconnect is not a fix for it, it is a way of
+paying for it.
 
-Three ways to resolve it, in the order I would argue for them:
+Two things follow, and the second is the serious one:
 
-1. **Close the promoted participant's connections.** The server already knows
-   which connections belong to a participant — the presence registry is keyed
-   exactly that way — and the client already has a manual reconnect path and a
-   surfaced `"closed"` status. The promotion becomes: update the row, drop their
-   sockets, they click Reconnect and come back as a player. Honest, uses what
-   exists, and the person SEES something happen.
-2. **Re-verify per command.** Correct and immediate, but it puts a database read
-   on the hot path of every command and quietly makes `Authorize` do I/O, which
-   its own doc comment says it does not.
-3. **Accept reconnect-only and say so in the UI.** Cheapest, but it makes the
-   DM's action look broken.
+1. **Every joiner arrives as a spectator** (§2), so a reconnect-to-promote
+   would sit on the critical path of *everybody who ever joins*, immediately
+   after they join. The shared link would be more cumbersome than the
+   per-person invites it replaces. The feature would defeat its own purpose.
+2. **`vtt revoke` does not remove anybody.** Verified 2026-08-09: the only
+   `Verify` in the WS path is at connect, so a revoked participant keeps
+   playing — moving tokens, using abilities — until they choose to disconnect.
+   Throwing someone out of your table currently does nothing until they
+   cooperate. This predates the joining work and is the same root cause.
 
-Option 1 also composes with §4.1's delivery rules and needs no new client work.
-It should be measured against a live table before adoption: dropping a socket is
-visible, and doing it to someone mid-turn is worse than a short delay.
+**So: the participant is re-resolved per command, not cached for the
+connection.** A role change and a revocation both take effect on the very next
+thing that person does. No reconnect, no dropped socket, no waiting.
+
+The objection is cost — a database read on the hot path of every command, and
+`Authorize`'s doc comment says it does no I/O. That comment describes the
+current design, not a law, and the read is a local SQLite lookup by primary
+key. It is to be MEASURED rather than argued about, and the measurement
+recorded here; if it is genuinely too expensive, a short-lived cache with an
+invalidation hook is the fallback, not a reconnect.
 
 ## 4. What gets built
 

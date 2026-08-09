@@ -441,6 +441,9 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	if err := d.SetJoinOpen(true); err == nil {
 		t.Fatal("opening the door against a dead handle must report the failure")
 	}
+	if _, err := d.Lookup("p-anyone"); err == nil {
+		t.Fatal("a lookup against a dead handle must report the failure, not resolve")
+	}
 	if err := d.SetRole("p-anyone", identity.RolePlayer); err == nil {
 		t.Fatal("promoting against a dead handle must report the failure — a DM console " +
 			"that reports success while the database is gone is worse than one that errors")
@@ -641,5 +644,118 @@ func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
 	_ = d.SetRole(id, identity.RolePlayer)
 	if _, err := d.Verify(token); err == nil {
 		t.Fatal("promoting a revoked participant must not restore them")
+	}
+}
+
+// --- live re-resolution (joining-a-table J4, spec §3.2) --------------------
+
+func TestLookupReflectsAPromotionImmediately(t *testing.T) {
+	// The property the whole of J4 exists for: authentication is a
+	// connection-time fact, authorization is a LIVE one. A promotion must be
+	// visible to the very next thing the participant does.
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(id, identity.RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	p, err := d.Lookup(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Role != identity.RolePlayer {
+		t.Fatalf("role = %q, want player — a lookup that returns the OLD role is exactly "+
+			"the caching this replaces", p.Role)
+	}
+}
+
+func TestLookupRefusesARevokedParticipant(t *testing.T) {
+	// The serious half. Until this existed, `vtt revoke` removed nobody: the
+	// only Verify was at connect, so a revoked participant kept playing until
+	// they chose to disconnect. Throwing someone out did nothing without their
+	// cooperation.
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Revoke(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Lookup(id); err == nil {
+		t.Fatal("a revoked participant must not resolve — otherwise revocation waits on " +
+			"the revoked person's goodwill")
+	}
+}
+
+func TestLookupRefusesAnUnknownParticipant(t *testing.T) {
+	d, _ := openTemp(t)
+	if _, err := d.Lookup("p-nobody"); err == nil {
+		t.Fatal("an unknown id must not resolve")
+	}
+}
+
+func TestLookupCarriesTheWholeParticipant(t *testing.T) {
+	// Not just the role: Authorize reads ID for ownership checks and Controls
+	// is part of the identity story, so a partial lookup would silently change
+	// what authorization sees.
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Kim", identity.RolePlayer, []string{"act-warden"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := d.Lookup(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != id || p.Name != "Kim" || p.Role != identity.RolePlayer {
+		t.Fatalf("lookup lost identity: %+v", p)
+	}
+	if len(p.Controls) != 1 || p.Controls[0] != "act-warden" {
+		t.Fatalf("lookup lost controls: %v", p.Controls)
+	}
+}
+
+func TestLookupRefusesACorruptRow(t *testing.T) {
+	// A row whose role or controls cannot be parsed must NOT resolve. These
+	// are unreachable through this package's own writers, which is exactly why
+	// they are worth asserting: if a row ever became malformed — a hand-edited
+	// database, a botched migration, a future writer with a bug — the failure
+	// must be a refusal, not a participant with a silently wrong authorization
+	// level.
+	for _, tc := range []struct{ name, role, controls string }{
+		{"unparseable role", "superuser", "[]"},
+		{"unparseable controls", "player", "not json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, path := openTemp(t)
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := raw.Exec(
+				`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked)
+				 VALUES ('p-bad', 'Bad', ?, ?, X'01', 0)`, tc.role, tc.controls); err != nil {
+				t.Fatal(err)
+			}
+			if err := raw.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			again, err := identity.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer again.Close()
+			if _, err := again.Lookup("p-bad"); err == nil {
+				t.Fatal("a corrupt row must be refused, not resolved into a participant whose " +
+					"authorization nobody can account for")
+			}
+		})
 	}
 }

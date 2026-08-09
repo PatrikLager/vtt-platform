@@ -504,7 +504,28 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			return
 		}
 
-		result := s.handleCommand(p, cmd)
+		// RE-RESOLVE, every command. Verify ran once before the upgrade and
+		// answered "who is this, and what may they do?" — but the first half
+		// is a connection-time fact and the second is a LIVE one. Trusting the
+		// cached answer meant a promotion did not bite until the participant
+		// reconnected, which would sit on the critical path of everybody who
+		// ever joins (they all arrive as spectators), and it meant `vtt revoke`
+		// removed nobody: a revoked participant kept playing until they chose
+		// to disconnect. Spec §3.2.
+		//
+		// Measured at 15.5µs against a 40-participant table, on a path that
+		// already folds state, appends to SQLite and writes a socket frame.
+		now, err := s.ids.Lookup(p.ID)
+		if err != nil {
+			// Revoked, or gone. Close rather than refuse-and-continue: their
+			// credential is no longer valid, so there is nothing left for this
+			// connection to be allowed to do.
+			shutdown()
+			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
+			return
+		}
+
+		result := s.handleCommand(now, cmd)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue

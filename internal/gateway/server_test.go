@@ -1155,3 +1155,107 @@ func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
 		t.Fatalf("a refused promotion still changed the role to %q", after.Role)
 	}
 }
+
+// TestAPromotionBitesWithoutReconnecting is what J4 exists for (spec §3.2).
+//
+// Everyone who joins through the shared link arrives as a SPECTATOR, so if a
+// promotion only took effect on reconnect, a reconnect would sit on the
+// critical path of every single person who ever joins — making the shared link
+// more cumbersome than the per-person invites it replaces.
+func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, watcher)
+	expectPresenceSnapshot(t, watcher)
+
+	// As a spectator, narrating is refused.
+	sendCommand(t, watcher, &vttv1.ClientCommand{
+		RequestId: "before",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+	})
+	if res := readResult(t, watcher); res.GetOk() {
+		t.Fatal("a spectator must not be able to narrate")
+	}
+
+	// The DM promotes them, on a DIFFERENT connection.
+	me, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "promote",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: me.ID, Role: string(identity.RolePlayer),
+			},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %q", res.GetError())
+	}
+
+	// SAME connection, no reconnect: it now works.
+	sendCommand(t, watcher, &vttv1.ClientCommand{
+		RequestId: "after",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+	})
+	if res := readResult(t, watcher); !res.GetOk() {
+		t.Fatalf("a promoted participant must be able to act on their EXISTING connection, "+
+			"got %q — otherwise everyone who joins must reconnect immediately after joining",
+			res.GetError())
+	}
+}
+
+// TestRevokingRemovesSomebodyWhoIsStillConnected closes a hole that predates
+// this branch: the only Verify in the WS path ran at CONNECT, so a revoked
+// participant kept playing — moving tokens, narrating — until they chose to
+// disconnect. Throwing someone out of a table did nothing without their
+// cooperation.
+func TestRevokingRemovesSomebodyWhoIsStillConnected(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.playerToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	p, err := f.ids.Verify(f.playerToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Their very next action must not land.
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "after-revoke",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "still here"}},
+	})
+	// Drain until the connection ENDS rather than asserting on the very next
+	// frame: anything already queued for this connection is still written out
+	// on the way down, so "the next read errors" would be a race.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("a revoked participant must be cut off on their next command, not left " +
+				"playing until they decide to leave")
+		}
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, _, err := conn.Read(ctx)
+		cancel()
+		if err == nil {
+			continue // a frame that was already queued; keep draining
+		}
+		// A CLOSE, not a timeout. The first version of this loop returned on
+		// any error, so when the server did NOT hang up the read simply
+		// expired and the test read that as success — it passed under an
+		// injection that ignored the lookup failure entirely.
+		if websocket.CloseStatus(err) == -1 {
+			t.Fatalf("the connection did not close — a revoked participant is still being "+
+				"served (read ended with %v, not a websocket close)", err)
+		}
+		return
+	}
+}
