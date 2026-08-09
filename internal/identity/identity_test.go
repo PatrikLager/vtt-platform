@@ -441,6 +441,10 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	if err := d.SetJoinOpen(true); err == nil {
 		t.Fatal("opening the door against a dead handle must report the failure")
 	}
+	if err := d.SetRole("p-anyone", identity.RolePlayer); err == nil {
+		t.Fatal("promoting against a dead handle must report the failure — a DM console " +
+			"that reports success while the database is gone is worse than one that errors")
+	}
 }
 
 // TestRotatingTheSecretLeavesTheDoorAlone pins the independence of the two
@@ -519,5 +523,123 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	}
 	if other == secret {
 		t.Fatal("two campaigns must not share a join secret")
+	}
+}
+
+// --- promotion (joining-a-table J3) ----------------------------------------
+
+func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
+	d, _ := openTemp(t)
+	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(id, identity.RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	p, err := d.Verify(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Role != identity.RolePlayer {
+		t.Fatalf("role = %q, want player — the same TOKEN must now carry the new role, "+
+			"because that is what the connection reads", p.Role)
+	}
+}
+
+func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
+	// A missing WHERE promotes the whole table, and the mutation gate cannot
+	// see SQL (#40), so this is guarded by hand or not at all.
+	d, _ := openTemp(t)
+	_, kim, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaToken, _, err := d.CreateInvite("Ada", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(kim, identity.RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	ada, err := d.Verify(adaToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ada.Role != identity.RoleSpectator {
+		t.Fatalf("Ada became %q — promoting one participant must not promote the table", ada.Role)
+	}
+}
+
+func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(id, identity.Role("superuser")); err == nil {
+		t.Fatal("an unknown role must be refused — ParseRole is the whole set, and a row " +
+			"carrying anything else is a participant no authz cell describes")
+	}
+}
+
+func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
+	// Silence here would let the DM console report a successful promotion of
+	// somebody who left, and the caller could never tell.
+	d, _ := openTemp(t)
+	if err := d.SetRole("p-nobody", identity.RolePlayer); err == nil {
+		t.Fatal("promoting an unknown participant must report it, not succeed quietly")
+	}
+}
+
+func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
+	// A DM clicking twice is not an error.
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Kim", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(id, identity.RolePlayer); err != nil {
+		t.Fatalf("re-promoting to the same role must be a no-op, not an error: %v", err)
+	}
+}
+
+func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
+	// The token and the controls belong to the person, not the role. A
+	// promotion that rewrote either would silently log them out or strip what
+	// they hold.
+	d, _ := openTemp(t)
+	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator, []string{"act-warden"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRole(id, identity.RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	p, err := d.Verify(token)
+	if err != nil {
+		t.Fatalf("the token must still verify after a promotion: %v", err)
+	}
+	if p.ID != id || p.Name != "Kim" {
+		t.Fatalf("promotion changed identity: %+v", p)
+	}
+	if len(p.Controls) != 1 || p.Controls[0] != "act-warden" {
+		t.Fatalf("promotion changed controls: %v", p.Controls)
+	}
+}
+
+func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
+	// Promotion must not be a way back in for somebody who was thrown out.
+	d, _ := openTemp(t)
+	token, id, err := d.CreateInvite("Mallory", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Revoke(id); err != nil {
+		t.Fatal(err)
+	}
+	_ = d.SetRole(id, identity.RolePlayer)
+	if _, err := d.Verify(token); err == nil {
+		t.Fatal("promoting a revoked participant must not restore them")
 	}
 }

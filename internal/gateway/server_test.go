@@ -36,6 +36,11 @@ type gwFixture struct {
 	playerToken, otherPlayerToken       string
 	playerID                            string
 
+	// ids is exposed for the same reason campaign is: promotion changes
+	// IDENTITY, not campaign state, so the only place its effect is visible is
+	// the participants table.
+	ids *identity.DB
+
 	// campaign is exposed so a test can assert on FOLDED STATE rather than on
 	// the result frame alone. A command can answer ok=true and still not mean
 	// what the test claims; the state is what the table actually sees.
@@ -126,6 +131,7 @@ func newGWFixture(t *testing.T) *gwFixture {
 		dmToken: dmToken, agentToken: agentToken, spectatorToken: spectatorToken,
 		playerToken: playerToken, otherPlayerToken: otherPlayerToken, playerID: playerID,
 		campaign: c,
+		ids:      ids,
 	}
 }
 
@@ -1074,5 +1080,78 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	}
 	if ids := f.campaign.State().Actors["a1"].GetControllerIds(); len(ids) != 1 {
 		t.Fatalf("controller_ids = %v, want the grant undone", ids)
+	}
+}
+
+// TestDMPromotesASpectatorOverTheWire is the seam: authorized, converted,
+// APPLIED. The branch this work follows shipped grant_actor_control
+// authorized and dead because nothing tested past the permission check, so
+// this asserts on IDENTITY — the only place a role change is visible — rather
+// than on the result frame.
+func TestDMPromotesASpectatorOverTheWire(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watcher.Role != identity.RoleSpectator {
+		t.Fatalf("fixture drifted: %q", watcher.Role)
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "promote-1",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: watcher.ID, Role: string(identity.RolePlayer),
+			},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %q", res.GetError())
+	}
+
+	// The SAME token now carries the new role — which is what a reconnect will
+	// read, and the whole reason role stays beside the credential.
+	after, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Role != identity.RolePlayer {
+		t.Fatalf("role = %q, want player — the command was accepted but changed nothing",
+			after.Role)
+	}
+}
+
+func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
+	// End to end, because the escalation guard lives in Authorize and a
+	// refactor could move the check past it.
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "escalate-1",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: watcher.ID, Role: string(identity.RoleDM),
+			},
+		},
+	})
+	if res := readResult(t, dm); res.GetOk() {
+		t.Fatal("promotion to dm must be refused — the shared join link would otherwise " +
+			"reach full authority in two steps")
+	}
+	after, _ := f.ids.Verify(f.spectatorToken)
+	if after.Role != identity.RoleSpectator {
+		t.Fatalf("a refused promotion still changed the role to %q", after.Role)
 	}
 }

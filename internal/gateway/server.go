@@ -545,6 +545,14 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
 		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)
 	}
+	// promote_participant produces NO EVENT AT ALL, unlike the two above which
+	// produce a batch. A role lives in participants.role beside the token —
+	// one source of truth, never in the log (joining-a-table spec §3.1). It is
+	// the only command that changes identity rather than campaign state, which
+	// is why ToEvent's completeness gate names it on its allowlist.
+	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
+		return s.handlePromotion(requestID, pp.PromoteParticipant)
+	}
 
 	env, err := ToEvent(cmd, p)
 	if err != nil {
@@ -627,4 +635,18 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 		return
 	}
 	s.presence.broadcast(pc, b)
+}
+
+// handlePromotion applies an authorized role change.
+//
+// Authorize has already bounded WHO may issue this and WHAT role it may name
+// (gateway/authz.go: dm/agent only, targeting player or spectator only), so
+// this applies it and reports what identity said. It deliberately appends
+// nothing: the whole point of keeping role identity-side is that there is one
+// source of truth, and writing an event beside it would create a second.
+func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant) *vttv1.CommandResult {
+	if err := s.ids.SetRole(req.GetParticipantId(), identity.Role(req.GetRole())); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }

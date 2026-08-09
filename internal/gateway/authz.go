@@ -56,6 +56,10 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// a player is holding without first revoking them.
 	"grant_actor_control":  {identity.RoleDM: true, identity.RoleAgent: true},
 	"revoke_actor_control": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	// promote_participant (joining-a-table spec §3.1a). DM and agent only, and
+	// NO player row: a shared join link mints spectators, so a player able to
+	// promote would make that link a route to authority in two steps.
+	"promote_participant": {identity.RoleDM: true, identity.RoleAgent: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -72,6 +76,15 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	if !known || !roles[p.Role] {
 		return fmt.Errorf("%w: role %q may not issue %q", ErrUnauthorized, p.Role, name)
 	}
+	// Checked for EVERY role, before the player-only ownership rules below:
+	// this bounds what a promotion may DO, not who may issue it, so a DM is
+	// subject to it too (spec §3.1a).
+	if name == "promote_participant" {
+		if err := authorizePromotionTarget(cmd.GetPromoteParticipant()); err != nil {
+			return err
+		}
+	}
+
 	if p.Role != identity.RolePlayer {
 		return nil
 	}
@@ -167,6 +180,27 @@ func authorizeSelfRevoke(p *identity.Participant, req *vttv1.RevokeActorControl,
 	return authorizeActorOwnership(p, req.GetActorId(), st)
 }
 
+// authorizePromotionTarget bounds what a promotion may make someone.
+//
+// ONLY player or spectator (spec §3.1a). The shared join link mints
+// spectators, so allowing dm or agent here would turn that link into a path to
+// full authority in two steps — which is the thing admitting-as-spectator
+// exists to prevent. Minting a DM stays with `vtt invite`, deliberately out of
+// band.
+//
+// ParseRole would reject an unknown string anyway, but it would accept "dm";
+// this is the narrower rule, and it is checked for every role including the
+// DM's own.
+func authorizePromotionTarget(req *vttv1.PromoteParticipant) error {
+	switch req.GetRole() {
+	case string(identity.RolePlayer), string(identity.RoleSpectator):
+		return nil
+	default:
+		return fmt.Errorf("%w: a participant may be promoted only to player or spectator, not %q",
+			ErrUnauthorized, req.GetRole())
+	}
+}
+
 // commandName returns the oneof field name for cmd's set command, matching
 // the proto field names used as commandRoles keys ("" for unset/unknown).
 func commandName(cmd *vttv1.ClientCommand) string {
@@ -201,6 +235,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "grant_actor_control"
 	case *vttv1.ClientCommand_RevokeActorControl:
 		return "revoke_actor_control"
+	case *vttv1.ClientCommand_PromoteParticipant:
+		return "promote_participant"
 	default:
 		return ""
 	}

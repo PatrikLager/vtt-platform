@@ -205,6 +205,12 @@ var manifest = []toolSpec{
 		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
 		descriptor:  (&vttv1.RevokeActorControl{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.PromoteParticipant",
+		name:        "promote_participant",
+		description: "Change what a participant is ALLOWED to do. Someone who joined through the shared link arrives as a spectator and can only watch; promote them to \"player\" so they can be given a character and act. role accepts ONLY \"player\" or \"spectator\" — promotion can never reach dm or agent, because the join link would otherwise be a route to full authority in two steps. Minting a DM is a deliberate out-of-band act (`vtt invite`). This changes IDENTITY, not the campaign, so it writes no event.",
+		descriptor:  (&vttv1.PromoteParticipant{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

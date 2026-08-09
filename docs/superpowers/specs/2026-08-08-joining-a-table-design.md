@@ -87,6 +87,26 @@ trusted. Authorization is not where to repeat that.
 **So: a role change is an UPDATE to `participants.role`, in the same table the
 token already lives in. One source of truth.**
 
+### 3.1a How promotion reaches the wire
+
+**Decided by Patrik 2026-08-09**, because §3.1 and §5 together left a real
+tension: a `ClientCommand` is structurally *a thing that becomes an event* —
+`TestEveryClientCommandConverts` enforces it — while a role change deliberately
+produces no event.
+
+**It is a `ClientCommand`**, with an entry in that gate's `notConverted`
+allowlist beside `use_ability`, `load_adventure` and `retract_events`. The
+alternative was an authenticated HTTP endpoint beside `/join`, which is more
+honest about what promotion IS but sidesteps `commandRoles` — and one
+authorization surface beats two. §5's matrix is where every "who may do what"
+answer already lives, and splitting it is how a cell goes missing.
+
+**`promote_participant` may target ONLY `player` or `spectator`.** A shared
+join link mints spectators; letting promotion reach `dm` or `agent` would make
+that link a path to full authority in two steps, which is precisely what
+admitting-as-spectator exists to prevent. Minting a DM stays with `vtt invite`
+— a deliberate, out-of-band act (§6.4).
+
 The audit question — "who let this person act?" — is real and is answered
 separately, not by relocating the data. Options for the spec to choose from:
 

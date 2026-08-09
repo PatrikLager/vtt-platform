@@ -26,6 +26,8 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return moveTokenCmd("t1")
 	case "grant_actor_control":
 		return grantActorControlCmd("p-2")
+	case "promote_participant":
+		return promoteCmd("p-2", "player")
 	case "revoke_actor_control":
 		// Names "p-1", which is who the table test runs as — so the player
 		// row exercises the SELF case, the only one a player may issue.
@@ -141,7 +143,15 @@ func revokeActorControlCmd(participantID string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 15 commands x 4 roles authorization matrix.
+// promoteCmd builds a PromoteParticipant naming who is being promoted, and to
+// what.
+func promoteCmd(participantID, role string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PromoteParticipant{
+		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: participantID, Role: role},
+	}}
+}
+
+// authzCase is one cell of the 16 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -151,7 +161,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 60-cell matrix (spec §4/§7, grown from 52 by
+// authzCases is the full 64-cell matrix (spec §4/§7, grown from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
@@ -252,6 +262,16 @@ var authzCases = []authzCase{
 	{"revoke_actor_control", identity.RoleAgent, true},
 	{"revoke_actor_control", identity.RolePlayer, true},
 	{"revoke_actor_control", identity.RoleSpectator, false},
+
+	// promote_participant (joining-a-table J3, spec §3.1a). DM and agent only,
+	// with NO player row at all: a shared join link mints spectators, and a
+	// player able to promote would make that link a path to authority in two
+	// steps. TestASpectatorCannotPromoteItself covers the case the default
+	// exists to prevent.
+	{"promote_participant", identity.RoleDM, true},
+	{"promote_participant", identity.RoleAgent, true},
+	{"promote_participant", identity.RolePlayer, false},
+	{"promote_participant", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -274,8 +294,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 60 {
-		t.Fatalf("authzCases has %d entries, want 60 (15 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 64 {
+		t.Fatalf("authzCases has %d entries, want 64 (16 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -570,5 +590,46 @@ func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
 		if err := gateway.Authorize(p, grantActorControlCmd("p-2"), st); err != nil {
 			t.Fatalf("%s must be able to grant control of a player-held actor: %v", role, err)
 		}
+	}
+}
+
+// --- promotion may not reach dm or agent (spec §3.1a) -----------------------
+
+func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
+	// The escalation path this guard exists to close: a shared join link mints
+	// SPECTATORS, so if promotion could reach dm or agent, that link would be
+	// a route to full authority in two steps — exactly what admitting people
+	// as spectators is for. Minting a DM stays with `vtt invite`, out of band.
+	st := ownershipFixture()
+	dm := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
+
+	for _, role := range []string{"player", "spectator"} {
+		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err != nil {
+			t.Fatalf("a DM must be able to promote to %q: %v", role, err)
+		}
+	}
+	for _, role := range []string{"dm", "agent"} {
+		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err == nil {
+			t.Fatalf("promotion to %q must be refused even for a DM — the join link would "+
+				"otherwise reach full authority in two steps", role)
+		}
+	}
+	// And a role that is not a role at all.
+	if err := gateway.Authorize(dm, promoteCmd("p-2", "superuser"), st); err == nil {
+		t.Fatal("an unknown role must be refused")
+	}
+}
+
+func TestASpectatorCannotPromoteItself(t *testing.T) {
+	// NOT the same test as "a spectator cannot promote". The participant id in
+	// the COMMAND and the id on the CONNECTION are different fields, and
+	// confusing them is how revoke_actor_control's self-check nearly shipped
+	// unpinned. Self-promotion is the case the spectator default exists to
+	// prevent, so it gets its own assertion.
+	st := ownershipFixture()
+	me := &identity.Participant{ID: "p-self", Role: identity.RoleSpectator}
+	if err := gateway.Authorize(me, promoteCmd("p-self", "player"), st); err == nil {
+		t.Fatal("a spectator promoting ITSELF must be refused — anyone through the shared " +
+			"link could otherwise make themselves a player")
 	}
 }

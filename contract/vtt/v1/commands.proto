@@ -91,6 +91,7 @@ message ClientCommand {
     LoadAdventure load_adventure = 22;
     GrantActorControl grant_actor_control = 23;
     RevokeActorControl revoke_actor_control = 24;
+    PromoteParticipant promote_participant = 25;
   }
 }
 
@@ -110,6 +111,26 @@ message RevokeActorControl {
   string participant_id = 2;
   // Both fields genuinely required, same check as GrantActorControl above:
   // there is no meaning to revoking control of nothing, or from nobody.
+}
+
+// PromoteParticipant changes what a participant is ALLOWED to do.
+//
+// It is the only command that changes IDENTITY rather than campaign state, and
+// so the only one that produces NO EVENT: a role lives in the participants
+// table beside the token, one source of truth, never in the log (joining-a-
+// table spec §3.1). The gateway's ToEvent allowlist names it for that reason.
+//
+// role may be ONLY "player" or "spectator" (spec §3.1a). A shared join link
+// mints spectators, and letting promotion reach "dm" or "agent" would make
+// that link a path to full authority in two steps — which is exactly what
+// admitting-as-spectator exists to prevent. Minting a DM stays with
+// `vtt invite`, deliberately out of band.
+//
+// DM and agent only. A spectator promoting itself would make the default
+// meaningless.
+message PromoteParticipant {
+  string participant_id = 1;
+  string role = 2;
 }
 
 message CommandResult {

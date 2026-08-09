@@ -380,5 +380,24 @@
       "type": "object"
     },
     "name": "revoke_actor_control"
+  },
+  {
+    "description": "Change what a participant is ALLOWED to do. Someone who joined through the shared link arrives as a spectator and can only watch; promote them to \"player\" so they can be given a character and act. role accepts ONLY \"player\" or \"spectator\" — promotion can never reach dm or agent, because the join link would otherwise be a route to full authority in two steps. Minting a DM is a deliberate out-of-band act (`vtt invite`). This changes IDENTITY, not the campaign, so it writes no event.",
+    "inputSchema": {
+      "properties": {
+        "participantId": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "participantId",
+        "role"
+      ],
+      "type": "object"
+    },
+    "name": "promote_participant"
   }
 ]

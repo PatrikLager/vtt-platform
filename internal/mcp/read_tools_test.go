@@ -257,7 +257,7 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 // literal, and this test is no longer named for the number. It was
 // TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools, and its
 // comment had accumulated a six-entry history of past bumps (7->9, 9->12,
-// 12->13, 15->16, 16->17) — each one a rename that had to touch the
+// 12->13, 15->16, 16->17, and since then 17->19->20 without touching any of
 // identifier, the comment, and every other file naming the count. P12 shipped
 // the same stale number three times on one such rename. Derive the count from
 // the list; the list is the assertion.

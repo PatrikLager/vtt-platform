@@ -227,6 +227,43 @@ func newSecret() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// SetRole changes a participant's authorization level.
+//
+// ONE SOURCE OF TRUTH, deliberately (joining-a-table spec §3.1). Role stays in
+// participants.role beside the token rather than becoming an event: the fold
+// contains no reference to Role at all, so putting it in the log would drag an
+// identity concern into engine.State AND create a second place authorization
+// lives. What a second source of truth costs is on the record — controller_id
+// mirroring controller_ids needed an invariant, fault-injection proof on both
+// folds and a golden scenario before it could be trusted.
+//
+// It changes ONLY the role. The token, the id, the display name and the
+// controls belong to the person and survive: a promotion that rewrote the
+// credential would log them out, and one that cleared controls would strip the
+// characters they hold.
+//
+// A revoked participant stays revoked. Promotion is not a way back in.
+func (d *DB) SetRole(id string, role Role) error {
+	if _, err := ParseRole(string(role)); err != nil {
+		return err
+	}
+	res, err := d.db.Exec(`UPDATE participants SET role = ? WHERE id = ?`, string(role), id)
+	if err != nil {
+		return fmt.Errorf("identity: set role: %w", err)
+	}
+	// Reporting "no such participant" rather than succeeding silently: a DM
+	// console that says it promoted somebody who has already left, and a
+	// caller with no way to tell, is worse than an error.
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("identity: set role: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("identity: no participant %q", id)
+	}
+	return nil
+}
+
 // Close releases the underlying SQLite handle.
 func (d *DB) Close() error {
 	return d.db.Close()
