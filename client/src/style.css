@@ -131,3 +131,29 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .control-actor { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .control-name { font-weight: 600; }
 .held { display: inline-flex; gap: 4px; align-items: center; }
+
+/* The join form (plan J5): the only screen somebody sees before they have a
+   credential, so it is deliberately a single question on an otherwise empty
+   page rather than a panel inside the table's chrome. */
+.join {
+  max-width: 28rem;
+  margin: 4rem auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.join h1 {
+  margin: 0;
+}
+.join input {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+.join button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}
+.join .error {
+  margin: 0;
+  color: #b00020;
+}

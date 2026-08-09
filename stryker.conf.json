@@ -14,22 +14,19 @@
     "command": "bun test client/test"
   },
   "coverageAnalysis": "off",
+  "_mutate_comment": [
+    "BY EXCLUSION, not inclusion. This was a hand-maintained list of every",
+    "file, which meant a NEW source file was ungated by default and nothing",
+    "anywhere said so -- the gate would report a clean run over code it had",
+    "never looked at. Found 2026-08-09 adding client/src/join.ts, and it is",
+    "the same trap check:race was rewritten out of two days earlier: an",
+    "inclusion list is a promise to remember, and the failure mode is silent.",
+    "Adding a file to client/src now gates it; taking one OUT is a visible",
+    "line here that has to carry a reason, as main.ts's does."
+  ],
   "mutate": [
-    "client/src/app.ts",
-    "client/src/auth.ts",
-    "client/src/commands.ts",
-    "client/src/fold.ts",
-    "client/src/metadata.ts",
-    "client/src/player.ts",
-    "client/src/session.ts",
-    "client/src/state.ts",
-    "client/src/undo.ts",
-    "client/src/view/dm.ts",
-    "client/src/view/feed.ts",
-    "client/src/view/grid.ts",
-    "client/src/view/player.ts",
-    "client/src/view/spectator.ts",
-    "client/src/wire.ts"
+    "client/src/**/*.ts",
+    "!client/src/main.ts"
   ],
   "tempDirName": ".stryker-tmp",
   "concurrency": 4,

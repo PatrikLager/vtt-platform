@@ -869,3 +869,165 @@ test("presence reaches the DM console's grant dropdown", async () => {
     .toEqual(["Lera"]);
   session?.close();
 });
+
+// --- the shared join link (plan J5) --------------------------------------
+
+/** Answer /join with one canned response; everything else 404s. */
+function stubJoinRoute(status: number, body: string): { bodies: string[] } {
+  const bodies: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path !== "/join") return new Response("", { status: 404 });
+    bodies.push(String(init?.body ?? ""));
+    return new Response(body, { status });
+  }) as typeof fetch;
+  return { bodies };
+}
+
+test("a shared join link with no credential yet asks who you are", async () => {
+  // The whole point of the feature: somebody with no invite, no token and no
+  // account opens ONE link and is asked a single question.
+  setURL("http://localhost/?join=s3cret");
+  const r = root();
+
+  const session = boot(r);
+
+  expect(session).toBeNull();
+  expect(r.querySelector('[data-field="join-name"]')).not.toBeNull();
+  // And emphatically NOT the dead end that used to be the only other branch.
+  expect(r.textContent).not.toContain("invite token");
+  // The form starts EMPTY and unalarmed. Both halves matter: a prefilled name
+  // is somebody else's, and an error box before anything has been tried reads
+  // as "this is already broken" to a person who has not typed a character.
+  expect(r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.value).toBe("");
+  expect(r.querySelector(".error")).toBeNull();
+});
+
+test("a stored token wins over the join link, so reopening it does not mint a second you", async () => {
+  // THE OPPOSITE PRECEDENCE FROM ?token=, and deliberately so. A ?token= link
+  // is an act of re-invitation aimed at one person, so it overrides. A ?join=
+  // link is a durable URL that everybody at the table keeps and reopens — if
+  // it won, every visit would mint a NEW participant, and the returning player
+  // would arrive as a stranger with none of their characters, while the DM
+  // watched the roster fill with duplicates nobody can tell apart.
+  localStorage.setItem("vtt.token", "tok-mine");
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubMetadata({});
+
+  const session = boot(root());
+  await settle();
+
+  expect(FakeSocket.instances).toHaveLength(1);
+  expect(FakeSocket.instances[0]!.url).toContain("token=tok-mine");
+  expect(document.querySelector('[data-field="join-name"]')).toBeNull();
+  session?.close();
+});
+
+test("joining stores the credential, strips the secret from the address bar, and dials", async () => {
+  // All three, because each has failed on its own elsewhere in this client:
+  // a token that is fetched but not stored means the next reload asks again;
+  // a secret left in the URL is a shareable credential in browser history;
+  // and a join that never dials leaves a form that looks like it worked.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  const calls: string[] = [];
+  const original = history.replaceState.bind(history);
+  history.replaceState = ((...args: unknown[]) => {
+    calls.push(String(args[2]));
+    return original(args[0] as never, args[1] as string, args[2] as string);
+  }) as typeof history.replaceState;
+  const seen = stubJoinRoute(200, JSON.stringify({ token: "tok-joined" }));
+
+  const r = root();
+  boot(r);
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.value = "Kim";
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.dispatchEvent(new Event("input"));
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  expect(seen.bodies).toHaveLength(1);
+  expect(JSON.parse(seen.bodies[0]!)).toEqual({ secret: "s3cret", displayName: "Kim" });
+  expect(localStorage.getItem("vtt.token")).toBe("tok-joined");
+  expect(calls.some((u) => u.includes("join"))).toBe(false);
+  expect(FakeSocket.instances).toHaveLength(1);
+  expect(FakeSocket.instances[0]!.url).toContain("token=tok-joined");
+
+  history.replaceState = original;
+  FakeSocket.instances[0]!.close();
+});
+
+test("a refused join leaves the form up, says why, and stores nothing", async () => {
+  // The failure that must not silently half-succeed: storing a credential the
+  // server refused would make every later reload dial with a dead token and
+  // report a connection problem instead of a closed door.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubJoinRoute(403, "gateway: this link is not accepting anyone\n");
+
+  const r = root();
+  boot(r);
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  expect(r.querySelector('[data-field="join-name"]')).not.toBeNull();
+  expect(r.querySelector(".error")!.textContent).toContain("DM");
+  expect(localStorage.getItem("vtt.token")).toBeNull();
+  expect(FakeSocket.instances).toHaveLength(0);
+  // AND THEY CAN TRY AGAIN. The in-flight flag has to be cleared on the way
+  // out of a refusal, or the button stays disabled for good and the only
+  // recovery from a closed door is reloading the page — which somebody who
+  // has just been told "ask your DM" has no reason to think of.
+  expect(r.querySelector<HTMLButtonElement>('[data-action="join"]')!.disabled).toBe(false);
+});
+
+test("Enter while a join is in flight does not mint a second you", async () => {
+  // Found reviewing my own wiring rather than by a test, which is why it is
+  // here: the double-press guard is the DISABLED BUTTON, and Enter never
+  // touches the button. Every post mints a participant, so a second one puts
+  // the same person at the table twice holding two credentials — and nothing
+  // will ever revoke the spare, because nobody knows it exists.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  const posts: string[] = [];
+  let release: (r: Response) => void = () => {};
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    posts.push(String(init?.body ?? ""));
+    // Never settles until this test says so, so the second press lands while
+    // the first is genuinely still in flight rather than after it.
+    return new Promise<Response>((r) => {
+      release = r;
+    });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  boot(r);
+  const typeInto = () => {
+    const i = r.querySelector<HTMLInputElement>('[data-field="join-name"]')!;
+    i.value = "Kim";
+    i.dispatchEvent(new Event("input"));
+    return i;
+  };
+  typeInto();
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  // The repaint rebuilt the input, so this is deliberately re-queried: asking
+  // the stale element would dispatch at a node no longer in the document and
+  // pass whether or not the guard exists.
+  // Nothing is reported as wrong while the answer is still outstanding: the
+  // submit clears any previous error before it starts, so a retry after a
+  // closed door does not sit under the old message while it runs.
+  expect(r.querySelector(".error")).toBeNull();
+
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter" }),
+  );
+  await settle();
+
+  expect(posts).toHaveLength(1);
+
+  release(new Response(JSON.stringify({ token: "tok-joined" }), { status: 200 }));
+  await settle();
+  FakeSocket.instances[0]?.close();
+});

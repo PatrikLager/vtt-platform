@@ -19,6 +19,8 @@ import {
   type Ability, type AdventureMeta, type Me,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
+import { requestJoin } from "./join";
+import { renderJoinView, type JoinViewState } from "./view/join";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 function gatewayURL(): string {
@@ -28,6 +30,7 @@ function gatewayURL(): string {
 
 export function boot(root: HTMLElement): Session | null {
   const auth = new Auth(localStorage);
+  const params = new URLSearchParams(location.search);
   // A token in the URL WINS over a stored one. The other order looks safer
   // and is not: it made re-invitation impossible, because a player who had
   // ever connected kept their old identity no matter which link they opened,
@@ -37,17 +40,83 @@ export function boot(root: HTMLElement): Session | null {
   // you are. That is the authority the link already carries — it is a bearer
   // credential, and anyone holding it can open a private window and be that
   // identity anyway — and unlike the previous behaviour it is recoverable.
-  const token = new URLSearchParams(location.search).get("token") ?? auth.get();
-  if (!token) {
-    root.textContent = "No invite token. Open the link your DM sent you.";
+  const token = params.get("token") ?? auth.get();
+  if (token) {
+    // A token arriving in the URL is stored and then removed from the address
+    // bar: leaving it there puts a bearer credential into browser history and
+    // into the Referer of every outbound link.
+    auth.set(token);
+    history.replaceState(null, "", location.pathname);
+    return startSession(root, token);
+  }
+
+  // No credential — but perhaps a way to get one. THE STORED TOKEN ABOVE WINS
+  // OVER THIS, which is the opposite precedence from ?token= and deliberately
+  // so. A ?token= link is an act of re-invitation aimed at one person, so it
+  // overrides. A ?join= link is a durable URL the whole table keeps and
+  // reopens; if it won, every visit would mint a NEW participant, and a
+  // returning player would arrive as a stranger with none of their characters
+  // while the roster filled with duplicates nobody can tell apart.
+  const secret = params.get("join");
+  if (secret !== null) {
+    runJoin(root, auth, secret);
     return null;
   }
-  // A token arriving in the URL is stored and then removed from the address
-  // bar: leaving it there puts a bearer credential into browser history and
-  // into the Referer of every outbound link.
-  auth.set(token);
-  history.replaceState(null, "", location.pathname);
 
+  root.textContent = "No invite token. Open the link your DM sent you.";
+  return null;
+}
+
+/** Ask who this person is, exchange that for their own token, then boot. */
+function runJoin(root: HTMLElement, auth: Auth, secret: string): void {
+  const state: JoinViewState = { name: "", busy: false, error: "" };
+  const paint = () =>
+    renderJoinView(root, state, {
+      // NO repaint on a keystroke: rebuilding the input mid-typing throws away
+      // the caret. The value is re-seeded from state on the paints that do
+      // happen, which is what keeps a refusal from costing them their typing.
+      onName: (v) => {
+        state.name = v;
+      },
+      onSubmit: () => void submit(),
+    });
+
+  const submit = async () => {
+    // THE DISABLED BUTTON IS NOT THE WHOLE GUARD. Enter goes to the INPUT,
+    // which is not disabled, so pressing Join and then tapping Enter would
+    // post twice — and every post mints a PARTICIPANT. The same person would
+    // be at the table twice holding two credentials, one of which nothing
+    // will ever revoke because nobody knows it exists.
+    //
+    // Disabling the input instead would be the tidier fix and is not
+    // available: a disabled control receives no keydown in a real browser,
+    // but happy-dom delivers one anyway (measured), so the assignment would
+    // be code this gate cannot observe. The guard goes where a test can reach
+    // it.
+    if (state.busy) return;
+    state.busy = true;
+    state.error = "";
+    paint();
+
+    const out = await requestJoin(location.origin, secret, state.name);
+    if (!out.ok) {
+      state.busy = false;
+      state.error = out.message;
+      paint();
+      return;
+    }
+    // Stored and stripped in the same breath as the invite path above, and for
+    // the same reason — except this URL is worse to leave lying about, because
+    // the secret in it admits ANYONE, not just the person holding it.
+    auth.set(out.token);
+    history.replaceState(null, "", location.pathname);
+    startSession(root, out.token);
+  };
+
+  paint();
+}
+
+function startSession(root: HTMLElement, token: string): Session {
   const session = new Session(gatewayURL(), token);
   let status = "connecting";
   let failure = "";
