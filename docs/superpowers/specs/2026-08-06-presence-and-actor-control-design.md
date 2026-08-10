@@ -161,6 +161,43 @@ connection opens with a fresh snapshot — which, per §4's replace semantics, i
 also what repairs any list that drifted. Presence is soft state: it is repaired
 by the next snapshot, never by the log.
 
+**AMENDED 2026-08-10: the bound is right, but a joiner must not be the one who
+waits it out.** This section argued the wait and the bound and never said WHOSE
+TIME they spend. The answer was: the joiner's. `serve` announced an arrival
+before starting that connection's own event pump, and the broadcast walks the
+registry SERIALLY, so the news of your arrival sat on the critical path of your
+own catch-up.
+
+Measured 2026-08-10: with a 2s budget and one peer whose socket had genuinely
+backed up, a joiner waited **2.018s** for its first event. At the registry the
+cost is strictly serial — one stalled peer 101ms against a 100ms budget, two
+202ms, three 302ms. With the production 3s budget and two dead tabs left open
+somewhere, a new player waits **six seconds** to see the board, having done
+nothing wrong.
+
+The announcement now happens after the pump is running. Nothing about the
+budget or the drop policy changes; the observable difference is that other
+clients learn of an arrival a little later, and a joiner no longer waits on
+ITS OWN announcement. It stays SYNCHRONOUS rather than moving to a goroutine: a
+fast disconnect could otherwise let DISCONNECTED overtake CONNECTED, and a
+client that re-adds on CONNECTED would keep a ghost for the rest of the session.
+
+**WHAT THIS DOES NOT FIX, stated because the first draft of this amendment
+claimed the joiner "sees the board at once" and that is not true.** `broadcast`
+holds the registry lock for its whole serial walk, and `joinAndSend` takes that
+same lock — before the pump exists. So a joiner arriving DURING somebody else's
+fan-out, an arrival or a departure, still blocks for the full N x budget, now
+through lock contention rather than through its own announcement. Measured
+2026-08-10: a second joiner dialling 100ms into the first's fan-out waited
+1.897s, 1.905s and 1.910s across three runs against a 2s budget — the same six
+seconds in production, arrived at by a different route.
+
+Closing that is a policy change rather than a reordering: the send is under the
+lock BY DESIGN, because deregistration takes the same lock before closing the
+channel, and that ordering is what makes "send on closed channel" impossible.
+Hoisting the send out needs the per-connection `done` channel that makes an
+abandoned send safe. Carried to the ledger rather than done here.
+
 **Both teardown paths must be covered**, and the second is the one that gets
 forgotten:
 
