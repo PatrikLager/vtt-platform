@@ -506,7 +506,8 @@ func (c *Campaign) State() *engine.State {
 // Campaign to recover. The log itself remains intact and readable through a
 // fresh Campaign even while poisoned; only this in-process projection is
 // suspect.
-// The third return value is the catch-up head — see Store.Subscribe.
+//
+// catchUpHead is the sequence catch-up ended at — see Store.Subscribe.
 func (c *Campaign) Subscribe(afterSeq int64, buffer int) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
 	return c.SubscribeWithNoProgressTimeout(afterSeq, buffer, 0)
 }

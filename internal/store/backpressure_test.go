@@ -61,10 +61,10 @@ func TestOneWedgedSubscriberDoesNotAffectTheOthers(t *testing.T) {
 	// The property the old drop policy existed to protect, and which must
 	// survive the change: no subscriber may block appends or starve its peers.
 	s := openTemp(t)
-	wedged, cancelWedged, _, _ := s.Subscribe(0, 1)
-	defer cancelWedged()
-	healthy, cancelHealthy, _, _ := s.Subscribe(0, 1)
-	defer cancelHealthy()
+	wedged, unsubscribeWedged, _, _ := s.Subscribe(0, 1)
+	defer unsubscribeWedged()
+	healthy, unsubscribeHealthy, _, _ := s.Subscribe(0, 1)
+	defer unsubscribeHealthy()
 
 	const burst = 50
 	for i := range burst {

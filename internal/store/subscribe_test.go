@@ -58,10 +58,10 @@ func TestSubscribeCatchUpThenLive(t *testing.T) {
 func TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := openTemp(t)
-		wedged, cancelWedged, _, _ := s.Subscribe(0, 1)
-		defer cancelWedged()
-		healthy, cancelHealthy, _, _ := s.Subscribe(0, 16)
-		defer cancelHealthy()
+		wedged, unsubscribeWedged, _, _ := s.Subscribe(0, 1)
+		defer unsubscribeWedged()
+		healthy, unsubscribeHealthy, _, _ := s.Subscribe(0, 16)
+		defer unsubscribeHealthy()
 
 		for i := range 4 {
 			env := newEnv(string(rune('a' + i)))
