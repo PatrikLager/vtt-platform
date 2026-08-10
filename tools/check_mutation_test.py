@@ -105,6 +105,127 @@ class MutationGateTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", err)
 
+    def stale_line(self, err):
+        """The one 'no longer survives' line, so a hint assertion is scoped to it.
+
+        Asserting against the whole stream is how these went vacuous: a
+        location named by the hint is ALSO named by its own "SURVIVED and is
+        not adjudicated" line, so `assertIn(loc, err)` passes whether the hint
+        mentions it or not.
+        """
+        lines = [l for l in err.splitlines() if "no longer survives" in l]
+        self.assertEqual(len(lines), 1, f"want exactly one stale-entry line, got {lines}")
+        return lines[0]
+
+    # --- a stale entry beside a same-file survivor gets a HINT, not a claim ---
+    #
+    # The delete-the-adjudication reflex is the harm being addressed. "This
+    # entry no longer survives, remove it" reads as an instruction, and when an
+    # edit has merely SHIFTED the mutant, obeying it throws away reasoning and
+    # leaves the survivor unexplained. Measured: that happened four times in one
+    # day, across both gates.
+    #
+    # The TS gate can go further and NAME the move, because its keys carry the
+    # replacement text. The Go keys do not, so "same file, same mutator" cannot
+    # tell a moved mutant from a different one a line away — which is precisely
+    # what test_adjudication_is_matched_on_all_three_fields above pins. So this
+    # side gets a hint that changes the MESSAGE and never the verdict.
+
+    def test_stale_entry_hints_at_a_same_file_survivor(self):
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
+        code, _, err = self.gate(eq, m)
+
+        self.assertEqual(code, 1)
+        hint = self.stale_line(err)
+        self.assertIn("a.go:14:5", hint)
+        self.assertIn("RE-KEY", hint)
+        # A HINT. It must say so, or the next reader takes it for a match and
+        # re-keys an adjudication onto a mutant nobody judged.
+        self.assertIn("hint, not a match", err)
+
+    def test_the_hint_does_not_excuse_anything(self):
+        """The verdict is unchanged: BOTH are still reported, and it still fails.
+
+        This is the invariant the first attempt at this broke. Pairing the two
+        as a move made the survivor stop being reported, which silently
+        pre-approved a mutant nobody had judged — the exact failure the gate
+        exists to prevent, reached by way of a convenience.
+        """
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
+        code, _, err = self.gate(eq, m)
+
+        self.assertEqual(code, 1)
+        self.assertIn("not adjudicated", err)   # the survivor, still unexcused
+        self.assertIn("no longer survives", err)  # the stale entry, still stale
+
+    def test_no_hint_when_nothing_could_have_moved(self):
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        for survivor in [("ARITHMETIC_BASE", "a.go:14:5"),  # other mutator
+                         ("CONDITIONALS_BOUNDARY", "b.go:14:5")]:  # other file
+            with self.subTest(survivor):
+                code, _, err = self.gate(eq, {"./p/": gremlins_output(survivor)})
+                self.assertEqual(code, 1)
+                self.assertNotIn("RE-KEY", err)
+
+    def test_the_hint_names_every_candidate(self):
+        """Never one. Picking a favourite is the guess this design refuses.
+
+        Asserted against the HINT LINE, not the whole stream. Both locations
+        appear in err regardless — each has its own "SURVIVED and is not
+        adjudicated" line — so `assertIn(loc, err)` was satisfied with the hint
+        entirely absent. Proven: naming a single candidate left the suite green.
+        """
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"),
+                                     ("CONDITIONALS_BOUNDARY", "a.go:20:9"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        hint = self.stale_line(err)
+        self.assertIn("a.go:14:5", hint)
+        self.assertIn("a.go:20:9", hint)
+
+    def test_no_hint_across_packages(self):
+        """Same file, same mutator, DIFFERENT package is not a candidate.
+
+        Without this, dropping the package check makes the gate point a RE-KEY
+        at a mutant in another package entirely — and the rest of the suite
+        stays green.
+        """
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./q/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
+        code, _, err = self.gate(eq, m, packages=("./q/",))
+        self.assertEqual(code, 1)
+        self.assertNotIn("RE-KEY", err)
+
+    def test_a_package_written_differently_is_diagnosed_as_such(self):
+        """The same location under a differently-spelled package is not a move.
+
+        read_equivalents takes the package verbatim while survivors carry the
+        normalised name, so `./p/` in the file matches nothing and BOTH halves
+        are reported — loudly, but with no clue that the two lines are the same
+        mutant. That cost a real debugging session: the first attempt at
+        pairing silently matched nothing for exactly this reason.
+        """
+        eq = equivalents("./p/  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        code, _, err = self.gate(eq, m)
+
+        self.assertEqual(code, 1)
+        hint = self.stale_line(err)
+        # BOTH spellings, so the reader can see the difference rather than
+        # being told there is one. The correction alone leaves them hunting.
+        self.assertIn("'./p/'", hint)
+        self.assertIn("'p'", hint)
+        # Stated as a DEDUCTION, not hedged. If the spellings agreed the keys
+        # would be equal and this entry would not be stale, so the mismatch is
+        # certain — and hedging certain, actionable advice invites the reader
+        # to ignore it.
+        self.assertIn("A DEDUCTION", hint)
+        # Still not excused: the entry does not apply, and the gate says so.
+        self.assertIn("not adjudicated", err)
+
     # --- an equivalence claim without a stated reason is not a claim ---
 
     def test_entry_without_a_reason_is_fatal(self):
