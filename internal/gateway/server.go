@@ -403,12 +403,6 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 	defer leavePresence()
 
-	// Only the participant's FIRST connection is an arrival. A second device
-	// must not announce someone who is already at the table.
-	if firstConnection {
-		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
-	}
-
 	var closing atomic.Bool
 
 	pumpDone := make(chan struct{})
@@ -432,11 +426,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// drop an event: losing a frame is worse than a moment's delay in
 			// removing somebody, and the very next event catches them anyway.
 			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
-				// The same force-close the end of this loop uses, not a second
-				// teardown route: conn.Read errors, serve unwinds, and presence
-				// deregisters through the one path it already had.
+				// CLOSED WITH A REASON, not force-closed.
+				//
+				// There are two revocation paths — this one and the command
+				// loop's — and they used to end the connection differently:
+				// the command loop sends StatusPolicyViolation with a reason,
+				// this one dropped the socket. Which one fired was a race, so
+				// a revoked participant was told why SOMETIMES. Measured 5 in
+				// 30 runs, and the winner shifts with unrelated timing: the
+				// person's client showed "closed" with nothing to explain it.
+				//
+				// conn.Close rather than shutdown(): shutdown waits on
+				// pumpDone and this IS the pump, so calling it here would
+				// deadlock. Close only writes the close frame; the read loop
+				// then unwinds through its own error path exactly as before,
+				// and serve's deferred CloseNow still does the final cleanup.
+				// coder/websocket serialises writes internally, so a frame
+				// already going out finishes first.
 				if !closing.Load() {
-					_ = conn.CloseNow()
+					_ = conn.Close(websocket.StatusPolicyViolation,
+						"gateway: credential no longer valid")
 				}
 				return
 			}
@@ -477,6 +486,37 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			_ = conn.CloseNow()
 		}
 	}()
+
+	// AFTER the pump is running, and that ordering is the whole point.
+	//
+	// Announcing an arrival walks the registry SERIALLY, waiting up to
+	// presenceSendBudget on each connection. Done before the pump started, the
+	// news of your arrival sat on the critical path of your own catch-up: N
+	// wedged peers cost N x budget, paid by the person joining, who has done
+	// nothing wrong. MEASURED: with a 2s budget and one peer whose socket had
+	// genuinely backed up, a joiner waited 2.018s for its first event; at the
+	// registry, one stalled peer costs 101ms against a 100ms budget, two 202ms,
+	// three 302ms. With the production 3s budget and two dead tabs left open
+	// somewhere, a new player waits six seconds to see the board.
+	//
+	// The bound itself is deliberate and unchanged (spec §4.1): a client that
+	// is merely BUSY must keep its frame, and an instant drop was tried and was
+	// wrong. What moved is WHO WAITS. The announcement is other people's news;
+	// the catch-up is the joiner's own reason for connecting.
+	//
+	// SYNCHRONOUS, not a goroutine, and that is deliberate too. In a goroutine
+	// a fast disconnect could let leavePresence broadcast DISCONNECTED before
+	// this CONNECTED landed, and a client that re-adds on CONNECTED would keep
+	// a ghost for the rest of the session — the same inversion that made
+	// announcePromotion take one lock hold instead of three. So the read loop
+	// below still waits for this; only the pump no longer does, and a joiner
+	// with nothing on screen yet has nothing to send.
+	//
+	// Only the participant's FIRST connection is an arrival. A second device
+	// must not announce someone who is already at the table.
+	if firstConnection {
+		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+	}
 
 	// shutdown tears the connection's helper goroutines down in dependency
 	// order: mark this as an intentional close (so the pump's post-loop

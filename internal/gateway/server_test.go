@@ -1422,15 +1422,24 @@ func TestARevokedSpectatorStopsSeeingTheTable(t *testing.T) {
 			continue
 		}
 		// A TIMEOUT is not a close, and conflating the two is what made the
-		// sibling test below pass under an injection that did nothing. But the
-		// witness here cannot be a close FRAME: the pump force-closes with
-		// CloseNow, deliberately — it cannot run the full shutdown from inside
-		// itself, so it drops the connection and lets conn.Read unwind serve.
-		// The client sees an abrupt end, not a status. So: anything except the
-		// deadline expiring means the connection ended.
+		// sibling test below pass under an injection that did nothing.
 		if timedOut {
 			t.Fatal("the connection did not end — a revoked spectator is still being served, " +
 				"and no command of theirs can be refused instead, because they can issue none")
+		}
+		// AND THEY ARE TOLD WHY. This is the ONLY path that can end a
+		// spectator's connection — they issue no commands, so the command
+		// loop's revocation check never runs for them — and it used to drop
+		// the socket with no close frame. A person whose client says "closed"
+		// with no reason cannot tell being thrown out from a flaky network,
+		// and the two want completely different responses from them.
+		//
+		// The two revocation paths said different things and which one fired
+		// was a race: measured 5 failures in 30 runs of the sibling test,
+		// shifting with unrelated timing elsewhere in serve.
+		if status := websocket.CloseStatus(err); status != websocket.StatusPolicyViolation {
+			t.Fatalf("the connection ended with status %v, want StatusPolicyViolation — a "+
+				"revoked spectator must be told why, not merely dropped (err: %v)", status, err)
 		}
 		return
 	}
