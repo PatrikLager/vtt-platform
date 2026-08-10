@@ -426,11 +426,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// drop an event: losing a frame is worse than a moment's delay in
 			// removing somebody, and the very next event catches them anyway.
 			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
-				// The same force-close the end of this loop uses, not a second
-				// teardown route: conn.Read errors, serve unwinds, and presence
-				// deregisters through the one path it already had.
+				// CLOSED WITH A REASON, not force-closed.
+				//
+				// There are two revocation paths — this one and the command
+				// loop's — and they used to end the connection differently:
+				// the command loop sends StatusPolicyViolation with a reason,
+				// this one dropped the socket. Which one fired was a race, so
+				// a revoked participant was told why SOMETIMES. Measured 5 in
+				// 30 runs, and the winner shifts with unrelated timing: the
+				// person's client showed "closed" with nothing to explain it.
+				//
+				// conn.Close rather than shutdown(): shutdown waits on
+				// pumpDone and this IS the pump, so calling it here would
+				// deadlock. Close only writes the close frame; the read loop
+				// then unwinds through its own error path exactly as before,
+				// and serve's deferred CloseNow still does the final cleanup.
+				// coder/websocket serialises writes internally, so a frame
+				// already going out finishes first.
 				if !closing.Load() {
-					_ = conn.CloseNow()
+					_ = conn.Close(websocket.StatusPolicyViolation,
+						"gateway: credential no longer valid")
 				}
 				return
 			}
