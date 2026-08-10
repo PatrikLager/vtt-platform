@@ -186,6 +186,80 @@ def read_equivalents(path):
     return entries
 
 
+def _norm_pkg(name):
+    """Normalise a package as written to the form survivors carry.
+
+    read_equivalents takes the package VERBATIM while the survivor loop stores
+    `pkg.strip("./").rstrip("/")`, so `./p/` and `p` are different keys. That is
+    a real footgun and the first attempt at pairing here silently matched
+    nothing because of it — so anything comparing the two sides normalises
+    both, and the hint below diagnoses the mismatch by name rather than
+    leaving somebody to find it.
+    """
+    return name.strip("./").rstrip("/")
+
+
+def stale_entry_hint(name, location, mutator, unadjudicated):
+    """A HINT that a stale adjudication may be the same mutant, moved. Never a claim.
+
+    THE HARM THIS ADDRESSES is the delete-the-adjudication reflex. "No longer
+    survives, remove the entry" reads as an instruction, and when an edit has
+    merely SHIFTED a mutant, obeying it throws away reasoning somebody did and
+    leaves the survivor unexplained. That happened four times in one day.
+
+    THE TS GATE CAN DO BETTER and this one deliberately does not. Over there the
+    key carries the replacement text, so a move can be identified and NAMED.
+    Here the key is (package, file:line:col, mutator) with no replacement, so
+    "same file, same mutator" cannot tell a moved mutant from a different one a
+    line away — and check_mutation_test.py's
+    test_adjudication_is_matched_on_all_three_fields exists precisely to pin
+    that a survivor one line from an adjudication is a DIFFERENT claim. An
+    earlier attempt paired them anyway and broke that test; editing the test to
+    fit would have been weakening a gate's own test to pass a change.
+
+    So this returns TEXT and nothing else. Both the stale entry and the
+    unadjudicated survivor are still reported, and the gate still fails. The
+    reader gets a lead; the gate keeps its verdict.
+    """
+    pkg = _norm_pkg(name)
+    file_ = location.rsplit(":", 2)[0]
+
+    spelling, elsewhere = False, []
+    for other_name, other_loc, other_mutator in unadjudicated:
+        if _norm_pkg(other_name) != pkg or other_mutator != mutator:
+            continue
+        if other_loc == location:
+            # Same normalised package, same location, same mutator — and the
+            # entry is stale while this one is unadjudicated. The two package
+            # strings must therefore differ VERBATIM. Checked rather than
+            # assumed, so a future caller passing an identical spelling cannot
+            # be told its spelling is wrong.
+            spelling = spelling or other_name != name
+        elif other_loc.rsplit(":", 2)[0] == file_:
+            elsewhere.append(other_loc)
+
+    if spelling:
+        # NOT a move, and not a guess either. If the two spellings agreed the
+        # keys would be equal, the survivor would be claimed and this entry
+        # would not be stale — so the mismatch is deduced, not suspected.
+        # Hedging it would invite the reader to ignore correct, actionable
+        # advice, which is why the "hint, not a match" wording belongs on the
+        # other branch and not this one.
+        return (f". THE SAME MUTANT SURVIVES UNADJUDICATED AT THAT EXACT LOCATION: this entry "
+                f"spells the package {name!r} while survivors carry {pkg!r}, so it matches "
+                f"nothing. Write it as {pkg!r} rather than deleting the entry. A DEDUCTION, not "
+                f"a guess: were the spellings equal the keys would be equal, the survivor would "
+                f"be claimed, and this entry would not be stale.")
+    if elsewhere:
+        where = ", ".join(sorted(set(elsewhere)))
+        return (f". NOTE: {mutator} also survives unadjudicated in that file, at {where} — if an "
+                f"edit SHIFTED this mutant, RE-KEY this entry and re-check that its reason still "
+                f"holds, rather than deleting it. This is a hint, not a match: unlike the TS gate, "
+                f"these keys carry no replacement text, so same-file-same-mutator cannot tell a "
+                f"moved mutant from a different one a line away.")
+    return ""
+
+
 def parse_survivors(output):
     """Return [(location, mutator)] from one gremlins run's output."""
     survivors = []
@@ -310,7 +384,7 @@ def unresolvable_packages(packages, root="."):
     """
     bad = []
     for pkg in packages:
-        rel = pkg.strip("./").rstrip("/")
+        rel = _norm_pkg(pkg)
         declared = declared_package(os.path.join(root, rel))
         if declared is None:
             # No Go source to read. run_package will fail on its own terms;
@@ -430,9 +504,9 @@ def gremlins_args(pkg, packages=PACKAGES):
     """
     args = ["go", "tool", "gremlins", "unleash", pkg,
             "--workers", "1", "--timeout-coefficient", TIMEOUT_COEFFICIENT]
-    parent = pkg.strip("./").rstrip("/")
+    parent = _norm_pkg(pkg)
     for other in packages:
-        child = other.strip("./").rstrip("/")
+        child = _norm_pkg(other)
         # Trailing slash on the prefix so internal/rulesets is not read as a
         # child of internal/rules.
         if child != parent and child.startswith(parent + "/"):
@@ -489,7 +563,7 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
     unadjudicated = []
     claimed = set()
     for pkg in packages:
-        name = pkg.strip("./").rstrip("/")
+        name = _norm_pkg(pkg)
         try:
             survivors, timed_out = run_package(pkg, runner)
         except EquivalentsError as exc:
@@ -524,7 +598,8 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
     for name, location, mutator in sorted(set(equivalents) - claimed):
         print(f"check:mutation: {equivalents_path} lists {name} {location} {mutator}, which no "
               f"longer survives — remove the entry so it cannot pre-approve a future survivor "
-              f"at that location", file=err)
+              f"at that location{stale_entry_hint(name, location, mutator, unadjudicated)}",
+              file=err)
         failed = True
 
     if failed:
