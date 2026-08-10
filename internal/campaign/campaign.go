@@ -507,14 +507,14 @@ func (c *Campaign) State() *engine.State {
 // fresh Campaign even while poisoned; only this in-process projection is
 // suspect.
 // The third return value is the catch-up head — see Store.Subscribe.
-func (c *Campaign) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), int64, error) {
+func (c *Campaign) Subscribe(afterSeq int64, buffer int) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
 	return c.SubscribeWithNoProgressTimeout(afterSeq, buffer, 0)
 }
 
 // SubscribeWithNoProgressTimeout is Subscribe with an explicit liveness budget
 // — see store.Store.SubscribeWithNoProgressTimeout. A non-positive noProgress
 // means the store's default.
-func (c *Campaign) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (<-chan *vttv1.Envelope, func(), int64, error) {
+func (c *Campaign) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
 	c.mu.Lock()
 	poisoned := c.poisoned
 	c.mu.Unlock()

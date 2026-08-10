@@ -295,7 +295,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		defer s.onServeDone()
 	}
 
-	events, cancel, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(after, s.buffer, s.noProgress)
+	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(after, s.buffer, s.noProgress)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -357,7 +357,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// the caller hangs until Ctrl-C instead of getting an error. Tear the
 		// writer down first (nothing else has started yet) so it cannot
 		// outlive the connection.
-		cancel()
+		unsubscribe()
 		close(outCh)
 		<-writerDone
 		_ = conn.Close(websocket.StatusInternalError, "gateway: encode catch-up head failed")
@@ -524,7 +524,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// wait for the pump to drain it, THEN close outCh (safe — the pump is
 	// guaranteed done, so nothing sends to outCh after this point), and
 	// wait for the writer to drain outCh and exit. Safe to call after the
-	// pump has already force-closed the connection on overflow: cancel,
+	// pump has already force-closed the connection on overflow: unsubscribe,
 	// CloseNow, and channel-close are all idempotent here.
 	shutdown := func() {
 		// Presence FIRST, before close(outCh). leave takes the registry lock,
@@ -549,7 +549,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// return paths that never reach shutdown.
 		leavePresence()
 		closing.Store(true)
-		cancel()
+		unsubscribe()
 		<-pumpDone
 		close(outCh)
 		<-writerDone

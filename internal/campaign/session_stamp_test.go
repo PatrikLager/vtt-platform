@@ -195,11 +195,11 @@ func TestSessionStampClearsClosedSessionIDOnSubsequentEvent(t *testing.T) {
 
 	must(t, c, cenv(nextID(), &vttv1.SessionEnded{}))
 
-	ch, cancel, _, err := c.Subscribe(0, 8)
+	ch, unsubscribe, _, err := c.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	afterEnd := cenv(nextID(), &vttv1.ActorAdded{
 		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
@@ -322,11 +322,11 @@ func TestSessionStampUndoMarkerCarriesOpenSessionID(t *testing.T) {
 	c, moveSeq := seedMovedToken(t)
 	sid := c.State().Sessions[0].ID
 
-	ch, cancel, _, err := c.Subscribe(moveSeq, 4)
+	ch, unsubscribe, _, err := c.Subscribe(moveSeq, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	if _, err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
 		t.Fatal(err)

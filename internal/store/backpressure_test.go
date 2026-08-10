@@ -33,11 +33,11 @@ func TestABurstLargerThanTheBufferDoesNotDropAKeepingUpSubscriber(t *testing.T) 
 	s := openTemp(t)
 	// A deliberately tiny buffer: the point is that buffer size no longer
 	// decides who survives a batch.
-	ch, cancel, _, err := s.Subscribe(0, 4)
+	ch, unsubscribe, _, err := s.Subscribe(0, 4)
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	// Publish the whole burst with NOBODY reading — the shape of an atomic
 	// AppendBatch, and deterministic: under the old policy the fifth event
@@ -99,8 +99,8 @@ func TestOneWedgedSubscriberDoesNotAffectTheOthers(t *testing.T) {
 func TestASubscriberThatNeverReadsIsDroppedAfterTheNoProgressTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := openTemp(t)
-		ch, cancel, _, _ := s.Subscribe(0, 1)
-		defer cancel()
+		ch, unsubscribe, _, _ := s.Subscribe(0, 1)
+		defer unsubscribe()
 
 		for i := range 8 {
 			env := newEnv(envID(i))
@@ -146,8 +146,8 @@ func TestASubscriberThatKeepsConsumingIsNeverDropped(t *testing.T) {
 		// select with NO TIMER ARMED — the test would claim to exercise the
 		// budget while never arming it. Unbuffered forces the hand-off to
 		// park, which is the only state in which the timer runs at all.
-		ch, cancel, _, _ := s.Subscribe(0, 0)
-		defer cancel()
+		ch, unsubscribe, _, _ := s.Subscribe(0, 0)
+		defer unsubscribe()
 
 		for i := range 6 {
 			env := newEnv(envID(i))

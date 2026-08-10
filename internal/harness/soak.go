@@ -380,10 +380,6 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	return rep, nil
 }
 
-// deniedLeakLine formats a leak against the outstanding denied actions.
-// Nothing orders consecutive denials relative to each other — they produce no
-// events — so the EARLIEST carries the failure and the line discloses the
-// range instead of implying the leak was pinned to one action.
 // settleTrailingDenials resolves the denials that have no accepted action
 // after them, the only ones that fall back to a bounded wait. Extracted from
 // RunSoak rather than inlined: the second case below pushed that function past
@@ -408,6 +404,10 @@ func settleTrailingDenials(rep *SoakReport, histories *soakHistories, pending []
 	}
 }
 
+// deniedLeakLine formats a leak against the outstanding denied actions.
+// Nothing orders consecutive denials relative to each other — they produce no
+// events — so the EARLIEST carries the failure and the line discloses the
+// range instead of implying the leak was pinned to one action.
 func deniedLeakLine(pending []*deniedPending, leaked []string) string {
 	first := pending[0]
 	line := fmt.Sprintf("[action %d] by=%s kind=%s FAIL: unexpected broadcast observed by %s after a denied command",
@@ -522,15 +522,6 @@ func highestSequence(envs []*vttv1.Envelope) int64 {
 	return head
 }
 
-// drainToSequence collects envelopes until the history has reached `head` AND
-// then gone quiet for `window`, or until `timeout` elapses. The bool reports
-// whether `head` was reached.
-//
-// The two conditions are both needed. Waiting only for `head` would stop mid
-// tail and drop envelopes that arrive after it; waiting only for quiet is the
-// bug this replaced. A head of 0 (an empty observer history) is reached
-// immediately, which degrades this to the old quiescent drain — correctly, as
-// there is then nothing to catch up to.
 // drainFreshCatchUp replays the whole log into a fresh connection, RESUMING
 // across the overflow disconnects the client is designed to produce.
 //
@@ -599,6 +590,15 @@ func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration)
 	return all, false
 }
 
+// drainToSequence collects envelopes until the history has reached `head` AND
+// then gone quiet for `window`, or until `timeout` elapses. The bool reports
+// whether `head` was reached.
+//
+// The two conditions are both needed. Waiting only for `head` would stop mid
+// tail and drop envelopes that arrive after it; waiting only for quiet is the
+// bug this replaced. A head of 0 (an empty observer history) is reached
+// immediately, which degrades this to the old quiescent drain — correctly, as
+// there is then nothing to catch up to.
 func drainToSequence(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)

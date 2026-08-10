@@ -175,11 +175,11 @@ func TestAppendBatchSubscriberSeesContiguousRunUnderConcurrentAppend(t *testing.
 	// review: ~60% failure without -race, ~7% with -race, "want 3 batch
 	// deliveries, got 0"). Matches the same from-the-head pattern
 	// TestUndoRetractsWholeAppendBatchRange already uses.
-	ch, cancel, _, err := c.Subscribe(seedSeq, 64)
+	ch, unsubscribe, _, err := c.Subscribe(seedSeq, 64)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	const foreignCount = 12
 	batchIDs := map[string]bool{}

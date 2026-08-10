@@ -28,11 +28,11 @@ func TestSubscribeCatchUpThenLive(t *testing.T) {
 	s.Append(newEnv("e1"))
 	s.Append(newEnv("e2"))
 
-	ch, cancel, _, err := s.Subscribe(1, 8)
+	ch, unsubscribe, _, err := s.Subscribe(1, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 	if got := recv(t, ch); got.EventId != "e2" {
 		t.Fatalf("catch-up: got %s, want e2", got.EventId)
 	}
@@ -117,11 +117,11 @@ func TestSubscribeAcceptsZeroBuffer(t *testing.T) {
 	s.Append(newEnv("e1"))
 	s.Append(newEnv("e2"))
 
-	ch, cancel, _, err := s.Subscribe(0, 0)
+	ch, unsubscribe, _, err := s.Subscribe(0, 0)
 	if err != nil {
 		t.Fatalf("want buffer=0 accepted (only negative buffers are invalid), got error: %v", err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	if got := recv(t, ch); got.EventId != "e1" {
 		t.Fatalf("catch-up: got %s, want e1", got.EventId)
@@ -143,11 +143,11 @@ func TestSubscribeRejectsNegativeBuffer(t *testing.T) {
 // nothing until the caller explicitly calls Notify.
 func TestAppendDoesNotNotify(t *testing.T) {
 	s := openTemp(t)
-	ch, cancel, _, err := s.Subscribe(0, 4)
+	ch, unsubscribe, _, err := s.Subscribe(0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	env := newEnv("e1")
 	if _, err := s.Append(env); err != nil {
@@ -180,11 +180,11 @@ func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 
 	// Subscribe catches up to seq 1 (the appended-but-not-yet-notified
 	// event) via history preload.
-	ch, cancel, _, err := s.Subscribe(0, 8)
+	ch, unsubscribe, _, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 	if got := recv(t, ch); got.EventId != "e1" {
 		t.Fatalf("catch-up: got %s, want e1", got.EventId)
 	}
@@ -224,11 +224,11 @@ func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 // stop proving anything about the guard.
 func TestNotifyIgnoresZeroSequence(t *testing.T) {
 	s := openTemp(t)
-	ch, cancel, _, err := s.Subscribe(-1, 8)
+	ch, unsubscribe, _, err := s.Subscribe(-1, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	s.Notify(&vttv1.Envelope{
 		EventId:   "zero-seq",
@@ -259,8 +259,8 @@ func TestNotifyIgnoresZeroSequence(t *testing.T) {
 
 func TestUnsubscribeStopsDelivery(t *testing.T) {
 	s := openTemp(t)
-	ch, cancel, _, _ := s.Subscribe(0, 4)
-	cancel()
+	ch, unsubscribe, _, _ := s.Subscribe(0, 4)
+	unsubscribe()
 	after := newEnv("after")
 	s.Append(after)
 	s.Notify(after)
