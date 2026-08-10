@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -205,6 +206,24 @@ var manifest = []toolSpec{
 		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
 		descriptor:  (&vttv1.RevokeActorControl{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.PromoteParticipant",
+		name:        "promote_participant",
+		description: "Change what a participant is ALLOWED to do. Someone who joined through the shared link arrives as a spectator and can only watch; promote them to \"player\" so they can be given a character and act. role accepts ONLY \"player\" or \"spectator\" — promotion can never reach dm or agent, because the join link would otherwise be a route to full authority in two steps. Minting a DM is a deliberate out-of-band act (`vtt invite`). This changes IDENTITY, not the campaign, so it writes no event.",
+		descriptor:  (&vttv1.PromoteParticipant{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.SetJoinDoor",
+		name:        "set_join_door",
+		description: "Open or close the table's shared join link. While it is OPEN, anyone holding the link can join as a spectator without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",
+		descriptor:  (&vttv1.SetJoinDoor{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.RotateJoinLink",
+		name:        "rotate_join_link",
+		description: "Replace the shared join link's secret. Use this when a link has LEAKED: the old link stops admitting anyone, while everybody already at the table keeps their own credential and their characters. Independent of the door — rotating does not open or close it. DM/agent only. Writes no event.",
+		descriptor:  (&vttv1.RotateJoinLink{}).ProtoReflect().Descriptor(),
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {
@@ -287,6 +306,27 @@ func valueSchemaWithOverrides(f protoreflect.FieldDescriptor, overrides map[prot
 		return map[string]any{"type": "boolean"}
 	case protoreflect.Int32Kind, protoreflect.Int64Kind:
 		return map[string]any{"type": "integer"}
+	case protoreflect.EnumKind:
+		// protojson carries enum values as their NAMES, so the schema is a
+		// string constrained to those names.
+		//
+		// The zero value is dropped when — and only when — it is the proto3
+		// UNSPECIFIED sentinel. That value exists so the wire can distinguish
+		// "I mean the false one" from "I forgot to say", and every command
+		// that reads one refuses it; advertising it to a model would be
+		// offering a choice that can only fail. The name check matters: an
+		// enum whose zero carries real meaning keeps every value, rather than
+		// quietly losing one to a rule about a convention it does not follow.
+		vals := f.Enum().Values()
+		names := make([]any, 0, vals.Len())
+		for i := range vals.Len() {
+			v := vals.Get(i)
+			if v.Number() == 0 && strings.HasSuffix(string(v.Name()), "_UNSPECIFIED") {
+				continue
+			}
+			names = append(names, string(v.Name()))
+		}
+		return map[string]any{"type": "string", "enum": names}
 	case protoreflect.MessageKind:
 		if f.Message().FullName() == "google.protobuf.Struct" {
 			return map[string]any{"type": "object"}

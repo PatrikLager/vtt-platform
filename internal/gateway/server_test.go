@@ -1,8 +1,12 @@
 package gateway_test
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -35,6 +39,16 @@ type gwFixture struct {
 	dmToken, agentToken, spectatorToken string
 	playerToken, otherPlayerToken       string
 	playerID                            string
+
+	// ids is exposed for the same reason campaign is: promotion changes
+	// IDENTITY, not campaign state, so the only place its effect is visible is
+	// the participants table.
+	ids *identity.DB
+
+	// path is the campaign file. A test that needs to break identity
+	// OPERATIONALLY (rather than revoke somebody, which is a credential fact)
+	// reaches the table through here.
+	path string
 
 	// campaign is exposed so a test can assert on FOLDED STATE rather than on
 	// the result frame alone. A command can answer ok=true and still not mean
@@ -126,6 +140,8 @@ func newGWFixture(t *testing.T) *gwFixture {
 		dmToken: dmToken, agentToken: agentToken, spectatorToken: spectatorToken,
 		playerToken: playerToken, otherPlayerToken: otherPlayerToken, playerID: playerID,
 		campaign: c,
+		ids:      ids,
+		path:     path,
 	}
 }
 
@@ -1075,4 +1091,756 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	if ids := f.campaign.State().Actors["a1"].GetControllerIds(); len(ids) != 1 {
 		t.Fatalf("controller_ids = %v, want the grant undone", ids)
 	}
+}
+
+// TestDMPromotesASpectatorOverTheWire is the seam: authorized, converted,
+// APPLIED. The branch this work follows shipped grant_actor_control
+// authorized and dead because nothing tested past the permission check, so
+// this asserts on IDENTITY — the only place a role change is visible — rather
+// than on the result frame.
+func TestDMPromotesASpectatorOverTheWire(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watcher.Role != identity.RoleSpectator {
+		t.Fatalf("fixture drifted: %q", watcher.Role)
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "promote-1",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: watcher.ID, Role: string(identity.RolePlayer),
+			},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %q", res.GetError())
+	}
+
+	// The SAME token now carries the new role — which is what a reconnect will
+	// read, and the whole reason role stays beside the credential.
+	after, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Role != identity.RolePlayer {
+		t.Fatalf("role = %q, want player — the command was accepted but changed nothing",
+			after.Role)
+	}
+}
+
+func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
+	// End to end, because the escalation guard lives in Authorize and a
+	// refactor could move the check past it.
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "escalate-1",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: watcher.ID, Role: string(identity.RoleDM),
+			},
+		},
+	})
+	if res := readResult(t, dm); res.GetOk() {
+		t.Fatal("promotion to dm must be refused — the shared join link would otherwise " +
+			"reach full authority in two steps")
+	}
+	after, _ := f.ids.Verify(f.spectatorToken)
+	if after.Role != identity.RoleSpectator {
+		t.Fatalf("a refused promotion still changed the role to %q", after.Role)
+	}
+}
+
+// TestAPromotionBitesWithoutReconnecting is what J4 exists for (spec §3.2).
+//
+// Everyone who joins through the shared link arrives as a SPECTATOR, so if a
+// promotion only took effect on reconnect, a reconnect would sit on the
+// critical path of every single person who ever joins — making the shared link
+// more cumbersome than the per-person invites it replaces.
+func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, watcher)
+	expectPresenceSnapshot(t, watcher)
+
+	// As a spectator, narrating is refused.
+	sendCommand(t, watcher, &vttv1.ClientCommand{
+		RequestId: "before",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+	})
+	if res := readResult(t, watcher); res.GetOk() {
+		t.Fatal("a spectator must not be able to narrate")
+	}
+
+	// The DM promotes them, on a DIFFERENT connection.
+	me, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "promote",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: me.ID, Role: string(identity.RolePlayer),
+			},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %q", res.GetError())
+	}
+
+	// SAME connection, no reconnect: it now works.
+	sendCommand(t, watcher, &vttv1.ClientCommand{
+		RequestId: "after",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+	})
+	if res := readResult(t, watcher); !res.GetOk() {
+		t.Fatalf("a promoted participant must be able to act on their EXISTING connection, "+
+			"got %q — otherwise everyone who joins must reconnect immediately after joining",
+			res.GetError())
+	}
+}
+
+// TestRevokingRemovesSomebodyWhoIsStillConnected closes a hole that predates
+// this branch: the only Verify in the WS path ran at CONNECT, so a revoked
+// participant kept playing — moving tokens, narrating — until they chose to
+// disconnect. Throwing someone out of a table did nothing without their
+// cooperation.
+func TestRevokingRemovesSomebodyWhoIsStillConnected(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.playerToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	p, err := f.ids.Verify(f.playerToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	before := f.head(t)
+
+	// Their very next action must not land.
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "after-revoke",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "still here"}},
+	})
+	// Drain until the connection ENDS rather than asserting on the very next
+	// frame: anything already queued for this connection is still written out
+	// on the way down, so "the next read errors" would be a race.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("a revoked participant must be cut off on their next command, not left " +
+				"playing until they decide to leave")
+		}
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, _, err := conn.Read(ctx)
+		cancel()
+		if err == nil {
+			continue // a frame that was already queued; keep draining
+		}
+		// A CLOSE, not a timeout. The first version of this loop returned on
+		// any error, so when the server did NOT hang up the read simply
+		// expired and the test read that as success — it passed under an
+		// injection that ignored the lookup failure entirely.
+		if websocket.CloseStatus(err) == -1 {
+			t.Fatalf("the connection did not close — a revoked participant is still being "+
+				"served (read ended with %v, not a websocket close)", err)
+		}
+		break
+	}
+
+	// AND THE COMMAND ITSELF NEVER LANDED. The doc comment above claims "their
+	// very next action must not land", and until this the test only checked
+	// that the socket eventually closed — so failing open (run the command
+	// with the cached participant, THEN close) passed, with the revoked
+	// player's narration appended to the permanent log on the way out. Closing
+	// the door after somebody has already walked through it is not a lock.
+	//
+	// The LOG is the witness, not folded state: NarrationAdded deliberately
+	// does not mutate state, so campaign.State() cannot tell these apart.
+	if after := f.head(t); after != before {
+		t.Fatalf("the revoked participant's command was APPENDED anyway (log head %d → %d): "+
+			"they were cut off, but only after their action had landed permanently", before, after)
+	}
+}
+
+// head reads the campaign's current log head through a throwaway connection.
+//
+// It exists because NarrationAdded does NOT mutate folded state, so
+// campaign.State() cannot answer "did that command actually land?". The log
+// can, and the catch-up head is the log's sequence in one frame.
+func (f *gwFixture) head(t *testing.T) int64 {
+	t.Helper()
+	c := f.dial(f.dmToken, 0)
+	defer c.Close(websocket.StatusNormalClosure, "")
+	return expectCatchUpHead(t, c)
+}
+
+// TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody separates the
+// two things a failed Lookup can mean.
+//
+// Re-resolving per command put identity I/O on a path that previously had
+// none — and so it put identity's FAILURE MODES there too. Revoked and unknown
+// are facts about a credential and end the connection. A database that cannot
+// answer is not a fact about anybody's credential: closing on it tells a
+// player in good standing "your credential is no longer valid", which is
+// false, and throws them out of a live table over a transient. identity.go's
+// own comment records this exact shared file blocking the full busy_timeout(5000)
+// and then failing under another handle's write transaction, so the contention
+// case is measured behaviour in this repo, not a hypothetical.
+//
+// The precedent is already in handleCommand one screen below: a campaign that
+// cannot answer produces ok=false and leaves the connection open.
+func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.playerToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	// OPERATIONAL, not a credential fact — nobody was revoked, and the row is
+	// still there. Only the table it lives in has moved out from under the
+	// query, which is what an unhealthy database looks like from here.
+	raw, err := sql.Open("sqlite", f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`ALTER TABLE participants RENAME TO participants_elsewhere`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "while-unwell",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "one"}},
+	})
+	res := readResult(t, conn)
+	if res.GetOk() {
+		t.Fatal("a command must not be authorized while identity cannot say who the caller is")
+	}
+
+	// AND THEY ARE STILL AT THE TABLE. This is the half that fails when an
+	// operational error is misread as a revocation: readResult reports a
+	// closed connection rather than timing out, so the failure names itself.
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "still-here",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "two"}},
+	})
+	if res := readResult(t, conn); res.GetOk() {
+		t.Fatal("the command must still be refused while identity is unwell")
+	}
+
+	// AND THE TABLE STILL REACHES THEM. Delivery re-resolves as well, so the
+	// same distinction has to hold there: dropping frames — or the connection
+	// — on an unhealthy database would make a transient look like everyone
+	// being thrown out at once. Losing an event is worse than a moment's delay
+	// in removing somebody, and the very next event catches a revoked watcher.
+	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{SceneId: "attic", Name: "Attic", GridWidth: 4, GridHeight: 4},
+	})
+	// This connection dialed at 0, so the seeded history is queued ahead of it.
+	// readEvent fails the test outright if the connection ends instead.
+	for i := 0; ; i++ {
+		if i == 8 {
+			t.Fatal("the event appended while identity was unreadable never arrived")
+		}
+		if readEvent(t, conn).GetEventId() == "while-unwell" {
+			return
+		}
+	}
+}
+
+// TestARevokedSpectatorStopsSeeingTheTable closes the half of revocation that
+// re-resolving per COMMAND cannot reach, and it is the half this branch
+// created.
+//
+// commandRoles has no spectator row anywhere: a spectator may issue NO command
+// at all. So the command loop's Lookup never fires for one, and the shared
+// join link mints nothing BUT spectators. A stranger who got in through a
+// leaked link and was then revoked kept watching the entire session — the
+// branch's own headline, that a leaked link can be closed and the stranger
+// removed, had a hole exactly in the population the branch creates.
+//
+// DELIVERY is where a spectator meets the server, so delivery is where it has
+// to bite. Not on a timer and not on connect: on the next thing the table
+// would have shown them.
+func TestARevokedSpectatorStopsSeeingTheTable(t *testing.T) {
+	f := newGWFixture(t)
+	conn := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The table plays on, which is the only way a watcher is a watcher.
+	mustAppend(t, f.campaign, "after-revoke", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{SceneId: "vault", Name: "Vault", GridWidth: 5, GridHeight: 5},
+	})
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, data, err := conn.Read(ctx)
+		timedOut := ctx.Err() != nil // captured BEFORE cancel, which overwrites it
+		cancel()
+		if err == nil {
+			// Anything already queued may still be written on the way down,
+			// but NOT this: it was appended after the revocation.
+			if strings.Contains(string(data), "after-revoke") {
+				t.Fatal("a revoked spectator was delivered an event that happened AFTER they " +
+					"were thrown out")
+			}
+			continue
+		}
+		// A TIMEOUT is not a close, and conflating the two is what made the
+		// sibling test below pass under an injection that did nothing. But the
+		// witness here cannot be a close FRAME: the pump force-closes with
+		// CloseNow, deliberately — it cannot run the full shutdown from inside
+		// itself, so it drops the connection and lets conn.Read unwind serve.
+		// The client sees an abrupt end, not a status. So: anything except the
+		// deadline expiring means the connection ended.
+		if timedOut {
+			t.Fatal("the connection did not end — a revoked spectator is still being served, " +
+				"and no command of theirs can be refused instead, because they can issue none")
+		}
+		return
+	}
+}
+
+// --- the door, driven the way a DM drives it (plan J6) --------------------
+
+// postJoin exercises the real /join endpoint against this fixture's server,
+// returning the status and the minted token (empty on refusal).
+func (f *gwFixture) postJoin(t *testing.T, secret, name string) (int, string) {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"secret": secret, "displayName": name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(f.srv.URL+"/join", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	return resp.StatusCode, out.Token
+}
+
+func setDoor(t *testing.T, conn *websocket.Conn, door vttv1.JoinDoor) *vttv1.CommandResult {
+	t.Helper()
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "r-door",
+		Command:   &vttv1.ClientCommand_SetJoinDoor{SetJoinDoor: &vttv1.SetJoinDoor{Door: door}},
+	})
+	return readResult(t, conn)
+}
+
+// TestTheDMCanActuallyOpenTheDoor is the seam test this whole task exists for.
+//
+// Before it, identity.SetJoinOpen had ZERO non-test callers. The door is closed
+// by default, so /join was live and refused everyone, forever, and no human
+// could reach the feature at all — five completed tasks, every gate green, and
+// nobody could join a table. The presence branch shipped ONE layer dead;
+// this would have shipped the whole feature dead.
+func TestTheDMCanActuallyOpenTheDoor(t *testing.T) {
+	f := newGWFixture(t)
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Closed by default: this is the state the feature ships in.
+	if status, _ := f.postJoin(t, secret, "Kim"); status == http.StatusOK {
+		t.Fatal("the door must start closed")
+	}
+
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	if res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_OPEN); !res.GetOk() {
+		t.Fatalf("a DM must be able to open the door: %s", res.GetError())
+	}
+
+	status, token := f.postJoin(t, secret, "Kim")
+	if status != http.StatusOK {
+		t.Fatalf("with the door open a joiner must get in, got %d", status)
+	}
+	// And what they got is REAL: a spectator credential this server accepts.
+	p, err := f.ids.Verify(token)
+	if err != nil {
+		t.Fatalf("the minted token must verify: %v", err)
+	}
+	if p.Role != identity.RoleSpectator {
+		t.Fatalf("role = %q, want spectator", p.Role)
+	}
+
+	// And closing it again shuts the newcomers out.
+	if res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_CLOSED); !res.GetOk() {
+		t.Fatalf("a DM must be able to close the door again: %s", res.GetError())
+	}
+	if status, _ := f.postJoin(t, secret, "Robin"); status == http.StatusOK {
+		t.Fatal("a door that only opens is not a door")
+	}
+}
+
+func TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt(t *testing.T) {
+	// The reason the contract carries an ENUM and not a bool. protojson omits
+	// zero values, so `bool open` would put CLOSED on the wire as an ABSENT
+	// FIELD — and a sender that forgot the field entirely would be
+	// indistinguishable from one asking to shut the door. Guessing either way
+	// is wrong: guess OPEN and a bug admits strangers, guess CLOSED and a bug
+	// locks the table out mid-session.
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_UNSPECIFIED)
+	if res.GetOk() {
+		t.Fatal("an unspecified door must be refused, not resolved to a default")
+	}
+	if f.ids.JoinOpen() {
+		t.Fatal("a refused command must not have moved the door")
+	}
+}
+
+func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
+	// The property spec §2 calls close to required: a LEAKED link must be
+	// closable without re-inviting anyone already in.
+	f := newGWFixture(t)
+	old, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	if res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_OPEN); !res.GetOk() {
+		t.Fatal(res.GetError())
+	}
+	// Somebody joined on the old link before it leaked.
+	_, earlyToken := f.postJoin(t, old, "Kim")
+	if earlyToken == "" {
+		t.Fatal("setup: the first joiner should have got in")
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "r-rot",
+		Command:   &vttv1.ClientCommand_RotateJoinLink{RotateJoinLink: &vttv1.RotateJoinLink{}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("a DM must be able to rotate the link: %s", res.GetError())
+	}
+
+	if status, _ := f.postJoin(t, old, "Stranger"); status == http.StatusOK {
+		t.Fatal("the OLD link must stop working — that is the entire point of rotating")
+	}
+	fresh, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh == old {
+		t.Fatal("rotating must actually change the secret")
+	}
+	if status, _ := f.postJoin(t, fresh, "Robin"); status != http.StatusOK {
+		t.Fatalf("the NEW link must work, got %d", status)
+	}
+	// And the person already through the old link is untouched: their token is
+	// theirs, not the link's. Without this, closing a leak would mean
+	// re-inviting the whole table at the worst possible moment.
+	if _, err := f.ids.Verify(earlyToken); err != nil {
+		t.Fatalf("rotating must not disturb anyone already in: %v", err)
+	}
+	// Rotating is INDEPENDENT of the door: it says nothing about whether the
+	// link is open, and a rotate that quietly shut the table would be a very
+	// unwelcome surprise mid-session.
+	if !f.ids.JoinOpen() {
+		t.Fatal("rotating the link must not close the door")
+	}
+}
+
+// TestPromotionCannotUNMAKEADMOrAgent closes the mirror image of the rule
+// spec §3.1a states.
+//
+// §3.1a bounds what a promotion may promote TO — only player or spectator, so
+// the shared link is never a route to full authority in two steps. It says
+// nothing about who may be promoted FROM, and the two are not the same rule:
+// promote_participant(dm_id, "spectator") names an allowed role, so the target
+// check passes, and a DM becomes a spectator at their own table.
+//
+// That is not recoverable in-band. Promotion cannot reach `dm` by design, so
+// nobody left at the table can undo it — it takes host access and `vtt
+// invite`. AGENTS ARE AUTHORIZED to promote, which is the sharp end: an agent
+// having a bad day can lock every human out of their own campaign.
+func TestPromotionCannotUNMAKEADMOrAgent(t *testing.T) {
+	f := newGWFixture(t)
+	dmP, err := f.ids.Verify(f.dmToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentP, err := f.ids.Verify(f.agentToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Issued BY the agent, because that is the case that matters: a DM doing
+	// this to themselves is a mistake, an agent doing it is a takeover.
+	conn := f.dial(f.agentToken, 0)
+	expectCatchUpHead(t, conn)
+	expectPresenceSnapshot(t, conn)
+
+	for _, target := range []struct {
+		what string
+		id   string
+	}{
+		{"the DM", dmP.ID},
+		{"another agent", agentP.ID},
+	} {
+		sendCommand(t, conn, &vttv1.ClientCommand{
+			RequestId: "r-" + target.id,
+			Command: &vttv1.ClientCommand_PromoteParticipant{
+				PromoteParticipant: &vttv1.PromoteParticipant{
+					ParticipantId: target.id, Role: "spectator",
+				},
+			},
+		})
+		if res := readResult(t, conn); res.GetOk() {
+			t.Fatalf("%s was demoted to a spectator — nobody left at the table can undo "+
+				"that, because promotion cannot reach dm or agent", target.what)
+		}
+		now, err := f.ids.Lookup(target.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if now.Role == identity.RoleSpectator {
+			t.Fatalf("%s is now a spectator despite the refusal", target.what)
+		}
+	}
+
+	// And an ordinary promotion still works — a guard that refuses everything
+	// is not a guard.
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "r-ok",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: p.ID, Role: "player"},
+		},
+	})
+	if res := readResult(t, conn); !res.GetOk() {
+		t.Fatalf("promoting a spectator must still work: %s", res.GetError())
+	}
+}
+
+// TestAPromotionIsAnnouncedToThePromotedPersonThemselves covers the half of
+// promotion that live re-resolution does not reach.
+//
+// The server starts accepting a promoted spectator's commands immediately
+// (J4). Their BROWSER read its role once, at connect, via /api/me — and
+// nothing ever told it that role moved, so they could act and their own client
+// offered them nothing to act with: the server saying yes to a screen with no
+// controls on it. The re-announcement is the nudge that makes the client
+// re-read.
+//
+// Two things are asserted and both are load-bearing. That a frame arrives AT
+// ALL is the point of the announcement. That it carries the promoted person's
+// own DISPLAY NAME is what pins which connection the registry looked up — a
+// lookup that matched the wrong participant would announce somebody else's
+// name under this id, and the table's roster would quietly rename them.
+func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
+	f := newGWFixture(t)
+
+	// TWO connections, deliberately: with only one, a registry lookup that
+	// matched the wrong participant would find nobody and merely fall silent,
+	// which the first assertion catches by accident rather than on purpose.
+	// With a second connection present it returns the WRONG NAME, and only an
+	// assertion on the name can tell.
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, watcher)
+	expectPresenceSnapshot(t, watcher)
+
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "r-promote",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: p.ID, Role: "player"},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %s", res.GetError())
+	}
+
+	// Read on the PROMOTED person's own socket: they are the one who most
+	// needs this, and broadcast excludes nobody for exactly that reason.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("a promoted participant was never told anything on their own connection, " +
+				"so their client goes on believing the role it read at connect")
+		}
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := watcher.Read(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		var frame vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &frame); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		pc := frame.GetPresenceChanged()
+		if pc == nil || pc.GetParticipantId() != p.ID {
+			continue
+		}
+		if pc.GetDisplayName() != p.Name {
+			t.Fatalf("the announcement names %q under %q's id, want %q — the registry "+
+				"matched the wrong connection, and the table would rename them",
+				pc.GetDisplayName(), p.ID, p.Name)
+		}
+		return
+	}
+}
+
+// TestARevokedWatcherIsNotEvenToldWhoElseArrives closes the half of revocation
+// that per-event re-resolution cannot reach.
+//
+// The pump re-resolves before delivering an EVENT. Presence frames never travel
+// that channel — announcePresence writes straight into each connection's out —
+// so a revoked stranger who came in on a leaked link went on watching the guest
+// list arrive and leave until the table happened to append something. Nothing
+// of the campaign leaked, but spec §3.2 states the property without
+// qualification, and "the next thing the table would have shown them" plainly
+// includes somebody walking in.
+//
+// The absence is asserted against a POSITIVE control on the same frame: an
+// unrevoked watcher must receive it. Without that, a broadcast that reached
+// nobody at all would pass.
+func TestARevokedWatcherIsNotEvenToldWhoElseArrives(t *testing.T) {
+	f := newGWFixture(t)
+
+	stranger := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, stranger)
+	expectPresenceSnapshot(t, stranger)
+
+	// The positive control, connected before the revocation so both sockets
+	// are in exactly the same state.
+	witness := f.dial(f.otherPlayerToken, 0)
+	expectCatchUpHead(t, witness)
+	expectPresenceSnapshot(t, witness)
+	// The stranger legitimately learns the witness arrived.
+	expectPresenceChanged(t, stranger, f.playerIDFor(t, f.otherPlayerToken),
+		vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Somebody else joins. No event is appended — people are just arriving.
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	dmID := f.playerIDFor(t, f.dmToken)
+
+	// The witness is told, so the frame really was broadcast.
+	expectPresenceChanged(t, witness, dmID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	// The revoked stranger is not.
+	expectNoPresenceWithin(t, stranger, 500*time.Millisecond)
+}
+
+// expectNoPresenceWithin fails if any PresenceChanged reaches conn within d.
+//
+// Reads the socket DIRECTLY, and that is the whole reason it exists.
+// assertNoFrameWithin routes through the frame queue, which demultiplexes into
+// results, events and closed — and DROPS presence frames. Asserting "no
+// presence arrived" through a helper that cannot see presence is an assertion
+// with no teeth, and this one had none: reverting the deny set failed nothing
+// at all. The fourteenth instance of that defect class on this branch, and I
+// wrote it while fixing the thirteenth.
+//
+// Single-use per connection: coder/websocket closes the socket when a Read's
+// context expires, so this belongs last in a test.
+func expectNoPresenceWithin(t *testing.T, conn *websocket.Conn, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := conn.Read(ctx)
+		quiet := ctx.Err() != nil // captured BEFORE cancel overwrites it
+		cancel()
+		if err != nil {
+			if quiet {
+				return // nothing arrived, which is the point
+			}
+			t.Fatalf("read: %v", err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		if pc := f.GetPresenceChanged(); pc != nil {
+			t.Fatalf("a revoked participant was told that %q is %v — they are meant to see "+
+				"nothing at all", pc.GetDisplayName(), pc.GetState())
+		}
+	}
+}
+
+// playerIDFor resolves a token to its participant id.
+func (f *gwFixture) playerIDFor(t *testing.T, token string) string {
+	t.Helper()
+	p, err := f.ids.Verify(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.ID
 }

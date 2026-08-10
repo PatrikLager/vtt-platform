@@ -257,7 +257,7 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 // literal, and this test is no longer named for the number. It was
 // TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools, and its
 // comment had accumulated a six-entry history of past bumps (7->9, 9->12,
-// 12->13, 15->16, 16->17) — each one a rename that had to touch the
+// 12->13, 15->16, 16->17, and since then 17->19->20 without touching any of
 // identifier, the comment, and every other file naming the count. P12 shipped
 // the same stale number three times on one such rename. Derive the count from
 // the list; the list is the assertion.
@@ -277,10 +277,13 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	// wantCommandToolNames carries every generic command tool — fix-wave F5
-	// grew that pin to match the oneof itself, so it needs no separate
-	// maintenance here. Only the four read/guide tools registered separately
-	// (read_tools.go, guide_tool.go, adventure_guide_tool.go) are appended.
+	// wantCommandToolNames carries every generic command tool; only the four
+	// read/guide tools registered separately (read_tools.go, guide_tool.go,
+	// adventure_guide_tool.go) are appended here.
+	//
+	// NO RUNNING TALLY. This comment used to carry one and it went stale twice
+	// — a comment warning about stale counts, shipping a stale count. The total
+	// is derived from the list, so the list is the only thing to maintain.
 	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "get_adventure_guide")
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)

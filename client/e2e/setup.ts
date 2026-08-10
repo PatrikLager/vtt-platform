@@ -41,14 +41,20 @@ function run(bin: string, args: string[]): string {
   return r.stdout.trim();
 }
 
-let server: ChildProcess | undefined;
+let servers: ChildProcess[] = [];
+let binary = "";
 
-export async function startFixture(): Promise<Fixture> {
+async function startTable(): Promise<Fixture> {
   const dir = mkdtempSync(join(tmpdir(), "vtt-e2e-"));
-  const bin = join(dir, "vtt");
   const campaign = join(dir, "campaign.db");
 
-  run("go", ["build", "-o", bin, "./cmd/vtt"]);
+  if (!binary) {
+    // ONCE for the whole run, not once per table: `go build` is the slowest
+    // thing here, and the binary does not vary by campaign.
+    binary = join(mkdtempSync(join(tmpdir(), "vtt-e2e-bin-")), "vtt");
+    run("go", ["build", "-o", binary, "./cmd/vtt"]);
+  }
+  const bin = binary;
 
   // One invite per role. The player controls act-lera, which the adventure
   // places on the board — without a controlled actor the player panel has
@@ -79,34 +85,106 @@ export async function startFixture(): Promise<Fixture> {
   const tokens = { dm: dm.token, player: player.token, spectator: spectator.token };
   const ids = { dm: dm.id, player: player.id, spectator: spectator.id };
 
-  const port = 8900 + Math.floor(Math.random() * 90);
-  server = spawn(
+  // Sequential from a fixed base rather than random: with one server per spec
+  // file a collision is no longer a one-in-ninety curiosity, and a predictable
+  // port means a failure names an address somebody can go and look at.
+  const port = 8900 + servers.length;
+  const proc = spawn(
     bin,
     ["serve", "--campaign", campaign, "--addr", `127.0.0.1:${port}`,
      "--ruleset", RULESET, "--adventures-dir", ADVENTURES],
     { cwd: REPO, stdio: "ignore" },
   );
+  servers.push(proc);
 
   const base = `http://127.0.0.1:${port}`;
+  let ready = false;
   for (let i = 0; i < 100; i++) {
     try {
       const r = await fetch(`${base}/healthz`);
-      if (r.ok) break;
+      if (r.ok) {
+        ready = true;
+        break;
+      }
     } catch {
       // not up yet
     }
     await new Promise((r) => setTimeout(r, 100));
   }
+  // FAIL HERE, LOUDLY. The loop used to fall out identically on success and on
+  // a hundred failures, so a server that never bound produced a Fixture
+  // pointing at a dead address — and every test then failed on
+  // `.conn` never reaching "connected", an error that accuses the CLIENT of
+  // something the server did. Ten seconds of waiting followed by silence is
+  // the worst possible report.
+  if (!ready) {
+    throw new Error(
+      `e2e: no server answered ${base}/healthz within 10s. If something else is ` +
+        `holding that port — a stale \`vtt serve\` from an earlier run, say — kill it: ` +
+        `a squatter that answers /healthz is worse than one that does not, because the ` +
+        `suite then runs against somebody else's campaign.`,
+    );
+  }
 
-  const fixture: Fixture = { base, tokens, ids };
-  writeFileSync(STATE, JSON.stringify(fixture));
-  return fixture;
+  return { base, tokens, ids };
 }
 
-export function stopFixture(): void {
-  server?.kill();
+/**
+ * ONE SERVER AND ONE CAMPAIGN PER SPEC FILE.
+ *
+ * It used to be one for the whole run, and the coupling was not survivable.
+ * The campaign is an APPEND-ONLY LOG: a spec can close a session it opened,
+ * but it cannot un-create an actor or un-place a token. So handover.spec.ts's
+ * Ash and Bram stood on the board while table.spec.ts tried to move a player's
+ * token onto ground it had every reason to think was empty, and
+ * table.spec.ts's session test found "End session" where it expected "Start".
+ *
+ * Both failures were real and both were invisible, because `task e2e` is
+ * deliberately outside `task check` (it needs a browser binary) and nobody ran
+ * it between merges. The DEMO GATE — the one gate whose whole job is catching
+ * features no human can reach — had itself been failing since the presence
+ * branch landed.
+ *
+ * The binary is built once and shared; only the campaign and the server are
+ * per-file. Ports come from the index rather than at random, so a failure
+ * names a predictable address.
+ */
+export async function startFixtures(names: string[]): Promise<void> {
+  const all: Record<string, Fixture> = {};
+  for (const n of names) {
+    all[n] = await startTable();
+  }
+  writeFileSync(STATE, JSON.stringify(all));
 }
 
-export function fixture(): Fixture {
-  return JSON.parse(readFileSync(STATE, "utf8")) as Fixture;
+export function stopFixtures(): void {
+  for (const s of servers) s.kill();
+  servers = [];
+}
+
+/**
+ * THE CONTRACT EVERY SPEC FILE STILL OWES: leave the table as you found it —
+ * no open session.
+ *
+ * Per-file isolation covers files against EACH OTHER; it does not cover a file
+ * against ITSELF. The campaign is append-only and outlives the test run, so a
+ * second run of the same file — `--repeat-each`, which is how a new e2e gets
+ * checked for flakiness — finds the session the first run opened and waits out
+ * its timeout for a Start button that has been replaced by End. Measured:
+ * --repeat-each=6 on joining.spec.ts gave 1 pass and 5 failures.
+ *
+ * So each spec that opens a session closes it in test.afterAll. There is no
+ * helper here to do it: it is four lines at the point of use, and a helper
+ * would only hide which files actually open one.
+ */
+export function fixture(name: string): Fixture {
+  const all = JSON.parse(readFileSync(STATE, "utf8")) as Record<string, Fixture>;
+  const f = all[name];
+  if (!f) {
+    throw new Error(
+      `e2e: no table for ${name}. fixture() takes this spec file's basename, and ` +
+        `global-setup starts one server per *.spec.ts it finds. Known: ${Object.keys(all).join(", ")}`,
+    );
+  }
+  return f;
 }

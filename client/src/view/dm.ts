@@ -9,13 +9,16 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { AdventureMeta } from "../metadata";
+import type { AdventureMeta, JoinLink, Roster } from "../metadata";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, createScene, placeToken, loadAdventure,
   upsertNote, deleteNote, removeCondition, retractEvents, parseActorJSON, addActor,
   grantActorControl, revokeActorControl,
+  setJoinDoor,
+  rotateJoinLink,
+  promoteParticipant,
 } from "../commands";
 import { lastUndoable, retractableRange } from "../undo";
 
@@ -102,7 +105,41 @@ export interface DMDeps {
   participants: Participant[];
   adventures: AdventureMeta[];
   guideFor: (id: string) => Promise<string | null>;
-  send: (c: ClientCommand) => void;
+  /**
+   * The shared join link, or null when there is none to show.
+   *
+   * null means "do not render a sharing panel at all" — either the fetch
+   * failed or this console belongs to somebody the route refuses. An empty
+   * panel would be worse than none: a DM might paste a blank link.
+   */
+  joinLink: JoinLink | null;
+  /**
+   * Everyone at the table and what they may do, read from identity rather
+   * than presence: presence is connection-scoped and carries no role, so a
+   * role taken from it would go stale the moment somebody was promoted
+   * without reconnecting (spec §3.2).
+   */
+  roster: Roster[] | null;
+  /** Where this table lives, for building the link a DM can actually paste. */
+  origin: string;
+  /**
+   * Re-read the link and roster.
+   *
+   * The door commands produce NO EVENT, deliberately (spec §4), so nothing
+   * re-renders on its own after one. Without this the DM opens the door and
+   * the console goes on saying "closed" until something unrelated happens.
+   */
+  refreshSharing: () => void;
+  /**
+   * Issue a command, resolving once the server has answered.
+   *
+   * The promise is load-bearing for the controls below that read state back:
+   * a role change and a door change produce NO EVENT, so an HTTP re-read fired
+   * beside the command races it on a different transport, and losing that race
+   * repaints the panel with exactly the state the command was changing — with
+   * nothing left to correct it.
+   */
+  send: (c: ClientCommand) => Promise<void>;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
 }
@@ -119,7 +156,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     group(
       openSession ? `Session: ${openSession.Name}` : "Session",
       ...(openSession
-        ? [button("End session", () => d.send(endSession()))]
+        ? [button("End session", () => d.send(endSession()), "end-session")]
         : [
             sessionName,
             button("Start session", () => {
@@ -370,6 +407,91 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     controlRows.push(row);
   }
   if (controlRows.length > 0) wrap.appendChild(group("Who controls what", ...controlRows));
+
+  // --- who may do what ---
+  //
+  // Beside "Who controls what" on purpose (spec §4): promoting somebody and
+  // handing them a character are one thought, and two screens apart is how a
+  // DM promotes a spectator and then wonders why they still cannot act.
+  // Rendered whenever the roster was READ, even if it came back empty — which
+  // it cannot, since it always holds the caller. A panel that disappeared on
+  // an empty list would make a failed fetch look like a deliberately absent
+  // feature. Built INSIDE the branch: outside it, a null roster still built
+  // rows and discarded them, so nothing could observe what went into them.
+  const roster = d.roster;
+  if (roster !== null) {
+    const rosterRows: HTMLElement[] = [];
+    for (const person of roster) {
+      const row = el("div", "roster-row");
+      row.dataset["participant"] = person.participantId;
+      row.appendChild(el("span", "who", person.name));
+      row.appendChild(el("span", "role", person.role));
+
+      // ONLY player and spectator are offered, because promote_participant may
+      // only ever name those two (spec §3.1a): a control that reached dm or
+      // agent would make the shared link a route to full authority in two steps,
+      // and the server refuses it — so the button could only ever fail.
+      if (person.role === "spectator") {
+        row.appendChild(
+          button("Make player", () => void d.send(
+            promoteParticipant(person.participantId, "player"),
+          ).then(d.refreshSharing), `promote-${person.participantId}`),
+        );
+      } else if (person.role === "player") {
+        row.appendChild(
+          button("Make spectator", () => void d.send(
+            promoteParticipant(person.participantId, "spectator"),
+          ).then(d.refreshSharing), `demote-${person.participantId}`),
+        );
+      }
+      rosterRows.push(row);
+    }
+    wrap.appendChild(group("Who may do what", ...rosterRows));
+  }
+
+  // --- sharing this table ---
+  if (d.joinLink !== null) {
+    const link = d.joinLink;
+    const nodes: HTMLElement[] = [];
+
+    // The state word first, and rendered even when it is "closed": a sharing
+    // panel that only spoke up when open would make "is this live?" a question
+    // the DM answers by trying it.
+    nodes.push(el("span", "door-state", link.open ? "door: open" : "door: closed"));
+
+    // The whole URL, not the bare secret. A secret alone is not shareable —
+    // the DM would have to know to wrap it, and the wrapping they invent is
+    // where the ?join= spelling goes wrong. This string and app.ts's reader
+    // are the two halves of one format.
+    const url = document.createElement("input");
+    url.className = "wide";
+    url.dataset["field"] = "join-link";
+    url.readOnly = true;
+    url.value = `${d.origin}/?join=${link.secret}`;
+    nodes.push(url);
+
+    nodes.push(
+      link.open
+        ? button("Close the door", () => void d.send(setJoinDoor(false)).then(d.refreshSharing),
+            "close-door")
+        : button("Open the door", () => void d.send(setJoinDoor(true)).then(d.refreshSharing),
+            "open-door"),
+    );
+
+    nodes.push(
+      button("New link", () => {
+        // ASKED FIRST, unlike opening. Rotating silently stops the link
+        // everybody was already sent from working, and there is no undo — the
+        // old secret is gone.
+        if (!d.confirm("Replace the link? Anyone you already sent the old one to will not get in.")) {
+          return;
+        }
+        void d.send(rotateJoinLink()).then(d.refreshSharing);
+      }, "rotate-link"),
+    );
+
+    wrap.appendChild(group("Sharing this table", ...nodes));
+  }
 
   return wrap;
 }

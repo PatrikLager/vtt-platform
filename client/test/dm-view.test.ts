@@ -2,8 +2,9 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 
 import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
+import type { Roster } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
-import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { create } from "@bufbuild/protobuf";
 import { EnvelopeSchema, TokenMovedSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 
@@ -30,7 +31,13 @@ function harness(
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
-    send: (c) => sent.push(c),
+    // The sharing panel is exercised by its own tests below; these existing
+    // cases assert the rest of the console, so they render without one.
+    joinLink: null,
+    roster: [],
+    origin: "https://table.example",
+    refreshSharing: () => {},
+    send: async (c) => void sent.push(c),
     notify: (m) => notices.push(m),
     confirm: (m: string) => {
       confirmCount++;
@@ -152,9 +159,13 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
   const st = newState();
   const node = renderDMConsole({
     participants: [],
+    joinLink: null,
+    roster: [],
+    origin: "https://table.example",
+    refreshSharing: () => {},
     st, log: [moved(1)], adventures: [],
     guideFor: async () => null,
-    send: () => {},
+    send: async () => {},
     notify: () => {},
     confirm: () => {
       confirmCalls++;
@@ -1011,4 +1022,269 @@ test("the DM's choice of participant survives a re-render", () => {
 
   const second = harness(st, [], { participants: parts });
   expect((second.node.querySelector(".grant-target") as HTMLSelectElement).value).toBe("p-bo");
+});
+
+// --- sharing the table, and who may do what (plan J6) --------------------
+
+function emptyState(): State {
+  return newState();
+}
+
+function shareConsole(opts: {
+  joinLink?: { open: boolean; secret: string } | null;
+  roster?: Roster[] | null;
+} = {}) {
+  const sent: ClientCommand[] = [];
+  const notices: string[] = [];
+  let refreshes = 0;
+  const node = renderDMConsole({
+    st: emptyState(),
+    log: [],
+    adventures: [],
+    guideFor: async () => null,
+    participants: [],
+    joinLink: opts.joinLink === undefined ? { open: false, secret: "s3cret" } : opts.joinLink,
+    // `=== undefined`, not `??`: null is a MEANINGFUL value here (the read
+    // failed) and `?? []` would quietly turn it into "an empty table".
+    roster: opts.roster === undefined ? [] : opts.roster,
+    origin: "https://table.example",
+    refreshSharing: () => refreshes++,
+    send: async (c) => void sent.push(c),
+    notify: (m) => notices.push(m),
+    confirm: () => true,
+  });
+  return { node, sent, notices, refreshes: () => refreshes };
+}
+
+test("the DM can open the door, and the console says which way it is", () => {
+  // THE SEAM THIS WHOLE TASK EXISTS FOR. Before it, identity.SetJoinOpen had
+  // no caller anywhere outside its own tests: five completed tasks, every gate
+  // green, and the shared join link admitted nobody because nothing in the
+  // product could open it.
+  const c = shareConsole({ joinLink: { open: false, secret: "s3cret" } });
+
+  expect(c.node.querySelector(".door-state")!.textContent).toContain("closed");
+  c.node.querySelector<HTMLButtonElement>('[data-action="open-door"]')!.click();
+
+  expect(c.sent).toHaveLength(1);
+  expect(c.sent[0]!.command.case).toBe("setJoinDoor");
+  // The VALUE, not just the command: a console that sent UNSPECIFIED would be
+  // refused every time and look broken rather than unauthorized.
+  expect(c.sent[0]!.command.value).toMatchObject({ door: JoinDoor.OPEN });
+});
+
+test("an open door offers to close it, not to open it again", () => {
+  // One button whose meaning follows the state. Two always-present buttons
+  // would leave a DM asking which one is currently in effect.
+  const c = shareConsole({ joinLink: { open: true, secret: "s3cret" } });
+
+  expect(c.node.querySelector(".door-state")!.textContent).toContain("open");
+  expect(c.node.querySelector('[data-action="open-door"]')).toBeNull();
+  c.node.querySelector<HTMLButtonElement>('[data-action="close-door"]')!.click();
+
+  expect(c.sent[0]!.command.value).toMatchObject({ door: JoinDoor.CLOSED });
+});
+
+test("the console shows the whole link a DM can paste, not just the secret", () => {
+  // A secret on its own is not shareable: the DM would have to know to wrap it
+  // in a URL, and the one they invent is where the "?join=" spelling gets
+  // wrong.
+  //
+  // NOT the only writer, and this comment used to claim it was: cmd/vtt's
+  // `join-link show` and `rotate` print the same format, so there are THREE
+  // writers against app.ts's one reader, tied together by nothing. Renaming
+  // the parameter leaves the CLI printing a dead link with every gate green —
+  // gremlins does not mutate string literals and Stryker cannot see Go at all.
+  // Recorded in the ledger rather than fixed here.
+  const c = shareConsole({ joinLink: { open: true, secret: "s3cret" } });
+  const link = c.node.querySelector<HTMLInputElement>('[data-field="join-link"]')!;
+  expect(link.value).toBe("https://table.example/?join=s3cret");
+  expect(link.readOnly).toBe(true);
+});
+
+test("rotating asks first, because it locks out a link already sent", () => {
+  // Destructive in a way opening is not: everyone who was sent the old link
+  // silently stops being able to use it, and there is no undo.
+  const sent: ClientCommand[] = [];
+  let asked = 0;
+  const node = renderDMConsole({
+    st: emptyState(), log: [], adventures: [], guideFor: async () => null,
+    participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
+    origin: "https://table.example", refreshSharing: () => {},
+    send: async (c) => void sent.push(c), notify: () => {},
+    confirm: () => {
+      asked++;
+      return false;
+    },
+  });
+  node.querySelector<HTMLButtonElement>('[data-action="rotate-link"]')!.click();
+
+  expect(asked).toBe(1);
+  expect(sent).toHaveLength(0); // answered no
+});
+
+test("a spectator can be promoted, and a player is not offered promotion again", () => {
+  // The client half of promote_participant, which J3 shipped WITHOUT one: the
+  // command reached the contract, authz and the MCP tool list, and no console
+  // could issue it.
+  const c = shareConsole({
+    roster: [
+      { participantId: "p-watch", name: "Zoe", role: "spectator" },
+      { participantId: "p-play", name: "Lera", role: "player" },
+      { participantId: "p-dm", name: "Ari", role: "dm" },
+    ],
+  });
+
+  const rows = c.node.querySelectorAll(".roster-row");
+  expect(rows.length).toBe(3); // everyone is SHOWN, including the DM
+
+  c.node.querySelector<HTMLButtonElement>('[data-action="promote-p-watch"]')!.click();
+  expect(c.sent).toHaveLength(1);
+  expect(c.sent[0]!.command.value).toMatchObject({ participantId: "p-watch", role: "player" });
+
+  // A player gets the reverse control, not a second promotion.
+  expect(c.node.querySelector('[data-action="promote-p-play"]')).toBeNull();
+  c.node.querySelector<HTMLButtonElement>('[data-action="demote-p-play"]')!.click();
+  expect(c.sent[1]!.command.value).toMatchObject({ participantId: "p-play", role: "spectator" });
+
+  // A DM is offered NEITHER. promote_participant may only ever name player or
+  // spectator (spec §3.1a) — a button that reached dm would make the shared
+  // link a route to full authority in two steps, and the server refuses it, so
+  // offering it would only ever produce a confusing failure.
+  expect(c.node.querySelector('[data-action="promote-p-dm"]')).toBeNull();
+  expect(c.node.querySelector('[data-action="demote-p-dm"]')).toBeNull();
+});
+
+test("without a join link there is no sharing panel, rather than an empty one", () => {
+  // A player's console never asks for it, and a failed fetch must not leave a
+  // panel showing a blank link the DM might paste to somebody.
+  const c = shareConsole({ joinLink: null });
+  expect(c.node.querySelector(".door-state")).toBeNull();
+  expect(c.node.querySelector('[data-field="join-link"]')).toBeNull();
+});
+
+test("ending a session is addressable, not just clickable by its label", () => {
+  // A data-action, like every other console control. Without one the only
+  // handle is the button's TEXT, and the e2e specs need to close a session
+  // they opened — leaving one open is what broke `task e2e` for two weeks
+  // (see client/e2e/setup.ts's note on the shared campaign).
+  const st = newState();
+  st.Sessions = [{ ID: "s1", Name: "Open Table", StartSeq: 1, EndSeq: 0 }];
+  const sent: ClientCommand[] = [];
+  const node = renderDMConsole({
+    st, log: [], adventures: [], guideFor: async () => null,
+    participants: [], joinLink: null, roster: [], origin: "https://table.example",
+    refreshSharing: () => {}, send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+  });
+
+  node.querySelector<HTMLButtonElement>('[data-action="end-session"]')!.click();
+  expect(sent[0]!.command.case).toBe("endSession");
+});
+
+test("rotating goes through once the DM says yes", async () => {
+  // The other half of the confirm. Asserting only the refusal would leave the
+  // path that actually replaces the link — the destructive one — unrun.
+  const sent: ClientCommand[] = [];
+  let refreshes = 0;
+  const node = renderDMConsole({
+    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
+    origin: "https://table.example", refreshSharing: () => refreshes++,
+    send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+  });
+
+  node.querySelector<HTMLButtonElement>('[data-action="rotate-link"]')!.click();
+
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.command.case).toBe("rotateJoinLink");
+  // The re-read happens AFTER the server answers, not beside the command:
+  // both travel on different transports, and an HTTP read fired alongside a
+  // WS command can arrive first and repaint with the state the command was
+  // about to change — with no event to correct it afterwards.
+  expect(refreshes).toBe(0);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(refreshes).toBe(1);
+});
+
+test("a roster that could not be read is not the same as an empty table", () => {
+  // List() always contains at least the caller, so an empty roster cannot
+  // happen — an empty array would be a failed fetch wearing the costume of an
+  // ordinary answer, and the panel would vanish with nothing said.
+  const absent = shareConsole({ roster: null });
+  expect(absent.node.querySelector(".roster-row")).toBeNull();
+  expect(absent.node.textContent).not.toContain("Who may do what");
+
+  const empty = shareConsole({ roster: [] });
+  expect(empty.node.textContent).toContain("Who may do what");
+});
+
+test("the sharing panel says what it means, in words a DM reads", () => {
+  // The LABELS, not just the data-actions. A console wired correctly and
+  // labelled wrongly is a console that does the opposite of what its buttons
+  // say — and these particular words carry the difference between "anyone
+  // with this link can walk in" and "nobody can".
+  const shut = shareConsole({ joinLink: { open: false, secret: "s" } });
+  expect(shut.node.querySelector(".door-state")!.textContent).toBe("door: closed");
+  expect(
+    shut.node.querySelector('[data-action="open-door"]')!.textContent,
+  ).toBe("Open the door");
+
+  const open = shareConsole({ joinLink: { open: true, secret: "s" } });
+  expect(open.node.querySelector(".door-state")!.textContent).toBe("door: open");
+  expect(
+    open.node.querySelector('[data-action="close-door"]')!.textContent,
+  ).toBe("Close the door");
+  expect(open.node.querySelector('[data-action="rotate-link"]')!.textContent).toBe("New link");
+
+  // The panel's WHOLE composition, so a stray node cannot slip in unnoticed:
+  // this is the one panel that renders a shared secret, and anything else
+  // sitting in it is something a DM might read as part of the link.
+  const panel = open.node.querySelector(".dmgroup:has(.door-state)")!;
+  expect(panel.querySelector("h3")!.textContent).toBe("Sharing this table");
+  const row = panel.querySelector(".row")!;
+  expect(row.children.length).toBe(4); // state, link, door button, rotate
+  expect(row.textContent).toBe("door: openClose the doorNew link");
+  // The link input is full-width, or the URL is cropped to something the DM
+  // will copy half of.
+  expect(open.node.querySelector<HTMLInputElement>('[data-field="join-link"]')!.className)
+    .toBe("wide");
+});
+
+test("the roster names each person, their role, and what the button will do", () => {
+  const c = shareConsole({
+    roster: [
+      { participantId: "p-w", name: "Zoe", role: "spectator" },
+      { participantId: "p-p", name: "Lera", role: "player" },
+    ],
+  });
+
+  const watcher = c.node.querySelector('.roster-row[data-participant="p-w"]')!;
+  expect(watcher.querySelector(".who")!.textContent).toBe("Zoe");
+  expect(watcher.querySelector(".role")!.textContent).toBe("spectator");
+  expect(watcher.querySelector("button")!.textContent).toBe("Make player");
+
+  const player = c.node.querySelector('.roster-row[data-participant="p-p"]')!;
+  expect(player.querySelector(".role")!.textContent).toBe("player");
+  expect(player.querySelector("button")!.textContent).toBe("Make spectator");
+});
+
+test("the rotate confirmation says what is lost, not just 'are you sure'", () => {
+  // The DM is about to invalidate a link other people are already holding.
+  // "Are you sure?" gives them nothing to be sure ABOUT.
+  let asked = "";
+  const node = renderDMConsole({
+    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    participants: [], joinLink: { open: true, secret: "s" }, roster: [],
+    origin: "https://table.example", refreshSharing: () => {},
+    send: async () => {}, notify: () => {},
+    confirm: (m) => {
+      asked = m;
+      return false;
+    },
+  });
+  node.querySelector<HTMLButtonElement>('[data-action="rotate-link"]')!.click();
+
+  expect(asked).toContain("old one");
+  expect(asked.length).toBeGreaterThan(20);
 });

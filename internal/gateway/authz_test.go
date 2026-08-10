@@ -26,6 +26,22 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return moveTokenCmd("t1")
 	case "grant_actor_control":
 		return grantActorControlCmd("p-2")
+	case "promote_participant":
+		return promoteCmd("p-2", "player")
+	case "set_join_door":
+		return &vttv1.ClientCommand{
+			RequestId: "r-door",
+			Command: &vttv1.ClientCommand_SetJoinDoor{
+				SetJoinDoor: &vttv1.SetJoinDoor{Door: vttv1.JoinDoor_JOIN_DOOR_OPEN},
+			},
+		}
+	case "rotate_join_link":
+		return &vttv1.ClientCommand{
+			RequestId: "r-rotate",
+			Command: &vttv1.ClientCommand_RotateJoinLink{
+				RotateJoinLink: &vttv1.RotateJoinLink{},
+			},
+		}
 	case "revoke_actor_control":
 		// Names "p-1", which is who the table test runs as — so the player
 		// row exercises the SELF case, the only one a player may issue.
@@ -141,7 +157,15 @@ func revokeActorControlCmd(participantID string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 15 commands x 4 roles authorization matrix.
+// promoteCmd builds a PromoteParticipant naming who is being promoted, and to
+// what.
+func promoteCmd(participantID, role string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PromoteParticipant{
+		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: participantID, Role: role},
+	}}
+}
+
+// authzCase is one cell of the 16 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -151,7 +175,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 60-cell matrix (spec §4/§7, grown from 52 by
+// authzCases is the full 72-cell matrix (spec §4/§7, grown from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
@@ -252,6 +276,36 @@ var authzCases = []authzCase{
 	{"revoke_actor_control", identity.RoleAgent, true},
 	{"revoke_actor_control", identity.RolePlayer, true},
 	{"revoke_actor_control", identity.RoleSpectator, false},
+
+	// promote_participant (joining-a-table J3, spec §3.1a). DM and agent only,
+	// with NO player row at all: a shared join link mints spectators, and a
+	// player able to promote would make that link a path to authority in two
+	// steps. TestASpectatorCannotPromoteItself covers the case the default
+	// exists to prevent.
+	// set_join_door / rotate_join_link (joining-a-table J6, spec §5). DM and
+	// agent only, by the same argument that gates grant_actor_control: an OPEN
+	// DOOR MINTS PARTICIPANTS. A spectator who could open one — and every
+	// joiner through the shared link arrives as a spectator — could staff the
+	// table with strangers, which is the exact thing admitting-as-spectator
+	// exists to prevent.
+	//
+	// Rotation is gated for the mirror-image reason: it is the only way to
+	// close a leaked link, so anyone who can rotate can also lock the DM's own
+	// link out from under them mid-session.
+	{"set_join_door", identity.RoleDM, true},
+	{"set_join_door", identity.RoleAgent, true},
+	{"set_join_door", identity.RolePlayer, false},
+	{"set_join_door", identity.RoleSpectator, false},
+
+	{"rotate_join_link", identity.RoleDM, true},
+	{"rotate_join_link", identity.RoleAgent, true},
+	{"rotate_join_link", identity.RolePlayer, false},
+	{"rotate_join_link", identity.RoleSpectator, false},
+
+	{"promote_participant", identity.RoleDM, true},
+	{"promote_participant", identity.RoleAgent, true},
+	{"promote_participant", identity.RolePlayer, false},
+	{"promote_participant", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -274,8 +328,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 60 {
-		t.Fatalf("authzCases has %d entries, want 60 (15 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 72 {
+		t.Fatalf("authzCases has %d entries, want 72 (18 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -570,5 +624,82 @@ func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
 		if err := gateway.Authorize(p, grantActorControlCmd("p-2"), st); err != nil {
 			t.Fatalf("%s must be able to grant control of a player-held actor: %v", role, err)
 		}
+	}
+}
+
+// --- promotion may not reach dm or agent (spec §3.1a) -----------------------
+
+func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
+	// The escalation path this guard exists to close: a shared join link mints
+	// SPECTATORS, so if promotion could reach dm or agent, that link would be
+	// a route to full authority in two steps — exactly what admitting people
+	// as spectators is for. Minting a DM stays with `vtt invite`, out of band.
+	st := ownershipFixture()
+	dm := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
+
+	for _, role := range []string{"player", "spectator"} {
+		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err != nil {
+			t.Fatalf("a DM must be able to promote to %q: %v", role, err)
+		}
+	}
+	for _, role := range []string{"dm", "agent"} {
+		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err == nil {
+			t.Fatalf("promotion to %q must be refused even for a DM — the join link would "+
+				"otherwise reach full authority in two steps", role)
+		}
+	}
+	// And a role that is not a role at all.
+	if err := gateway.Authorize(dm, promoteCmd("p-2", "superuser"), st); err == nil {
+		t.Fatal("an unknown role must be refused")
+	}
+}
+
+func TestASpectatorCannotPromoteItself(t *testing.T) {
+	// NOT the same test as "a spectator cannot promote". The participant id in
+	// the COMMAND and the id on the CONNECTION are different fields, and
+	// confusing them is how revoke_actor_control's self-check nearly shipped
+	// unpinned. Self-promotion is the case the spectator default exists to
+	// prevent, so it gets its own assertion.
+	st := ownershipFixture()
+	me := &identity.Participant{ID: "p-self", Role: identity.RoleSpectator}
+	if err := gateway.Authorize(me, promoteCmd("p-self", "player"), st); err == nil {
+		t.Fatal("a spectator promoting ITSELF must be refused — anyone through the shared " +
+			"link could otherwise make themselves a player")
+	}
+}
+
+// TestEveryClientCommandHasRoleCells is the authz twin of
+// TestEveryClientCommandConverts, and it exists because commandName and
+// commandRoles are both HAND-WRITTEN LISTS over a oneof that grows.
+//
+// The failure mode is quieter than a missing conversion arm and so easier to
+// ship: an unlisted command resolves to the empty name, misses commandRoles,
+// and is denied for EVERY role. Fail-closed, which is the right direction —
+// but the command is then advertised on the wire and through MCP while being
+// impossible for anyone to issue, and the only symptom is a DM being told they
+// "may not issue \"\"".
+//
+// The 72-cell table beside this cannot catch it: its count is a literal, so a
+// command added without cells leaves the count untouched and every existing
+// case still passes. Reflection over the oneof is what makes forgetting
+// impossible rather than merely unlikely.
+func TestEveryClientCommandHasRoleCells(t *testing.T) {
+	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")
+	if oneof == nil {
+		t.Fatal("vttv1.ClientCommand has no \"command\" oneof")
+	}
+	for i := range oneof.Fields().Len() {
+		name := string(oneof.Fields().Get(i).Name())
+		t.Run(name, func(t *testing.T) {
+			// The name must round-trip through commandName, or authorization
+			// is deciding about a command it cannot identify.
+			if got := gateway.CommandNameForTest(commandFor(t, name)); got != name {
+				t.Fatalf("commandName resolved %q to %q — an unlisted arm is denied for "+
+					"every role, so this command is advertised and unusable", name, got)
+			}
+			if !gateway.HasRoleCellsForTest(name) {
+				t.Fatalf("%q has no row in commandRoles, so no role may issue it", name)
+			}
+		})
 	}
 }

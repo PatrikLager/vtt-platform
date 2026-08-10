@@ -133,7 +133,7 @@ func TestBroadcastReachesEveryoneButTheExcludedConnection(t *testing.T) {
 	join(r, self)
 	join(r, other)
 
-	r.broadcast(self, []byte("frame"))
+	r.broadcast(self, []byte("frame"), nil)
 
 	if len(self.out) != 0 {
 		t.Fatal("the excluded connection must not receive its own announcement")
@@ -152,7 +152,7 @@ func TestBroadcastReachesEverySecondDeviceOfTheSameParticipant(t *testing.T) {
 	join(r, laptop)
 	join(r, phone)
 
-	r.broadcast(laptop, []byte("frame"))
+	r.broadcast(laptop, []byte("frame"), nil)
 
 	if len(phone.out) != 1 {
 		t.Fatal("the same participant's OTHER connection must still receive the announcement")
@@ -180,7 +180,7 @@ func TestBroadcastIsBoundedByAWedgedConnectionNotStalledByIt(t *testing.T) {
 	join(r, healthy)
 
 	start := time.Now()
-	r.broadcast(nil, []byte("frame"))
+	r.broadcast(nil, []byte("frame"), nil)
 	elapsed := time.Since(start)
 
 	if len(healthy.out) != 1 {
@@ -207,7 +207,7 @@ func TestBroadcastWaitsForAConnectionThatIsMerelyBusy(t *testing.T) {
 		<-busy.out // drains, as a healthy reader does
 	}()
 
-	r.broadcast(nil, []byte("frame"))
+	r.broadcast(nil, []byte("frame"), nil)
 
 	// CONTENT, not depth. `len(busy.out) == 1` is satisfied by the leftover
 	// "backlog" frame under an instant drop, so a depth assertion passes under
@@ -232,7 +232,7 @@ func TestLeaveStopsDelivery(t *testing.T) {
 	join(r, stays)
 	r.leave(gone)
 
-	r.broadcast(nil, []byte("frame"))
+	r.broadcast(nil, []byte("frame"), nil)
 
 	if len(gone.out) != 0 {
 		t.Fatal("a departed connection must not still be written to")
@@ -282,7 +282,7 @@ func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
 		close(leaver.out)
 	}()
 
-	r.broadcast(nil, []byte("frame"))
+	r.broadcast(nil, []byte("frame"), nil)
 
 	select {
 	case <-left:
@@ -293,10 +293,92 @@ func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
 	// A second broadcast must not send to the departed connection. Without the
 	// leave-before-close ordering this is a send on a closed channel, which
 	// panics rather than failing, and takes the announcement to `stays` with it.
-	r.broadcast(nil, []byte("second"))
+	r.broadcast(nil, []byte("second"), nil)
 
 	if len(stays.out) == 0 {
 		t.Fatal("the remaining connection lost its announcement — a panic mid-broadcast " +
 			"delivers to some connections and never to the rest")
+	}
+}
+
+// TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT pins the ordering
+// guarantee that makes a promotion announcement safe.
+//
+// Resolving the name, encoding, and sending used to be three steps with the
+// lock released between them. If the participant's last connection unwound in
+// that gap, the table received DISCONNECTED and then CONNECTED — in that order
+// — and the client re-adds on CONNECTED. The departed participant stayed in
+// everybody's list for the rest of the session: a permanent ghost, which is
+// the precise failure presence exists to prevent.
+//
+// Under one hold that reordering is impossible, and this is the observable
+// consequence: once leave has returned, no announcement for that participant
+// can be produced at all.
+func TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT(t *testing.T) {
+	r := newPresenceRegistry()
+	watcher := &presenceConn{participantID: "p-watch", displayName: "Zoe", out: make(chan []byte, 4)}
+	going := &presenceConn{participantID: "p-go", displayName: "Kim", out: make(chan []byte, 4)}
+	r.joinAndSend(watcher, func([]*vttv1.PresenceChanged) []byte { return nil })
+	r.joinAndSend(going, func([]*vttv1.PresenceChanged) []byte { return nil })
+
+	if !r.announceIfPresent("p-go", func(name string) []byte {
+		if name != "Kim" {
+			t.Errorf("announced name = %q, want Kim", name)
+		}
+		return []byte("promoted")
+	}) {
+		t.Fatal("a connected participant must be announceable")
+	}
+	if got := <-watcher.out; string(got) != "promoted" {
+		t.Fatalf("the table got %q", got)
+	}
+
+	// They leave. Any announcement AFTER this would arrive as a CONNECTED for
+	// somebody the table has already been told is gone.
+	r.leave(going)
+	built := false
+	if r.announceIfPresent("p-go", func(string) []byte {
+		built = true
+		return []byte("ghost")
+	}) {
+		t.Fatal("announced somebody who has left — the table will re-add them and never " +
+			"hear otherwise, because only a snapshot can replace the list")
+	}
+	if built {
+		t.Fatal("the frame must not even be built for a participant who is gone")
+	}
+	select {
+	case got := <-watcher.out:
+		t.Fatalf("the table was sent %q about a participant who had left", got)
+	default:
+	}
+}
+
+func TestBroadcastSkipsAnybodyTheCallerHasDenied(t *testing.T) {
+	// How revocation reaches presence. Frames written here never travel the
+	// pump, so the per-event re-resolution cannot see them: a revoked stranger
+	// on a leaked link went on watching the guest list until the table next
+	// appended an event.
+	r := newPresenceRegistry()
+	staying := &presenceConn{participantID: "p-ok", displayName: "Zoe", out: make(chan []byte, 4)}
+	revoked := &presenceConn{participantID: "p-gone", displayName: "Stranger", out: make(chan []byte, 4)}
+	r.joinAndSend(staying, func([]*vttv1.PresenceChanged) []byte { return nil })
+	r.joinAndSend(revoked, func([]*vttv1.PresenceChanged) []byte { return nil })
+
+	r.broadcast(nil, []byte("someone arrived"), map[string]bool{"p-gone": true})
+
+	if got := <-staying.out; string(got) != "someone arrived" {
+		t.Fatalf("a participant in good standing got %q", got)
+	}
+	select {
+	case got := <-revoked.out:
+		t.Fatalf("a revoked participant was sent %q — they are meant to see nothing", got)
+	default:
+	}
+
+	// And a nil deny denies nobody, or every ordinary broadcast would stop.
+	r.broadcast(nil, []byte("second"), nil)
+	if got := <-revoked.out; string(got) != "second" {
+		t.Fatalf("nil deny must deny nobody, got %q", got)
 	}
 }

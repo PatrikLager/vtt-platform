@@ -26,6 +26,7 @@ client/src/app.ts                100.00
 client/src/auth.ts              100.00
 client/src/commands.ts          100.00
 client/src/fold.ts               100.00
+client/src/join.ts               100.00
 client/src/main.ts              100.00
 client/src/metadata.ts          100.00
 client/src/player.ts            100.00
@@ -34,6 +35,7 @@ client/src/undo.ts              100.00
 client/src/view/dm.ts            100.00
 client/src/view/feed.ts         100.00
 client/src/view/grid.ts         100.00
+client/src/view/join.ts          100.00
 client/src/view/player.ts        100.00
 client/src/view/spectator.ts     100.00
 client/src/wire.ts               100.00

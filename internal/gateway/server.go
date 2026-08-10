@@ -210,9 +210,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws", s.handleWS)
 	// Read-only metadata (metadata.go). Method-qualified patterns, so a POST
 	// to a read endpoint is a clean 405 rather than a silent success.
+	// The shared join link. POST-only and unauthenticated by construction —
+	// see join.go for why its refusals are deliberately indistinguishable.
+	mux.HandleFunc("POST /join", s.handleJoin)
+
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/ruleset", s.handleRuleset)
 	mux.HandleFunc("GET /api/ruleset/guide", s.handleRulesetGuide)
+	mux.HandleFunc("GET /api/join-link", s.handleJoinLink)
+	mux.HandleFunc("GET /api/participants", s.handleParticipants)
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 
@@ -410,6 +416,31 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		defer close(pumpDone)
 
 		for env := range events {
+			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
+			// cover. commandRoles has no spectator row anywhere, so a
+			// spectator may issue NO command — the lookup down there never
+			// fires for one. And every joiner through the shared link arrives
+			// as a spectator. So a revoked stranger who found a leaked link
+			// kept watching the whole session: the one thing a spectator does
+			// is exactly the thing revocation was not reaching.
+			//
+			// Delivery is where a watcher meets the server, so delivery is
+			// where it bites — on the next thing the table would have shown
+			// them, not on a timer and not at their next connect.
+			//
+			// ErrInvalidToken ONLY. An operational failure must not silently
+			// drop an event: losing a frame is worse than a moment's delay in
+			// removing somebody, and the very next event catches them anyway.
+			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
+				// The same force-close the end of this loop uses, not a second
+				// teardown route: conn.Read errors, serve unwinds, and presence
+				// deregisters through the one path it already had.
+				if !closing.Load() {
+					_ = conn.CloseNow()
+				}
+				return
+			}
+
 			// Marshaled per connection, deliberately: each pump encodes
 			// straight off its own subscription channel with no shared
 			// cache. At table scale (a handful of participants, not
@@ -500,7 +531,55 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			return
 		}
 
-		result := s.handleCommand(p, cmd)
+		// RE-RESOLVE, every command. Verify ran once before the upgrade and
+		// answered "who is this, and what may they do?" — but the first half
+		// is a connection-time fact and the second is a LIVE one. Trusting the
+		// cached answer meant a promotion did not bite until the participant
+		// reconnected, which would sit on the critical path of everybody who
+		// ever joins (they all arrive as spectators), and it meant `vtt revoke`
+		// removed nobody: a revoked participant kept playing until they chose
+		// to disconnect. Spec §3.2.
+		//
+		// Measured at 15.5µs against a 40-participant table, on a path that
+		// already folds state, appends to SQLite and writes a socket frame.
+		//
+		// THIS IS HALF OF IT. A spectator issues no commands at all, so the
+		// pump above re-resolves on DELIVERY for the same reason. Change one
+		// and you almost certainly mean to change the other.
+		now, err := s.ids.Lookup(p.ID)
+		if errors.Is(err, identity.ErrInvalidToken) {
+			// Revoked, or gone. Close rather than refuse-and-continue: their
+			// credential is no longer valid, so there is nothing left for this
+			// connection to be allowed to do.
+			shutdown()
+			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
+			return
+		}
+
+		// ANY OTHER ERROR IS OPERATIONAL, and must not be read as a
+		// revocation. Putting a database read on this path also put its
+		// failure modes here: a busy file, a corrupt row, a driver error. None
+		// of those is a fact about this person's credential, and closing on
+		// them tells a player in good standing that theirs is no longer valid
+		// — a lie, and one that throws them out of a live table over a
+		// transient. identity's own comment records this shared file blocking
+		// the full busy_timeout and then failing under another handle's write
+		// transaction, so it is measured, not hypothetical.
+		//
+		// Refuse the command and keep the connection, exactly as handleCommand
+		// already does for a campaign that cannot answer. Still fail-closed
+		// where it counts: nothing is authorized while we cannot say who is
+		// asking.
+		var result *vttv1.CommandResult
+		if err != nil {
+			result = &vttv1.CommandResult{
+				RequestId: cmd.GetRequestId(),
+				Ok:        false,
+				Error:     "gateway: identity unavailable",
+			}
+		} else {
+			result = s.handleCommand(now, cmd)
+		}
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue
@@ -540,6 +619,20 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
 		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)
+	}
+	// promote_participant produces NO EVENT AT ALL, unlike the two above which
+	// produce a batch. A role lives in participants.role beside the token —
+	// one source of truth, never in the log (joining-a-table spec §3.1). It is
+	// the only command that changes identity rather than campaign state, which
+	// is why ToEvent's completeness gate names it on its allowlist.
+	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
+		return s.handlePromotion(requestID, pp.PromoteParticipant)
+	}
+	if d, ok := cmd.GetCommand().(*vttv1.ClientCommand_SetJoinDoor); ok {
+		return s.handleJoinDoor(requestID, d.SetJoinDoor)
+	}
+	if _, ok := cmd.GetCommand().(*vttv1.ClientCommand_RotateJoinLink); ok {
+		return s.handleRotateJoinLink(requestID)
 	}
 
 	env, err := ToEvent(cmd, p)
@@ -622,5 +715,159 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 	if err != nil {
 		return
 	}
-	s.presence.broadcast(pc, b)
+	// Revoked participants are denied this frame. Presence is the ONE delivery
+	// path that does not run through the pump, so without this a revoked
+	// stranger who came in on a leaked link went on watching the guest list
+	// arrive and leave until the table next appended an event (spec §3.2).
+	s.presence.broadcast(pc, b, s.revoked())
+}
+
+// revoked resolves every connected participant and returns those whose
+// credential no longer stands.
+//
+// Resolved HERE rather than inside the registry, and that placement is the
+// point: a Lookup inside broadcast's loop would put one SQLite read per
+// connection under the registry's global mutex — the fan-out stall
+// presenceSendBudget exists to prevent, reintroduced on the path that fans out.
+//
+// Only ErrInvalidToken denies. An operational failure is not a fact about
+// anybody's credential, and dropping presence frames on a busy database would
+// make a transient look like the whole table walking out.
+//
+// The cost is one lookup per connected participant per presence frame, and
+// presence frames are rare — somebody joins, somebody leaves — unlike events.
+// nil when nobody is revoked, which is the ordinary case and allocates nothing.
+func (s *Server) revoked() map[string]bool {
+	var out map[string]bool
+	for _, id := range s.presence.participantIDs() {
+		if _, err := s.ids.Lookup(id); errors.Is(err, identity.ErrInvalidToken) {
+			if out == nil {
+				out = make(map[string]bool, 1)
+			}
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// announcePromotion re-announces a promoted participant to the whole table,
+// their own connections included.
+//
+// The frame carries no NEW presence information — they were already connected
+// and still are. It exists as a NUDGE, and it closes the half of promotion
+// that live re-resolution does not reach: the server now lets a promoted
+// spectator act on their existing socket, but their own browser read its role
+// once at connect (/api/me) and nothing ever told it that role moved. So they
+// could act and their client offered them nothing to act with — the server
+// said yes to a screen with no controls on it.
+//
+// Sent to everyone rather than just to them, because a stale role is a stale
+// role: the DM's console lists roles too.
+//
+// Found by the e2e. No unit test could see it — every layer was correct, and
+// what was wrong was a browser's idea of itself.
+func (s *Server) announcePromotion(participantID string) {
+	// Resolve, encode and send under ONE hold of the registry lock. Doing it
+	// in three steps let the participant's last connection unwind between the
+	// resolve and the send, so the table saw DISCONNECTED then CONNECTED and
+	// kept a ghost in its list for the rest of the session.
+	s.presence.announceIfPresent(participantID, func(name string) []byte {
+		b, err := s.encodeFrame(&vttv1.ServerFrame{
+			Frame: &vttv1.ServerFrame_PresenceChanged{
+				PresenceChanged: &vttv1.PresenceChanged{
+					ParticipantId: participantID,
+					DisplayName:   name,
+					State:         vttv1.PresenceState_PRESENCE_STATE_CONNECTED,
+				},
+			},
+		})
+		if err != nil {
+			return nil
+		}
+		return b
+	})
+}
+
+// handleJoinDoor opens or closes the shared join link (joining-a-table §2).
+//
+// Authorize has already bounded WHO may issue this (dm/agent, authz.go), so
+// this applies it. It appends NOTHING: the door is operational state, like
+// presence, and replaying a campaign must never reopen a door somebody closed.
+func (s *Server) handleJoinDoor(requestID string, req *vttv1.SetJoinDoor) *vttv1.CommandResult {
+	var open bool
+	switch req.GetDoor() {
+	case vttv1.JoinDoor_JOIN_DOOR_OPEN:
+		open = true
+	case vttv1.JoinDoor_JOIN_DOOR_CLOSED:
+		open = false
+	default:
+		// REFUSED, not defaulted, and this is why the contract carries an enum
+		// rather than a bool: protojson omits zero values, so `bool open`
+		// would put CLOSED on the wire as an absent field and make a sender
+		// that forgot to set it indistinguishable from one asking to shut the
+		// door. Both guesses are bad in their own direction — guess open and a
+		// bug admits strangers, guess closed and a bug locks the table out
+		// mid-session — so neither is made.
+		return &vttv1.CommandResult{
+			RequestId: requestID,
+			Ok:        false,
+			Error:     "gateway: set_join_door must say open or closed",
+		}
+	}
+	if err := s.ids.SetJoinOpen(open); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
+// handleRotateJoinLink mints a new join secret, closing a LEAKED link to
+// newcomers without touching anybody already through it.
+func (s *Server) handleRotateJoinLink(requestID string) *vttv1.CommandResult {
+	if _, err := s.ids.RotateJoinSecret(); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	// The new secret is deliberately NOT returned here. CommandResult carries
+	// no payload, and adding one to smuggle a credential back would put a
+	// shared secret on the channel every participant's frames travel. The DM
+	// reads it from GET /api/join-link instead, which is authenticated and
+	// dm/agent only.
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
+// handlePromotion applies an authorized role change.
+//
+// Authorize has already bounded WHO may issue this and WHAT role it may name
+// (gateway/authz.go: dm/agent only, targeting player or spectator only), so
+// this applies it and reports what identity said. It deliberately appends
+// nothing: the whole point of keeping role identity-side is that there is one
+// source of truth, and writing an event beside it would create a second.
+func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant) *vttv1.CommandResult {
+	// A PROMOTION MAY NOT UNMAKE A DM OR AN AGENT.
+	//
+	// Authorize bounds what a promotion may promote TO (authz.go: player or
+	// spectator only, spec §3.1a). It cannot bound who may be promoted FROM,
+	// because that is a fact about the target's CURRENT row and Authorize does
+	// no I/O — so the check lives here, where the lookup is.
+	//
+	// Without it, promote_participant(dm_id, "spectator") names a permitted
+	// role and goes through. Nobody left at the table could undo it: promotion
+	// cannot reach dm by design, so it would take host access and `vtt invite`.
+	// Agents are authorized to promote, which is the sharp end — one agent
+	// having a bad day could lock every human out of their own campaign.
+	target, err := s.ids.Lookup(req.GetParticipantId())
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	if target.Role == identity.RoleDM || target.Role == identity.RoleAgent {
+		return &vttv1.CommandResult{
+			RequestId: requestID,
+			Ok:        false,
+			Error:     "gateway: not authorized: a dm or agent cannot be demoted by a promotion",
+		}
+	}
+	if err := s.ids.SetRole(req.GetParticipantId(), identity.Role(req.GetRole())); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	s.announcePromotion(req.GetParticipantId())
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }

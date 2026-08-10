@@ -869,3 +869,745 @@ test("presence reaches the DM console's grant dropdown", async () => {
     .toEqual(["Lera"]);
   session?.close();
 });
+
+// --- the shared join link (plan J5) --------------------------------------
+
+/** Answer /join with one canned response; everything else 404s. */
+function stubJoinRoute(status: number, body: string): { bodies: string[] } {
+  const bodies: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path !== "/join") return new Response("", { status: 404 });
+    bodies.push(String(init?.body ?? ""));
+    return new Response(body, { status });
+  }) as typeof fetch;
+  return { bodies };
+}
+
+test("a shared join link with no credential yet asks who you are", async () => {
+  // The whole point of the feature: somebody with no invite, no token and no
+  // account opens ONE link and is asked a single question.
+  setURL("http://localhost/?join=s3cret");
+  const r = root();
+
+  const session = boot(r);
+
+  expect(session).toBeNull();
+  expect(r.querySelector('[data-field="join-name"]')).not.toBeNull();
+  // And emphatically NOT the dead end that used to be the only other branch.
+  expect(r.textContent).not.toContain("invite token");
+  // The form starts EMPTY and unalarmed. Both halves matter: a prefilled name
+  // is somebody else's, and an error box before anything has been tried reads
+  // as "this is already broken" to a person who has not typed a character.
+  expect(r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.value).toBe("");
+  expect(r.querySelector(".error")).toBeNull();
+});
+
+test("a stored token wins over the join link, so reopening it does not mint a second you", async () => {
+  // THE OPPOSITE PRECEDENCE FROM ?token=, and deliberately so. A ?token= link
+  // is an act of re-invitation aimed at one person, so it overrides. A ?join=
+  // link is a durable URL that everybody at the table keeps and reopens — if
+  // it won, every visit would mint a NEW participant, and the returning player
+  // would arrive as a stranger with none of their characters, while the DM
+  // watched the roster fill with duplicates nobody can tell apart.
+  localStorage.setItem("vtt.token", "tok-mine");
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubMetadata({});
+
+  const session = boot(root());
+  await settle();
+
+  expect(FakeSocket.instances).toHaveLength(1);
+  expect(FakeSocket.instances[0]!.url).toContain("token=tok-mine");
+  expect(document.querySelector('[data-field="join-name"]')).toBeNull();
+  session?.close();
+});
+
+test("joining stores the credential, strips the secret from the address bar, and dials", async () => {
+  // All three, because each has failed on its own elsewhere in this client:
+  // a token that is fetched but not stored means the next reload asks again;
+  // a secret left in the URL is a shareable credential in browser history;
+  // and a join that never dials leaves a form that looks like it worked.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  const calls: string[] = [];
+  const original = history.replaceState.bind(history);
+  history.replaceState = ((...args: unknown[]) => {
+    calls.push(String(args[2]));
+    return original(args[0] as never, args[1] as string, args[2] as string);
+  }) as typeof history.replaceState;
+  const seen = stubJoinRoute(200, JSON.stringify({ token: "tok-joined" }));
+
+  const r = root();
+  boot(r);
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.value = "Kim";
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.dispatchEvent(new Event("input"));
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  expect(seen.bodies).toHaveLength(1);
+  expect(JSON.parse(seen.bodies[0]!)).toEqual({ secret: "s3cret", displayName: "Kim" });
+  expect(localStorage.getItem("vtt.token")).toBe("tok-joined");
+  // toHaveLength FIRST. `calls.some(...)` on an empty array is false, so the
+  // old form was satisfied by replaceState never being called at all —
+  // deleting the strip left all 486 tests passing. The join secret is the more
+  // dangerous of the two credentials this client handles: it admits ANYONE, so
+  // leaving it in history and in every outbound Referer is worse than leaking
+  // one person's token.
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).not.toContain("join");
+  expect(FakeSocket.instances).toHaveLength(1);
+  expect(FakeSocket.instances[0]!.url).toContain("token=tok-joined");
+
+  history.replaceState = original;
+  FakeSocket.instances[0]!.close();
+});
+
+test("a refused join leaves the form up, says why, and stores nothing", async () => {
+  // The failure that must not silently half-succeed: storing a credential the
+  // server refused would make every later reload dial with a dead token and
+  // report a connection problem instead of a closed door.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubJoinRoute(403, "gateway: this link is not accepting anyone\n");
+
+  const r = root();
+  boot(r);
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  expect(r.querySelector('[data-field="join-name"]')).not.toBeNull();
+  expect(r.querySelector(".error")!.textContent).toContain("DM");
+  expect(localStorage.getItem("vtt.token")).toBeNull();
+  expect(FakeSocket.instances).toHaveLength(0);
+  // AND THEY CAN TRY AGAIN. The in-flight flag has to be cleared on the way
+  // out of a refusal, or the button stays disabled for good and the only
+  // recovery from a closed door is reloading the page — which somebody who
+  // has just been told "ask your DM" has no reason to think of.
+  expect(r.querySelector<HTMLButtonElement>('[data-action="join"]')!.disabled).toBe(false);
+});
+
+test("Enter while a join is in flight does not mint a second you", async () => {
+  // Found reviewing my own wiring rather than by a test, which is why it is
+  // here: the double-press guard is the DISABLED BUTTON, and Enter never
+  // touches the button. Every post mints a participant, so a second one puts
+  // the same person at the table twice holding two credentials — and nothing
+  // will ever revoke the spare, because nobody knows it exists.
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  const posts: string[] = [];
+  let release: (r: Response) => void = () => {};
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    posts.push(String(init?.body ?? ""));
+    // Never settles until this test says so, so the second press lands while
+    // the first is genuinely still in flight rather than after it.
+    return new Promise<Response>((r) => {
+      release = r;
+    });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  boot(r);
+  const typeInto = () => {
+    const i = r.querySelector<HTMLInputElement>('[data-field="join-name"]')!;
+    i.value = "Kim";
+    i.dispatchEvent(new Event("input"));
+    return i;
+  };
+  typeInto();
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  // The repaint rebuilt the input, so this is deliberately re-queried: asking
+  // the stale element would dispatch at a node no longer in the document and
+  // pass whether or not the guard exists.
+  // Nothing is reported as wrong while the answer is still outstanding: the
+  // submit clears any previous error before it starts, so a retry after a
+  // closed door does not sit under the old message while it runs.
+  expect(r.querySelector(".error")).toBeNull();
+
+  r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter" }),
+  );
+  await settle();
+
+  expect(posts).toHaveLength(1);
+
+  release(new Response(JSON.stringify({ token: "tok-joined" }), { status: 200 }));
+  await settle();
+  FakeSocket.instances[0]?.close();
+});
+
+test("a DM's roster learns about somebody who joins after the console loaded", async () => {
+  // The gap the e2e found, and the only test that could: every layer worked —
+  // /join minted the spectator, presence announced them, the console rendered
+  // a roster — and the roster was read ONCE at boot, so the one person who
+  // needed a promote button was the one person who never had one.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  let rosterCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: true, secret: "s3cret" });
+    if (path === "/api/participants") {
+      rosterCalls++;
+      // FIRST read predates the joiner, exactly as at a real table.
+      return Response.json(
+        rosterCalls === 1
+          ? [{ participantId: "p-dm", name: "Ari", role: "dm" }]
+          : [
+              { participantId: "p-dm", name: "Ari", role: "dm" },
+              { participantId: "p-new", name: "Robin", role: "spectator" },
+            ],
+      );
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  await settle();
+  expect(rosterCalls).toBe(1);
+
+  // Somebody arrives. Presence is the ONLY signal — no event is appended,
+  // because joining is not campaign history.
+  sock.deliver({
+    presenceChanged: { participantId: "p-new", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(rosterCalls).toBe(2);
+  expect(r.querySelector('[data-action="promote-p-new"]')).not.toBeNull();
+
+  // And it does NOT re-read on every subsequent frame: a console that fetched
+  // per event would put a request behind every token move at the table.
+  const after = rosterCalls;
+  sock.deliver(envelope(9, { sceneCreated: { sceneId: "s9", name: "Vault", gridWidth: 4, gridHeight: 4 } }));
+  await settle();
+  expect(rosterCalls).toBe(after);
+
+  session?.close();
+});
+
+test("a promoted spectator's own screen catches up without reconnecting", async () => {
+  // The half of promotion that live re-resolution does NOT reach. The server
+  // starts accepting this person's commands the moment the DM promotes them —
+  // and their browser read its role once, at connect. Without this they can
+  // act and their own client offers them nothing to act with: the server says
+  // yes to a screen with no controls on it.
+  //
+  // The server re-announces a promoted participant for exactly this reason, so
+  // a presence frame naming ME means "read your role again". Watching the
+  // participant LIST cannot serve: they were already present, so it does not
+  // change.
+  setURL("http://localhost/?token=tok-watcher");
+  useFakeSocket();
+  let role = "spectator";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  await settle();
+  expect(r.querySelector(".player")).toBeNull(); // a spectator watches
+
+  // The DM promotes them elsewhere; the server nudges this connection.
+  role = "player";
+  sock.deliver({
+    presenceChanged: { participantId: "p-me", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(r.querySelector(".player")).not.toBeNull();
+
+  session?.close();
+});
+
+test("only a DM or agent reads the join link, and a refusal does not become an unhandled rejection", async () => {
+  // Two properties, both about the routes that are role-gated server-side.
+  //
+  // A player must not ASK: the request would 403, and getJSON turns a 403 into
+  // a thrown error rather than an absence — so asking would cost an unhandled
+  // rejection for a panel the player was never going to see.
+  setURL("http://localhost/?token=tok-player");
+  useFakeSocket();
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    asked.push(path);
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-1", name: "Lera", role: "player", controls: [] });
+    }
+    if (path === "/api/join-link" || path === "/api/participants") {
+      return new Response("gateway: not authorized", { status: 403 });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const session = boot(root());
+  await settle();
+  // And still not when presence churns — including a frame naming the player
+  // THEMSELVES, which is what a promotion sends. Re-reading your own role is
+  // right; asking for a link you may not have is not.
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-1", displayName: "Lera", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  sock.deliver({
+    presenceChanged: { participantId: "p-2", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  expect(asked).toContain("/api/me");
+  expect(asked).not.toContain("/api/join-link");
+  expect(asked).not.toContain("/api/participants");
+  session?.close();
+});
+
+test("a DM whose credential is pulled mid-session loses the panels, not the page", async () => {
+  // The refusal path that IS reachable: a DM asks legitimately, and by the
+  // time the request lands they have been revoked. getJSON throws; without a
+  // catch that is an unhandled rejection, and the console keeps rendering a
+  // link nobody can use.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  let allowed = true;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") {
+      return allowed
+        ? Response.json({ open: true, secret: "s3cret" })
+        : new Response("gateway: not authorized", { status: 403 });
+    }
+    if (path === "/api/participants") {
+      return allowed
+        ? Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }])
+        : new Response("gateway: not authorized", { status: 403 });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  allowed = false;
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  // Names the DM THEMSELVES, so the self-role re-read runs too and its own
+  // follow-up refresh is exercised rather than skipped.
+  sock.deliver({
+    presenceChanged: { participantId: "p-dm", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+
+  // The panel is gone and the page is still a page.
+  expect(r.querySelector('[data-field="join-link"]')).toBeNull();
+  expect(r.querySelector(".conn")).not.toBeNull();
+  session?.close();
+});
+
+test("an AGENT gets the sharing panel too, and a presence frame keeps the roster fresh", async () => {
+  // Agents are dm-equivalent for the door and the roster (spec §5), and the
+  // role check is written once — so this is the case that proves "once" means
+  // both, rather than "dm" with an unreached second clause.
+  setURL("http://localhost/?token=tok-agent");
+  useFakeSocket();
+  let rosterCalls = 0;
+  let meCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      meCalls++;
+      return Response.json({ participantId: "p-a", name: "Aide", role: "agent", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: false, secret: "s3cret" });
+    if (path === "/api/participants") {
+      rosterCalls++;
+      return Response.json([{ participantId: "p-a", name: "Aide", role: "agent" }]);
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+  expect(rosterCalls).toBe(1);
+
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  // A batch naming SOMEBODY ELSE. The roster still has to be re-read — that is
+  // the whole newcomer case — even though nothing about this agent changed.
+  sock.deliver({
+    presenceChanged: { participantId: "p-new", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(rosterCalls).toBe(2);
+  // But NOT a re-read of this agent's own role: the frame names somebody else,
+  // and my role cannot have changed because theirs did. A client that re-read
+  // /api/me on every presence frame would put a request behind every arrival
+  // and departure at the table, for an answer it already has.
+  expect(meCalls).toBe(1);
+
+  // And an ordinary EVENT does not: onChange fires per frame, and a roster
+  // read behind every token move at the table is not a feature.
+  const before = rosterCalls;
+  sock.deliver(envelope(4, { sceneCreated: { sceneId: "s4", name: "Attic", gridWidth: 3, gridHeight: 3 } }));
+  await settle();
+  expect(rosterCalls).toBe(before);
+
+  session?.close();
+});
+
+test("a batch naming me AND somebody else still re-reads my own role", async () => {
+  // The snapshot every connection gets names everyone, and a promotion's
+  // re-announcement can arrive batched with an arrival. A check that only
+  // acted when the batch named ME ALONE would skip exactly those.
+  setURL("http://localhost/?token=tok-watcher");
+  useFakeSocket();
+  let meCalls = 0;
+  let role = "spectator";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      meCalls++;
+      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  await settle();
+  const before = meCalls;
+
+  role = "player";
+  sock.deliver({
+    presenceSnapshot: {
+      present: [
+        { participantId: "p-other", displayName: "Ari", state: "PRESENCE_STATE_CONNECTED" },
+        { participantId: "p-me", displayName: "Robin", state: "PRESENCE_STATE_CONNECTED" },
+      ],
+    },
+  });
+  await settle();
+
+  expect(meCalls).toBe(before + 1);
+  expect(r.querySelector(".player")).not.toBeNull();
+  // Promoted to PLAYER, not to dm — so the re-read must not go on to ask for
+  // the sharing panel. A role change is a reason to re-check what you may do,
+  // not a reason to assume it grew.
+  expect(r.querySelector('[data-field="join-link"]')).toBeNull();
+  session?.close();
+});
+
+test("a network blip keeps the DM's panels; only a refusal takes them away", async () => {
+  // Two different failures that getJSON reports the same way (both throw), and
+  // they deserve opposite answers. A 403 means "you may not read this" — a
+  // revocation mid-session — and dropping the panel is right. A network fault
+  // means "this read failed", and dropping the panel for that takes the door
+  // and the roster away from a DM who still has every right to them, silently.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  let mode: "ok" | "blip" | "refused" = "ok";
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link" || path === "/api/participants") {
+      if (mode === "blip") throw new TypeError("Failed to fetch");
+      if (mode === "refused") return new Response("gateway: not authorized", { status: 403 });
+      return path === "/api/join-link"
+        ? Response.json({ open: true, secret: "s3cret" })
+        : Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]);
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  const nudge = (id: string) =>
+    sock.deliver({
+      presenceChanged: { participantId: id, displayName: "X", state: "PRESENCE_STATE_CONNECTED" },
+    });
+
+  // A blip: the panel STAYS. There is nothing new to show, and nothing was
+  // withdrawn.
+  mode = "blip";
+  nudge("p-a");
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  // A refusal: the panel goes.
+  mode = "refused";
+  nudge("p-b");
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).toBeNull();
+
+  session?.close();
+});
+
+test("a slow roster answer cannot overwrite a fresher one", async () => {
+  // Two refreshes can be in flight at once — a promotion and an arrival a
+  // moment apart — and both assignments are last-writer-wins on COMPLETION,
+  // not on issue order. The first read describes the table BEFORE the
+  // promotion; if it lands second it repaints a promoted player as the
+  // spectator they were, and nothing corrects it until the next presence
+  // frame.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  const gate: ((v: Response) => void)[] = [];
+  let rosterCall = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: true, secret: "s" });
+    if (path === "/api/participants") {
+      rosterCall++;
+      const body =
+        rosterCall === 1
+          ? [{ participantId: "p-k", name: "Kim", role: "spectator" }] // the OLD truth
+          : [{ participantId: "p-k", name: "Kim", role: "player" }]; // after the promotion
+      // Held open so the test decides the ORDER they resolve in.
+      return new Promise<Response>((r) => gate.push(() => r(Response.json(body))));
+    }
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  expect(gate).toHaveLength(1); // the boot read, in flight
+
+  // A presence frame issues a SECOND refresh while the first is outstanding.
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-k", displayName: "Kim", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(gate).toHaveLength(2);
+
+  // The FRESH one lands first, then the stale one. Out of order on purpose:
+  // that is the whole scenario, and it is the order a slow first request
+  // produces.
+  gate[1]!(undefined as never);
+  await settle();
+  expect(r.querySelector(".roster-row .role")!.textContent).toBe("player");
+
+  gate[0]!(undefined as never);
+  await settle();
+  expect(r.querySelector(".roster-row .role")!.textContent).toBe("player");
+
+  session?.close();
+});
+
+test("a stale refusal cannot clear a panel that has been refreshed since", async () => {
+  // The catch path needs the same ticket the success path has. A 403 answering
+  // a request issued BEFORE a revocation was undone — or simply before a newer
+  // read succeeded — would otherwise pull the door and the roster off a
+  // console that had just been told it may have them.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  const gate: (() => void)[] = [];
+  let call = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/participants") {
+      return Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]);
+    }
+    if (path === "/api/join-link") {
+      call++;
+      const n = call;
+      return new Promise<Response>((resolve, reject) => {
+        gate.push(() => {
+          // The FIRST read is refused; the second succeeds.
+          if (n === 1) reject(new Error("metadata: forbidden — this role may not read that"));
+          else resolve(Response.json({ open: true, secret: "s3cret" }));
+        });
+      });
+    }
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-x", displayName: "X", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(gate).toHaveLength(2);
+
+  // The fresh read succeeds, THEN the stale refusal arrives.
+  gate[1]!();
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  gate[0]!();
+  await settle();
+  expect(r.querySelector('[data-field="join-link"]')).not.toBeNull();
+
+  session?.close();
+});
+
+test("a stale join-link answer cannot overwrite a fresher one", async () => {
+  // The success path's twin of the roster test above. A door read issued
+  // before the DM closed the door, landing after the read that saw it shut,
+  // repaints the console as OPEN — and the DM believes the link is live.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  const gate: (() => void)[] = [];
+  let call = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/participants") {
+      return Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]);
+    }
+    if (path === "/api/join-link") {
+      call++;
+      const open = call === 1; // the first read saw it open; it has since shut
+      return new Promise<Response>((resolve) => {
+        gate.push(() => resolve(Response.json({ open, secret: "s3cret" })));
+      });
+    }
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-x", displayName: "X", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(gate).toHaveLength(2);
+
+  gate[1]!(); // the fresh answer: the door is SHUT
+  await settle();
+  expect(r.querySelector(".door-state")!.textContent).toBe("door: closed");
+
+  gate[0]!(); // the stale answer: it was open when this was asked
+  await settle();
+  expect(r.querySelector(".door-state")!.textContent).toBe("door: closed");
+
+  session?.close();
+});
+
+test("a refusal DOES clear the roster, and a stale one does not", async () => {
+  // Both directions of the roster's catch. Without the first, a revoked DM
+  // keeps promote buttons that no longer work; without the second, a refusal
+  // answering an old request pulls the panel off a console that has since been
+  // told it may have it.
+  setURL("http://localhost/?token=tok-dm");
+  useFakeSocket();
+  const gate: (() => void)[] = [];
+  let call = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+    }
+    if (path === "/api/join-link") return Response.json({ open: true, secret: "s" });
+    if (path === "/api/participants") {
+      call++;
+      const n = call;
+      return new Promise<Response>((resolve, reject) => {
+        gate.push(() => {
+          // Reads 2 AND 3 are refused. Read 3 is the one that lands stale,
+          // behind read 4's success — a refusal arriving late is the case the
+          // ticket exists for, and an earlier version of this test made the
+          // stale one a SUCCESS, so the clause was never exercised.
+          if (n === 2 || n === 3) {
+            reject(new Error("metadata: forbidden — this role may not read that"));
+          } else {
+            resolve(Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]));
+          }
+        });
+      });
+    }
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const r = root();
+  const session = boot(r);
+  await settle();
+  gate[0]!();
+  await settle();
+  expect(r.querySelector(".roster-row")).not.toBeNull();
+
+  // A LIVE refusal clears it.
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver({
+    presenceChanged: { participantId: "p-x", displayName: "X", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  gate[1]!();
+  await settle();
+  expect(r.querySelector(".roster-row")).toBeNull();
+
+  // Now a fresh success, then a STALE refusal behind it: the panel stays.
+  sock.deliver({
+    presenceChanged: { participantId: "p-y", displayName: "Y", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  sock.deliver({
+    presenceChanged: { participantId: "p-z", displayName: "Z", state: "PRESENCE_STATE_CONNECTED" },
+  });
+  await settle();
+  expect(gate).toHaveLength(4);
+  gate[3]!(); // read 4: fresh success, the panel comes back
+  await settle();
+  expect(r.querySelector(".roster-row")).not.toBeNull();
+  gate[2]!(); // read 3: a REFUSAL, now stale — it must not pull the panel again
+  await settle();
+  expect(r.querySelector(".roster-row")).not.toBeNull();
+
+  session?.close();
+});

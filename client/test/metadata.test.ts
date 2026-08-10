@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide, fetchMe } from "../src/metadata";
+import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide, fetchMe,
+  fetchJoinLink, fetchParticipants } from "../src/metadata";
 
 function fakeAPI(routes: Record<string, { status?: number; body: unknown }>) {
   const seenAuth: string[] = [];
@@ -203,5 +204,53 @@ test("an adventure id is URL-encoded on the way into the path", async () => {
     expect(api.seenPaths).toContain("/api/adventures/a%20b%2Fc/guide");
   } finally {
     api.stop();
+  }
+});
+
+test("the join link and roster are read from the routes the server actually serves", async () => {
+  // The PATHS, spelled out. Both are new routes with no other caller, so a
+  // typo here is a 404 the console degrades around silently — the DM simply
+  // never sees a sharing panel and nothing says why.
+  const seen: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      const path = new URL(req.url).pathname;
+      seen.push(path);
+      if (path === "/api/join-link") return Response.json({ open: true, secret: "s3cret" });
+      if (path === "/api/participants") {
+        return Response.json([{ participantId: "p-1", name: "Ari", role: "dm" }]);
+      }
+      return new Response("", { status: 404 });
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    const link = await fetchJoinLink(base, "tok");
+    expect(link).toEqual({ open: true, secret: "s3cret" });
+
+    const roster = await fetchParticipants(base, "tok");
+    expect(roster).toEqual([{ participantId: "p-1", name: "Ari", role: "dm" }]);
+
+    expect(seen).toEqual(["/api/join-link", "/api/participants"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a refused roster REJECTS rather than answering with an empty table", async () => {
+  // 403 is not absence. [] would say "nobody is here", which can never be
+  // true — the caller is always in their own roster — so answering it would
+  // let the console drop its panel and blame the data instead of the
+  // permission. getJSON's existing posture, asserted here because these two
+  // routes are the first whose 403 is reachable in normal play: a participant
+  // revoked mid-session hits it on the very next refresh.
+  const server = Bun.serve({ port: 0, fetch: () => new Response("", { status: 403 }) });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    await expect(fetchParticipants(base, "tok")).rejects.toThrow(/forbidden/);
+    await expect(fetchJoinLink(base, "tok")).rejects.toThrow(/forbidden/);
+  } finally {
+    server.stop(true);
   }
 });

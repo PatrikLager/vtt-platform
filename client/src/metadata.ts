@@ -99,3 +99,45 @@ export async function fetchAdventureGuide(
   );
   return body?.guide ?? null;
 }
+
+/** The shared join link and whether the door is open (spec §2). */
+export interface JoinLink {
+  open: boolean;
+  secret: string;
+}
+
+/** One person at the table, with what they are allowed to do (spec §3.1). */
+export interface Roster {
+  participantId: string;
+  name: string;
+  role: "dm" | "player" | "agent" | "spectator";
+}
+
+/**
+ * Read the join link. DM/agent only — the secret admits ANYBODY who holds it.
+ *
+ * null on any failure, matching the other fetches here: a console that cannot
+ * read the link degrades to one without a sharing panel, which is better than
+ * a blank page. The caller distinguishes "not loaded yet" from "you are not a
+ * DM" by whether it asked at all.
+ */
+export async function fetchJoinLink(base: string, token: string): Promise<JoinLink | null> {
+  return await getJSON<JoinLink>(base, "/api/join-link", token);
+}
+
+/**
+ * Read the table's roster: who exists, and what each of them may do.
+ *
+ * NOT derived from presence. Presence answers "who is connected right now" and
+ * carries no role, deliberately — a role folded into a presence frame would go
+ * stale the moment somebody was promoted without reconnecting, which is
+ * exactly what live re-resolution made possible (spec §3.2).
+ */
+export async function fetchParticipants(base: string, token: string): Promise<Roster[] | null> {
+  // null on failure rather than [], because the two mean different things and
+  // the caller renders them differently. List() always contains at least the
+  // caller, so an EMPTY roster cannot happen — an empty array would therefore
+  // be a failure wearing the costume of an ordinary answer, and the console
+  // would quietly drop its "Who may do what" panel with nothing said.
+  return await getJSON<Roster[]>(base, "/api/participants", token);
+}

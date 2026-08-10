@@ -36,6 +36,7 @@ export class Session {
   // the same person twice and never correct itself.
   private present = new Map<string, Participant>();
   private errorHandlers: ((e: Error) => void)[] = [];
+  private presenceHandlers: ((batch: PresenceEvent[]) => void)[] = [];
 
   constructor(url: string, token: string) {
     this.wire = new Wire(url, token);
@@ -83,6 +84,19 @@ export class Session {
 
   onChange(fn: () => void): void {
     this.changeHandlers.push(fn);
+  }
+
+  /**
+   * Raw presence batches, for a caller that needs more than the resulting
+   * list.
+   *
+   * onChange cannot serve this: a promotion re-announces somebody who is
+   * ALREADY present, so the participant list is unchanged and a listener
+   * watching the list sees nothing at all. The batch is the only place that
+   * frame is visible.
+   */
+  onPresence(fn: (batch: PresenceEvent[]) => void): void {
+    this.presenceHandlers.push(fn);
   }
 
   onError(fn: (e: Error) => void): void {
@@ -137,6 +151,7 @@ export class Session {
         this.present.delete(p.participantId);
       }
     }
+    for (const fn of this.presenceHandlers) fn(batch);
     for (const fn of this.changeHandlers) fn();
   }
 

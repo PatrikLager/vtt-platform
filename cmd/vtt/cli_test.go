@@ -237,3 +237,91 @@ func extractField(t *testing.T, out, prefix string) string {
 	t.Fatalf("no line with prefix %q in output: %q", prefix, out)
 	return ""
 }
+
+// TestJoinLinkOpenShareCloseRotate walks the whole door from the command line.
+//
+// The CLI matters more here than it does for invite/revoke, and not only as a
+// convenience: until this existed, identity.SetJoinOpen had NO caller anywhere
+// outside its own tests. Five completed tasks, every gate green, and the shared
+// join link admitted nobody because nothing in the product could open it.
+func TestJoinLinkOpenShareCloseRotate(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+
+	// SHOW works before anything else does — a DM needs the link in hand
+	// before deciding to open the door, not after.
+	out, err := runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatalf("show: %v", err)
+	}
+	// The FIELD, not the whole blob: the output also carries a base64 secret,
+	// and a substring search over it is one lucky random string away from
+	// asserting nothing.
+	if door := extractField(t, out, "door: "); door != "closed" {
+		t.Fatalf("a fresh campaign must report the door CLOSED, got %q", door)
+	}
+	first := secretFrom(t, campaignPath)
+	// The SHARE line specifically. `Contains(out, secret)` is satisfied by the
+	// `secret:` line on its own, so the whole share clause could be deleted and
+	// this stayed green — and the share line is the only part a DM actually
+	// pastes to somebody. It is also one of three places the ?join= spelling is
+	// written down against a single reader in app.ts.
+	if share := extractField(t, out, "share: "); !strings.Contains(share, "?join="+first) {
+		t.Fatalf("show must print a pasteable link carrying the secret, got %q", share)
+	}
+
+	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	out, err = runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if door := extractField(t, out, "door: "); door != "open" {
+		t.Fatalf("after open, show must report it open, got %q", door)
+	}
+
+	// Rotating changes the secret and leaves the door where it was — a rotate
+	// that quietly shut the table would be a very unwelcome surprise.
+	if _, err := runCLI(t, "join-link", "rotate", "--campaign", campaignPath); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	second := secretFrom(t, campaignPath)
+	if second == first {
+		t.Fatal("rotate must actually change the secret")
+	}
+	out, err = runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if door := extractField(t, out, "door: "); door != "open" {
+		t.Fatalf("rotating the link must not close the door, got %q", door)
+	}
+
+	if _, err := runCLI(t, "join-link", "close", "--campaign", campaignPath); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	out, err = runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if door := extractField(t, out, "door: "); door != "closed" {
+		t.Fatalf("a door that only opens is not a door, got %q", door)
+	}
+}
+
+// secretFrom reads the current join secret straight from identity, so the test
+// asserts against the STORED value rather than against whatever the command
+// happened to print.
+func secretFrom(t *testing.T, campaignPath string) string {
+	t.Helper()
+	ids, err := identity.Open(campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	s, err := ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
