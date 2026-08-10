@@ -474,3 +474,71 @@ the top.
    explanation for the "58 timeouts, then 1, then 58 again across three runs of
    identical code" that `check-mutation.py` currently attributes to
    compilation. Compare like with like, and state the cache state.
+
+## What one run costs in DISK, and why the gate now refuses to start without it
+
+Measured 2026-08-10 on a freshly emptied cache, one full `task check`:
+
+| | |
+|---|---|
+| free space consumed | **7.6 GiB** |
+| GOCACHE growth | **2.0 → 6.1 GiB** (~4 GiB retained) |
+| pre-flight floor | **16 GiB**, on the tighter of $TMPDIR and GOCACHE |
+
+The retained part is what matters: gremlins copies the whole tree per mutant and
+**every mutant is a distinct binary**, so GOCACHE grows without bound across
+runs. Measured at **82 GiB** on this machine, which filled a 228 GiB volume.
+
+**When it fills, the gate does not fail — it LIES.** gremlins emits
+`ERROR: failed to apply mutation` or `failed to restore mutation` per mutant,
+then prints a normal summary and exits 0. A failed *apply* means the test ran
+against clean source; a failed *restore* means every subsequent mutant in that
+run was measured against already-corrupted source. One recorded run tallied 467
+of 555 mutants and invented seven "stale adjudications" — entries a maintainer
+would have been told to DELETE, discarding real reasoning. And when the volume
+is genuinely full, Bash itself stops working, so it does not even present as a
+gate failure.
+
+`check-mutation.py` now refuses three ways, in order of how early they catch it:
+
+1. **Before the run**: under `MIN_FREE_BYTES` (16 GiB — the measured cost with
+   room for one more run), it refuses and names both numbers. It reads the
+   TIGHTER of $TMPDIR (the per-mutant tree copies) and GOCACHE (the retained
+   growth): they are the same volume here and are not everywhere, and a
+   RAM-backed /tmp would otherwise refuse forever on a machine with hundreds
+   of free gigabytes.
+2. **On the output**: any `failed to apply`/`failed to restore` line makes the
+   run not a measurement, and no verdict is read from it.
+3. **On the arithmetic**: the summary must account for every per-mutant line
+   printed. Verified against real output — `internal/rules` prints 553 lines
+   against 498 killed + 16 lived + 38 not covered + 1 timed out, and
+   `NOT COVERED` does get a line of its own.
+
+   **This one does NOT catch a full disk**, and an earlier draft of this
+   section said it did. The printed lines and the summary come from the same
+   slice (`engine.go:229`), and a mutant that failed to apply is dropped from
+   both — so they agree by construction however corrupt the run. Guard 2 is
+   what catches that. What guard 3 catches is a printed set that no longer
+   matches the counted set: output filtering, and format drift.
+
+## An environment variable could silence the gate
+
+Found 2026-08-10 while adding the above, and worse than the disk problem
+because it needed no disk pressure at all.
+
+`gremlins --output-statuses` decides which verdicts get PRINTED. It defaults to
+empty and is bound through viper, so `GREMLINS_UNLEASH_OUTPUT_STATUSES` in the
+environment — or a `.gremlins.yaml` anywhere up the tree — beats a flag this
+gate never passed. **Measured on `internal/adventure` with `=k` exported: the
+`LIVED` line vanished while the summary still read `Lived: 1`.**
+
+`check-mutation.py` reads survivors from the LINES. So that run reports zero
+survivors and the gate PASSES, over a real one. Nothing about it looks wrong.
+
+`gremlins_args` now passes `--output-statuses lctkvs` explicitly — every status
+that reaches the summary also reaches the lines — and the argv is asserted by
+test. The tally check above is the backstop if that ever drifts again.
+
+**The gate does not prune the cache**, deliberately: deleting a developer's
+build cache as a side effect of a check is a surprise, and `go clean -cache` is
+one command in the failure message.

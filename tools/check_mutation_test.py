@@ -21,15 +21,30 @@ _spec = importlib.util.spec_from_file_location(
 cm = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cm)
 
-def gremlins_output(*survivors, killed=9, timed_out=0, timed_out_locs=()):
-    """Fake a gremlins run: survivors are (mutator, location) pairs."""
-    lines = ["      KILLED CONDITIONALS_NEGATION at x.go:1:1"]
+def gremlins_output(*survivors, killed=9, timed_out=0, timed_out_locs=(), not_covered=0):
+    """Fake a gremlins run: survivors are (mutator, location) pairs.
+
+    THE LINES AND THE SUMMARY AGREE BY CONSTRUCTION, because real gremlins
+    output does. Measured 2026-08-10 on internal/rules: 553 per-mutant lines
+    against a summary of 498 killed + 16 lived + 38 not covered + 1 timed out,
+    and NOT COVERED does get a line of its own.
+
+    This used to emit ONE `KILLED` line beside a summary claiming nine, which
+    is output gremlins cannot produce. A fixture that models impossible output
+    is a lie of its own, and this one hid the tally check — the cheapest
+    available cross-check on a run that silently lost 88 mutants to a full disk.
+    """
+    lines = [f"      KILLED CONDITIONALS_NEGATION at k{i}.go:1:1" for i in range(killed)]
     lines += [f"       LIVED {m} at {loc}" for m, loc in survivors]
-    lines += [f"   TIMED OUT {m} at {loc}" for m, loc in timed_out_locs]
+    lines += [f"  NOT COVERED CONDITIONALS_NEGATION at n{i}.go:1:1" for i in range(not_covered)]
+    # Named locations when given, otherwise as many anonymous ones as the
+    # summary claims — either way the two halves match.
+    locs = list(timed_out_locs) or [("CONDITIONALS_NEGATION", f"t{i}.go:1:1") for i in range(timed_out)]
+    lines += [f"   TIMED OUT {m} at {loc}" for m, loc in locs]
     return "\n".join(lines) + (
         f"\nMutation testing completed in 1 seconds\n"
-        f"Killed: {killed}, Lived: {len(survivors)}, Not covered: 0\n"
-        f"Timed out: {timed_out}, Not viable: 0, Skipped: 0\n"
+        f"Killed: {killed}, Lived: {len(survivors)}, Not covered: {not_covered}\n"
+        f"Timed out: {len(locs)}, Not viable: 0, Skipped: 0\n"
         f"Test efficacy: 100.00%\n")
 
 
@@ -54,8 +69,13 @@ class MutationGateTest(unittest.TestCase):
         # symlink anywhere under the working directory short-circuits run()
         # and reds all of them with a diagnosis from the wrong subsystem.
         with tempfile.TemporaryDirectory() as root:
+            # free_bytes pinned for the same reason root is: without it every
+            # test here reads the REAL disk, and on a machine below the floor
+            # all of them fail with a diagnosis from the wrong subsystem — 26
+            # unrelated assertion failures in place of the one clear message
+            # the pre-flight exists to give. The disk tests pass it explicitly.
             code = cm.run(eq_path, list(packages), runner_for(mapping),
-                          out=out, err=err, root=root)
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3)
         return code, out.getvalue(), err.getvalue()
 
     # --- the property the gate exists for ---
@@ -225,6 +245,209 @@ class MutationGateTest(unittest.TestCase):
         self.assertIn("A DEDUCTION", hint)
         # Still not excused: the entry does not apply, and the gate says so.
         self.assertIn("not adjudicated", err)
+
+    # --- too little disk is refused BEFORE the run, not discovered after it ---
+    #
+    # The corruption guards below catch a spoiled run. This catches the cause
+    # before any of it is spent: gremlins copies the tree per mutant into
+    # $TMPDIR, and `task check:mutation` grows GOCACHE without bound — measured
+    # 2026-08-10, one full gate run consumed 7.6 GB of free space and left
+    # GOCACHE 4 GB larger, which is how it reached 82 GB and filled a 228 GB
+    # volume. When it fills, Bash itself stops working, so the failure does not
+    # even present as a gate failure.
+
+    def test_too_little_disk_refuses_before_running_anything(self):
+        ran = []
+
+        def runner(pkg):
+            ran.append(pkg)
+            return gremlins_output()
+
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/"], runner, out=out, err=err, root=root,
+                          free_bytes=3 * 1024**3)
+        self.assertEqual(code, 1)
+        self.assertEqual(ran, [], "nothing may be measured on a disk this full")
+        # The NUMBERS, both of them: an operator needs to know what they have
+        # and what is wanted, not just that something is wrong.
+        # "3" alone matched the TMPDIR PATH, which on this machine contains a
+        # 3. Both numbers, spelled as the message spells them.
+        self.assertIn("3.0 GiB free", err.getvalue())
+        self.assertIn("16 GiB", err.getvalue())
+        self.assertIn("go clean -cache", err.getvalue())
+
+    def test_enough_disk_runs_normally(self):
+        """The control. A floor that refuses every run gates nothing."""
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3)
+        self.assertEqual(code, 0, err.getvalue())
+
+    def test_the_floor_is_above_one_run_s_measured_cost(self):
+        """A floor below what a run actually spends would let it start and die.
+
+        7.6 GB is the measured cost of one full gate run. A floor at or under
+        that is not a floor — it admits a run that cannot finish, which is the
+        state this guard exists to prevent.
+        """
+        self.assertGreater(cm.MIN_FREE_BYTES, 8 * 1024**3)
+
+    # --- a run that could not apply or restore a mutation is NOT a measurement ---
+    #
+    # gremlins copies the tree per mutant into $TMPDIR. When the disk filled it
+    # emitted, per mutant, an ERROR line — and then printed a normal summary and
+    # EXITED 0. The gate never looked, so it produced confident, precise, wrong
+    # numbers from a run that had measured nothing of the kind.
+    #
+    # Two distinct corruptions hide in there, and both are silent:
+    #   failed to APPLY   — the mutation was never written, so the test ran
+    #                       against CLEAN SOURCE. The verdict is about
+    #                       unmutated code.
+    #   failed to RESTORE — the mutation stays in the workdir file, so every
+    #                       SUBSEQUENT mutant in that run is measured against
+    #                       already-corrupted source.
+    #
+    # Measured on internal/rules, identical source both times: the corrupted run
+    # tallied 467 of 555 mutant lines and invented seven "stale adjudications" —
+    # entries a maintainer would have been told to DELETE, discarding real
+    # reasoning and leaving the door open for a genuine future survivor.
+
+    def _with_error(self, kind, *survivors, count=2, **kw):
+        """gremlins' REAL error shape, not a tidy invention.
+
+        log.Errorf goes through Writef with NO TRAILING NEWLINE, and
+        executor.go formats the cause as "...%s - %s\n\t%v" — a TAB. So
+        consecutive errors GLUE onto the previous one's cause line, and a run
+        with 88 failures is not 88 tidy lines.
+
+        The first version of this helper wrote one newline-terminated error
+        with a "..." continuation, which gremlins cannot produce — and the
+        regex written against it matched exactly one error of any number and
+        dropped the cause. A fixture that models impossible output tests
+        nothing but itself.
+        """
+        out = gremlins_output(*survivors, **kw)
+        head, sep, tail = out.partition("\nMutation testing completed")
+        errs = "".join(
+            f"ERROR: failed to {kind} mutation at load.go:{i}:14 - RUNNABLE"
+            f"\n\tcopy file: no space left on device"
+            for i in range(count))
+        return head + "\n" + errs + sep + tail
+
+    def test_a_run_that_could_not_apply_a_mutation_is_refused(self):
+        eq = equivalents("")
+        code, _, err = self.gate(eq, {"./p/": self._with_error("apply", count=2)})
+        self.assertEqual(code, 1)
+        # The CAUSE, which is the actionable half. Without it, "could not apply
+        # a mutation" sends an operator looking for a bug in the gate.
+        self.assertIn("no space left on device", err)
+        # And ALL of them, not just the first. They glue together in real
+        # output, and a regex anchored on the line start counts one.
+        self.assertIn("2 mutation(s)", err)
+        # And it must NOT be reported as a clean run. The whole defect is that
+        # a corrupt measurement looked exactly like a good one.
+        self.assertNotIn("zero unadjudicated survivors", err)
+
+    def test_a_run_that_could_not_restore_a_mutation_is_refused(self):
+        eq = equivalents("")
+        code, out, err = self.gate(eq, {"./p/": self._with_error("restore")})
+        self.assertEqual(code, 1)
+        self.assertNotIn("zero unadjudicated survivors", out)
+
+    def test_a_corrupt_run_is_refused_even_when_it_reports_survivors_that_are_adjudicated(self):
+        """The corruption outranks the verdict.
+
+        This is the shape that actually shipped: a run with errors in it still
+        produced a survivor list, the list still matched the equivalents file,
+        and the gate said zero unadjudicated survivors — over numbers that
+        described partly-unmutated source.
+        """
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": self._with_error("apply", ("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        code, out, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        self.assertNotIn("zero unadjudicated survivors", out)
+
+    def test_an_ordinary_run_is_not_mistaken_for_a_corrupt_one(self):
+        """The word ERROR in a test's own output must not red the gate.
+
+        A guard that refuses any line containing "ERROR" would fail on a
+        package whose tests legitimately log one — and the fix for THAT is
+        usually to weaken the guard, which is how a gate starts lying.
+        """
+        out = gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))
+        noisy = out.replace("      KILLED", "      ERROR: some test logged this\n      KILLED", 1)
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        code, out2, err = self.gate(eq, {"./p/": noisy})
+        self.assertEqual(code, 0)
+        self.assertIn("zero unadjudicated survivors", out2)
+
+    # --- the tally must account for every mutant line gremlins printed ---
+    #
+    # A generic check on top of the specific one: mutant count is a pure
+    # function of the parsed source, so a summary that does not add up to the
+    # per-mutant lines is proof of loss whatever the cause. The ENOSPC run
+    # tallied 467 against 555 lines and nothing noticed.
+
+    def test_a_summary_that_does_not_account_for_every_mutant_line_is_refused(self):
+        eq = equivalents("")
+        # Three mutant lines printed, a summary claiming one.
+        out = ("      KILLED CONDITIONALS_NEGATION at x.go:1:1\n"
+               "      KILLED CONDITIONALS_NEGATION at x.go:2:1\n"
+               "      KILLED CONDITIONALS_NEGATION at x.go:3:1\n"
+               "Mutation testing completed in 1 seconds\n"
+               "Killed: 1, Lived: 0, Not covered: 0\n"
+               "Timed out: 0, Not viable: 0, Skipped: 0\n"
+               "Test efficacy: 100.00%\n")
+        code, _, err = self.gate(eq, {"./p/": out})
+        self.assertEqual(code, 1)
+        # Which number is which. Bare "3"/"1" could not tell "printed 3,
+        # accounts for 1" from its reverse.
+        self.assertIn("printed 3", err)
+        self.assertIn("accounts for 1", err)
+
+    def test_a_consistent_summary_passes(self):
+        """The control. A tally check that refuses everything gates nothing."""
+        eq = equivalents("")
+        out = ("      KILLED CONDITIONALS_NEGATION at x.go:1:1\n"
+               "  NOT COVERED CONDITIONALS_NEGATION at x.go:2:1\n"
+               "   NOT VIABLE CONDITIONALS_NEGATION at x.go:3:1\n"
+               "Mutation testing completed in 1 seconds\n"
+               "Killed: 1, Lived: 0, Not covered: 1\n"
+               "Timed out: 0, Not viable: 1, Skipped: 0\n"
+               "Test efficacy: 100.00%\n")
+        code, out2, err = self.gate(eq, {"./p/": out})
+        self.assertEqual(code, 0, err)
+
+    def test_a_summary_that_does_not_parse_is_fatal_rather_than_skipped(self):
+        """Fail closed on format drift, like the counts check beside it."""
+        eq = equivalents("")
+        out = ("      KILLED CONDITIONALS_NEGATION at x.go:1:1\n"
+               "Mutation testing completed in 1 seconds\n"
+               "Killed: 1, Lived: 0, Not covered: 0, Ignored: 0\n"
+               "Timed out: 0, Not viable: 0, Skipped: 0\n")
+        code, _, err = self.gate(eq, {"./p/": out})
+        self.assertEqual(code, 1)
+        self.assertIn("check the pin", err)
+
+    def test_a_run_that_measured_nothing_is_not_a_clean_sweep(self):
+        """Zero mutants is a broken run, not a perfect one.
+
+        Same class as the unresolvable-package and dropped-symlink guards: a
+        green line over a run that established nothing. Every gated package has
+        hundreds of mutants.
+        """
+        eq = equivalents("")
+        out = ("Mutation testing completed in 1 seconds\n"
+               "Killed: 0, Lived: 0, Not covered: 0\n"
+               "Timed out: 0, Not viable: 0, Skipped: 0\n")
+        code, _, err = self.gate(eq, {"./p/": out})
+        self.assertEqual(code, 1)
+        self.assertIn("measured nothing", err)
 
     # --- an equivalence claim without a stated reason is not a claim ---
 
@@ -468,6 +691,29 @@ class SubpackageRecursionTest(unittest.TestCase):
     survivors by path would also silently drop mutants from subpackages that
     are NOT separately gated, converting a visible gap into an invisible one.
     """
+
+    def test_the_printed_statuses_are_pinned_on_the_command_line(self):
+        """An environment variable must not be able to silence this gate.
+
+        `--output-statuses` defaults to EMPTY and gremlins binds it through
+        viper, so GREMLINS_UNLEASH_OUTPUT_STATUSES — or a .gremlins.yaml
+        anywhere up the tree — beats an unset flag. MEASURED 2026-08-10 with
+        `=k` exported on internal/adventure: the LIVED line vanished while the
+        summary still said `Lived: 1`. This gate reads survivors from the
+        LINES, so it reported zero survivors and PASSED over a real one.
+
+        Passing the flag explicitly makes the environment irrelevant.
+        """
+        args = cm.gremlins_args("./internal/rules/", ["./internal/rules/"])
+        self.assertIn("--output-statuses", args)
+        letters = args[args.index("--output-statuses") + 1]
+        # lived, not-covered, timed-out, killed, not-viable, skipped
+        # (report/logger.go:58-74). Every status that reaches the summary must
+        # also reach the lines, or the tally check below is comparing two
+        # different populations.
+        self.assertEqual(sorted(letters), sorted("lctkvs"))
+
+
 
     def test_a_gated_child_is_excluded_from_its_parents_run(self):
         args = cm.gremlins_args("./internal/rules/",
