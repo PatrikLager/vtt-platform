@@ -26,6 +26,8 @@ the toolchain. Keep this file small enough that it cannot hide a bug.
 
 import os
 import re
+import shutil
+import tempfile
 import subprocess
 import sys
 
@@ -99,6 +101,77 @@ PACKAGES = [
 ]
 
 # `LIVED CONDITIONALS_BOUNDARY at apply.go:147:15`
+# The floor below which a mutation run must not START.
+#
+# MEASURED 2026-08-10 on this machine, with a freshly emptied cache: one full
+# `task check` consumed 7.6 GiB of free space and left GOCACHE 4 GiB larger than
+# it found it. gremlins copies the whole tree per mutant into $TMPDIR and every
+# mutant is a distinct binary, so the cache grows without bound across runs —
+# which is how it reached 82 GB and filled a 228 GB volume.
+#
+# 16 GiB is that measured cost with room for one more run, not a round number
+# picked for looking careful. It is deliberately generous: the cost of refusing
+# a run that would have squeaked through is a clear message and a `go clean
+# -cache`, while the cost of admitting one that cannot finish is a CORRUPT
+# VERDICT that looks exactly like a good one — and, when the volume actually
+# fills, a machine on which Bash itself stops working, so the failure does not
+# even present as a gate failure.
+MIN_FREE_BYTES = 16 * 1024**3
+
+
+# A run that could not APPLY or RESTORE a mutation is not a measurement.
+#
+# gremlins copies the tree per mutant into $TMPDIR. When the disk filled it
+# emitted one of these per mutant, then printed a normal summary and EXITED 0 —
+# so the gate produced confident, precise numbers from a run that had measured
+# something other than what it claimed.
+#
+# The two halves fail differently and both are silent:
+#   failed to APPLY   — the mutation was never written, so the test ran against
+#                       CLEAN SOURCE and the verdict describes unmutated code.
+#   failed to RESTORE — the mutation stays in the workdir file, so EVERY
+#                       SUBSEQUENT mutant in that run is measured against
+#                       already-corrupted source.
+#
+# Anchored on gremlins' own phrasing rather than on the word ERROR, which a
+# package's own tests may legitimately log — a guard that reds the gate on
+# those gets weakened, and a weakened gate is how this started.
+# gremlins' real shape, read from the source rather than guessed:
+#
+#   log.Errorf -> eWritef("%s: %s", ...)   -- Writef, NO TRAILING NEWLINE
+#   executor.go:178 -> "failed to apply mutation at %s - %s\n\t%v"  -- a TAB
+#
+# So the cause is tab-indented, and because the error itself never ends a line,
+# CONSECUTIVE ERRORS GLUE onto the previous one's cause. A run with 88 failures
+# is not 88 tidy lines. An earlier version of this anchored on `^` and looked
+# for a `...` continuation — a shape gremlins cannot produce — and matched
+# exactly ONE of them, dropping "no space left on device" with it. The phrase
+# is the anchor; the line start is not.
+# The PHRASE ONLY, so the count is a count. Matching the cause line too made a
+# single match swallow the next glued error, and 88 failures reported as 1.
+MUTATION_IO_ERROR_RE = re.compile(r"failed to (?:apply|restore) mutation\b")
+
+# Every per-mutant verdict line gremlins prints, cross-checked against the
+# summary counts.
+#
+# WHAT THIS DOES AND DOES NOT CATCH, because the first version of this comment
+# claimed the wrong thing. It does NOT catch a disk-exhausted run: the printed
+# lines and the summary come from the same slice (engine.go:229), and a mutant
+# that failed to apply is dropped from both, so the two agree by construction
+# however corrupt the run. The errors above are what catch that.
+#
+# What it DOES catch is a printed set that no longer matches the counted set —
+# output filtering (see --output-statuses, now pinned) and format drift. It is
+# the check that would have caught `GREMLINS_UNLEASH_OUTPUT_STATUSES=k`
+# silencing every survivor: 74 lines against 75 counted.
+MUTANT_LINE_RE = re.compile(
+    r"^\s*(?:KILLED|LIVED|TIMED OUT|NOT COVERED|NOT VIABLE|SKIPPED)\s+\S+\s+at\s+\S+\s*$",
+    re.M)
+
+SUMMARY_COUNTS_RE = re.compile(
+    r"^Killed:\s*(\d+),\s*Lived:\s*(\d+),\s*Not covered:\s*(\d+)\s*$"
+    r"\s*^Timed out:\s*(\d+),\s*Not viable:\s*(\d+),\s*Skipped:\s*(\d+)\s*$", re.M)
+
 LIVED_RE = re.compile(r"^\s*LIVED\s+(\S+)\s+at\s+(\S+)\s*$")
 
 # `   TIMED OUT CONDITIONALS_NEGATION at server.go:158:9`
@@ -260,6 +333,23 @@ def stale_entry_hint(name, location, mutator, unadjudicated):
     return ""
 
 
+def _first_io_error(out):
+    """The first apply/restore error WITH its cause, as one readable line.
+
+    Cut at the next `ERROR:` because they glue: gremlins' Errorf writes no
+    trailing newline, so a sibling error starts partway through the previous
+    one's tab-indented cause.
+    """
+    m = MUTATION_IO_ERROR_RE.search(out)
+    if not m:
+        return ""
+    tail = out[m.start():m.start() + 400]
+    nxt = tail.find("ERROR:", 1)
+    if nxt != -1:
+        tail = tail[:nxt]
+    return " ".join(tail.split())
+
+
 def parse_survivors(output):
     """Return [(location, mutator)] from one gremlins run's output."""
     survivors = []
@@ -292,6 +382,21 @@ def run_package(pkg, runner):
     the result says nothing about the ones that did not.
     """
     out = runner(pkg)
+
+    # BEFORE anything is parsed. A run carrying these errors has no verdict to
+    # extract, and reading one out of it is the defect: the numbers look exactly
+    # like a good run's.
+    broken = MUTATION_IO_ERROR_RE.findall(out)
+    if broken:
+        raise EquivalentsError(
+            f"{pkg}: gremlins could not apply or restore {len(broken)} mutation(s), so this run "
+            f"is NOT a measurement and no verdict may be read from it. A failed APPLY means the "
+            f"test ran against CLEAN source; a failed RESTORE means every subsequent mutant in "
+            f"the run was measured against already-corrupted source. The usual cause is a full "
+            f"disk — gremlins copies the tree per mutant into $TMPDIR, and `task check:mutation` "
+            f"grows GOCACHE without bound (82 GiB measured). Check free space, `go clean -cache`, "
+            f"and run it again. First error:\n    {_first_io_error(out)}")
+
     # gremlins exits non-zero when mutants survive and no threshold is set, so
     # the exit code is not a failure signal here — the survivor list is.
     if "Mutation testing completed" not in out:
@@ -309,6 +414,36 @@ def run_package(pkg, runner):
             f"{pkg}: could not parse gremlins' summary counts (Killed/Lived/Timed out) — "
             f"the output format changed, so the timeout check cannot run and this result "
             f"cannot be trusted. gremlins is pinned at v0.6.0 for this reason; check the pin.")
+    # The summary must account for every per-mutant line above it. Generic
+    # where the check above is specific: it catches silent disappearance
+    # whatever the cause, and it costs one regex.
+    sm = SUMMARY_COUNTS_RE.search(out)
+    if not sm:
+        # FAIL CLOSED, like the counts check twelve lines above. Skipping the
+        # tally on an unrecognised summary would put the gate back where it
+        # started: quietly not looking.
+        raise EquivalentsError(
+            f"{pkg}: gremlins' summary lines did not parse, so the per-mutant tally cannot be "
+            f"checked and this result cannot be trusted. The output format changed; gremlins is "
+            f"pinned at v0.6.0 for exactly this reason, so check the pin.")
+    claimed = sum(int(g) for g in sm.groups())
+    printed = len(MUTANT_LINE_RE.findall(out))
+    if printed == 0:
+        # Every gated package has hundreds of mutants. Zero is not a clean
+        # sweep, it is a run that measured nothing — a mis-scoped
+        # --exclude-files, or a package that failed to parse.
+        raise EquivalentsError(
+            f"{pkg}: gremlins printed no per-mutant verdicts at all. That is a run which "
+            f"measured nothing, not a package with nothing to measure — check --exclude-files "
+            f"and that the package builds.")
+    if claimed != printed:
+        raise EquivalentsError(
+                f"{pkg}: gremlins printed {printed} per-mutant line(s) but its summary accounts "
+                f"for {claimed}. Mutant count is a pure function of the parsed source, so a "
+                f"summary that does not add up is proof that mutants went missing — the result "
+                f"cannot be trusted whatever the cause. A disk-exhausted run tallied 467 of 555 "
+                f"this way and reported a clean efficacy.")
+
     timed_out = int(tm.group(1))
     evaluated = int(km.group(1)) + int(km.group(2))
     total = evaluated + timed_out
@@ -503,7 +638,22 @@ def gremlins_args(pkg, packages=PACKAGES):
     the argv, not gremlins' honouring of it.
     """
     args = ["go", "tool", "gremlins", "unleash", pkg,
-            "--workers", "1", "--timeout-coefficient", TIMEOUT_COEFFICIENT]
+            "--workers", "1", "--timeout-coefficient", TIMEOUT_COEFFICIENT,
+            # WHICH VERDICTS GET PRINTED, pinned explicitly — l,c,t,k,v,s being
+            # lived, not-covered, timed-out, killed, not-viable, skipped
+            # (report/logger.go:58-74). 'r' (runnable) is omitted: it only
+            # occurs under --dry-run.
+            #
+            # This closes a hole that had nothing to do with disks. The flag
+            # defaults to EMPTY and gremlins binds it through viper, so
+            # GREMLINS_UNLEASH_OUTPUT_STATUSES in the environment — or a
+            # .gremlins.yaml anywhere up the tree — beats an unset flag. With
+            # `=k` exported, MEASURED 2026-08-10 on internal/adventure, the
+            # LIVED line vanishes while the summary still says `Lived: 1`. This
+            # gate reads survivors from the LINES, so it would have reported
+            # zero survivors and PASSED over a real one. An environment
+            # variable could silence the gate.
+            "--output-statuses", "lctkvs"]
     parent = _norm_pkg(pkg)
     for other in packages:
         child = _norm_pkg(other)
@@ -520,8 +670,54 @@ def default_runner(pkg):
     return proc.stdout + proc.stderr
 
 
+def _disk_targets():
+    """The directories a mutation run consumes: the tree copies, and the cache."""
+    targets = [tempfile.gettempdir()]
+    cache = os.environ.get("GOCACHE") or subprocess.run(
+        ["go", "env", "GOCACHE"], capture_output=True, text=True).stdout.strip()
+    if cache:
+        targets.append(cache)
+    return targets
+
+
+def _free(path):
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        # An unreadable path must not silently lower the floor to nothing.
+        return float("inf")
+
+
 def run(equivalents_path, packages=PACKAGES, runner=default_runner,
-        out=sys.stdout, err=sys.stderr, root="."):
+        out=sys.stdout, err=sys.stderr, root=".", free_bytes=None):
+    # BEFORE anything is spent. Discovering a full disk as a corrupt verdict is
+    # the failure this whole file's error handling is about; discovering it as
+    # a number, up front, costs nothing.
+    #
+    # $TMPDIR rather than the repo: that is where gremlins copies the tree per
+    # mutant, and on this platform it is a different volume from the source in
+    # principle even though it is not in practice.
+    if free_bytes is None:
+        # BOTH volumes, whichever is tighter. $TMPDIR takes the per-mutant tree
+        # copies; GOCACHE takes the retained growth, and they are not always
+        # the same filesystem — a systemd /tmp is a RAM-backed tmpfs, where
+        # reading only $TMPDIR would refuse forever on a machine with hundreds
+        # of free gigabytes AND `go clean -cache` could not move the number by
+        # a byte. The inverse is worse: /tmp looks roomy while the cache volume
+        # is full, and the pre-flight waves through the run this exists to stop.
+        free_bytes = min(_free(d) for d in _disk_targets())
+    if free_bytes < MIN_FREE_BYTES:
+        print(f"check:mutation: {free_bytes / 1024**3:.1f} GiB free on "
+              f"{tempfile.gettempdir()}, and this needs at least "
+              f"{MIN_FREE_BYTES / 1024**3:.0f} GiB. gremlins copies the tree per mutant and "
+              f"every mutant is a distinct binary, so a full gate run costs about 7.6 GiB and "
+              f"leaves GOCACHE ~4 GiB larger — unbounded across runs, measured at 82 GiB. "
+              f"Run `go clean -cache` and try again. REFUSING RATHER THAN RUNNING: out of space, "
+              f"gremlins fails to apply or restore mutations, scores the result anyway, prints a "
+              f"normal summary and exits 0 — a wrong answer that looks exactly like a right one.",
+              file=err)
+        return 1
+
     # BEFORE anything is measured: a package gremlins cannot resolve reports
     # every mutant as killed, so letting the loop below run would print `ok`
     # lines that establish nothing.
