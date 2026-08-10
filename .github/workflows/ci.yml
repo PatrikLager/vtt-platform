@@ -12,22 +12,30 @@
 
 name: check
 
-# TRIGGERS NARROWED 2026-08-07, Patrik's call: the GitHub Actions allowance is
-# exhausted until 1 September, and `pull_request` was spending it fastest — a
-# full run is 45-60 minutes and it fired on EVERY push to a branch, 755 minutes
-# in a single day.
+# ON DEMAND ONLY. Every trigger is gone; nothing starts this but a person.
 #
-# What replaces it: `task check:ts-mutation:docker` runs the ONE gate that
-# cannot run on macOS (FB21686886) inside a Linux container, locally, for no
-# minutes at all. Every other gate in `task check` already ran natively. So the
-# signal is not lost, it moved — and main is still verified on every merge.
+# 2026-08-07 the allowance ran out and `pull_request` went first — a full run is
+# 45-60 minutes and it fired on every push to a branch, 755 minutes in one day.
+# `push: [main]` survived that round because a merge is rare and main deserves
+# verifying. 2026-08-10 THE ALLOWANCE IS GONE AND EVERY MINUTE IS BILLED, so
+# even that is too expensive to spend automatically. Patrik's call, and it is
+# about money rather than about the value of the signal.
 #
-# RESTORE `pull_request:` once the allowance resets. It is worth having: CI on a
-# clean checkout catches what a developer's tree hides, and it was CI that
-# caught the ts-mutation survivors this branch shipped.
+# WHAT ACTUALLY REPLACES IT, and this is why the gate is not weakened: `task
+# check` runs natively on the laptop and is the same single command CI runs —
+# CI deliberately has no parallel definition of "green" that could drift. The
+# one gate that cannot run on macOS (FB21686886) runs in a Linux container via
+# `task check:ts-mutation:docker`, locally, for nothing. So the signal is not
+# lost; it costs a developer's wall-clock instead of Patrik's money.
+#
+# WHAT IS GENUINELY LOST: a clean checkout. CI catches what a developer's tree
+# hides — a file never committed, a stale generated artifact, a tool only
+# installed locally. `check:drift` covers the generated-artifact half. The rest
+# is uncovered until this is restored.
+#
+# RESTORE `push: [main]` first, then `pull_request:`, when minutes are free
+# again.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
