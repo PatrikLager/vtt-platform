@@ -93,18 +93,36 @@ the connection are different fields and confusing them is exactly how the
 
 **Files:** `internal/gateway/server.go`, presence registry.
 
-Per spec §3.2: `Verify` runs once at connect and the `Participant` is held for
-the connection's life, so a role change is invisible until reconnect. Close the
-promoted participant's connections; the presence registry is already keyed by
-participant, and the client already has Reconnect and a surfaced `"closed"`.
+**AMENDED 2026-08-09, Patrik's call, and the amendment is the interesting
+part.** This task originally read: "`Verify` runs once at connect and the
+`Participant` is held for the connection's life, so a role change is invisible
+until reconnect. Close the promoted participant's connections." Patrik rejected
+it — *"What role a participant has and what connection it has should be fully
+separated"* — and he was right. Caching the answer to "what may this person do"
+for the life of a socket is the DEFECT; a reconnect is not a fix for it, it is
+a way of paying for it. Recorded rather than quietly rewritten, because the
+wrong version is the more natural one to reach for and will be proposed again.
 
-**Watch:** this runs the same teardown path presence uses, which took three
-defects to get right (send-on-closed-channel, the bounded broadcast, the
-snapshot race). Do not add a second teardown route — reuse `shutdown()`.
+**So: the participant is RE-RESOLVED, per command and per delivered event.** A
+promotion and a revocation both bite on the very next thing that person does or
+is shown. No reconnect, no dropped socket, no waiting. Spec §3.2.
 
-**Measure before adopting** (spec §3.2): dropping a socket mid-turn is worse
-than a short delay. If it feels wrong at a live table, fall back to telling the
-DM "takes effect when they reconnect" and say so in the UI.
+**Watch — three of them, all found the hard way:**
+
+- A SPECTATOR ISSUES NO COMMANDS, so the command path alone reaches nobody who
+  joined through the link. Delivery is where a watcher meets the server.
+- PRESENCE FRAMES DO NOT TRAVEL THE PUMP. They are written straight into each
+  connection's channel, so the delivery gate misses them too and a revoked
+  watcher goes on seeing who arrives. That needs its own denial, resolved
+  OUTSIDE the registry lock — a lookup inside the broadcast loop puts one
+  SQLite read per connection under the global mutex.
+- ONLY `ErrInvalidToken` MAY END A CONNECTION. A busy database is not a fact
+  about anybody's credential, and closing on it tells a player in good standing
+  that theirs is no longer valid.
+
+**Measured before adopting** (spec §3.2 asked for it): 15.5µs against a
+40-participant table, on a path that already folds state, appends to SQLite and
+writes a socket frame.
 
 ---
 

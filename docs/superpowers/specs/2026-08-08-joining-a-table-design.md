@@ -180,6 +180,23 @@ registry works for `promote_participant` and cannot work for revocation at all.
 Re-resolution is not merely the cheaper option here; it is the only one that
 covers both.
 
+**AMENDED 2026-08-10, whole-branch review.** "Delivery" first meant the EVENT
+pump only, and presence frames do not travel it — they are written straight
+into each connection's channel. So a revoked stranger who came in on a leaked
+link went on watching people arrive and leave until the table next appended
+something. Nothing of the campaign leaked, but the property above is stated
+without qualification and a person walking in is plainly "the next thing the
+table would have shown them". Presence delivery now denies revoked
+participants too. The resolution happens OUTSIDE the presence lock: one lookup
+per connected participant per presence frame, and presence frames are rare —
+a lookup inside the broadcast loop would put a database read per connection
+under the registry's global mutex, which is the fan-out stall the send budget
+exists to prevent.
+
+**The cost, measured** (this section asked for it): 15.5µs for one lookup,
+against a 40-participant table, on a command path that already folds state,
+appends to SQLite and writes a socket frame. Microseconds against milliseconds.
+
 **Only an invalid credential ends a connection.** An operational failure — a
 busy file, a driver error, a corrupt row — is not a fact about anybody's
 credential. It refuses the command and keeps the connection, exactly as a

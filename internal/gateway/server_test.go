@@ -1746,3 +1746,101 @@ func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 		return
 	}
 }
+
+// TestARevokedWatcherIsNotEvenToldWhoElseArrives closes the half of revocation
+// that per-event re-resolution cannot reach.
+//
+// The pump re-resolves before delivering an EVENT. Presence frames never travel
+// that channel — announcePresence writes straight into each connection's out —
+// so a revoked stranger who came in on a leaked link went on watching the guest
+// list arrive and leave until the table happened to append something. Nothing
+// of the campaign leaked, but spec §3.2 states the property without
+// qualification, and "the next thing the table would have shown them" plainly
+// includes somebody walking in.
+//
+// The absence is asserted against a POSITIVE control on the same frame: an
+// unrevoked watcher must receive it. Without that, a broadcast that reached
+// nobody at all would pass.
+func TestARevokedWatcherIsNotEvenToldWhoElseArrives(t *testing.T) {
+	f := newGWFixture(t)
+
+	stranger := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, stranger)
+	expectPresenceSnapshot(t, stranger)
+
+	// The positive control, connected before the revocation so both sockets
+	// are in exactly the same state.
+	witness := f.dial(f.otherPlayerToken, 0)
+	expectCatchUpHead(t, witness)
+	expectPresenceSnapshot(t, witness)
+	// The stranger legitimately learns the witness arrived.
+	expectPresenceChanged(t, stranger, f.playerIDFor(t, f.otherPlayerToken),
+		vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	p, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.Revoke(p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Somebody else joins. No event is appended — people are just arriving.
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	dmID := f.playerIDFor(t, f.dmToken)
+
+	// The witness is told, so the frame really was broadcast.
+	expectPresenceChanged(t, witness, dmID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+
+	// The revoked stranger is not.
+	expectNoPresenceWithin(t, stranger, 500*time.Millisecond)
+}
+
+// expectNoPresenceWithin fails if any PresenceChanged reaches conn within d.
+//
+// Reads the socket DIRECTLY, and that is the whole reason it exists.
+// assertNoFrameWithin routes through the frame queue, which demultiplexes into
+// results, events and closed — and DROPS presence frames. Asserting "no
+// presence arrived" through a helper that cannot see presence is an assertion
+// with no teeth, and this one had none: reverting the deny set failed nothing
+// at all. The fourteenth instance of that defect class on this branch, and I
+// wrote it while fixing the thirteenth.
+//
+// Single-use per connection: coder/websocket closes the socket when a Read's
+// context expires, so this belongs last in a test.
+func expectNoPresenceWithin(t *testing.T, conn *websocket.Conn, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := conn.Read(ctx)
+		quiet := ctx.Err() != nil // captured BEFORE cancel overwrites it
+		cancel()
+		if err != nil {
+			if quiet {
+				return // nothing arrived, which is the point
+			}
+			t.Fatalf("read: %v", err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		if pc := f.GetPresenceChanged(); pc != nil {
+			t.Fatalf("a revoked participant was told that %q is %v — they are meant to see "+
+				"nothing at all", pc.GetDisplayName(), pc.GetState())
+		}
+	}
+}
+
+// playerIDFor resolves a token to its participant id.
+func (f *gwFixture) playerIDFor(t *testing.T, token string) string {
+	t.Helper()
+	p, err := f.ids.Verify(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.ID
+}

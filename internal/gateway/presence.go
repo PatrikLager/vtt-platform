@@ -164,31 +164,91 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 	return false
 }
 
-// displayName returns the name one of participantID's live connections is
-// registered under, and whether any is connected at all.
-func (r *presenceRegistry) displayName(participantID string) (string, bool) {
+// announceIfPresent re-announces participantID to every connection, their own
+// included, under ONE HOLD of the lock. Reports whether anything was sent.
+//
+// The single hold is the entire point, and it was learned the hard way. The
+// caller used to resolve the display name, drop the lock to encode, then take
+// it again to broadcast — and if that participant's last connection unwound in
+// the gap, the table received DISCONNECTED and then CONNECTED, in that order.
+// The client re-adds on CONNECTED and only a snapshot can replace the list, so
+// the departed participant stayed listed for the rest of the session. A ghost,
+// permanently, which is the exact failure presence exists to prevent. Found by
+// review at 2-6 occurrences per 3000 promotions, WITHOUT injection — a real
+// race between two real goroutines.
+//
+// False when nobody by that id is connected. Nothing is lost: they read their
+// role fresh the moment they next arrive.
+//
+// frame is called with the lock HELD, like joinAndSend's, and may return nil
+// on an encode failure — in which case nothing is sent.
+func (r *presenceRegistry) announceIfPresent(participantID string, frame func(displayName string) []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	name, found := "", false
 	for conn := range r.conns {
 		if conn.participantID == participantID {
-			return conn.displayName, true
+			name, found = conn.displayName, true
+			break
 		}
 	}
-	return "", false
+	if !found {
+		return false
+	}
+	b := frame(name)
+	if b == nil {
+		return false
+	}
+	// Everyone, excluding nobody: the promoted participant is the one who most
+	// needs this, and their other devices need it too.
+	for conn := range r.conns {
+		r.send(conn, b)
+	}
+	return true
 }
 
-// broadcast hands b to every registered connection EXCEPT except, bounded per
-// connection by presenceSendBudget so one slow reader cannot stall the table.
+// participantIDs returns the distinct participants holding a live connection.
+//
+// Exists so a caller can resolve identity for all of them OUTSIDE the lock and
+// come back with the answer: a Lookup inside broadcast's loop would put one
+// SQLite read per connection under the registry's global mutex, which is the
+// fan-out stall presenceSendBudget exists to prevent.
+func (r *presenceRegistry) participantIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	seen := make(map[string]bool, len(r.counts))
+	out := make([]string, 0, len(r.counts))
+	for conn := range r.conns {
+		if seen[conn.participantID] {
+			continue
+		}
+		seen[conn.participantID] = true
+		out = append(out, conn.participantID)
+	}
+	return out
+}
+
+// broadcast hands b to every registered connection EXCEPT except and except
+// anyone in deny, bounded per connection by presenceSendBudget so one slow
+// reader cannot stall the table.
 //
 // Excluding by CONNECTION POINTER, not by participant id: someone on two
 // devices who acts on one must still see the result on the other.
-func (r *presenceRegistry) broadcast(except *presenceConn, b []byte) {
+//
+// deny carries PARTICIPANT ids and is how revocation reaches this path. A
+// revoked participant stops receiving events on the pump, but presence frames
+// never travel that channel — they are written straight into each connection's
+// out — so without this they went on watching the guest list arrive and leave
+// until the table next appended something. deny may be nil, which denies
+// nobody. Resolved by the caller, never here: see participantIDs.
+func (r *presenceRegistry) broadcast(except *presenceConn, b []byte, deny map[string]bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for conn := range r.conns {
-		if conn == except {
+		if conn == except || deny[conn.participantID] {
 			continue
 		}
 		r.send(conn, b)

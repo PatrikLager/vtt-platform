@@ -715,7 +715,39 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 	if err != nil {
 		return
 	}
-	s.presence.broadcast(pc, b)
+	// Revoked participants are denied this frame. Presence is the ONE delivery
+	// path that does not run through the pump, so without this a revoked
+	// stranger who came in on a leaked link went on watching the guest list
+	// arrive and leave until the table next appended an event (spec §3.2).
+	s.presence.broadcast(pc, b, s.revoked())
+}
+
+// revoked resolves every connected participant and returns those whose
+// credential no longer stands.
+//
+// Resolved HERE rather than inside the registry, and that placement is the
+// point: a Lookup inside broadcast's loop would put one SQLite read per
+// connection under the registry's global mutex — the fan-out stall
+// presenceSendBudget exists to prevent, reintroduced on the path that fans out.
+//
+// Only ErrInvalidToken denies. An operational failure is not a fact about
+// anybody's credential, and dropping presence frames on a busy database would
+// make a transient look like the whole table walking out.
+//
+// The cost is one lookup per connected participant per presence frame, and
+// presence frames are rare — somebody joins, somebody leaves — unlike events.
+// nil when nobody is revoked, which is the ordinary case and allocates nothing.
+func (s *Server) revoked() map[string]bool {
+	var out map[string]bool
+	for _, id := range s.presence.participantIDs() {
+		if _, err := s.ids.Lookup(id); errors.Is(err, identity.ErrInvalidToken) {
+			if out == nil {
+				out = make(map[string]bool, 1)
+			}
+			out[id] = true
+		}
+	}
+	return out
 }
 
 // announcePromotion re-announces a promoted participant to the whole table,
@@ -735,27 +767,25 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 // Found by the e2e. No unit test could see it — every layer was correct, and
 // what was wrong was a browser's idea of itself.
 func (s *Server) announcePromotion(participantID string) {
-	name, ok := s.presence.displayName(participantID)
-	if !ok {
-		// Not connected. Nothing to nudge, and nothing is lost: they read
-		// their role fresh the moment they next arrive.
-		return
-	}
-	b, err := s.encodeFrame(&vttv1.ServerFrame{
-		Frame: &vttv1.ServerFrame_PresenceChanged{
-			PresenceChanged: &vttv1.PresenceChanged{
-				ParticipantId: participantID,
-				DisplayName:   name,
-				State:         vttv1.PresenceState_PRESENCE_STATE_CONNECTED,
+	// Resolve, encode and send under ONE hold of the registry lock. Doing it
+	// in three steps let the participant's last connection unwind between the
+	// resolve and the send, so the table saw DISCONNECTED then CONNECTED and
+	// kept a ghost in its list for the rest of the session.
+	s.presence.announceIfPresent(participantID, func(name string) []byte {
+		b, err := s.encodeFrame(&vttv1.ServerFrame{
+			Frame: &vttv1.ServerFrame_PresenceChanged{
+				PresenceChanged: &vttv1.PresenceChanged{
+					ParticipantId: participantID,
+					DisplayName:   name,
+					State:         vttv1.PresenceState_PRESENCE_STATE_CONNECTED,
+				},
 			},
-		},
+		})
+		if err != nil {
+			return nil
+		}
+		return b
 	})
-	if err != nil {
-		return
-	}
-	// nil, not a connection to skip: the promoted participant is the one who
-	// most needs this.
-	s.presence.broadcast(nil, b)
 }
 
 // handleJoinDoor opens or closes the shared join link (joining-a-table §2).

@@ -771,6 +771,41 @@ func TestLookupRefusesACorruptRow(t *testing.T) {
 // lock on a file internal/store writes to inside a transaction on every event
 // append. That is the exact hazard ensureJoinRow's read-first path was
 // restructured to avoid for the DM console, on the one path a stranger drives.
+func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
+	// RotateJoinSecret is an upsert, and its INSERT branch is reached only on a
+	// campaign whose join_access row does not exist yet — `vtt join-link rotate`
+	// as the very first thing anybody does, or an agent's rotate_join_link.
+	// Every other rotation test calls SetJoinOpen or JoinSecret first, so all of
+	// them reach DO UPDATE and none of them reaches this.
+	//
+	// Flip that branch's `open` literal from 0 to 1 and the whole repository
+	// stays green — the Go mutation gate cannot mutate SQL text, and the
+	// column's DEFAULT 0 is no backstop because both upserts write it
+	// explicitly. The two sibling literals carrying this same property ARE
+	// pinned; this was the one that was not, and the two statements sit forty
+	// lines apart and differ only in that value.
+	d, _ := openTemp(t)
+
+	secret, err := d.RotateJoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.JoinOpen() {
+		t.Fatal("rotating a link on a campaign nobody has opened must not open the door — " +
+			"the DM would be handed a live link by an operation that says nothing about " +
+			"letting anyone in")
+	}
+	// And the door is shut in the way that matters: the fresh secret does not
+	// get anybody in.
+	allowed, err := d.JoinAllows(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("a brand-new secret admitted somebody through a door that was never opened")
+	}
+}
+
 func TestCheckingTheDoorMintsNothing(t *testing.T) {
 	d, path := openTemp(t)
 

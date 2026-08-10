@@ -97,6 +97,10 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   // cost them their typing and did not leave the form dead.
   await guest.locator('[data-action="join"]').click();
   await expect(guest.locator(".conn")).toHaveText("connected", { timeout: 20_000 });
+  // The secret is gone from the address bar, checked in a REAL browser where
+  // it means something — happy-dom does not move location on replaceState, so
+  // the unit test can only assert the call, not the result.
+  expect(guest.url()).not.toContain("join=");
   await guest.screenshot(shot("j4-guest-joined-as-spectator"));
 
   // The DM sees them arrive WITHOUT reloading — presence, over the same

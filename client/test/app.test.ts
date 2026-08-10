@@ -949,7 +949,14 @@ test("joining stores the credential, strips the secret from the address bar, and
   expect(seen.bodies).toHaveLength(1);
   expect(JSON.parse(seen.bodies[0]!)).toEqual({ secret: "s3cret", displayName: "Kim" });
   expect(localStorage.getItem("vtt.token")).toBe("tok-joined");
-  expect(calls.some((u) => u.includes("join"))).toBe(false);
+  // toHaveLength FIRST. `calls.some(...)` on an empty array is false, so the
+  // old form was satisfied by replaceState never being called at all —
+  // deleting the strip left all 486 tests passing. The join secret is the more
+  // dangerous of the two credentials this client handles: it admits ANYONE, so
+  // leaving it in history and in every outbound Referer is worse than leaking
+  // one person's token.
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).not.toContain("join");
   expect(FakeSocket.instances).toHaveLength(1);
   expect(FakeSocket.instances[0]!.url).toContain("token=tok-joined");
 
