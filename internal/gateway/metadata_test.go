@@ -529,8 +529,18 @@ func TestJoinLinkIsDMOnlyAndLiteralPerRole(t *testing.T) {
 				t.Fatalf("%s: status = %d, want %d (body %s)", tc.role, code, tc.want, body)
 			}
 			if tc.want != http.StatusOK {
-				// And the secret is not in the refusal. A 403 that still
-				// carried the value would be a lock on an open door.
+				// And the refusal does not carry the SECRET ITSELF. Searching
+				// the body for the word "secret" tests the JSON field name, not
+				// the value — it fires on a missing `return` after http.Error
+				// (worth keeping) but not on a refusal that leaked the value by
+				// any other shape.
+				live, err := f.ids.JoinSecret()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(body), live) {
+					t.Fatalf("%s: a refusal carried the live join secret: %s", tc.role, body)
+				}
 				if strings.Contains(string(body), "secret") {
 					t.Fatalf("%s: a refusal must not carry the link: %s", tc.role, body)
 				}

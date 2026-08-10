@@ -22,10 +22,12 @@
     "the same trap check:race was rewritten out of two days earlier: an",
     "inclusion list is a promise to remember, and the failure mode is silent.",
     "Adding a file to client/src now gates it; taking one OUT is a visible",
-    "line here that has to carry a reason, as main.ts's does."
+    "line here that has to carry a reason, as main.ts's does. The suffix list",
+    "matches check-ts-coverage.py's SOURCE_SUFFIXES: a bare *.ts glob claimed to",
+    "gate every new file and covered one suffix in four."
   ],
   "mutate": [
-    "client/src/**/*.ts",
+    "client/src/**/*.{ts,tsx,mts,cts}",
     "!client/src/main.ts"
   ],
   "tempDirName": ".stryker-tmp",

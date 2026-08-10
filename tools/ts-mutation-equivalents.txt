@@ -286,12 +286,17 @@ client/src/view/feed.ts 106:43 EqualityOperator a.seq <= b.seq
 
 # --- client/src/app.ts ------------------------------------------------------
 #
-# ONE entry: history.replaceState's title argument, which the runtime this
+# TWO entries, both history.replaceState's title argument, which the runtime this
 # gate measures discards outright (happy-dom's signature is literally
-# replaceState(state, _unused, url)). There are now TWO such calls in this
-# file — the invite path and the join path — and only one of them surfaces a
-# surviving mutant; see the entry itself, which says so rather than quietly
-# covering both.
+# replaceState(state, _unused, url)). There are TWO such calls in this file —
+# the invite path and the join path — and each carries its own entry rather
+# than one stretched to cover both.
+#
+# This preamble said "ONE" and "only one of them surfaces a surviving mutant"
+# until 2026-08-10, while the section held two and the second entry said so in
+# words. The same miscount this file already apologises for higher up, in the
+# opposite direction. A preamble that disagrees with its own contents is the
+# failure this file exists to prevent, in miniature.
 #
 # This preamble said "two initial values" until 2026-08-03 and delivered one.
 # The second was app.ts 52:16, withdrawn by the review that found it wrong —

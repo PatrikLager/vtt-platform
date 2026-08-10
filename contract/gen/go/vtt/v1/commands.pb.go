@@ -1815,7 +1815,17 @@ func (*ServerFrame_PresenceSnapshot) isServerFrame_Frame() {}
 
 func (*ServerFrame_PresenceChanged) isServerFrame_Frame() {}
 
-// PresenceChanged reports one participant joining or leaving.
+// PresenceChanged reports one participant joining or leaving — or, since the
+// joining-a-table branch, being PROMOTED.
+//
+// The promotion case sends CONNECTED for somebody who never left, as a nudge:
+// their client read its own role once at connect and nothing else would ever
+// tell it that role moved. So this is also the first frame a client can
+// receive NAMING ITSELF for a reason other than its own arrival, and a client
+// that treats every CONNECTED as an arrival will simply re-add somebody it
+// already has, which is harmless. It carries no role: roles live in identity
+// (joining-a-table spec §3.1) and a role in a connection-scoped frame would go
+// stale the moment somebody was promoted without reconnecting.
 //
 // A FRAME, never an Envelope: who happened to be online is not campaign
 // history. Appending it would make every replay reconstruct session noise and

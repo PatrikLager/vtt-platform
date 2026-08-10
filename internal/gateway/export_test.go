@@ -21,6 +21,8 @@ func CommandNameForTest(cmd *vttv1.ClientCommand) string { return commandName(cm
 // HasRoleCellsForTest reports whether any role at all may issue name. A
 // command missing from commandRoles is denied to everyone.
 func HasRoleCellsForTest(name string) bool {
-	_, ok := commandRoles[name]
-	return ok
+	// len, not comma-ok. A `"foo": {}` entry EXISTS while permitting nobody, so
+	// the comma-ok form certified a command no role may issue — the very state
+	// this gate was added to catch.
+	return len(commandRoles[name]) > 0
 }

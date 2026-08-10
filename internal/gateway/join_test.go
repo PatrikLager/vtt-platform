@@ -225,6 +225,37 @@ func TestARefusedJoinWritesNothingAtAll(t *testing.T) {
 	}
 }
 
+func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
+	// The cap on the ONE surface an anonymous stranger controls, and it was
+	// exercised by nothing: raise maxJoinBody to a gigabyte and everything
+	// still passed.
+	//
+	// The oversize goes in the SECRET, not the display name. An 8KB name is
+	// refused 400 by the rune bound either way, so that shape would pass
+	// whether the cap existed or not — the wrong-reason trap, in the test
+	// written to close a gap.
+	f := newJoinFixture(t)
+	if err := f.ids.SetJoinOpen(true); err != nil {
+		t.Fatal(err)
+	}
+	before := f.count("participants")
+
+	resp, _, body := f.post(strings.Repeat("x", 8<<10), "Kim")
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d for a body past the cap", resp.StatusCode, http.StatusBadRequest)
+	}
+	// Refused as MALFORMED, not as a door problem: the request never got far
+	// enough to be a guess at the secret, and reporting it as one would tell a
+	// prober their oversized body was merely the wrong password.
+	if !strings.Contains(body, "malformed") {
+		t.Fatalf("an oversized body must be refused as malformed, got %q", strings.TrimSpace(body))
+	}
+	if after := f.count("participants"); after != before {
+		t.Fatal("an oversized request minted a participant")
+	}
+}
+
 func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	// It is what the whole table sees. Blank, or whitespace pretending to be
 	// blank, is not a name.
@@ -277,6 +308,9 @@ func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 		"Kim\u001b[31m",                     // an ANSI escape, for anything that logs it
 		"Kim\nDM: everyone roll initiative", // a newline, to forge a second line
 		"Kim\u202emiK",                      // a BIDI override, so the name reads as somebody else
+		"\u200b\u200b\u200b",                // zero-width spaces: passes every other rule, shows nothing
+		"\ufeff",                            // a byte-order mark, the same shape
+		"\u3164",                            // HANGUL FILLER, the classic invisible-name trick
 		"Kim\u0000",                         // a NUL, for anything that is not Go
 	} {
 		resp, _, _ := f.post(secret, name)

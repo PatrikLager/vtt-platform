@@ -153,22 +153,50 @@ function startSession(root: HTMLElement, token: string): Session {
   // Fired unconditionally rather than only for dm/agent: the routes are
   // role-gated server-side and answer null for anyone else, so a player's
   // console simply keeps no sharing panel.
+  // A MONOTONIC TICKET PER REFRESH, so a slow answer cannot overwrite a fast
+  // one. Two refreshes can be in flight at once — a promotion and an arrival a
+  // moment apart — and both assignments below are last-writer-wins on
+  // COMPLETION, not on issue order. A stale roster landing second repaints a
+  // promoted player as the spectator they were.
+  // An IDENTITY, not a counter. "Is this still the newest request?" is a
+  // question about sameness, and a number answers it only by convention — any
+  // strictly monotonic sequence behaves identically, so counting up and
+  // counting down are indistinguishable and the direction is a detail no test
+  // could ever justify. A fresh object per call has no direction to get wrong.
+  let newest: object = {};
   const refreshSharing = () => {
-    // CAUGHT, both of them. getJSON THROWS on 401/403 rather than answering
-    // null, and while this is only called for a role the routes admit, a
-    // revocation mid-session turns the next refresh into a rejection with
-    // nobody listening. Falling back to null is the honest degradation: the
-    // console drops the panels rather than showing a link it could not read.
+    const ticket = {};
+    newest = ticket;
+    const current = () => ticket === newest;
+    // CAUGHT, both of them, and the two failures are NOT the same failure.
+    //
+    // getJSON throws on 401/403 as well as on a network fault. A refusal means
+    // "you may not read this" and dropping the panel is the right answer — a
+    // revocation mid-session lands here. A network blip means "this read
+    // failed", and dropping the panel for that takes the door and the roster
+    // controls away from a DM who still has every right to them, silently,
+    // until the next presence frame. So a transient KEEPS what is on screen.
+    const refused = (e: unknown) => /forbidden|unauthorized/.test(String(e));
     void fetchJoinLink(location.origin, token)
-      .catch(() => null)
       .then((l) => {
+        if (!current()) return;
         joinLink = l;
+        paint();
+      })
+      .catch((e: unknown) => {
+        if (!current() || !refused(e)) return; // keep what we have; try again next time
+        joinLink = null;
         paint();
       });
     void fetchParticipants(location.origin, token)
-      .catch(() => null)
       .then((r) => {
+        if (!current()) return;
         roster = r;
+        paint();
+      })
+      .catch((e: unknown) => {
+        if (!current() || !refused(e)) return;
+        roster = null;
         paint();
       });
   };

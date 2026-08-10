@@ -260,8 +260,13 @@ func TestJoinLinkOpenShareCloseRotate(t *testing.T) {
 		t.Fatalf("a fresh campaign must report the door CLOSED, got %q", door)
 	}
 	first := secretFrom(t, campaignPath)
-	if !strings.Contains(out, first) {
-		t.Fatalf("show must print the link itself, got %q", out)
+	// The SHARE line specifically. `Contains(out, secret)` is satisfied by the
+	// `secret:` line on its own, so the whole share clause could be deleted and
+	// this stayed green — and the share line is the only part a DM actually
+	// pastes to somebody. It is also one of three places the ?join= spelling is
+	// written down against a single reader in app.ts.
+	if share := extractField(t, out, "share: "); !strings.Contains(share, "?join="+first) {
+		t.Fatalf("show must print a pasteable link carrying the secret, got %q", share)
 	}
 
 	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath); err != nil {

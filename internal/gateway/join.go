@@ -38,6 +38,9 @@ const maxDisplayNameRunes = 64
 //   - BIDI controls, which are not "control characters" by Unicode's
 //     definition but do the same job: U+202E renders the rest of a line
 //     right-to-left, so a name can be made to read as somebody else's.
+//   - Names with NOTHING VISIBLE IN THEM. A run of zero-width spaces passes
+//     every rule above and survives TrimSpace, then renders as an empty gap
+//     in everyone's participant list.
 //
 // Everything else is allowed on purpose. A bound that only accepted ASCII
 // would lock out most of the people who might sit at a table.
@@ -45,12 +48,27 @@ func usableDisplayName(name string) bool {
 	if name == "" || utf8.RuneCountInString(name) > maxDisplayNameRunes {
 		return false
 	}
+	visible := false
 	for _, r := range name {
 		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
 			return false
 		}
+		// DEFAULT-IGNORABLE code points are the ones that render as nothing,
+		// and Unicode's own categories will not tell you which those are:
+		// U+3164 HANGUL FILLER is a LETTER (category Lo) and draws a blank —
+		// which is precisely why it is the classic invisible-name trick. Cf
+		// and whitespace round out the set. A name made only of these passes
+		// every rule above and survives TrimSpace, then appears in everyone's
+		// participant list as an empty gap: somebody at the table with no name.
+		switch {
+		case unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r):
+		case unicode.Is(unicode.Cf, r):
+		case unicode.IsSpace(r):
+		default:
+			visible = true
+		}
 	}
-	return true
+	return visible
 }
 
 type joinRequest struct {
