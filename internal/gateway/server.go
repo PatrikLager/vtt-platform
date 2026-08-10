@@ -403,12 +403,6 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 	defer leavePresence()
 
-	// Only the participant's FIRST connection is an arrival. A second device
-	// must not announce someone who is already at the table.
-	if firstConnection {
-		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
-	}
-
 	var closing atomic.Bool
 
 	pumpDone := make(chan struct{})
@@ -477,6 +471,37 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			_ = conn.CloseNow()
 		}
 	}()
+
+	// AFTER the pump is running, and that ordering is the whole point.
+	//
+	// Announcing an arrival walks the registry SERIALLY, waiting up to
+	// presenceSendBudget on each connection. Done before the pump started, the
+	// news of your arrival sat on the critical path of your own catch-up: N
+	// wedged peers cost N x budget, paid by the person joining, who has done
+	// nothing wrong. MEASURED: with a 2s budget and one peer whose socket had
+	// genuinely backed up, a joiner waited 2.018s for its first event; at the
+	// registry, one stalled peer costs 101ms against a 100ms budget, two 202ms,
+	// three 302ms. With the production 3s budget and two dead tabs left open
+	// somewhere, a new player waits six seconds to see the board.
+	//
+	// The bound itself is deliberate and unchanged (spec §4.1): a client that
+	// is merely BUSY must keep its frame, and an instant drop was tried and was
+	// wrong. What moved is WHO WAITS. The announcement is other people's news;
+	// the catch-up is the joiner's own reason for connecting.
+	//
+	// SYNCHRONOUS, not a goroutine, and that is deliberate too. In a goroutine
+	// a fast disconnect could let leavePresence broadcast DISCONNECTED before
+	// this CONNECTED landed, and a client that re-adds on CONNECTED would keep
+	// a ghost for the rest of the session — the same inversion that made
+	// announcePromotion take one lock hold instead of three. So the read loop
+	// below still waits for this; only the pump no longer does, and a joiner
+	// with nothing on screen yet has nothing to send.
+	//
+	// Only the participant's FIRST connection is an arrival. A second device
+	// must not announce someone who is already at the table.
+	if firstConnection {
+		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+	}
 
 	// shutdown tears the connection's helper goroutines down in dependency
 	// order: mark this as an intentional close (so the pump's post-loop

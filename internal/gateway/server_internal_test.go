@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -866,4 +867,180 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 			return
 		}
 	}
+}
+
+// TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced pins whose time the
+// presence fan-out spends.
+//
+// serve announced the arrival BEFORE it started the event pump, and broadcast
+// walks the registry SERIALLY, waiting up to presenceSendBudget per connection.
+// So the announcement of your arrival was on the critical path of your own
+// catch-up: N wedged peers cost N x budget, paid by the person joining, who has
+// done nothing wrong. Measured at the registry: 1 stalled peer 101ms, 2 202ms,
+// 3 302ms against a 100ms budget — with the production 3s budget and two dead
+// tabs left open somewhere, a new player waits six seconds to see the board.
+//
+// The bound is deliberate and stays (spec §4.1): a client that is merely busy
+// must not lose the frame. What changes is WHO WAITS. The announcement is other
+// people's news; the catch-up is the joiner's own reason for connecting.
+//
+// The stall is ARRANGED, not raced: the wedged peer gets buffer 0 and never
+// reads, so its outCh cannot accept anything, and the budget below is two
+// orders of magnitude above the microseconds a healthy send takes.
+func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	wedgedToken, _, err := ids.CreateInvite("Wedged", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joinerToken, _, err := ids.CreateInvite("Joiner", identity.RoleSpectator, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const budget = 2 * time.Second
+	srv := New(c, ids)
+	srv.buffer = 0 // no slot for the wedged peer to hide behind
+	srv.noProgress = 10 * time.Minute
+	srv.presence.sendBudget = budget
+	httpSrv := httptest.NewUnstartedServer(srv.Handler())
+	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
+	httpSrv.Start()
+	defer httpSrv.Close()
+
+	dial := func(token string, client *http.Client) *websocket.Conn {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var opts *websocket.DialOptions
+		if client != nil {
+			opts = &websocket.DialOptions{HTTPClient: client}
+		}
+		conn, _, err := websocket.Dial(ctx, httpSrv.URL+"/ws?token="+token+"&after=0", opts)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		return conn
+	}
+
+	// The wedged peer: a pinned-small receive buffer, and it never reads. Its
+	// catch-up alone exceeds the socket buffers, so the server's writer parks
+	// and outCh stays full.
+	wedged := dial(wedgedToken, tinyRecvBufClient())
+	defer wedged.CloseNow()
+
+	// Oversized events, appended AFTER it is connected and while it never
+	// reads. Live broadcast is what parks the writer; a catch-up backlog does
+	// not — an earlier version of this test seeded the log first and the peer
+	// drained it happily, so the test measured nothing and passed against the
+	// unfixed code. 28KB against pinned 8KB buffers forces real TCP
+	// backpressure within a few writes.
+	for i := range 40 {
+		if _, err := c.Append(&vttv1.Envelope{
+			EventId: fmt.Sprintf("seed-%d", i),
+			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+				SceneId: fmt.Sprintf("scn-%d", i), Name: bigSceneName, GridWidth: 4, GridHeight: 4,
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(500 * time.Millisecond) // let the writer genuinely park
+
+	joiner := dial(joinerToken, nil)
+	defer joiner.CloseNow()
+
+	// Time to the joiner's own first EVENT, not its first frame.
+	//
+	// The catch-up HEAD is written straight to outCh before any of this and
+	// arrives in about a millisecond either way — measuring that proves
+	// nothing, and an earlier version of this test did exactly that and
+	// passed against the unfixed code. The events are what the pump carries,
+	// and the pump is what starts late.
+	//
+	// The window is not pure socket time: dial returns at the HTTP 101, so the
+	// store's backlog read (~1.1MB, synchronous, under its lock) also falls
+	// inside it. Warm pages and 22x of headroom cover that, but it is the one
+	// honest flake vector on a disk-pressured machine.
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for {
+		_, raw, err := joiner.Read(ctx)
+		if err != nil {
+			t.Fatalf("joiner never received its catch-up events: %v", err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		if f.GetEvent() != nil {
+			break
+		}
+	}
+	elapsed := time.Since(start)
+
+	// AND THE WEDGE MUST HAVE BEEN REAL. "Fast" on its own cannot tell a
+	// working fix from a peer that was never wedged — remove the tiny socket
+	// buffers and the oversized events and this still finishes in 4ms, which
+	// is exactly how the first three versions of this test passed against the
+	// unfixed code.
+	//
+	// The witness is free and already here: the READ LOOP still starts after
+	// the announcement (deliberately — see server.go), so the joiner's own
+	// first command result is gated on the fan-out. If that came back quickly
+	// the budget was never spent and this test proved nothing.
+	cmdStart := time.Now()
+	raw, err := protojson.Marshal(&vttv1.ClientCommand{
+		RequestId: "probe",
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wctx, wcancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer wcancel()
+	if err := joiner.Write(wctx, websocket.MessageText, raw); err != nil {
+		t.Fatalf("joiner write: %v", err)
+	}
+	for {
+		_, rawFrame, err := joiner.Read(ctx)
+		if err != nil {
+			t.Fatalf("joiner never got its command result: %v", err)
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(rawFrame, &f); err != nil {
+			t.Fatalf("frame did not decode: %v", err)
+		}
+		if f.GetResult() != nil {
+			break
+		}
+	}
+	if spent := time.Since(cmdStart); spent < budget/2 {
+		t.Fatalf("the joiner's own command was answered in %v, so the presence fan-out never "+
+			"cost the %v budget — the peer was not actually wedged and this test proves nothing",
+			spent.Round(time.Millisecond), budget)
+	}
+
+	// Half the budget is the margin: a healthy send is microseconds, so
+	// anything approaching the budget means the fan-out is on this path.
+	// Measured across 21 runs: worst 45ms under -race on a loaded machine,
+	// against a 1000ms threshold, with the unfixed failure at 2.005s.
+	if elapsed > budget/2 {
+		t.Fatalf("the joiner waited %v for its first EVENT against a %v presence budget — its "+
+			"own catch-up is queued behind announcing its arrival to a wedged stranger",
+			elapsed.Round(time.Millisecond), budget)
+	}
+	t.Logf("joiner's first EVENT after %v (budget %v)", elapsed.Round(time.Millisecond), budget)
 }
