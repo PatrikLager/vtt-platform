@@ -42,6 +42,7 @@ tasks:
       - task: check:drift
       - task: check:breaking
       - task: check:invariants
+      - task: check:doc-owner
       - task: check:arch
       # BEFORE the mutation gates: ~53s against their minutes, so a race
       # failing here saves the long wait. NOT claimed to be first-cheapest
@@ -689,6 +690,29 @@ tasks:
         fi
         tail -3 "$LOG"
         python3 tools/check-mutation.py tools/mutation-equivalents.txt
+
+  check:doc-owner:
+    desc: >
+      Fail when a doc comment names a DIFFERENT function than the one it sits
+      on. Insert a function between a comment and its owner and Go says
+      nothing: the comment silently belongs to the newcomer, the original is
+      left bare, and the next reader is told about a function they are not
+      looking at.
+
+      Found two on its first run, both months old, both in
+      internal/harness/soak.go — and I had just done it myself in
+      internal/gateway/presence.go, caught by review, which is not a mechanism
+      that scales.
+
+      Deliberately NARROW: it fires only when the first word names another
+      function that actually exists. Enforcing Go's full "doc starts with the
+      name" convention would flag internal/rules' `// Complexity:` blocks,
+      which sit above //nolint:gocyclo for a stated reason — and a gate whose
+      first act is to demand the removal of correct code is a gate that gets
+      switched off.
+    cmds:
+      - python3 tools/check_doc_owner_test.py -q
+      - python3 tools/check-doc-owner.py .
 
   check:invariants:
     desc: >

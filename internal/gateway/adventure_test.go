@@ -230,7 +230,9 @@ func (f *adventureFixture) dial(token string, after int64) *websocket.Conn {
 	return conn
 }
 
-// loadAdventureCmd builds a LoadAdventure ClientCommand for id.
+// loadAdventureCmdFor builds a LoadAdventure ClientCommand for id. Distinct
+// from authz_test.go's argument-less loadAdventureCmd, whose name this doc
+// carried until check:doc-owner was pointed at test files.
 func loadAdventureCmdFor(id string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadAdventure{
 		LoadAdventure: &vttv1.LoadAdventure{AdventureId: id},
@@ -282,7 +284,7 @@ func TestLoadAdventureUnknownIdCleanError(t *testing.T) {
 	}
 }
 
-// payloadKind names env's oneof payload variant using the same camelCase
+// adventurePayloadKind names env's oneof payload variant using the same camelCase
 // key protojson would use for it (ruleset_test.go's own precedent, extended
 // with the adventure-format Compile batch's variants).
 func adventurePayloadKind(env *vttv1.Envelope) string {

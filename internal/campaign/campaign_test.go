@@ -231,11 +231,11 @@ func TestCloseReopenStateDeepEquals(t *testing.T) {
 func TestSubscriberSeesAppendedEvents(t *testing.T) {
 	c := openTemp(t)
 
-	ch, cancel, _, err := c.Subscribe(0, 4)
+	ch, unsubscribe, _, err := c.Subscribe(0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	env := cenv(nextID(), &vttv1.SessionStarted{Name: "n"})
 	if _, err := c.Append(env); err != nil {

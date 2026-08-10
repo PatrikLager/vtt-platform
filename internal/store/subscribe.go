@@ -108,7 +108,7 @@ func (sub *subscriber) isClosed() bool {
 }
 
 // markStopped ends the subscription. Idempotent, and safe to call from either
-// the store (cancel, Close) or the pump itself (no-progress timeout).
+// the store (unsubscribe, Close) or the pump itself (no-progress timeout).
 //
 // It does NOT close ch. Only the pump does that, on its way out, so a
 // concurrent hand-off can never send on a closed channel.
@@ -180,7 +180,7 @@ func (sub *subscriber) pump(timeout time.Duration) {
 // the wire could not previously express (contract CatchUpHead). It is now
 // QUEUED rather than already resident in the channel; the sequence a consumer
 // eventually reads is unchanged.
-func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, func(), int64, error) {
+func (s *Store) Subscribe(afterSeq int64, buffer int) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
 	return s.SubscribeWithNoProgressTimeout(afterSeq, buffer, 0)
 }
 
@@ -192,7 +192,7 @@ func (s *Store) Subscribe(afterSeq int64, buffer int) (<-chan *vttv1.Envelope, f
 // knows what a stalled CONNECTION is, and its own tests need a budget shorter
 // than a wall-clock half-minute. Tests elsewhere use Subscribe and get the
 // default.
-func (s *Store) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (<-chan *vttv1.Envelope, func(), int64, error) {
+func (s *Store) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
 	if noProgress <= 0 {
 		noProgress = SubscriberNoProgressTimeout
 	}
@@ -219,17 +219,25 @@ func (s *Store) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noPro
 	s.subs = append(s.subs, sub)
 	go sub.pump(noProgress)
 
-	// cancel marks sub stopped but does not remove it from s.subs itself. The
+	// NOT `cancel`. It reads as a context.CancelFunc to any Go programmer, and
+	// it is not one — it ends a SUBSCRIPTION and touches no context. That
+	// misreading cost a real debugging session: a defect was diagnosed as
+	// "shutdown cancels the connection context" and written up that way in the
+	// backlog, from the name alone, when this function never touches a context
+	// at all. The name is the fix; a comment explaining the name would have
+	// been read just as little.
+	//
+	// It marks sub stopped but does not remove it from s.subs itself. The
 	// stopped subscriber stays in s.subs until the next Notify's compaction
-	// pass sweeps it out. Deliberate lazy reclamation: cancel doesn't need to
-	// touch the slice under lock beyond the single dropLocked call, and the
-	// compaction it defers to already runs on every Notify regardless.
-	cancel := func() {
+	// pass sweeps it out. Deliberate lazy reclamation: it need not touch the
+	// slice under lock beyond the single dropLocked call, and the compaction it
+	// defers to already runs on every Notify regardless.
+	unsubscribe = func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.dropLocked(sub)
 	}
-	return sub.ch, cancel, sub.lastSeq, nil
+	return sub.ch, unsubscribe, sub.lastSeq, nil
 }
 
 // notifyLocked queues env for all live subscribers; callers hold s.mu.

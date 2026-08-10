@@ -17,11 +17,11 @@ func TestSubscribeHeadIsTheHighestPreloadedSequence(t *testing.T) {
 		s.Append(newEnv(id))
 	}
 
-	ch, cancel, head, err := s.Subscribe(0, 8)
+	ch, unsubscribe, head, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	if head != 5 {
 		t.Fatalf("catch-up head = %d, want 5", head)
@@ -44,11 +44,11 @@ func TestSubscribeHeadIsTheLogHeadNotTheCursor(t *testing.T) {
 	for _, id := range []string{"e1", "e2", "e3", "e4"} {
 		s.Append(newEnv(id))
 	}
-	_, cancel, head, err := s.Subscribe(2, 8)
+	_, unsubscribe, head, err := s.Subscribe(2, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 	if head != 4 {
 		t.Fatalf("catch-up head = %d, want 4", head)
 	}
@@ -58,11 +58,11 @@ func TestSubscribeHeadOnAnEmptyLogIsZero(t *testing.T) {
 	// Zero tells a client there is nothing to wait for. Sequence 0 is never a
 	// real event, so it is unambiguous.
 	s := openTemp(t)
-	_, cancel, head, err := s.Subscribe(0, 8)
+	_, unsubscribe, head, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 	if head != 0 {
 		t.Fatalf("catch-up head = %d, want 0 on an empty log", head)
 	}
@@ -75,11 +75,11 @@ func TestSubscribeHeadExcludesEventsAppendedAfterwards(t *testing.T) {
 	s := openTemp(t)
 	s.Append(newEnv("e1"))
 
-	_, cancel, head, err := s.Subscribe(0, 8)
+	_, unsubscribe, head, err := s.Subscribe(0, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	later := newEnv("e2")
 	s.Append(later)

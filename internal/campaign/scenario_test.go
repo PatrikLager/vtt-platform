@@ -62,11 +62,11 @@ func TestExitScenario(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 
-	ch, cancel, _, err := c.Subscribe(0, 32)
+	ch, unsubscribe, _, err := c.Subscribe(0, 32)
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	defer cancel()
+	defer unsubscribe()
 
 	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "exit-scenario"}))
 

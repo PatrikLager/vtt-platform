@@ -25,6 +25,11 @@ pre-commit:
       run: task check:arch
     vocabulary:
       run: task check:invariants
+    doc-owner:
+      # 0.3s, and it catches an edit-time slip: the moment a function is
+      # inserted above someone else's doc comment. Waiting 25 minutes for CI
+      # to say so means the misfiled comment is already in history.
+      run: task check:doc-owner
     secrets:
       run: task check:secrets:staged
     typecheck:
