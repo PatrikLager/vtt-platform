@@ -297,6 +297,57 @@ class MutationGateTest(unittest.TestCase):
         """
         self.assertGreater(cm.MIN_FREE_BYTES, 8 * 1024**3)
 
+    # --- the deadline every mutant is judged against ---
+    #
+    # gremlins derives it from the wall time of its OWN coverage run, which
+    # omits -count=1 and is therefore eligible for Go's test result cache.
+    # Measured on internal/gateway back to back: 9.286s then (cached) 0.27s —
+    # a 41x collapse that drops the deadline BELOW the suite's own runtime, so
+    # every mutant times out and the gate reports a broken measurement.
+
+    def test_the_test_cache_is_cleared_before_any_package_is_measured(self):
+        """ORDER, not just occurrence. Clearing it after the first package has
+        run leaves that package judged against a collapsed deadline — which is
+        the failure, not a smaller version of it."""
+        events = []
+
+        def prepare():
+            events.append("clear")
+
+        def runner(pkg):
+            events.append(pkg)
+            return gremlins_output()
+
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/", "./q/"], runner, out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0, prepare=prepare)
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(events, ["clear", "./p/", "./q/"],
+                         "the cache must be cleared once, before the first package")
+
+    def test_a_disk_too_full_to_run_does_not_bother_clearing_the_cache(self):
+        """The floor refuses before anything is spent, and throwing away the
+        test cache is a cost — the next ordinary `go test` pays for it. A guard
+        that refuses AND charges you is worse than one that just refuses."""
+        cleared = []
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                          free_bytes=3 * 1024**3, cache_bytes=0,
+                          prepare=lambda: cleared.append(1))
+        self.assertEqual(code, 1)
+        self.assertEqual(cleared, [], "a refused run must not clear the cache")
+
+    def test_the_real_clear_names_the_test_cache_not_the_build_cache(self):
+        """The distinction the first diagnosis of this got wrong, and it decides
+        the cost: `go clean -testcache` discards cached RESULTS and nothing has
+        to be recompiled, while `go clean -cache` forces a full rebuild of the
+        module — minutes, on every gate run, for no benefit."""
+        self.assertEqual(cm.clear_test_cache_args(), ["go", "clean", "-testcache"])
+
     # --- 16 GiB free is a CLIFF; these pin the ramp in front of it ---
     #
     # The floor fails closed, but only once the volume is nearly gone, on a

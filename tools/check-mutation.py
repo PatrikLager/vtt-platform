@@ -732,6 +732,46 @@ def gremlins_args(pkg, packages=PACKAGES):
     return args
 
 
+def clear_test_cache_args():
+    """The command that makes every mutant's deadline mean the same thing.
+
+    -testcache, NOT -cache, and the difference is the whole cost of this fix:
+    `go clean -testcache` discards cached test RESULTS and leaves every
+    compiled artifact alone, so nothing is rebuilt. `go clean -cache` throws
+    away the build cache and costs minutes of recompilation on every gate run.
+    """
+    return ["go", "clean", "-testcache"]
+
+
+def clear_test_cache():
+    """Discard cached test results, so gremlins' baseline is a real measurement.
+
+    WHY THIS EXISTS, read from gremlins v0.6.0 and then measured. Every mutant's
+    deadline is `cProfile.Elapsed * TIMEOUT_COEFFICIENT` (engine/executor.go:101),
+    and Elapsed is the wall time of gremlins' OWN coverage run — which it invokes
+    as `go test -cover -coverprofile <file> <pkg>` with NO -count=1
+    (coverage/coverage.go:145-157). That is eligible for Go's test result cache.
+
+    Measured on internal/gateway, back to back:
+
+        run 1   9.286s          -> deadline ~336s   suite 9.3s   fine
+        run 2   (cached) 0.27s  -> deadline ~8.1s   suite 9.3s   ALL time out
+
+    A 41x collapse, landing the deadline BELOW the suite's own runtime. That is
+    the 55-of-78 gateway timeouts, and the internal/mcp history recorded at
+    TIMEOUT_COEFFICIENT (58 timeouts, then 1, then 58 over identical code) with
+    no appeal to machine load at all.
+
+    Failure here is NOT fatal. A gate that refuses to run because it could not
+    clear a cache has turned a slow measurement into no measurement; the guard
+    that catches a collapsed deadline is the majority-timeout check, which stays.
+    """
+    try:
+        subprocess.run(clear_test_cache_args(), capture_output=True, check=False)
+    except OSError:
+        pass
+
+
 def default_runner(pkg):
     proc = subprocess.run(gremlins_args(pkg), capture_output=True, text=True)
     return proc.stdout + proc.stderr
@@ -756,7 +796,7 @@ def _free(path):
 
 def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         out=sys.stdout, err=sys.stderr, root=".", free_bytes=None,
-        cache_bytes=None):
+        cache_bytes=None, prepare=clear_test_cache):
     # BEFORE anything is spent. Discovering a full disk as a corrupt verdict is
     # the failure this whole file's error handling is about; discovering it as
     # a number, up front, costs nothing.
@@ -801,6 +841,12 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
               f"fills, Bash stops working, so the failure does not even present as a "
               f"gate failure.{recover}",
               file=err)
+
+    # AFTER the floor, so a refused run does not also throw away the test cache
+    # somebody else's next `go test` would have used — and BEFORE the first
+    # package, because clearing it later leaves that package judged against a
+    # collapsed deadline, which is the failure rather than a smaller version.
+    prepare()
 
     # BEFORE anything is measured: a package gremlins cannot resolve reports
     # every mutant as killed, so letting the loop below run would print `ok`
