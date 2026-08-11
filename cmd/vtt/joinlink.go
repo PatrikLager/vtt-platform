@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -57,32 +58,69 @@ func newJoinLinkCmd() *cobra.Command {
 			if ids.JoinOpen() {
 				state = "open"
 			}
-			fmt.Fprintf(c.OutOrStdout(), "door: %s\nsecret: %s\nshare: <your-server-url>/?join=%s\n",
-				state, secret, secret)
+			// The REMAINING count, not the raw pair: "3 of 8" makes a DM do
+			// the subtraction, and the number they act on is how many more
+			// people can still get in.
+			admitted, limit, err := ids.JoinBudget()
+			if err != nil {
+				return fmt.Errorf("vtt join-link show: %w", err)
+			}
+			// Its OWN line, leaving `door:` alone. Folding it into that value
+			// broke TestJoinLinkOpenShareCloseRotate, which reads the field
+			// rather than searching the blob — and it was right to: `door` is
+			// the machine-readable answer to "open or closed", and a caller
+			// parsing it should not have to strip prose.
+			//
+			// Printed only when the door is open: "0 of 0 left" on a shut door
+			// invites the reading that the budget is why it is shut.
+			fmt.Fprintf(c.OutOrStdout(), "door: %s\n", state)
+			if state == "open" {
+				left := limit - admitted
+				if left < 0 {
+					left = 0
+				}
+				fmt.Fprintf(c.OutOrStdout(), "admissions: %d of %d left\n", left, limit)
+			}
+			fmt.Fprintf(c.OutOrStdout(), "secret: %s\nshare: <your-server-url>/?join=%s\n",
+				secret, secret)
 			return nil
 		}),
 	}
 
+	var admit int
 	open := &cobra.Command{
 		Use:   "open",
 		Short: "Let anyone holding the link join as a spectator",
 		RunE: withIdentity(func(ids *identity.DB, c *cobra.Command) error {
-			if err := ids.SetJoinOpen(true); err != nil {
+			if err := ids.SetJoinOpen(true, admit); err != nil {
 				return fmt.Errorf("vtt join-link open: %w", err)
 			}
 			// Named for what it actually admits. "Open" alone invites the
 			// reading that the link now grants access to the game; it grants
 			// the right to WATCH, and the DM promotes from there.
-			fmt.Fprintln(c.OutOrStdout(), "door: open — anyone with the link can now join as a spectator")
+			//
+			// The NUMBER is printed, always, including the default. A budget
+			// nobody was told about is one they find out about when the last
+			// player is turned away with the same message a stranger gets.
+			n := admit
+			if n <= 0 {
+				n = identity.DefaultAdmitLimit
+			}
+			fmt.Fprintf(c.OutOrStdout(),
+				"door: open — the next %d people with the link can join as spectators\n", n)
 			return nil
 		}),
 	}
+	// --admit, not --for: this is a count, and --for reads as a duration.
+	open.Flags().IntVar(&admit, "admit", 0,
+		"how many people this opening may let in (default "+
+			strconv.Itoa(identity.DefaultAdmitLimit)+")")
 
 	closeCmd := &cobra.Command{
 		Use:   "close",
 		Short: "Stop the link admitting anyone new",
 		RunE: withIdentity(func(ids *identity.DB, c *cobra.Command) error {
-			if err := ids.SetJoinOpen(false); err != nil {
+			if err := ids.SetJoinOpen(false, 0); err != nil {
 				return fmt.Errorf("vtt join-link close: %w", err)
 			}
 			// Says what it does NOT do, because that is the question a DM

@@ -401,9 +401,13 @@
     "name": "promote_participant"
   },
   {
-    "description": "Open or close the table's shared join link. While it is OPEN, anyone holding the link can join as a spectator without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",
+    "description": "Open or close the table's shared join link. While it is OPEN, the next few people holding the link can join as spectators without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",
     "inputSchema": {
       "properties": {
+        "admitLimit": {
+          "description": "Optional; omit for the default of 8. How many people THIS opening may admit before the door stops letting anyone new in — a bound on what a leaked link can cost, since closing the door later does NOT revoke anyone already through it. Opening the door again starts a fresh budget.",
+          "type": "integer"
+        },
         "door": {
           "enum": [
             "JOIN_DOOR_OPEN",

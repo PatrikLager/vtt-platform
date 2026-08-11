@@ -71,7 +71,66 @@ SQLite's write lock on the file `internal/store` writes to inside a transaction
 on every event append, on the one path a stranger controls. The argument above
 was sound; the code did not implement it. `identity.JoinAllows` now answers
 from a single read and never writes, and a gateway test counts rows rather than
-trusting the refusal.
+trusting the refusal. (`JoinAllows` was superseded on the hot path by
+`JoinAdmits` in the 2026-08-11 amendment below, which carries the same property
+for the same reason — this paragraph is left naming the function it was written
+about rather than quietly rewritten.)
+
+**AMENDED 2026-08-11, at the merge gate the note above reserved.** Two things
+were wrong with the argument as it stood, and only one of them was known.
+
+**What was known: an open door mints without limit.** The case against rate
+limiting turns on there being no endpoint while the door is shut. True — but
+the door is open for the whole of a session, and J5 put the secret in a URL,
+which is where the exposure changed shape.
+
+**What was NOT known, and is the sharper half: closing the door undoes
+nothing.** `SetJoinOpen(false)` flips a flag and `RotateJoinSecret` replaces a
+string. NEITHER revokes anything already minted. So "a leak is harmless outside
+the window" is true PROSPECTIVELY and false RETROSPECTIVELY: every credential
+created during the window is permanent, survives both closing and rotating, and
+can only be undone by `vtt revoke`, one participant at a time, against a list
+the DM would first have to notice. The sentence above implied otherwise and
+should not have.
+
+**The bound is now a budget per opening.** `SetJoinOpen` takes an admission
+limit; `JoinAdmits` spends one as it answers. Opening the door RESETS the count,
+because a DM who opens it twice means twice — carrying the count over would let
+a campaign exhaust its admissions permanently, curable only by editing the
+database.
+
+A COUNT rather than a time window (Patrik, 2026-08-11). Both bound the blast
+radius; a DM knows how many people they are expecting more reliably than how
+long they will take to arrive, and a window that expires mid-arrival is a
+failure the DM has to diagnose from the other end of a chat.
+
+**The cost is real and is stated here rather than only in a doc comment.** The
+Nth+1 joiner is refused with the SAME status and the SAME body as a wrong
+secret and a shut door — three reasons, one answer, deliberately (§5). A
+legitimate player who arrives one too late therefore cannot tell why, and has
+to ask the DM. That is the price of not telling a prober whether the door is
+real and merely full, and it is worth paying; it is not free.
+
+The default is a NUMBER (`identity.DefaultAdmitLimit`, 8), not "unlimited" and
+not zero. protojson omits zero values, so an absent `admit_limit` and a
+deliberate 0 arrive as the same bytes — the trap `JoinDoor` is an enum to
+avoid. Of the two readings, "admit nobody" is the one that cannot be debugged
+from either end: the DM sees an open door, every joiner sees the 403 a stranger
+sees, and nothing anywhere distinguishes them.
+
+There is NO UPPER BOUND on the budget, and that is not an oversight: `admit_limit`
+is an int32, so a DM or agent can ask for an effectively uncapped door. Setting
+it is already an authorized act — the same authority that can open the door at
+all, and the same one that could re-open it repeatedly — so a ceiling would
+bound nothing a determined holder of that authority could not walk around. What
+it would bound is a typo, which is worth noting and was not worth a refusal.
+
+Atomicity is the property that makes the cap a cap rather than a suggestion.
+The secret is compared in Go, in constant time, and every refusal is decided
+there — so a refused request still writes nothing, which is what the 2026-08-09
+amendment above is about. Only an expected admission issues the increment, and
+that `UPDATE` re-states the whole condition in its `WHERE`, so two joiners
+racing for the last slot are serialised by SQLite and the loser matches no row.
 
 ## 3. Promotion, which is the hard part
 

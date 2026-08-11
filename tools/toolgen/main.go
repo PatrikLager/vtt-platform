@@ -215,8 +215,23 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.SetJoinDoor",
 		name:        "set_join_door",
-		description: "Open or close the table's shared join link. While it is OPEN, anyone holding the link can join as a spectator without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",
+		description: "Open or close the table's shared join link. While it is OPEN, the next few people holding the link can join as spectators without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",
 		descriptor:  (&vttv1.SetJoinDoor{}).ProtoReflect().Descriptor(),
+		// admitLimit is OPTIONAL, and the derived list would make it REQUIRED —
+		// forcing every caller to name a number for a field whose whole design
+		// is that an absent one means the default. Worse for an LLM caller than
+		// for a human one, which is what these overrides exist for: told a
+		// field is required, it fabricates a value rather than sending nothing.
+		// `door` stays required — it is what this tool sets, and guessing it is
+		// refused rather than defaulted.
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.SetJoinDoor": {
+				requiredOverride: []string{"door"},
+				fieldDocs: map[string]string{
+					"admitLimit": "Optional; omit for the default of 8. How many people THIS opening may admit before the door stops letting anyone new in — a bound on what a leaked link can cost, since closing the door later does NOT revoke anyone already through it. Opening the door again starts a fresh budget.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.RotateJoinLink",

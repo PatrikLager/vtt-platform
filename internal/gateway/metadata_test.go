@@ -576,7 +576,7 @@ func TestJoinLinkReportsTheDoorAndTheSecret(t *testing.T) {
 			"door open and nobody told where to go")
 	}
 
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	_, body = f.get("/api/join-link", f.dmToken)

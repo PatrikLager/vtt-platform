@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -299,13 +301,13 @@ func TestJoinIsClosedOnAFreshCampaign(t *testing.T) {
 
 func TestTheDoorOpensAndClosesAgain(t *testing.T) {
 	d, _ := openTemp(t)
-	if err := d.SetJoinOpen(true); err != nil {
+	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	if !d.JoinOpen() {
 		t.Fatal("opening the door must take effect")
 	}
-	if err := d.SetJoinOpen(false); err != nil {
+	if err := d.SetJoinOpen(false, 0); err != nil {
 		t.Fatal(err)
 	}
 	if d.JoinOpen() {
@@ -317,7 +319,7 @@ func TestTheDoorSurvivesAReopen(t *testing.T) {
 	// It is operational state, but it is PERSISTENT operational state: a DM
 	// who opens the door and restarts the server has not closed it.
 	d, path := openTemp(t)
-	if err := d.SetJoinOpen(true); err != nil {
+	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Close(); err != nil {
@@ -439,7 +441,7 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 		t.Fatal("rotating against a dead handle must report the failure, or a DM believes " +
 			"a leaked link was closed when it was not")
 	}
-	if err := d.SetJoinOpen(true); err == nil {
+	if err := d.SetJoinOpen(true, 100); err == nil {
 		t.Fatal("opening the door against a dead handle must report the failure")
 	}
 	if _, err := d.Lookup("p-anyone"); err == nil {
@@ -461,7 +463,7 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 	for _, open := range []bool{false, true} {
 		d, _ := openTemp(t)
-		if err := d.SetJoinOpen(open); err != nil {
+		if err := d.SetJoinOpen(open, 100); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := d.RotateJoinSecret(); err != nil {
@@ -476,7 +478,7 @@ func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 }
 
 // TestTheDoorOpensOnACampaignThatAlreadyHasALink covers SetJoinOpen's CONFLICT
-// branch, which nothing reached: every SetJoinOpen(true) in this file ran on a
+// branch, which nothing reached: every SetJoinOpen(true, 100) in this file ran on a
 // database with no row, so `true` only ever exercised the INSERT.
 //
 // Measured by review: `DO UPDATE SET open = excluded.open` -> `SET open = 0`
@@ -488,7 +490,7 @@ func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 	if _, err := d.JoinSecret(); err != nil { // mints the row, closed
 		t.Fatal(err)
 	}
-	if err := d.SetJoinOpen(true); err != nil {
+	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	if !d.JoinOpen() {
@@ -507,7 +509,7 @@ func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 // attacker-suppliable "" against a stored "".
 func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	a, _ := openTemp(t)
-	if err := a.SetJoinOpen(true); err != nil {
+	if err := a.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	secret, err := a.JoinSecret()
@@ -518,7 +520,7 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 		t.Fatal("opening the door must mint a real secret, not an empty one")
 	}
 	b, _ := openTemp(t)
-	if err := b.SetJoinOpen(true); err != nil {
+	if err := b.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	other, err := b.JoinSecret()
@@ -852,7 +854,7 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 		{open: false, offer: right, expect: false},
 		{open: false, offer: right + "x", expect: false},
 	} {
-		if err := d.SetJoinOpen(c.open); err != nil {
+		if err := d.SetJoinOpen(c.open, 100); err != nil {
 			t.Fatal(err)
 		}
 		got, err := d.JoinAllows(c.offer)
@@ -874,7 +876,7 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 // future writer with a bug must fail CLOSED, not admit the world.
 func TestAnEmptyStoredSecretAdmitsNobody(t *testing.T) {
 	d, path := openTemp(t)
-	if err := d.SetJoinOpen(true); err != nil {
+	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1062,5 +1064,744 @@ func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatal("an error must not also return a list somebody might render")
+	}
+}
+
+// TestACampaignPredatingTheAdmissionBudgetStillWorks is the migration this
+// package had no mechanism for.
+//
+// The schema comment above join_access records WHY it is a separate table: on
+// a campaign that already has `participants`, CREATE TABLE IF NOT EXISTS is a
+// no-op, so a new COLUMN there would never appear. A new TABLE dodges that
+// because it exists nowhere yet. Adding admitted/admit_limit to join_access
+// walks straight back into it — every campaign whose door was ever touched
+// already HAS that table, so IF NOT EXISTS skips it and the columns never
+// arrive. The failure is silent and total: every join errors on a missing
+// column, on real campaigns only, and never on a fresh test database.
+//
+// So this builds the OLD shape by hand and opens it.
+func TestACampaignPredatingTheAdmissionBudgetStillWorks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The join_access schema EXACTLY as it shipped before the budget.
+	if _, err := raw.Exec(`
+CREATE TABLE participants (
+  id           TEXT PRIMARY KEY,
+  display_name TEXT,
+  role         TEXT,
+  controls     TEXT,
+  token_hash   BLOB UNIQUE,
+  revoked      INTEGER DEFAULT 0
+);
+CREATE TABLE join_access (
+  id     INTEGER PRIMARY KEY CHECK (id = 1),
+  secret TEXT NOT NULL,
+  open   INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	db, err := identity.Open(path)
+	if err != nil {
+		t.Fatalf("opening a campaign that predates the budget: %v", err)
+	}
+	defer db.Close()
+
+	// It must ADMIT, not merely open: a migration that adds the columns with a
+	// budget of zero would satisfy "no error" while locking every existing
+	// campaign out of its own join link.
+	admitted, err := db.JoinAdmits("old-secret")
+	if err != nil {
+		t.Fatalf("JoinAdmits on a migrated campaign: %v", err)
+	}
+	if !admitted {
+		t.Fatal("a campaign that predates the budget must still admit through its open door — " +
+			"migrating it to a budget of zero would shut a door its DM had left open")
+	}
+}
+
+// TestOnlyOneJoinerTakesTheLastSlot is the whole point of a cap.
+//
+// A budget two concurrent joiners can both pass is not a budget, and this is
+// the classic shape: read "admitted < limit", both see room, both proceed. The
+// read in JoinAdmits is a FAST PATH ONLY — the increment re-states the whole
+// condition in its WHERE, so SQLite serialises the two writes and the loser
+// matches no row.
+//
+// Deliberately more goroutines than slots, released together, so the race is
+// contended rather than hypothetical.
+func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "race.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 1); err != nil { // ONE slot
+		t.Fatal(err)
+	}
+
+	// ROUNDS, and the number is measured rather than chosen to look thorough.
+	// Review deleted `AND admitted < admit_limit` from the UPDATE — the single
+	// clause this test exists for — and a ONE-ROUND version passed five times
+	// running: detection was 9 in 40 at one round, 39 in 40 at ten, 40 in 40 at
+	// thirty. A cap that lets six racers through a budget of one would have
+	// shipped green on four CI runs in five.
+	const (
+		racers = 16
+		rounds = 30
+	)
+	for round := range rounds {
+		if err := d.SetJoinOpen(true, 1); err != nil { // ONE slot, fresh each round
+			t.Fatal(err)
+		}
+		var (
+			wg      sync.WaitGroup
+			mu      sync.Mutex
+			granted int
+		)
+		start := make(chan struct{})
+		for range racers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				ok, err := d.JoinAdmits(secret)
+				if err != nil {
+					return
+				}
+				if ok {
+					mu.Lock()
+					granted++
+					mu.Unlock()
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		if granted != 1 {
+			t.Fatalf("round %d: %d of %d racers were admitted against a budget of 1 — the "+
+				"cap is not atomic, so a leaked link is bounded only by how slowly people "+
+				"click", round, granted, racers)
+		}
+	}
+}
+
+// TestABudgetIsPerOpeningNotPerCampaign pins what "open the door again" means.
+//
+// A DM who opens the door twice means twice: the second opening is a fresh
+// decision about a fresh set of people, not the remainder of an old one. If
+// the count carried over, a campaign would silently run out of admissions
+// forever, and the only cure would be a database edit.
+func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reopen.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.SetJoinOpen(true, 1); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := d.JoinAdmits(secret); !ok {
+		t.Fatal("the first joiner must get the only slot")
+	}
+	if ok, _ := d.JoinAdmits(secret); ok {
+		t.Fatal("a spent budget must refuse")
+	}
+
+	if err := d.SetJoinOpen(true, 1); err != nil { // opened again
+		t.Fatal(err)
+	}
+	if ok, _ := d.JoinAdmits(secret); !ok {
+		t.Fatal("re-opening the door must restore the budget — otherwise a campaign runs " +
+			"out of admissions permanently and only a database edit brings it back")
+	}
+}
+
+// TestAClosedDoorSpendsNothing keeps spec §2's inertness true for the new
+// column too: a refused anonymous request must not write, and "admitted" is
+// now a thing a refusal could plausibly touch.
+func TestAClosedDoorSpendsNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shut.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(false, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, _ := d.JoinAdmits(secret); ok {
+		t.Fatal("a closed door must admit nobody")
+	}
+	if ok, _ := d.JoinAdmits("wrong"); ok {
+		t.Fatal("a wrong secret must admit nobody")
+	}
+
+	// READ THE COUNTER, with NO SetJoinOpen in between.
+	//
+	// The first version of this re-opened the door and then counted five
+	// successful admissions — but SetJoinOpen resets `admitted` to 0
+	// unconditionally, so it wiped the very evidence it was about to read.
+	// Review injected "every refusal increments admitted" and all three suites
+	// stayed green. The shipped failure: a stranger POSTs a wrong secret eight
+	// times, the door is exhausted, the whole table is locked out — and each
+	// refusal takes SQLite's write lock on the file internal/store appends
+	// events to, which is the inertness §2 rests on.
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	var admitted int
+	if err := raw.QueryRow(`SELECT admitted FROM join_access WHERE id = 1`).Scan(&admitted); err != nil {
+		t.Fatal(err)
+	}
+	if admitted != 0 {
+		t.Fatalf("two refusals spent %d admissions — a stranger can exhaust the door "+
+			"without ever getting through it, locking the table out", admitted)
+	}
+}
+
+// TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath is the twin of the
+// JoinAllows test three functions up, pointed at the function /join actually
+// calls. Review deleted the `secret == ""` guard from JoinAdmits and every
+// suite stayed green: the existing test exercises JoinAllows, which handleJoin
+// no longer uses. ConstantTimeCompare("", "") returns 1 and a request body
+// omitting the field decodes to "", so the degenerate row admits the world.
+func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.JoinSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`UPDATE join_access SET secret = '' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, _ := d.JoinAdmits(""); ok {
+		t.Fatal("an empty stored secret admitted an empty candidate — the degenerate row " +
+			"admits the world, because ConstantTimeCompare(\"\", \"\") is 1")
+	}
+}
+
+// TestRotatingAfterASpentBudgetGivesAWorkingLink is the leak remedy, and
+// without it the remedy is worse than the leak.
+//
+// Rotating is what §2 tells a DM to do when a link escapes. Review measured
+// the state that left: open with a budget of 2, admit 2, rotate — and the new
+// secret admits NOBODY, because rotate replaced the secret and left `admitted`
+// spent. `vtt join-link show` says "door: open"; every legitimate player gets
+// the byte-identical stranger's 403; nothing on either end says why. That is
+// precisely the "cannot be debugged from either end" failure the spec argues
+// against for a zero default, reached by a different road.
+//
+// A new secret is a NEW OPENING. Nobody holding it has spent anything.
+func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rotate.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 2); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if ok, err := d.JoinAdmits(secret); !ok {
+			t.Fatalf("admission %d of 2 refused (%v)", i+1, err)
+		}
+	}
+
+	fresh, err := d.RotateJoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := d.JoinAdmits(fresh); !ok {
+		t.Fatalf("the freshly rotated link admits nobody (%v) — the documented cure for a "+
+			"leak hands the DM a door that reads open and refuses everyone", err)
+	}
+	// And the OLD secret is still locked out, which is the point of rotating.
+	if ok, _ := d.JoinAdmits(secret); ok {
+		t.Fatal("the old secret still admits — rotating did not close the leak")
+	}
+}
+
+// TestMigrationSurvivesConcurrentFirstOpens covers the one run where it
+// matters: the first open after an upgrade.
+//
+// The scan and the ALTERs are separate statements, so two processes opening the
+// same campaign together both see the columns missing and both add them. Review
+// measured 35 failures in 40 trials with four concurrent opens, dying on
+// `duplicate column name` — the server refusing to start, or a raw SQL error in
+// the DM's terminal, on the one run nobody will connect to the upgrade.
+func TestMigrationSurvivesConcurrentFirstOpens(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "concurrent.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`
+CREATE TABLE participants (
+  id TEXT PRIMARY KEY, display_name TEXT, role TEXT,
+  controls TEXT, token_hash BLOB UNIQUE, revoked INTEGER DEFAULT 0
+);
+CREATE TABLE join_access (
+  id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL,
+  open INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	const openers = 4
+	var wg sync.WaitGroup
+	errs := make(chan error, openers)
+	start := make(chan struct{})
+	for range openers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			db, err := identity.Open(path)
+			if err != nil {
+				errs <- err
+				return
+			}
+			db.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("a concurrent first open failed: %v", err)
+	}
+}
+
+// TestMigratingTwiceIsNotAnError pins idempotency. ALTER TABLE ADD COLUMN is an
+// error, not a no-op, on a column that is already there — so a regression in
+// the shape scan surfaces as `duplicate column name` on the SECOND open of
+// every real campaign, which the migration test alone would never see.
+func TestMigratingTwiceIsNotAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "twice.db")
+	for i := range 3 {
+		d, err := identity.Open(path)
+		if err != nil {
+			t.Fatalf("open %d: %v", i+1, err)
+		}
+		d.Close()
+	}
+}
+
+// TestJoinBudgetReportsWhatHasBeenSpent is what the DM console and `vtt
+// join-link show` render. It had ZERO coverage in this package when it landed:
+// the CLI test exercised it through a subprocess, which proves the wiring and
+// not the function.
+func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "budget.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// A campaign whose door has never been touched has no row at all, and must
+	// answer rather than error — the console polls this before anything exists.
+	admitted, limit, err := d.JoinBudget()
+	if err != nil {
+		t.Fatalf("a never-touched campaign errored: %v", err)
+	}
+	if admitted != 0 || limit != 0 {
+		t.Fatalf("a never-touched campaign reports %d/%d, want 0/0", admitted, limit)
+	}
+
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 3); err != nil {
+		t.Fatal(err)
+	}
+	if admitted, limit, err = d.JoinBudget(); err != nil || admitted != 0 || limit != 3 {
+		t.Fatalf("a freshly opened door reports %d/%d (%v), want 0/3", admitted, limit, err)
+	}
+
+	if ok, err := d.JoinAdmits(secret); !ok {
+		t.Fatal(err)
+	}
+	if admitted, limit, err = d.JoinBudget(); err != nil || admitted != 1 || limit != 3 {
+		t.Fatalf("after one joiner it reports %d/%d (%v), want 1/3 — the count the DM "+
+			"reads does not follow the door", admitted, limit, err)
+	}
+
+	// Closing resets the spend, so a shut door never reports a stale number.
+	if err := d.SetJoinOpen(false, 0); err != nil {
+		t.Fatal(err)
+	}
+	if admitted, _, err = d.JoinBudget(); err != nil || admitted != 0 {
+		t.Fatalf("a closed door still reports %d spent (%v)", admitted, err)
+	}
+}
+
+// TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting covers the error
+// arms, and the direction matters more than the coverage: every one of these
+// must fail CLOSED. A database that cannot answer must never be able to open a
+// door, and JoinAdmits returning (true, err) anywhere would admit a stranger on
+// a broken campaign.
+func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "broken.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	// The door is OPEN and the secret is RIGHT — so anything refusing below is
+	// refusing because the database is gone, not because the request was bad.
+	d.Close()
+
+	if ok, err := d.JoinAdmits(secret); ok || err == nil {
+		t.Fatalf("JoinAdmits on a closed database returned (%v, %v) — it must report the "+
+			"failure and admit nobody", ok, err)
+	}
+	if _, _, err := d.JoinBudget(); err == nil {
+		t.Fatal("JoinBudget on a closed database reported success")
+	}
+	if ok, err := d.JoinAllows(secret); ok || err == nil {
+		t.Fatalf("JoinAllows on a closed database returned (%v, %v)", ok, err)
+	}
+	if err := d.SetJoinOpen(true, 5); err == nil {
+		t.Fatal("SetJoinOpen on a closed database reported success")
+	}
+	if _, err := d.RotateJoinSecret(); err == nil {
+		t.Fatal("RotateJoinSecret on a closed database reported success")
+	}
+}
+
+// TestOpeningAnUnreadableCampaignFailsLoudly covers migrate's error arms. A
+// campaign that cannot be migrated must not come up half-migrated: every join
+// would then fail on a missing column, which reads as "the link is broken"
+// rather than "this database could not be upgraded".
+func TestOpeningAnUnreadableCampaignFailsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "notadb.db")
+	// Not SQLite at all. Open must fail somewhere in schema-or-migrate and say
+	// so, rather than returning a handle nothing works against.
+	if err := os.WriteFile(path, []byte("this is not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := identity.Open(path); err == nil {
+		d.Close()
+		t.Fatal("opening a file that is not a database succeeded")
+	}
+}
+
+// TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying covers migrate's
+// failure arms with a scenario that actually happens: a campaign file on
+// read-only media, or one whose permissions were tightened.
+//
+// The DIRECTION is the point. A migration that cannot write must not return a
+// usable handle, because every join would then fail on a missing column and
+// present as "the join link is broken" rather than "this campaign could not be
+// upgraded". The BEGIN IMMEDIATE wrapper also means a partial ALTER cannot be
+// left behind for the next open to trip over.
+func TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "readonly.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pre-budget shape, so a migration is genuinely required.
+	if _, err := raw.Exec(`
+CREATE TABLE participants (
+  id TEXT PRIMARY KEY, display_name TEXT, role TEXT,
+  controls TEXT, token_hash BLOB UNIQUE, revoked INTEGER DEFAULT 0
+);
+CREATE TABLE join_access (
+  id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL,
+  open INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	// The DIRECTORY too: SQLite needs to create -wal/-shm beside the file, so a
+	// writable directory leaves a path where the write still succeeds.
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+		_ = os.Chmod(path, 0o644)
+	})
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		t.Skip("running with rights that make a read-only file writable")
+	}
+
+	d, err := identity.Open(path)
+	if err == nil {
+		d.Close()
+		t.Fatal("opening a campaign that could not be migrated succeeded — every join " +
+			"against it would fail on a missing column and read as a broken link")
+	}
+}
+
+// TestOpeningACurrentCampaignTakesNoWriteLock is the property, tested through
+// the consequence rather than by inspecting locks.
+//
+// migrate runs on EVERY Open, and its first draft wrapped everything in BEGIN
+// IMMEDIATE unconditionally — so opening an already-current campaign took
+// SQLite's write lock on a file internal/store writes to inside a transaction
+// on every event append. ensureJoinRow's own comment records what that costs:
+// with another handle holding a write txn, the blocked caller waits the full
+// busy_timeout(5000) and then fails SQLITE_BUSY.
+//
+// So: hold a write transaction open, and assert Open still returns promptly.
+func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "current.db")
+	d, err := identity.Open(path) // migrates once
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	blocker, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Close()
+	tx, err := blocker.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A genuine WRITE, so the transaction actually holds the write lock.
+	if _, err := tx.Exec(
+		`INSERT INTO join_access (id, secret, open) VALUES (1, 'held', 0)
+		 ON CONFLICT(id) DO UPDATE SET secret = excluded.secret`); err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	done := make(chan error, 1)
+	go func() {
+		second, err := identity.Open(path)
+		if err == nil {
+			second.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("opening a current campaign behind a write transaction failed: %v — "+
+				"migrate is taking the write lock when it has nothing to write", err)
+		}
+	case <-time.After(2 * time.Second):
+		// busy_timeout is 5s, so 2s of silence is already the wrong answer.
+		t.Fatal("opening a current campaign BLOCKED behind another handle's write " +
+			"transaction — migrate takes the write lock on every open, which is a lock a " +
+			"read-only user has no business taking")
+	}
+}
+
+// TestAnAlreadyMigratedReadOnlyCampaignStillOpens is the other half. A campaign
+// on read-only media, or one whose permissions were tightened, must still be
+// readable — `vtt state dump` against an archived campaign is the case. The
+// unconditional-transaction draft made this impossible: nothing needed writing
+// and it took the write lock anyway.
+func TestAnAlreadyMigratedReadOnlyCampaignStillOpens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "archived.db")
+	d, err := identity.Open(path) // creates and migrates
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.JoinSecret(); err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		t.Skip("running with rights that make a read-only file writable")
+	}
+
+	again, err := identity.Open(path)
+	if err != nil {
+		t.Fatalf("an already-migrated read-only campaign would not open: %v — migrate "+
+			"writes even when the schema is current", err)
+	}
+	defer again.Close()
+	if !again.JoinOpen() == false {
+		t.Fatal("unreachable")
+	}
+}
+
+// TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne is the
+// never-touched case, and it is a security property rather than a coverage
+// one: the row does not exist until somebody opens the door or reads the link,
+// and an anonymous request must be answered from that absence WITHOUT minting
+// anything. Minting here is what the 2026-08-09 amendment was written about.
+func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "untouched.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if ok, err := d.JoinAdmits("anything"); ok || err != nil {
+		t.Fatalf("JoinAdmits on a campaign with no door row returned (%v, %v), want (false, nil)", ok, err)
+	}
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	var n int
+	if err := raw.QueryRow(`SELECT count(*) FROM join_access`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("an anonymous refusal created %d door row(s) — the closed door is not "+
+			"inert, and §2's case against rate limiting depends on it being inert", n)
+	}
+}
+
+// TestCreateInviteRefusesARoleThatIsNotOne keeps the four roles the complete
+// set. A caller that can invent a role can invent one authz has no cell for,
+// and every commandRoles lookup for it would answer "not permitted" — which
+// looks like a permissions bug rather than a bad invite.
+func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
+	d, _ := openTemp(t)
+	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord"), nil); err == nil {
+		t.Fatal("CreateInvite accepted a role that is not one of the four")
+	}
+}
+
+// TestTheIdentityStoreReportsFailuresRatherThanPretending covers the write
+// paths' error arms. Same direction as the join path's: a database that cannot
+// answer must say so, never quietly succeed — a silent SetRole would leave a
+// promotion the DM believes happened and authz does not.
+func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gone.db")
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, id, err := d.CreateInvite("Ada", identity.RolePlayer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+
+	if err := d.SetRole(id, identity.RoleSpectator); err == nil {
+		t.Fatal("SetRole on a closed database reported success")
+	}
+	if err := d.Revoke(id); err == nil {
+		t.Fatal("Revoke on a closed database reported success")
+	}
+	if _, err := d.JoinSecret(); err == nil {
+		t.Fatal("JoinSecret on a closed database reported success")
+	}
+	if _, err := d.List(); err == nil {
+		t.Fatal("List on a closed database reported success")
+	}
+	if _, _, err := d.CreateInvite("Bo", identity.RoleSpectator, nil); err == nil {
+		t.Fatal("CreateInvite on a closed database reported success")
+	}
+	if _, err := d.Lookup(id); err == nil {
+		t.Fatal("Lookup on a closed database reported success")
+	}
+}
+
+// TestADoorOpenedWithNoStatedBudgetStillAdmits pins the coercion at the layer
+// that owns it. The gateway has the same test over the wire, but mutation runs
+// PER PACKAGE, so a gateway test cannot kill an identity mutant — and the
+// mutation gate duly found `admitLimit <= 0` mutated to `<` surviving here.
+//
+// A door opened with an explicit 0, or with the absent wire field that decodes
+// to one, must not admit nobody: the DM sees "open", every joiner sees the same
+// 403 a stranger sees, and nothing on either side distinguishes them.
+func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
+	d, _ := openTemp(t)
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := d.JoinAdmits(secret); !ok {
+		t.Fatalf("a door opened with a budget of 0 admitted nobody (%v) — 0 means "+
+			"'unstated', and reading it literally opens a door no one can get through", err)
+	}
+	_, limit, err := d.JoinBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit != identity.DefaultAdmitLimit {
+		t.Fatalf("an unstated budget became %d, want the default of %d", limit, identity.DefaultAdmitLimit)
 	}
 }

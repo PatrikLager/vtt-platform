@@ -22,6 +22,15 @@ excludeFiles:
   # same campaign file (task-3-brief.md Step 1) — that one behavioral case
   # requires importing store + contract, same precedent as the entry above.
   - internal/identity/identity_test\.go$
+  # Same precedent, and the same shape of exception: identity is self-only in
+  # PRODUCTION (mayDependOn: [identity]) and must stay that way, but this test
+  # file drives Open and JoinAdmits through internal/testdb's fault-injecting
+  # driver to reach the arms that decide what happens when SQLite fails
+  # mid-operation. Excluding the FILE rather than adding testdb to identity's
+  # mayDependOn is the whole point: the latter would let production identity
+  # import a test-only driver, which is exactly the dependency this rule
+  # exists to forbid.
+  - internal/identity/fault_internal_test\.go$
 components:
   contract: { in: contract/gen/go/** }
   store:    { in: internal/store }
@@ -50,6 +59,12 @@ components:
   # from adventure's own: it imports adventure AND rules, neither of which
   # adventure itself may import back).
   adventureconformance: { in: internal/adventure/conformance }
+  # internal/testdb (2026-08-11): a SQLite driver that fails one statement on
+  # demand, so the error arms every store in this repo carries are reachable
+  # at all. TEST-ONLY — nothing in cmd/ or the server imports it — but it is a
+  # real package rather than a _test.go file because more than one component
+  # needs it, and Go cannot import test files.
+  testdb:   { in: internal/testdb }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -57,6 +72,11 @@ deps:
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
   identity: { mayDependOn: [identity] }
+  # Self-only, and self is needed: testdb's own tests are an EXTERNAL package
+  # (testdb_test) so they can drive the driver the way a caller does, which
+  # means importing it. Nothing else here may depend on testdb — the one
+  # component that does is excluded by file, above.
+  testdb:   { mayDependOn: [testdb] }
   # rules added Task 6 (ruleset-interpreter wiring): the gateway's
   # use_ability handler calls rules.Resolve directly over an OPTIONAL
   # server-config *rules.Ruleset (nil keeps every pre-Task-6 behavior

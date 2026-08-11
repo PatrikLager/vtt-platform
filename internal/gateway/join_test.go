@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -109,7 +110,7 @@ func TestJoiningThroughAnOpenDoorMintsASpectator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,7 +154,7 @@ func TestAClosedDoorAndAWrongSecretAreRefusedIDENTICALLY(t *testing.T) {
 	// Door CLOSED, secret RIGHT.
 	closedRight, _, bodyA := f.post(secret, "Kim")
 	// Door OPEN, secret WRONG.
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	openWrong, _, bodyB := f.post("not-the-secret", "Kim")
@@ -235,7 +236,7 @@ func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
 	// whether the cap existed or not — the wrong-reason trap, in the test
 	// written to close a gap.
 	f := newJoinFixture(t)
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	before := f.count("participants")
@@ -270,7 +271,7 @@ func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"", "   ", "\t\n"} {
@@ -299,7 +300,7 @@ func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
@@ -353,7 +354,7 @@ func TestTwoJoinersGetDistinctIdentities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	_, a, _ := f.post(secret, "Kim")
@@ -370,7 +371,7 @@ func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.ids.SetJoinOpen(true); err != nil {
+	if err := f.ids.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
 	if resp, _, _ := f.post(old, "Kim"); resp.StatusCode != http.StatusOK {
@@ -385,5 +386,55 @@ func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 	}
 	if resp, _, _ := f.post(fresh, "Ada"); resp.StatusCode != http.StatusOK {
 		t.Fatal("the NEW secret must work, or rotating locks the table out")
+	}
+}
+
+// TestTheDoorStopsAdmittingWhenItsBudgetIsSpent is the END-TO-END wiring, and
+// it exists because the registry-level tests cannot see it.
+//
+// Every identity test injects its own budget and calls JoinAdmits directly. If
+// handleJoin kept calling JoinAllows — which still exists, still compiles, and
+// still answers the same question WITHOUT spending anything — the cap would be
+// perfect in internal/identity and absent from the product. That is the exact
+// shape a review caught in this session's previous change: a feature dead in
+// production behind a fully green suite.
+func TestTheDoorStopsAdmittingWhenItsBudgetIsSpent(t *testing.T) {
+	f := newJoinFixture(t)
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ids.SetJoinOpen(true, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 2 {
+		resp, _, body := f.post(secret, fmt.Sprintf("Player %d", i))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("join %d of 2 returned %d (%q) — the budget was spent early",
+				i+1, resp.StatusCode, body)
+		}
+	}
+
+	spent, _, spentBody := f.post(secret, "One Too Many")
+	if spent.StatusCode != http.StatusForbidden {
+		t.Fatalf("the third join returned %d, want 403 — an open door mints without limit, "+
+			"so a leaked link is bounded only by how fast anyone clicks", spent.StatusCode)
+	}
+
+	// The SAME answer as a wrong secret, byte for byte. A prober must not learn
+	// which of the three refusals they hit (spec §5) — and the raw body is
+	// compared, not the decoded struct, because http.Error writes plain text
+	// and two failed decodes are identical whatever the bodies said.
+	wrong, _, wrongBody := f.post("not-the-secret", "Prober")
+	if wrong.StatusCode != spent.StatusCode || wrongBody != spentBody {
+		t.Fatalf("a spent budget answers %d %q and a wrong secret answers %d %q — the "+
+			"difference tells a prober the door is real and merely full",
+			spent.StatusCode, spentBody, wrong.StatusCode, wrongBody)
+	}
+
+	// And it minted exactly the two it admitted.
+	if n := f.count("participants"); n != 2 {
+		t.Fatalf("%d participants exist, want 2 — the refused join minted one anyway", n)
 	}
 }
