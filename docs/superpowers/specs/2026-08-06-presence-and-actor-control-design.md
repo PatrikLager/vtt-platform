@@ -182,21 +182,57 @@ ITS OWN announcement. It stays SYNCHRONOUS rather than moving to a goroutine: a
 fast disconnect could otherwise let DISCONNECTED overtake CONNECTED, and a
 client that re-adds on CONNECTED would keep a ghost for the rest of the session.
 
-**WHAT THIS DOES NOT FIX, stated because the first draft of this amendment
-claimed the joiner "sees the board at once" and that is not true.** `broadcast`
-holds the registry lock for its whole serial walk, and `joinAndSend` takes that
-same lock — before the pump exists. So a joiner arriving DURING somebody else's
-fan-out, an arrival or a departure, still blocks for the full N x budget, now
-through lock contention rather than through its own announcement. Measured
-2026-08-10: a second joiner dialling 100ms into the first's fan-out waited
-1.897s, 1.905s and 1.910s across three runs against a 2s budget — the same six
-seconds in production, arrived at by a different route.
+**AMENDED AGAIN 2026-08-11: the other half is closed.** The amendment above
+left a joiner arriving DURING somebody else's fan-out still paying N x budget —
+`broadcast` held the registry lock for its whole serial walk and `joinAndSend`
+took that same lock, before the pump exists. Measured 2026-08-10: a second
+joiner dialling 100ms into the first's fan-out waited 1.897s, 1.905s and 1.910s
+across three runs against a 2s budget. The same six seconds in production,
+arrived at by a different route.
 
-Closing that is a policy change rather than a reordering: the send is under the
-lock BY DESIGN, because deregistration takes the same lock before closing the
-channel, and that ordering is what makes "send on closed channel" impossible.
-Hoisting the send out needs the per-connection `done` channel that makes an
-abandoned send safe. Carried to the ledger rather than done here.
+It was a policy change rather than a reordering, and the policy that changed is
+this: **a connection's outbound channel is never closed.** The send used to sit
+under the registry lock BY DESIGN, because deregistration took that same lock
+before closing the channel, and the ordering was what made "send on closed
+channel" impossible. That interlock cannot survive an out-of-lock send, and no
+guard can replace it — closing a channel while a goroutine is parked sending on
+it panics THAT goroutine, whatever its `select` is watching. So the close is
+gone: the writer stops on a separate `flush` signal and drains what is queued,
+and a frame written after teardown lands in a buffer nobody reads.
+
+The registry now holds two locks with a fixed order, `fanOut` then `mu`:
+
+- `fanOut` is held across a whole announcement and gives the ORDERING. Presence
+  deltas are not commutative — a client re-adds on CONNECTED and only a
+  snapshot can replace the list — so a CONNECTED delivered after a DISCONNECTED
+  for the same participant is a permanent ghost. One lock used to give that
+  ordering for free, and charged a joiner for it.
+- `mu` protects the maps and a fan-out holds it only long enough to snapshot
+  who it should reach. **`joinAndSend` takes `mu` alone**, which is the whole
+  fix: it no longer queues behind anybody's sends. Nothing takes `mu` before
+  `fanOut`, so there is no cycle.
+
+  One exception, stated because the sentence above was written without it and
+  was therefore false: `joinAndSend` still enqueues the *snapshot* under `mu`,
+  because that is what stops a delta overtaking it. That send is bounded by a
+  fact rather than by the budget — it runs before the connection's pump exists,
+  `out` holds at most the catch-up head, and the buffer is 256. With a small
+  buffer it is not bounded at all: review measured `leave()` blocked 1.95s, and
+  every fan-out behind it, against a buffer of 0. Production never uses one;
+  four tests in the package deliberately do.
+
+`announceIfPresent` takes `fanOut` FIRST, and that order is load-bearing rather
+than incidental: a departure's DISCONNECTED is itself a fan-out, so it queues
+behind a promotion in flight instead of being overtaken by it. Either the
+promotion resolves the participant as present and lands ahead of their
+departure — correct, the client shows them and then removes them — or the
+departure got there first and the promotion finds nobody by that id and sends
+nothing. Neither order resurrects anyone.
+
+The snapshot guarantee is unchanged and still holds: a fan-out reads membership
+under `mu` too, so it either misses a joining connection entirely (there was no
+delta to miss) or sees it and necessarily sends after `joinAndSend` returned.
+Registering and enqueueing the snapshot are not separable from outside.
 
 **Both teardown paths must be covered**, and the second is the one that gets
 forgotten:

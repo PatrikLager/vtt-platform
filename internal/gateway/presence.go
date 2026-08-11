@@ -20,13 +20,22 @@ type presenceConn struct {
 	// keeps two writes off the wire at once, and so a snapshot cannot be
 	// overtaken by a delta that belongs after it.
 	//
-	// LIFETIME, which is the part that bit: the registry holds this channel
-	// but does NOT own it. serve owns its close. That is only safe because
-	// serve deregisters (taking r.mu) BEFORE closing it, and every send here
-	// happens under the same lock — so a connection still in the registry
-	// cannot have had its channel closed underneath it. Reordering those two
-	// steps reintroduces "send on closed channel".
+	// LIFETIME, which is the part that bit twice. The registry holds this
+	// channel but does not own it, and NOBODY CLOSES IT. That is deliberate:
+	// sends now happen outside r.mu (see broadcast), so the old interlock —
+	// deregister under the lock, then close — no longer holds, and no select
+	// can rescue a sender from it either. Closing a channel while a goroutine
+	// is parked sending on it panics THAT GOROUTINE, whatever else its select
+	// was watching. The only way to make an out-of-lock send safe is for the
+	// close never to happen; a frame written after teardown lands in the
+	// buffer and is collected with the connection.
 	out chan []byte
+
+	// done is closed by serve when this connection is finished. A fan-out that
+	// snapshotted this connection just before it left still holds the pointer;
+	// without done it would spend the full budget on a connection that is
+	// already unwinding, and the rest of the table would wait behind it.
+	done chan struct{}
 }
 
 // presenceRegistry tracks who is currently connected.
@@ -41,6 +50,24 @@ type presenceConn struct {
 // one connection closes would tell the table someone left while they are still
 // sitting there on another device.
 type presenceRegistry struct {
+	// fanOut serialises whole fan-outs against each other. mu protects the
+	// maps. They were ONE lock until #47, and separating them is the fix.
+	//
+	// Presence deltas are not commutative: a client re-adds a participant on
+	// CONNECTED and only a snapshot can replace the list, so a CONNECTED
+	// delivered after a DISCONNECTED for the same participant leaves them
+	// listed for the rest of the session. One lock held across the whole walk
+	// gave that ordering for free — and charged for it, because joinAndSend
+	// takes the same lock and runs before the joining connection's pump
+	// exists, so anyone arriving mid-fan-out waited N x the budget on a
+	// stranger's slow reader. Measured at 1.9s against a 2s budget.
+	//
+	// So: fanOut gives the ordering, mu gives the map safety, and a joiner
+	// needs only mu. Lock order is fanOut -> mu, never the reverse.
+	// joinAndSend takes mu alone, which is what lets it past a fan-out in
+	// progress, and is why there is no cycle to deadlock on.
+	fanOut sync.Mutex
+
 	mu     sync.Mutex
 	conns  map[*presenceConn]struct{}
 	counts map[string]int
@@ -83,16 +110,25 @@ func newPresenceRegistry() *presenceRegistry {
 const presenceSendBudget = 3 * time.Second
 
 // joinAndSend registers c, hands frame the resulting snapshot, and enqueues
-// what it returns — all under one lock — then reports whether this is the
+// what it returns — all under r.mu — then reports whether this is the
 // participant's FIRST live connection, the only case in which the table learns
 // someone arrived.
 //
-// Building and enqueueing the snapshot INSIDE the critical section is the
-// point. Registration makes c eligible for deltas immediately; if the snapshot
-// were enqueued after the lock dropped, a delta could reach the wire first and
-// the snapshot behind it would already be stale. A client applying
-// snapshot-then-deltas would then show someone who has left as present, and
-// nothing would ever correct it.
+// It takes r.mu and DELIBERATELY NOT fanOut, which is the whole of #47's fix.
+// This runs before the joining connection's pump exists, so while it waits
+// nobody is being served; holding it behind a stranger's slow reader cost a
+// measured 1.9s against a 2s budget, and six seconds in production.
+//
+// Building and enqueueing the snapshot INSIDE the critical section is still
+// the point, and still works with sends outside the lock. Registration makes c
+// eligible for deltas immediately; if the snapshot were enqueued after the
+// lock dropped, a delta could reach the wire first and the snapshot behind it
+// would already be stale. A client applying snapshot-then-deltas would then
+// show someone who has left as present, and nothing would ever correct it.
+// A fan-out reads membership under r.mu too, so it either misses c entirely —
+// c was not registered yet, so there is no delta to miss — or it sees c and
+// necessarily sends after this returns. There is no third case: the register
+// and the enqueue are not separable from outside.
 //
 // The snapshot lists every participant present, c INCLUDED, exactly once
 // however many connections each holds: a picture of the table, not of everyone
@@ -123,6 +159,16 @@ func (r *presenceRegistry) joinAndSend(c *presenceConn, frame func([]*vttv1.Pres
 		})
 	}
 
+	// THE ONE BLOCKING SEND STILL UNDER r.mu, and it is bounded by a fact
+	// rather than by the budget: this runs before the connection's pump exists,
+	// out holds at most the catch-up head, and gatewayBuffer is 256 — so 255
+	// slots are free and this cannot park. Written down because it is not
+	// visible from here, and because the alternative reading (a joiner can
+	// stall the whole registry) IS true if the buffer is small: review measured
+	// leave() blocked 1.95s and every fan-out behind it with buffer 0, which
+	// four tests in this package deliberately set. Production never does. If
+	// that ever changes, this send needs its own tight bound — the snapshot is
+	// worth dropping, the registry is not worth freezing.
 	if b := frame(present); b != nil {
 		r.send(c, b)
 	}
@@ -131,17 +177,39 @@ func (r *presenceRegistry) joinAndSend(c *presenceConn, frame func([]*vttv1.Pres
 
 // send hands b to c, waiting at most presenceSendBudget.
 //
-// Callers hold r.mu, and that is what makes the send safe rather than merely
-// convenient: serve deregisters a connection (taking this same lock) BEFORE it
-// closes outCh, so a connection still in the registry cannot have had its
-// channel closed underneath us.
+// Safe WITHOUT r.mu, which is the whole point of #47 and needs saying because
+// the previous version's safety came from the opposite claim. It rests on out
+// never being closed (see presenceConn.out): a send to a connection that has
+// already gone lands in a buffer nobody will read, which costs a garbage frame
+// and nothing else. done is what stops it costing the budget as well.
 func (r *presenceRegistry) send(c *presenceConn, b []byte) {
 	timer := time.NewTimer(r.sendBudget)
 	defer timer.Stop()
 	select {
 	case c.out <- b:
+	case <-c.done:
 	case <-timer.C:
 	}
+}
+
+// targets snapshots the connections a fan-out should reach, so the walk itself
+// can happen with r.mu released.
+//
+// except is excluded by CONNECTION POINTER, not by participant id: someone on
+// two devices who acts on one must still see the result on the other. deny
+// carries PARTICIPANT ids and may be nil, which denies nobody.
+func (r *presenceRegistry) targets(except *presenceConn, deny map[string]bool) []*presenceConn {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make([]*presenceConn, 0, len(r.conns))
+	for conn := range r.conns {
+		if conn == except || deny[conn.participantID] {
+			continue
+		}
+		out = append(out, conn)
+	}
+	return out
 }
 
 // leave deregisters c and reports whether that was the participant's LAST live
@@ -156,6 +224,16 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 		return false
 	}
 	delete(r.conns, c)
+	// Closed HERE, behind the membership check, so "exactly once" is a
+	// consequence of leave's idempotence rather than a separate promise. serve
+	// reaches teardown by two paths (shutdown, and the defer that backstops the
+	// returns which never get there), and closing an already-closed channel
+	// panics. A sync.Once at the call site also works and is what this was
+	// first written as — but a panic inside serve is RECOVERED BY net/http, so
+	// nothing failed when the guard was removed and the injection proving it
+	// survived. Here, TestLeaveIsIdempotent calls leave twice directly and the
+	// test binary takes the panic.
+	close(c.done)
 	r.counts[c.participantID]--
 	if r.counts[c.participantID] <= 0 {
 		delete(r.counts, c.participantID)
@@ -165,9 +243,9 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 }
 
 // announceIfPresent re-announces participantID to every connection, their own
-// included, under ONE HOLD of the lock. Reports whether anything was sent.
+// included, as ONE UNINTERRUPTIBLE FAN-OUT. Reports whether anything was sent.
 //
-// The single hold is the entire point, and it was learned the hard way. The
+// Indivisibility is the entire point, and it was learned the hard way. The
 // caller used to resolve the display name, drop the lock to encode, then take
 // it again to broadcast — and if that participant's last connection unwound in
 // the gap, the table received DISCONNECTED and then CONNECTED, in that order.
@@ -177,15 +255,26 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 // review at 2-6 occurrences per 3000 promotions, WITHOUT injection — a real
 // race between two real goroutines.
 //
+// WHAT PROVIDES IT NOW IS fanOut, NOT r.mu, and the ordering of the two locks
+// is what makes that equivalent. Taking fanOut FIRST means a departure cannot
+// interleave: leave() takes r.mu and removes the connection, but the
+// DISCONNECTED that follows is a fan-out and must queue behind this one. So
+// either we resolve them as present and our frame lands ahead of their
+// DISCONNECTED — correct, the client shows them, then removes them — or the
+// departure got here first, we find nobody by that id, and send nothing.
+// Neither order resurrects anyone. Reversing the two locks reopens the ghost.
+//
 // False when nobody by that id is connected. Nothing is lost: they read their
 // role fresh the moment they next arrive.
 //
-// frame is called with the lock HELD, like joinAndSend's, and may return nil
-// on an encode failure — in which case nothing is sent.
+// frame is called with NO lock held (it may return nil on an encode failure,
+// in which case nothing is sent) — the atomicity that matters is against other
+// fan-outs, and fanOut is still held throughout.
 func (r *presenceRegistry) announceIfPresent(participantID string, frame func(displayName string) []byte) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.fanOut.Lock()
+	defer r.fanOut.Unlock()
 
+	r.mu.Lock()
 	name, found := "", false
 	for conn := range r.conns {
 		if conn.participantID == participantID {
@@ -193,6 +282,17 @@ func (r *presenceRegistry) announceIfPresent(participantID string, frame func(di
 			break
 		}
 	}
+	// Everyone, excluding nobody: the promoted participant is the one who most
+	// needs this, and their other devices need it too.
+	var targets []*presenceConn
+	if found {
+		targets = make([]*presenceConn, 0, len(r.conns))
+		for conn := range r.conns {
+			targets = append(targets, conn)
+		}
+	}
+	r.mu.Unlock()
+
 	if !found {
 		return false
 	}
@@ -200,9 +300,7 @@ func (r *presenceRegistry) announceIfPresent(participantID string, frame func(di
 	if b == nil {
 		return false
 	}
-	// Everyone, excluding nobody: the promoted participant is the one who most
-	// needs this, and their other devices need it too.
-	for conn := range r.conns {
+	for _, conn := range targets {
 		r.send(conn, b)
 	}
 	return true
@@ -210,10 +308,10 @@ func (r *presenceRegistry) announceIfPresent(participantID string, frame func(di
 
 // participantIDs returns the distinct participants holding a live connection.
 //
-// Exists so a caller can resolve identity for all of them OUTSIDE the lock and
-// come back with the answer: a Lookup inside broadcast's loop would put one
-// SQLite read per connection under the registry's global mutex, which is the
-// fan-out stall presenceSendBudget exists to prevent.
+// Exists so a caller can resolve identity for all of them BEFORE broadcasting
+// and come back with the answer: a Lookup inside broadcast's loop would put
+// one SQLite read per connection inside the fan-out, serialised behind fanOut
+// with every other announcement waiting on it.
 func (r *presenceRegistry) participantIDs() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -244,13 +342,14 @@ func (r *presenceRegistry) participantIDs() []string {
 // until the table next appended something. deny may be nil, which denies
 // nobody. Resolved by the caller, never here: see participantIDs.
 func (r *presenceRegistry) broadcast(except *presenceConn, b []byte, deny map[string]bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// fanOut for the whole walk, r.mu only to read the membership. A joiner
+	// needs r.mu alone, so it no longer queues behind these sends; other
+	// fan-outs still queue behind this one, which is what keeps the table
+	// agreeing about the order presence changed in.
+	r.fanOut.Lock()
+	defer r.fanOut.Unlock()
 
-	for conn := range r.conns {
-		if conn == except || deny[conn.participantID] {
-			continue
-		}
+	for _, conn := range r.targets(except, deny) {
 		r.send(conn, b)
 	}
 }
