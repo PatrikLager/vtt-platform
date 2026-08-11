@@ -1831,6 +1831,22 @@ func expectNoPresenceWithin(t *testing.T, conn *websocket.Conn, d time.Duration)
 			if quiet {
 				return // nothing arrived, which is the point
 			}
+			// A POLICY-VIOLATION CLOSE also satisfies this, and treating it as
+			// a failure was a flake: since #48 the pump closes a revoked
+			// connection with exactly this status, so whether the close or the
+			// deadline arrives first is timing. Both outcomes mean the same
+			// thing — no PresenceChanged reached them, and none ever will.
+			// Measured before the fix: 1 failure in 20 runs on clean main under
+			// -race, 3 in 20 on a tree that perturbs the timing.
+			//
+			// Narrow on purpose. Any OTHER read error is still fatal, because
+			// "the connection broke for some unrelated reason" would otherwise
+			// satisfy an assertion about what the connection received — an
+			// absence proved by a dead socket, which is the defect class this
+			// helper's own comment was written about.
+			if websocket.CloseStatus(err) == websocket.StatusPolicyViolation {
+				return
+			}
 			t.Fatalf("read: %v", err)
 		}
 		var f vttv1.ServerFrame
@@ -1917,5 +1933,92 @@ func TestADoorOpenedOverTheWireWithNoBudgetStillAdmits(t *testing.T) {
 		t.Fatalf("a door opened with no stated budget refused a joiner (%d) — an absent "+
 			"field was read as 'admit nobody', which is an open door nobody can get through "+
 			"and nothing explains", status)
+	}
+}
+
+// TestAReconnectingPlayerIsNeverAnnouncedGone is the WIRE-LEVEL pin for #55,
+// and it exists because nothing else connects the fix to the product.
+//
+// The three registry tests call announceIfAbsent directly. Review replaced
+// announceDeparture's body with the pre-#55 call — `s.announcePresence(pc,
+// DISCONNECTED)` — and the whole suite stayed green with lint clean: the bug
+// fully restored, nothing failing. That is the same defect this session has
+// shipped twice already, a feature dead in production behind a green suite.
+// Dropping announcePresence's `state` parameter makes that particular revert a
+// compile error; this makes the BEHAVIOUR the thing being asserted.
+//
+// The scenario is a player whose connection drops and who reconnects — which
+// spec §3.4 makes a manual act, so whatever the table is told last is what it
+// keeps until somebody does something about it.
+func TestAReconnectingPlayerIsNeverAnnouncedGone(t *testing.T) {
+	f := newGWFixture(t)
+	watcher := f.dial(f.dmToken, 0)
+	defer watcher.CloseNow()
+	drainPresence(t, watcher, 300*time.Millisecond) // the DM's own arrival
+
+	// The player arrives, then reconnects: a SECOND connection on the same
+	// token, and the first torn down. Both orders of the announcement race are
+	// legal; what is not legal is the table's last word being DISCONNECTED.
+	old := f.dial(f.spectatorToken, 0)
+	drainPresence(t, watcher, 300*time.Millisecond)
+
+	fresh := f.dial(f.spectatorToken, 0)
+	defer fresh.CloseNow()
+	old.CloseNow() // the drop, racing the arrival above
+
+	p := f.playerIDFor(t, f.spectatorToken)
+	last := lastPresenceStateFor(t, watcher, p, 600*time.Millisecond)
+	if last == vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED {
+		t.Fatal("the table's last word about a player who is CONNECTED RIGHT NOW is that " +
+			"they left. Only a snapshot corrects it and spec §3.4 makes reconnection " +
+			"manual, so the ghost stays until the player acts on something they cannot see")
+	}
+
+	// And the fresh connection must not be told it is itself gone: broadcast
+	// excludes by connection POINTER, so a participant's own other connection
+	// is a legitimate target.
+	if s := lastPresenceStateFor(t, fresh, p, 300*time.Millisecond); s == vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED {
+		t.Fatal("the reconnecting connection was told ITSELF disconnected")
+	}
+}
+
+// drainPresence reads and discards whatever arrives until d passes.
+func drainPresence(t *testing.T, conn *websocket.Conn, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, _, err := conn.Read(ctx)
+		cancel()
+		if err != nil {
+			return
+		}
+	}
+}
+
+// lastPresenceStateFor returns the LAST state announced for id within d, or
+// UNSPECIFIED if none arrived.
+//
+// The last one, not the first: the whole defect is about ORDER, and a helper
+// that returned on the first match would report the correct frame and miss the
+// wrong one landing behind it.
+func lastPresenceStateFor(t *testing.T, conn *websocket.Conn, id string, d time.Duration) vttv1.PresenceState {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	state := vttv1.PresenceState_PRESENCE_STATE_UNSPECIFIED
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, raw, err := conn.Read(ctx)
+		cancel()
+		if err != nil {
+			return state
+		}
+		var frame vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &frame); err != nil {
+			continue
+		}
+		if pc := frame.GetPresenceChanged(); pc != nil && pc.GetParticipantId() == id {
+			state = pc.GetState()
+		}
 	}
 }
