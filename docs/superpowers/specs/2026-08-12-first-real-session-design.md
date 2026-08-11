@@ -68,8 +68,27 @@ rather than a fact.
 
 ### 4.1 Session zero — the dry run
 
-Patrik and the agent, localhost, no guests, about an hour. Not a rehearsal of
-the story; a check that the machinery is real.
+Patrik and the agent, no guests, about an hour. Not a rehearsal of the story; a
+check that the machinery is real.
+
+**THROUGH THE TUNNEL, not localhost** (corrected 2026-08-12, after the first
+draft said localhost). The gateway calls `websocket.Accept(w, r, nil)`, and
+coder/websocket's default policy is `accept.go:239` — the browser's `Origin`
+host must equal the `Host` header the server sees, with no fallback patterns
+because the options are nil. On localhost those always match. Through a tunnel
+they match only if cloudflared preserves the original `Host` rather than
+rewriting it to the origin URL, which is config-dependent and cannot be settled
+by reading.
+
+So a localhost dry run would pass cleanly and derisk NOTHING about the
+transport session one uses, and the first person to discover whether the
+upgrade survives a tunnel would discover it with guests waiting. Session zero
+runs against the same `wss://…trycloudflare.com` origin the guests will use.
+
+If the upgrade is refused, §3 applies: it is a finding, and the fix is a real
+one — an explicit allowed-origin configuration on the server, with the security
+reasoning written down — not a nil-options shortcut or a flag that turns the
+check off.
 
 It walks the whole path once: serve a campaign, seat the agent over MCP, open
 the door, take the join link, join as a second participant in a browser, get
@@ -78,9 +97,11 @@ and reconnect.
 
 Two things it must answer that nothing has ever tested:
 
-- **Is the client usable on a phone?** `client-design.md` says tablet-first
-  responsive. The DM console and the join view have only ever been driven by
-  tests and by their author. The guests will be on phones.
+- **Is the client usable on a real handheld?** `client-design.md` says
+  tablet-first responsive. The DM console and the join view have only ever been
+  driven by tests and by their author. Session zero uses **one computer and one
+  iPad** (Patrik, 2026-08-12) — real devices, not browser emulation, which
+  catches layout but not touch targets or a mobile browser's own behaviour.
 - **How long does joining actually take**, from link sent to seated player?
 
 The output is a list, not a verdict. Anything that needed a human to notice,
@@ -98,8 +119,12 @@ Session zero also chooses the adventure: whichever of `goblin-ambush` or
 
 The LLM DMs. Patrik and friends play.
 
-**Topology.** `vtt serve` on Patrik's machine; a tunnel supplies an external
-`wss://` origin. Guests open that origin in a browser on whatever device they
+**Topology.** `vtt serve` on Patrik's machine; a **cloudflared quick tunnel**
+(`cloudflared tunnel --url http://localhost:8080`) supplies an external
+`wss://` origin. Chosen because guests install NOTHING — they open a link — and
+it needs no account on Patrik's side either. Its URL is fresh per run, so the
+link is minted on the night; a tunnel that restarts mid-session invalidates
+every shared URL, though tokens already issued keep working. Guests open that origin in a browser on whatever device they
 have. The agent runs `vtt mcp --server wss://…`, seated as the agent
 participant and judged by the same authz table as every other client.
 
