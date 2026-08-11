@@ -128,9 +128,18 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	// cannot answer must not be able to open a door, and telling an anonymous
 	// caller that this campaign's identity store is unwell is not information
 	// they have any business having.
-	allowed, err := s.ids.JoinAllows(req.Secret)
+	// JoinAdmits, not JoinAllows: it SPENDS an admission from this opening's
+	// budget as it answers, atomically, so two joiners racing for the last slot
+	// cannot both get through (spec §2, amended 2026-08-11). A budget checked
+	// separately from being spent is not a budget.
+	allowed, err := s.ids.JoinAdmits(req.Secret)
 	if err != nil || !allowed {
-		// Deliberately the same status and text for every refusal here.
+		// Deliberately the same status and text for every refusal here —
+		// now covering THREE reasons, not two: a shut door, a wrong secret,
+		// and an exhausted budget. A joiner turned away by a spent budget
+		// learns nothing a prober could not, which is the point (spec §5); the
+		// cost is that a legitimate Nth+1 player cannot tell why either, and
+		// has to ask the DM. That cost is real and is recorded in the spec.
 		http.Error(w, "gateway: this link is not accepting anyone", http.StatusForbidden)
 		return
 	}

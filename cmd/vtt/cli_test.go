@@ -325,3 +325,114 @@ func secretFrom(t *testing.T, campaignPath string) string {
 	}
 	return s
 }
+
+// TestJoinLinkOpenTakesAnAdmissionBudget is the CLI half of the cap (spec §2,
+// amended 2026-08-11).
+//
+// The number is asserted in the OUTPUT as well as in the behaviour, and that is
+// deliberate: a budget nobody was told about is one the DM discovers when their
+// last player is turned away with the same message a stranger gets. `open`
+// prints it even when it was defaulted.
+func TestJoinLinkOpenTakesAnAdmissionBudget(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+
+	out, err := runCLI(t, "join-link", "open", "--campaign", campaignPath, "--admit", "3")
+	if err != nil {
+		t.Fatalf("open --admit 3: %v", err)
+	}
+	if !strings.Contains(out, "next 3 people") {
+		t.Fatalf("open --admit 3 said %q — a DM who is not told the number finds out "+
+			"when somebody is refused", out)
+	}
+
+	ids, err := identity.Open(campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	secret, err := ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		if ok, err := ids.JoinAdmits(secret); !ok {
+			t.Fatalf("admission %d of 3 refused (%v) — --admit did not reach the door", i+1, err)
+		}
+	}
+	if ok, _ := ids.JoinAdmits(secret); ok {
+		t.Fatal("a fourth joiner got in against --admit 3")
+	}
+}
+
+// TestJoinLinkOpenWithNoBudgetAdmitsSomebody pins the direction the default
+// must fail in.
+//
+// An absent count is 0, and 0 admits nobody. Defaulting it to that would open
+// a door that refuses everyone, with nothing on either side saying why — the
+// DM sees "door: open", the player sees the same 403 a stranger gets, and no
+// log distinguishes them. So the default is a NUMBER, and this asserts a
+// plain `open` still lets a person in.
+func TestJoinLinkOpenWithNoBudgetAdmitsSomebody(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	ids, err := identity.Open(campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	secret, err := ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ids.JoinAdmits(secret); !ok {
+		t.Fatalf("a door opened without --admit let nobody in (%v) — the default is zero, "+
+			"which is an open door that refuses everyone", err)
+	}
+}
+
+// TestJoinLinkShowReportsWhatIsLeftOfTheBudget closes the gap review named:
+// a door now has THREE states — open, shut, and open but spent — and without
+// this the DM's only way to learn the third is a player reporting they were
+// turned away, with the same message a stranger gets.
+func TestJoinLinkShowReportsWhatIsLeftOfTheBudget(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath, "--admit", "2"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := extractField(t, out, "admissions: "); got != "2 of 2 left" {
+		t.Fatalf("a freshly opened door reports admissions %q, want \"2 of 2 left\"", got)
+	}
+	// `door` stays the machine-readable answer; the budget is its own field.
+	if door := extractField(t, out, "door: "); door != "open" {
+		t.Fatalf("door reads %q — the budget leaked into the field a caller parses", door)
+	}
+
+	ids, err := identity.Open(campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ids.JoinAdmits(secret); !ok {
+		t.Fatalf("admission refused: %v", err)
+	}
+	ids.Close()
+
+	out, err = runCLI(t, "join-link", "show", "--campaign", campaignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := extractField(t, out, "admissions: "); got != "1 of 2 left" {
+		t.Fatalf("after one joiner, admissions reads %q, want \"1 of 2 left\" — the count "+
+			"does not move, so the DM cannot tell a live door from a spent one", got)
+	}
+}

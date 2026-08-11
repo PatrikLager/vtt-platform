@@ -301,6 +301,13 @@ func (s *Server) handleAdventureGuide(w http.ResponseWriter, r *http.Request) {
 type joinLinkJSON struct {
 	Open   bool   `json:"open"`
 	Secret string `json:"secret"`
+	// The budget, because a door has a third state now: open, shut, and open
+	// but spent. Without these the console can only say "open" about a link
+	// that refuses everyone, and the DM's only way to find out is a player
+	// telling them they were turned away — with the same message a stranger
+	// gets, so neither of them can tell why.
+	Admitted   int `json:"admitted"`
+	AdmitLimit int `json:"admitLimit"`
 }
 
 // handleJoinLink reports the shared join link and whether the door is open.
@@ -329,7 +336,15 @@ func (s *Server) handleJoinLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gateway: join link unavailable", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, joinLinkJSON{Open: s.ids.JoinOpen(), Secret: secret})
+	admitted, limit, err := s.ids.JoinBudget()
+	if err != nil {
+		http.Error(w, "gateway: join link unavailable", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, joinLinkJSON{
+		Open: s.ids.JoinOpen(), Secret: secret,
+		Admitted: admitted, AdmitLimit: limit,
+	})
 }
 
 // --- /api/participants -----------------------------------------------------

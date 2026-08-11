@@ -922,7 +922,11 @@ func (s *Server) handleJoinDoor(requestID string, req *vttv1.SetJoinDoor) *vttv1
 			Error:     "gateway: set_join_door must say open or closed",
 		}
 	}
-	if err := s.ids.SetJoinOpen(open); err != nil {
+	// The budget travels straight through. A non-positive value — which is
+	// what an absent field decodes to, since protojson omits zero values —
+	// becomes DefaultAdmitLimit inside SetJoinOpen rather than being guessed at
+	// here, so the CLI and the wire cannot drift into two different defaults.
+	if err := s.ids.SetJoinOpen(open, int(req.GetAdmitLimit())); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}

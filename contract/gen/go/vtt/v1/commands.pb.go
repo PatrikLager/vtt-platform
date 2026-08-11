@@ -1262,8 +1262,23 @@ func (*ClientCommand_RotateJoinLink) isClientCommand_Command() {}
 // It produces NO EVENT. The door is operational state, like presence — a
 // replay of a campaign must not reopen a door somebody closed (spec §4).
 type SetJoinDoor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Door          JoinDoor               `protobuf:"varint,1,opt,name=door,proto3,enum=vtt.v1.JoinDoor" json:"door,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Door  JoinDoor               `protobuf:"varint,1,opt,name=door,proto3,enum=vtt.v1.JoinDoor" json:"door,omitempty"`
+	// How many people THIS OPENING may admit (spec §2, amended 2026-08-11).
+	//
+	// An int32 and not an enum, unlike `door` above, and the difference is not
+	// an inconsistency. protojson omits zero values for both, so absent and 0
+	// arrive identically here too — but the two fields fail in opposite
+	// directions. For the door, the absent reading is CLOSED and the dangerous
+	// one is "open by accident", so UNSPECIFIED is refused. For the budget, the
+	// absent reading would be "admit nobody", which is not dangerous but IS
+	// undebuggable: a DM opens the door, the link answers 403 to everyone, and
+	// nothing on either side says why. So a non-positive value means
+	// identity.DefaultAdmitLimit, and a caller that wants a specific number says
+	// so.
+	//
+	// Ignored when closing.
+	AdmitLimit    int32 `protobuf:"varint,2,opt,name=admit_limit,json=admitLimit,proto3" json:"admit_limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1303,6 +1318,13 @@ func (x *SetJoinDoor) GetDoor() JoinDoor {
 		return x.Door
 	}
 	return JoinDoor_JOIN_DOOR_UNSPECIFIED
+}
+
+func (x *SetJoinDoor) GetAdmitLimit() int32 {
+	if x != nil {
+		return x.AdmitLimit
+	}
+	return 0
 }
 
 // RotateJoinLink mints a new join secret and returns nothing.
@@ -2037,9 +2059,11 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\x13promote_participant\x18\x19 \x01(\v2\x1a.vtt.v1.PromoteParticipantH\x00R\x12promoteParticipant\x129\n" +
 	"\rset_join_door\x18\x1a \x01(\v2\x13.vtt.v1.SetJoinDoorH\x00R\vsetJoinDoor\x12B\n" +
 	"\x10rotate_join_link\x18\x1b \x01(\v2\x16.vtt.v1.RotateJoinLinkH\x00R\x0erotateJoinLinkB\t\n" +
-	"\acommand\"3\n" +
+	"\acommand\"T\n" +
 	"\vSetJoinDoor\x12$\n" +
-	"\x04door\x18\x01 \x01(\x0e2\x10.vtt.v1.JoinDoorR\x04door\"\x10\n" +
+	"\x04door\x18\x01 \x01(\x0e2\x10.vtt.v1.JoinDoorR\x04door\x12\x1f\n" +
+	"\vadmit_limit\x18\x02 \x01(\x05R\n" +
+	"admitLimit\"\x10\n" +
 	"\x0eRotateJoinLink\"U\n" +
 	"\x11GrantActorControl\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12%\n" +

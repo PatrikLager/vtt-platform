@@ -1853,3 +1853,69 @@ func (f *gwFixture) playerIDFor(t *testing.T, token string) string {
 	}
 	return p.ID
 }
+
+// TestTheWireCarriesTheAdmissionBudget is the other half of the seam
+// TestTheDMCanActuallyOpenTheDoor exists for.
+//
+// The DM console opens the door over the WEBSOCKET, not the CLI. A budget the
+// CLI could set and the wire could not would mean the console opens an
+// eight-person door every time with no way to say otherwise — and nothing would
+// fail, because the CLI tests would be green.
+func TestTheWireCarriesTheAdmissionBudget(t *testing.T) {
+	f := newGWFixture(t)
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := f.dial(f.dmToken, 0)
+	defer conn.CloseNow()
+
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "r-door",
+		Command: &vttv1.ClientCommand_SetJoinDoor{SetJoinDoor: &vttv1.SetJoinDoor{
+			Door:       vttv1.JoinDoor_JOIN_DOOR_OPEN,
+			AdmitLimit: 1,
+		}},
+	})
+	if res := readResult(t, conn); !res.GetOk() {
+		t.Fatalf("opening the door with a budget failed: %s", res.GetError())
+	}
+
+	if status, _ := f.postJoin(t, secret, "First"); status != http.StatusOK {
+		t.Fatalf("the one admission this door allows was refused (%d)", status)
+	}
+	if status, _ := f.postJoin(t, secret, "Second"); status != http.StatusForbidden {
+		t.Fatalf("a second joiner got %d against admit_limit=1 — the wire field is decoded "+
+			"but never reaches the door", status)
+	}
+}
+
+// TestADoorOpenedOverTheWireWithNoBudgetStillAdmits is the protojson trap, and
+// this repo has already been bitten by it once (JoinDoor is an enum and not a
+// bool for exactly this reason).
+//
+// protojson OMITS ZERO VALUES, so a console that does not set admit_limit sends
+// bytes indistinguishable from one that deliberately sends 0. Taking that
+// literally opens a door which refuses everybody: the DM sees "open", every
+// joiner sees the same 403 a stranger sees, and nothing anywhere says why.
+func TestADoorOpenedOverTheWireWithNoBudgetStillAdmits(t *testing.T) {
+	f := newGWFixture(t)
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := f.dial(f.dmToken, 0)
+	defer conn.CloseNow()
+
+	// admit_limit deliberately UNSET — the wire shape a client that never
+	// heard of the field produces.
+	if res := setDoor(t, conn, vttv1.JoinDoor_JOIN_DOOR_OPEN); !res.GetOk() {
+		t.Fatalf("opening the door failed: %s", res.GetError())
+	}
+
+	if status, _ := f.postJoin(t, secret, "Somebody"); status != http.StatusOK {
+		t.Fatalf("a door opened with no stated budget refused a joiner (%d) — an absent "+
+			"field was read as 'admit nobody', which is an open door nobody can get through "+
+			"and nothing explains", status)
+	}
+}
