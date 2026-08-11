@@ -234,6 +234,31 @@ under `mu` too, so it either misses a joining connection entirely (there was no
 delta to miss) or sees it and necessarily sends after `joinAndSend` returned.
 Registering and enqueueing the snapshot are not separable from outside.
 
+**AMENDED 2026-08-11 (#55): a departure is only news if they are still gone.**
+
+`leave()` decides "that was the participant's last connection" and the
+announcement is a SEPARATE step. A reconnect landing between the two made the
+table's last word about a PRESENT participant `DISCONNECTED` — and told their
+fresh connection itself gone, because `broadcast` excludes by CONNECTION
+POINTER, so a participant's own new connection is a legitimate target. Presence
+is soft state and a snapshot repairs it, but reconnection is MANUAL (§3.4), so
+"repaired by the next snapshot" means "wrong until the player acts on something
+they cannot see".
+
+MEASURED before fixing, driving both sides exactly as `serve` does: **1
+inversion in 20,000 rounds**, 0.8% of the rounds that produced both frames.
+Rare because the reference count usually saves it — a reconnect that wins the
+lock makes `leave()` return `last=false`, so no departure is announced at all.
+The case that bites is `leave` winning and its announcement losing. Zero in
+20,000 after.
+
+The fix is the mirror of the promotion path's, and deliberately not the
+sequence number or per-participant queue this was first sketched as needing:
+`announceIfAbsent` re-checks, at send time and under `fanOut` then `mu`, that
+nobody by that id is connected. Arrivals need no such re-check — the connection
+announcing one is registered and is the reason the news is true, so nothing can
+have undone it in between.
+
 **Both teardown paths must be covered**, and the second is the one that gets
 forgotten:
 

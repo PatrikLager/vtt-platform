@@ -306,6 +306,70 @@ func (r *presenceRegistry) announceIfPresent(participantID string, frame func(di
 	return true
 }
 
+// announceIfAbsent tells the table a participant has gone — but only if they
+// are STILL gone when the announcement is about to leave. Reports whether
+// anything was sent.
+//
+// The mirror of announceIfPresent, and it closes the mirror-image defect (#55).
+// leave() decides "that was their last connection" and the announcement is a
+// SEPARATE step, so a reconnect landing in between leaves the table's last word
+// about a present participant "DISCONNECTED". Worse, the fresh connection is
+// told ITSELF gone: broadcast excludes by connection POINTER, so the
+// participant's own new connection is a legitimate target. Only a snapshot can
+// correct it, and spec §3.4 makes reconnection a MANUAL act — so it stays wrong
+// until the player does something about a problem they cannot see.
+//
+// MEASURED before fixing, driving both sides exactly as serve does: 1 inversion
+// in 20,000 rounds. Rare because the reference count usually saves it — a
+// reconnect that wins the lock makes leave() return last=false and no departure
+// is announced at all. The case that bites is leave winning and its
+// announcement losing.
+//
+// The re-check is the whole fix, and it is cheap because absence is already the
+// registry's own question. fanOut FIRST, then mu, exactly as announceIfPresent:
+// reversing them reopens the ghost #47 closed.
+//
+// frame is called with NO lock held, and only when there is something to say.
+// deny may be nil, which denies nobody.
+func (r *presenceRegistry) announceIfAbsent(participantID string, deny map[string]bool, frame func() []byte) bool {
+	r.fanOut.Lock()
+	defer r.fanOut.Unlock()
+
+	r.mu.Lock()
+	// PER PARTICIPANT, not per connection: counts is the reference count leave
+	// maintains, so this asks "is anybody by that id still here" rather than
+	// "did this socket go away".
+	_, present := r.counts[participantID]
+	var targets []*presenceConn
+	if !present {
+		targets = make([]*presenceConn, 0, len(r.conns))
+		for conn := range r.conns {
+			// deny carries PARTICIPANT ids and must be resolved by the caller,
+			// BEFORE fanOut is taken: it needs an identity read per
+			// participant, and doing that in here would put one SQLite query
+			// per connection inside the fan-out, with every other announcement
+			// queued behind it. See participantIDs.
+			if deny[conn.participantID] {
+				continue
+			}
+			targets = append(targets, conn)
+		}
+	}
+	r.mu.Unlock()
+
+	if present {
+		return false
+	}
+	b := frame()
+	if b == nil {
+		return false
+	}
+	for _, conn := range targets {
+		r.send(conn, b)
+	}
+	return true
+}
+
 // participantIDs returns the distinct participants holding a live connection.
 //
 // Exists so a caller can resolve identity for all of them BEFORE broadcasting

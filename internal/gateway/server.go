@@ -450,7 +450,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// no-op rather than a double close.
 	leavePresence := func() {
 		if last := s.presence.leave(pc); last {
-			s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
+			s.announceDeparture(pc)
 		}
 	}
 	defer leavePresence()
@@ -567,7 +567,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// Only the participant's FIRST connection is an arrival. A second device
 	// must not announce someone who is already at the table.
 	if firstConnection {
-		s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
+		s.announcePresence(pc)
 	}
 
 	// shutdown tears the connection's helper goroutines down in dependency
@@ -799,8 +799,14 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }
 
-// announcePresence tells everyone EXCEPT pc that pc's participant arrived or
-// left.
+// announcePresence tells everyone EXCEPT pc that pc's participant ARRIVED.
+//
+// Arrivals only, since #55. Departures go through announceDeparture, which
+// re-checks absence at send time — a departure is only news if they are still
+// gone, and a reconnect can land between leave() deciding "that was the last
+// connection" and the announcement leaving. An arrival needs no such re-check:
+// the connection announcing it is registered and is the reason the news is
+// true, so there is nothing that could have undone it in between.
 //
 // An encode failure is dropped rather than escalated: presence is soft state,
 // every client is re-synced by the snapshot it gets on connect, and tearing a
@@ -809,13 +815,13 @@ func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *iden
 // the catch-up head, which fails the connection closed — a client that cannot
 // learn where catch-up ends cannot function, and one that misses a presence
 // blip can.
-func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
+func (s *Server) announcePresence(pc *presenceConn) {
 	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_PresenceChanged{
 			PresenceChanged: &vttv1.PresenceChanged{
 				ParticipantId: pc.participantID,
 				DisplayName:   pc.displayName,
-				State:         state,
+				State:         vttv1.PresenceState_PRESENCE_STATE_CONNECTED,
 			},
 		},
 	})
@@ -827,6 +833,45 @@ func (s *Server) announcePresence(pc *presenceConn, state vttv1.PresenceState) {
 	// stranger who came in on a leaked link went on watching the guest list
 	// arrive and leave until the table next appended an event (spec §3.2).
 	s.presence.broadcast(pc, b, s.revoked())
+}
+
+// announceDeparture tells the table pc's participant has gone — unless they
+// have already come back.
+//
+// leave() decides "that was their last connection" and this is a SEPARATE step,
+// so a reconnect landing in between would otherwise make the table's last word
+// about a PRESENT participant "DISCONNECTED", and tell their fresh connection
+// itself gone (broadcast excludes by connection pointer, so a participant's own
+// other connection is a legitimate target). Measured at 1 inversion in 20,000
+// rounds before the re-check existed; it persists until a snapshot, and spec
+// §3.4 makes reconnection manual, so it stays wrong until the player acts on a
+// problem they cannot see. See presenceRegistry.announceIfAbsent (#55).
+func (s *Server) announceDeparture(pc *presenceConn) {
+	// revoked() resolved HERE, before the fan-out is held, for two reasons and
+	// the second is the binding one. It reads identity once per connected
+	// participant, which inside the walk would queue every other announcement
+	// behind a pile of SQLite reads. And it CANNOT be deferred until after the
+	// absence check to save that work on a suppressed departure: the check and
+	// the target selection have to happen under ONE hold of the registry lock,
+	// or membership can change between them and the suppression this exists for
+	// stops holding. So a suppressed departure pays for a deny set it does not
+	// use, deliberately.
+	deny := s.revoked()
+	s.presence.announceIfAbsent(pc.participantID, deny, func() []byte {
+		b, err := s.encodeFrame(&vttv1.ServerFrame{
+			Frame: &vttv1.ServerFrame_PresenceChanged{
+				PresenceChanged: &vttv1.PresenceChanged{
+					ParticipantId: pc.participantID,
+					DisplayName:   pc.displayName,
+					State:         vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED,
+				},
+			},
+		})
+		if err != nil {
+			return nil
+		}
+		return b
+	})
 }
 
 // revoked resolves every connected participant and returns those whose

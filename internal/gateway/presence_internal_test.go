@@ -571,3 +571,157 @@ func TestAPromotionInFlightIsNotOvertakenByTheDeparture(t *testing.T) {
 			"permanent ghost.", got)
 	}
 }
+
+func TestADepartureIsNotAnnouncedIfTheyHaveAlreadyComeBack(t *testing.T) {
+	// #55. leave() decides "that was their last connection" and the
+	// announcement is a SEPARATE step, so a reconnect landing in between makes
+	// the table's last word about a present participant "DISCONNECTED" — and
+	// tells the fresh connection ITSELF gone, since broadcast excludes by
+	// connection pointer, not by participant.
+	//
+	// MEASURED before fixing, mirroring exactly what serve does on each side:
+	// 1 inversion in 20,000 rounds (0.8% of the 125 that produced both frames).
+	// Rare because the reference count usually saves it — a reconnect that wins
+	// the lock makes leave() return last=false, so no departure is announced at
+	// all. It is the case where leave wins and the announcement loses that bites.
+	//
+	// The fix is the mirror of announceIfPresent: re-check at send time. A
+	// departure is only news if they are still gone.
+	r := newPresenceRegistry()
+	watcher := conn("p-watch", "Zoe", 4)
+	old := conn("p-1", "Ada", 4)
+	join(r, watcher)
+	join(r, old)
+
+	if last := r.leave(old); !last {
+		t.Fatal("removing the only connection must report last=true")
+	}
+	// They come back BEFORE the departure is announced. Deterministic, because
+	// the race only decides whether this ordering happens — not what it means.
+	fresh := conn("p-1", "Ada", 4)
+	join(r, fresh)
+
+	built := false
+	if r.announceIfAbsent("p-1", nil, func() []byte {
+		built = true
+		return []byte("DISCONNECTED p-1")
+	}) {
+		t.Fatal("announced a departure for somebody who had already reconnected — the " +
+			"table's last word about a present player is that they left, and only a " +
+			"snapshot can correct it, which spec §3.4 makes a MANUAL act")
+	}
+	if built {
+		t.Fatal("the frame must not even be built for a participant who is back")
+	}
+	if len(watcher.out) != 0 {
+		t.Fatalf("the table was sent %d frame(s) about a participant who is present",
+			len(watcher.out))
+	}
+}
+
+func TestARealDepartureIsStillAnnounced(t *testing.T) {
+	// The control, and the one that matters: a suppression rule that suppressed
+	// everything would satisfy the test above while removing presence entirely.
+	r := newPresenceRegistry()
+	// TWO watchers, because one cannot tell "reached the table" from "reached
+	// the first connection and stopped". Review injected a walk that sends to
+	// targets[0] only and the whole suite stayed green — and a fan-out that
+	// dies partway through is the PERMANENT GHOST 656079f was written to fix:
+	// some connections learn of the departure and the rest never do.
+	first := conn("p-watch-1", "Zoe", 4)
+	second := conn("p-watch-2", "Kim", 4)
+	going := conn("p-1", "Ada", 4)
+	join(r, first)
+	join(r, second)
+	join(r, going)
+
+	if last := r.leave(going); !last {
+		t.Fatal("last=true expected")
+	}
+	if !r.announceIfAbsent("p-1", nil, func() []byte { return []byte("DISCONNECTED p-1") }) {
+		t.Fatal("a genuine departure was not announced — the table keeps a ghost")
+	}
+	for i, w := range []*presenceConn{first, second} {
+		select {
+		case got := <-w.out:
+			if string(got) != "DISCONNECTED p-1" {
+				t.Fatalf("watcher %d got %q", i, got)
+			}
+		default:
+			t.Fatalf("watcher %d was never told — a fan-out that stops partway leaves a "+
+				"permanent ghost on every connection it skipped", i)
+		}
+	}
+}
+
+func TestADepartureIsWithheldFromAnybodyTheCallerHasDenied(t *testing.T) {
+	// Spec §3.2. Presence is the ONE delivery path that does not run through
+	// the pump, so a revoked stranger who came in on a leaked link would go on
+	// watching the guest list LEAVE until the table next appended an event.
+	//
+	// This is a COVERAGE REGRESSION the fix introduced and review caught:
+	// departures used to share broadcast's deny filter with arrivals, covered
+	// by TestBroadcastSkipsAnybodyTheCallerHasDenied. announceIfAbsent
+	// duplicates that filter, and the copy had no test — `_ = deny` left the
+	// whole suite green.
+	r := newPresenceRegistry()
+	staying := conn("p-ok", "Zoe", 4)
+	revoked := conn("p-gone", "Stranger", 4)
+	going := conn("p-1", "Ada", 4)
+	join(r, staying)
+	join(r, revoked)
+	join(r, going)
+
+	if last := r.leave(going); !last {
+		t.Fatal("last=true expected")
+	}
+	if !r.announceIfAbsent("p-1", map[string]bool{"p-gone": true},
+		func() []byte { return []byte("DISCONNECTED p-1") }) {
+		t.Fatal("the departure was not announced at all")
+	}
+
+	if len(revoked.out) != 0 {
+		t.Fatal("a revoked participant was told who left — presence does not run through " +
+			"the pump, so nothing else withholds it from them")
+	}
+	// The positive control on the SAME frame: a deny filter that denied
+	// everybody would satisfy the assertion above.
+	if len(staying.out) != 1 {
+		t.Fatalf("the remaining watcher holds %d frames, want 1 — the deny set is "+
+			"withholding from everyone", len(staying.out))
+	}
+}
+
+func TestSuppressionIsPerParticipantNotPerConnection(t *testing.T) {
+	// Absence is per PARTICIPANT, and the check must not confuse "this
+	// connection is gone" with "this person is gone". A laptop closing while
+	// the phone stays connected is not a departure at all — leave() already
+	// says so with last=false — but the suppression must agree, or a genuine
+	// last-connection departure could be suppressed by the connection that just
+	// left still being visible somewhere.
+	//
+	// RENAMED from TestADepartureReachesTheParticipantsOtherDevices, which
+	// promised something it never looked at: it reads return values only, and
+	// by the final announcement p-1 has no devices left to reach. What it
+	// actually pins is the sentence above.
+	r := newPresenceRegistry()
+	watcher := conn("p-watch", "Zoe", 4)
+	laptop := conn("p-1", "Ada", 4)
+	phone := conn("p-1", "Ada", 4)
+	join(r, watcher)
+	join(r, laptop)
+	join(r, phone)
+
+	if last := r.leave(laptop); last {
+		t.Fatal("closing one of two devices must not report the participant gone")
+	}
+	if r.announceIfAbsent("p-1", nil, func() []byte { return []byte("DISCONNECTED p-1") }) {
+		t.Fatal("announced a departure for somebody still on another device")
+	}
+	if last := r.leave(phone); !last {
+		t.Fatal("closing the last device must report the participant gone")
+	}
+	if !r.announceIfAbsent("p-1", nil, func() []byte { return []byte("DISCONNECTED p-1") }) {
+		t.Fatal("the real departure was suppressed")
+	}
+}
