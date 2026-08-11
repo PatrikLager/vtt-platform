@@ -183,9 +183,12 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	if err := json.Unmarshal(toolsJSON, &manifest); err != nil {
 		t.Fatalf("parse embedded tools.json: %v", err)
 	}
-	// The four read/guide tools are registered in Go rather than generated,
-	// so this one IS written down — there is no manifest to derive it from.
-	const readAndGuideTools = 4 // get_state, get_events_since, get_ruleset_guide, get_adventure_guide
+	// The Go-registered tools have no manifest to derive from, so they are
+	// DECLARED — but in exactly one place, mcp.GoRegisteredToolNames, which
+	// internal/mcp's own ListTools test holds to the registered set. A literal
+	// here was the fifth copy of a number #30 spent a task consolidating, and
+	// it went stale the first time a tool was added after that.
+	readAndGuideTools := len(mcppkg.GoRegisteredToolNames)
 	want := len(manifest) + readAndGuideTools
 	if len(res.Tools) != want {
 		names := make([]string, 0, len(res.Tools))

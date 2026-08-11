@@ -95,6 +95,24 @@ var getEventsSinceInputSchema = map[string]any{
 // registerReadTools adds get_state and get_events_since to the same tool
 // table New builds the 13 generic command tools into (spec §4: "Both
 // registered in the same tool table").
+// GoRegisteredToolNames are the tools registered in GO rather than generated
+// from the contract manifest — the ones no tools.json can be derived from.
+//
+// It exists so there is ONE place to update, and #30 is why: the count of MCP
+// tools lived at four separate sites that each carried their own copy, and the
+// adventure-format sub-project shipped a stale one three times on a single
+// rename. internal/mcp's own ListTools test asserts the registered set equals
+// the contract manifest plus exactly this list, so a tool added without being
+// named here fails immediately rather than at whichever site is checked next.
+var GoRegisteredToolNames = []string{
+	"get_state",           // read_tools.go
+	"get_events_since",    // read_tools.go
+	"get_ruleset_guide",   // guide_tool.go
+	"get_adventure_guide", // adventure_guide_tool.go
+	"get_join_link",       // door_tools.go (#45)
+	"get_participants",    // door_tools.go (#45)
+}
+
 func (s *Server) registerReadTools() {
 	s.mcp.AddTool(&mcpsdk.Tool{
 		Name:        "get_state",

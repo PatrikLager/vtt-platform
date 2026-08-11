@@ -27,6 +27,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	mcppkg "github.com/PatrikLager/vtt-platform/internal/mcp"
 )
 
 // --- canned envelope construction ------------------------------------------
@@ -284,7 +285,7 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 	// NO RUNNING TALLY. This comment used to carry one and it went stale twice
 	// — a comment warning about stale counts, shipping a stale count. The total
 	// is derived from the list, so the list is the only thing to maintain.
-	want := append(append([]string{}, wantCommandToolNames...), "get_state", "get_events_since", "get_ruleset_guide", "get_adventure_guide")
+	want := append(append([]string{}, wantCommandToolNames...), mcppkg.GoRegisteredToolNames...)
 	if len(got) != len(want) {
 		t.Fatalf("list_tools returned %d distinct names, want %d: %v", len(got), len(want), got)
 	}
