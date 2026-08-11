@@ -245,3 +245,75 @@ func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
 			"the repair should have budgeted it", admitted, limit, DefaultAdmitLimit)
 	}
 }
+
+func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
+	// The inertness property, and until internal/testdb existed there was no
+	// way to observe it. Spec §2's case against rate limiting is that a
+	// refused, anonymous, unauthenticated request performs NO WRITE — because
+	// even an UPDATE matching zero rows takes SQLite's write lock on the file
+	// internal/store appends events to, inside a transaction, on the one path a
+	// stranger controls.
+	//
+	// The mutation gate found it: `admitted >= budget` mutated to `>` gives the
+	// caller the identical answer (the UPDATE's own WHERE still refuses) while
+	// reaching for the write. Nothing could tell the difference, so nothing did.
+	// Here the fault is armed on the UPDATE and must NOT fire.
+	withFaultDriver(t)
+	path := filepath.Join(t.TempDir(), "spent.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 1); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := d.JoinAdmits(secret); !ok {
+		t.Fatalf("the one admission was refused: %v", err)
+	}
+
+	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
+	ok, err := d.JoinAdmits(secret)
+	if reached() {
+		t.Fatal("a refusal against a spent budget reached the UPDATE — it takes SQLite's " +
+			"write lock on the campaign file, so a stranger hammering a spent door " +
+			"contends with every event append, which is the whole of §2's case against " +
+			"rate limiting")
+	}
+	if ok || err != nil {
+		t.Fatalf("a spent budget answered (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
+func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
+	// The same property on the path a prober actually uses. Separate from the
+	// spent-budget case because they refuse for different reasons and a guard
+	// covering one says nothing about the other.
+	withFaultDriver(t)
+	path := filepath.Join(t.TempDir(), "wrong.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.JoinSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
+	ok, err := d.JoinAdmits("not-the-secret")
+	if reached() {
+		t.Fatal("a wrong secret reached the UPDATE — an anonymous guess must not be able " +
+			"to take the campaign file's write lock")
+	}
+	if ok || err != nil {
+		t.Fatalf("a wrong secret answered (%v, %v), want (false, nil)", ok, err)
+	}
+}

@@ -1774,3 +1774,34 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 		t.Fatal("Lookup on a closed database reported success")
 	}
 }
+
+// TestADoorOpenedWithNoStatedBudgetStillAdmits pins the coercion at the layer
+// that owns it. The gateway has the same test over the wire, but mutation runs
+// PER PACKAGE, so a gateway test cannot kill an identity mutant — and the
+// mutation gate duly found `admitLimit <= 0` mutated to `<` surviving here.
+//
+// A door opened with an explicit 0, or with the absent wire field that decodes
+// to one, must not admit nobody: the DM sees "open", every joiner sees the same
+// 403 a stranger sees, and nothing on either side distinguishes them.
+func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
+	d, _ := openTemp(t)
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := d.JoinAdmits(secret); !ok {
+		t.Fatalf("a door opened with a budget of 0 admitted nobody (%v) — 0 means "+
+			"'unstated', and reading it literally opens a door no one can get through", err)
+	}
+	_, limit, err := d.JoinBudget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit != identity.DefaultAdmitLimit {
+		t.Fatalf("an unstated budget became %d, want the default of %d", limit, identity.DefaultAdmitLimit)
+	}
+}
