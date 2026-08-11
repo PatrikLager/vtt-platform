@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "The ?join= link's shape, as a checked fact rather than a convention (#46).",
+    "",
+    "It is written in THREE places -- cmd/vtt/joinlink.go's show and rotate, and",
+    "client/src/view/dm.ts -- and read in ONE, client/src/app.ts. Nothing tied",
+    "them together, so renaming the parameter left `vtt join-link show` printing",
+    "a dead link with every gate green.",
+    "",
+    "INVISIBLE TO BOTH MUTATION GATES, which is why a fixture rather than a test",
+    "alone: gremlins does not mutate string literals, and Stryker cannot see the",
+    "Go side at all. It spans two languages, so a shared constant is not",
+    "available either -- this file is the nearest thing to one.",
+    "",
+    "Asserted by cmd/vtt/cli_test.go (the CLI writers) and client/test/",
+    "join-url-format.test.ts (the browser writer AND the reader). Change the",
+    "parameter here and all four sites fail at once, which is the whole point."
+  ],
+  "queryParameter": "join",
+  "shareSuffix": "/?join=",
+  "exampleShareURL": "https://table.example/?join=THE-SECRET"
+}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -238,6 +240,37 @@ func extractField(t *testing.T, out, prefix string) string {
 	return ""
 }
 
+// joinURLFormat is contract/testdata/join_url_format.json, the one place the
+// ?join= shape is written down (#46).
+//
+// It is a FIXTURE rather than a Go constant because the format spans two
+// languages: three writers here and in client/src/view/dm.ts, one reader in
+// client/src/app.ts, and neither mutation gate can see it whole — gremlins does
+// not mutate string literals, and Stryker cannot see Go at all. Renaming the
+// parameter used to leave `vtt join-link show` printing a dead link with every
+// gate green. Now all four sites derive from this file and fail together.
+func joinURLFormat(t *testing.T) struct {
+	QueryParameter string `json:"queryParameter"`
+	ShareSuffix    string `json:"shareSuffix"`
+} {
+	t.Helper()
+	var f struct {
+		QueryParameter string `json:"queryParameter"`
+		ShareSuffix    string `json:"shareSuffix"`
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contract", "testdata", "join_url_format.json"))
+	if err != nil {
+		t.Fatalf("reading the join-url fixture: %v", err)
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("parsing the join-url fixture: %v", err)
+	}
+	if f.ShareSuffix == "" || f.QueryParameter == "" {
+		t.Fatal("the join-url fixture is empty — every assertion built from it would be vacuous")
+	}
+	return f
+}
+
 // TestJoinLinkOpenShareCloseRotate walks the whole door from the command line.
 //
 // The CLI matters more here than it does for invite/revoke, and not only as a
@@ -263,10 +296,14 @@ func TestJoinLinkOpenShareCloseRotate(t *testing.T) {
 	// The SHARE line specifically. `Contains(out, secret)` is satisfied by the
 	// `secret:` line on its own, so the whole share clause could be deleted and
 	// this stayed green — and the share line is the only part a DM actually
-	// pastes to somebody. It is also one of three places the ?join= spelling is
-	// written down against a single reader in app.ts.
-	if share := extractField(t, out, "share: "); !strings.Contains(share, "?join="+first) {
-		t.Fatalf("show must print a pasteable link carrying the secret, got %q", share)
+	// pastes to somebody. It is one of THREE places the ?join= spelling is
+	// written against app.ts's single reader — see joinURLFormat below.
+	// DERIVED from the fixture, not written out: a literal here would be a
+	// fourth independent copy of the format, which is the defect (#46).
+	format := joinURLFormat(t)
+	if share := extractField(t, out, "share: "); !strings.Contains(share, format.ShareSuffix+first) {
+		t.Fatalf("show must print a pasteable link carrying the secret in the %s form, got %q",
+			format.ShareSuffix, share)
 	}
 
 	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath); err != nil {
@@ -282,12 +319,23 @@ func TestJoinLinkOpenShareCloseRotate(t *testing.T) {
 
 	// Rotating changes the secret and leaves the door where it was — a rotate
 	// that quietly shut the table would be a very unwelcome surprise.
-	if _, err := runCLI(t, "join-link", "rotate", "--campaign", campaignPath); err != nil {
+	rotated, err := runCLI(t, "join-link", "rotate", "--campaign", campaignPath)
+	if err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 	second := secretFrom(t, campaignPath)
 	if second == first {
 		t.Fatal("rotate must actually change the secret")
+	}
+	// ROTATE PRINTS ITS OWN SHARE LINE, and nothing asserted it: this test
+	// checked that the secret changed and the door stayed open, then re-ran
+	// `show`. That left the THIRD writer of the ?join= format (joinlink.go's
+	// rotate) unpinned — the one a DM reads at the worst possible moment,
+	// having just locked everybody out of the old link. Derived from the
+	// fixture like the others (#46).
+	if share := extractField(t, rotated, "share: "); !strings.Contains(share, format.ShareSuffix+second) {
+		t.Fatalf("rotate must print a pasteable link carrying the NEW secret in the %s "+
+			"form, got %q", format.ShareSuffix, share)
 	}
 	out, err = runCLI(t, "join-link", "show", "--campaign", campaignPath)
 	if err != nil {

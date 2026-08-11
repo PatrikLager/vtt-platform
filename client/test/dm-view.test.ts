@@ -4,6 +4,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
 import type { Roster } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
+import joinURL from "../../contract/testdata/join_url_format.json";
 import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { create } from "@bufbuild/protobuf";
 import { EnvelopeSchema, TokenMovedSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -1092,13 +1093,18 @@ test("the console shows the whole link a DM can paste, not just the secret", () 
   //
   // NOT the only writer, and this comment used to claim it was: cmd/vtt's
   // `join-link show` and `rotate` print the same format, so there are THREE
-  // writers against app.ts's one reader, tied together by nothing. Renaming
-  // the parameter leaves the CLI printing a dead link with every gate green —
-  // gremlins does not mutate string literals and Stryker cannot see Go at all.
-  // Recorded in the ledger rather than fixed here.
+  // writers against app.ts's one reader. They were tied together by NOTHING,
+  // and renaming the parameter left the CLI printing a dead link with every
+  // gate green — gremlins does not mutate string literals and Stryker cannot
+  // see Go at all.
+  //
+  // FIXED (#46): the shape now lives in contract/testdata/join_url_format.json
+  // and every site derives from it, so a rename fails all four at once. The
+  // expectation below is built from the fixture rather than written out, which
+  // is the point — a literal here would be a fifth copy.
   const c = shareConsole({ joinLink: { open: true, secret: "s3cret" } });
   const link = c.node.querySelector<HTMLInputElement>('[data-field="join-link"]')!;
-  expect(link.value).toBe("https://table.example/?join=s3cret");
+  expect(link.value).toBe(`https://table.example${joinURL.shareSuffix}s3cret`);
   expect(link.readOnly).toBe(true);
 });
 
