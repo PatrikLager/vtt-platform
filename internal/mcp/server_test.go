@@ -57,6 +57,12 @@ type fakeServer struct {
 	conns     []*websocket.Conn
 
 	onCommand func(conn *websocket.Conn, cmd *vttv1.ClientCommand)
+
+	// api answers the gateway's metadata routes (/api/join-link,
+	// /api/participants) for the door tools. Nil means "this table has no
+	// metadata routes", which answers 404 — the shape an agent sees when
+	// pointed at something that is not a vtt server.
+	api func(w http.ResponseWriter, r *http.Request)
 }
 
 func newFakeServer(t *testing.T, onCommand func(conn *websocket.Conn, cmd *vttv1.ClientCommand)) *fakeServer {
@@ -64,6 +70,16 @@ func newFakeServer(t *testing.T, onCommand func(conn *websocket.Conn, cmd *vttv1
 	fs := &fakeServer{t: t, onCommand: onCommand}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", fs.handleWS)
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		fs.mu.Lock()
+		h := fs.api
+		fs.mu.Unlock()
+		if h == nil {
+			http.NotFound(w, r)
+			return
+		}
+		h(w, r)
+	})
 	fs.srv = httptest.NewServer(mux)
 	t.Cleanup(fs.srv.Close)
 	return fs

@@ -62,13 +62,13 @@ internal/campaign  campaign.go:448:62  INVERT_NEGATIVES
 internal/campaign  campaign.go:448:68  ARITHMETIC_BASE
     Same capacity hint, the trailing `+1` (can reach -1 when from==to). Unobservable for the same reason, including the negative-hint caveat above.
 
-internal/mcp  read_tools.go:218:11  CONDITIONALS_BOUNDARY
+internal/mcp  read_tools.go:236:11  CONDITIONALS_BOUNDARY
     `limit > maxEventsSinceLimit` -> `>=`: at limit == max the branch assigns max, the value limit already holds. Clamping to a bound you are already at is a no-op.
 
-internal/mcp  server.go:298:15  CONDITIONALS_BOUNDARY
-    `backoff < redialMaxBackoff` -> `<=`: at backoff == max the body doubles then immediately re-clamps to max on the next line, so backoff is unchanged either way. COUPLED: this reason depends on the clamp at :300 being intact. Sound under single-mutant analysis (gremlins applies one at a time), but if :300 changes, re-derive this entry rather than trusting it.
+internal/mcp  server.go:307:15  CONDITIONALS_BOUNDARY
+    `backoff < redialMaxBackoff` -> `<=`: at backoff == max the body doubles then immediately re-clamps to max on the next line, so backoff is unchanged either way. COUPLED: this reason depends on the clamp at :309 being intact. Sound under single-mutant analysis (gremlins applies one at a time), but if :309 changes, re-derive this entry rather than trusting it.
 
-internal/mcp  server.go:300:16  CONDITIONALS_BOUNDARY
+internal/mcp  server.go:309:16  CONDITIONALS_BOUNDARY
     `backoff > redialMaxBackoff` -> `>=`: at backoff == max the branch assigns max, the value it already holds.
 
 internal/rules/conformance  conformance.go:207:11  CONDITIONALS_BOUNDARY

@@ -196,6 +196,15 @@ func New(cfg Config) (*Server, error) {
 	// get_state + get_events_since + get_ruleset_guide + this one).
 	s.registerAdventureGuideTool()
 
+	// get_join_link / get_participants (door_tools.go, #45): the door was
+	// advertised and undrivable — an agent could open it and rotate it and
+	// then not tell anybody the URL, and could promote a participant only by
+	// supplying an id it had no way to learn. Registered in the SAME tool
+	// table; the count is derived from the list by
+	// TestListToolsReturnsEveryCommandAndReadTool, so there is no number here
+	// to go stale, which is the ripple #30 spent a task on.
+	s.registerDoorTools()
+
 	return s, nil
 }
 
