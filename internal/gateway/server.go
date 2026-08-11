@@ -18,6 +18,40 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
+// writeUntilFlushed hands every frame on out to write, in order, until write
+// fails or flush is closed — and on flush it DRAINS what is already queued
+// before returning.
+//
+// A free function with an injected write, rather than the closure it was, so
+// the drain can be tested at all. It cannot be observed through the socket:
+// flush is only ever closed while the connection is being torn down, so on the
+// path where the client has gone every write fails anyway, and on the path
+// where it has not, the frames are usually already in the OS buffer. Behaviour
+// nobody can see is behaviour nobody maintains — this was the one assertion in
+// #47 that fault injection found untested, and deleting the drain to make that
+// go away would have silently dropped what `for b := range out` gave for free.
+func writeUntilFlushed(out <-chan []byte, flush <-chan struct{}, write func([]byte) bool) {
+	for {
+		select {
+		case b := <-out:
+			if !write(b) {
+				return
+			}
+		case <-flush:
+			for {
+				select {
+				case b := <-out:
+					if !write(b) {
+						return
+					}
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
 // gatewayBuffer is Server.buffer's default (New sets it; see that field's
 // doc comment for the test-only override seam). It sizes the hand-off channel
 // store.Store.Subscribe hands back, and the per-connection outbound byte
@@ -302,10 +336,20 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 
 	outCh := make(chan []byte, s.buffer)
+	// flush replaces close(outCh) as the writer's stop signal, and outCh is
+	// now never closed at all. Presence sends happen OUTSIDE the registry lock
+	// (#47), so the old interlock — deregister under r.mu, then close — cannot
+	// hold, and no amount of selecting saves a sender from it: closing a
+	// channel while a goroutine is parked sending on it panics that goroutine.
+	// A frame written after teardown lands in the buffer and is collected with
+	// the connection, which costs one garbage slice and removes the whole
+	// "send on closed channel" class that 656079f fixed by ordering and that
+	// took three attempts to get right.
+	flush := make(chan struct{})
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
-		for b := range outCh {
+		write := func(b []byte) bool {
 			// Bounded, and load-bearing. A client that stops reading backs
 			// the socket up; without a deadline this parks forever while the
 			// command loop still waits in conn.Read — a connection that is
@@ -325,10 +369,9 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			wctx, wcancel := context.WithTimeout(ctx, s.writeTimeout)
 			err := conn.Write(wctx, websocket.MessageText, b)
 			wcancel()
-			if err != nil {
-				return
-			}
+			return err == nil
 		}
+		writeUntilFlushed(outCh, flush, write)
 	}()
 
 	// closing is set (by shutdown, below) immediately before it cancels the
@@ -358,7 +401,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// writer down first (nothing else has started yet) so it cannot
 		// outlive the connection.
 		unsubscribe()
-		close(outCh)
+		close(flush)
 		<-writerDone
 		_ = conn.Close(websocket.StatusInternalError, "gateway: encode catch-up head failed")
 		return
@@ -377,7 +420,12 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// writer's deadline each unwind through here. The second is the one that
 	// gets forgotten, and it is the one that matters — a wedged client that
 	// never says goodbye would otherwise sit in the table's list forever.
-	pc := &presenceConn{participantID: p.ID, displayName: p.Name, out: outCh}
+	pc := &presenceConn{
+		participantID: p.ID,
+		displayName:   p.Name,
+		out:           outCh,
+		done:          make(chan struct{}),
+	}
 	// The snapshot is built AND enqueued inside join's critical section, so no
 	// delta can slip between this connection being registered and the snapshot
 	// that describes the table it joined. Enqueued after, a DISCONNECTED could
@@ -396,6 +444,10 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		return b
 	})
 
+	// Safe to reach twice — shutdown below, and this defer as a backstop for
+	// the returns that never get there. leave() is idempotent and closes
+	// pc.done itself, behind its own membership check, so a second call is a
+	// no-op rather than a double close.
 	leavePresence := func() {
 		if last := s.presence.leave(pc); last {
 			s.announcePresence(pc, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)
@@ -521,37 +573,52 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// shutdown tears the connection's helper goroutines down in dependency
 	// order: mark this as an intentional close (so the pump's post-loop
 	// check above is a no-op), stop the subscription (closes `events`),
-	// wait for the pump to drain it, THEN close outCh (safe — the pump is
-	// guaranteed done, so nothing sends to outCh after this point), and
-	// wait for the writer to drain outCh and exit. Safe to call after the
-	// pump has already force-closed the connection on overflow: unsubscribe,
-	// CloseNow, and channel-close are all idempotent here.
+	// wait for the pump to drain it, THEN signal the writer to flush what is
+	// queued and stop, and wait for it to exit.
+	//
+	// Safe to call after the pump has already force-closed the connection on
+	// overflow — but note WHY, because the previous wording ("unsubscribe,
+	// CloseNow, and channel-close are all idempotent here") was wrong about the
+	// last one and invited the second call that would panic. Closing a channel
+	// twice panics. What is actually true is that shutdown runs at most once
+	// per serve, and the catch-up-head failure path returns before shutdown
+	// exists — so close(flush) has exactly one caller on any given path.
 	shutdown := func() {
-		// Presence FIRST, before close(outCh). leave takes the registry lock,
-		// and broadcast holds that same lock while it sends — so once leave
-		// returns, no broadcast can still be holding this connection, and
-		// none can acquire it again. Without this ordering the registry keeps
-		// handing frames to a channel this function has already closed:
-		// "send on closed channel", raised inside a teardown that is often
-		// already unwinding, and caught only by net/http's handler recover.
+		// Presence FIRST — but the reason has changed, and the history is
+		// worth keeping because it is what makes the current shape defensible.
 		//
-		// The consequence was worse than the crash. Map iteration order is
-		// random, so a panic mid-broadcast delivers the departure to SOME
-		// connections and never to the rest — a permanent ghost at the table,
-		// which is the exact failure presence exists to prevent, arriving
-		// silently. Found by review under -race, at a time when `task check`
-		// ran no -race anywhere and so could not see it. check:race closes
-		// that (2026-08-08) — and reinstating this ordering is the fault
-		// injection that proved the new gate has teeth: `ok` without -race,
-		// DATA RACE with it, same code and same tests.
+		// This used to be an ordering against close(outCh): leave took the
+		// registry lock, broadcast HELD that same lock while sending, so once
+		// leave returned no broadcast could still be holding this connection.
+		// Get it backwards and the registry kept handing frames to a channel
+		// this function had already closed — "send on closed channel", raised
+		// inside a teardown that is often already unwinding, and caught only
+		// by net/http's handler recover. The consequence was worse than the
+		// crash: map iteration order is random, so a panic mid-broadcast
+		// delivered the departure to SOME connections and never to the rest, a
+		// permanent ghost at the table, arriving silently. Found by review
+		// under -race when `task check` ran no -race anywhere; check:race
+		// closes that (2026-08-08), and reinstating the bad ordering was the
+		// injection that proved the new gate has teeth.
 		//
-		// The deferred leave below stays, as an idempotent backstop for the
-		// return paths that never reach shutdown.
+		// #47 dissolved that interlock, because sends no longer happen under
+		// the registry lock at all — so instead of ordering the close, there
+		// IS no close (see the flush channel above). What leaving first buys
+		// now is smaller and still worth it: the departure is announced before
+		// the writer stops, so it goes out on this connection's own socket
+		// too, and pc.done is closed early enough that a fan-out already
+		// holding this connection abandons it rather than spending the budget.
+		//
+		// The deferred leave below stays, as a backstop for the return paths
+		// that never reach shutdown. Both are safe because leave() is
+		// idempotent and closes pc.done behind its own membership check — NOT
+		// because of a sync.Once here, which is what this first was and what a
+		// reader adding a third call site would otherwise go looking for.
 		leavePresence()
 		closing.Store(true)
 		unsubscribe()
 		<-pumpDone
-		close(outCh)
+		close(flush)
 		<-writerDone
 	}
 
@@ -807,8 +874,9 @@ func (s *Server) revoked() map[string]bool {
 // Found by the e2e. No unit test could see it — every layer was correct, and
 // what was wrong was a browser's idea of itself.
 func (s *Server) announcePromotion(participantID string) {
-	// Resolve, encode and send under ONE hold of the registry lock. Doing it
-	// in three steps let the participant's last connection unwind between the
+	// Resolve, encode and send as ONE UNINTERRUPTIBLE fan-out — see
+	// announceIfPresent, which holds fanOut across all three. Doing it in three
+	// separable steps let the participant's last connection unwind between the
 	// resolve and the send, so the table saw DISCONNECTED then CONNECTED and
 	// kept a ghost in its list for the rest of the session.
 	s.presence.announceIfPresent(participantID, func(name string) []byte {

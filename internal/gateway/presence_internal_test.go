@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,11 @@ func conn(participantID, displayName string, buffer int) *presenceConn {
 		participantID: participantID,
 		displayName:   displayName,
 		out:           make(chan []byte, buffer),
+		// Open, never closed: these connections are live for the whole test.
+		// A nil done would also work — a nil channel blocks forever, so the
+		// select simply never picks it — but it would work by accident, and
+		// the first test to close one would find the field it needed missing.
+		done: make(chan struct{}),
 	}
 }
 
@@ -242,62 +248,82 @@ func TestLeaveStopsDelivery(t *testing.T) {
 	}
 }
 
-// TestBroadcastNeverTouchesAConnectionThatHasLeft pins the ORDERING that
-// serve's teardown depends on: leave() must complete before outCh is closed.
+// TestAFanOutAbandonsAConnectionThatLeftMidWalk replaces
+// TestBroadcastNeverTouchesAConnectionThatHasLeft, and the replacement is the
+// honest consequence of #47 rather than a relaxation.
 //
-// Nothing pinned it before. Moving leavePresence() back below <-writerDone —
-// the exact pre-fix state — left the whole Go suite green across 96 executions
-// while producing 16 "send on closed channel" panics, because `go test` hides a
-// passing package's output and net/http's handler recovers the panic. The
-// consequence is not the crash: map iteration order is random, so a panic
-// mid-broadcast delivers the departure to SOME connections and never to the
-// rest, leaving a permanent ghost.
+// The old test simulated serve closing outCh right after leave() and asserted
+// that a later broadcast did not panic on it. That ordering was the ONLY thing
+// making an out-of-lock close survivable, and #47 removed the premise: sends no
+// longer happen under the registry lock, so no ordering can save them. Run the
+// old test against this code and it panics — not as a regression, but because
+// it performs the very close the new design forbids, while a fan-out is parked
+// mid-send. MEASURED, because the first draft of this said "it panics" flatly
+// and that overstates it: about one run in a hundred under -race, since leave()
+// now closes done first and usually wakes the parked sender through that case
+// before the close lands. The narrow path is enough. Closing a channel out from
+// under a parked sender panics THAT sender whatever its select is watching, so
+// "guard the close" was never on the table and "never close" is the only fix.
 //
-// This works at the registry level, where the ordering actually lives: a
-// broadcast that is holding the lock must not still be handing frames to a
-// connection whose leave() has returned. Deliberately not a race-detector
-// test, and the reason has CHANGED for the better: the gate ran no -race at
-// all when this was written, so a pin that only failed under -race would not
-// have failed anything. check:race fixed that on 2026-08-08. This stays as
-// it is on the stronger argument — it is DETERMINISTIC where a race pin is
-// probabilistic, failing every run rather than only the runs where the
-// scheduler happens to cooperate.
-func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
+// So the property moves. serve now closes done, not out, and what must hold is
+// that a fan-out already holding a departed connection LETS GO of it — quickly,
+// and without dropping the connections behind it in the walk. That last part is
+// the original point, preserved: a fan-out that dies partway through delivers
+// the departure to some connections and never to the rest, which is a permanent
+// ghost at the table.
+//
+// Deterministic, not a race-detector test: it fails every run rather than only
+// the runs where the scheduler cooperates.
+func TestAFanOutAbandonsAConnectionThatLeftMidWalk(t *testing.T) {
 	r := newPresenceRegistry()
-	r.sendBudget = time.Second
+	// Deliberately far longer than the assertions below. If done were ignored,
+	// the fan-out would take this long and the failure would be unambiguous —
+	// "abandoned" cannot be confused with "the budget happened to expire".
+	r.sendBudget = 5 * time.Second
 
-	// `leaver` never drains, so a broadcast to it parks under the lock — the
-	// window in which serve would otherwise be closing its channel.
-	leaver := conn("p-1", "Ada", 0)
-	stays := conn("p-2", "Bo", 1)
+	leaver := conn("p-1", "Ada", 0) // unbuffered, never drained: the walk parks here
+	// Room for BOTH announcements below. At depth 1 the second broadcast has
+	// nowhere to put its frame, parks for the whole budget and drops it — which
+	// reads as "the fan-out skipped it" and blames the code for the fixture.
+	stays := conn("p-2", "Bo", 2)
 	join(r, leaver)
 	join(r, stays)
 
-	left := make(chan struct{})
+	fanOutDone := make(chan struct{})
 	go func() {
-		defer close(left)
-		r.leave(leaver) // blocks until the broadcast releases r.mu
-		// Standing in for serve's close(outCh): only reached once leave has
-		// returned, and by then no broadcast may hold this connection.
-		close(leaver.out)
+		defer close(fanOutDone)
+		r.broadcast(nil, []byte("frame"), nil)
 	}()
+	time.Sleep(20 * time.Millisecond) // let the walk reach its parked send
 
-	r.broadcast(nil, []byte("frame"), nil)
+	// Exactly what serve's teardown does, in order, and NOT close(leaver.out):
+	// nothing closes a connection's out channel any more.
+	start := time.Now()
+	r.leave(leaver) // closes leaver.done itself, behind its membership check
+	leaveElapsed := time.Since(start)
 
 	select {
-	case <-left:
-	case <-time.After(5 * time.Second):
-		t.Fatal("leave never returned — broadcast is holding the registry lock indefinitely")
+	case <-fanOutDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the fan-out never let go of a connection that left mid-walk — done is " +
+			"not being watched, so a departing client costs the whole table the budget")
+	}
+	if leaveElapsed > time.Second {
+		t.Fatalf("leave() took %v while a fan-out was mid-walk — teardown is queued "+
+			"behind a stranger's slow reader", leaveElapsed)
 	}
 
-	// A second broadcast must not send to the departed connection. Without the
-	// leave-before-close ordering this is a send on a closed channel, which
-	// panics rather than failing, and takes the announcement to `stays` with it.
-	r.broadcast(nil, []byte("second"), nil)
+	// The original assertion, and the one that matters: a fan-out that gives up
+	// on one connection must still serve the rest of its walk.
+	if len(stays.out) != 1 {
+		t.Fatalf("the remaining connection holds %d frames, want 1 — a fan-out that "+
+			"abandons one connection must not abandon the table with it", len(stays.out))
+	}
 
-	if len(stays.out) == 0 {
-		t.Fatal("the remaining connection lost its announcement — a panic mid-broadcast " +
-			"delivers to some connections and never to the rest")
+	// And a later fan-out must not consider the departed connection at all.
+	r.broadcast(nil, []byte("second"), nil)
+	if len(stays.out) != 2 {
+		t.Fatal("the remaining connection lost a later announcement")
 	}
 }
 
@@ -311,13 +337,18 @@ func TestBroadcastNeverTouchesAConnectionThatHasLeft(t *testing.T) {
 // everybody's list for the rest of the session: a permanent ghost, which is
 // the precise failure presence exists to prevent.
 //
-// Under one hold that reordering is impossible, and this is the observable
-// consequence: once leave has returned, no announcement for that participant
-// can be produced at all.
+// What forbids the reordering is now fanOut rather than one hold of the
+// registry lock (#47 moved sends out from under it), but the observable
+// consequence is the same and is what this asserts: once leave has returned, no
+// announcement for that participant can be produced at all. Stated as an
+// OUTCOME on purpose — it survived the locking being rebuilt underneath it,
+// which a test phrased in terms of "the lock is held here" would not have.
 func TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT(t *testing.T) {
 	r := newPresenceRegistry()
-	watcher := &presenceConn{participantID: "p-watch", displayName: "Zoe", out: make(chan []byte, 4)}
-	going := &presenceConn{participantID: "p-go", displayName: "Kim", out: make(chan []byte, 4)}
+	// Via the helper, not a literal: leave() closes done, so a connection built
+	// without one panics on close(nil) the moment it departs.
+	watcher := conn("p-watch", "Zoe", 4)
+	going := conn("p-go", "Kim", 4)
 	r.joinAndSend(watcher, func([]*vttv1.PresenceChanged) []byte { return nil })
 	r.joinAndSend(going, func([]*vttv1.PresenceChanged) []byte { return nil })
 
@@ -360,8 +391,8 @@ func TestBroadcastSkipsAnybodyTheCallerHasDenied(t *testing.T) {
 	// on a leaked link went on watching the guest list until the table next
 	// appended an event.
 	r := newPresenceRegistry()
-	staying := &presenceConn{participantID: "p-ok", displayName: "Zoe", out: make(chan []byte, 4)}
-	revoked := &presenceConn{participantID: "p-gone", displayName: "Stranger", out: make(chan []byte, 4)}
+	staying := conn("p-ok", "Zoe", 4)
+	revoked := conn("p-gone", "Stranger", 4)
 	r.joinAndSend(staying, func([]*vttv1.PresenceChanged) []byte { return nil })
 	r.joinAndSend(revoked, func([]*vttv1.PresenceChanged) []byte { return nil })
 
@@ -380,5 +411,163 @@ func TestBroadcastSkipsAnybodyTheCallerHasDenied(t *testing.T) {
 	r.broadcast(nil, []byte("second"), nil)
 	if got := <-revoked.out; string(got) != "second" {
 		t.Fatalf("nil deny must deny nobody, got %q", got)
+	}
+}
+
+func TestAJoinerDoesNotWaitOutSomebodyElsesFanOut(t *testing.T) {
+	// #47. #36 stopped a joiner waiting on its OWN announcement; this is the
+	// same wait arriving by a different route, and that fix did not touch it.
+	//
+	// joinAndSend and broadcast take the SAME lock, and broadcast holds it for
+	// its entire serial walk — up to the budget per connection. So anyone
+	// arriving inside somebody else's fan-out pays for a stranger's slow
+	// reader, before their own pump even exists. Measured at 1.897–1.910s
+	// against a 2s budget, 3/3, by the review that found it. In production
+	// (3s budget, two dead tabs) that is the same six seconds #36 was about.
+	r := newPresenceRegistry()
+	r.sendBudget = 500 * time.Millisecond
+	wedged := conn("p-1", "Ada", 0) // unbuffered, never read: the fan-out parks here
+	join(r, wedged)
+
+	fanOutDone := make(chan struct{})
+	go func() {
+		defer close(fanOutDone)
+		r.broadcast(nil, []byte("frame"), nil)
+	}()
+	// Long enough for the fan-out to be parked in its send, short enough that
+	// the remaining budget dwarfs the threshold below.
+	time.Sleep(50 * time.Millisecond)
+
+	// Checked BEFORE the measurement, not after, and the difference is the
+	// whole test. This is what stops it passing for the wrong reason: if the
+	// fan-out had already finished, the joiner never overlapped it and the
+	// timing below would pass on any implementation at all. It cannot be
+	// checked afterwards — under the defect, join BLOCKS until the fan-out
+	// completes, so by then fanOutDone is always closed and the guard would
+	// fire on correct and broken code alike.
+	select {
+	case <-fanOutDone:
+		t.Fatal("the fan-out finished before the joiner arrived — this run did not " +
+			"exercise the overlap the test is named for, so its timing proves nothing")
+	default:
+	}
+
+	joiner := conn("p-2", "Bo", 1)
+	start := time.Now()
+	join(r, joiner)
+	elapsed := time.Since(start)
+
+	if elapsed > 100*time.Millisecond {
+		t.Fatalf("joinAndSend took %v while another connection's fan-out held the "+
+			"registry lock (budget %v). A joiner must not wait out a stranger's slow reader.",
+			elapsed, r.sendBudget)
+	}
+	<-fanOutDone
+}
+
+func TestConcurrentFanOutsReachEveryConnectionInTheSameOrder(t *testing.T) {
+	// Measured by MUTUAL EXCLUSION, not by observed order, and the first draft
+	// of this test is why. It ran two fan-outs at eight fast connections and
+	// compared what each received — but two fan-outs that never block simply run
+	// one after the other on any implementation, so it agreed with itself
+	// whatever the locking did. It would have passed with fanOut deleted.
+	//
+	// A connection that NEVER drains makes the cost visible instead: every
+	// fan-out must park on it for the whole budget, so a serialised pair costs
+	// two budgets and an interleaved pair costs one. No drainer, no sleep, no
+	// scheduling luck — the difference is the budget itself.
+	const budget = 100 * time.Millisecond
+	r := newPresenceRegistry()
+	r.sendBudget = budget
+
+	wedged := conn("p-1", "Ada", 0) // unbuffered, never drained
+	other := conn("p-2", "Bo", 2)
+	join(r, wedged)
+	join(r, other)
+
+	start := time.Now()
+	var wg sync.WaitGroup
+	for _, b := range [][]byte{[]byte("first"), []byte("second")} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.broadcast(nil, b, nil)
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	if elapsed < 2*budget-budget/5 {
+		t.Fatalf("two fan-outs finished in %v, about one budget of %v rather than two. "+
+			"They overlapped, so presence deltas are no longer ordered against each "+
+			"other — and they are not commutative: a client re-adds a participant on "+
+			"CONNECTED and only a snapshot can replace the list, so a CONNECTED "+
+			"delivered after a DISCONNECTED leaves a permanent ghost at the table.",
+			elapsed, budget)
+	}
+
+	// And the consequence that matters, on the connection that could receive:
+	// both frames, in one order, whichever fan-out won the race.
+	if len(other.out) != 2 {
+		t.Fatalf("the healthy connection holds %d frames, want 2", len(other.out))
+	}
+	got := string(<-other.out) + "," + string(<-other.out)
+	if got != "first,second" && got != "second,first" {
+		t.Fatalf("healthy connection saw %q — a fan-out delivered a partial pair", got)
+	}
+}
+
+func TestAPromotionInFlightIsNotOvertakenByTheDeparture(t *testing.T) {
+	// The reason announceIfPresent takes fanOut BEFORE mu. Review reversed the
+	// two and the entire package still passed: the invariant the whole comment
+	// block above announceIfPresent hangs on — and the re-fix of 656079f's
+	// second defect — was defended by nothing at all.
+	//
+	// Reversed, this is deterministic: resolve p-go present and release mu,
+	// let the departure take mu, remove them, and fan out DISCONNECTED, then
+	// deliver the CONNECTED behind it. The client re-adds on CONNECTED and only
+	// a snapshot can replace the list, so p-go is a ghost for the session.
+	//
+	// The seam is that frame runs UNDER fanOut, so the test can hold a fan-out
+	// open from inside it and drive the interleaving rather than sleeping at it.
+	r := newPresenceRegistry()
+	r.sendBudget = time.Second
+	watcher, going := conn("p-watch", "Zoe", 4), conn("p-go", "Kim", 4)
+	join(r, watcher)
+	join(r, going)
+
+	resolved, release, promoDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(promoDone)
+		r.announceIfPresent("p-go", func(string) []byte {
+			close(resolved)
+			<-release // hold the fan-out open across the departure below
+			return []byte("CONNECTED p-go")
+		})
+	}()
+	<-resolved
+
+	depDone := make(chan struct{})
+	go func() {
+		defer close(depDone)
+		r.leave(going)
+		r.broadcast(going, []byte("DISCONNECTED p-go"), nil)
+	}()
+	// Long enough for the departure to get as far as the locking lets it. With
+	// fanOut taken first that is "queued"; reversed, it is "delivered".
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	<-promoDone
+	<-depDone
+
+	var got []string
+	for len(watcher.out) > 0 {
+		got = append(got, string(<-watcher.out))
+	}
+	if len(got) == 2 && got[0] != "CONNECTED p-go" {
+		t.Fatalf("the watcher saw %v — a departure overtook a promotion that was already "+
+			"in flight, so the table was told p-go left and then that they arrived. The "+
+			"client re-adds on CONNECTED and only a snapshot replaces the list: a "+
+			"permanent ghost.", got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1043,4 +1044,123 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 			elapsed.Round(time.Millisecond), budget)
 	}
 	t.Logf("joiner's first EVENT after %v (budget %v)", elapsed.Round(time.Millisecond), budget)
+}
+
+func TestTheWriterDrainsWhatIsQueuedBeforeItStops(t *testing.T) {
+	// The behaviour `for b := range outCh` used to give for free. outCh is no
+	// longer closed (#47 moved presence sends outside the registry lock, and
+	// closing a channel under a parked sender panics that sender), so the stop
+	// signal is a separate channel — and a bare `return` on it would throw away
+	// whatever a clean teardown had just enqueued.
+	//
+	// Tested here rather than through the socket because it is invisible from
+	// there: flush is only closed during teardown, so either the client has
+	// gone and every write fails anyway, or it has not and the frames are
+	// already in the OS buffer. Fault injection found this to be the one
+	// assertion in #47 that nothing covered.
+	// REPEATED, and that is not padding. With frames queued AND flush closed,
+	// both select cases are ready and Go picks between them at random, so the
+	// top branch often drains everything on its own. A single round therefore
+	// passes about half the time with the drain deleted — measured: the first
+	// version of this test survived that exact injection. Over 200 rounds,
+	// "never lost a frame" is a real assertion.
+	for i := range 200 {
+		out := make(chan []byte, 4)
+		flush := make(chan struct{})
+		out <- []byte("a")
+		out <- []byte("b")
+		close(flush)
+
+		var got []string
+		writeUntilFlushed(out, flush, func(b []byte) bool {
+			got = append(got, string(b))
+			return true
+		})
+
+		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+			t.Fatalf("round %d wrote %v, want [a b] — frames queued at teardown were dropped", i, got)
+		}
+	}
+}
+
+func TestTheWriterStopsAtTheFirstFailedWrite(t *testing.T) {
+	// A failed write means the socket is gone. Carrying on would spend the
+	// write deadline once per queued frame on a connection that cannot receive
+	// any of them, holding shutdown open for as long as the backlog is deep.
+	// REPEATED for the same reason as the test above, which I diagnosed there
+	// and then failed to apply here. Frames queued AND flush closed makes both
+	// select cases ready, Go picks at random, and one round therefore covers
+	// one branch. Review injected "drop the failed-write return from the DRAIN
+	// branch only" and caught it in 10 of 20 rounds — at the gate's -count=1
+	// that defect ships on a coin flip.
+	for i := range 200 {
+		out := make(chan []byte, 4)
+		flush := make(chan struct{})
+		out <- []byte("a")
+		out <- []byte("b")
+		close(flush)
+
+		calls := 0
+		writeUntilFlushed(out, flush, func([]byte) bool {
+			calls++
+			return false
+		})
+
+		if calls != 1 {
+			t.Fatalf("round %d: write was called %d times after failing, want 1", i, calls)
+		}
+	}
+}
+
+func TestServeNeverClosesAConnectionsOutboundChannel(t *testing.T) {
+	// A SOURCE-LEVEL assertion, which needs justifying because it is unusual.
+	//
+	// "outCh is never closed" is the premise the whole of #47 rests on: sends
+	// moved out from under the registry lock, and closing a channel while a
+	// goroutine is parked sending on it panics THAT goroutine, whatever its
+	// select is watching. But no runtime test pins it. Review added close(outCh)
+	// back into shutdown and ran the package eight times under -race: SEVEN
+	// PASSED. The one failure was a 10s timeout with no message naming a cause,
+	// because net/http recovers a panic raised inside a handler — the same thing
+	// that hid this class for weeks before 656079f, and the reason `task check`
+	// could run green over it.
+	//
+	// It cannot be pinned deterministically at runtime either: the window needs
+	// a fan-out parked on a connection that is being torn down at that instant,
+	// and `send` selects over out, done and the timer, so Go picks among the
+	// ready ones at random. A probabilistic guard against a defect that is
+	// already invisible is not a guard. Reading the file is deterministic.
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatalf("reading server.go: %v", err)
+	}
+	// COMMENTS STRIPPED, because the first version of this test fired on the
+	// prose that explains why the close is gone — the shutdown comment quotes
+	// `close(outCh)` to describe what the ordering used to defend. A gate that
+	// cannot tell code from the comment about the code trains people to delete
+	// the comment.
+	var code strings.Builder
+	for line := range strings.Lines(string(src)) {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i] + "\n"
+		}
+		code.WriteString(line)
+	}
+	text := code.String()
+
+	// Checked FIRST, and it is what keeps this test honest. Rename outCh and a
+	// bare "no close(outCh)" assertion passes forever over a file it no longer
+	// describes — a test that cannot fail, which is the defect this repo keeps
+	// finding in its own gates. If this fires, the channel was renamed: point
+	// both assertions at the new name rather than deleting them.
+	if !strings.Contains(text, "outCh := make(chan []byte") {
+		t.Fatal("serve no longer declares outCh — this test is describing a file that " +
+			"has moved on, and its close assertion below is now vacuous")
+	}
+	if strings.Contains(text, "close(outCh)") {
+		t.Fatal("serve closes outCh. Presence sends happen outside the registry lock, so " +
+			"a fan-out can be parked on this channel when teardown runs, and closing it " +
+			"panics THAT goroutine — recovered by net/http, so the table silently loses " +
+			"the rest of the broadcast. Stop the writer with close(flush) instead.")
+	}
 }
