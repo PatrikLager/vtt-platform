@@ -75,7 +75,8 @@ class MutationGateTest(unittest.TestCase):
             # unrelated assertion failures in place of the one clear message
             # the pre-flight exists to give. The disk tests pass it explicitly.
             code = cm.run(eq_path, list(packages), runner_for(mapping),
-                          out=out, err=err, root=root, free_bytes=500 * 1024**3)
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3,
+                          cache_bytes=0)
         return code, out.getvalue(), err.getvalue()
 
     # --- the property the gate exists for ---
@@ -267,7 +268,7 @@ class MutationGateTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as root:
             code = cm.run(eq, ["./p/"], runner, out=out, err=err, root=root,
-                          free_bytes=3 * 1024**3)
+                          free_bytes=3 * 1024**3, cache_bytes=0)
         self.assertEqual(code, 1)
         self.assertEqual(ran, [], "nothing may be measured on a disk this full")
         # The NUMBERS, both of them: an operator needs to know what they have
@@ -284,7 +285,7 @@ class MutationGateTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as root:
             code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
-                          free_bytes=500 * 1024**3)
+                          free_bytes=500 * 1024**3, cache_bytes=0)
         self.assertEqual(code, 0, err.getvalue())
 
     def test_the_floor_is_above_one_run_s_measured_cost(self):
@@ -295,6 +296,164 @@ class MutationGateTest(unittest.TestCase):
         state this guard exists to prevent.
         """
         self.assertGreater(cm.MIN_FREE_BYTES, 8 * 1024**3)
+
+    # --- 16 GiB free is a CLIFF; these pin the ramp in front of it ---
+    #
+    # The floor fails closed, but only once the volume is nearly gone, on a
+    # machine that may by then be too full for Bash. The warning speaks while
+    # there is still room to act, and never changes the exit code.
+
+    def test_a_disk_heading_for_the_floor_warns_and_still_runs(self):
+        """A WARNING, not a floor. Refusing here would be a new gate, and a gate
+        change is its own reviewed decision (CLAUDE.md rule 2).
+
+        `ran` is asserted, not just the exit code: a mutant that returned 0
+        WITHOUT running anything would satisfy an exit-code-only test while
+        reporting success over a gate that never executed.
+        """
+        ran = []
+
+        def runner(pkg):
+            ran.append(pkg)
+            return gremlins_output()
+
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/"], runner, out=out, err=err, root=root,
+                          free_bytes=20 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(ran, ["./p/"], "a warning must not stop the measurement")
+        self.assertIn("20.0 GiB free", err.getvalue())
+        self.assertIn("16 GiB floor", err.getvalue())
+
+    def test_a_roomy_disk_says_nothing_at_all(self):
+        """The control, and the assertion that matters most.
+
+        assertEqual on the WHOLE stream, not assertNotIn on a chosen word:
+        review made the warning unconditional and reworded it, and a
+        `assertNotIn("GOCACHE", ...)` control SURVIVED. A clean run writes
+        nothing to stderr, so the strongest form is also the simplest.
+        """
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(err.getvalue(), "")
+
+    def test_exactly_at_the_warning_mark_is_silent(self):
+        """The boundary. `<` mutated to `<=` survives unless a test sits on the
+        line -- this file already carries test_exactly_half_timed_out_is_accepted,
+        written for that exact reason one screen up."""
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                   free_bytes=cm.CACHE_WARN_FREE_BYTES, cache_bytes=0)
+        self.assertEqual(err.getvalue(), "")
+
+    def test_the_warning_says_what_cleaning_the_cache_would_recover(self):
+        """The du half, and the only thing it is for: an operator deciding
+        whether `go clean -cache` is worth it needs the number."""
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                   free_bytes=20 * 1024**3, cache_bytes=37 * 1024**3)
+        self.assertIn("37.0 GiB", err.getvalue())
+        self.assertIn("go clean -cache", err.getvalue())
+
+    def test_an_unmeasurable_cache_still_warns_without_the_recover_clause(self):
+        """Fail SOFT, and note WHICH way. Because the trigger is free space, a
+        du that cannot answer costs one clause of the message -- not the
+        message. Under the first design, which triggered on cache size, the same
+        failure suppressed the warning entirely."""
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        real, cm.cache_size = cm.cache_size, lambda _: None
+        try:
+            with tempfile.TemporaryDirectory() as root:
+                cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                       free_bytes=20 * 1024**3)
+        finally:
+            cm.cache_size = real
+        self.assertIn("20.0 GiB free", err.getvalue())
+        self.assertNotIn("go clean -cache", err.getvalue())
+
+    def test_the_production_path_measures_the_cache_itself(self):
+        """WIRING, not logic. Every other test here injects cache_bytes, so
+        deleting the two lines that actually call cache_size(go_cache()) left
+        the whole suite green and the feature dead in production. Review found
+        that by deleting them."""
+        eq = equivalents("")
+        out, err = io.StringIO(), io.StringIO()
+        real, cm.cache_size = cm.cache_size, lambda _: 41 * 1024**3
+        try:
+            with tempfile.TemporaryDirectory() as root:
+                code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                              free_bytes=20 * 1024**3)
+        finally:
+            cm.cache_size = real
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("41.0 GiB", err.getvalue())
+
+    def test_cache_size_measures_a_real_directory(self):
+        """The measurement path, which no other test reaches -- the missing-dir
+        test stops at the isdir guard. Review injected three mutants that all
+        survived: dropping the *1024 (a 4 GiB cache reads as 4 MB), taking
+        split()[-1] (parses the path, ValueError, None), and measuring $TMPDIR
+        instead of the argument. A range, not equality: du reports allocated
+        blocks, not bytes."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "payload"), "wb") as f:
+                f.write(b"\0" * (5 * 1024**2))
+            size = cm.cache_size(d)
+        self.assertIsNotNone(size, "a readable directory must be measurable")
+        self.assertGreaterEqual(size, 4 * 1024**2)
+        self.assertLess(size, 64 * 1024**2)
+
+    def test_a_partial_du_is_used_rather_than_discarded(self):
+        """du exits NON-ZERO on an unreadable entry while still printing a good
+        total, and GOCACHE produces that routinely -- gopls and any concurrent
+        `go` command write and trim it while the editor is open. Review measured
+        a real 450k-file cache exiting 1 over nine unreadable entries.
+
+        Checking the exit status would return None here, and the advisory would
+        then be silent on a healthy machine. A partial total can only
+        UNDERSTATE, so using it risks a warning that is too quiet while
+        discarding it risks no warning at all.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "payload"), "wb") as f:
+                f.write(b"\0" * (5 * 1024**2))
+            blocked = os.path.join(d, "blocked")
+            os.mkdir(blocked)
+            os.chmod(blocked, 0o000)
+            try:
+                if os.access(blocked, os.R_OK):
+                    self.skipTest("running with rights that make an unreadable dir readable")
+                size = cm.cache_size(d)
+            finally:
+                os.chmod(blocked, 0o700)
+        self.assertIsNotNone(size, "a partial total must be used, not thrown away")
+        self.assertGreaterEqual(size, 4 * 1024**2)
+
+    def test_cache_size_reports_none_for_a_directory_that_is_not_there(self):
+        self.assertIsNone(cm.cache_size(os.path.join(tempfile.gettempdir(), "no-such-cache-dir")))
+        self.assertIsNone(cm.cache_size(""))
+
+    def test_the_warning_mark_sits_a_few_runs_above_the_floor(self):
+        """DERIVED, not a second independent guess at the same quantity. The
+        first version of this asserted a bare constant against two hand-picked
+        bounds and accepted anything in [9, 40) GiB -- it excluded 6-8 GiB and
+        nothing else. Tying it to the floor and the measured run cost means a
+        drift in either is caught here."""
+        self.assertEqual(cm.CACHE_WARN_FREE_BYTES, cm.MIN_FREE_BYTES + 3 * cm.RUN_COST_BYTES)
+        self.assertGreater(cm.CACHE_WARN_FREE_BYTES, cm.MIN_FREE_BYTES)
+        self.assertGreaterEqual(cm.RUN_COST_BYTES, 8 * 1024**3,
+                                "one full run consumes a measured 7.6 GiB")
 
     # --- a run that could not apply or restore a mutation is NOT a measurement ---
     #
