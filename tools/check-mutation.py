@@ -118,6 +118,73 @@ PACKAGES = [
 # even present as a gate failure.
 MIN_FREE_BYTES = 16 * 1024**3
 
+# One full gate run's measured consumption of free space, rounded up from the
+# 7.6 GiB recorded above. Named so the warning below is DERIVED from it rather
+# than being a second independent guess about the same run.
+RUN_COST_BYTES = 8 * 1024**3
+
+# Where the disk gets a WORD, well before MIN_FREE_BYTES gets a veto.
+#
+# The floor fails closed, but only at a cliff, and by then the volume may be too
+# full for Bash itself to work. This is the ramp: three more runs' worth of room
+# above the floor, so there is time to act while acting is still easy.
+#
+# TRIGGERED ON FREE SPACE, NOT ON CACHE SIZE, which was a review finding rather
+# than the first design. GOCACHE is MACHINE-GLOBAL — every Go project on the box
+# shares it — so "the cache is over N GiB" says nothing about whether THIS
+# volume is in trouble. A developer with two other Go repos would sit above any
+# useful threshold permanently with 100 GiB free, and be told every single run
+# to `go clean -cache`, throwing away every project's cache to solve nothing. A
+# warning that fires every time is one people learn to scroll past, which costs
+# the warning that mattered. Free space is the quantity that actually ran out;
+# cache size is a proxy that tracks it only on a small volume.
+#
+# ADVISORY ONLY. It never changes the exit code. Making it refuse would be a new
+# gate, and a gate change is its own reviewed decision (CLAUDE.md rule 2).
+CACHE_WARN_FREE_BYTES = MIN_FREE_BYTES + 3 * RUN_COST_BYTES
+
+
+def go_cache():
+    """GOCACHE, from the environment or the toolchain.
+
+    Returns "" if the toolchain reports none. RAISES if `go` is not on PATH,
+    deliberately: swallowing that would make _disk_targets silently drop GOCACHE
+    from the floor's targets, narrowing a gate by accident.
+    """
+    return os.environ.get("GOCACHE") or subprocess.run(
+        ["go", "env", "GOCACHE"], capture_output=True, text=True).stdout.strip()
+
+
+def cache_size(path):
+    """Bytes under path, or None if that cannot be measured.
+
+    Only ever called to enrich a warning that has ALREADY been decided, so None
+    costs one clause of a message rather than the message.
+
+    du rather than an os.walk: the build cache holds hundreds of thousands of
+    small files. Measured 0.09s at 4.31 GiB warm; ~25s cold on a 450k-file tree.
+
+    THE EXIT STATUS IS NOT CONSULTED, only stdout. Review measured a real
+    450k-file cache where du exited 1 over nine unreadable entries while
+    printing a perfectly good total, and a file vanishing mid-walk does the
+    same — not exotic here, since gopls and any concurrent `go` command write
+    and trim this directory continuously. A partial total can only UNDERSTATE,
+    so parsing one risks a warning that is too quiet, while discarding it risks
+    no warning at all.
+    """
+    if not path or not os.path.isdir(path):
+        return None
+    try:
+        proc = subprocess.run(["du", "-sk", path], capture_output=True,
+                              text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    try:
+        return int(proc.stdout.split()[0]) * 1024
+    except (IndexError, ValueError):
+        return None
+
+
 
 # A run that could not APPLY or RESTORE a mutation is not a measurement.
 #
@@ -673,8 +740,7 @@ def default_runner(pkg):
 def _disk_targets():
     """The directories a mutation run consumes: the tree copies, and the cache."""
     targets = [tempfile.gettempdir()]
-    cache = os.environ.get("GOCACHE") or subprocess.run(
-        ["go", "env", "GOCACHE"], capture_output=True, text=True).stdout.strip()
+    cache = go_cache()
     if cache:
         targets.append(cache)
     return targets
@@ -689,7 +755,8 @@ def _free(path):
 
 
 def run(equivalents_path, packages=PACKAGES, runner=default_runner,
-        out=sys.stdout, err=sys.stderr, root=".", free_bytes=None):
+        out=sys.stdout, err=sys.stderr, root=".", free_bytes=None,
+        cache_bytes=None):
     # BEFORE anything is spent. Discovering a full disk as a corrupt verdict is
     # the failure this whole file's error handling is about; discovering it as
     # a number, up front, costs nothing.
@@ -717,6 +784,23 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
               f"normal summary and exits 0 — a wrong answer that looks exactly like a right one.",
               file=err)
         return 1
+
+    # PAST the floor, so this run is going ahead. The floor is a cliff; this is
+    # the ramp, while there is still room to act.
+    if free_bytes < CACHE_WARN_FREE_BYTES:
+        if cache_bytes is None:
+            cache_bytes = cache_size(go_cache())
+        recover = ("" if cache_bytes is None else
+                   f" `go clean -cache` would recover about "
+                   f"{cache_bytes / 1024**3:.1f} GiB of that.")
+        print(f"check:mutation: {free_bytes / 1024**3:.1f} GiB free, heading for the "
+              f"{MIN_FREE_BYTES / 1024**3:.0f} GiB floor that refuses to run at all. "
+              f"Running anyway — this is a warning, not a floor. Every mutant is a "
+              f"distinct binary, so the build cache grows without bound across runs; "
+              f"measured at 82 GiB on a 228 GiB volume, and once the volume actually "
+              f"fills, Bash stops working, so the failure does not even present as a "
+              f"gate failure.{recover}",
+              file=err)
 
     # BEFORE anything is measured: a package gremlins cannot resolve reports
     # every mutant as killed, so letting the loop below run would print `ok`
