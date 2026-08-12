@@ -96,6 +96,61 @@ Four `OriginProbe*` agent participants were minted into `/tmp/vtt-session/sessio
 while testing. Harmless — session one starts on a fresh campaign per the plan —
 but the campaign used for evidence must not be this one.
 
+### 5. The DM opened the table with ZERO nudges — PASS, and informative
+
+**WHAT.** One prompt — "load `goblin-ambush`, open the door for 2, tell me the
+secret" — and the agent chained `load_adventure` → `set_join_door` →
+`get_join_link` unprompted, in the right order, across five tool calls.
+
+It also volunteered, without being asked:
+- that it knows the secret but NOT which address the players can reach;
+- that closing the door later does not kick anyone already through, and the
+  secret admits anyone holding it, so pass it to players directly;
+- a summary of what loaded (scene, actors, tokens, notes);
+- two things it noticed were off (see below).
+
+The first two are verbatim the caveats written into `get_join_link`'s and
+`set_join_door`'s tool descriptions in #45, yesterday. **The descriptions are
+doing real work** — the agent is passing on the reasoning rather than just
+calling the tool.
+
+**WHY IT MATTERS beyond "it worked".** The drive gap (§5 of the spec) is about
+the agent not being WOKEN. It is not, on this evidence, about the agent being
+unable to decide what to do once addressed. A task-shaped request produced a
+correct multi-step plan with no hand-holding. That narrows what an autonomous
+loop would have to supply: wake-ups and turn-taking, not reasoning.
+
+**COST.** None. Recorded as a positive result because the arc's job is to
+replace guesses with evidence in both directions.
+
+### 6. `goblin-ambush` is a conformance fixture, not a playable ambush
+
+**WHAT.** The agent flagged that "the tokens are all bunched along the top row
+at their placement defaults rather than in ambush positions". Verified against
+the source rather than taken on trust — `adventures/goblin-ambush/scenes/ravine.json`:
+
+    tok-fighter (0,0)   tok-cutter (1,0)   tok-archer (5,0)
+
+Three tokens, all on row 0, on a 32×32 grid. The fighter is adjacent to a goblin
+at the start and nobody is concealed or elevated. It is not an ambush.
+
+**WHY.** The directory carries a `goldens/` folder: this adventure exists to
+pin the compiler's output, and its placements were chosen to be checkable, not
+to stage an encounter. Nothing is broken — it is doing its job. It is simply not
+content anyone would play.
+
+**WHERE.** `adventures/goblin-ambush/scenes/ravine.json`, verified 2026-08-12.
+
+**COST.** Awkward for session zero — the walk can continue. Potentially
+"stopped play" for session one, since the first thing real players see is a
+tableau that contradicts the adventure's name.
+
+**WHAT IT SUGGESTS, for the next arc.** The founding spec's content candidate is
+"full 4.5e ruleset", i.e. RULES. This points somewhere adjacent: the gap may be
+adventures authored FOR PLAY rather than for tests. Both existing adventures
+should be checked for the same shape before session one, and one of them staged
+properly — which is content work, not engine work.
+
 ---
 
 ## Still to walk (plan Task 2)
