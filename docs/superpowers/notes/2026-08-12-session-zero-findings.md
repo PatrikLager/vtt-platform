@@ -69,7 +69,28 @@ Origin), proving nothing about a browser.
 produce a confident wrong answer, and the tell was the same every time: a
 control that made no sense. Positive **and** negative controls, always.
 
-### 3. Housekeeping from the probes
+### 3. "Test it on cellular" was justified wrongly — CORRECTION
+
+**WHAT.** The plan told Patrik to verify from the iPad on cellular with wifi
+off, on the grounds that same-network access "can succeed for reasons that will
+not hold for a guest". He asked why, and the reason does not survive the
+question.
+
+The tunnel hostname is a public Cloudflare address. DNS resolves to their edge,
+so traffic goes iPad → internet → Cloudflare → the Mac regardless of the iPad's
+network. There is no local shortcut available to produce a false pass. The
+argument would be sound for a LAN address such as `http://192.168.x.x:8080`,
+and it was carried across to a case where it does not hold.
+
+What IS true, and weaker: cellular exercises a different network path — mobile
+latency, carrier NAT, possibly IPv6-only — which is closer to a remote guest's
+conditions. Realism, not correctness.
+
+**COST.** None to the result; entry 1's controls stand on their own and did not
+depend on this. Recorded because a wrong reason in a plan is worse than no
+reason: it gets followed, and later relied on.
+
+### 4. Housekeeping from the probes
 
 Four `OriginProbe*` agent participants were minted into `/tmp/vtt-session/session.db`
 while testing. Harmless — session one starts on a fresh campaign per the plan —

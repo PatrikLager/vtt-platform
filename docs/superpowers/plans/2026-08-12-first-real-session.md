@@ -112,9 +112,21 @@ Nothing is installed on any guest device — that was the reason for choosing it
 
 - [ ] **Step 4: Verify the upgrade from a genuinely external device**
 
-On the **iPad, using cellular data with wifi turned off** — not the computer,
-and not the iPad on the same wifi. Same-network access can succeed for reasons
-that will not hold for a guest.
+On the **iPad**. Cellular rather than wifi is worth doing once, but for a
+weaker reason than the first draft of this plan gave.
+
+That draft said same-network access "can succeed for reasons that will not hold
+for a guest". THAT IS WRONG for a tunnel, and Patrik caught it (2026-08-12). The
+hostname is a public Cloudflare address: DNS resolves to their edge and traffic
+goes iPad → internet → Cloudflare → this Mac whatever network the iPad is on.
+There is no local shortcut it could accidentally take. The reasoning would hold
+for a LAN address like `http://192.168.x.x:8080`; it was carried over to a case
+where it does not apply.
+
+The real reason to use cellular once: it exercises a genuinely different network
+path — mobile latency, carrier NAT, possibly IPv6-only — which is closer to what
+a remote guest gets. That is realism, not correctness, so wifi is fine for the
+rest of the walk.
 
 Open `https://<random>.trycloudflare.com/` in Safari.
 
