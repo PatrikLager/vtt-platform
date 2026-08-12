@@ -24,3 +24,6 @@ reports/
 # package -- `task build` and `go test` do not, so it only appears for whoever
 # runs that at the root, and no hook would stop a `git add -A` committing 26 MB.
 /vtt
+
+# superpowers brainstorming companion (local mockups, never committed)
+.superpowers/
