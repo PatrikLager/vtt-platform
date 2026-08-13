@@ -27,3 +27,6 @@ reports/
 
 # superpowers brainstorming companion (local mockups, never committed)
 .superpowers/
+
+# session screenshots and captures (artifacts, not source)
+*.jpg

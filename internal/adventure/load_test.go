@@ -177,6 +177,26 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		// decode" clause the brief states separately from the numbered
 		// rules, mirroring internal/rules/testdata/invalid/unknown-field.
 		{"unknown-field", []string{"adventure.json", "bogus_field"}},
+		// The two cases below are new at maps-as-geometry Task 4: a scene is
+		// now a map (spec §4.3), and loadScenes reuses mapdef's own
+		// completeness/wall checks (internal/mapdef's CheckEverySquarePresent
+		// and CheckPlacementsNotInWalls) rather than re-implementing them —
+		// these pin that the reuse actually fires for an embedded scene, not
+		// only for a standalone map file.
+		{"scene-tile-missing", []string{"cellar.json", "field \"tiles[\\\"0,0\\\"]\"", "no tile named for this square"}},
+		{"scene-placement-in-wall", []string{"cellar.json", `field "placements[0]"`, "inside a wall"}},
+		// An override can pass every shape/bounds check above and still not
+		// RESOLVE (no pack given, or the pack does not define the named
+		// art) — checked at LOAD, not deferred to Compile (adventure-format
+		// spec §7: fail loud at boot, not at the table).
+		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "no pack was given to resolve it"}},
+		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
+		// with no tiles at all is incoherent (mirrors mapdef's own
+		// CheckOverridesRequireTiles, reused here the same way every other
+		// terrain check in this table is). The specific phrase matters —
+		// "overrides" alone would coincidentally match this fixture's own
+		// directory name.
+		{"scene-override-without-tiles", []string{"cellar.json", "declares overrides but tiles is empty"}},
 	}
 
 	rs := loadFixtureRuleset(t)
@@ -222,6 +242,8 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"placement-y-out-of-bounds", "unknown-field",
 		"placement-token-id-empty", "placement-actor-id-empty",
 		"note-key-empty", "note-text-empty",
+		"scene-tile-missing", "scene-placement-in-wall", "scene-override-unresolvable",
+		"scene-override-without-tiles",
 	}
 	if len(want) != len(onDisk) {
 		t.Errorf("testdata/invalid has %d dirs, case table names %d", len(onDisk), len(want))

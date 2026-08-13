@@ -247,6 +247,19 @@ and §9 treats it as a measured risk rather than a settled question.
 what let a model choose tiles deliberately rather than at random, and without
 them §1.5 cannot be met.
 
+**Where a pack lives** (added 2026-08-13; the first draft said only "beside the
+images" and never said beside *which* images, which a Task 4 review correctly
+called unsanctioned format surface — a path becomes an API the moment somebody
+else's adventure ships one):
+
+- **Inside an adventure:** `adventures/<id>/tiles/pack.json`. Mirrors
+  `guide.md`, which already lives in the adventure directory and is already
+  served over HTTP.
+- **Beside a standalone map:** `maps/<id>/tiles/pack.json`, the same shape, so
+  a map moving into or out of an adventure does not change where its art sits.
+
+Both are served over HTTP alongside the images (§7), never through the log.
+
 ```json
 { "id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
   "tiles": [ {"name":"wood-planks-split-3", "file":"planks_03.png",
@@ -407,6 +420,31 @@ image could serve neither.
 the space the layout gives it and the map is drawn through a scale-and-offset
 transform. Scene size stops affecting page height entirely: a 200x200 outdoor
 map and a 10x10 room lay out identically. **This is the T1/#19 fix.**
+
+**Amended 2026-08-13 (Patrik's ruling), because the sentence above was true of
+LAYOUT and false of the WIRE.** Task 4 measured it: `SceneCreated` carries one
+`TileRef` per square as protojson, so a 32x32 scene is **45.5 KiB** and a
+200x200 scene is **~1.79 MiB in a single frame**. coder/websocket's default
+read limit is 32768 bytes, which is why loading `goblin-ambush` tore down every
+connection until the reading side raised it — a bug this arc found and fixed
+only because an implementer read "existing adventures must still compile" as
+"must still work end to end".
+
+So **the honest limit today is roughly a 60x60 scene** against the 200 KiB read
+limit now set. A 200x200 map lays out identically and does not arrive.
+
+**Not fixed in this arc, deliberately.** The remedy is a compact wire encoding —
+a palette plus index rows, which would put 200x200 near 40 KB — and it costs an
+additive contract change plus its own task. Nothing in §10's exit criteria needs
+a scene larger than the demo map, and growing an arc mid-flight to chase a size
+nobody is using yet is how arcs stop landing. **Filed as its own follow-up.**
+
+Worth stating plainly because it is a consequence of a decision rather than an
+accident: the per-square explicitness of §4.1 — every square naming its own
+tile, which is what makes the format atomic and diffable — is exactly what makes
+it large on the wire. **Authoring and transport need not be the same shape.**
+The loader already resolves tile NAMES into facts, so the wire form is ours to
+choose freely without touching how a map is written.
 
 - Fit on scene change, so you always start seeing the whole map.
 - Wheel to zoom, drag to pan. Desktop-first; touch gestures are deferred.

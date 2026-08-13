@@ -1,0 +1,10 @@
+{
+  "id": "featureless",
+  "name": "Featureless Field",
+  "grid_width": 2,
+  "grid_height": 2,
+
+  "overrides": {
+    "0,0": "some-custom-tile"
+  }
+}

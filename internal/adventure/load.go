@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -98,7 +99,15 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		return nil, err
 	}
 
-	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs)
+	// Loaded BEFORE scenes: loadScenes needs pack in hand to prove each
+	// scene's terrain actually resolves (fail loud at boot — see
+	// loadScenes' own doc comment for why this cannot wait for Compile).
+	pack, err := loadEmbeddedPack(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs, pack)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +129,36 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		Scenes:           scenes,
 		Actors:           actors,
 		Notes:            notes,
+		Pack:             pack,
 		GuidePath:        filepath.Join(dir, "guide.md"),
 	}, nil
+}
+
+// loadEmbeddedPack loads dir/tiles/pack.json if present — mirrors a
+// standalone map's own art-pack directory convention (maps-as-geometry
+// implementation plan, Task 10: "maps/cellar/tiles/pack.json"), embedded
+// rather than referenced by id because the adventure format is
+// self-contained (adventure-format spec §2.2: "No bestiary format" — shared
+// content libraries were rejected). Absence is legal and the common case:
+// most adventures use only standard tiles and declare no Overrides at all,
+// so nothing ever needs a pack to resolve against.
+func loadEmbeddedPack(dir string) (*mapdef.Pack, error) {
+	packDir := filepath.Join(dir, "tiles")
+	if _, err := os.Stat(filepath.Join(packDir, "pack.json")); err != nil {
+		if os.IsNotExist(err) {
+			// (nil, nil) is the correct, intentional result here — not the
+			// ambiguous API smell nilnil normally catches: this is an
+			// unexported helper with exactly one caller (Load, immediately
+			// above), which stores the result straight into Adventure.Pack
+			// and documents nil as a legal, expected value. There is no
+			// caller anywhere who could mistake "no error" for "safe to
+			// dereference".
+			//nolint:nilnil
+			return nil, nil
+		}
+		return nil, fmt.Errorf("adventure: %s: %w", packDir, err)
+	}
+	return mapdef.LoadPack(packDir)
 }
 
 // --- adventure.json ---
@@ -226,12 +263,20 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 
 // --- scenes/*.json (one scene per file, placements declared inline) ---
 
+// sceneJSON mirrors mapdef's own mapJSON shape for Tiles/Overrides/Objects
+// (maps-as-geometry spec §4.1) — a scene IS a map (spec §4.3) — so the two
+// formats decode identically field-for-field; only Pack is absent (an
+// adventure's art pack is embedded once for the whole adventure, not named
+// per scene — see load.go's loadEmbeddedPack doc comment).
 type sceneJSON struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	GridWidth  int32           `json:"grid_width"`
-	GridHeight int32           `json:"grid_height"`
-	Placements []placementJSON `json:"placements"`
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	GridWidth  int32               `json:"grid_width"`
+	GridHeight int32               `json:"grid_height"`
+	Tiles      map[string]string   `json:"tiles"`
+	Overrides  map[string]string   `json:"overrides"`
+	Objects    []mapdef.ObjectJSON `json:"objects"`
+	Placements []placementJSON     `json:"placements"`
 }
 
 type placementJSON struct {
@@ -242,12 +287,29 @@ type placementJSON struct {
 }
 
 // loadScenes decodes every scenes/*.json file (file-name order), validating
-// grid sanity (width/height >= 1), each placement's actor reference against
-// actorIDs, each placement's coordinates against its own scene's grid, and
-// scene-id/token-id uniqueness WITHIN the adventure (token ids are unique
-// across ALL scenes, not just within one — tracked via a running set as
-// scenes are processed in file-name order).
-func loadScenes(dir string, actorIDs map[string]bool) ([]AdventureScene, error) {
+// grid sanity (width/height >= 1), the tiles/overrides/objects completeness
+// and bounds checks a standalone map file gets (spec §4.4) — reused directly
+// from internal/mapdef rather than re-implemented, via the exported Check*
+// functions load.go (mapdef) itself calls. TILES IS OPTIONAL (Patrik's
+// ruling, 2026-08-13): a scene with no "tiles" key has no terrain, exactly
+// as before this format existed — this format is written by third parties
+// and by an LLM, and an existing scene file must keep loading. Once tiles
+// carries ANY entry, completeness applies in full (CheckEverySquarePresent
+// itself carries this rule now); an overrides entry with no tiles at all is
+// its own refusal (CheckOverridesRequireTiles — an override names art for a
+// square whose nature tiles declares, so there is nothing to attach it to
+// with no tiles present). Also checked: that every square actually RESOLVES
+// against pack (below — bounds alone is not enough: an override naming an
+// art the pack doesn't define is a shape-valid, content-invalid scene),
+// each placement's actor reference against actorIDs, each placement's
+// coordinates against its own scene's grid, scene-id/token-id uniqueness
+// WITHIN the adventure (token ids are unique across ALL scenes, not just
+// within one — tracked via a running set as scenes are processed in
+// file-name order), and finally that no placement starts inside a wall
+// (also reused from mapdef — the one check the old scene-plus-four-numbers
+// format could never even express, and a no-op when tiles is empty: no
+// terrain declared means nothing to stand inside).
+func loadScenes(dir string, actorIDs map[string]bool, pack *mapdef.Pack) ([]AdventureScene, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
 		return nil, err
@@ -277,6 +339,49 @@ func loadScenes(dir string, actorIDs map[string]bool) ([]AdventureScene, error) 
 			return nil, fieldErr(path, "grid_height", fmt.Sprintf("must be >= 1, got %d", raw.GridHeight))
 		}
 
+		errf := func(field, msg string) error { return fieldErr(path, field, msg) }
+		if err := mapdef.CheckEverySquarePresent(raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
+			return nil, err
+		}
+		if err := mapdef.CheckTilesInsideGrid(raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
+			return nil, err
+		}
+		if err := mapdef.CheckTileNamesKnown(raw.Tiles, errf); err != nil {
+			return nil, err
+		}
+		if err := mapdef.CheckOverridesInsideGrid(raw.Overrides, raw.GridWidth, raw.GridHeight, errf); err != nil {
+			return nil, err
+		}
+		if err := mapdef.CheckOverridesRequireTiles(raw.Tiles, raw.Overrides, errf); err != nil {
+			return nil, err
+		}
+		objects := make([]mapdef.Object, 0, len(raw.Objects))
+		for _, oj := range raw.Objects {
+			objects = append(objects, oj.ToObject())
+		}
+		if err := mapdef.CheckObjectFootprints(objects, raw.GridWidth, raw.GridHeight, errf); err != nil {
+			return nil, err
+		}
+
+		// Every square must actually RESOLVE, not just satisfy the shape and
+		// bounds checks above — spec §4.4's fuller promise. An Overrides
+		// entry naming an art the pack doesn't define (or one at all, with
+		// no pack loaded) would otherwise pass every check here and only
+		// surface later, at Compile — "at the table" rather than "at boot"
+		// (adventure-format spec §7's explicit posture, which every other
+		// rule in this function already follows: this is the one gap that
+		// did not exist before this task, because a scene had nothing to
+		// resolve). Reuses the exact call compile.go's own delegation makes
+		// (mapdef.BuildSceneCreated), discarding the result: a genuine dry
+		// run of the one construction site this task exists to create, not
+		// a second check that could drift from what Compile actually does.
+		if _, _, err := mapdef.BuildSceneCreated(&mapdef.Map{
+			ID: raw.ID, Name: raw.Name, GridW: raw.GridWidth, GridH: raw.GridHeight,
+			Tiles: raw.Tiles, Overrides: raw.Overrides, Objects: objects,
+		}, pack); err != nil {
+			return nil, fieldErr(path, "overrides", err.Error())
+		}
+
 		placements := make([]Placement, 0, len(raw.Placements))
 		for i, p := range raw.Placements {
 			field := fmt.Sprintf("placements[%d]", i)
@@ -302,9 +407,18 @@ func loadScenes(dir string, actorIDs map[string]bool) ([]AdventureScene, error) 
 			placements = append(placements, Placement(p))
 		}
 
+		mp := make([]mapdef.Placement, len(placements))
+		for i, p := range placements {
+			mp[i] = mapdef.Placement(p)
+		}
+		if err := mapdef.CheckPlacementsNotInWalls(mp, raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
+			return nil, err
+		}
+
 		out = append(out, AdventureScene{
 			ID: raw.ID, Name: raw.Name,
 			GridW: raw.GridWidth, GridH: raw.GridHeight,
+			Tiles: raw.Tiles, Overrides: raw.Overrides, Objects: objects,
 			Placements: placements,
 		})
 	}

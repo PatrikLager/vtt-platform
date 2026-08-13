@@ -94,6 +94,53 @@ func TestToEventCreateSceneProducesSceneCreated(t *testing.T) {
 	}
 }
 
+// TestToEventCreateSceneCarriesTilesAndObjects pins that a CreateScene
+// declaring terrain does not get it silently discarded on the way to
+// SceneCreated — maps-as-geometry Task 1 added Tiles/Objects to CreateScene
+// and tools/toolgen advertises both to MCP as part of create_scene's
+// contract, so an agent-issued command with terrain must produce an event
+// carrying that SAME terrain, not a scene with none. This is the same class
+// of defect Task 1 already fixed once for OpenDoor/CloseDoor, but silent
+// rather than an error: without this test, ToEvent's CreateScene arm could
+// drop Tiles/Objects and every other test here (which never sets them)
+// would still pass.
+func TestToEventCreateSceneCarriesTilesAndObjects(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	tiles := map[string]*vttv1.TileRef{
+		"0,0": {Kind: "wall", Material: "stone"},
+		"1,0": {Kind: "floor", Material: "wood", Art: "planks-3"},
+	}
+	objects := []*vttv1.SceneObject{{
+		ObjectId: "o1", Kind: "boulder",
+		At: &vttv1.GridPosition{X: 1, Y: 0}, Width: 1, Height: 1,
+		BlocksSight: true, BlocksMove: true,
+	}}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{
+		CreateScene: &vttv1.CreateScene{
+			SceneId: "scn", Name: "Cave", GridWidth: 2, GridHeight: 1,
+			Tiles: tiles, Objects: objects,
+		},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, ok := env.Payload.(*vttv1.Envelope_SceneCreated)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_SceneCreated", env.Payload)
+	}
+	if len(sc.SceneCreated.GetTiles()) != 2 {
+		t.Fatalf("Tiles = %v, want 2 entries (Tiles was dropped)", sc.SceneCreated.GetTiles())
+	}
+	if got := sc.SceneCreated.GetTiles()["1,0"]; got.GetArt() != "planks-3" || got.GetMaterial() != "wood" {
+		t.Fatalf("Tiles[1,0] = %v, want art planks-3, material wood", got)
+	}
+	if len(sc.SceneCreated.GetObjects()) != 1 || sc.SceneCreated.GetObjects()[0].GetObjectId() != "o1" {
+		t.Fatalf("Objects = %v, want one entry with object_id o1 (Objects was dropped)", sc.SceneCreated.GetObjects())
+	}
+}
+
 func TestToEventAddActorProducesActorAdded(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleAgent}
 	actor := &vttv1.Actor{ActorId: "a1", Name: "Goblin"}

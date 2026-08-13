@@ -13,9 +13,10 @@
 // rather than importing one, because a pack is content (design spec §4.2)
 // with no engine behaviour riding on it — nothing about Kind/Material ever
 // comes from a pack (see Resolve's doc comment for why that boundary is
-// load-bearing). Compiling a loaded Map into wire events is still a later
-// task: this package intentionally has no dependency on
-// contract/gen/go/vtt/v1.
+// load-bearing). Compiling a loaded Map into wire events is compile.go's job
+// (Task 4, spec §5) — the one and only reason this package depends on
+// contract/gen/go/vtt/v1 at all; nothing in format.go, load.go, standard.go,
+// or resolve.go touches it.
 package mapdef
 
 // Map is one fully-loaded, fully-validated map file (spec §4.1's two-layer

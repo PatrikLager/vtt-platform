@@ -1,0 +1,15 @@
+{
+  "actor_id": "act-fighter",
+  "name": "Fighter",
+  "attributes": {
+    "vim": 12,
+    "vigor": 10,
+    "brace": 8
+  },
+  "resources": {
+    "focus": {
+      "current": 10,
+      "max": 10
+    }
+  }
+}

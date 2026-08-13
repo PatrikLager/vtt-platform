@@ -61,11 +61,21 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			To:      c.MoveToken.GetTo(),
 		}}
 	case *vttv1.ClientCommand_CreateScene:
+		// Tiles/Objects carried through (maps-as-geometry Task 1 added both
+		// fields to CreateScene; tools/toolgen advertises them to MCP as
+		// part of create_scene's contract). Dropping them here would be the
+		// same class of defect Task 1 already fixed once for OpenDoor/
+		// CloseDoor — worse, in fact: this failure mode is SILENT, not an
+		// error, so an agent calling create_scene with terrain would see
+		// ok=true and only discover the loss later, reading back a scene
+		// with no tiles at all.
 		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 			SceneId:    c.CreateScene.GetSceneId(),
 			Name:       c.CreateScene.GetName(),
 			GridWidth:  c.CreateScene.GetGridWidth(),
 			GridHeight: c.CreateScene.GetGridHeight(),
+			Tiles:      c.CreateScene.GetTiles(),
+			Objects:    c.CreateScene.GetObjects(),
 		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{

@@ -23,6 +23,24 @@ func TestLoadsAMapWhereEverySquareNamesItsTile(t *testing.T) {
 	}
 }
 
+// TestLoadsAMapWithNoTilesAsHavingNoTerrain pins Patrik's ruling
+// (2026-08-13): a map declaring no "tiles" key at all has no terrain —
+// exactly what existed before maps-as-geometry — and that must stay legal
+// forever, since this format is written by third parties and by an LLM,
+// and an existing file must keep loading. This is deliberately NOT the same
+// thing as a map with an incomplete tiles map (that stays an error — see
+// TestInvalidMapsAreRefusedWithAUsefulReason's "missing-square" case, a
+// genuinely PARTIAL map, 8 of 9 squares present).
+func TestLoadsAMapWithNoTilesAsHavingNoTerrain(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/no-terrain.json")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(m.Tiles) != 0 {
+		t.Fatalf("Tiles = %v, want empty (no terrain declared)", m.Tiles)
+	}
+}
+
 // TestObjectFieldsSurviveTheJSONToMapShapeConversion pins
 // checkObjectsInsideGrid's At/Size -> X/Y/W/H split field-by-field. Without
 // this, TestLoadsAMapWhereEverySquareNamesItsTile never looks at m.Objects
@@ -85,6 +103,15 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 		// tolerated"), mirroring internal/adventure/testdata/invalid/
 		// unknown-field's identical role for that sibling loader.
 		{"unknown-field", "bogus_field"},
+		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
+		// with no tiles at all is incoherent -- an override names art for
+		// a square whose NATURE is declared in tiles, so there is nothing
+		// to attach the art to. The exact phrase below (not just
+		// "overrides") is deliberate: the fixture directory name itself
+		// contains "overrides", so a looser substring would pass even
+		// against today's unrelated "tiles[...]: no tile named" error --
+		// caught exactly this way in review before this test was trusted.
+		{"overrides-without-tiles", "declares overrides but tiles is empty"},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			_, err := mapdef.Load(filepath.Join("testdata/invalid", c.dir, "map.json"))

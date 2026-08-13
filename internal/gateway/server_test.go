@@ -169,6 +169,12 @@ func (f *gwFixture) dial(token string, after int64) *websocket.Conn {
 		f.t.Fatalf("dial: %v", err)
 	}
 	f.t.Cleanup(func() { conn.CloseNow() })
+	// maps-as-geometry Task 4: SceneCreated now carries one TileRef per grid
+	// square, so a real scene's broadcast can exceed coder/websocket's
+	// default 32KB read cap — see server_internal_test.go's bigSceneName
+	// fixture (TestAWedgedConnectionIsTornDownAndOthersKeepServing), the
+	// precedent this 200KiB matches exactly.
+	conn.SetReadLimit(200 * 1024)
 	return conn
 }
 
