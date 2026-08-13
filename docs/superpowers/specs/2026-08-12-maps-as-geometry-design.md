@@ -134,9 +134,35 @@ Patrik, 2026-08-12: *"you have a standard of 'tiles', like earth, wood, water.
 And you always define those in your map. Those can then be replaced by
 custom/user tiles."*
 
-The standard pack ships a documented set of natures — `stone-wall`, `wood`,
-`earth`, `water`, `stone`, `grass`, `sand`, `metal`, `ice`, `wood-door` — each
-carrying a `kind`, a `material` and a default picture.
+The standard pack ships a documented set of natures — eleven, each carrying a
+`kind`, a `material` and a default picture:
+
+| name | kind | material |
+|---|---|---|
+| `stone-wall` | wall | stone |
+| `wood-wall` | wall | wood |
+| `wood-door` | door | wood |
+| `stone` | floor | stone |
+| `wood` | floor | wood |
+| `earth` | floor | earth |
+| `grass` | floor | grass |
+| `sand` | floor | sand |
+| `water` | floor | water |
+| `metal` | floor | metal |
+| `ice` | floor | ice |
+
+**Amended 2026-08-13 (Patrik's ruling), and recorded rather than corrected
+silently** per CLAUDE.md rule 7. This section's first draft was prose listing
+ten names and omitted `wood-wall`; the implementation plan's table carried
+eleven, and the Task 2 review caught the divergence before anything depended on
+it. `wood-wall` stays: `stone-wall` and `wood-door` were both already present,
+so it completes an obvious pair, and a wooden partition or palisade is ordinary
+dungeon furniture. The omission was a slip in prose, not a decision.
+
+The list is a **table now rather than a sentence**, which is the durable half of
+the fix — §9 calls this vocabulary a one-way door ("adding a nature later is
+additive; removing one is not"), and a one-way door should not be specified in
+a form where an entry can go missing without anyone noticing.
 
 **A door is one nature, not two.** `wood-door` is `kind: door`; whether it is
 open is folded state (§6), never part of the tile name. A pack therefore
