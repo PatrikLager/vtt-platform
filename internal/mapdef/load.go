@@ -308,10 +308,15 @@ func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 // inside a wall. Callers run this last because it is the one check that
 // reads a square's TILE NAME rather than merely its coordinates — by the
 // time this runs, CheckEverySquarePresent and CheckTileNamesKnown have
-// already proven every in-grid square has a known name, so the only new
-// failure this step can find is a placement whose OWN square is outside the
-// grid (checked here too, since tiles has no entry to read otherwise) or
-// whose square resolves to kind "wall".
+// already proven every in-grid square has a known name WHENEVER TILES WERE
+// DECLARED AT ALL. When tiles is empty there is nothing to have proven and
+// nothing to stand in: a lookup yields "", StandardTile("") reports unknown,
+// the kind is never "wall", and every placement passes. That is correct — a
+// scene with no terrain has no walls to stand inside.
+//
+// So the only new failure this step can find is a placement whose OWN square
+// is outside the grid (checked here too, since tiles has no entry to read
+// otherwise) or whose square resolves to kind "wall".
 func CheckPlacementsNotInWalls(placements []Placement, tiles map[string]string, w, h int32, errf FieldErrFunc) error {
 	for i, p := range placements {
 		field := fmt.Sprintf("placements[%d]", i)

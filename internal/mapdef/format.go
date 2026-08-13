@@ -35,9 +35,20 @@ type Map struct {
 	Pack string
 
 	// Tiles declares the NATURE of every square: what it structurally IS,
-	// enforced by the engine (spec §3.2). It must have an entry for every
-	// square in GridW x GridH — that completeness is the point of the
-	// format, checked by Load before anything else that depends on it.
+	// enforced by the engine (spec §3.2).
+	//
+	// OPTIONAL, and empty is legal (Patrik's ruling, 2026-08-13): a scene
+	// that declares no tiles has no terrain, exactly as every scene did
+	// before maps-as-geometry, and still loads. Making it mandatory broke
+	// the on-disk format for anything authored earlier, which a format meant
+	// to be written by third parties and by an LLM does not get to do.
+	//
+	// IF DECLARED, it must hold an entry for every square in GridW x GridH —
+	// that completeness is the point of the format, and Load checks it
+	// before anything else that depends on it. So the invariant is not
+	// weakened, it applies where terrain is claimed. Do NOT assume
+	// len(Tiles) == GridW*GridH: assert on it and you reintroduce the
+	// breakage the ruling removed.
 	Tiles map[string]string
 
 	// Overrides is sparse and optional: it changes a square's PICTURE only,

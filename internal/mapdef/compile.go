@@ -6,8 +6,10 @@ import (
 
 // Compile turns m (+ its pack p, which may be nil when m carries no
 // overrides) into the ordered wire events one atomic AppendBatch applies:
-// exactly one SceneCreated carrying every square's resolved terrain plus its
-// objects, followed by one TokenPlaced per placement in declaration order
+// exactly one SceneCreated carrying the resolved terrain of every square the
+// map DECLARES — none, for a scene that declares no tiles, which is legal
+// (see Map.Tiles) — plus its objects, followed by one TokenPlaced per
+// placement in declaration order
 // (spec §4.3: "both paths compile through one code path to the same
 // events"). Any warning Resolve produces along the way (an override's kind
 // not matching its base tile — spec §3.2) is collected and returned rather
