@@ -64,6 +64,14 @@ components:
   # from adventure's own: it imports adventure AND rules, neither of which
   # adventure itself may import back).
   adventureconformance: { in: internal/adventure/conformance }
+  # internal/mapdef (Task 2, maps-as-geometry design spec §4.1/§4.4): parses
+  # and validates one standalone map file — walls, floors, doors, objects,
+  # placements. Deliberately zero internal deps: it consumes nothing from
+  # the contract (that wiring is Task 4) and nothing from adventure (a map
+  # loads standalone per spec §4.3, "the ability to be loaded outside the
+  # adventure" — mapdef must not gain a reason to import adventure just
+  # because the two formats happen to share a Placement shape).
+  mapdef: { in: internal/mapdef }
   # internal/testdb (2026-08-11): a SQLite driver that fails one statement on
   # demand, so the error arms every store in this repo carries are reachable
   # at all. TEST-ONLY — nothing in cmd/ or the server imports it — but it is a
@@ -147,6 +155,11 @@ deps:
   # dep), compiles against an engine.State (engine dep), and builds
   # *vttv1.Envelope-shaped goldens (contract dep).
   adventureconformance: { mayDependOn: [adventure, rules, engine, contract, adventureconformance] }
+  # internal/mapdef (Task 2, maps-as-geometry design spec §4.1): self-only —
+  # Load's standard-vocabulary check is pure data (standard.go) and needs no
+  # other component; compiling a loaded Map into wire events is Task 4's job,
+  # not this package's.
+  mapdef: { mayDependOn: [mapdef] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide
