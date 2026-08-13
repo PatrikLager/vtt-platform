@@ -65,9 +65,36 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if _, dup := st.Scenes[sc.SceneId]; dup {
 			return fmt.Errorf("engine: scene %q already exists", sc.SceneId)
 		}
+		// Translate the wire terrain into the engine's own Tile/SceneObject
+		// (state.go): Tiles/Objects may be empty here — an old-style
+		// SceneCreated with neither is legal (Patrik's ruling 2026-08-13) —
+		// and both loops below are no-ops on a nil/empty map or slice, so no
+		// special case is needed for "no terrain".
+		tiles := make(map[string]Tile, len(sc.Tiles))
+		for k, t := range sc.Tiles {
+			tiles[k] = Tile{Kind: t.GetKind(), Material: t.GetMaterial(), Art: t.GetArt()}
+		}
+		objects := make([]SceneObject, 0, len(sc.Objects))
+		for _, o := range sc.Objects {
+			objects = append(objects, SceneObject{
+				ObjectID: o.GetObjectId(), Kind: o.GetKind(),
+				X: o.GetAt().GetX(), Y: o.GetAt().GetY(),
+				Width: o.GetWidth(), Height: o.GetHeight(),
+				RotationDegrees: o.GetRotationDegrees(),
+				BlocksSight:     o.GetBlocksSight(), BlocksMove: o.GetBlocksMove(),
+				Art: o.GetArt(),
+			})
+		}
 		st.Scenes[sc.SceneId] = Scene{
 			ID: sc.SceneId, Name: sc.Name,
 			GridWidth: sc.GridWidth, GridHeight: sc.GridHeight,
+			Tiles: tiles, Objects: objects,
+			// Doors start CLOSED: a door whose state was never recorded is
+			// shut (spec §6; the fail-closed direction — a door wrongly shut
+			// is a puzzle, a door wrongly open is an ambush that does not
+			// happen). Initialised empty rather than nil so the DoorOpened
+			// arm below can always write into it.
+			OpenDoors: map[string]bool{},
 		}
 		return nil
 
@@ -172,6 +199,66 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		tok.X, tok.Y = tm.To.X, tm.To.Y
 		st.Tokens[tm.TokenId] = tok
+		return nil
+
+	case *vttv1.Envelope_DoorOpened:
+		do := p.DoorOpened
+		sc, ok := st.Scenes[do.SceneId]
+		if !ok {
+			return fmt.Errorf("engine: door opened in unknown scene %q", do.SceneId)
+		}
+		if do.At == nil {
+			return fmt.Errorf("engine: door opened without position")
+		}
+		// OpenDoors is non-nil for any Scene the SceneCreated arm above
+		// built, but not every Scene in st.Scenes went through that arm:
+		// synthetic test tooling (internal/rules/conformance/conformance.go,
+		// semgrep-exempted as state that never becomes a real campaign)
+		// assigns Scene{} literals straight into st.Scenes, leaving
+		// OpenDoors nil. Writing to a nil map panics, and Apply's own
+		// promise is "validates BEFORE mutating" — a bad or unusual event
+		// should error, not crash the process folding every event in the
+		// log. Lazily initialising here closes that gap without touching
+		// the exempted package.
+		if sc.OpenDoors == nil {
+			sc.OpenDoors = map[string]bool{}
+		}
+		sc.OpenDoors[gridKey(do.At.GetX(), do.At.GetY())] = true
+		// sc is a local copy of the Scene struct. When OpenDoors was already
+		// non-nil, its map header aliases the same backing map stored in
+		// st.Scenes[do.SceneId], so the write above would have reached live
+		// state either way — but the guard just above can hand sc a BRAND
+		// NEW map, which exists only in this local copy until written back.
+		// Writing back unconditionally means correctness never depends on
+		// which of those two cases just happened.
+		st.Scenes[do.SceneId] = sc
+		return nil
+
+	case *vttv1.Envelope_DoorClosed:
+		dc := p.DoorClosed
+		sc, ok := st.Scenes[dc.SceneId]
+		if !ok {
+			return fmt.Errorf("engine: door closed in unknown scene %q", dc.SceneId)
+		}
+		if dc.At == nil {
+			return fmt.Errorf("engine: door closed without position")
+		}
+		// Go's delete() is a documented no-op on a nil map, so this guard
+		// does not fix a crash the way DoorOpened's does — but it is added
+		// for the same reason both arms now document the same invariant: a
+		// reader of one arm should not need to recall a delete-on-nil
+		// subtlety to trust that OpenDoors is safe to use after Apply
+		// returns nil, and a later edit to this arm (e.g. switching from
+		// delete to an explicit false) would silently reintroduce the panic
+		// without it.
+		if sc.OpenDoors == nil {
+			sc.OpenDoors = map[string]bool{}
+		}
+		// delete rather than set-false: it restores the "never toggled"
+		// state exactly, so a door that is closed either because it was
+		// just shut or because it was never touched reads identically.
+		delete(sc.OpenDoors, gridKey(dc.At.GetX(), dc.At.GetY()))
+		st.Scenes[dc.SceneId] = sc // see DoorOpened's comment above
 		return nil
 
 	case *vttv1.Envelope_AttackRolled:

@@ -14,11 +14,61 @@
 //
 //   Sessions is a Go slice: nil marshals as `null`, not `[]`.
 
+/**
+ * Tile mirrors internal/engine's Tile: one square's terrain, translated out
+ * of the wire vtt.v1.TileRef at sceneCreated fold time. Kind is the closed
+ * spatial set "wall"/"floor"/"door"; Material is opaque and must never be
+ * branched on (CLAUDE.md rule 5).
+ */
+export interface Tile {
+  Kind: string;
+  Material: string;
+  Art: string;
+}
+
+/**
+ * SceneObject mirrors internal/engine's SceneObject: scenery, never an
+ * actor. Kind here is an OPEN descriptive label the platform never
+ * interprets — only BlocksSight/BlocksMove carry structural effect.
+ */
+export interface SceneObject {
+  ObjectID: string;
+  Kind: string;
+  X: number;
+  Y: number;
+  Width: number;
+  Height: number;
+  RotationDegrees: number;
+  BlocksSight: boolean;
+  BlocksMove: boolean;
+  Art: string;
+}
+
 export interface Scene {
   ID: string;
   Name: string;
   GridWidth: number;
   GridHeight: number;
+  /**
+   * Tiles, Objects and OpenDoors are OPTIONAL here — the TypeScript
+   * equivalent of Go's zero-value convenience for engine.Scene, which lets
+   * a struct literal omit a map/slice field entirely and read it back as
+   * nil (empty). TypeScript has no such affordance: a plain object literal
+   * either has the property or doesn't, and there is no implicit "absent
+   * means empty" at the type level. fold.ts's sceneCreated arm always sets
+   * all three explicitly (mirroring apply.go's SceneCreated arm, which
+   * always initialises non-nil maps/slices even for a terrain-free scene —
+   * "Tiles may be empty and that is legal", Patrik's ruling 2026-08-13);
+   * marking them optional here only accommodates Scene literals built
+   * directly elsewhere in this test suite (the TS analogue of Go's
+   * `engine.Scene{ID: ..., Name: ..., GridWidth: ..., GridHeight: ...}`
+   * fixtures), which predate this field and must keep compiling. Any reader
+   * of a Scene that might be one of those has to default explicitly
+   * (`?? {}` / `?? []`) rather than relying on Go's implicit nil-read.
+   */
+  Tiles?: Record<string, Tile>;
+  Objects?: SceneObject[];
+  OpenDoors?: Record<string, boolean>;
 }
 
 export interface Token {

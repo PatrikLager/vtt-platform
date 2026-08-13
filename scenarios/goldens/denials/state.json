@@ -12,7 +12,10 @@
       "ID": "scn-deny",
       "Name": "Deny Hall",
       "GridWidth": 5,
-      "GridHeight": 5
+      "GridHeight": 5,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {}
     }
   },
   "Sessions": [
