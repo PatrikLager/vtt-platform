@@ -47,6 +47,8 @@ var theCommandTools = []string{
 	"promote_participant",
 	"set_join_door",
 	"rotate_join_link",
+	"open_door",
+	"close_door",
 }
 
 func TestParseToolsJSONRejectsMalformedInput(t *testing.T) {

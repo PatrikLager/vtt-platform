@@ -58,6 +58,22 @@ var manifest = []toolSpec{
 		name:        "create_scene",
 		description: "Create a new scene with a grid.",
 		descriptor:  (&vttv1.CreateScene{}).ProtoReflect().Descriptor(),
+		// tiles/objects are the same fabrication trap as add_actor's fix
+		// (final review Fix 2): neither is proto3 `optional`, so the
+		// derived required list would force a caller to invent terrain for
+		// every scene, even a bare grid — the only shape this tool
+		// created before maps-as-geometry (Task 1). Terrain is normally
+		// authored as a map file and loaded through the map/adventure
+		// path, not built field by field through this tool.
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.CreateScene": {
+				requiredOverride: []string{"sceneId", "name", "gridWidth", "gridHeight"},
+				fieldDocs: map[string]string{
+					"tiles":   "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+					"objects": "Optional; omit unless placing scenery inline. Scenery is normally authored as part of a map file rather than built field by field here.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.AddActor",
@@ -238,6 +254,18 @@ var manifest = []toolSpec{
 		name:        "rotate_join_link",
 		description: "Replace the shared join link's secret. Use this when a link has LEAKED: the old link stops admitting anyone, while everybody already at the table keeps their own credential and their characters. Independent of the door — rotating does not open or close it. DM/agent only. Writes no event.",
 		descriptor:  (&vttv1.RotateJoinLink{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.OpenDoor",
+		name:        "open_door",
+		description: "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+		descriptor:  (&vttv1.OpenDoor{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.CloseDoor",
+		name:        "close_door",
+		description: "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+		descriptor:  (&vttv1.CloseDoor{}).ProtoReflect().Descriptor(),
 	},
 }
 

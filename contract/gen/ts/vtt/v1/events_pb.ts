@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSJXCgxTY2VuZUNyZWF0ZWQSEAoIc2NlbmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCRISCgpncmlkX3dpZHRoGAMgASgFEhMKC2dyaWRfaGVpZ2h0GAQgASgFIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSKyCAoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSABCCQoHcGF5bG9hZEJCWkBnaXRodWIuY29tL1BhdHJpa0xhZ2VyL3Z0dC1wbGF0Zm9ybS9jb250cmFjdC9nZW4vZ28vdnR0L3YxO3Z0dHYxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSKICQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIAEIJCgdwYXlsb2FkQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -326,6 +326,110 @@ export const ActorControlRevokedSchema: GenMessage<ActorControlRevoked> = /*@__P
   messageDesc(file_vtt_v1_events, 8);
 
 /**
+ * TileRef is one square, resolved at LOAD from a tile name into the facts the
+ * engine needs plus the art name the renderer needs. Resolved rather than
+ * referenced so the log never depends on a pack file being present at replay
+ * (maps-as-geometry spec §5).
+ *
+ * @generated from message vtt.v1.TileRef
+ */
+export type TileRef = Message<"vtt.v1.TileRef"> & {
+  /**
+   * "wall" | "floor" | "door" — spatial, closed set
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * OPAQUE. The ruleset's business, never the platform's.
+   *
+   * @generated from field: string material = 2;
+   */
+  material: string;
+
+  /**
+   * pack tile name; empty means the standard picture
+   *
+   * @generated from field: string art = 3;
+   */
+  art: string;
+};
+
+/**
+ * Describes the message vtt.v1.TileRef.
+ * Use `create(TileRefSchema)` to create a new message.
+ */
+export const TileRefSchema: GenMessage<TileRef> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 9);
+
+/**
+ * SceneObject is SCENERY. Anything that acts, moves or holds state is an actor
+ * with a token (spec §3.4) — this line is what stops SceneObject becoming a
+ * second entity system.
+ *
+ * kind here is an OPEN descriptive label ("boulder", "chest") for the DM and
+ * the LLM to talk about. It is NOT the closed spatial set TileRef.kind uses,
+ * and no behaviour may be inferred from it: structural effect comes only from
+ * blocks_sight and blocks_move.
+ *
+ * @generated from message vtt.v1.SceneObject
+ */
+export type SceneObject = Message<"vtt.v1.SceneObject"> & {
+  /**
+   * @generated from field: string object_id = 1;
+   */
+  objectId: string;
+
+  /**
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: vtt.v1.GridPosition at = 3;
+   */
+  at?: GridPosition | undefined;
+
+  /**
+   * @generated from field: int32 width = 4;
+   */
+  width: number;
+
+  /**
+   * @generated from field: int32 height = 5;
+   */
+  height: number;
+
+  /**
+   * @generated from field: int32 rotation_degrees = 6;
+   */
+  rotationDegrees: number;
+
+  /**
+   * @generated from field: bool blocks_sight = 7;
+   */
+  blocksSight: boolean;
+
+  /**
+   * @generated from field: bool blocks_move = 8;
+   */
+  blocksMove: boolean;
+
+  /**
+   * @generated from field: string art = 9;
+   */
+  art: string;
+};
+
+/**
+ * Describes the message vtt.v1.SceneObject.
+ * Use `create(SceneObjectSchema)` to create a new message.
+ */
+export const SceneObjectSchema: GenMessage<SceneObject> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 10);
+
+/**
  * @generated from message vtt.v1.SceneCreated
  */
 export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
@@ -348,6 +452,20 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
    * @generated from field: int32 grid_height = 4;
    */
   gridHeight: number;
+
+  /**
+   * Keys are "x,y", column then row; the separator is a comma because a dot
+   * reads as a decimal (maps-as-geometry spec §4.1). Every square in the
+   * grid has an entry.
+   *
+   * @generated from field: map<string, vtt.v1.TileRef> tiles = 5;
+   */
+  tiles: { [key: string]: TileRef };
+
+  /**
+   * @generated from field: repeated vtt.v1.SceneObject objects = 6;
+   */
+  objects: SceneObject[];
 };
 
 /**
@@ -355,7 +473,59 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
  * Use `create(SceneCreatedSchema)` to create a new message.
  */
 export const SceneCreatedSchema: GenMessage<SceneCreated> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 9);
+  messageDesc(file_vtt_v1_events, 11);
+
+/**
+ * A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
+ * whether it is open is folded state here, never part of the tile name —
+ * encoding openness in the vocabulary would put a mutable fact in an
+ * immutable declaration, and terrain is immutable.
+ *
+ * @generated from message vtt.v1.DoorOpened
+ */
+export type DoorOpened = Message<"vtt.v1.DoorOpened"> & {
+  /**
+   * @generated from field: string scene_id = 1;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: vtt.v1.GridPosition at = 2;
+   */
+  at?: GridPosition | undefined;
+};
+
+/**
+ * Describes the message vtt.v1.DoorOpened.
+ * Use `create(DoorOpenedSchema)` to create a new message.
+ */
+export const DoorOpenedSchema: GenMessage<DoorOpened> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 12);
+
+/**
+ * DoorOpened's counterpart; see DoorOpened's comment above — the same
+ * folded-state reasoning applies to both directions.
+ *
+ * @generated from message vtt.v1.DoorClosed
+ */
+export type DoorClosed = Message<"vtt.v1.DoorClosed"> & {
+  /**
+   * @generated from field: string scene_id = 1;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: vtt.v1.GridPosition at = 2;
+   */
+  at?: GridPosition | undefined;
+};
+
+/**
+ * Describes the message vtt.v1.DoorClosed.
+ * Use `create(DoorClosedSchema)` to create a new message.
+ */
+export const DoorClosedSchema: GenMessage<DoorClosed> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 13);
 
 /**
  * @generated from message vtt.v1.ActorAdded
@@ -372,7 +542,7 @@ export type ActorAdded = Message<"vtt.v1.ActorAdded"> & {
  * Use `create(ActorAddedSchema)` to create a new message.
  */
 export const ActorAddedSchema: GenMessage<ActorAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 10);
+  messageDesc(file_vtt_v1_events, 14);
 
 /**
  * @generated from message vtt.v1.TokenPlaced
@@ -404,7 +574,7 @@ export type TokenPlaced = Message<"vtt.v1.TokenPlaced"> & {
  * Use `create(TokenPlacedSchema)` to create a new message.
  */
 export const TokenPlacedSchema: GenMessage<TokenPlaced> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 11);
+  messageDesc(file_vtt_v1_events, 15);
 
 /**
  * @generated from message vtt.v1.SessionStarted
@@ -421,7 +591,7 @@ export type SessionStarted = Message<"vtt.v1.SessionStarted"> & {
  * Use `create(SessionStartedSchema)` to create a new message.
  */
 export const SessionStartedSchema: GenMessage<SessionStarted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 12);
+  messageDesc(file_vtt_v1_events, 16);
 
 /**
  * @generated from message vtt.v1.SessionEnded
@@ -434,7 +604,7 @@ export type SessionEnded = Message<"vtt.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13);
+  messageDesc(file_vtt_v1_events, 17);
 
 /**
  * Compensating undo marker (spec §6). Retraction events cannot themselves
@@ -464,7 +634,7 @@ export type EventsRetracted = Message<"vtt.v1.EventsRetracted"> & {
  * Use `create(EventsRetractedSchema)` to create a new message.
  */
 export const EventsRetractedSchema: GenMessage<EventsRetracted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 14);
+  messageDesc(file_vtt_v1_events, 18);
 
 /**
  * @generated from message vtt.v1.AbilityUsed
@@ -501,7 +671,7 @@ export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
  * Use `create(AbilityUsedSchema)` to create a new message.
  */
 export const AbilityUsedSchema: GenMessage<AbilityUsed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 15);
+  messageDesc(file_vtt_v1_events, 19);
 
 /**
  * @generated from message vtt.v1.AbilityUsed.Roll
@@ -528,7 +698,7 @@ export type AbilityUsed_Roll = Message<"vtt.v1.AbilityUsed.Roll"> & {
  * Use `create(AbilityUsed_RollSchema)` to create a new message.
  */
 export const AbilityUsed_RollSchema: GenMessage<AbilityUsed_Roll> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 15, 0);
+  messageDesc(file_vtt_v1_events, 19, 0);
 
 /**
  * @generated from message vtt.v1.ResourceChanged
@@ -565,7 +735,7 @@ export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
  * Use `create(ResourceChangedSchema)` to create a new message.
  */
 export const ResourceChangedSchema: GenMessage<ResourceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 16);
+  messageDesc(file_vtt_v1_events, 20);
 
 /**
  * @generated from message vtt.v1.ConditionApplied
@@ -592,7 +762,7 @@ export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
  * Use `create(ConditionAppliedSchema)` to create a new message.
  */
 export const ConditionAppliedSchema: GenMessage<ConditionApplied> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 17);
+  messageDesc(file_vtt_v1_events, 21);
 
 /**
  * @generated from message vtt.v1.ConditionRemoved
@@ -619,7 +789,7 @@ export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
  * Use `create(ConditionRemovedSchema)` to create a new message.
  */
 export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 18);
+  messageDesc(file_vtt_v1_events, 22);
 
 /**
  * @generated from message vtt.v1.NarrationAdded
@@ -651,7 +821,7 @@ export type NarrationAdded = Message<"vtt.v1.NarrationAdded"> & {
  * Use `create(NarrationAddedSchema)` to create a new message.
  */
 export const NarrationAddedSchema: GenMessage<NarrationAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19);
+  messageDesc(file_vtt_v1_events, 23);
 
 /**
  * @generated from message vtt.v1.NoteUpserted
@@ -678,7 +848,7 @@ export type NoteUpserted = Message<"vtt.v1.NoteUpserted"> & {
  * Use `create(NoteUpsertedSchema)` to create a new message.
  */
 export const NoteUpsertedSchema: GenMessage<NoteUpserted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 20);
+  messageDesc(file_vtt_v1_events, 24);
 
 /**
  * @generated from message vtt.v1.NoteDeleted
@@ -695,7 +865,7 @@ export type NoteDeleted = Message<"vtt.v1.NoteDeleted"> & {
  * Use `create(NoteDeletedSchema)` to create a new message.
  */
 export const NoteDeletedSchema: GenMessage<NoteDeleted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 21);
+  messageDesc(file_vtt_v1_events, 25);
 
 /**
  * Pure testimony (AbilityUsed's pattern — engine no-op): the compile
@@ -722,7 +892,7 @@ export type AdventureLoaded = Message<"vtt.v1.AdventureLoaded"> & {
  * Use `create(AdventureLoadedSchema)` to create a new message.
  */
 export const AdventureLoadedSchema: GenMessage<AdventureLoaded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 22);
+  messageDesc(file_vtt_v1_events, 26);
 
 /**
  * @generated from message vtt.v1.Envelope
@@ -871,6 +1041,18 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: ActorControlRevoked;
     case: "actorControlRevoked";
+  } | {
+    /**
+     * @generated from field: vtt.v1.DoorOpened door_opened = 28;
+     */
+    value: DoorOpened;
+    case: "doorOpened";
+  } | {
+    /**
+     * @generated from field: vtt.v1.DoorClosed door_closed = 29;
+     */
+    value: DoorClosed;
+    case: "doorClosed";
   } | { case: undefined; value?: undefined };
 };
 
@@ -879,5 +1061,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 23);
+  messageDesc(file_vtt_v1_events, 27);
 

@@ -17,6 +17,11 @@ exclude:
   - .stryker-tmp
 excludeFiles:
   - contract/roundtrip_test\.go$
+  # Same reason as roundtrip_test.go above: package contract_test lives
+  # directly in contract/, which the "contract" component's `in:` pattern
+  # (contract/gen/go/**) does not cover, so any *_test.go sitting beside it
+  # is unattached the same way.
+  - contract/contract_test\.go$
   # identity is self-only in production code (mayDependOn: [identity]), but
   # its test file legitimately proves coexistence with store.Store on the
   # same campaign file (task-3-brief.md Step 1) — that one behavioral case

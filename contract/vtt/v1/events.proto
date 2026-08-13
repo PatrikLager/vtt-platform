@@ -104,12 +104,57 @@ message ActorControlRevoked {
   string participant_id = 2;
 }
 
+// TileRef is one square, resolved at LOAD from a tile name into the facts the
+// engine needs plus the art name the renderer needs. Resolved rather than
+// referenced so the log never depends on a pack file being present at replay
+// (maps-as-geometry spec §5).
+message TileRef {
+  string kind = 1;      // "wall" | "floor" | "door" — spatial, closed set
+  string material = 2;  // OPAQUE. The ruleset's business, never the platform's.
+  string art = 3;       // pack tile name; empty means the standard picture
+}
+
+// SceneObject is SCENERY. Anything that acts, moves or holds state is an actor
+// with a token (spec §3.4) — this line is what stops SceneObject becoming a
+// second entity system.
+//
+// kind here is an OPEN descriptive label ("boulder", "chest") for the DM and
+// the LLM to talk about. It is NOT the closed spatial set TileRef.kind uses,
+// and no behaviour may be inferred from it: structural effect comes only from
+// blocks_sight and blocks_move.
+message SceneObject {
+  string object_id = 1;
+  string kind = 2;
+  GridPosition at = 3;
+  int32 width = 4;
+  int32 height = 5;
+  int32 rotation_degrees = 6;
+  bool blocks_sight = 7;
+  bool blocks_move = 8;
+  string art = 9;
+}
+
 message SceneCreated {
   string scene_id = 1;
   string name = 2;
   int32 grid_width = 3;
   int32 grid_height = 4;
+  // Keys are "x,y", column then row; the separator is a comma because a dot
+  // reads as a decimal (maps-as-geometry spec §4.1). Every square in the
+  // grid has an entry.
+  map<string, TileRef> tiles = 5;
+  repeated SceneObject objects = 6;
 }
+
+// A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
+// whether it is open is folded state here, never part of the tile name —
+// encoding openness in the vocabulary would put a mutable fact in an
+// immutable declaration, and terrain is immutable.
+message DoorOpened { string scene_id = 1; GridPosition at = 2; }
+
+// DoorOpened's counterpart; see DoorOpened's comment above — the same
+// folded-state reasoning applies to both directions.
+message DoorClosed { string scene_id = 1; GridPosition at = 2; }
 
 message ActorAdded {
   Actor actor = 1;
@@ -211,5 +256,7 @@ message Envelope {
     AdventureLoaded adventure_loaded = 25;
     ActorControlGranted actor_control_granted = 26;
     ActorControlRevoked actor_control_revoked = 27;
+    DoorOpened door_opened = 28;
+    DoorClosed door_closed = 29;
   }
 }

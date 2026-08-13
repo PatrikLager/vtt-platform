@@ -26,7 +26,21 @@ message CreateScene {
   string name = 2;
   int32 grid_width = 3;
   int32 grid_height = 4;
+  // Keys are "x,y", column then row; the separator is a comma because a dot
+  // reads as a decimal (maps-as-geometry spec §4.1). Optional: omitted
+  // entirely, the scene is a bare grid with no terrain.
+  map<string, TileRef> tiles = 5;
+  repeated SceneObject objects = 6;
 }
+
+// A door is one nature, not two (spec §3.3): the tile stays "door" whether
+// it is open or closed, and these commands change only the folded state —
+// they never create or remove a tile.
+message OpenDoor { string scene_id = 1; GridPosition at = 2; }
+
+// OpenDoor's counterpart; see OpenDoor's comment above — the same
+// folded-state reasoning applies to both directions.
+message CloseDoor { string scene_id = 1; GridPosition at = 2; }
 
 message AddActor {
   Actor actor = 1;
@@ -94,6 +108,8 @@ message ClientCommand {
     PromoteParticipant promote_participant = 25;
     SetJoinDoor set_join_door = 26;
     RotateJoinLink rotate_join_link = 27;
+    OpenDoor open_door = 28;
+    CloseDoor close_door = 29;
   }
 }
 
