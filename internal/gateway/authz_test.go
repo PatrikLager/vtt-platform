@@ -83,13 +83,13 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 	case "load_adventure":
 		return loadAdventureCmd()
 	case "open_door":
-		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
-			OpenDoor: &vttv1.OpenDoor{SceneId: "s1", At: &vttv1.GridPosition{X: 0, Y: 1}},
-		}}
+		// Scene "scn", not "s1": Task 6's adjacency check (mayWorkDoor) now
+		// consults the state, and "scn" is where ownershipFixture's t1 sits —
+		// at the zero position, adjacent to (0,1). See ownershipFixture's own
+		// comment for why that placement is deliberate, not incidental.
+		return openDoorCmd("scn", 0, 1)
 	case "close_door":
-		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
-			CloseDoor: &vttv1.CloseDoor{SceneId: "s1", At: &vttv1.GridPosition{X: 0, Y: 1}},
-		}}
+		return closeDoorCmd("scn", 0, 1)
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
@@ -173,6 +173,22 @@ func promoteCmd(participantID, role string) *vttv1.ClientCommand {
 	}}
 }
 
+// openDoorCmd/closeDoorCmd build door commands with a caller-chosen scene and
+// position, parameterized (unlike commandFor's fixed builders) so the
+// adjacency tests below can place the door near or far from a token without
+// a family of near-duplicate literals.
+func openDoorCmd(sceneID string, x, y int32) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
+		OpenDoor: &vttv1.OpenDoor{SceneId: sceneID, At: &vttv1.GridPosition{X: x, Y: y}},
+	}}
+}
+
+func closeDoorCmd(sceneID string, x, y int32) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
+		CloseDoor: &vttv1.CloseDoor{SceneId: sceneID, At: &vttv1.GridPosition{X: x, Y: y}},
+	}}
+}
+
 // authzCase is one cell of the 20 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
@@ -190,11 +206,12 @@ type authzCase struct {
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
 // 28 by ruleset-interpreter Task 6's use_ability/remove_condition rows):
 // every command against every one of the four roles. move_token/player,
-// use_ability/player, and remove_condition/player are all TRUE here because
-// the shared fixture in TestAuthorizeTableAllCommandsAllRoles gives
-// participant "p-1" ownership of actor "a1" (and its token "t1") — the
-// table alone allows it, and the dedicated ownership tests below
-// independently prove each additional check. add_narration/upsert_note/
+// use_ability/player, remove_condition/player, open_door/player and
+// close_door/player are all TRUE here because the shared fixture in
+// TestAuthorizeTableAllCommandsAllRoles gives participant "p-1" ownership of
+// actor "a1" (and its token "t1", standing adjacent to the door commandFor
+// builds) — the table alone allows it, and the dedicated ownership/adjacency
+// tests below independently prove each additional check. add_narration/upsert_note/
 // delete_note have NO ownership check at all (spec §5: "world facts are the
 // DM's" is a role-only gate, unlike move_token/use_ability/remove_condition's
 // per-actor ownership) — a plain role lookup is the entire story for these
@@ -316,15 +333,19 @@ var authzCases = []authzCase{
 	{"promote_participant", identity.RolePlayer, false},
 	{"promote_participant", identity.RoleSpectator, false},
 
-	// open_door/close_door (maps-as-geometry Task 1 fix, spec §6: "hard for
+	// open_door/close_door (maps-as-geometry Task 6, spec §6: "hard for
 	// players, free for DM"). dm/agent/player all TRUE — a player may work a
 	// door same as they may move a token — spectator FALSE, same shape as
-	// every other command. NO ownership/adjacency check yet: "a player may
-	// work a door only if a token they control is adjacent to it" is Task 5
-	// (engine.State.Blocked) plus Task 6 (the gateway call site), neither of
-	// which exists yet. Adding it here would be enforcing a rule with no
-	// engine support behind it. The role row alone is the correct, honest
-	// state for now.
+	// every other command. The player cells are TRUE here only because
+	// commandFor's open_door/close_door target a door adjacent to
+	// ownershipFixture's t1 (mayWorkDoor, wired below in Authorize's switch);
+	// TestAuthorizePlayerMayNotWorkDistantDoor proves the OTHER direction —
+	// a row that only ever says yes is not a guard, the same argument the
+	// revoke_actor_control comment above already makes for its own player
+	// cell. dm/agent are TRUE unconditionally: mayWorkDoor returns nil for
+	// any non-player role before it ever looks at token position, which is
+	// the mechanical form of "free for DM" — TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition
+	// pins it with a token nowhere near the door.
 	{"open_door", identity.RoleDM, true},
 	{"open_door", identity.RoleAgent, true},
 	{"open_door", identity.RolePlayer, true},
@@ -351,7 +372,11 @@ func ownershipFixture() *engine.State {
 		ControllerId:  "p-1",
 		ControllerIds: []string{"p-1"},
 	}
-	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+	// X/Y spelled out at (0,0) rather than left implicit: this position also
+	// has to be adjacent to the door commandFor's open_door/close_door target
+	// ((0,1) in this same scene, "scn") for the open_door/close_door player
+	// cells in the matrix test to hold — see authzCases' own comment.
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1", X: 0, Y: 0}
 	return st
 }
 
@@ -415,6 +440,89 @@ func TestAuthorizePlayerUnknownTokenDenied(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("no-such-token"), st); err == nil {
 		t.Fatal("want error moving an unknown token")
+	}
+}
+
+// --- open_door / close_door adjacency (maps-as-geometry Task 6) -----------
+//
+// Same shape as the ownership tests above: the matrix cell shows only the
+// permissive direction (a token happens to be adjacent), so these prove the
+// other direction independently, plus the DM/agent bypass "hard for
+// players, free for DM" is built on (Patrik, spec §6).
+
+// doorFixture returns a State where actor "a1"/token "t1" belongs to
+// participant "p-1", positioned at (x, y) in scene "scn" — parameterized so
+// the adjacent and distant cases below share one shape while proving
+// opposite outcomes.
+func doorFixture(x, y int32) *engine.State {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1",
+		ControllerIds: []string{"p-1"},
+	}
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1", X: x, Y: y}
+	return st
+}
+
+func TestAuthorizePlayerMayWorkAdjacentDoor(t *testing.T) {
+	st := doorFixture(0, 0) // door at (0,1): dx=0, dy=1 — adjacent
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 0, 1), st); err != nil {
+		t.Fatalf("want nil error opening a door a controlled token stands next to: %v", err)
+	}
+	if err := gateway.Authorize(p, closeDoorCmd("scn", 0, 1), st); err != nil {
+		t.Fatalf("want nil error closing a door a controlled token stands next to: %v", err)
+	}
+}
+
+// TestAuthorizePlayerMayNotWorkDistantDoor is the guard direction: without
+// it, mayWorkDoor could always return nil for a player and every open_door/
+// close_door player cell in the matrix would pass for the wrong reason.
+func TestAuthorizePlayerMayNotWorkDistantDoor(t *testing.T) {
+	st := doorFixture(5, 5) // nowhere near the door at (0,1)
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 0, 1), st); err == nil {
+		t.Fatal("want error opening a door with no controlled token nearby")
+	}
+	if err := gateway.Authorize(p, closeDoorCmd("scn", 0, 1), st); err == nil {
+		t.Fatal("want error closing a door with no controlled token nearby")
+	}
+}
+
+// TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes closes the gap between
+// "position happens to be adjacent" and "adjacent in the right scene": a
+// token that is numerically close but in a DIFFERENT scene must not count,
+// or mayWorkDoor's scene filter is dead code no test would catch removing.
+func TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes(t *testing.T) {
+	st := engine.NewState()
+	st.Actors["a1"] = &vttv1.Actor{
+		ActorId: "a1", Name: "Hero",
+		ControllerId:  "p-1",
+		ControllerIds: []string{"p-1"},
+	}
+	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "a-different-scene", ActorID: "a1", X: 0, Y: 0}
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 0, 1), st); err == nil {
+		t.Fatal("want error: the adjacent token is in a different scene than the door")
+	}
+}
+
+// TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition is the mechanical form
+// of "free for DM": mayWorkDoor returns nil for a non-player role before it
+// ever inspects token position, so a token nowhere near the door still lets
+// the DM and agent through.
+func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
+	st := doorFixture(5, 5) // far from the door at (0,1) — irrelevant for dm/agent
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
+		p := &identity.Participant{ID: "someone-else", Role: role}
+		if err := gateway.Authorize(p, openDoorCmd("scn", 0, 1), st); err != nil {
+			t.Fatalf("%s must be free of the adjacency rule (Patrik: \"hard for players, "+
+				"free for DM\"): %v", role, err)
+		}
+		if err := gateway.Authorize(p, closeDoorCmd("scn", 0, 1), st); err != nil {
+			t.Fatalf("%s must be free of the adjacency rule: %v", role, err)
+		}
 	}
 }
 

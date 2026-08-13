@@ -1164,3 +1164,37 @@ func TestServeNeverClosesAConnectionsOutboundChannel(t *testing.T) {
 			"the rest of the broadcast. Stop the writer with close(flush) instead.")
 	}
 }
+
+// TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough
+// closes the coordinator's fix-round-1 finding: describeBlockage shipped
+// with its two rewritten branches (the reason this function exists at all —
+// see its own doc comment on the task-5 review finding) driven by no
+// assertion anywhere. server_test.go's wall test only ever checked
+// strings.Contains(result.Error, "wall"), which the PASSTHROUGH branch
+// alone already satisfies — it could never have caught either rewrite
+// regressing, or even being deleted outright, so long as passthrough still
+// worked.
+//
+// Exact string equality, not a substring: describeBlockage exists SOLELY
+// for its wording, so a test that would still pass with the rewrite
+// silently reverted to "scenery: boulder" protects nothing.
+func TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough(t *testing.T) {
+	cases := []struct {
+		name string
+		why  string
+		want string
+	}{
+		{"scenery is rewritten off its debug-tag shape", "scenery: boulder", "something (a boulder) is in the way"},
+		{"unknown scene is rewritten off its Go %q literal", `unknown scene "nowhere"`, "that destination is not part of any scene this table has created"},
+		{"a wall passes through unchanged", "a wall", "a wall"},
+		{"a closed door passes through unchanged", "a closed door", "a closed door"},
+		{"outside the grid passes through unchanged", "outside the grid", "outside the grid"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := describeBlockage(c.why); got != c.want {
+				t.Fatalf("describeBlockage(%q) = %q, want %q", c.why, got, c.want)
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -700,6 +701,30 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 }
 
+// describeBlockage turns engine.State.Blocked's reason into a clause a
+// player reading a CommandResult.Error can act on. This is the FIRST place a
+// Blocked answer reaches a human rather than a source reader or a test
+// failure (task-5 review finding) — terrain.go's own reasons are written for
+// the latter, and read inconsistently as a result: "a wall" and "a closed
+// door" already pass for plain English, but "scenery: <kind>" is a
+// colon-joined debug tag, and `unknown scene %q` is a raw Go-quoted literal
+// naming an internal scene id nobody at the table chose. Only those two get
+// rewritten; the rest pass through unchanged rather than being forced
+// through a "sentence-ifier" that would just be paraphrasing prose that
+// already reads fine. engine/terrain.go stays untouched (Task 6 does not
+// touch internal/engine) — this list has to be kept in sync by hand if
+// Blocked's reasons ever change, which is the cost of the fix living on the
+// consuming side instead.
+func describeBlockage(why string) string {
+	if kind, ok := strings.CutPrefix(why, "scenery: "); ok {
+		return "something (a " + kind + ") is in the way"
+	}
+	if strings.HasPrefix(why, "unknown scene ") {
+		return "that destination is not part of any scene this table has created"
+	}
+	return why
+}
+
 // handleCommand runs the authorize → convert → persist pipeline for one
 // inbound ClientCommand (spec §3): authz/validation failures produce an
 // ok=false CommandResult and leave the connection open; only a persisted
@@ -715,6 +740,30 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	if err := Authorize(p, cmd, st); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+
+	// The map constrains PLAYERS; the DM and the agent author the world and
+	// are free of it (maps-as-geometry spec §6, Patrik: "hard for players,
+	// free for DM"). Staging a creature inside stone is a legitimate thing
+	// for a DM to do.
+	//
+	// Checked HERE, not in engine.Apply: Apply is the FOLD — by the time an
+	// event reaches it the move is already history, and history is not the
+	// place to say no. This is the seam where a command is still a request,
+	// the last point a refusal can mean "you may not" rather than "this
+	// never happened".
+	if p.Role == identity.RolePlayer {
+		if mt, ok := cmd.GetCommand().(*vttv1.ClientCommand_MoveToken); ok {
+			if tok, known := st.Tokens[mt.MoveToken.GetTokenId()]; known {
+				to := mt.MoveToken.GetTo()
+				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
+					return &vttv1.CommandResult{
+						RequestId: requestID, Ok: false,
+						Error: "gateway: cannot move there — " + describeBlockage(why),
+					}
+				}
+			}
+		}
 	}
 
 	// use_ability/load_adventure do not become a single Envelope via ToEvent

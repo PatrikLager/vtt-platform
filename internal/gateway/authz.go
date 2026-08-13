@@ -67,13 +67,9 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"rotate_join_link": {identity.RoleDM: true, identity.RoleAgent: true},
 	// open_door/close_door (maps-as-geometry Task 1 fix, spec §6: "hard for
 	// players, free for DM"). Same role set as move_token: dm/agent/player
-	// may all issue it, spectator may not. NO additional ownership/adjacency
-	// check yet — "a player may work a door only if a token they control is
-	// adjacent to it" needs engine.State.Blocked (Task 5) and its gateway
-	// call site (Task 6), neither of which exists yet. Leaving the row at a
-	// plain role check rather than adding a partial adjacency check here is
-	// deliberate: a check with no terrain data behind it would either always
-	// pass (worthless) or always fail (wrongly denies every player).
+	// may all issue it, spectator may not. The additional adjacency check —
+	// "a player may work a door only if a token they control is adjacent to
+	// it" — is mayWorkDoor, below, wired into Authorize's switch (Task 6).
 	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 }
@@ -113,8 +109,55 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 		return authorizeActorOwnership(p, cmd.GetRemoveCondition().GetActorId(), st)
 	case "revoke_actor_control":
 		return authorizeSelfRevoke(p, cmd.GetRevokeActorControl(), st)
+	case "open_door":
+		od := cmd.GetOpenDoor()
+		return mayWorkDoor(p, st, od.GetSceneId(), od.GetAt())
+	case "close_door":
+		cd := cmd.GetCloseDoor()
+		return mayWorkDoor(p, st, cd.GetSceneId(), cd.GetAt())
 	}
 	return nil
+}
+
+// mayWorkDoor enforces the player-only adjacency rule for open_door/
+// close_door (maps-as-geometry Task 6, spec §6: "hard for players, free for
+// DM"). A non-player role returns nil immediately — the DM and the agent
+// author the world and are free of it, the same bypass move_token's
+// ownership check never applies to them either.
+//
+// SPATIAL ONLY, deliberately (CLAUDE.md rule 5): this asks WHERE a
+// participant's tokens are, never what edition or ruleset is in play — no
+// reach, no movement cost, nothing a rule module would own. Adjacency uses
+// Chebyshev distance (max of the two axis deltas <= 1), matching a
+// standard 8-neighbour grid: the four orthogonal squares and the four
+// diagonals all count as "next to".
+func mayWorkDoor(p *identity.Participant, st *engine.State, sceneID string, at *vttv1.GridPosition) error {
+	if p.Role != identity.RolePlayer {
+		return nil
+	}
+	for _, tok := range st.Tokens {
+		if tok.SceneID != sceneID {
+			continue
+		}
+		actor, ok := st.Actors[tok.ActorID]
+		if !ok || !controls(actor, p.ID) {
+			continue
+		}
+		if abs(tok.X-at.GetX()) <= 1 && abs(tok.Y-at.GetY()) <= 1 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: participant %q has no token adjacent to that door", ErrUnauthorized, p.ID)
+}
+
+// abs returns the absolute value of a grid-coordinate delta. Small enough
+// that pulling in a generic math package for one int32 subtraction is not
+// worth it; mayWorkDoor is its only caller.
+func abs(n int32) int32 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // authorizeTokenOwnership enforces the player-only ownership rule: the token

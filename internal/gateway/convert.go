@@ -149,11 +149,12 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		}}
 	case *vttv1.ClientCommand_OpenDoor:
 		// maps-as-geometry Task 1 fix. Plain single-Envelope conversion, same
-		// shape as grant/revoke_actor_control above: no movement/adjacency
-		// check here, since engine.State.Blocked and its gateway call site
-		// don't exist yet (Tasks 5-6) — Authorize has already decided this
-		// participant may issue the command, and there is nothing else to
-		// validate at this layer.
+		// shape as grant/revoke_actor_control above: no adjacency check HERE
+		// — that lives in Authorize (authz.go's mayWorkDoor, Task 6), which
+		// runs before ToEvent ever sees the command. By the time control
+		// reaches this switch, Authorize has already decided this
+		// participant may issue it, and there is nothing else to validate at
+		// this layer.
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
 			SceneId: c.OpenDoor.GetSceneId(),
 			At:      c.OpenDoor.GetAt(),

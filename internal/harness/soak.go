@@ -939,12 +939,24 @@ func pickDMOrAgent(rng *rand.Rand) string {
 	return soakAgent
 }
 
+// soakSceneGridSize is every soak-generated scene's GridWidth/GridHeight.
+// planMoveOwn's random destinations (maps-as-geometry Task 6) must draw from
+// exactly this range: engine.State.Blocked now enforces grid bounds for a
+// PLAYER's own move (spec §6, "hard for players, free for DM" — the check
+// never applies to dm/agent), so a coordinate this generator could never
+// legitimately reach would make moveOwn an unintended second source of
+// denial, alongside the deliberate deniedAttempt bucket RunSoak's invariant
+// already accounts for (SoakReport.Pass's doc comment). One named constant,
+// shared by the scene's own declared size and the range moveOwn draws from,
+// so the two cannot drift apart the way two independent literals could.
+const soakSceneGridSize int32 = 30
+
 func (m *soakModel) planCreateScene(rng *rand.Rand) soakStep {
 	m.sceneN++
 	id := fmt.Sprintf("soak-scn-%d", m.sceneN)
 	issuer := pickDMOrAgent(rng)
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-		SceneId: id, Name: id, GridWidth: 30, GridHeight: 30,
+		SceneId: id, Name: id, GridWidth: soakSceneGridSize, GridHeight: soakSceneGridSize,
 	}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionCreateScene, apply: func(int64) {
 		m.scenes = append(m.scenes, id)
@@ -1047,8 +1059,19 @@ func (m *soakModel) planMoveOwn(rng *rand.Rand) (soakStep, bool) {
 	}
 	choice := options[rng.Intn(len(options))]
 	tok := choice.tokens[rng.Intn(len(choice.tokens))]
-	// #nosec G115 -- rng.Intn(50) is bounded to 0..49; int32 cannot overflow.
-	x, y := int32(rng.Intn(50)), int32(rng.Intn(50))
+	// #nosec G115 -- rng.Intn(int(soakSceneGridSize)) is bounded to
+	// 0..soakSceneGridSize-1; int32 cannot overflow.
+	//
+	// Bounded to the scene's OWN size, not an arbitrary wider range: every
+	// soak scene is soakSceneGridSize square (planCreateScene), and since
+	// Task 6 a coordinate outside it is a real, gateway-enforced "outside
+	// the grid" refusal for a player-issued move (engine.State.Blocked).
+	// Drawing outside that range would make moveOwn an accidental second
+	// source of denial — this generator does not model terrain at all
+	// (no scene it builds ever sets Tiles), so bounds are the only way
+	// moveOwn could ever be blocked, and a well-formed client never sends a
+	// destination its own scene cannot contain.
+	x, y := int32(rng.Intn(int(soakSceneGridSize))), int32(rng.Intn(int(soakSceneGridSize)))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
 	}}}
