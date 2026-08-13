@@ -1,0 +1,21 @@
+{
+  "id": "mossy-keep",
+  "name": "Mossy Keep",
+  "cell_px": 64,
+
+  "tiles": [
+    {"name": "planks-split-3", "file": "planks_03.png",
+     "kind": "floor", "material": "resin",
+     "desc": "worn pine planks, one board split along the grain -- material is deliberately 'resin' rather than 'wood', which the base tile actually is, so a test asserting Material comes from the base and not the pack has something real to catch"},
+    {"name": "oak-door-banded", "kind": "door", "material": "wood",
+     "file_open": "door_open.png", "file_closed": "door_shut.png",
+     "desc": "iron-banded oak door"},
+    {"name": "mystery-flagstone", "file": "flag_09.png",
+     "desc": "unclassified paving photographed for a future pack update -- kind and material are deliberately left blank, so a square resolved against this tile has an OPTIONAL kind rather than a mismatched one"}
+  ],
+
+  "objects": [
+    {"name": "boulder-mossy-2", "file": "boulder_02.png",
+     "desc": "granite boulder, moss on its north face"}
+  ]
+}

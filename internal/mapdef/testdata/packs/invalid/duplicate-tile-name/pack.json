@@ -1,0 +1,12 @@
+{
+  "id": "broken-pack",
+  "name": "Broken Pack",
+  "cell_px": 64,
+
+  "tiles": [
+    {"name": "planks-split-3", "file": "a.png", "kind": "floor", "material": "wood", "desc": "a"},
+    {"name": "planks-split-3", "file": "b.png", "kind": "floor", "material": "wood", "desc": "b"}
+  ],
+
+  "objects": []
+}

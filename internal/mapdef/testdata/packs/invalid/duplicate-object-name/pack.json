@@ -1,0 +1,12 @@
+{
+  "id": "broken-pack-2",
+  "name": "Broken Pack 2",
+  "cell_px": 64,
+
+  "tiles": [],
+
+  "objects": [
+    {"name": "boulder-mossy-2", "file": "a.png", "desc": "a"},
+    {"name": "boulder-mossy-2", "file": "b.png", "desc": "b"}
+  ]
+}

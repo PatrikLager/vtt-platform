@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -156,8 +157,9 @@ func checkTilesInsideGrid(path string, tiles map[string]string, w, h int32) erro
 // vocabulary. It runs after checkEverySquarePresent and checkTilesInsideGrid
 // have proven every grid square has an entry and no entry lies outside the
 // grid, so walking the Tiles map here (rather than the grid again) covers
-// exactly the same squares. Pack-declared names are not checked — resolving
-// those needs the pack manifest, which is Task 3.
+// exactly the same squares. Overrides values (pack-declared art names) are
+// NOT checked here — that needs a *Pack, which Load never takes as an
+// argument; Resolve (resolve.go) does that check per square instead.
 func checkTileNamesKnown(path string, tiles map[string]string) error {
 	for key, name := range tiles {
 		if _, _, ok := StandardTile(name); !ok {
@@ -171,8 +173,9 @@ func checkTileNamesKnown(path string, tiles map[string]string) error {
 // checkOverridesInsideGrid validates that every Overrides KEY names a square
 // the grid actually contains. Overrides is sparse (spec §4.1), so unlike
 // Tiles there is no completeness rule — only a bounds rule. The VALUE is not
-// inspected: it is an opaque pack tile name until Task 3 can resolve it
-// against a pack manifest.
+// inspected: it is an opaque pack tile name that only Resolve (resolve.go),
+// given a *Pack, can validate — Load has no pack argument to check it
+// against.
 func checkOverridesInsideGrid(path string, overrides map[string]string, w, h int32) error {
 	for key := range overrides {
 		x, y, ok := parseSquareKey(key)
@@ -198,7 +201,10 @@ func checkOverridesInsideGrid(path string, overrides map[string]string, w, h int
 // guards the same comparison against int32 overflow: At and Size both come
 // straight from author-supplied JSON, and `at:2147483647, size:1` wraps a
 // naive int32 sum negative, which is also less than w and so also wrongly
-// passes.
+// passes. Object.Art resolution is not checked here or anywhere yet: Load
+// has no *Pack to resolve it against, and Resolve (resolve.go) resolves a
+// square's tile override only — resolving an object's own art is later work,
+// left for whichever task gives objects their own resolution path.
 func checkObjectsInsideGrid(path string, objs []objectJSON, w, h int32) ([]Object, error) {
 	out := make([]Object, 0, len(objs))
 	for i, o := range objs {
@@ -276,6 +282,87 @@ func parseSquareKey(key string) (x, y int32, ok bool) {
 		return 0, 0, false
 	}
 	return int32(xi), int32(yi), true
+}
+
+// packJSON is the on-disk shape of a pack manifest (design spec §4.2):
+// pack.json beside the images it names. Tiles and Objects share one JSON
+// shape (packTileJSON) because a pack.json entry looks identical whichever
+// array it sits in — mirrored in Go by PackTile itself (format.go) being the
+// one exported type for both.
+type packJSON struct {
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	CellPx  int32          `json:"cell_px"`
+	Tiles   []packTileJSON `json:"tiles"`
+	Objects []packTileJSON `json:"objects"`
+}
+
+type packTileJSON struct {
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Material   string `json:"material"`
+	File       string `json:"file"`
+	FileOpen   string `json:"file_open"`
+	FileClosed string `json:"file_closed"`
+	Desc       string `json:"desc"`
+}
+
+// LoadPack reads and validates the pack manifest at dir/pack.json: strict
+// JSON decoding (decodeStrict, the same shape Load uses), then keys Tiles
+// and Objects by name so Resolve (resolve.go) gets an O(1) lookup per
+// square. LoadPack never reads a *Map — a pack is reusable across many maps
+// (spec §4.3's "load standalone" principle applied to art), so it takes only
+// a directory.
+func LoadPack(dir string) (*Pack, error) {
+	path := filepath.Join(dir, "pack.json")
+	var raw packJSON
+	if err := decodeStrict(path, &raw); err != nil {
+		return nil, err
+	}
+
+	tiles, err := packTileMap(path, "tiles", raw.Tiles)
+	if err != nil {
+		return nil, err
+	}
+	objects, err := packTileMap(path, "objects", raw.Objects)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Pack{
+		ID:      raw.ID,
+		Name:    raw.Name,
+		CellPx:  raw.CellPx,
+		Tiles:   tiles,
+		Objects: objects,
+	}, nil
+}
+
+// packTileMap keys a pack.json array by its own entries' Name, refusing
+// (rather than silently keeping the last one) an empty or a repeated name:
+// a map author's override references a pack tile by name alone, so a name
+// that cannot uniquely address one entry would let two authored pictures
+// collide, with whichever JSON array element decoded last winning silently
+// and the other becoming permanently unreferenceable. Field names which
+// array ("tiles" or "objects") an error came from, matching this package's
+// existing fieldErr convention of naming the offending JSON path.
+func packTileMap(path, field string, items []packTileJSON) (map[string]PackTile, error) {
+	out := make(map[string]PackTile, len(items))
+	for i, it := range items {
+		loc := fmt.Sprintf("%s[%d].name", field, i)
+		if it.Name == "" {
+			return nil, fieldErr(path, loc, "must not be empty")
+		}
+		if _, dup := out[it.Name]; dup {
+			return nil, fieldErr(path, loc, fmt.Sprintf("duplicate name %q", it.Name))
+		}
+		// packTileJSON and PackTile share field order and types exactly (kept
+		// in lockstep deliberately), so this is a straight conversion rather
+		// than a literal that would drift silently if a field were ever
+		// added to one and not the other.
+		out[it.Name] = PackTile(it)
+	}
+	return out, nil
 }
 
 // decodeStrict decodes the JSON file at path into v with unknown fields
