@@ -137,6 +137,22 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ActorId:       c.RevokeActorControl.GetActorId(),
 			ParticipantId: c.RevokeActorControl.GetParticipantId(),
 		}}
+	case *vttv1.ClientCommand_OpenDoor:
+		// maps-as-geometry Task 1 fix. Plain single-Envelope conversion, same
+		// shape as grant/revoke_actor_control above: no movement/adjacency
+		// check here, since engine.State.Blocked and its gateway call site
+		// don't exist yet (Tasks 5-6) — Authorize has already decided this
+		// participant may issue the command, and there is nothing else to
+		// validate at this layer.
+		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
+			SceneId: c.OpenDoor.GetSceneId(),
+			At:      c.OpenDoor.GetAt(),
+		}}
+	case *vttv1.ClientCommand_CloseDoor:
+		env.Payload = &vttv1.Envelope_DoorClosed{DoorClosed: &vttv1.DoorClosed{
+			SceneId: c.CloseDoor.GetSceneId(),
+			At:      c.CloseDoor.GetAt(),
+		}}
 	default:
 		return nil, ErrUnknownCommand
 	}

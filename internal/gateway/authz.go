@@ -65,6 +65,17 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// PARTICIPANTS, and rotation is the only way to close a leaked link.
 	"set_join_door":    {identity.RoleDM: true, identity.RoleAgent: true},
 	"rotate_join_link": {identity.RoleDM: true, identity.RoleAgent: true},
+	// open_door/close_door (maps-as-geometry Task 1 fix, spec §6: "hard for
+	// players, free for DM"). Same role set as move_token: dm/agent/player
+	// may all issue it, spectator may not. NO additional ownership/adjacency
+	// check yet — "a player may work a door only if a token they control is
+	// adjacent to it" needs engine.State.Blocked (Task 5) and its gateway
+	// call site (Task 6), neither of which exists yet. Leaving the row at a
+	// plain role check rather than adding a partial adjacency check here is
+	// deliberate: a check with no terrain data behind it would either always
+	// pass (worthless) or always fail (wrongly denies every player).
+	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -246,6 +257,10 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "revoke_actor_control"
 	case *vttv1.ClientCommand_PromoteParticipant:
 		return "promote_participant"
+	case *vttv1.ClientCommand_OpenDoor:
+		return "open_door"
+	case *vttv1.ClientCommand_CloseDoor:
+		return "close_door"
 	default:
 		return ""
 	}

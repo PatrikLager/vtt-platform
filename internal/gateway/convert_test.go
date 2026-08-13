@@ -289,6 +289,50 @@ func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
 	}
 }
 
+// TestToEventOpenDoorProducesDoorOpened and its CloseDoor counterpart below
+// are maps-as-geometry Task 1's fix: OpenDoor/CloseDoor carry scene_id and
+// at straight through to DoorOpened/DoorClosed, the same plain
+// single-Envelope conversion as remove_condition/grant_actor_control above
+// — no movement/adjacency check here, that is Task 6's job at the call
+// site (engine.State.Blocked doesn't exist until Task 5).
+func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
+		OpenDoor: &vttv1.OpenDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	do, ok := env.Payload.(*vttv1.Envelope_DoorOpened)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_DoorOpened", env.Payload)
+	}
+	if do.DoorOpened.GetSceneId() != "cellar" || do.DoorOpened.GetAt().GetX() != 0 || do.DoorOpened.GetAt().GetY() != 1 {
+		t.Fatalf("DoorOpened = %+v, want cellar/(0,1)", do.DoorOpened)
+	}
+}
+
+func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
+		CloseDoor: &vttv1.CloseDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc, ok := env.Payload.(*vttv1.Envelope_DoorClosed)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_DoorClosed", env.Payload)
+	}
+	if dc.DoorClosed.GetSceneId() != "cellar" || dc.DoorClosed.GetAt().GetX() != 0 || dc.DoorClosed.GetAt().GetY() != 1 {
+		t.Fatalf("DoorClosed = %+v, want cellar/(0,1)", dc.DoorClosed)
+	}
+}
+
 func TestToEventUnknownCommandErrors(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	if env, err := gateway.ToEvent(&vttv1.ClientCommand{}, p); err == nil {

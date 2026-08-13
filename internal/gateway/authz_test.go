@@ -82,6 +82,14 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return deleteNoteCmd()
 	case "load_adventure":
 		return loadAdventureCmd()
+	case "open_door":
+		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
+			OpenDoor: &vttv1.OpenDoor{SceneId: "s1", At: &vttv1.GridPosition{X: 0, Y: 1}},
+		}}
+	case "close_door":
+		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
+			CloseDoor: &vttv1.CloseDoor{SceneId: "s1", At: &vttv1.GridPosition{X: 0, Y: 1}},
+		}}
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
@@ -165,7 +173,7 @@ func promoteCmd(participantID, role string) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 16 commands x 4 roles authorization matrix.
+// authzCase is one cell of the 20 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -175,7 +183,8 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 72-cell matrix (spec §4/§7, grown from 52 by
+// authzCases is the full 80-cell matrix (spec §4/§7, grown from 72 by
+// maps-as-geometry Task 1's open_door/close_door rows, from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
 // world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
@@ -306,6 +315,25 @@ var authzCases = []authzCase{
 	{"promote_participant", identity.RoleAgent, true},
 	{"promote_participant", identity.RolePlayer, false},
 	{"promote_participant", identity.RoleSpectator, false},
+
+	// open_door/close_door (maps-as-geometry Task 1 fix, spec §6: "hard for
+	// players, free for DM"). dm/agent/player all TRUE — a player may work a
+	// door same as they may move a token — spectator FALSE, same shape as
+	// every other command. NO ownership/adjacency check yet: "a player may
+	// work a door only if a token they control is adjacent to it" is Task 5
+	// (engine.State.Blocked) plus Task 6 (the gateway call site), neither of
+	// which exists yet. Adding it here would be enforcing a rule with no
+	// engine support behind it. The role row alone is the correct, honest
+	// state for now.
+	{"open_door", identity.RoleDM, true},
+	{"open_door", identity.RoleAgent, true},
+	{"open_door", identity.RolePlayer, true},
+	{"open_door", identity.RoleSpectator, false},
+
+	{"close_door", identity.RoleDM, true},
+	{"close_door", identity.RoleAgent, true},
+	{"close_door", identity.RolePlayer, true},
+	{"close_door", identity.RoleSpectator, false},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -328,8 +356,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 72 {
-		t.Fatalf("authzCases has %d entries, want 72 (18 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 80 {
+		t.Fatalf("authzCases has %d entries, want 80 (20 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
