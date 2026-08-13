@@ -143,7 +143,7 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		}
 	}
 
-	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir)
+	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir, "")
 	if err != nil {
 		_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 		return nil, fmt.Errorf("vtt client run: boot server: %w", err)

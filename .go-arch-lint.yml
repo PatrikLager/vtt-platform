@@ -103,7 +103,13 @@ deps:
   # 2's own adventure component, rather than left for Task 4 to add — Task
   # 2's brief pre-authorizes this edge so arch-lint never blocks Task 4's
   # gateway wiring on a forgotten dependency-graph update.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure] }
+  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7): GET /api/maps
+  # and GET /api/packs/{pack}/{file} (metadata.go) hold boot-time-loaded
+  # *mapdef.Map/*mapdef.Pack values directly (Server.WithMaps), the same
+  # "gateway does no file I/O, cmd/vtt owns the filesystem" shape rules and
+  # adventure already established above — gateway reads only the already-
+  # validated Go values, never a map.json/pack.json itself.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -188,4 +194,9 @@ deps:
   # NOT import adventure — its Config carries only the already-loaded guide
   # strings (map[adventure_id]guide.md content), so the P1 wire-client
   # boundary is untouched here too.
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure] }
+  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7 wiring): `vtt
+  # serve --maps-dir` walks the maps directory and calls mapdef.Load/
+  # mapdef.LoadPack/mapdef.Compile per subdirectory directly (cmd composes,
+  # same shape as rules/adventure above) — see cmd/vtt/maps.go's
+  # loadMapsDir.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef] }

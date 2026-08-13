@@ -16,6 +16,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -182,6 +183,39 @@ type Server struct {
 	// `vtt serve` without a bundle still serves the API, and a browser gets
 	// an honest 404 rather than a panic. Set via WithStatic, boot time only.
 	static fs.FS
+
+	// maps is OPTIONAL server config (maps-as-geometry Task 7, spec §4.3/
+	// §4.4): nil/empty is today's behavior for a server with no
+	// --maps-dir — GET /api/maps answers 200 with an empty list, the same
+	// "empty is not an error" posture handleAdventures already gives (spec
+	// §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
+	// its own doc comment for why), keyed by each map's own declared id
+	// (Map.ID), not any directory name — cmd/vtt's loadMapsDir refuses a
+	// collision there before either map ever reaches here.
+	maps map[string]*mapdef.Map
+
+	// packs mirrors maps' own keying but for packs (Pack.ID, set together
+	// via WithMaps): used to enrich GET /api/maps with each map's pack name
+	// and cell size, so a client can render at the right scale without a
+	// second request. loadMapsDir refuses two packs sharing an id before
+	// either reaches here, so this map's keys already match packFS's
+	// key-for-key.
+	packs map[string]*mapdef.Pack
+
+	// packFS is OPTIONAL server config, boot time only, set via
+	// WithPackFiles: one fs.FS PER PACK, each rooted AT that pack's own
+	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over an
+	// operator-installed --maps-dir — NOT os.DirFS; see WithPackFiles' own
+	// doc comment for why that distinction is load-bearing, not stylistic).
+	// GET /api/packs/{pack}/{file} (metadata.go's handlePackFile) serves
+	// straight out of the matching entry. A SEPARATE field from packs
+	// rather than folding an fs.FS onto *mapdef.Pack itself: a Pack value
+	// carries no notion of "where it came from" (mapdef is a pure parser —
+	// see its own package doc — and reusable independent of any one
+	// directory), so the directory-rooted serving capability has to live
+	// here, at the layer that actually owns the filesystem boundary
+	// (ADR-008).
+	packFS map[string]fs.FS
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -238,6 +272,48 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 	return s
 }
 
+// WithMaps configures s to answer GET /api/maps from m/packs, keyed by each
+// map's/pack's own declared id (maps-as-geometry Task 7). Both are expected
+// already fully loaded and validated (cmd/vtt's loadMapsDir: mapdef.Load,
+// mapdef.LoadPack, and a boot-time dry-run mapdef.Compile per map — fail
+// loud at boot, spec §4.4); this method does no I/O and no validation of
+// its own, mirroring WithAdventures. Returns s for call-site chaining;
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic. Pack file BYTES are a separate concern — see
+// WithPackFiles.
+func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pack) *Server {
+	s.maps = m
+	s.packs = packs
+	return s
+}
+
+// WithPackFiles configures s to answer GET /api/packs/{pack}/{file} from
+// fsys, keyed by each pack's own declared id — the SAME keys WithMaps'
+// packs argument uses, kept as a separate call because it is a genuinely
+// different kind of thing (raw filesystem access for byte serving, not a
+// parsed Go value) rather than because the two could disagree in practice.
+//
+// Each fsys entry MUST be rooted AT that pack's own directory via
+// os.OpenRoot(dir).FS() (go1.24+) — NOT os.DirFS. This distinction was
+// found missing by review and is the whole reason this doc comment exists:
+// fs.FS's contract (fs.ValidPath) refuses any NAME containing a ".."
+// element, which stops a request like ".../../../etc/passwd", but it says
+// nothing about a file that is, on disk, a symlink pointing outside the
+// tree — os.DirFS's own doc comment states plainly that "using DirFS does
+// not stop the access any more than using os.Open does" in that case, and
+// nothing about the NAME "evil.png" would ever look wrong. A community-
+// authored pack (spec §4.2's own trust framing: same trust as guide.md, but
+// an installed pack is more likely third-party than a hand-authored guide)
+// could ship exactly that. os.Root closes it: "Methods on Root will follow
+// symbolic links, but symbolic links may not reference a location outside
+// the root" (go doc os.Root). Both mechanisms are proven independently in
+// internal/gateway/packfile_internal_test.go, because a fix for one says
+// nothing about the other. Boot time only, like WithMaps.
+func (s *Server) WithPackFiles(fsys map[string]fs.FS) *Server {
+	s.packFS = fsys
+	return s
+}
+
 // Handler returns the http.Handler routing /healthz and /ws (spec §3).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -256,6 +332,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/participants", s.handleParticipants)
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
+	mux.HandleFunc("GET /api/maps", s.handleMaps)
+	mux.HandleFunc("GET /api/packs/{pack}/{file}", s.handlePackFile)
 
 	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
 	// the most specific pattern, so the explicit routes above always win — a

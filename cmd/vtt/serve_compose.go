@@ -80,7 +80,19 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // above. A mismatched adventure (one declaring a different ruleset id than
 // rulesetDir) is caught by adventure.Load itself (its own ruleset-id-match
 // check) and surfaces as this same boot error.
-func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
+//
+// mapsDir is OPTIONAL (maps-as-geometry Task 7, design spec §4.4): ""
+// keeps every pre-Task-7 behavior exactly as it was — a nil/empty
+// gateway.Server.maps, GET /api/maps answering 200 with an empty list and
+// GET /api/packs/{pack}/{file} always 404ing. Unlike adventuresDir, a
+// non-empty mapsDir needs no rulesetDir — a standalone map carries no
+// ruleset reference (mapdef.Map has none; only adventure.Adventure does).
+// Every immediate subdirectory of mapsDir is loaded and validated via
+// loadMapsDir (maps.go) — fail loud here, at boot, on any single map's
+// failure or an override that does not resolve against its own pack (the
+// same "fail loud, never at the table" posture as adventuresDir above),
+// closing both handles before returning.
+func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
@@ -126,6 +138,16 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 			return nil, nil, fmt.Errorf("vtt serve: load adventure guides %s: %w", adventuresDir, err)
 		}
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
+	}
+
+	if mapsDir != "" {
+		maps, packs, packFS, err := loadMapsDir(mapsDir)
+		if err != nil {
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
+			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", mapsDir, err)
+		}
+		gw = gw.WithMaps(maps, packs).WithPackFiles(packFS)
 	}
 
 	// The embedded client, when this binary was built with one. API-only is

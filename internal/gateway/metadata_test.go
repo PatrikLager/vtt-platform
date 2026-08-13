@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
 // --- fixture ---------------------------------------------------------------
@@ -652,5 +655,402 @@ func TestParticipantsNamesEveryoneAndTheirRole(t *testing.T) {
 	}
 	if strings.Contains(string(body), "token") || strings.Contains(string(body), "hash") {
 		t.Fatalf("the roster must not carry credentials: %s", body)
+	}
+}
+
+// --- maps and packs (maps-as-geometry Task 7) -------------------------
+
+// mapsFixture is deliberately separate from metaFixture: these routes need
+// a REAL pack directory on disk (fs.FS-backed byte serving, traversal
+// defence and content-type inference are the whole point under test), which
+// metaFixture's adventures/ruleset setup has no reason to carry.
+type mapsFixture struct {
+	t   *testing.T
+	srv *httptest.Server
+
+	dmToken, agentToken, playerToken, spectatorToken string
+}
+
+// newGatewayWithPack builds a server with one map ("shrine") and one REAL
+// pack directory ("mossy-keep") — loaded through mapdef.LoadPack, not a
+// hand-built literal, since the loader (not this test) owns what a valid
+// Pack value looks like — containing pack.json plus one real file,
+// planks_03.png, so a request for it has actual bytes to return.
+func newGatewayWithPack(t *testing.T) *mapsFixture {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "campaign.db")
+
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+
+	mint := func(name string, role identity.Role) string {
+		tok, _, err := ids.CreateInvite(name, role, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	f := &mapsFixture{
+		t:              t,
+		dmToken:        mint("DM", identity.RoleDM),
+		agentToken:     mint("Agent", identity.RoleAgent),
+		playerToken:    mint("Lera", identity.RolePlayer),
+		spectatorToken: mint("Watcher", identity.RoleSpectator),
+	}
+
+	packDir := filepath.Join(t.TempDir(), "tiles")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
+		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
+		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
+		           "kind":"floor", "material":"wood"}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "planks_03.png"),
+		[]byte("stand-in bytes; a real Content-Type is looked up from the allowlist by extension, not from this content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// An SVG file, deliberately: proves the allowlist EXCLUDES it (this
+	// file's own doc comment on TestPackFileSVGIsNotServedAsImage) rather
+	// than the fixture simply never exercising the case.
+	if err := os.WriteFile(filepath.Join(packDir, "icon.svg"),
+		[]byte("<svg><script>alert(1)</script></svg>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := mapdef.LoadPack(packDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	maps := map[string]*mapdef.Map{
+		"shrine": {ID: "shrine", Name: "Obsidian Shrine", GridW: 3, GridH: 3, Pack: "mossy-keep"},
+	}
+	packs := map[string]*mapdef.Pack{"mossy-keep": pack}
+	// os.OpenRoot, matching production (cmd/vtt/maps.go) — NOT os.DirFS; see
+	// WithPackFiles' doc comment for why that distinction is load-bearing
+	// (a symlink escape, found by review, that os.DirFS does not stop).
+	root, err := os.OpenRoot(packDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packFS := map[string]fs.FS{"mossy-keep": root.FS()}
+
+	srv := gateway.New(c, ids).WithMaps(maps, packs).WithPackFiles(packFS)
+	f.srv = httptest.NewServer(srv.Handler())
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+// get issues a GET authenticated as the fixture's DM (every maps/packs
+// route is open to every role per spec §7's "everyone still sees the whole
+// map" — the role-table tests below cover that breadth explicitly; this
+// helper exists for the tests that are not ABOUT roles).
+func (f *mapsFixture) get(path string) (int, []byte) {
+	return f.getAs(path, f.dmToken)
+}
+
+func (f *mapsFixture) getAs(path, token string) (int, []byte) {
+	f.t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return resp.StatusCode, body
+}
+
+// TestPackImagesAreServedAndUnknownOnesAre404 is task-7-brief.md's own RED
+// test: a real pack file 200s, an unknown pack 404s, and a traversal
+// attempt over the real HTTP round trip does not escape the pack directory.
+//
+// HONEST NOTE on what this assertion actually proves (found while fault-
+// injecting, recorded in task-7-report.md): a literal ".." in the URL never
+// reaches handlePackFile at all here — net/http's own ServeMux redirects
+// any request whose path contains a ".." element to the CLEANED path
+// (verified directly: this exact request 307s to /api/etc/passwd, which
+// matches no route and 404s) BEFORE pattern matching ever runs. So this
+// test is real and worth keeping — a caller must still not observe a 200 —
+// but it does not, by itself, exercise handlePackFile's OWN fs.FS defence;
+// it is caught one layer up, by framework behaviour this package does not
+// own or control. TestHandlePackFileRefusesTraversalEvenWithAPathValueSetDirectly
+// (packfile_internal_test.go) is the assertion that actually isolates and
+// proves the fs.FS-level defence the brief asked for, by handing
+// handlePackFile a traversal string directly, bypassing ServeMux's own
+// path-cleaning entirely.
+func TestPackImagesAreServedAndUnknownOnesAre404(t *testing.T) {
+	f := newGatewayWithPack(t)
+	if code, body := f.get("/api/packs/mossy-keep/planks_03.png"); code != 200 {
+		t.Fatalf("pack image returned %d: %s", code, body)
+	}
+	if code, _ := f.get("/api/packs/mossy-keep/../../etc/passwd"); code == 200 {
+		t.Fatal("path traversal escaped the pack directory")
+	}
+	if code, _ := f.get("/api/packs/no-such-pack/x.png"); code != 404 {
+		t.Fatalf("unknown pack returned %d, want 404", code)
+	}
+}
+
+// TestPackFileUnknownWithinKnownPackIs404 covers the adjacent case the
+// brief's own test does not: a KNOWN pack, but a file name that pack does
+// not contain. Without this, a bug that served the whole packDir listing
+// (or always returned 200) on any request under a valid pack id would slip
+// past the "known pack, known file" and "unknown pack" cases alone.
+func TestPackFileUnknownWithinKnownPackIs404(t *testing.T) {
+	f := newGatewayWithPack(t)
+	if code, body := f.get("/api/packs/mossy-keep/does-not-exist.png"); code != http.StatusNotFound {
+		t.Fatalf("unknown file in a known pack: status = %d, want 404 (body %s)", code, body)
+	}
+}
+
+// getFull issues an authenticated (DM) GET and returns the full response
+// for header inspection; the caller closes the body.
+func (f *mapsFixture) getFull(t *testing.T, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+f.dmToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+// TestPackFileAllowlistedExtensionGetsItsRealContentType pins this task's
+// content-type decision (metadata.go's own package-doc section explains the
+// reasoning): a .png is on the closed tile-art allowlist, so it is served
+// as image/png, inline (no Content-Disposition), with nosniff set. This
+// used to be plain extension INFERENCE (http.ServeFileFS/ServeContent, the
+// same mechanism WithStatic uses for the client bundle) — review found that
+// insufficient for third-party pack content and this is the corrected
+// behaviour: an allowlist, not inference, even though the OUTCOME for a
+// .png is unchanged.
+func TestPackFileAllowlistedExtensionGetsItsRealContentType(t *testing.T) {
+	f := newGatewayWithPack(t)
+	resp := f.getFull(t, "/api/packs/mossy-keep/planks_03.png")
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "image/png") {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := resp.Header.Get("Content-Disposition"); got != "" {
+		t.Errorf("Content-Disposition = %q, want empty (allowlisted content serves inline)", got)
+	}
+}
+
+// TestPackFileUnrecognizedExtensionIsOctetStreamAttachment pins the
+// fallback half of the allowlist: pack.json is real, legitimate content
+// this route serves (it sits in the same pack directory as the images,
+// and a client fetching it programmatically does not care about
+// Content-Type or Content-Disposition), but it is not TILE ART, so it gets
+// application/octet-stream + an attachment disposition rather than any
+// inference — proving the fallback is not merely theoretical, since a real,
+// always-present file exercises it.
+func TestPackFileUnrecognizedExtensionIsOctetStreamAttachment(t *testing.T) {
+	f := newGatewayWithPack(t)
+	resp := f.getFull(t, "/api/packs/mossy-keep/pack.json")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Errorf("Content-Disposition = %q, want it to contain \"attachment\"", cd)
+	}
+}
+
+// TestPackFileSVGIsNotServedAsImage pins the one deliberate exclusion this
+// task's review specifically asked to be explicit about: SVG can embed
+// <script>, so it does NOT get image/svg+xml or inline serving despite
+// nominally being an image format — it is routed down the SAME
+// octet-stream/attachment fallback as any other unrecognised extension.
+// The fixture's icon.svg literally contains a <script> tag, so this test
+// also proves the response never claims to be inline-renderable image
+// content that a browser might choose to display anyway.
+func TestPackFileSVGIsNotServedAsImage(t *testing.T) {
+	f := newGatewayWithPack(t)
+	resp := f.getFull(t, "/api/packs/mossy-keep/icon.svg")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct == "image/svg+xml" || strings.HasPrefix(ct, "image/") {
+		t.Errorf("Content-Type = %q, want NOT an image/* type for .svg", ct)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Errorf("Content-Disposition = %q, want it to contain \"attachment\"", cd)
+	}
+}
+
+// TestPackFilesRequireAuth pins that pack files sit behind the SAME Bearer-
+// header gate every other /api route does (metadata.go's package doc:
+// "every route it then calls is authenticated") — an installed pack is
+// operator-trusted content (spec §4.2, "same trust as guide.md"), but that
+// trust is about what an AUTHENTICATED caller may read, not about skipping
+// authentication the way /join and the static bundle deliberately do.
+func TestPackFilesRequireAuth(t *testing.T) {
+	f := newGatewayWithPack(t)
+	if code, _ := f.getAs("/api/packs/mossy-keep/planks_03.png", ""); code != http.StatusUnauthorized {
+		t.Fatalf("no token: status = %d, want 401", code)
+	}
+	if code, _ := f.getAs("/api/packs/mossy-keep/planks_03.png", "garbage"); code != http.StatusUnauthorized {
+		t.Fatalf("bad token: status = %d, want 401", code)
+	}
+}
+
+// TestPackFilesReadableByEveryRole pins spec §7's "everyone still sees the
+// whole map. No filtering in this arc" — unlike an adventure guide (DM/agent
+// only, DM secrets) or the join link (admission control), pack art carries
+// neither, so every role that can authenticate at all can read it.
+func TestPackFilesReadableByEveryRole(t *testing.T) {
+	f := newGatewayWithPack(t)
+	for _, tc := range []struct {
+		role  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		if code, body := f.getAs("/api/packs/mossy-keep/planks_03.png", tc.token); code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200 (body %s)", tc.role, code, body)
+		}
+	}
+}
+
+// TestMapsListedForEveryRole pins /api/maps' shape and its role breadth
+// (same reasoning as TestPackFilesReadableByEveryRole): id, name, grid
+// dimensions, and the pack's own name/cellPx a client needs to draw at the
+// right scale without a second request.
+func TestMapsListedForEveryRole(t *testing.T) {
+	f := newGatewayWithPack(t)
+	for _, tc := range []struct {
+		role  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		code, body := f.getAs("/api/maps", tc.token)
+		if code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200 (body %s)", tc.role, code, body)
+		}
+		var got struct {
+			Maps []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				GridWidth  int    `json:"gridWidth"`
+				GridHeight int    `json:"gridHeight"`
+				Pack       *struct {
+					ID     string `json:"id"`
+					Name   string `json:"name"`
+					CellPx int    `json:"cellPx"`
+				} `json:"pack"`
+			} `json:"maps"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("%s: decode: %v (body %s)", tc.role, err, body)
+		}
+		if len(got.Maps) != 1 {
+			t.Fatalf("%s: got %d maps, want 1", tc.role, len(got.Maps))
+		}
+		m := got.Maps[0]
+		if m.ID != "shrine" || m.Name != "Obsidian Shrine" || m.GridWidth != 3 || m.GridHeight != 3 {
+			t.Errorf("%s: map = %+v, want shrine/Obsidian Shrine/3x3", tc.role, m)
+		}
+		if m.Pack == nil || m.Pack.ID != "mossy-keep" || m.Pack.Name != "Mossy Keep" || m.Pack.CellPx != 64 {
+			t.Errorf("%s: pack = %+v, want mossy-keep/Mossy Keep/64", tc.role, m.Pack)
+		}
+	}
+}
+
+// TestMapsEmptyCollectionWithNothingLoaded mirrors
+// TestMetadataEmptyCollectionsWithNothingLoaded's "empty is not an error"
+// posture (spec §5): a server booted without --maps-dir answers 200 with an
+// empty list, not a 404 or a 500.
+func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(gateway.New(c, ids).Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/maps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Maps []any `json:"maps"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if got.Maps == nil {
+		t.Error("maps must be [] and never null — the client iterates it directly")
 	}
 }
