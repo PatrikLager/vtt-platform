@@ -30,7 +30,11 @@ body {
 }
 
 .status { grid-area: status; display: flex; gap: 16px; align-items: baseline; }
-.board  { grid-area: board; }
+/* min-height: 0 overrides a grid item's default min-height: auto, which
+   otherwise sizes to its content's intrinsic minimum -- belt-and-braces
+   alongside .grid's own fixed size below, so an oversized scene can never
+   grow this row and push .player down the page (backlog T1/#19). */
+.board  { grid-area: board; min-height: 0; }
 .feed   { grid-area: feed; }
 .notes  { grid-area: notes; }
 .ticker { grid-area: ticker; }
@@ -43,14 +47,28 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .session { color: var(--dim); }
 .fatal { color: #ff8a8a; padding: 24px; }
 
-/* The board: a plain squared field. Grid lines come from a repeating
-   gradient so cell size stays driven by one number (CELL in grid.ts). */
+/* The board: a fixed-size pane with a camera inside it (spec §7). Width and
+   height are literal numbers, not derived from the scene -- that is the
+   T1/#19 fix (spectator.ts's PANE_W/PANE_H): a 200x200 outdoor map and a
+   10x10 room now lay out identically instead of the page growing with the
+   map. overflow: hidden clips a scene the camera has zoomed past the pane's
+   edge, once zooming exists. Grid lines come from a repeating gradient so
+   cell size stays driven by one number (CELL in spectator.ts) for as long as
+   nothing has been drawn onto the canvas layered on top of it. */
 .grid {
   position: relative;
+  width: 640px;
+  height: 480px;
+  max-width: 100%;
+  overflow: hidden;
   border: 1px solid var(--line);
   background-image:
     linear-gradient(to right, var(--line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+}
+.grid canvas {
+  position: absolute;
+  inset: 0;
 }
 
 .token { position: absolute; width: 44px; height: 44px; display: flex; flex-direction: column;

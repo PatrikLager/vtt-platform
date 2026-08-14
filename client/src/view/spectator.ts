@@ -12,8 +12,40 @@ import type { Participant } from "../session";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
+import { fitCamera, worldFromScreen, type Camera } from "./camera";
+import { planScene } from "./scene-plan";
+import { paint, type ImageMap } from "./canvas";
 
 export const CELL = 44;
+
+// The pane is a FIXED size, independent of the scene's grid dimensions —
+// this is backlog T1/#19 (spec §1.4, §7): the old board was gridWidth*CELL
+// px tall (1408 for a 32x32 scene), so the page grew with the map and the
+// controls sat ~1450px down it, below every laptop fold. A 200x200 outdoor
+// map and a 10x10 room now lay out identically; the camera (fitCamera) is
+// what makes the whole scene visible inside whichever of the two binds.
+const PANE_W = 640;
+const PANE_H = 480;
+
+// No task in this arc's plan fetches a pack manifest or loads an image over
+// HTTP into an ImageMap yet (checked: nothing under client/src references
+// /api/packs). Building that resolver is its own decision — which URL a
+// "tile:<name>" key names — and belongs to whichever task adds it, not to
+// this wiring. An empty map keeps today's canvas honestly blank rather than
+// inventing one; canvas.ts's paint() already skips an unresolved key rather
+// than throwing (see its own test).
+const NO_IMAGES: ImageMap = {};
+
+/**
+ * boardCamera is the ONE fit renderGrid uses -- for the canvas terrain, for
+ * token discs, and for click resolution alike. Exported so a test can derive
+ * the exact expected transform (via this, not a hand-copied PANE_W/PANE_H
+ * pair) rather than duplicating the fit arithmetic and risking silent drift
+ * from whatever this function actually computes.
+ */
+export function boardCamera(width: number, height: number): Camera {
+  return fitCamera(width, height, CELL, PANE_W, PANE_H);
+}
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
@@ -81,32 +113,65 @@ function renderGrid(
 
   const geom: Geometry = { cell: CELL, width: scene.GridWidth, height: scene.GridHeight };
   const board = el("div", "grid");
-  board.style.width = `${geom.width * CELL}px`;
-  board.style.height = `${geom.height * CELL}px`;
+  // NO inline width/height keyed to the scene (T1/#19, see PANE_W/PANE_H
+  // above) -- the pane's size comes from style.css and stays fixed.
   board.style.backgroundSize = `${CELL}px ${CELL}px`;
   board.dataset["sceneId"] = sceneId;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = PANE_W;
+  canvas.height = PANE_H;
+  board.appendChild(canvas);
+
+  // Fit the WHOLE scene into the pane (spec §7: "always start seeing the
+  // whole map"), turn that into draw instructions (Task 8, pure and fully
+  // tested), and hand them to Task 9's thin drawImage loop. ctx is null under
+  // happy-dom -- canvas.ts's header comment explains why -- but never in a
+  // real browser, which always returns one for "2d".
+  const cam = boardCamera(scene.GridWidth, scene.GridHeight);
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
+    paint(ctx, ops, NO_IMAGES);
+  }
 
   if (onCell) {
     board.style.cursor = "crosshair";
     board.addEventListener("click", (ev) => {
       // Offset from the board's own box, so the cell is right regardless of
-      // where the board sits in the page or how far it is scrolled.
+      // where the board sits in the page or how far it is scrolled -- THEN
+      // through worldFromScreen (Task 8, algebraically exact inverse of the
+      // same cam the canvas terrain draws through), so a click resolves to
+      // the square under the cursor at any scale/offset, not just at the
+      // scale-1/offset-0 case where skipping this step is invisible.
       const r = board.getBoundingClientRect();
-      onCell(cellFromPoint(ev.clientX - r.left, ev.clientY - r.top, geom));
+      const world = worldFromScreen(ev.clientX - r.left, ev.clientY - r.top, cam);
+      onCell(cellFromPoint(world.x, world.y, geom));
     });
   }
 
   for (const d of tokensOnScene(st, sceneId)) {
-    board.appendChild(renderDisc(d));
+    board.appendChild(renderDisc(d, cam));
   }
   wrap.appendChild(board);
   return wrap;
 }
 
-function renderDisc(d: TokenDisc): HTMLElement {
+/**
+ * renderDisc positions and SIZES a token disc through the SAME camera the
+ * canvas terrain and click resolution use -- both, because a token scaled in
+ * position but not in size would float free of its own square at any scale
+ * but 1 (fix round 1 finding: this drew at raw `x * CELL`, invisible only
+ * because nothing yet on the canvas gave it anything to visibly disagree
+ * with).
+ */
+function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
   const t = el("div", "token");
-  t.style.left = `${d.x * CELL}px`;
-  t.style.top = `${d.y * CELL}px`;
+  const size = CELL * cam.scale;
+  t.style.left = `${d.x * CELL * cam.scale + cam.offsetX}px`;
+  t.style.top = `${d.y * CELL * cam.scale + cam.offsetY}px`;
+  t.style.width = `${size}px`;
+  t.style.height = `${size}px`;
   t.title = d.name || d.actorId;
   t.dataset["tokenId"] = d.tokenId;
   t.appendChild(el("span", "initial", d.initial));

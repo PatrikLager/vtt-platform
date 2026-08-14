@@ -20,6 +20,16 @@ export interface DrawOp {
   sy: number;
   sw: number;
   sh: number;
+  /**
+   * Radians. Rotates about the rect's CENTRE -- (sx + sw/2, sy + sh/2) --
+   * never about (sx, sy). Rotating about the corner would swing a footprint
+   * out of its own square, which is wrong for the one thing this field is
+   * for (a rotated object, §3.4). Task 9's canvas.ts is the consumer that
+   * establishes this; recorded here because DrawOp is Task 9's contract with
+   * this file and a pivot left undocumented is exactly the kind of implicit
+   * geometric assumption this file's whole premise (planScene decides
+   * everything) is meant not to leave lying around.
+   */
   rot: number;
 }
 
