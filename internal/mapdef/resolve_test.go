@@ -1,6 +1,7 @@
 package mapdef_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
@@ -200,6 +201,63 @@ func TestResolveRejectsAPackThatIsNotTheMapsOwn(t *testing.T) {
 	}
 	if _, _, err := mapdef.Resolve(m, p, "1,1"); err == nil {
 		t.Fatal("want an error resolving against a pack that is not the map's own")
+	}
+}
+
+// TestResolveObjectArtRejectsEmptyArt pins ResolveObjectArt's own defensive
+// empty-art guard directly (whole-branch-review finding I1) — the one
+// branch CheckObjectArtDeclared (load.go) makes UNREACHABLE for any object
+// that went through mapdef.Load, and so the one branch no Load-based test
+// can ever exercise. It exists because BuildSceneCreated (compile.go, the
+// ONE shared construction site both load paths call) can be reached with a
+// hand-built *Map that never ran Load's checks at all — this package's own
+// compile tests do exactly that (m.Overrides = nil, e.g.), and
+// internal/adventure/load.go's own dry run builds one from raw fields
+// too — so ResolveObjectArt cannot assume o.Art is already proven non-empty.
+func TestResolveObjectArtRejectsEmptyArt(t *testing.T) {
+	if err := mapdef.ResolveObjectArt(0, mapdef.Object{ID: "boulder-1", Art: ""}, nil); err == nil {
+		t.Fatal("want an error resolving an object with no art, not silent success")
+	}
+}
+
+// TestResolveObjectArtRejectsNoPackGiven mirrors
+// TestResolveRejectsAnOverrideWithNoPackGiven for objects: a non-empty art
+// with p == nil must refuse rather than panic on p.Objects.
+func TestResolveObjectArtRejectsNoPackGiven(t *testing.T) {
+	err := mapdef.ResolveObjectArt(0, mapdef.Object{ID: "boulder-1", Art: "boulder-mossy-2"}, nil)
+	if err == nil {
+		t.Fatal("want an error resolving an object's art with no pack given, not a panic")
+	}
+}
+
+// TestResolveObjectArtRejectsAnUnresolvableName is the direct, single-unit
+// proof of I1's exact fault injection (the reviewer's own repro: copy
+// maps/cellar, typo "pillar-stone" as "pillar-stoen") — Pack.Objects was
+// loaded by LoadPack and read by nothing in Go before ResolveObjectArt
+// existed; this pins that it is read now.
+func TestResolveObjectArtRejectsAnUnresolvableName(t *testing.T) {
+	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	err = mapdef.ResolveObjectArt(0, mapdef.Object{ID: "boulder-1", Art: "pillar-stoen"}, p)
+	if err == nil {
+		t.Fatal("want an error resolving an object art the pack does not define")
+	}
+	if !strings.Contains(err.Error(), "pillar-stoen") {
+		t.Fatalf("error should name the unresolved art, got: %v", err)
+	}
+}
+
+// TestResolveObjectArtAcceptsAResolvableName is the mirror positive case:
+// an art name the pack DOES define resolves cleanly.
+func TestResolveObjectArtAcceptsAResolvableName(t *testing.T) {
+	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if err := mapdef.ResolveObjectArt(0, mapdef.Object{ID: "boulder-1", Art: "boulder-mossy-2"}, p); err != nil {
+		t.Fatalf("resolve object art: %v", err)
 	}
 }
 
