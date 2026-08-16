@@ -90,6 +90,12 @@ PACKAGES = [
     # Ascending by runtime: the gate fails as fast as it can.
     "./internal/identity/",                # ~16s
     "./internal/adventure/conformance/",   # ~19s
+    # internal/mapdef (maps-as-geometry): the arc's core package, and pure
+    # validation logic — exactly what a mutation gate is best at. It was in
+    # NEITHER this list nor mutation-scope.md, whose stated job is to publish
+    # what sits outside the gate, so it was silently ungated rather than
+    # deliberately excluded. Found by the whole-branch review.
+    "./internal/mapdef/",
     "./internal/store/",                   # ~33s
     "./internal/engine/",                  # ~38s
     "./internal/rules/conformance/",       # ~48s
