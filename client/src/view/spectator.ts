@@ -13,8 +13,8 @@ import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
-import { planScene } from "./scene-plan";
-import { paint, type ImageMap } from "./canvas";
+import { planGrid, planScene } from "./scene-plan";
+import { paint, strokeGrid, type ImageMap } from "./canvas";
 
 export const CELL = 44;
 
@@ -27,13 +27,13 @@ export const CELL = 44;
 const PANE_W = 640;
 const PANE_H = 480;
 
-// No task in this arc's plan fetches a pack manifest or loads an image over
-// HTTP into an ImageMap yet (checked: nothing under client/src references
-// /api/packs). Building that resolver is its own decision — which URL a
-// "tile:<name>" key names — and belongs to whichever task adds it, not to
-// this wiring. An empty map keeps today's canvas honestly blank rather than
-// inventing one; canvas.ts's paint() already skips an unresolved key rather
-// than throwing (see its own test).
+// The default when app.ts has not (yet, or ever) supplied one: extras.images
+// is optional (a spectator view built directly in a test, say, rarely has a
+// live pack to load), and an empty map keeps the canvas honestly blank
+// rather than inventing a picture — canvas.ts's paint() already skips an
+// unresolved key rather than throwing (see its own test). pack-assets.ts
+// (Task 10) is what actually populates a real one, over HTTP from
+// GET /api/packs/{pack}/{file}; app.ts wires its result in as extras.images.
 const NO_IMAGES: ImageMap = {};
 
 /**
@@ -101,6 +101,7 @@ export function describe(e: Envelope): string {
 function renderGrid(
   st: State,
   sceneId: string,
+  images: ImageMap,
   onCell?: (c: { x: number; y: number }) => void,
 ): HTMLElement {
   const scene = st.Scenes[sceneId];
@@ -112,10 +113,25 @@ function renderGrid(
   wrap.appendChild(el("h2", undefined, scene.Name));
 
   const geom: Geometry = { cell: CELL, width: scene.GridWidth, height: scene.GridHeight };
+  // Computed BEFORE anything below reads it (fix round: this used to run
+  // after the backgroundSize assignment, which is what let backgroundSize
+  // hardcode CELL instead of CELL * cam.scale unnoticed for as long as
+  // nothing was drawn on the canvas to visibly disagree with it -- see the
+  // backgroundSize assignment's own comment).
+  const cam = boardCamera(scene.GridWidth, scene.GridHeight);
+
   const board = el("div", "grid");
   // NO inline width/height keyed to the scene (T1/#19, see PANE_W/PANE_H
   // above) -- the pane's size comes from style.css and stays fixed.
-  board.style.backgroundSize = `${CELL}px ${CELL}px`;
+  //
+  // NO CSS BACKGROUND LATTICE EITHER: strokeGrid draws the grid on the canvas
+  // below, through the camera. A CSS tiling cannot be made to agree with it,
+  // because it tiles the whole pane from the PANE's origin while the canvas
+  // grid starts at the camera's OFFSET and spans only the SCENE. Those line up
+  // only when the offset is a whole multiple of the step -- true for the 10x9
+  // demo map by coincidence, false for a 32x32 one. It also ruled the
+  // letterboxed margin, drawing squares outside the map that the server would
+  // refuse to move a token onto.
   board.dataset["sceneId"] = sceneId;
 
   const canvas = document.createElement("canvas");
@@ -128,11 +144,15 @@ function renderGrid(
   // tested), and hand them to Task 9's thin drawImage loop. ctx is null under
   // happy-dom -- canvas.ts's header comment explains why -- but never in a
   // real browser, which always returns one for "2d".
-  const cam = boardCamera(scene.GridWidth, scene.GridHeight);
   const ctx = canvas.getContext("2d");
   if (ctx) {
     const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
-    paint(ctx, ops, NO_IMAGES);
+    paint(ctx, ops, images);
+    // AFTER the tiles, deliberately: the lattice divides the terrain, so it
+    // belongs on top of it. Drawn first, every tile would paint over it and the
+    // board would be uncountable again — which is exactly what happened to the
+    // old CSS background-size lattice the moment canvas terrain arrived.
+    strokeGrid(ctx, planGrid(st, sceneId, cam, CELL, PANE_W, PANE_H));
   }
 
   if (onCell) {
@@ -164,17 +184,34 @@ function renderGrid(
  * but 1 (fix round 1 finding: this drew at raw `x * CELL`, invisible only
  * because nothing yet on the canvas gave it anything to visibly disagree
  * with).
+ *
+ * The disc's INNER content is scaled too (Task 10 cosmetic fix), by the same
+ * cam.scale: style.css's 30px/8px/5px figures are the scale-1 defaults, and
+ * were the ONLY sizes anything drew at before a camera existed at all. Once
+ * fitCamera can shrink a token well below 44px (goblin-ambush's 32x32 fits
+ * at ~15px per cell), the 30px initial circle overflowed its own now-smaller
+ * box -- invisible until there was real art on the canvas to judge it
+ * against, same story as the backgroundSize fix above. Scaling the CHIP and
+ * DOT sizes too, not just the initial, for the same reason: nothing about a
+ * token's content should be the one part of the board immune to the camera
+ * that governs everything else on it.
  */
 function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
   const t = el("div", "token");
   const size = CELL * cam.scale;
+  const scale = cam.scale;
   t.style.left = `${d.x * CELL * cam.scale + cam.offsetX}px`;
   t.style.top = `${d.y * CELL * cam.scale + cam.offsetY}px`;
   t.style.width = `${size}px`;
   t.style.height = `${size}px`;
   t.title = d.name || d.actorId;
   t.dataset["tokenId"] = d.tokenId;
-  t.appendChild(el("span", "initial", d.initial));
+
+  const initial = el("span", "initial", d.initial);
+  initial.style.width = `${30 * scale}px`;
+  initial.style.height = `${30 * scale}px`;
+  initial.style.fontSize = `${16 * scale}px`;
+  t.appendChild(initial);
 
   // ALL resources, ALL conditions — no notion of a "primary" one exists in
   // the ruleset format, and inventing one here would bake in a genre.
@@ -183,6 +220,7 @@ function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
     for (const r of d.resources) {
       const chip = el("span", "chip", `${r.current}/${r.max}`);
       chip.title = r.name; // the NAME on hover, never abbreviated on the face
+      chip.style.fontSize = `${8 * scale}px`;
       chips.appendChild(chip);
     }
     t.appendChild(chips);
@@ -192,6 +230,8 @@ function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
     for (const c of d.conditions) {
       const dot = el("span", "dot");
       dot.title = c.id; // hover names, per the spectator floor
+      dot.style.width = `${5 * scale}px`;
+      dot.style.height = `${5 * scale}px`;
       dots.appendChild(dot);
     }
     t.appendChild(dots);
@@ -305,6 +345,14 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
+  /**
+   * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task
+   * 10) — keyed exactly as canvas.ts's paint() expects. Omitted (or not yet
+   * resolved) draws NO_IMAGES, which is not a failure: paint() skips an
+   * unresolved key rather than throwing, so a scene renders with whatever
+   * art has loaded so far.
+   */
+  images?: ImageMap | undefined;
 }
 
 export function renderSpectator(
@@ -321,7 +369,7 @@ export function renderSpectator(
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.onCell),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.onCell),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),

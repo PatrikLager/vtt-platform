@@ -26,3 +26,18 @@ func StandardTile(name string) (kind, material string, ok bool) {
 	t, ok := standardTiles[name]
 	return t.Kind, t.Material, ok
 }
+
+// StandardTileNames returns every name in the standard vocabulary (spec
+// §3.3's table), so a test can walk it without duplicating the eleven names
+// as a second literal that would silently drift from standardTiles itself —
+// exactly the risk §3.3's own amendment note describes ("a one-way door
+// should not be specified in a form where an entry can go missing without
+// anyone noticing"). A copy, not standardTiles itself: the caller gets a map
+// it cannot use to mutate the package's own vocabulary.
+func StandardTileNames() map[string]struct{} {
+	out := make(map[string]struct{}, len(standardTiles))
+	for name := range standardTiles {
+		out[name] = struct{}{}
+	}
+	return out
+}

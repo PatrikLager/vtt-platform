@@ -508,6 +508,72 @@ test("an adventures fetch that never happens leaves the console's list empty", a
   s?.close();
 });
 
+test("a configured map's pack is fetched and its images requested with the Bearer token", async () => {
+  // Task 10's seam: nothing before this task ever fetched a tile image (see
+  // pack-assets.ts's own header comment). This proves the WIRING end to end
+  // from GET /api/maps through to the pack manifest and its image files —
+  // the one thing this suite CAN prove, since happy-dom implements neither
+  // canvas nor createImageBitmap (canvas.ts's own header comment), so
+  // whether the decoded result actually reaches paint() is verified by
+  // reading spectator.ts, not by a DOM assertion here.
+  localStorage.setItem("vtt.token", "tok");
+  const asked: { path: string; auth: string | null }[] = [];
+  const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (_blob: Blob) => ({}) as unknown as ImageBitmap;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    asked.push({ path, auth: (init?.headers as Record<string, string> | undefined)?.["Authorization"] ?? null });
+    if (path === "/api/me") {
+      return Response.json({ participantId: "p", name: "DM", role: "dm", controls: [] });
+    }
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") {
+      return Response.json({ adventures: [] });
+    }
+    if (path === "/api/maps") {
+      return Response.json({
+        maps: [{
+          id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
+          pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
+        }],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/pack.json") {
+      return Response.json({
+        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
+        tiles: [{ name: "earth-1", kind: "floor", material: "earth", file: "earth_1.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/earth_1.png") {
+      return new Response("fake-png-bytes", { status: 200 });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  try {
+    const r = root();
+    const s = boot(r);
+    FakeSocket.instances[0]!.open();
+    await settle();
+
+    expect(asked.map((a) => a.path)).toContain("/api/maps");
+    expect(asked.map((a) => a.path)).toContain("/api/packs/cellar-basics/pack.json");
+    expect(asked.map((a) => a.path)).toContain("/api/packs/cellar-basics/earth_1.png");
+    // The token, as a Bearer header on every one of them — never a query
+    // parameter (metadata.ts's own header comment: a token in a query string
+    // leaks into access logs, Referer headers and browser history).
+    for (const a of asked) expect(a.auth).toBe("Bearer tok");
+    s?.close();
+  } finally {
+    (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
 function seedTable(sock: FakeSocket, actorId = "a1", participantId = "p") {
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));

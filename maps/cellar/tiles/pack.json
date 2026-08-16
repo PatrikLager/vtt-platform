@@ -1,0 +1,58 @@
+{
+  "id": "cellar-basics",
+  "name": "Cellar Basics",
+  "cell_px": 64,
+  "tiles": [
+    {
+      "name": "masonry-1",
+      "kind": "wall",
+      "material": "stone",
+      "file": "masonry_1.png",
+      "desc": "coursed stone blockwork, the standard wall face for the cellar pack"
+    },
+    {
+      "name": "earth-1",
+      "kind": "floor",
+      "material": "earth",
+      "file": "earth_1.png",
+      "desc": "packed dirt floor, uneven and speckled with small stones"
+    },
+    {
+      "name": "flagstone-1",
+      "kind": "floor",
+      "material": "stone",
+      "file": "flagstone_1.png",
+      "desc": "cut flagstone paving, mortared in irregular slabs"
+    },
+    {
+      "name": "cellar-door",
+      "kind": "door",
+      "material": "wood",
+      "file_open": "cellar_door_open.png",
+      "file_closed": "cellar_door_closed.png",
+      "desc": "a banded wooden door; closed and open pictures are the SAME nature (spec §3.3) — opening it changes only which of these two files the renderer picks, never the tile's kind"
+    }
+  ],
+  "objects": [
+    {
+      "name": "pillar-stone",
+      "file": "pillar_stone.png",
+      "desc": "a round stone column, wide enough to block a square's line of sight and passage"
+    },
+    {
+      "name": "crate-wood",
+      "file": "crate_wood.png",
+      "desc": "a stacked wooden shipping crate — good cover, or just clutter, depending on how it is placed"
+    },
+    {
+      "name": "barrel",
+      "file": "barrel.png",
+      "desc": "an upright wine barrel, banded in iron"
+    },
+    {
+      "name": "brazier",
+      "file": "brazier.png",
+      "desc": "a standing iron brazier, coals lit — decorative: it blocks neither sight nor movement"
+    }
+  ]
+}

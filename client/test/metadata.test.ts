@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide, fetchMe,
-  fetchJoinLink, fetchParticipants } from "../src/metadata";
+  fetchJoinLink, fetchParticipants, fetchMaps } from "../src/metadata";
 
 function fakeAPI(routes: Record<string, { status?: number; body: unknown }>) {
   const seenAuth: string[] = [];
@@ -79,6 +79,44 @@ test("adventures decode into id/name pairs", async () => {
   try {
     const advs = await fetchAdventures(api.base, "t");
     expect(advs.map((a) => a.id)).toEqual(["a", "b"]);
+  } finally {
+    api.stop();
+  }
+});
+
+test("maps decode with their pack reference, when they have one", async () => {
+  // The pack ref is the ONE thing pack-assets.ts needs from this route
+  // (id, name, cellPx) — asserted by field, not just presence, because a
+  // silently-dropped cellPx would still let a naive test pass while
+  // drawing every tile at the wrong scale.
+  const api = fakeAPI({
+    "/api/maps": {
+      body: {
+        maps: [
+          { id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
+            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 } },
+          { id: "bare", name: "Bare Room", gridWidth: 2, gridHeight: 2 },
+        ],
+      },
+    },
+  });
+  try {
+    const maps = await fetchMaps(api.base, "t");
+    expect(maps).toHaveLength(2);
+    expect(maps[0]!.pack).toEqual({ id: "cellar-basics", name: "Cellar Basics", cellPx: 64 });
+    // A map that declares no pack (mapdef.Map.Pack "" is legal) must not
+    // fabricate one.
+    expect(maps[1]!.pack).toBeUndefined();
+  } finally {
+    api.stop();
+  }
+});
+
+test("no --maps-dir configured is an empty list, not a crash and not a placeholder", async () => {
+  const api = fakeAPI({});
+  try {
+    const maps = await fetchMaps(api.base, "t");
+    expect(maps).toEqual([]);
   } finally {
     api.stop();
   }

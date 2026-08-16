@@ -315,15 +315,32 @@ test("a click past the last cell is clamped onto the board", () => {
   expect(cells).toEqual([{ x: 5, y: 3 }]);
 });
 
-test("the board carries its background grid pattern and scene id, independent of scene size", () => {
-  // Superseded by "the board does not size itself to the scene" below for the
-  // WIDTH/HEIGHT half of what this test used to pin (Task 9, T1/#19): the
-  // pane is now a fixed size from style.css, not `geom.width * CELL`. What
-  // still belongs to renderGrid's own logic is the background tiling and the
-  // scene id tag, so those stay pinned here.
+test("the board draws no CSS lattice — the canvas owns the grid", () => {
+  // THE CSS LATTICE IS GONE, and its removal is the point of this test.
+  //
+  // It tiled the WHOLE PANE from the pane's own origin, while the canvas grid
+  // (planGrid) starts at the camera's offset and spans only the SCENE. Two
+  // consequences, both visible in a screenshot and invisible to any assertion
+  // this repo can write, since happy-dom has no canvas:
+  //
+  //   - OUT OF PHASE at most scene sizes. A tiling that starts at 0 and one
+  //     that starts at offsetX agree only when offsetX is a whole multiple of
+  //     the step. Measured: the 10x9 demo map happens to align (offsetX is
+  //     exactly one step) — and a 32x32 scene, the size session zero actually
+  //     played on, does NOT. Aligning on the map you happen to be looking at
+  //     is the worst kind of correct.
+  //   - LINES WHERE THERE ARE NO SQUARES. A letterboxed margin is outside the
+  //     scene entirely; ruling it suggests a grid the map does not have and
+  //     the server would refuse to move a token onto.
+  //
+  // Its old job — a lattice before art loads — is covered: planGrid needs no
+  // images, so the canvas draws the grid whether or not a single tile resolves.
   const root = render(world());
   const grid = root.querySelector(".grid") as HTMLElement;
-  expect(grid.style.backgroundSize).toBe(`${CELL}px ${CELL}px`);
+  const cam = boardCamera(6, 4);
+  expect(cam.scale).not.toBe(1); // a scale of 1 would hide a phase error
+
+  expect(grid.style.backgroundSize).toBe("");
   expect(grid.dataset["sceneId"]).toBe("s1");
 });
 
@@ -394,6 +411,64 @@ test("a token's screen position and size scale with the camera, not just its gri
   // transform actually produces, so toBeCloseTo above already fails hard
   // against it -- this assertion just says so directly.
   expect(px(tok.style.left)).not.toBeCloseTo(5 * CELL, 0);
+});
+
+test("a token's INNER content shrinks with the camera too, not just its outer box", () => {
+  // Task 10 cosmetic fix: the outer .token box was already scaled (the test
+  // above), but its children -- the initial letter's circle, a resource
+  // chip's font, a condition dot -- carried FIXED pixel sizes from style.css
+  // (30px, 8px, 5px) regardless of cam.scale. At this fixture's scale
+  // (15/44 =~ 0.34) the token box shrinks to about 15px while the initial's
+  // circle stayed 30px, overflowing its own box -- the exact symptom the
+  // brief names ("the letter overflows at small scale").
+  const st = bigSceneState(32, 32);
+  st.Actors["a1"] = {
+    actorId: "a1", name: "Scout", moduleId: "", attributes: { vigor: 1 },
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [],
+  };
+  st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
+  st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
+
+  const root = document.createElement("div");
+  renderSpectator(root, st, [], "connected");
+  const tok = root.querySelector(".token") as HTMLElement;
+  const initial = tok.querySelector(".initial") as HTMLElement;
+  const chip = tok.querySelector(".chip") as HTMLElement;
+  const dot = tok.querySelector(".dot") as HTMLElement;
+
+  const cam = boardCamera(32, 32);
+  expect(cam.scale).toBeLessThan(0.5); // guards against a vacuous pass near scale 1
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+
+  // The circle SHRINKS below its 30px CSS default -- proportionally, not to
+  // some other fixed size.
+  expect(px(initial.style.width)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.height)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.width)).toBeLessThan(30);
+  // And the letter's own font, or it still overflows the now-smaller circle.
+  expect(px(initial.style.fontSize)).toBeGreaterThan(0);
+  expect(px(initial.style.fontSize)).toBeLessThan(16);
+
+  expect(px(chip.style.fontSize)).toBeCloseTo(8 * cam.scale, 6);
+  expect(px(chip.style.fontSize)).toBeLessThan(8);
+
+  expect(px(dot.style.width)).toBeCloseTo(5 * cam.scale, 6);
+  expect(px(dot.style.height)).toBeCloseTo(5 * cam.scale, 6);
+  expect(px(dot.style.width)).toBeLessThan(5);
+});
+
+test("at a large-enough camera scale a token's inner content does not shrink below its CSS default", () => {
+  // The other direction, so the fix cannot be "always shrink regardless of
+  // scale" -- world()'s 6x4 scene fits at scale ~2.42 (see the background-size
+  // test above), so a token here should be LARGER than the 30px/8px/5px
+  // defaults, not clamped to them.
+  const root = render(world());
+  const tok = root.querySelector(".token") as HTMLElement;
+  const initial = tok.querySelector(".initial") as HTMLElement;
+  const cam = boardCamera(6, 4);
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+  expect(px(initial.style.width)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.width)).toBeGreaterThan(30);
 });
 
 test("a click resolves through the camera, not raw pixels, at a non-unit scale and non-zero offset", () => {

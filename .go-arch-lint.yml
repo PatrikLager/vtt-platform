@@ -42,6 +42,12 @@ components:
   engine:   { in: internal/engine }
   campaign: { in: internal/campaign }
   toolgen:  { in: tools/toolgen }
+  # tools/genmappack (maps-as-geometry Task 10): generates the standard tile
+  # pack's images and manifest. A GENERATOR rather than committed-and-forgotten
+  # binaries, so the pack's provenance is unambiguous (no borrowed art of
+  # unclear licence), it is re-tunable, and it doubles as a worked example of
+  # what a pack author must produce (design spec §4.2).
+  genmappack: { in: tools/genmappack }
   identity: { in: internal/identity }
   gateway:  { in: internal/gateway }
   harness:  { in: internal/harness }
@@ -86,6 +92,12 @@ deps:
   engine:   { mayDependOn: [contract, engine] }
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
+  # genmappack is SELF-ONLY — deliberately not even contract. It writes PNGs
+  # and a pack.json, which are assets served over HTTP and never events, so it
+  # has no business knowing the wire vocabulary. Self-reference rather than an
+  # empty list because go-arch-lint requires at least one ref; the effect is
+  # the same, and a future import has to change this line and justify itself.
+  genmappack: { mayDependOn: [genmappack] }
   identity: { mayDependOn: [identity] }
   # Self-only, and self is needed: testdb's own tests are an EXTERNAL package
   # (testdb_test) so they can drive the driver the way a caller does, which

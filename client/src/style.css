@@ -55,6 +55,16 @@ h3 { margin: 0 0 2px; font-size: 14px; }
    edge, once zooming exists. Grid lines come from a repeating gradient so
    cell size stays driven by one number (CELL in spectator.ts) for as long as
    nothing has been drawn onto the canvas layered on top of it. */
+/* A FIXED pane (backlog T1/#19): the board no longer sizes itself to the
+   scene, so a 200x200 map and a 10x10 room lay out identically and the
+   controls stay above the fold. The camera fits the scene inside it.
+
+   NO background lattice here. The grid is drawn on the canvas by strokeGrid,
+   through the camera — a CSS tiling starts at THIS element's origin and rules
+   the whole pane, while the real grid starts at the camera's offset and spans
+   only the scene, so the two agree only when the offset happens to be a whole
+   multiple of the step, and the CSS one draws squares out in the letterboxed
+   margin where the map has none. */
 .grid {
   position: relative;
   width: 640px;
@@ -62,9 +72,6 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--line);
-  background-image:
-    linear-gradient(to right, var(--line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
 }
 .grid canvas {
   position: absolute;

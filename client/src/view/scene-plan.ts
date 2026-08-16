@@ -122,6 +122,70 @@ function planObjects(
   }
 }
 
+/**
+ * GridLine is one square boundary in SCREEN coordinates, already through the
+ * camera.
+ *
+ * A separate shape from DrawOp on purpose. DrawOp describes an IMAGE at a rect,
+ * and a line is not an image — widening DrawOp to pretend otherwise (a
+ * sentinel image name, a zero-height rect) would put a decision back into
+ * canvas.ts, which is the one layer no test in this repo can see.
+ */
+export interface GridLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * planGrid emits the square boundaries of one scene, culled to the viewport.
+ *
+ * THE GRID IS WHAT A TACTICAL MAP IS FOR. maps/cellar first rendered with
+ * walls, floors, pillars and a door and NO squares at all, so nothing on it
+ * could be counted — is that pillar three squares away, or four? The old CSS
+ * lattice (.grid's background-size) was painted over the instant terrain
+ * reached the canvas, leaving no grid rather than a misaligned one.
+ *
+ * It lives here, not in CSS, because only the camera knows the transform: a
+ * background-size that did not scale with cam.scale would drift out of step
+ * the moment anyone zoomed, which is precisely how tokens came to draw
+ * unscaled over scaled terrain earlier on this branch. One transform, one
+ * place.
+ *
+ * Lines span the SCENE, not the pane — a vertical stops where the map stops,
+ * so the lattice cannot overhang into empty pane beside a letterboxed map.
+ */
+export function planGrid(
+  st: State,
+  sceneId: string,
+  cam: Camera,
+  cell: number,
+  viewW: number,
+  viewH: number,
+): GridLine[] {
+  const scene = st.Scenes[sceneId];
+  if (!scene) return [];
+
+  const step = cell * cam.scale;
+  const left = cam.offsetX;
+  const top = cam.offsetY;
+  const right = left + scene.GridWidth * step;
+  const bottom = top + scene.GridHeight * step;
+
+  const lines: GridLine[] = [];
+  // <= because a grid of N squares has N+1 boundaries: both outer edges count.
+  for (let gx = 0; gx <= scene.GridWidth; gx++) {
+    const x = left + gx * step;
+    if (x >= 0 && x <= viewW) lines.push({ x1: x, y1: top, x2: x, y2: bottom });
+  }
+  for (let gy = 0; gy <= scene.GridHeight; gy++) {
+    const y = top + gy * step;
+    if (y >= 0 && y <= viewH) lines.push({ x1: left, y1: y, x2: right, y2: y });
+  }
+  return lines;
+}
+
 /** intersectsViewport: true when a screen rect overlaps [0,viewW)x[0,viewH). */
 function intersectsViewport(
   sx: number,
