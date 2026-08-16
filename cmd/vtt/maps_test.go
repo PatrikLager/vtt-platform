@@ -92,6 +92,49 @@ func TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack(t *testing.
 	}
 }
 
+// TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack is
+// whole-branch-review finding I1's exact reproduction, at the level the
+// reviewer actually ran it: copy a working map+pack pair, typo one object's
+// art, and prove loadMapsDir's boot dry-run refuses it rather than serving
+// it — the same guarantee TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack
+// already gives a tile override, now extended to an object. Before this
+// task, Pack.Objects was loaded by mapdef.LoadPack and read by nothing in
+// Go: this map would have booted cleanly, and the object (blocks_move:
+// true) would have gone on blocking its square forever with nothing ever
+// drawn there — an invisible barrier from a single typo.
+func TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "shrine")
+	if err := os.MkdirAll(filepath.Join(sub, "tiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A pack that defines the tile art the map overrides with, but NOT the
+	// object art the map's one object names.
+	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
+		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}],
+		"objects": [{"name":"boulder-mossy-2","file":"boulder_02.png"}]
+	}`)
+	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"id": "shrine", "name": "Obsidian Shrine",
+		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
+		"tiles": {"0,0":"wood"},
+		"overrides": {"0,0":"wood-planks-split-3"},
+		"objects": [{"id":"boulder-1","kind":"boulder","at":[0,0],"size":[1,1],
+		             "blocks_move":true,"art":"boulder-mosy-2"}]
+	}`)
+
+	_, err := LoadMapsDir(dir)
+	if err == nil {
+		t.Fatal("an object naming art the pack does not define loaded cleanly; " +
+			"it should have failed at boot — the object still blocks its square " +
+			"(blocks_move survives untouched) but nothing would ever draw there")
+	}
+	if !strings.Contains(err.Error(), "boulder-mosy-2") {
+		t.Errorf("error should name the unresolved art, got: %v", err)
+	}
+}
+
 // TestLoadMapsDirRefusesDuplicatePackIds guards the namespace GET
 // /api/packs/{pack}/{file} addresses by: two map directories declaring the
 // SAME pack id would otherwise let the second silently shadow the first's

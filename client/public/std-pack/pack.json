@@ -1,0 +1,86 @@
+{
+  "id": "std",
+  "name": "Standard Vocabulary",
+  "cell_px": 64,
+  "tiles": [
+    {
+      "name": "stone-wall",
+      "kind": "wall",
+      "material": "stone",
+      "file": "std_stone_wall.png",
+      "desc": "coursed stone blockwork, the standard wall face for any nature naming no art of its own"
+    },
+    {
+      "name": "wood-wall",
+      "kind": "wall",
+      "material": "wood",
+      "file": "std_wood_wall.png",
+      "desc": "upright wooden wall planking"
+    },
+    {
+      "name": "wood-door",
+      "kind": "door",
+      "material": "wood",
+      "file_open": "std_wood_door_open.png",
+      "file_closed": "std_wood_door_closed.png",
+      "desc": "a banded wooden door; closed and open are the SAME nature (spec §3.3) — folded state picks which of these two pictures the renderer draws, never the tile's kind"
+    },
+    {
+      "name": "stone",
+      "kind": "floor",
+      "material": "stone",
+      "file": "std_stone_floor.png",
+      "desc": "cut flagstone paving"
+    },
+    {
+      "name": "wood",
+      "kind": "floor",
+      "material": "wood",
+      "file": "std_wood_floor.png",
+      "desc": "wooden floorboards"
+    },
+    {
+      "name": "earth",
+      "kind": "floor",
+      "material": "earth",
+      "file": "std_earth_floor.png",
+      "desc": "packed dirt floor, uneven and speckled with small stones"
+    },
+    {
+      "name": "grass",
+      "kind": "floor",
+      "material": "grass",
+      "file": "std_grass_floor.png",
+      "desc": "short grass, blade-flecked"
+    },
+    {
+      "name": "sand",
+      "kind": "floor",
+      "material": "sand",
+      "file": "std_sand_floor.png",
+      "desc": "loose pale sand"
+    },
+    {
+      "name": "water",
+      "kind": "floor",
+      "material": "water",
+      "file": "std_water_floor.png",
+      "desc": "shallow, rippled water"
+    },
+    {
+      "name": "metal",
+      "kind": "floor",
+      "material": "metal",
+      "file": "std_metal_floor.png",
+      "desc": "riveted metal plating"
+    },
+    {
+      "name": "ice",
+      "kind": "floor",
+      "material": "ice",
+      "file": "std_ice_floor.png",
+      "desc": "frozen ice, cracked"
+    }
+  ],
+  "objects": []
+}

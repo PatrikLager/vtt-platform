@@ -42,3 +42,4 @@ github.com/PatrikLager/vtt-platform/internal/rules                   89.0
 github.com/PatrikLager/vtt-platform/internal/rules/conformance       85.5
 github.com/PatrikLager/vtt-platform/internal/store                   90.0
 github.com/PatrikLager/vtt-platform/tools/toolgen                    85.0
+github.com/PatrikLager/vtt-platform/tools/genmappack                 90.0

@@ -79,7 +79,17 @@ func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
 	}
 
 	objects := make([]*vttv1.SceneObject, 0, len(m.Objects))
-	for _, o := range m.Objects {
+	for i, o := range m.Objects {
+		// Whole-branch-review finding I1: an object's art was never
+		// resolved against anything — ResolveObjectArt (resolve.go) is the
+		// object-shaped sibling of the Resolve call the square loop above
+		// already makes, run here so a bad object art name fails this exact
+		// dry run (maps.go's boot-time mapdef.Compile call) the same way an
+		// unresolvable tile override already does, rather than silently
+		// riding through to a SceneObject nothing can ever draw.
+		if err := ResolveObjectArt(i, o, p); err != nil {
+			return nil, warnings, err
+		}
 		objects = append(objects, &vttv1.SceneObject{
 			ObjectId: o.ID, Kind: o.Kind,
 			At:    &vttv1.GridPosition{X: o.X, Y: o.Y},

@@ -616,6 +616,122 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	return r3.Sequence
 }
 
+// --- C5 remediation: create_scene terrain validation --------------------
+//
+// Whole-branch-review finding C5: create_scene was a THIRD terrain entry
+// point (load_map's mapdef.Load and the movement check's Blocked() above
+// being the other two) with NO validation at all — a tile kind of "Wall",
+// "wall " or "banana" reached engine state unexamined, and terrain.go's
+// exact-match switch let a player stand on all three. These tests exercise
+// the fix over the real wire, at the CommandResult a caller — including the
+// LLM DM issuing create_scene as an advertised MCP tool — actually reads.
+// The exhaustive matrix of what is/is not accepted lives at the unit level
+// (create_scene_validate_test.go); these prove the wiring reaches
+// handleCommand and produces a clean ok=false, never a dropped connection or
+// a silent fix, mirroring TestAPlayerCannotWalkOntoBlockingSceneryAndThe
+// RefusalNamesIt's own division of labour for the movement check above.
+
+// TestCreateSceneRefusesUnknownTileKind drives the reviewer's own three
+// empirical proof cases, unmodified: a bad capitalization, trailing
+// whitespace, and an invented kind — exactly the three strings the
+// whole-branch review demonstrated standing on as WALKABLE terrain.
+func TestCreateSceneRefusesUnknownTileKind(t *testing.T) {
+	cases := []string{"Wall", "wall ", "banana"}
+	for _, kind := range cases {
+		t.Run(kind, func(t *testing.T) {
+			f := newGWFixture(t)
+			dmConn := f.dial(f.dmToken, 4)
+
+			sendCommand(t, dmConn, &vttv1.ClientCommand{
+				RequestId: "r-bad-kind",
+				Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+					SceneId: "bad-kind-scene", Name: "Broken", GridWidth: 1, GridHeight: 1,
+					Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: kind}},
+				}},
+			})
+			res := readResult(t, dmConn)
+			if res.Ok {
+				t.Fatalf("kind %q was accepted — the closed spatial vocabulary is not enforced on create_scene", kind)
+			}
+			if !strings.Contains(res.Error, "kind") {
+				t.Fatalf("refusal does not name the problem: %q", res.Error)
+			}
+
+			// Never became history: no broadcast on this connection.
+			assertNoFrameWithin(t, dmConn, 200*time.Millisecond)
+
+			// The connection stays open — a refusal, not a dropped socket — and
+			// can still issue a command it IS authorized for.
+			sendCommand(t, dmConn, &vttv1.ClientCommand{
+				RequestId: "r-followup",
+				Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
+			})
+			if follow := readResult(t, dmConn); !follow.Ok {
+				t.Fatalf("connection did not survive the refusal: %q", follow.Error)
+			}
+		})
+	}
+}
+
+// TestCreateSceneRefusesOutOfGridTileKey is the reviewer's fourth proof
+// case: "scene stored 5 tile entries on a 3x3 grid (out-of-grid key
+// retained: true)". Every in-grid square is declared here (so completeness
+// alone cannot explain the refusal) plus one stray key outside the declared
+// grid, isolating the bounds check.
+func TestCreateSceneRefusesOutOfGridTileKey(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, 4)
+
+	tiles := map[string]*vttv1.TileRef{}
+	for y := int32(0); y < 3; y++ {
+		for x := int32(0); x < 3; x++ {
+			tiles[fmt.Sprintf("%d,%d", x, y)] = &vttv1.TileRef{Kind: "floor"}
+		}
+	}
+	tiles["5,5"] = &vttv1.TileRef{Kind: "floor"}
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-out-of-grid",
+		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+			SceneId: "out-of-grid-scene", Name: "Broken", GridWidth: 3, GridHeight: 3,
+			Tiles: tiles,
+		}},
+	})
+	res := readResult(t, dmConn)
+	if res.Ok {
+		t.Fatal("a tile key outside the declared grid was accepted, and retained (whole-branch-review C5)")
+	}
+	if !strings.Contains(res.Error, "5,5") {
+		t.Fatalf("refusal does not name the offending square: %q", res.Error)
+	}
+}
+
+// TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind pins the
+// deliberate other half of the C5 fix: kind is a closed spatial set, but
+// material is NOT — TileRef.material's own doc comment calls it "OPAQUE...
+// never the platform's", and design spec §3.3 states plainly that this is
+// what keeps CLAUDE.md rule 5 satisfied (no game-system vocabulary in
+// platform code). A regression that started rejecting unrecognized
+// materials would be enforcing a rule the file format never had (a map
+// file's material is never author-supplied at all — it is always DERIVED
+// from a standard tile name) and would put the platform in the business of
+// deciding which ruleset-flavour words are legitimate.
+func TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, 4)
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-custom-material",
+		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+			SceneId: "custom-material-scene", Name: "Homebrew", GridWidth: 1, GridHeight: 1,
+			Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "wall", Material: "obsidian-blend"}},
+		}},
+	})
+	if res := readResult(t, dmConn); !res.Ok {
+		t.Fatalf("a custom material alongside a validly-kinded tile was refused: %q", res.Error)
+	}
+}
+
 // TestAPlayerCannotWalkIntoAWallButTheDMCan is Task 6's movement half (spec
 // §6, Patrik: "hard for players, free for DM"). Checked in handleCommand,
 // not engine.Apply: Apply is the fold, and by the time a TokenMoved event

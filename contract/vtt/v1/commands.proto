@@ -87,6 +87,22 @@ message DeleteNote { string key = 1; }
 
 message LoadAdventure { string adventure_id = 1; }
 
+// LoadMap loads a standalone map (maps-as-geometry design spec §4.3: "a map
+// loads directly — pick-up play, someone drops in a dungeon and you use
+// it") into the campaign. It compiles through the exact same construction
+// site LoadAdventure's embedded scenes use (mapdef.BuildSceneCreated, spec
+// §4.3: "both paths compile through one code path to the same events"),
+// producing one SceneCreated carrying the map's resolved terrain/objects
+// followed by one TokenPlaced per declared placement — a whole ordered
+// batch, the same shape LoadAdventure produces, not a single event.
+//
+// Unlike LoadAdventure, a map never creates actors of its own (spec §3.4:
+// maps are terrain and placements, never a second source of actors) — a
+// placement's actor_id must already exist in campaign state (the DM's own
+// add_actor) or the whole batch is rejected, atomically, by
+// campaign.AppendBatch.
+message LoadMap { string map_id = 1; }
+
 message ClientCommand {
   string request_id = 1;
   oneof command {
@@ -110,6 +126,7 @@ message ClientCommand {
     RotateJoinLink rotate_join_link = 27;
     OpenDoor open_door = 28;
     CloseDoor close_door = 29;
+    LoadMap load_map = 30;
   }
 }
 

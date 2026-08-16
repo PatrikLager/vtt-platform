@@ -22,7 +22,7 @@ import {
 import { renderDMConsole } from "./view/dm";
 import { requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
-import { loadPackImages } from "./view/pack-assets";
+import { loadPackImages, loadStandardPackImages } from "./view/pack-assets";
 import type { ImageMap } from "./view/canvas";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
@@ -151,6 +151,35 @@ function startSession(root: HTMLElement, token: string): Session {
   // the same pack every time paint() happens to run again before the first
   // load has resolved.
   let images: ImageMap = {};
+
+  // The standard-vocabulary BASELINE (review finding C2, 2026-08-16): every
+  // one of the eleven std:<kind>/<material> pictures, so a square with no
+  // art override draws SOMETHING instead of nothing (both shipped
+  // adventures carry zero overrides — see pack-assets.ts's own header
+  // comment). Fired unconditionally, right here, rather than waiting on
+  // fetchMe/fetchMaps below: unlike a configured map's own pack, this one
+  // needs no token and no server-side maps/adventures configuration at all
+  // (it comes straight from the client's own bundle, "/std-pack/..."), so it
+  // must not be gated behind — or lost if — that metadata chain fails.
+  // Merged UNDER whatever a map's own pack later supplies: "tile:" and
+  // "std:" keys never collide (disjoint prefixes — scene-plan.ts's
+  // tileImage picks one or the other, never both, for a given square), so
+  // this is "baseline" in the sense the finding means (present for anything
+  // an override does not name), not in merge-order precedence.
+  void loadStandardPackImages(location.origin)
+    .then((imgs) => {
+      images = { ...images, ...imgs };
+      paint();
+    })
+    .catch(() => {
+      // loadStandardPackImages already tolerates a 404'd manifest or a
+      // failed image (its own doc comment): this only catches the fetch
+      // call itself throwing (e.g. no network) rather than answering with a
+      // Response — the same "metadata unavailable degrades the client
+      // gracefully" posture as the fetchMe/.../fetchMaps chain's own
+      // trailing .catch below.
+    });
+
   const loadedPacks = new Set<string>();
   const loadMapPacks = (maps: MapMeta[]) => {
     for (const m of maps) {

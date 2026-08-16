@@ -1,6 +1,11 @@
-// Command genmappack generates maps/cellar/tiles: the starter pack Task 10
-// of the maps-as-geometry arc ships as maps/cellar's own art (design spec
-// §4.2, §1.5's "a pack manifest, with no other help").
+// Command genmappack generates TWO packs: maps/cellar/tiles, the starter
+// pack Task 10 of the maps-as-geometry arc ships as maps/cellar's own art
+// (design spec §4.2, §1.5's "a pack manifest, with no other help"), and
+// (added for review finding C2, 2026-08-16) client/public/std-pack, a
+// baseline picture for every one of internal/mapdef/standard.go's eleven
+// standard natures — see std_pack.go's own header comment for why a square
+// with no art override needs this at all, and why it ships from a different
+// place than the cellar pack does.
 //
 // WHY GENERATED RATHER THAN DRAWN OR FETCHED. Patrik's ruling: copy no
 // image, fetch art from nowhere else on the web (fantasymapbuilder.com's
@@ -21,7 +26,8 @@
 // good art, only to be UNAMBIGUOUS art — a wall reads as a wall, a crate
 // reads as a crate, at 64px in a browser tile.
 //
-// Run: go run ./tools/genmappack [-out maps/cellar/tiles]
+// Run: go run ./tools/genmappack [-out maps/cellar/tiles] [-std-out client/public/std-pack]
+// Both packs are (re)written on every run — there is no flag to write only one.
 package main
 
 import (
@@ -81,17 +87,32 @@ type packOut struct {
 }
 
 func main() {
-	out := flag.String("out", "maps/cellar/tiles", "directory to write pack.json and its images into")
+	out := flag.String("out", "maps/cellar/tiles", "directory to write the cellar starter pack's pack.json and images into")
+	stdOut := flag.String("std-out", "client/public/std-pack",
+		"directory to write the standard-vocabulary baseline pack's pack.json and images into "+
+			"(see std_pack.go's header comment for why this ships from the client bundle, not a "+
+			"GET /api/packs/{pack}/... route)")
 	flag.Parse()
 
-	// 0o750/0o600 below rather than the more usual 0o755/0o644 because gosec
-	// (G301/G306) asks for them and complying costs nothing here: git records
-	// only the executable bit, so the committed pack is byte-identical either
-	// way. A gate is never weakened to pass it, and this one did not need to be.
-	if err := os.MkdirAll(*out, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "genmappack: %v\n", err)
-		os.Exit(1)
-	}
+	cellar, std := generate(*out, *stdOut)
+	fmt.Printf("genmappack: wrote %d tile(s), %d object(s) and pack.json into %s\n",
+		len(cellar.Tiles), len(cellar.Objects), *out)
+	fmt.Printf("genmappack: wrote %d standard tile(s) and pack.json into %s\n",
+		len(std.Tiles), *stdOut)
+}
+
+// generate writes both packs and returns their manifests.
+//
+// SPLIT OUT OF main SO IT CAN BE TESTED. main owns flags and stdout; this owns
+// the behaviour, and the behaviour that matters is REPRODUCIBILITY —
+// genmappack_test.go regenerates into temp dirs and compares byte-for-byte
+// against what is committed. That is what turns "generated, not borrowed" from
+// a claim in a commit message into something a gate checks: committed art
+// drifts silently from its source the moment somebody retouches a PNG or edits
+// a description, and the licensing argument for this art only holds while the
+// committed bytes really are this program's output.
+func generate(out, stdOut string) (packOut, packOut) {
+	mustMkdirAll(out)
 
 	// #nosec G404 -- math/rand is REQUIRED here, not a shortcut. The seed is a
 	// fixed constant so this generator is REPRODUCIBLE: re-running it must emit
@@ -102,32 +123,32 @@ func main() {
 	rng := rand.New(rand.NewSource(seed))
 
 	tiles := []packTileOut{
-		writeTile(*out, rng, "masonry-1", "wall", "stone", "masonry_1.png",
+		writeTile(out, rng, "masonry-1", "wall", "stone", "masonry_1.png",
 			"coursed stone blockwork, the standard wall face for the cellar pack",
 			drawMasonry),
-		writeTile(*out, rng, "earth-1", "floor", "earth", "earth_1.png",
+		writeTile(out, rng, "earth-1", "floor", "earth", "earth_1.png",
 			"packed dirt floor, uneven and speckled with small stones",
 			drawEarth),
-		writeTile(*out, rng, "flagstone-1", "floor", "stone", "flagstone_1.png",
+		writeTile(out, rng, "flagstone-1", "floor", "stone", "flagstone_1.png",
 			"cut flagstone paving, mortared in irregular slabs",
 			drawFlagstone),
 	}
-	tiles = append(tiles, writeDoor(*out, rng, "cellar-door", "wood", "cellar_door_closed.png", "cellar_door_open.png",
+	tiles = append(tiles, writeDoor(out, rng, "cellar-door", "wood", "cellar_door_closed.png", "cellar_door_open.png",
 		"a banded wooden door; closed and open pictures are the SAME nature (spec §3.3) — "+
 			"opening it changes only which of these two files the renderer picks, never the tile's kind",
 		drawDoorClosed, drawDoorOpen))
 
 	objects := []packTileOut{
-		writeObject(*out, rng, "pillar-stone", "pillar_stone.png",
+		writeObject(out, rng, "pillar-stone", "pillar_stone.png",
 			"a round stone column, wide enough to block a square's line of sight and passage",
 			drawPillar),
-		writeObject(*out, rng, "crate-wood", "crate_wood.png",
+		writeObject(out, rng, "crate-wood", "crate_wood.png",
 			"a stacked wooden shipping crate — good cover, or just clutter, depending on how it is placed",
 			drawCrate),
-		writeObject(*out, rng, "barrel", "barrel.png",
+		writeObject(out, rng, "barrel", "barrel.png",
 			"an upright wine barrel, banded in iron",
 			drawBarrel),
-		writeObject(*out, rng, "brazier", "brazier.png",
+		writeObject(out, rng, "brazier", "brazier.png",
 			"a standing iron brazier, coals lit — decorative: it blocks neither sight nor movement",
 			drawBrazier),
 	}
@@ -139,10 +160,38 @@ func main() {
 		Tiles:   tiles,
 		Objects: objects,
 	}
-	writeManifest(*out, manifest)
+	writeManifest(out, manifest)
 
-	fmt.Printf("genmappack: wrote %d tile(s), %d object(s) and pack.json into %s\n",
-		len(tiles), len(objects), *out)
+	// The standard-vocabulary baseline pack (review finding C2, std_pack.go's
+	// own header comment for the full why/where). rng is NOT re-seeded here —
+	// threaded straight from the cellar pack's own draws above, so a rerun of
+	// the WHOLE tool is what the fixed seed reproduces byte-identically, not
+	// just one half of it in isolation.
+	stdManifest := writeStandardPack(stdOut, rng)
+	return manifest, stdManifest
+}
+
+// mustMkdirAll creates dir (and any missing parents), or exits loudly.
+//
+// 0o750 rather than the more usual 0o755 because gosec (G301) asks for it
+// and complying costs nothing here: git records only the executable bit, so
+// the committed pack is byte-identical either way. A gate is never weakened
+// to pass it, and this one did not need to be.
+func mustMkdirAll(dir string) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "genmappack: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// colorRGBA is color.RGBA{r, g, b, 0xff} spelled without three zero-padded
+// hex bytes and a trailing 0xff at every one of std_pack.go's texture call
+// sites — purely a call-site-brevity helper, opaque colour values only,
+// nothing this file interprets (CLAUDE.md rule 5 is about game-system
+// vocabulary, not RGB triples, but the same "opaque data, not meaning" spirit
+// applies).
+func colorRGBA(r, g, b uint8) color.RGBA {
+	return color.RGBA{R: r, G: g, B: b, A: 0xff}
 }
 
 // writeTile draws one plain (non-door) tile via draw, PNG-encodes it to

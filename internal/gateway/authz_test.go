@@ -82,6 +82,8 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return deleteNoteCmd()
 	case "load_adventure":
 		return loadAdventureCmd()
+	case "load_map":
+		return loadMapCmd()
 	case "open_door":
 		// Scene "scn", not "s1": Task 6's adjacency check (mayWorkDoor) now
 		// consults the state, and "scn" is where ownershipFixture's t1 sits —
@@ -103,6 +105,16 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 func loadAdventureCmd() *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadAdventure{
 		LoadAdventure: &vttv1.LoadAdventure{AdventureId: "goblin-ambush"},
+	}}
+}
+
+// loadMapCmd builds a minimal, valid LoadMap ClientCommand (maps-as-geometry
+// C1 remediation) — loadAdventureCmd's sibling. Authorize never checks map
+// existence, only role, so a bare id is trivially valid for authz purposes;
+// the gateway handler (map.go) owns the "unknown map" lookup.
+func loadMapCmd() *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadMap{
+		LoadMap: &vttv1.LoadMap{MapId: "cellar"},
 	}}
 }
 
@@ -189,7 +201,7 @@ func closeDoorCmd(sceneID string, x, y int32) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 20 commands x 4 roles authorization matrix.
+// authzCase is one cell of the 21 commands x 4 roles authorization matrix.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -199,7 +211,8 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 80-cell matrix (spec §4/§7, grown from 72 by
+// authzCases is the full 84-cell matrix (spec §4/§7, grown from 80 by the
+// whole-branch-review C1 remediation's load_map row, from 72 by
 // maps-as-geometry Task 1's open_door/close_door rows, from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
 // adventure-format Task 4's load_adventure row, which itself grew from 36 by
@@ -283,6 +296,14 @@ var authzCases = []authzCase{
 	{"load_adventure", identity.RoleAgent, true},
 	{"load_adventure", identity.RolePlayer, false},
 	{"load_adventure", identity.RoleSpectator, false},
+
+	// load_map (whole-branch-review C1 remediation): dm/agent only, same
+	// shape and same reasoning as load_adventure directly above — loading a
+	// map rewrites the table's world, exactly like loading an adventure.
+	{"load_map", identity.RoleDM, true},
+	{"load_map", identity.RoleAgent, true},
+	{"load_map", identity.RolePlayer, false},
+	{"load_map", identity.RoleSpectator, false},
 
 	// grant/revoke_actor_control (presence-and-actor-control Task 3, spec
 	// §5.3). Handing a character to someone is the DM's, so grant has NO
@@ -381,8 +402,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 80 {
-		t.Fatalf("authzCases has %d entries, want 80 (20 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 84 {
+		t.Fatalf("authzCases has %d entries, want 84 (21 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

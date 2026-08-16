@@ -267,6 +267,17 @@ var manifest = []toolSpec{
 		description: "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
 		descriptor:  (&vttv1.CloseDoor{}).ProtoReflect().Descriptor(),
 	},
+	{
+		message:     "vtt.v1.LoadMap",
+		name:        "load_map",
+		description: "Load a standalone map into the campaign — compiles its terrain and scenery into one SceneCreated plus one TokenPlaced per placement the map declares, atomically. DM/agent only. Unlike load_adventure, a map brings no actors, notes or opening narration — just terrain and placements; a placement's actor must already exist (add_actor it first) or the whole load is rejected.",
+		descriptor:  (&vttv1.LoadMap{}).ProtoReflect().Descriptor(),
+		// requiredOverride check (the fabrication-trap lesson — see
+		// add_actor/add_narration above): LoadMap has exactly one field,
+		// map_id, and it is genuinely required — there is no way to load "a"
+		// map without naming which one, the same reasoning load_adventure's
+		// own comment gives for adventure_id. No override needed.
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

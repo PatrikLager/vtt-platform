@@ -112,6 +112,17 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 		// against today's unrelated "tiles[...]: no tile named" error --
 		// caught exactly this way in review before this test was trusted.
 		{"overrides-without-tiles", "declares overrides but tiles is empty"},
+		// Whole-branch-review finding I1: object art was resolved nowhere,
+		// so a pack typo produced an invisible barrier (a blocks_move
+		// object whose picture never draws, with nothing telling a player
+		// why). Empty art is the sharper half of that gap to close at Load
+		// itself (no *Pack needed to know it): unlike a tile, an object has
+		// no standard-vocabulary fallback (tools/genmappack/std_pack.go's
+		// own test says objects have none), so empty art can never draw at
+		// ANY pack. A non-empty but unresolvable name is the OTHER half --
+		// that needs a real *Pack to disprove, so it is pinned in
+		// compile_test.go instead (ResolveObjectArt, resolve.go), not here.
+		{"object-art-empty", "must not be empty"},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			_, err := mapdef.Load(filepath.Join("testdata/invalid", c.dir, "map.json"))

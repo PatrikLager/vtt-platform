@@ -153,6 +153,59 @@ func TestCompilePropagatesAResolveFailure(t *testing.T) {
 	}
 }
 
+// TestCompileRefusesAnObjectWhoseArtDoesNotResolve is whole-branch-review
+// finding I1's exact reproduction: p.Objects was loaded by LoadPack and read
+// by nothing in Go, so a typo'd object art (the reviewer's own proof: copy
+// maps/cellar, misspell "pillar-stone" as "pillar-stoen") passed every check
+// this package ran and produced an INVISIBLE BARRIER — the object still
+// blocks its square (blocks_move survives untouched), but nothing draws
+// there and nothing at load time said why. Mirrors
+// TestCompilePropagatesAResolveFailure's shape exactly, one layer over:
+// an override's bad art fails through Resolve; an object's bad art must
+// fail the identical way through the new ResolveObjectArt.
+func TestCompileRefusesAnObjectWhoseArtDoesNotResolve(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Objects[0].Art = "pillar-stoen" // the reviewer's exact typo, one letter transposed
+	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = mapdef.Compile(m, p)
+	if err == nil {
+		t.Fatal("want an error compiling a map whose object art does not resolve — " +
+			"this is I1's invisible barrier: the object still blocks its square, " +
+			"but nothing would ever be drawn there")
+	}
+	if !strings.Contains(err.Error(), "pillar-stoen") {
+		t.Fatalf("error should name the unresolved art, got: %v", err)
+	}
+}
+
+// TestCompileRefusesAnObjectArtWithNoPackGiven pins the OTHER half of
+// Resolve's own nil-pack guard (see its doc comment), now applied to
+// objects: a map whose only art comes from an object (no tile overrides at
+// all) must still refuse to compile against p == nil, exactly as it would if
+// the same art sat in overrides instead. Without this, a map with zero
+// overrides but one object could compile "successfully" against a
+// completely missing pack — the object's art silently never resolving to
+// anything, which is the invisible-barrier bug the WHOLE task exists to
+// close, reached through the one path TestCompileWithNilPackResolvesStandardOnlyTiles
+// deliberately does NOT exercise (that test clears m.Objects specifically so
+// it stays about tiles).
+func TestCompileRefusesAnObjectArtWithNoPackGiven(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Overrides = nil // no tile art needs a pack; the OBJECT's art still does
+	if _, _, err := mapdef.Compile(m, nil); err == nil {
+		t.Fatal("want an error compiling a map whose object names art but gives Compile no pack to resolve it against")
+	}
+}
+
 // TestCompileIsDeterministic mirrors internal/adventure's own
 // TestCompileIsDeterministic: BuildSceneCreated's square loop walks the grid
 // by coordinate (row-major), never ranges m.Tiles directly, so two calls
@@ -252,13 +305,21 @@ func TestWarningsSurfaceInRowMajorOrder(t *testing.T) {
 // TestCompileWithNilPackResolvesStandardOnlyTiles pins that a map using only
 // standard tiles (no overrides) compiles with p == nil — the common case for
 // a map that names no custom pack at all, and the same nil-tolerance
-// Resolve itself documents.
+// Resolve itself documents. m.Objects is cleared alongside m.Overrides,
+// deliberately, now that ResolveObjectArt exists (whole-branch-review I1):
+// cellar.json's one object still names art ("boulder-mossy-2"), and unlike a
+// tile an object has no standard fallback, so it would ALSO need a pack —
+// leaving it in place would make this test assert something no longer true
+// and fail for a reason unrelated to what it is actually pinning. The
+// object-specific case (an object's art with no pack to resolve it against)
+// has its own test: TestCompileRefusesAnObjectArtWithNoPackGiven.
 func TestCompileWithNilPackResolvesStandardOnlyTiles(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.Overrides = nil // no art overrides left: nothing needs a pack
+	m.Objects = nil   // ditto for the one object's own art (see doc comment above)
 
 	envs, _, err := mapdef.Compile(m, nil)
 	if err != nil {

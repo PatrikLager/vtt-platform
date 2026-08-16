@@ -92,12 +92,14 @@ deps:
   engine:   { mayDependOn: [contract, engine] }
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
-  # genmappack is SELF-ONLY — deliberately not even contract. It writes PNGs
-  # and a pack.json, which are assets served over HTTP and never events, so it
-  # has no business knowing the wire vocabulary. Self-reference rather than an
-  # empty list because go-arch-lint requires at least one ref; the effect is
-  # the same, and a future import has to change this line and justify itself.
-  genmappack: { mayDependOn: [genmappack] }
+  # genmappack may read mapdef, and ONLY for the reason its own test states:
+  # the standard pack must cover EXACTLY internal/mapdef's standard vocabulary,
+  # neither missing a nature nor inventing one, and the only honest way to
+  # check that is to read the vocabulary from its source. Duplicating the list
+  # into the test would let the two drift silently, which is the defect the
+  # test exists to prevent. It still writes only PNGs and pack.json — it has no
+  # business knowing the WIRE vocabulary, so contract stays off this list.
+  genmappack: { mayDependOn: [genmappack, mapdef] }
   identity: { mayDependOn: [identity] }
   # Self-only, and self is needed: testdb's own tests are an EXTERNAL package
   # (testdb_test) so they can drive the driver the way a caller does, which

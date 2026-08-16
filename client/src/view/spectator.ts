@@ -103,6 +103,19 @@ function renderGrid(
   sceneId: string,
   images: ImageMap,
   onCell?: (c: { x: number; y: number }) => void,
+  // TEST-ONLY SEAM (review finding C4, 2026-08-16): how this function
+  // obtains a 2D context. Defaults to the real canvas.getContext, which is
+  // what every production call site gets — app.ts never passes
+  // extras.getContext, and there is no reason it ever should; a real
+  // browser's canvas always answers "2d" with a context. The override
+  // exists because happy-dom's canvas.getContext ALWAYS returns null (this
+  // file's own comment on `ctx` below), so nothing past that call — the
+  // actual paint()/strokeGrid() wiring, including their relative order —
+  // was reachable by the suite before this seam existed. Kept minimal
+  // deliberately: one optional function parameter, not a restructuring of
+  // the drawing layer (spectator.ts's thinness is the design, not an
+  // oversight to fix).
+  getContext: (canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null = (c) => c.getContext("2d"),
 ): HTMLElement {
   const scene = st.Scenes[sceneId];
   const wrap = el("section", "board");
@@ -143,8 +156,10 @@ function renderGrid(
   // whole map"), turn that into draw instructions (Task 8, pure and fully
   // tested), and hand them to Task 9's thin drawImage loop. ctx is null under
   // happy-dom -- canvas.ts's header comment explains why -- but never in a
-  // real browser, which always returns one for "2d".
-  const ctx = canvas.getContext("2d");
+  // real browser, which always returns one for "2d". getContext is the
+  // TEST-ONLY seam above; production always uses its default, the real
+  // canvas.getContext.
+  const ctx = getContext(canvas);
   if (ctx) {
     const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
     paint(ctx, ops, images);
@@ -353,6 +368,12 @@ export interface ViewExtras {
    * art has loaded so far.
    */
   images?: ImageMap | undefined;
+  /**
+   * TEST-ONLY SEAM (review finding C4, 2026-08-16): overrides how renderGrid
+   * obtains its 2D context. Never set by app.ts — see renderGrid's own doc
+   * comment on the parameter this threads into for the full reasoning.
+   */
+  getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
 }
 
 export function renderSpectator(
@@ -369,7 +390,7 @@ export function renderSpectator(
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.onCell),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.onCell, extras.getContext),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),

@@ -135,6 +135,9 @@ func Load(path string) (*Map, error) {
 	if err := CheckObjectFootprints(objects, raw.GridWidth, raw.GridHeight, errf); err != nil {
 		return nil, err
 	}
+	if err := CheckObjectArtDeclared(objects, errf); err != nil {
+		return nil, err
+	}
 
 	placements := make([]Placement, 0, len(raw.Placements))
 	for _, p := range raw.Placements {
@@ -283,11 +286,13 @@ func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf Fiel
 // zero size broke it silently. The int64 arithmetic guards the same
 // comparison against int32 overflow: At and Size both come straight from
 // author-supplied JSON, and `at:2147483647, size:1` wraps a naive int32 sum
-// negative, which is also less than w and so also wrongly passes. Object art
-// resolution is not checked here or anywhere yet: this function has no
-// *Pack to resolve it against, and Resolve (resolve.go) resolves a square's
-// tile override only — resolving an object's own art is later work, left
-// for whichever task gives objects their own resolution path.
+// negative, which is also less than w and so also wrongly passes. This
+// function's own job stops at GEOMETRY — an object's ART is checked
+// separately, split across two functions by what each can prove without a
+// *Pack: CheckObjectArtDeclared (below) proves a name was declared at all;
+// ResolveObjectArt (resolve.go) proves a declared name actually resolves
+// against the map's pack, run by BuildSceneCreated (compile.go) during the
+// same dry run that already catches an unresolvable tile override.
 func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 	for i, o := range objs {
 		field := fmt.Sprintf("objects[%d]", i)
@@ -298,6 +303,36 @@ func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 			int64(o.X)+int64(o.W) > int64(w) ||
 			int64(o.Y)+int64(o.H) > int64(h) {
 			return errf(field+".at", "places the object outside the grid")
+		}
+	}
+	return nil
+}
+
+// CheckObjectArtDeclared validates that every object names non-empty art —
+// the one part of spec §4.4's "every `art` name resolves" that Load can
+// prove without a *Pack (whole-branch-review finding I1: object art was
+// resolved NOWHERE before this function and ResolveObjectArt existed —
+// Pack.Objects was loaded by LoadPack and read by nothing in Go). A tile's
+// own art may legally be empty (it falls back to the standard vocabulary —
+// CheckTileNamesKnown / StandardTile), but an object has no such fallback:
+// the standard pack declares tiles only, never objects
+// (tools/genmappack/std_pack.go, whose own test says so outright: "objects
+// have no standard fallback"). So an object with empty art can never draw,
+// at any pack, under any circumstances — exactly the invisible-barrier
+// defect spec §1.3 exists to prevent (a blocks_move object with nothing
+// telling a player why their square is blocked), and unlike a merely WRONG
+// art name (which resolves the moment the map's pack is fixed), an EMPTY
+// one is unfixable by any pack at all — so it is refused here, at Load,
+// rather than deferred to whichever caller happens to have a pack in hand.
+//
+// Whether a non-empty name actually resolves against the map's own pack is
+// a separate, pack-dependent question this function has no way to answer —
+// see ResolveObjectArt (resolve.go).
+func CheckObjectArtDeclared(objs []Object, errf FieldErrFunc) error {
+	for i, o := range objs {
+		if o.Art == "" {
+			return errf(fmt.Sprintf("objects[%d].art", i),
+				"must not be empty — objects have no standard art fallback (only tiles do), so an object with no art can never draw")
 		}
 	}
 	return nil

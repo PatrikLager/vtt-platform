@@ -67,3 +67,46 @@ func Resolve(m *Map, p *Pack, square string) (Resolved, []string, error) {
 	}
 	return Resolved{Kind: kind, Material: material, Art: art}, warnings, nil
 }
+
+// ResolveObjectArt resolves one object's art against pack p, closing spec
+// §4.4's "every `art` name resolves" for objects — the pack-dependent half
+// CheckObjectArtDeclared (load.go) cannot perform, since Load never takes a
+// *Pack (whole-branch-review finding I1: before this function existed,
+// p.Objects was loaded by LoadPack and read by nothing in Go — a typo'd
+// object art passed every check this package ran and produced an invisible
+// barrier, a blocked square nothing ever explained).
+//
+// This is deliberately its OWN function rather than folded into Resolve
+// above, and not a call TO Resolve either: Resolve is keyed by a square
+// ("x,y", the one unit spec §4.1's two layers are BOTH keyed by), and an
+// object has no square key of its own — its X/Y is an anchor, not an
+// identity — so forcing it through Resolve's square-shaped signature would
+// misrepresent what an object is. idx identifies the object by its position
+// in Map.Objects (the same "objects[N]" addressing load.go's other Check*
+// functions already use for this exact reason), since an object's own ID is
+// author-supplied and neither required nor guaranteed unique.
+//
+// An empty o.Art is refused here too, redundantly with
+// CheckObjectArtDeclared: BuildSceneCreated (compile.go, which calls this
+// per object) is the ONE shared construction site both the standalone-map
+// and adventure-embedded load paths call directly, and a caller that builds
+// a *Map by hand — as internal/adventure/load.go's own dry run, and several
+// tests in this package, both do — can reach here without ever having run
+// Load's checks at all.
+func ResolveObjectArt(idx int, o Object, p *Pack) error {
+	if o.Art == "" {
+		return fmt.Errorf("mapdef: objects[%d] has no art (objects have no standard art fallback — only tiles do)", idx)
+	}
+	// Same reasoning as Resolve's own p == nil guard above: Load accepts an
+	// object naming art alongside an empty/absent Pack (LoadPack and Load
+	// are independent, and Load has no pack to cross-check against), so a
+	// caller can reach here with p == nil for an object that legitimately
+	// needs one. Refuse rather than let p.Objects panic.
+	if p == nil {
+		return fmt.Errorf("mapdef: objects[%d] names art %q but no pack was given to resolve it", idx, o.Art)
+	}
+	if _, ok := p.Objects[o.Art]; !ok {
+		return fmt.Errorf("mapdef: objects[%d] names art %q, which pack %q does not define", idx, o.Art, p.ID)
+	}
+	return nil
+}

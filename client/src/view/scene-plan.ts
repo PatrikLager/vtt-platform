@@ -228,8 +228,9 @@ function tileImage(tile: Tile, open: boolean): string {
  * "tile:<name>". Validation (mapdef, §4.4) refuses an object whose art does
  * not resolve before this code ever runs; an empty Art reaching here would
  * be a bug upstream, not something this function can repair, and letting a
- * plain "tile:" key through to Task 9's missing-tile marker (spec §7) is the
- * honest, fail-loud answer.
+ * plain "tile:" key through to canvas.ts's missing-tile marker (spec §7,
+ * built 2026-08-16 — canvas.ts's drawMissingTile, not a forward reference
+ * to a task that was never written) is the honest, fail-loud answer.
  */
 function objectImage(obj: SceneObject): string {
   return `tile:${obj.Art}`;

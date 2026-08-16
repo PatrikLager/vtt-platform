@@ -22,28 +22,67 @@ import type { DrawOp, GridLine } from "./scene-plan";
 export type ImageMap = Record<string, CanvasImageSource>;
 
 /**
- * paint walks planScene's draw ops in order and issues one drawImage per op.
- * Nothing here decides position, image choice, visibility or rotation units —
- * every one of those is planScene's job (scene-plan.ts), already pure and
- * tested. This loop only executes the result.
+ * missingTileColors is the magenta-checker convention (spec §7: "An art
+ * name that resolves nowhere draws a visible missing-tile marker... it must
+ * be obvious rather than silently absent") — two colours, high-contrast
+ * against each other AND against everything genmappack's own textures ever
+ * draw (every pack texture in this repo is a muted earth/stone/wood/metal
+ * tone; nothing is this magenta), so a missing tile reads as WRONG on sight,
+ * never as a slightly odd floor. Exported so a test can assert on the exact
+ * marker colour rather than just "something non-empty was drawn".
+ */
+export const missingTileColors: readonly [string, string] = ["#ff00ff", "#1a1a1a"];
+
+/**
+ * drawMissingTile fills op's rect with a 2x2 checkerboard in
+ * missingTileColors, called from inside paint()'s own save/translate/rotate
+ * block — (x, y) is ALREADY relative to the rect's centre (the same frame
+ * drawImage's -sw/2, -sh/2 call uses below), so this function only ever
+ * needs sw/sh, never sx/sy or rot.
+ */
+function drawMissingTile(ctx: CanvasRenderingContext2D, sw: number, sh: number): void {
+  const cw = sw / 2;
+  const chh = sh / 2;
+  for (let gy = 0; gy < 2; gy++) {
+    for (let gx = 0; gx < 2; gx++) {
+      ctx.fillStyle = (gx + gy) % 2 === 0 ? missingTileColors[0] : missingTileColors[1];
+      ctx.fillRect(-sw / 2 + gx * cw, -sh / 2 + gy * chh, cw, chh);
+    }
+  }
+}
+
+/**
+ * paint walks planScene's draw ops in order and issues one drawImage per op
+ * whose image resolves, or draws the missing-tile marker (spec §7) for one
+ * that does not. Nothing here decides position, image choice, visibility or
+ * rotation units — every one of those is planScene's job (scene-plan.ts),
+ * already pure and tested. This loop only executes the result.
  */
 export function paint(ctx: CanvasRenderingContext2D, ops: DrawOp[], images: ImageMap): void {
   for (const op of ops) {
     const image = images[op.image];
-    // Not a visibility decision — planScene already decided this op belongs
-    // on screen. This guards against an ImageMap that has not (yet, or ever)
-    // resolved this key, which today is EVERY key: no task in this arc loads
-    // real pack images into one. Skipping rather than throwing keeps a
-    // partially-populated map from taking the whole board down.
-    if (!image) continue;
 
     ctx.save();
     // DrawOp.rot rotates about the rect's CENTRE (scene-plan.ts's doc comment
     // on DrawOp), so translate there before rotating — rotating about
-    // (sx, sy) would swing a footprint out of its own square.
+    // (sx, sy) would swing a footprint out of its own square. Applies
+    // equally to the missing-tile marker: a rotated object with unresolved
+    // art still marks its OWN rotated footprint, not an axis-aligned box
+    // that disagrees with where planScene actually placed it.
     ctx.translate(op.sx + op.sw / 2, op.sy + op.sh / 2);
     ctx.rotate(op.rot);
-    ctx.drawImage(image, -op.sw / 2, -op.sh / 2, op.sw, op.sh);
+    if (image) {
+      ctx.drawImage(image, -op.sw / 2, -op.sh / 2, op.sw, op.sh);
+    } else {
+      // Not a silent visibility decision (spec §7's whole point) — planScene
+      // already decided this op belongs on screen; an ImageMap that has not
+      // (yet, or ever) resolved this key must still draw SOMETHING obvious,
+      // never nothing. Review finding C2/C3 (2026-08-16): every square of
+      // both shipped adventures hit this exact branch and, before this
+      // marker existed, drew nothing at all — with a test
+      // (spectator-view.test.ts) actively pinning that silence as correct.
+      drawMissingTile(ctx, op.sw, op.sh);
+    }
     ctx.restore();
   }
 }

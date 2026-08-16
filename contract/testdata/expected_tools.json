@@ -575,5 +575,20 @@
       "type": "object"
     },
     "name": "close_door"
+  },
+  {
+    "description": "Load a standalone map into the campaign — compiles its terrain and scenery into one SceneCreated plus one TokenPlaced per placement the map declares, atomically. DM/agent only. Unlike load_adventure, a map brings no actors, notes or opening narration — just terrain and placements; a placement's actor must already exist (add_actor it first) or the whole load is rejected.",
+    "inputSchema": {
+      "properties": {
+        "mapId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mapId"
+      ],
+      "type": "object"
+    },
+    "name": "load_map"
   }
 ]

@@ -47,6 +47,12 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// (an adventure load is not scoped to any actor a participant
 	// controls).
 	"load_adventure": {identity.RoleDM: true, identity.RoleAgent: true},
+	// load_map (whole-branch-review C1 remediation): dm/agent only, exactly
+	// the same shape and reasoning as load_adventure directly above —
+	// loading a standalone map rewrites the table's world just as loading
+	// an adventure does, and no additional ownership check applies (a map
+	// load is not scoped to any actor a participant controls).
+	"load_map": {identity.RoleDM: true, identity.RoleAgent: true},
 	// grant/revoke_actor_control (presence-and-actor-control Task 3, spec
 	// §5.3). Handing a character to someone is the DM's call, so grant has
 	// no player row at all. Revoke does: a player may put a character DOWN,
@@ -294,6 +300,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "delete_note"
 	case *vttv1.ClientCommand_LoadAdventure:
 		return "load_adventure"
+	case *vttv1.ClientCommand_LoadMap:
+		return "load_map"
 	case *vttv1.ClientCommand_GrantActorControl:
 		return "grant_actor_control"
 	case *vttv1.ClientCommand_RevokeActorControl:

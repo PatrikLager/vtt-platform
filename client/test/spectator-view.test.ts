@@ -15,7 +15,7 @@ import { newState, type State } from "../src/state";
 import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { paint, type ImageMap } from "../src/view/canvas";
+import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
 import { worldFromScreen } from "../src/view/camera";
 import { cellFromPoint, type Geometry } from "../src/view/grid";
 
@@ -497,18 +497,30 @@ test("a click resolves through the camera, not raw pixels, at a non-unit scale a
 
 // --- canvas.ts's paint(): the thin drawImage loop --------------------------
 
-/** Records every drawImage call as "drawImage:<image key>"; everything else
- *  paint() may call (save/translate/rotate/restore) is a no-op it does NOT
- *  record, so a test asserting on `calls` sees only what was actually drawn,
- *  in order. */
+/** Records every drawImage call as "drawImage:<image key>" and every fillRect
+ *  call as "fillRect:<fillStyle at call time>:<x>,<y>,<w>,<h>" (C3's
+ *  missing-tile marker draws with fillRect, never drawImage) — everything
+ *  else paint()/strokeGrid() may call (save/restore/translate/rotate/
+ *  beginPath/moveTo/lineTo/stroke) is a no-op it does NOT record, so a test
+ *  asserting on `calls` sees only what was actually drawn, in order. */
 function fakeCtx(calls: string[]): CanvasRenderingContext2D {
   return {
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 0,
     save() {},
     restore() {},
     translate() {},
     rotate() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
     drawImage(image: unknown) {
       calls.push(`drawImage:${image as string}`);
+    },
+    fillRect(x: number, y: number, w: number, h: number) {
+      calls.push(`fillRect:${(this as { fillStyle: string }).fillStyle}:${x},${y},${w},${h}`);
     },
   } as unknown as CanvasRenderingContext2D;
 }
@@ -532,17 +544,114 @@ test("paint issues one drawImage per op, in order", () => {
   expect(calls).toEqual(["drawImage:tile:a", "drawImage:tile:b"]);
 });
 
-test("paint skips an op whose image is not in the map, rather than throwing", () => {
-  // Load-bearing TODAY, not just defensively: no task in this arc's ten has
-  // wired an ImageMap that actually resolves a key yet (grep the plan —
-  // nothing fetches /api/packs/*/*), so every real paint() call in the
-  // running client hits this branch for every op, right now.
+test("paint draws a visible missing-tile marker for an op whose image is not in the map, rather than skipping it silently", () => {
+  // RE-DERIVED (review finding C3, 2026-08-16) from this test's own prior
+  // form, "paint skips an op whose image is not in the map, rather than
+  // throwing", which asserted `expect(calls).toEqual([])`. That assertion
+  // was WRONG, not merely incomplete: spec §7 requires "An art name that
+  // resolves nowhere draws a visible missing-tile marker, not a blank
+  // square... it must be obvious rather than silently absent", and this
+  // test pinned exactly the blank-square behaviour the spec forbids —
+  // actively locking in review finding C2's defect (every square of both
+  // shipped adventures, having no art override, drew nothing) rather than
+  // catching it. Kept as one test, re-derived rather than deleted, so that
+  // mistake stays visible in history instead of quietly vanishing.
   const calls: string[] = [];
   const ctx = fakeCtx(calls);
   expect(() =>
     paint(ctx, [{ image: "tile:missing", sx: 0, sy: 0, sw: 44, sh: 44, rot: 0 }], {}),
   ).not.toThrow();
-  expect(calls).toEqual([]);
+  // Something was drawn — via fillRect, never drawImage, since nothing
+  // resolved this key.
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.some((c) => c.startsWith("drawImage:"))).toBe(false);
+  expect(calls.every((c) => c.startsWith("fillRect:"))).toBe(true);
+  // In the spec's own "obvious, not a shade that could pass for real art"
+  // convention: the marker's own magenta appears among what was drawn.
+  expect(calls.some((c) => c.includes(missingTileColors[0]))).toBe(true);
+});
+
+test("a resolved image still draws via drawImage, never the missing-tile marker", () => {
+  // The other direction from the test above, so "always draw the marker
+  // regardless of whether the key resolved" cannot pass unnoticed.
+  const calls: string[] = [];
+  const ctx = fakeCtx(calls);
+  paint(ctx, [{ image: "tile:a", sx: 0, sy: 0, sw: 44, sh: 44, rot: 0 }], stubImages());
+  expect(calls).toEqual(["drawImage:tile:a"]);
+});
+
+// --- renderSpectator's canvas SEAM (review finding C4, 2026-08-16) ---------
+//
+// Everything above tests paint()/strokeGrid() DIRECTLY, by calling them with
+// a hand-built ctx. That proves those two functions behave correctly in
+// isolation, but proves NOTHING about spectator.ts's renderGrid, which is
+// the only code that actually WIRES them together against a real canvas —
+// `const ctx = canvas.getContext("2d"); if (ctx) { paint(...); strokeGrid(...) }`.
+// Under happy-dom, canvas.getContext("2d") always returns null, so that
+// whole `if` body — the actual production wiring — runs ZERO times anywhere
+// in this suite. A reviewer mutated it seven ways (delete the strokeGrid
+// call; delete both draws; ignore extras.images; draw every op at 0,0 size
+// 0; rotate about the corner; draw the grid BEFORE terrain — the exact
+// defect that once shipped) and every one of the 532 tests that existed
+// before this section stayed green.
+//
+// getContext on ViewExtras (spectator.ts) is the seam this section needs:
+// an OPTIONAL override for how renderGrid obtains its 2D context, used only
+// by this test. Never set by app.ts — a real browser's canvas.getContext
+// always returns a context on its own, so production code has no reason to
+// override it.
+
+/** Every key resolves to itself (like stubImages above), so a scene with
+ *  real terrain produces resolvable DrawOps without any real pack art. */
+function tiledScene(): State {
+  const st = newState();
+  st.Scenes["s1"] = {
+    ID: "s1", Name: "Room", GridWidth: 2, GridHeight: 2,
+    Tiles: {
+      "0,0": { Kind: "floor", Material: "earth", Art: "" },
+      "1,0": { Kind: "floor", Material: "earth", Art: "" },
+      "0,1": { Kind: "floor", Material: "earth", Art: "" },
+      "1,1": { Kind: "floor", Material: "earth", Art: "" },
+    },
+    Objects: [], OpenDoors: {},
+  };
+  return st;
+}
+
+/** Records drawImage as "drawImage" and stroke() as "stroke", in call
+ *  order, with nothing else recorded — the two facts the ordering test
+ *  needs and nothing more, so a mutation this section is not aimed at
+ *  cannot accidentally flip the assertion for an unrelated reason. */
+function recordingCtx(calls: string[]): CanvasRenderingContext2D {
+  return {
+    fillStyle: "", strokeStyle: "", lineWidth: 0,
+    save() {}, restore() {}, translate() {}, rotate() {},
+    beginPath() {}, moveTo() {}, lineTo() {},
+    drawImage() { calls.push("drawImage"); },
+    fillRect() { calls.push("fillRect"); },
+    stroke() { calls.push("stroke"); },
+  } as unknown as CanvasRenderingContext2D;
+}
+
+test("renderSpectator paints terrain, strokes the grid, and strokes it AFTER the terrain", () => {
+  const calls: string[] = [];
+  const ctx = recordingCtx(calls);
+  const root = document.createElement("div");
+  renderSpectator(root, tiledScene(), [], "connected", {
+    images: stubImages(),
+    getContext: () => ctx,
+  });
+
+  const lastDrawImage = calls.lastIndexOf("drawImage");
+  const strokeIndex = calls.indexOf("stroke");
+  // Terrain was actually painted (via drawImage — stubImages resolves every
+  // key, so nothing here should hit the missing-tile marker's fillRect).
+  expect(lastDrawImage).toBeGreaterThanOrEqual(0);
+  // The grid was actually stroked.
+  expect(strokeIndex).toBeGreaterThanOrEqual(0);
+  // AND the stroke comes after the LAST terrain draw — the ordering defect
+  // that once shipped (grid drawn first, then painted over by every tile).
+  expect(strokeIndex).toBeGreaterThan(lastDrawImage);
 });
 
 test("a board with no click handler is not dressed as clickable", () => {

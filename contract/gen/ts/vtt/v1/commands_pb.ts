@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQi6gEKC0NyZWF0ZVNjZW5lEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRItCgV0aWxlcxgFIAMoCzIeLnZ0dC52MS5DcmVhdGVTY2VuZS5UaWxlc0VudHJ5EiQKB29iamVjdHMYBiADKAsyEy52dHQudjEuU2NlbmVPYmplY3QaPQoKVGlsZXNFbnRyeRILCgNrZXkYASABKAkSHgoFdmFsdWUYAiABKAsyDy52dHQudjEuVGlsZVJlZjoCOAEiPgoIT3BlbkRvb3ISEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIj8KCUNsb3NlRG9vchIQCghzY2VuZV9pZBgBIAEoCRIgCgJhdBgCIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iKAoIQWRkQWN0b3ISHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiagoKUGxhY2VUb2tlbhIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHAoMU3RhcnRTZXNzaW9uEgwKBG5hbWUYASABKAkiDAoKRW5kU2Vzc2lvbiJLCg1SZXRyYWN0RXZlbnRzEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIkYKClVzZUFiaWxpdHkSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJIjkKD1JlbW92ZUNvbmRpdGlvbhIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkiWAoMQWRkTmFycmF0aW9uEgwKBHRleHQYASABKAkSCgoCYXMYAiABKAkSFwoPYW5jaG9yX2Zyb21fc2VxGAMgASgDEhUKDWFuY2hvcl90b19zZXEYBCABKAMiNgoKVXBzZXJ0Tm90ZRILCgNrZXkYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEdGV4dBgDIAEoCSIZCgpEZWxldGVOb3RlEgsKA2tleRgBIAEoCSIlCg1Mb2FkQWR2ZW50dXJlEhQKDGFkdmVudHVyZV9pZBgBIAEoCSLhBwoNQ2xpZW50Q29tbWFuZBISCgpyZXF1ZXN0X2lkGAEgASgJEi4KCm1vdmVfdG9rZW4YCiABKAsyGC52dHQudjEuTW92ZVRva2VuUmVxdWVzdEgAEisKDGNyZWF0ZV9zY2VuZRgLIAEoCzITLnZ0dC52MS5DcmVhdGVTY2VuZUgAEiUKCWFkZF9hY3RvchgMIAEoCzIQLnZ0dC52MS5BZGRBY3RvckgAEikKC3BsYWNlX3Rva2VuGA0gASgLMhIudnR0LnYxLlBsYWNlVG9rZW5IABItCg1zdGFydF9zZXNzaW9uGA4gASgLMhQudnR0LnYxLlN0YXJ0U2Vzc2lvbkgAEikKC2VuZF9zZXNzaW9uGA8gASgLMhIudnR0LnYxLkVuZFNlc3Npb25IABIvCg5yZXRyYWN0X2V2ZW50cxgQIAEoCzIVLnZ0dC52MS5SZXRyYWN0RXZlbnRzSAASKQoLdXNlX2FiaWxpdHkYESABKAsyEi52dHQudjEuVXNlQWJpbGl0eUgAEjMKEHJlbW92ZV9jb25kaXRpb24YEiABKAsyFy52dHQudjEuUmVtb3ZlQ29uZGl0aW9uSAASLQoNYWRkX25hcnJhdGlvbhgTIAEoCzIULnZ0dC52MS5BZGROYXJyYXRpb25IABIpCgt1cHNlcnRfbm90ZRgUIAEoCzISLnZ0dC52MS5VcHNlcnROb3RlSAASKQoLZGVsZXRlX25vdGUYFSABKAsyEi52dHQudjEuRGVsZXRlTm90ZUgAEi8KDmxvYWRfYWR2ZW50dXJlGBYgASgLMhUudnR0LnYxLkxvYWRBZHZlbnR1cmVIABI4ChNncmFudF9hY3Rvcl9jb250cm9sGBcgASgLMhkudnR0LnYxLkdyYW50QWN0b3JDb250cm9sSAASOgoUcmV2b2tlX2FjdG9yX2NvbnRyb2wYGCABKAsyGi52dHQudjEuUmV2b2tlQWN0b3JDb250cm9sSAASOQoTcHJvbW90ZV9wYXJ0aWNpcGFudBgZIAEoCzIaLnZ0dC52MS5Qcm9tb3RlUGFydGljaXBhbnRIABIsCg1zZXRfam9pbl9kb29yGBogASgLMhMudnR0LnYxLlNldEpvaW5Eb29ySAASMgoQcm90YXRlX2pvaW5fbGluaxgbIAEoCzIWLnZ0dC52MS5Sb3RhdGVKb2luTGlua0gAEiUKCW9wZW5fZG9vchgcIAEoCzIQLnZ0dC52MS5PcGVuRG9vckgAEicKCmNsb3NlX2Rvb3IYHSABKAsyES52dHQudjEuQ2xvc2VEb29ySABCCQoHY29tbWFuZCJCCgtTZXRKb2luRG9vchIeCgRkb29yGAEgASgOMhAudnR0LnYxLkpvaW5Eb29yEhMKC2FkbWl0X2xpbWl0GAIgASgFIhAKDlJvdGF0ZUpvaW5MaW5rIj0KEUdyYW50QWN0b3JDb250cm9sEhAKCGFjdG9yX2lkGAEgASgJEhYKDnBhcnRpY2lwYW50X2lkGAIgASgJIj4KElJldm9rZUFjdG9yQ29udHJvbBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI6ChJQcm9tb3RlUGFydGljaXBhbnQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSDAoEcm9sZRgCIAEoCSJQCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMiJAoLQ2F0Y2hVcEhlYWQSFQoNaGVhZF9zZXF1ZW5jZRgBIAEoAyL8AQoLU2VydmVyRnJhbWUSJwoGcmVzdWx0GAEgASgLMhUudnR0LnYxLkNvbW1hbmRSZXN1bHRIABIhCgVldmVudBgCIAEoCzIQLnZ0dC52MS5FbnZlbG9wZUgAEiwKDWNhdGNoX3VwX2hlYWQYAyABKAsyEy52dHQudjEuQ2F0Y2hVcEhlYWRIABI1ChFwcmVzZW5jZV9zbmFwc2hvdBgEIAEoCzIYLnZ0dC52MS5QcmVzZW5jZVNuYXBzaG90SAASMwoQcHJlc2VuY2VfY2hhbmdlZBgFIAEoCzIXLnZ0dC52MS5QcmVzZW5jZUNoYW5nZWRIAEIHCgVmcmFtZSJlCg9QcmVzZW5jZUNoYW5nZWQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEiQKBXN0YXRlGAMgASgOMhUudnR0LnYxLlByZXNlbmNlU3RhdGUiPAoQUHJlc2VuY2VTbmFwc2hvdBIoCgdwcmVzZW50GAEgAygLMhcudnR0LnYxLlByZXNlbmNlQ2hhbmdlZCpPCghKb2luRG9vchIZChVKT0lOX0RPT1JfVU5TUEVDSUZJRUQQABISCg5KT0lOX0RPT1JfT1BFThABEhQKEEpPSU5fRE9PUl9DTE9TRUQQAipuCg1QcmVzZW5jZVN0YXRlEh4KGlBSRVNFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASHAoYUFJFU0VOQ0VfU1RBVEVfQ09OTkVDVEVEEAESHwobUFJFU0VOQ0VfU1RBVEVfRElTQ09OTkVDVEVEEAJCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQi6gEKC0NyZWF0ZVNjZW5lEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRItCgV0aWxlcxgFIAMoCzIeLnZ0dC52MS5DcmVhdGVTY2VuZS5UaWxlc0VudHJ5EiQKB29iamVjdHMYBiADKAsyEy52dHQudjEuU2NlbmVPYmplY3QaPQoKVGlsZXNFbnRyeRILCgNrZXkYASABKAkSHgoFdmFsdWUYAiABKAsyDy52dHQudjEuVGlsZVJlZjoCOAEiPgoIT3BlbkRvb3ISEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIj8KCUNsb3NlRG9vchIQCghzY2VuZV9pZBgBIAEoCRIgCgJhdBgCIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iKAoIQWRkQWN0b3ISHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiagoKUGxhY2VUb2tlbhIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHAoMU3RhcnRTZXNzaW9uEgwKBG5hbWUYASABKAkiDAoKRW5kU2Vzc2lvbiJLCg1SZXRyYWN0RXZlbnRzEhUKDWZyb21fc2VxdWVuY2UYASABKAMSEwoLdG9fc2VxdWVuY2UYAiABKAMSDgoGcmVhc29uGAMgASgJIkYKClVzZUFiaWxpdHkSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJIjkKD1JlbW92ZUNvbmRpdGlvbhIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkiWAoMQWRkTmFycmF0aW9uEgwKBHRleHQYASABKAkSCgoCYXMYAiABKAkSFwoPYW5jaG9yX2Zyb21fc2VxGAMgASgDEhUKDWFuY2hvcl90b19zZXEYBCABKAMiNgoKVXBzZXJ0Tm90ZRILCgNrZXkYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEdGV4dBgDIAEoCSIZCgpEZWxldGVOb3RlEgsKA2tleRgBIAEoCSIlCg1Mb2FkQWR2ZW50dXJlEhQKDGFkdmVudHVyZV9pZBgBIAEoCSIZCgdMb2FkTWFwEg4KBm1hcF9pZBgBIAEoCSKGCAoNQ2xpZW50Q29tbWFuZBISCgpyZXF1ZXN0X2lkGAEgASgJEi4KCm1vdmVfdG9rZW4YCiABKAsyGC52dHQudjEuTW92ZVRva2VuUmVxdWVzdEgAEisKDGNyZWF0ZV9zY2VuZRgLIAEoCzITLnZ0dC52MS5DcmVhdGVTY2VuZUgAEiUKCWFkZF9hY3RvchgMIAEoCzIQLnZ0dC52MS5BZGRBY3RvckgAEikKC3BsYWNlX3Rva2VuGA0gASgLMhIudnR0LnYxLlBsYWNlVG9rZW5IABItCg1zdGFydF9zZXNzaW9uGA4gASgLMhQudnR0LnYxLlN0YXJ0U2Vzc2lvbkgAEikKC2VuZF9zZXNzaW9uGA8gASgLMhIudnR0LnYxLkVuZFNlc3Npb25IABIvCg5yZXRyYWN0X2V2ZW50cxgQIAEoCzIVLnZ0dC52MS5SZXRyYWN0RXZlbnRzSAASKQoLdXNlX2FiaWxpdHkYESABKAsyEi52dHQudjEuVXNlQWJpbGl0eUgAEjMKEHJlbW92ZV9jb25kaXRpb24YEiABKAsyFy52dHQudjEuUmVtb3ZlQ29uZGl0aW9uSAASLQoNYWRkX25hcnJhdGlvbhgTIAEoCzIULnZ0dC52MS5BZGROYXJyYXRpb25IABIpCgt1cHNlcnRfbm90ZRgUIAEoCzISLnZ0dC52MS5VcHNlcnROb3RlSAASKQoLZGVsZXRlX25vdGUYFSABKAsyEi52dHQudjEuRGVsZXRlTm90ZUgAEi8KDmxvYWRfYWR2ZW50dXJlGBYgASgLMhUudnR0LnYxLkxvYWRBZHZlbnR1cmVIABI4ChNncmFudF9hY3Rvcl9jb250cm9sGBcgASgLMhkudnR0LnYxLkdyYW50QWN0b3JDb250cm9sSAASOgoUcmV2b2tlX2FjdG9yX2NvbnRyb2wYGCABKAsyGi52dHQudjEuUmV2b2tlQWN0b3JDb250cm9sSAASOQoTcHJvbW90ZV9wYXJ0aWNpcGFudBgZIAEoCzIaLnZ0dC52MS5Qcm9tb3RlUGFydGljaXBhbnRIABIsCg1zZXRfam9pbl9kb29yGBogASgLMhMudnR0LnYxLlNldEpvaW5Eb29ySAASMgoQcm90YXRlX2pvaW5fbGluaxgbIAEoCzIWLnZ0dC52MS5Sb3RhdGVKb2luTGlua0gAEiUKCW9wZW5fZG9vchgcIAEoCzIQLnZ0dC52MS5PcGVuRG9vckgAEicKCmNsb3NlX2Rvb3IYHSABKAsyES52dHQudjEuQ2xvc2VEb29ySAASIwoIbG9hZF9tYXAYHiABKAsyDy52dHQudjEuTG9hZE1hcEgAQgkKB2NvbW1hbmQiQgoLU2V0Sm9pbkRvb3ISHgoEZG9vchgBIAEoDjIQLnZ0dC52MS5Kb2luRG9vchITCgthZG1pdF9saW1pdBgCIAEoBSIQCg5Sb3RhdGVKb2luTGluayI9ChFHcmFudEFjdG9yQ29udHJvbBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI+ChJSZXZva2VBY3RvckNvbnRyb2wSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiOgoSUHJvbW90ZVBhcnRpY2lwYW50EhYKDnBhcnRpY2lwYW50X2lkGAEgASgJEgwKBHJvbGUYAiABKAkiUAoNQ29tbWFuZFJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEgoKAm9rGAIgASgIEg0KBWVycm9yGAMgASgJEhAKCHNlcXVlbmNlGAQgASgDIiQKC0NhdGNoVXBIZWFkEhUKDWhlYWRfc2VxdWVuY2UYASABKAMi/AEKC1NlcnZlckZyYW1lEicKBnJlc3VsdBgBIAEoCzIVLnZ0dC52MS5Db21tYW5kUmVzdWx0SAASIQoFZXZlbnQYAiABKAsyEC52dHQudjEuRW52ZWxvcGVIABIsCg1jYXRjaF91cF9oZWFkGAMgASgLMhMudnR0LnYxLkNhdGNoVXBIZWFkSAASNQoRcHJlc2VuY2Vfc25hcHNob3QYBCABKAsyGC52dHQudjEuUHJlc2VuY2VTbmFwc2hvdEgAEjMKEHByZXNlbmNlX2NoYW5nZWQYBSABKAsyFy52dHQudjEuUHJlc2VuY2VDaGFuZ2VkSABCBwoFZnJhbWUiZQoPUHJlc2VuY2VDaGFuZ2VkEhYKDnBhcnRpY2lwYW50X2lkGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIkCgVzdGF0ZRgDIAEoDjIVLnZ0dC52MS5QcmVzZW5jZVN0YXRlIjwKEFByZXNlbmNlU25hcHNob3QSKAoHcHJlc2VudBgBIAMoCzIXLnZ0dC52MS5QcmVzZW5jZUNoYW5nZWQqTwoISm9pbkRvb3ISGQoVSk9JTl9ET09SX1VOU1BFQ0lGSUVEEAASEgoOSk9JTl9ET09SX09QRU4QARIUChBKT0lOX0RPT1JfQ0xPU0VEEAIqbgoNUHJlc2VuY2VTdGF0ZRIeChpQUkVTRU5DRV9TVEFURV9VTlNQRUNJRklFRBAAEhwKGFBSRVNFTkNFX1NUQVRFX0NPTk5FQ1RFRBABEh8KG1BSRVNFTkNFX1NUQVRFX0RJU0NPTk5FQ1RFRBACQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -419,6 +419,38 @@ export const LoadAdventureSchema: GenMessage<LoadAdventure> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 15);
 
 /**
+ * LoadMap loads a standalone map (maps-as-geometry design spec §4.3: "a map
+ * loads directly — pick-up play, someone drops in a dungeon and you use
+ * it") into the campaign. It compiles through the exact same construction
+ * site LoadAdventure's embedded scenes use (mapdef.BuildSceneCreated, spec
+ * §4.3: "both paths compile through one code path to the same events"),
+ * producing one SceneCreated carrying the map's resolved terrain/objects
+ * followed by one TokenPlaced per declared placement — a whole ordered
+ * batch, the same shape LoadAdventure produces, not a single event.
+ *
+ * Unlike LoadAdventure, a map never creates actors of its own (spec §3.4:
+ * maps are terrain and placements, never a second source of actors) — a
+ * placement's actor_id must already exist in campaign state (the DM's own
+ * add_actor) or the whole batch is rejected, atomically, by
+ * campaign.AppendBatch.
+ *
+ * @generated from message vtt.v1.LoadMap
+ */
+export type LoadMap = Message<"vtt.v1.LoadMap"> & {
+  /**
+   * @generated from field: string map_id = 1;
+   */
+  mapId: string;
+};
+
+/**
+ * Describes the message vtt.v1.LoadMap.
+ * Use `create(LoadMapSchema)` to create a new message.
+ */
+export const LoadMapSchema: GenMessage<LoadMap> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 16);
+
+/**
  * @generated from message vtt.v1.ClientCommand
  */
 export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
@@ -550,6 +582,12 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
      */
     value: CloseDoor;
     case: "closeDoor";
+  } | {
+    /**
+     * @generated from field: vtt.v1.LoadMap load_map = 30;
+     */
+    value: LoadMap;
+    case: "loadMap";
   } | { case: undefined; value?: undefined };
 };
 
@@ -558,7 +596,7 @@ export type ClientCommand = Message<"vtt.v1.ClientCommand"> & {
  * Use `create(ClientCommandSchema)` to create a new message.
  */
 export const ClientCommandSchema: GenMessage<ClientCommand> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 16);
+  messageDesc(file_vtt_v1_commands, 17);
 
 /**
  * SetJoinDoor opens or closes the shared join link.
@@ -604,7 +642,7 @@ export type SetJoinDoor = Message<"vtt.v1.SetJoinDoor"> & {
  * Use `create(SetJoinDoorSchema)` to create a new message.
  */
 export const SetJoinDoorSchema: GenMessage<SetJoinDoor> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 17);
+  messageDesc(file_vtt_v1_commands, 18);
 
 /**
  * RotateJoinLink mints a new join secret and returns nothing.
@@ -624,7 +662,7 @@ export type RotateJoinLink = Message<"vtt.v1.RotateJoinLink"> & {
  * Use `create(RotateJoinLinkSchema)` to create a new message.
  */
 export const RotateJoinLinkSchema: GenMessage<RotateJoinLink> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 18);
+  messageDesc(file_vtt_v1_commands, 19);
 
 /**
  * GrantActorControl adds participant_id to actor_id's controller set.
@@ -650,7 +688,7 @@ export type GrantActorControl = Message<"vtt.v1.GrantActorControl"> & {
  * Use `create(GrantActorControlSchema)` to create a new message.
  */
 export const GrantActorControlSchema: GenMessage<GrantActorControl> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 19);
+  messageDesc(file_vtt_v1_commands, 20);
 
 /**
  * RevokeActorControl removes participant_id from actor_id's controller set.
@@ -679,7 +717,7 @@ export type RevokeActorControl = Message<"vtt.v1.RevokeActorControl"> & {
  * Use `create(RevokeActorControlSchema)` to create a new message.
  */
 export const RevokeActorControlSchema: GenMessage<RevokeActorControl> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 20);
+  messageDesc(file_vtt_v1_commands, 21);
 
 /**
  * PromoteParticipant changes what a participant is ALLOWED to do.
@@ -717,7 +755,7 @@ export type PromoteParticipant = Message<"vtt.v1.PromoteParticipant"> & {
  * Use `create(PromoteParticipantSchema)` to create a new message.
  */
 export const PromoteParticipantSchema: GenMessage<PromoteParticipant> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 21);
+  messageDesc(file_vtt_v1_commands, 22);
 
 /**
  * @generated from message vtt.v1.CommandResult
@@ -749,7 +787,7 @@ export type CommandResult = Message<"vtt.v1.CommandResult"> & {
  * Use `create(CommandResultSchema)` to create a new message.
  */
 export const CommandResultSchema: GenMessage<CommandResult> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 22);
+  messageDesc(file_vtt_v1_commands, 23);
 
 /**
  * CatchUpHead is sent ONCE, first, on every connection: the highest sequence
@@ -786,7 +824,7 @@ export type CatchUpHead = Message<"vtt.v1.CatchUpHead"> & {
  * Use `create(CatchUpHeadSchema)` to create a new message.
  */
 export const CatchUpHeadSchema: GenMessage<CatchUpHead> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 23);
+  messageDesc(file_vtt_v1_commands, 24);
 
 /**
  * The server->client frame; the oneof key is the frame discriminator.
@@ -864,7 +902,7 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 24);
+  messageDesc(file_vtt_v1_commands, 25);
 
 /**
  * PresenceChanged reports one participant joining or leaving — or, since the
@@ -914,7 +952,7 @@ export type PresenceChanged = Message<"vtt.v1.PresenceChanged"> & {
  * Use `create(PresenceChangedSchema)` to create a new message.
  */
 export const PresenceChangedSchema: GenMessage<PresenceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 25);
+  messageDesc(file_vtt_v1_commands, 26);
 
 /**
  * PresenceSnapshot is the full present-set, sent once immediately after
@@ -937,7 +975,7 @@ export type PresenceSnapshot = Message<"vtt.v1.PresenceSnapshot"> & {
  * Use `create(PresenceSnapshotSchema)` to create a new message.
  */
 export const PresenceSnapshotSchema: GenMessage<PresenceSnapshot> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 26);
+  messageDesc(file_vtt_v1_commands, 27);
 
 /**
  * JoinDoor is the state of the shared join link (joining-a-table spec §2).

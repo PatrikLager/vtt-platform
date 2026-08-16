@@ -411,6 +411,8 @@ func TestEveryClientCommandConverts(t *testing.T) {
 	notConverted := map[string]string{
 		"use_ability":    "resolved through the ruleset, which emits its own events (server.go)",
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
+		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
+			"same shape as load_adventure directly above",
 		"retract_events": "a retraction range, not a single event (handleRetraction)",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
