@@ -828,8 +828,28 @@ type SceneCreated struct {
 	GridWidth  int32                  `protobuf:"varint,3,opt,name=grid_width,json=gridWidth,proto3" json:"grid_width,omitempty"`
 	GridHeight int32                  `protobuf:"varint,4,opt,name=grid_height,json=gridHeight,proto3" json:"grid_height,omitempty"`
 	// Keys are "x,y", column then row; the separator is a comma because a dot
-	// reads as a decimal (maps-as-geometry spec §4.1). Every square in the
-	// grid has an entry.
+	// reads as a decimal (maps-as-geometry spec §4.1).
+	//
+	// MAY BE EMPTY, and a reader must handle an absent key. A scene that
+	// declares no terrain sends no tiles at all (Patrik's ruling 2026-08-13):
+	// terrain is optional, exactly as it was for every scene authored before
+	// maps-as-geometry, and requiring it would have broken the on-disk format
+	// for everything written earlier. Do NOT assume len(tiles) ==
+	// grid_width * grid_height.
+	//
+	// When tiles ARE sent they cover every square of the grid — completeness
+	// is the point of the format, and the loader checks it before anything
+	// that depends on it (internal/mapdef's CheckEverySquarePresent). So the
+	// invariant holds where terrain is claimed, and only there.
+	//
+	// A square with no entry has no terrain: the zero TileRef's kind is "",
+	// which matches neither "wall" nor "door", so it blocks nothing. That is
+	// the same answer a reader gets for a scene that opted out entirely.
+	//
+	// Size: one TileRef per tile, roughly 45.5 bytes each as protojson, so a
+	// fully tiled scene past about 60x60 exceeds the read limit clients set
+	// and the frame never arrives. internal/mapdef.MaxWireTiles enforces that
+	// ceiling at compile; spec §7 files the compact encoding that lifts it.
 	Tiles         map[string]*TileRef `protobuf:"bytes,5,rep,name=tiles,proto3" json:"tiles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Objects       []*SceneObject      `protobuf:"bytes,6,rep,name=objects,proto3" json:"objects,omitempty"`
 	unknownFields protoimpl.UnknownFields

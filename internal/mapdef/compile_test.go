@@ -1,6 +1,7 @@
 package mapdef_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -196,6 +197,66 @@ func TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne(t *testing.T) {
 			t.Errorf("envs[%d] TokenPlaced = %v, want %v", i+1, got, w)
 		}
 	}
+}
+
+// fullyTiledMap builds a w x h map whose every square declares a tile, which
+// is what CheckEverySquarePresent requires of any map that declares tiles at
+// all. Tile COUNT is what these tests are about — see BuildSceneCreated's wire
+// ceiling — so the nature is uniform and uninteresting.
+func fullyTiledMap(w, h int32) *mapdef.Map {
+	tiles := make(map[string]string, int(w)*int(h))
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			tiles[fmt.Sprintf("%d,%d", x, y)] = "stone"
+		}
+	}
+	return &mapdef.Map{ID: "big", Name: "Big", GridW: w, GridH: h, Tiles: tiles}
+}
+
+// TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable pins the
+// transport ceiling spec §7 measured but nothing enforced.
+//
+// A SceneCreated carries one TileRef per DECLARED tile as protojson: 32x32 is
+// 45.5 KiB, so ~45.5 bytes a tile, against the 200 KiB read limit Go clients
+// set (internal/harness/client.go). Past roughly 60x60 the frame does not
+// arrive — and the failure lands as a torn-down connection mid-session, not as
+// a load error, which is how loading goblin-ambush used to kill every
+// connection before that limit was raised.
+//
+// THE LIMIT IS ON TILES, NOT ON GRID AREA, and the difference is not academic:
+// tiles are optional (Patrik's ruling 2026-08-13), so a huge grid that
+// declares NO terrain costs nothing on the wire and must still load. Sizing
+// this on GridW*GridH would refuse maps that are free to send —
+// internal/rules/conformance builds a 100x100 tile-less scene for exactly that
+// reason.
+func TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable(t *testing.T) {
+	t.Run("a fully tiled map at the ceiling still compiles", func(t *testing.T) {
+		m := fullyTiledMap(60, 60) // 3600 tiles, ~160 KiB
+		if _, _, err := mapdef.BuildSceneCreated(m, nil); err != nil {
+			t.Fatalf("a 60x60 map is inside the stated ceiling and must compile: %v", err)
+		}
+	})
+
+	t.Run("one tile past the ceiling is refused", func(t *testing.T) {
+		m := fullyTiledMap(61, 61) // 3721 tiles
+		_, _, err := mapdef.BuildSceneCreated(m, nil)
+		if err == nil {
+			t.Fatal("a map too large to reach any client compiled without complaint")
+		}
+		// The number has to be IN the message: an author who cannot see the
+		// budget cannot resize the map to fit it.
+		if !strings.Contains(err.Error(), "3721") || !strings.Contains(err.Error(), "3600") {
+			t.Errorf("error must name both the map's tile count and the ceiling, got: %v", err)
+		}
+	})
+
+	t.Run("a grid far past the ceiling that declares no tiles is fine", func(t *testing.T) {
+		// The tiles-optional case. 40000 squares, zero wire cost.
+		m := &mapdef.Map{ID: "outdoor", Name: "Outdoor", GridW: 200, GridH: 200}
+		if _, _, err := mapdef.BuildSceneCreated(m, nil); err != nil {
+			t.Fatalf("a tile-less scene costs nothing on the wire and must compile: %v", err)
+		}
+	})
 }
 
 // TestCompilePropagatesAResolveFailure pins that Compile does not swallow a

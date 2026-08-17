@@ -1,8 +1,35 @@
 package mapdef
 
 import (
+	"fmt"
+
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
+
+// MaxWireTiles is the largest number of tiles one SceneCreated may carry, and
+// it is a TRANSPORT limit rather than a rule about maps (spec §7).
+//
+// SceneCreated ships one TileRef per declared tile as protojson. Task 4
+// measured a 32x32 scene at 45.5 KiB — about 45.5 bytes a tile — against the
+// 200 KiB read limit Go clients set (internal/harness/client.go's readLimit).
+// 3600 tiles is the 60x60 the spec calls "the honest limit today": ~160 KiB,
+// leaving room for the objects, placements and names that ride in the same
+// frame. Past it the frame simply does not arrive, and the way that presents
+// is a connection torn down mid-session — which is exactly how loading
+// goblin-ambush killed every connection before that read limit was raised.
+// Refusing at compile turns a mystery at the table into a message at load.
+//
+// COUNTED IN TILES, NOT GRID SQUARES, and the distinction is load-bearing:
+// tiles are optional (Patrik's ruling 2026-08-13), so a large grid that
+// declares no terrain costs nothing on the wire and must still load —
+// internal/rules/conformance relies on that with a tile-less 100x100 scene.
+// Sizing this on GridW*GridH would refuse maps that are free to send.
+//
+// NOT A PERMANENT CEILING. Spec §7 files the remedy: a compact wire encoding
+// (a palette plus index rows) would put 200x200 near 40 KB. When that lands,
+// this constant moves or goes — the authoring format was never the problem,
+// and §7 is explicit that "authoring and transport need not be the same shape".
+const MaxWireTiles = 3600
 
 // Compile turns m (+ its pack p, which may be nil when m carries no
 // overrides) into the ordered wire events one atomic AppendBatch applies:
@@ -62,6 +89,19 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 // has no notion of "this map opted out of terrain" — and Tiles ships empty
 // on the wire.
 func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
+	// BEFORE the square loop, so an oversized map costs one comparison rather
+	// than resolving thousands of tiles it can never deliver.
+	if len(m.Tiles) > MaxWireTiles {
+		return nil, nil, fmt.Errorf(
+			"mapdef: scene %q declares %d tiles, over the %d this wire format can deliver "+
+				"(one TileRef per tile at ~45.5 bytes against a 200 KiB client read limit; "+
+				"%d tiles is roughly 60x60). A larger scene compiles but its SceneCreated "+
+				"never arrives, tearing down the connection instead. Split the map, or drop "+
+				"the tiles it does not need — terrain is optional and a tile-less scene of "+
+				"any size is free to send",
+			m.ID, len(m.Tiles), MaxWireTiles, MaxWireTiles)
+	}
+
 	tiles := make(map[string]*vttv1.TileRef, len(m.Tiles))
 	var warnings []string
 	if len(m.Tiles) > 0 {

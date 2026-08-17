@@ -358,9 +358,36 @@ table. In order, roughly:
    square must not currently be a wall or a closed door.
 7. (Once a pack is involved) every `overrides` value and every `objects[].art`
    must actually name something the pack declares.
+8. `tiles` must hold no more than **3600** entries — see §12.
 
 Every refusal names the offending file, field, and (where relevant) the
 exact square — so a fix is a matter of reading the message, not guessing.
+
+## 12. How big a map can be
+
+**A map may declare at most 3600 tiles — about 60x60 if it is fully tiled.**
+
+This is a limit on how much terrain one map can *send*, not on how large the
+grid may be, and the two are different numbers because `tiles` is optional.
+A scene event carries one entry per declared tile, roughly 45.5 bytes each,
+against a 200 KiB read limit on the client side. 3600 tiles lands near
+160 KiB and leaves room for the objects and placements that travel in the
+same message; past that the message never arrives at all, and the way that
+shows up is a player's connection dropping mid-session rather than an error
+anyone can read. So it is refused when the map loads instead.
+
+**A grid larger than 60x60 is fine as long as it does not tile all of it.**
+`grid_width: 200, grid_height: 200` with no `tiles` at all costs nothing to
+send and loads happily — you get a 200x200 board with no terrain, which is
+exactly what every scene was before this format existed. What you cannot do
+is fill all 40,000 squares.
+
+If you need a large *tiled* space today, split it into several maps. That is
+a real constraint and not a permanent one: the fix is a more compact way of
+putting terrain on the wire (a palette plus one row of indices per row of
+map), which would bring 200x200 down to roughly 40 KB. It is designed and
+filed, not built — and when it lands, this ceiling moves or disappears
+without anything about the map format itself changing.
 
 ## 11. On per-square explicitness
 

@@ -455,8 +455,28 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
 
   /**
    * Keys are "x,y", column then row; the separator is a comma because a dot
-   * reads as a decimal (maps-as-geometry spec §4.1). Every square in the
-   * grid has an entry.
+   * reads as a decimal (maps-as-geometry spec §4.1).
+   *
+   * MAY BE EMPTY, and a reader must handle an absent key. A scene that
+   * declares no terrain sends no tiles at all (Patrik's ruling 2026-08-13):
+   * terrain is optional, exactly as it was for every scene authored before
+   * maps-as-geometry, and requiring it would have broken the on-disk format
+   * for everything written earlier. Do NOT assume len(tiles) ==
+   * grid_width * grid_height.
+   *
+   * When tiles ARE sent they cover every square of the grid — completeness
+   * is the point of the format, and the loader checks it before anything
+   * that depends on it (internal/mapdef's CheckEverySquarePresent). So the
+   * invariant holds where terrain is claimed, and only there.
+   *
+   * A square with no entry has no terrain: the zero TileRef's kind is "",
+   * which matches neither "wall" nor "door", so it blocks nothing. That is
+   * the same answer a reader gets for a scene that opted out entirely.
+   *
+   * Size: one TileRef per tile, roughly 45.5 bytes each as protojson, so a
+   * fully tiled scene past about 60x60 exceeds the read limit clients set
+   * and the frame never arrives. internal/mapdef.MaxWireTiles enforces that
+   * ceiling at compile; spec §7 files the compact encoding that lifts it.
    *
    * @generated from field: map<string, vtt.v1.TileRef> tiles = 5;
    */
