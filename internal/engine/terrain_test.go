@@ -59,6 +59,18 @@ func TestBlockedAnswersForWallsClosedDoorsAndScenery(t *testing.T) {
 		{"open floor", 2, 1, false, ""},
 		{"a closed door", 0, 1, true, "door"},
 		{"outside the grid", 9, 9, true, "outside"},
+		// The two cases at EXACTLY the grid's far edge. (9,9) above cannot
+		// pin `x >= GridWidth`: it is outside under `>` too, so the boundary
+		// mutants at terrain.go:23 lived through the whole suite. The first
+		// square outside is the only one that tells `>=` from `>`.
+		//
+		// A scene is GridWidth columns wide, indexed 0..GridWidth-1, so
+		// column 3 of a 3-wide grid is out. Under the mutant it is judged
+		// in-bounds, finds no tile (the zero Tile{} matches neither switch
+		// arm) and reports NOT blocked — a token could stand one square off
+		// the edge of the map.
+		{"the column at exactly GridWidth", 3, 1, true, "outside"},
+		{"the row at exactly GridHeight", 1, 3, true, "outside"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, why := st.Blocked("cellar", c.x, c.y)
@@ -95,6 +107,90 @@ func TestSceneryWithBlocksMoveIsImpassable(t *testing.T) {
 	st := stateWithCellar(t) // carries a boulder at 1,1 with BlocksMove
 	if blocked, why := st.Blocked("cellar", 1, 1); !blocked {
 		t.Fatalf("a boulder did not block movement: %q", why)
+	}
+}
+
+// TestAnObjectDoesNotBlockTheSquareBeyondItsFarEdge pins where a footprint
+// STOPS. covers() is `y < o.Y+o.Height`, and the cellar fixture cannot test
+// its far edge: its boulder sits at (1,1) and the square below is (1,2), a
+// wall — Blocked returns on the tile switch before the object loop ever runs,
+// so the boundary is masked by a different reason for the same answer. This
+// scene puts open floor under the object instead, which is the only way the
+// object loop decides the square.
+//
+// Kills CONDITIONALS_BOUNDARY at terrain.go:70:54 (`y <= o.Y+o.Height`), under
+// which a 1x1 object would blocks TWO rows. Note the x half of the same
+// expression was already killed — the fixture happened to pin the right edge
+// and not the bottom one, which is exactly the asymmetry a mutation gate sees
+// and a reader does not.
+func TestAnObjectDoesNotBlockTheSquareBeyondItsFarEdge(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "yard", Name: "Yard", GridWidth: 2, GridHeight: 2,
+		Tiles: map[string]*vttv1.TileRef{
+			"0,0": {Kind: "floor"}, "1,0": {Kind: "floor"},
+			"0,1": {Kind: "floor"}, "1,1": {Kind: "floor"},
+		},
+		Objects: []*vttv1.SceneObject{{
+			ObjectId: "crate-1", Kind: "crate", At: pos(0, 0),
+			Width: 1, Height: 1, BlocksMove: true,
+		}},
+	})))
+
+	if blocked, _ := st.Blocked("yard", 0, 0); !blocked {
+		t.Fatal("the crate does not block its own square; this test proves nothing")
+	}
+	if blocked, why := st.Blocked("yard", 0, 1); blocked {
+		t.Fatalf("the square below a 1x1 crate is blocked (%q) — the footprint "+
+			"extends one row too far", why)
+	}
+	if blocked, why := st.Blocked("yard", 1, 0); blocked {
+		t.Fatalf("the square right of a 1x1 crate is blocked (%q) — the footprint "+
+			"extends one column too far", why)
+	}
+}
+
+// TestClosingOneDoorLeavesEveryOtherDoorOpen pins that DoorClosed touches ONE
+// square. Nothing else in the suite opens two doors at once, so the nil-guard
+// in the DoorClosed arm (apply.go) could be rewritten to rebuild the map from
+// scratch and every existing test would still pass.
+//
+// Kills CONDITIONALS_NEGATION at apply.go:254:19: `sc.OpenDoors == nil`
+// negated to `!= nil` replaces a populated map with an empty one, so shutting
+// any door silently slams every other open door in the scene.
+func TestClosingOneDoorLeavesEveryOtherDoorOpen(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "hall", Name: "Hall", GridWidth: 3, GridHeight: 1,
+		Tiles: map[string]*vttv1.TileRef{
+			"0,0": {Kind: "door"}, "1,0": {Kind: "floor"}, "2,0": {Kind: "door"},
+		},
+	})))
+
+	for _, at := range []*vttv1.GridPosition{pos(0, 0), pos(2, 0)} {
+		must(t, engine.Apply(st, &vttv1.Envelope{Payload: &vttv1.Envelope_DoorOpened{
+			DoorOpened: &vttv1.DoorOpened{SceneId: "hall", At: at},
+		}}))
+	}
+	for _, at := range []*vttv1.GridPosition{pos(0, 0), pos(2, 0)} {
+		if blocked, why := st.Blocked("hall", at.GetX(), at.GetY()); blocked {
+			t.Fatalf("door at (%d,%d) did not open (%q); this test proves nothing",
+				at.GetX(), at.GetY(), why)
+		}
+	}
+
+	must(t, engine.Apply(st, &vttv1.Envelope{Payload: &vttv1.Envelope_DoorClosed{
+		DoorClosed: &vttv1.DoorClosed{SceneId: "hall", At: pos(0, 0)},
+	}}))
+
+	if blocked, _ := st.Blocked("hall", 0, 0); !blocked {
+		t.Fatal("the door that was closed is still open")
+	}
+	if blocked, why := st.Blocked("hall", 2, 0); blocked {
+		t.Fatalf("closing the door at (0,0) also closed the one at (2,0) (%q) — "+
+			"a door command must touch exactly its own square", why)
 	}
 }
 

@@ -511,6 +511,64 @@ func TestAuthorizePlayerMayNotWorkDistantDoor(t *testing.T) {
 	}
 }
 
+// TestAuthorizePlayerMayWorkAdjacentDoorAwayFromTheOrigin is the adjacent case
+// with BOTH coordinates non-zero, and it exists because the fixture above
+// cannot tell a subtraction from an addition: its token is at (0,0), so
+// `tok.X - at.X` and `tok.X + at.X` are both 0 and both read as adjacent. Every
+// adjacency assertion in this file sat on the one pair of coordinates where the
+// operator does not matter.
+//
+// Kills ARITHMETIC_BASE and INVERT_NEGATIVES at authz.go:152:15. Here the token
+// is at (3,3) and the door at (2,3): the true delta is 1 (adjacent), while the
+// mutated sum is 5 — far enough to refuse a door the player is standing right
+// beside.
+func TestAuthorizePlayerMayWorkAdjacentDoorAwayFromTheOrigin(t *testing.T) {
+	st := doorFixture(3, 3) // door at (2,3): dx=1, dy=0 — adjacent
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 2, 3), st); err != nil {
+		t.Fatalf("want nil error opening a door one square west of a controlled token: %v", err)
+	}
+	if err := gateway.Authorize(p, closeDoorCmd("scn", 2, 3), st); err != nil {
+		t.Fatalf("want nil error closing a door one square west of a controlled token: %v", err)
+	}
+}
+
+// TestAuthorizePlayerMayNotWorkADoorItStandsWestOrNorthOf is the refusal
+// direction from the OTHER SIDE. TestAuthorizePlayerMayNotWorkDistantDoor puts
+// its token at (5,5) and the door at (0,1), so both deltas are positive and
+// abs() never has to do anything — which is why the whole suite could not tell
+// `return -n` from `return n`.
+//
+// Kills ARITHMETIC_BASE and INVERT_NEGATIVES at authz.go:164:10. With abs()
+// returning its argument unchanged, a negative delta of any size satisfies
+// `<= 1`, so a player could work a door from any distance as long as it lay to
+// the west or north of their token. Both axes are checked because the two
+// comparisons in mayWorkDoor are separate expressions.
+func TestAuthorizePlayerMayNotWorkADoorItStandsWestOrNorthOf(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	for _, c := range []struct {
+		name         string
+		tokX, tokY   int32
+		doorX, doorY int32
+	}{
+		{"door four squares east", 1, 1, 5, 1},  // dx = -4
+		{"door four squares south", 1, 1, 1, 5}, // dy = -4
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			st := doorFixture(c.tokX, c.tokY)
+			if err := gateway.Authorize(p, openDoorCmd("scn", c.doorX, c.doorY), st); err == nil {
+				t.Fatalf("opening a door at (%d,%d) from (%d,%d) was allowed — a negative "+
+					"delta must be measured as distance, not passed through",
+					c.doorX, c.doorY, c.tokX, c.tokY)
+			}
+			if err := gateway.Authorize(p, closeDoorCmd("scn", c.doorX, c.doorY), st); err == nil {
+				t.Fatalf("closing a door at (%d,%d) from (%d,%d) was allowed",
+					c.doorX, c.doorY, c.tokX, c.tokY)
+			}
+		})
+	}
+}
+
 // TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes closes the gap between
 // "position happens to be adjacent" and "adjacent in the right scene": a
 // token that is numerically close but in a DIFFERENT scene must not count,

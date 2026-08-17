@@ -134,6 +134,70 @@ func TestCompileEmitsSceneThenOneTokenPlacedPerPlacement(t *testing.T) {
 	}
 }
 
+// TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne is the
+// multi-placement case, and it exists because the single-placement test above
+// cannot be what its own name promises: with one placement, "in declaration
+// order" has no order to observe, and one TokenPlaced comes out whether
+// Compile ranges the slice or returns its first element.
+//
+// It also kills ARITHMETIC_BASE at compile.go:23:38 — the `1+len(m.Placements)`
+// capacity hint, mutated to `1-len(...)`. That mutant looks like the map
+// capacity hints adjudicated as equivalent in tools/mutation-equivalents.txt
+// (campaign.go:448), and it is NOT: those are maps, this is a slice, and gc
+// panics on a negative slice capacity where it tolerates a negative map hint
+// ("makeslice: cap out of range", verified). So the mutation is observable
+// from two placements up — and survived only because nothing compiled two.
+//
+// It survived a manual gremlins run as a TIMED OUT mutant, which gremlins
+// scores as killed in its efficacy percentage; the gate's own
+// timeout-coefficient let it run to completion, where it LIVED. A timeout is
+// not a kill.
+func TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Appended rather than replaced, so the fixture's own placement stays
+	// first and declaration order is a claim about THIS slice's order.
+	m.Placements = append(m.Placements,
+		mapdef.Placement{TokenID: "tok-rogue", ActorID: "act-rogue", X: 3, Y: 2},
+		mapdef.Placement{TokenID: "tok-cleric", ActorID: "act-cleric", X: 1, Y: 2},
+	)
+
+	envs, _, err := mapdef.Compile(m, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 4 {
+		t.Fatalf("got %d envelopes, want 4 (one SceneCreated, three TokenPlaced)", len(envs))
+	}
+	if envs[0].GetSceneCreated() == nil {
+		t.Fatalf("envs[0] = %v, want a SceneCreated", envs[0])
+	}
+
+	want := []*vttv1.TokenPlaced{
+		{TokenId: "tok-fighter", SceneId: "cellar", ActorId: "act-fighter",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}},
+		{TokenId: "tok-rogue", SceneId: "cellar", ActorId: "act-rogue",
+			Position: &vttv1.GridPosition{X: 3, Y: 2}},
+		{TokenId: "tok-cleric", SceneId: "cellar", ActorId: "act-cleric",
+			Position: &vttv1.GridPosition{X: 1, Y: 2}},
+	}
+	for i, w := range want {
+		got := envs[i+1].GetTokenPlaced()
+		if got == nil {
+			t.Fatalf("envs[%d] = %v, want a TokenPlaced", i+1, envs[i+1])
+		}
+		if !proto.Equal(got, w) {
+			t.Errorf("envs[%d] TokenPlaced = %v, want %v", i+1, got, w)
+		}
+	}
+}
+
 // TestCompilePropagatesAResolveFailure pins that Compile does not swallow a
 // Resolve error (an override naming an art the pack does not define, say):
 // the whole call must fail loud rather than silently emitting a SceneCreated
