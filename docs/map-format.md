@@ -205,6 +205,14 @@ the *entire* mechanical effect an object has. A `"boulder"` with both flags
 `false` is, mechanically, nothing more than a picture; a `"curtain"` with
 `blocks_sight: true` is real cover.
 
+**`blocks_move` is enforced today. `blocks_sight` is not — nothing reads it
+yet.** It is carried faithfully from your file all the way into the engine's
+state and sits there inert, waiting for line of sight to arrive in a later
+cycle. Declare it truthfully now and it will start working when that lands;
+just do not expect a `blocks_sight` object to hide anything at the table
+today. The same goes for a `wall` tile: it stops movement, and at present it
+conceals nothing. Right now every participant sees the whole board.
+
 **`art` is required on every object, and the standard vocabulary has no
 object art in it.** Tiles have a standard fallback; objects do not. That means
 **you cannot place a single object without shipping a pack of your own**
@@ -305,6 +313,24 @@ names, in a directory called `tiles/`:
 Both are served the same way over HTTP, alongside the images — a pack is
 content, never something written into the campaign's event log, so nothing
 about it is frozen the way the wire contract is.
+
+**A pack is always your own, and there is no registry of shared packs.** The
+top-level `pack` field in a map file does not look anything up: it names the
+pack sitting in that map's own `tiles/` directory, and it exists so that a
+mismatch is caught rather than silently drawing the wrong pictures. If it is
+set, it must equal the `id` inside your own `tiles/pack.json`. You cannot
+name a pack you do not ship, and no map can borrow another map's art.
+
+**The standard tile vocabulary (§3) is not a pack and is never named.** It is
+built into the platform, which is why `stone`, `wood-door` and the rest work
+with no `pack`, no `tiles/` directory, and no `overrides` at all. If you have
+seen a manifest with `"id": "std"`, that is the client's own bundle of
+pictures for those standard names — it is not something a map file
+references, and writing `"pack": "std"` will not reach it.
+
+`pack` is only ever consulted when you use `overrides` (§4), since overrides
+are the only thing that names pack art for a tile. A map with no overrides
+never has its `pack` field read.
 
 ```json
 {
