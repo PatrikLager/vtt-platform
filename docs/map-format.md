@@ -9,6 +9,32 @@ If you take one sentence away, take this one: **art never decides nature.**
 A wall drawn to look like floorboards is still a wall. Everything below
 follows from that.
 
+## 0. Where the file goes, and what it is called
+
+A map is a **directory**, not a loose file. The server is pointed at a maps
+directory and loads every immediate subdirectory of it:
+
+```
+maps/                     <- the directory the server is given
+  cellar/                 <- one map; the directory name is yours to choose
+    map.json              <- REQUIRED, and must have exactly this name
+    tiles/                <- OPTIONAL: a custom pack (§8)
+      pack.json           <- required if tiles/ exists
+      floor-stone.png     <- the art pack.json names
+```
+
+**The file must be called `map.json`.** The subdirectory name is free and is
+not the map's id — `id` inside the file is (§9), and two maps declaring the
+same `id` are refused even from differently named directories.
+
+**A map needs no pack at all.** Leave out `tiles/` entirely and every square
+draws with the standard pack. Add `tiles/` only when you want custom art.
+
+**Unknown fields are refused.** The loader rejects any field it does not
+recognise rather than ignoring it, so a typo like `"gridwidth"` or
+`"placement"` fails loudly at load instead of silently doing nothing. Every
+field this document does not name is a field the format does not have.
+
 ## 1. Why a map is two separate things
 
 A map has two layers, and they answer two different questions:
@@ -179,6 +205,35 @@ the *entire* mechanical effect an object has. A `"boulder"` with both flags
 `false` is, mechanically, nothing more than a picture; a `"curtain"` with
 `blocks_sight: true` is real cover.
 
+**`art` is required on every object, and the standard vocabulary has no
+object art in it.** Tiles have a standard fallback; objects do not. That means
+**you cannot place a single object without shipping a pack of your own**
+(§8) — the standard pack declares eleven tile pictures and zero object
+pictures. If you want a crate, a pillar or a table, you are authoring a
+`tiles/` directory with art in it, and there is no way around that today.
+
+If you only need something to be *solid* — cover to duck behind, a pillar in
+a hall — **use terrain instead**: a `stone-wall` tile on a single square is
+one square of impassable stone, needs no pack, and the engine enforces it the
+same way it enforces any wall. Reach for an object when you need a thing that
+is genuinely a thing (it has a footprint larger than a square, it rotates, or
+it will later be moved or destroyed), not merely when you need a square to be
+blocked.
+
+**`at`, `size` and `art` must all be present.** `size` has no default — omit
+it and it reads as `[0, 0]`, which is refused as a footprint smaller than
+1x1 (§10 rule 5). Write `[1, 1]` explicitly for a single-square object.
+
+`rot` defaults to `0`, and `blocks_sight` and `blocks_move` both default to
+`false` — so an object that declares neither is pure decoration that a token
+walks straight through and sees straight past. If you want it solid, say so.
+
+`id` and `kind` are not validated: nothing refuses an empty or duplicated
+`id`, and `kind` is a free string the platform never interprets (§5). Give
+them sensible values anyway — `id` is how a later event will refer to this
+object, and `kind` is what a game master reads when asking what is in the
+room.
+
 An object's `art` must name a picture declared in the map's pack — there is
 no standard-vocabulary fallback for objects the way there is for tiles,
 because objects have no platform-defined set of natures to fall back to in
@@ -200,6 +255,19 @@ key to build). A placement's square must not be a `wall`, and must not be a
 closed `door` — a token can never start somewhere it could not otherwise
 stand.
 
+**`actor_id` must name an actor that already exists in the campaign the map
+is loaded into, and this is the one rule that is not checked when the file
+loads.** The map file itself validates fine; the failure comes later, when
+the map is loaded into a campaign and the engine refuses a token placed for
+an unknown actor. A map is a described space, not a cast list — it cannot
+create the actors it places, and it has no way to know what a given campaign
+contains.
+
+So unless you are authoring a map for a campaign whose actors you already
+know by id, **leave `placements` out entirely.** It is optional. An empty
+map loads into any campaign, and the game master places tokens once the
+actors exist — which is the normal way a table starts anyway.
+
 ## 7. Doors: folded state, not part of the tile
 
 A door's tile name (`wood-door`, or a custom door tile from a pack) never
@@ -215,6 +283,16 @@ across. This matters for two reasons:
    supplies `file_closed` and `file_open` — the renderer picks between them
    based on the door's current folded state, while the tile itself stays
    exactly one thing throughout.
+
+**Every door starts CLOSED**, and there is no way to say otherwise in a map
+file — openness is not a field here, because it is state rather than
+geometry. A freshly loaded map therefore has every door shut, and two rooms
+joined only by a door really are two separate spaces until somebody opens
+it. Closing a door returns it to exactly the state it had before it was ever
+touched, so "never opened" and "opened then shut" are indistinguishable.
+
+If you want two areas to start connected, do not open a door — leave floor
+between them.
 
 ## 8. A pack: the art a map draws with
 
@@ -363,6 +441,29 @@ table. In order, roughly:
 Every refusal names the offending file, field, and (where relevant) the
 exact square — so a fix is a matter of reading the message, not guessing.
 
+## 11. On per-square explicitness
+
+This format asks every square to name its own tile, with no shorthand.
+That is a deliberate trade: it makes a map fully explicit and diffable
+square by square, at the cost of a large map being a long file that a human
+cannot eyeball the shape of by reading the raw JSON.
+
+Tools exist that organise map authoring differently — assign a tileset to a
+whole *room* or *section*, and let the tool fan that out to individual
+squares, with per-square painting only as an override on top. That
+organisation is a reasonable and useful one. It belongs in an **editor** —
+something that reads author intent and *produces* a map in this format —
+rather than in the format itself. This document describes the format a
+loader reads, not a tool for writing it; keeping "how you'd like to author
+this" separate from "what gets stored and loaded" is what lets either one
+change without the other having to.
+
+---
+
+**The one rule everything above exists to serve:** art never decides
+nature. If you remember nothing else from this document, remember that a
+wall drawn as floorboards is still a wall.
+
 ## 12. How big a map can be
 
 **A map may declare at most 3600 tiles — about 60x60 if it is fully tiled.**
@@ -388,26 +489,3 @@ putting terrain on the wire (a palette plus one row of indices per row of
 map), which would bring 200x200 down to roughly 40 KB. It is designed and
 filed, not built — and when it lands, this ceiling moves or disappears
 without anything about the map format itself changing.
-
-## 11. On per-square explicitness
-
-This format asks every square to name its own tile, with no shorthand.
-That is a deliberate trade: it makes a map fully explicit and diffable
-square by square, at the cost of a large map being a long file that a human
-cannot eyeball the shape of by reading the raw JSON.
-
-Tools exist that organise map authoring differently — assign a tileset to a
-whole *room* or *section*, and let the tool fan that out to individual
-squares, with per-square painting only as an override on top. That
-organisation is a reasonable and useful one. It belongs in an **editor** —
-something that reads author intent and *produces* a map in this format —
-rather than in the format itself. This document describes the format a
-loader reads, not a tool for writing it; keeping "how you'd like to author
-this" separate from "what gets stored and loaded" is what lets either one
-change without the other having to.
-
----
-
-**The one rule everything above exists to serve:** art never decides
-nature. If you remember nothing else from this document, remember that a
-wall drawn as floorboards is still a wall.
