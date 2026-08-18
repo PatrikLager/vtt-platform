@@ -62,13 +62,26 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 	return envs, warnings, nil
 }
 
-// BuildSceneCreated is the ONE construction site for a SceneCreated event
-// (maps-as-geometry Task 4's whole point): both Compile above (the
+// BuildSceneCreated is the one place a map FILE's tile names are resolved into
+// TileRefs (maps-as-geometry Task 4's point): both Compile above (the
 // standalone map path) and internal/adventure/compile.go (the
 // adventure-embedded path) call this exact function, so the two load paths
 // cannot drift out of shape with each other —
 // TestBothLoadPathsEmitIdenticalSceneEvents (internal/adventure/compile_test.go)
-// pins it. p may be nil when m carries no overrides (Resolve only needs one
+// pins it.
+//
+// CORRECTED 2026-08-18. This comment used to claim BuildSceneCreated was "the
+// ONE construction site for a SceneCreated event", and the plan said the same
+// ("there is literally one construction site"). Both were false:
+// internal/gateway/convert.go also builds a SceneCreated, from a CreateScene
+// COMMAND. That is not drift to be stamped out — the two have different
+// inputs. convert.go receives Tiles as TileRefs the caller already resolved
+// and carries them through; this function receives tile NAMES from a file and
+// resolves them against a pack and the standard vocabulary. Only the
+// resolution is shared, and only the file paths share it. Forcing the command
+// path through here would mean inventing names for refs that arrive resolved.
+//
+// p may be nil when m carries no overrides (Resolve only needs one
 // when an override is present); a nil Pack alongside a non-empty override
 // fails loud through Resolve itself, exactly as it would for a standalone
 // map — see Resolve's own doc comment.
