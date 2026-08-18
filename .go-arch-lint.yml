@@ -80,6 +80,13 @@ components:
   # reason to import adventure just because the two formats happen to
   # share a Placement shape).
   mapdef: { in: internal/mapdef }
+  # internal/sight (visibility Task 1, spec §3.4/§3.5): pure geometry — given a
+  # scene and a standing position, which squares can be seen. It consumes
+  # engine's already-folded Scene and returns square keys; it holds no state,
+  # does no I/O and knows nothing of participants, connections or the wire, so
+  # everything downstream in the visibility arc can depend on it without any of
+  # them depending on each other.
+  sight:    { in: internal/sight }
   # internal/testdb (2026-08-11): a SQLite driver that fails one statement on
   # demand, so the error arms every store in this repo carries are reachable
   # at all. TEST-ONLY — nothing in cmd/ or the server imports it — but it is a
@@ -123,7 +130,13 @@ deps:
   # "gateway does no file I/O, cmd/vtt owns the filesystem" shape rules and
   # adventure already established above — gateway reads only the already-
   # validated Go values, never a map.json/pack.json itself.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef] }
+  # sight added visibility Task 1 and PRE-REGISTERED, the same shape adventure
+  # was in maps-as-geometry Task 2: a later task in this arc computes what each
+  # participant may see at the gateway (where authz already lives) by calling
+  # sight.VisibleFrom over the folded scene. Declared with the package rather
+  # than left for that task, so arch-lint never blocks the wiring on a
+  # forgotten dependency-graph update.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -197,6 +210,14 @@ deps:
   # component that depends on mapdef, not the reverse (see adventure's own
   # deps: entry).
   mapdef: { mayDependOn: [mapdef, contract] }
+  # internal/sight (visibility Task 1): engine and nothing else. It reads
+  # engine.Scene/SceneObject/Tile — the folded terrain movement already reads
+  # via engine.State.Blocked — and deliberately does NOT depend on contract:
+  # sight answers a spatial question and never builds or reads a wire message,
+  # so whoever turns its answer into an envelope is the gateway's problem, not
+  # its own. mapdef is off this list for the same reason: sight is handed an
+  # already-folded scene, never a map file.
+  sight:    { mayDependOn: [sight, engine] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide

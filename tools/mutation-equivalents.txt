@@ -137,3 +137,34 @@ internal/rules  compile.go:395:36  CONDITIONALS_BOUNDARY
 
 internal/rules  compile.go:409:35  CONDITIONALS_BOUNDARY
     consumePhaseForAtom's `p < phase { phase = p }` -> `<=`, taking a minimum. Same reasoning as :395.
+
+# ------------------------------------------------------------------------
+# internal/sight (visibility Task 1). Gated from the package's first commit,
+# which is why these five are the whole list: the other 36 survivors of the
+# first run were killed by tests rather than excused here.
+#
+# All five were checked the way this file's header demands — "is there ANY
+# observable that distinguishes them?" — by running each mutant against the
+# original over inputs chosen to hit the equality case hard: exhaustively over
+# all 43,046,721 coordinate quadruples in [-40,40]^4 for the two integer ones,
+# and over 20 million random segment/rect triples drawn from the half-integer
+# lattice this package actually uses (plus both zeros and +/-1e-12) for the
+# three float ones. NOT a clean sweep taken on faith: the same harness was
+# re-run with a mutant gremlins had KILLED (`t0 > t1` -> `>=` at :194) spliced
+# in as a control, and it found a difference within 200,000 samples.
+# ------------------------------------------------------------------------
+
+internal/sight  sight.go:147:8  CONDITIONALS_BOUNDARY
+    chebyshev's `if dx > dy { return dx }; return dy` -> `>=`: at dx == dy the mutant returns dx where the original returns dy, and those are the same int32. Identical in shape to internal/rules resolve.go:698:8 above, and to the maximum at compile.go:395:36.
+
+internal/sight  sight.go:154:7  CONDITIONALS_BOUNDARY
+    abs32's `if n < 0 { return -n }` -> `<=`: at n == 0 the mutant returns -0, and for an int32 that IS 0 — there is no signed zero to observe as there would be for a float. The same entry as internal/gateway authz.go:163:7 above, in a second copy of abs(); its siblings here are NOT equivalent and ARE killed.
+
+internal/sight  sight.go:185:8  CONDITIONALS_BOUNDARY
+    segmentHitsRect's `if a > b { a, b = b, a }` -> `>=` swaps only when a == b, and two float64s that compare equal are bit-identical unless they are +0.0 and -0.0 — which these two cannot be, because both quotients share the divisor d[i] and a zero numerator is always +0.0 (x - x is +0.0 for every finite x, -0.0 included), so a pair of zeros here necessarily carries the SAME sign.
+
+internal/sight  sight.go:188:8  CONDITIONALS_BOUNDARY
+    `if a > t0 { t0 = a }` -> `>=` assigns t0 a value equal to the one it already holds; the one case where those are distinguishable is a == -0.0 against t0 == +0.0, and t0 is only ever compared numerically (`t0 > t1`, and the next axis's own `a > t0`) — never returned, formatted, or used as a key — so the sign of that zero has no observable.
+
+internal/sight  sight.go:191:8  CONDITIONALS_BOUNDARY
+    `if b < t1 { t1 = b }` -> `<=`, the same clamp on the other end of the parameter range: it assigns t1 the value t1 already holds, and t1's only uses are the numeric `t0 > t1` and the next axis's `b < t1`, so a +0.0/-0.0 substitution is unobservable for exactly the reason given at :188.

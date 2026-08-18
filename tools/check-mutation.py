@@ -102,6 +102,20 @@ PACKAGES = [
     "./internal/gateway/",                 # ~57s
     "./internal/adventure/",               # ~60s
     "./internal/campaign/",                # ~91s
+    # internal/sight (visibility): pure geometry with no I/O — exactly what a
+    # mutation gate is best at, and gated from its FIRST commit. internal/mapdef
+    # was in neither this list nor mutation-scope.md, so it shipped silently
+    # ungated; adding it later found 13 live mutants and one real bug.
+    #
+    # 190-260s over four runs for only 85 mutants, which is out of proportion
+    # to the package and is worth knowing before anyone tries to speed it up:
+    # FOUR of them are INCREMENT_DECREMENT on the grid-walk loop counters and
+    # CANNOT TERMINATE, so each burns a full deadline rather than failing. The
+    # deadline is baseline x TIMEOUT_COEFFICIENT, so it moves with how warm the
+    # cache was — which is also why the spread above is 70s on identical code.
+    # See tools/mutation-scope.md on why those four are the one honest case in
+    # this repo for counting a timeout as a detection.
+    "./internal/sight/",                   # ~250s, much of it four unkillable timeouts
     "./internal/rules/",                   # ~393s -- the interpreter, 553 mutants
     "./internal/mcp/",                     # ~857s
 ]
