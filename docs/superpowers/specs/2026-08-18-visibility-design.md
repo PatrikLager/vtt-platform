@@ -72,11 +72,15 @@ Each is a plausible thing to start doing halfway through.
 **A seat sees the union of what its controlled actors see.** Sight belongs to
 actors; a participant inherits it from the actors they control.
 
-**A seat with no actor sees no scene at all** — not a black board, but no board,
-because scene knowledge follows actor presence (§4.2). That is how everyone
-starts: onboarding assigns no character and the DM grants one afterwards, so
-arriving with nothing and then being given both a character and a place to
-stand is the normal first minute at a table.
+**A seat with no actor is not in a scene, so it has no board yet** — scene
+knowledge follows actor presence (§4.2), and a seat that is nowhere has nothing
+to draw. The moment the DM grants a character standing somewhere, that scene's
+board arrives: its outline, black, filling in as they look around. That is the
+normal first minute at a table, since onboarding assigns no character.
+
+Note the distinction §4.2 turns on: this is "you are not in a scene", NOT "you
+are in a scene you cannot see". A player who IS in a scene always has its
+board.
 
 **This makes a spectator blind, and that is a real product consequence**, not a
 detail. A spectator has no actor, so under this ruling they see nothing at all
@@ -190,15 +194,25 @@ player's replay filters identically and the gaps are invisible to them.
   since the tiles-optional ruling (2026-08-13), so a redacted scene needs no new
   shape.
 
-**A scene a player has not entered does not exist for them.** Patrik,
-2026-08-18: *"we can not have that players know anything about a campaign's
-scenes that have not yet [been] encountered… You can only know/see a scene that
-you participate in."*
+**Two different things, and they must not be confused.**
 
-So `SceneCreated` is projected like everything else. A player receives it at
-the moment their actor is placed in that scene — synthesized, stamped with the
-causing sequence, exactly as a token's introduction is (§4.2). Before that they
-do not learn its name, its dimensions, or that it is there at all.
+**The scene you are IN gives you a board.** You receive its `scene_id`, name and
+grid dimensions — the full outline — with tiles and objects empty. Everything
+you have not seen is black, and it fills in as you explore. Patrik, 2026-08-18:
+*"of course there is a board, but you do not know what is in the black area
+before you enter the black area."* That is ordinary fog of war, and knowing the
+room you stand in is 48×48 is not a leak; it is the shape of the paper.
+
+**A scene you have NOT entered does not exist for you.** Patrik, same day: *"we
+can not have that players know anything about a campaign's scenes that have not
+yet [been] encountered… You can only know/see a scene that you participate
+in."* A campaign with six scenes loaded must not hand a player six names and
+sizes — that is a table of contents for an adventure they have not played.
+
+So `SceneCreated` is projected like everything else: a player receives it at the
+moment their actor is placed in that scene, synthesized and stamped with the
+causing sequence exactly as a token's introduction is. Before that they learn
+nothing of it; from then on they have its board and fill it in by walking.
 
 This closes a leak an earlier draft of this spec accepted. A campaign with six
 scenes loaded would otherwise have handed every player a list of six names and
@@ -378,7 +392,9 @@ gate, neither in scope here:
 
 ## 9. Exit criteria
 
-1. A player sees a room they are in, and not the room beyond a closed door.
+1. A player in a scene has its full board outline from the start, black where
+   unexplored — and sees the room they are in, but not the room beyond a closed
+   door.
 2. Opening the door reveals the room beyond, in one event, to everyone who can
    see through it.
 3. A player who leaves a room keeps its terrain, dimmed, and loses the creatures
