@@ -530,3 +530,66 @@ that list calling `drawImage`, small enough to verify by looking. This mirrors
    authors a map that loads and plays.** If this fails, the format is not yet
    an API — and that is the criterion that decides whether this arc delivered
    what was asked for.
+
+## 11. Natural cover, and what it asks of the visibility arc
+
+**Not in this arc** (Patrik, 2026-08-14, explicitly not now). Recorded here
+because it constrains the NEXT arc's primitives, and a constraint discovered
+after that arc picks them is a rewrite rather than a decision.
+
+Trees, high grass, scrub, hills — the things that hide a creature outdoors.
+The obvious reading is "more object kinds", and that reading is wrong in three
+ways, one of which turned out to be wrong itself.
+
+**Patrik's ruling, which decides the shape:** *"trees are pillars — you cannot
+see THROUGH a tree, only BETWEEN trees."*
+
+### 11.1 Concealment stays binary
+
+The first analysis argued that a wood degrades sight with depth, so
+`blocks_sight` must stop being a bool and become a degree — and that designing
+the predicate as degree-valued now is far cheaper than retrofitting it once fog
+ships.
+
+**The pillar ruling strikes that, and the simpler model is the right one.** A
+trunk blocks sight completely; what varies is how many trunks a sightline
+meets. The graded feel of a forest EMERGES FROM DENSITY rather than from a
+graded primitive: deep sightlines cross more trunks, and along a forest edge
+the gaps line up. No new primitive, no degree-valued predicate, no change to
+`blocks_sight`.
+
+Recorded rather than quietly dropped, because the discarded version is the
+more obvious design and someone will propose it again.
+
+### 11.2 The real consequence: line of sight must be object-granular
+
+A trunk is SMALLER THAN ITS SQUARE, and you see past it at an angle. So the
+sight test cannot ask "is this square blocking" — it must cast a ray against
+object FOOTPRINTS, using the geometry §4.1 already stores: `at`, `size`,
+`rot`.
+
+**Tile-granular line of sight would make a wood a solid wall.** That is the
+whole finding, and it lands on the visibility arc's first design choice.
+
+This also retro-justifies §3.1's hybrid, which was argued at design time on
+authoring convenience alone: walls can stay tile-granular precisely because
+they fill their squares, while natural cover forces object-granularity for
+everything else. MapTool solves the same problem with segment-VBL; we get it
+from object geometry we already carry.
+
+### 11.3 What stays open
+
+- **Density is a tooling problem, not a format one.** A wood is hundreds of
+  trunks, and nobody hand-authors that. Either a material meaning "trees"
+  expands into blockers at load, or a generator emits them. The format does
+  not need to change either way; the answer is a tool.
+- **Natural cover is area-shaped, not object-shaped.** Our objects are
+  furniture: one thing, one place, a footprint. Woodland, scrub and marsh
+  behave more like a MATERIAL — which suggests they belong ON the tile rather
+  than beside it, and `material` is already the opaque tag the ruleset
+  interprets, exactly where "does high grass conceal, and how much" belongs.
+  Note the tension with 11.2: trunks need footprints, ground cover does not.
+- **Hills are still elevation**, which §2 excludes as "a whole coordinate
+  system". A tree is cover; a hill is cover AND vantage — it blocks sight to
+  what is behind while improving sight from on top. That is a relationship
+  between two squares and a height, and the pillar model does not reach it.

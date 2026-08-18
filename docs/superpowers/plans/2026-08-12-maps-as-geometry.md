@@ -557,8 +557,21 @@ in row-major order (deterministic map iteration is required for goldens — sort
 the keys), then one `TokenPlaced` per placement.
 
 In `internal/adventure/compile.go`, replace the inline `SceneCreated`
-construction with a call into `mapdef.Compile`'s scene half, so **there is
-literally one construction site.** In `internal/adventure/load.go`, `sceneJSON`
+construction with a call into `mapdef.Compile`'s scene half, so **both FILE
+load paths resolve tile names in one place.**
+
+> **CORRECTED 2026-08-18.** This step originally said "there is literally one
+> construction site", and the shipped doc comment on `BuildSceneCreated`
+> repeated it. Both were false: `internal/gateway/convert.go` builds a
+> `SceneCreated` too, from a `CreateScene` COMMAND. That is not drift — the
+> inputs differ. The command path receives Tiles as `TileRef`s the caller
+> already resolved; the file paths receive tile NAMES and resolve them against
+> a pack and the standard vocabulary. Only the resolution is shared, and only
+> the two file paths share it. The honest claim is the narrower one, and it is
+> the one worth holding: a second resolver is what would let a map mean
+> different things depending on how it was loaded.
+
+In `internal/adventure/load.go`, `sceneJSON`
 gains `Tiles`, `Overrides`, `Objects`, and `loadScenes` reuses `mapdef`'s
 validation rather than re-implementing it.
 
