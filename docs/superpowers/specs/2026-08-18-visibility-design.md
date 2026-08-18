@@ -82,13 +82,46 @@ Note the distinction §4.2 turns on: this is "you are not in a scene", NOT "you
 are in a scene you cannot see". A player who IS in a scene always has its
 board.
 
-**This makes a spectator blind, and that is a real product consequence**, not a
-detail. A spectator has no actor, so under this ruling they see nothing at all
-— which is a strange shape for a role whose name means "one who watches", and
-session zero had a spectator seat that could follow the game. Called out here
-rather than settled: if a spectator should see something, the honest options are
-that the DM grants them sight explicitly, or that spectator becomes a seat you
-are promoted OUT of rather than one you watch from. Not resolved in this spec.
+### 3.1.1 A spectator rides a shoulder
+
+An earlier draft left spectators blind — no actor, so nothing at all — which is
+a strange shape for a role whose name means "one who watches". Patrik,
+2026-08-18: *"I would rather that you as a spectator, can jump between tokens -
+like a bird hopping from one shoulder to another. You can sit on any of the
+characters, and you can choose to shift to another character's view, whenever -
+but you will only know as much as the party does, not what the DM has planned to
+happen."*
+
+**So `viewer` is a participant PLUS a viewpoint.** For a player the viewpoint is
+fixed: the union of the actors they control. For a spectator it is whichever
+shoulder they are currently sitting on. §4.1's purity is untouched — the
+projection is still a pure function of `(log-so-far, viewer)`; `viewer` simply
+carries one more field.
+
+**A perch may only target a player-controlled actor.** This is the constraint
+the whole idea rests on: a spectator perched on the Goblin Archer would watch
+the ambush from inside it, and the arc would be undone in a single click.
+Enforced server-side, never by which names the UI happens to offer.
+
+**The bird remembers every shoulder it has sat on.** Explored terrain (§3.2)
+accumulates for the spectator across perches, so hopping Armak → Asme leaves
+them holding both rooms. Over an evening that converges on exactly what Patrik
+described: as much as the party collectively knows, and never what the DM has
+planned, because there is no shoulder on the DM's side of the screen to sit on.
+
+**Perching is NOT logged.** Patrik: *"we do not need to log anything about
+what/where the spectator sees."* Correct, and the reason generalises: the log is
+the campaign's history, and where a spectator points their camera is not a fact
+about the campaign. It is a view preference, like zoom or which panel is open.
+Logging it would replay forever, add story-panel noise, and — absurdly — make it
+retractable, so a DM could "undo" somebody having looked at Asme. It is a
+connection setting, like the catch-up point. The only cost is that a perch does
+not survive a reconnect, and the client re-sends it on connect.
+
+**An unassigned PLAYER does not perch.** They see nothing until the DM grants a
+character (§3.1). Perching is the spectator's affordance; a player's answer to
+an empty board is to be given a character, which is the onboarding flow working
+as intended.
 
 **DM and agent see everything.** Their projection is the identity function, so
 their stream is byte-for-byte what it is today.
@@ -401,12 +434,15 @@ gate, neither in scope here:
    in it.
 4. A seat with no actor sees no scene at all — not its name, not its size.
    Being granted a character gives it both a place to stand and eyes.
-5. **A scene a player has never entered is absent from their stream entirely.**
+5. A spectator perches on a party member and sees exactly what that character
+   sees; hopping to another shoulder switches the view and keeps what the bird
+   has already seen. A perch on an NPC is REFUSED by the server.
+6. **A scene a player has never entered is absent from their stream entirely.**
    Load six scenes into a campaign; a player in one of them can enumerate
    exactly one.
-6. **Session zero cannot happen again:** the goblin is not on the wire, not on
+7. **Session zero cannot happen again:** the goblin is not on the wire, not on
    the board, and its square cannot be targeted by a player who cannot see it.
-7. The DM's stream is byte-for-byte unchanged, and the MCP agent seat notices
+8. The DM's stream is byte-for-byte unchanged, and the MCP agent seat notices
    nothing.
-8. `task check` green, no gate weakened, the new package mutation-gated from its
+9. `task check` green, no gate weakened, the new package mutation-gated from its
    first commit.
