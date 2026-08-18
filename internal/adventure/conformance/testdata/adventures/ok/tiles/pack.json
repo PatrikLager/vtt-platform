@@ -1,0 +1,18 @@
+{
+  "id": "room-basics",
+  "name": "Room Basics",
+  "cell_px": 64,
+  "tiles": [],
+  "objects": [
+    {
+      "name": "pillar-plain",
+      "file": "pillar_plain.png",
+      "desc": "a plain stone column, blocking sight and passage"
+    },
+    {
+      "name": "rug-woven",
+      "file": "rug_woven.png",
+      "desc": "a woven rug, purely decorative"
+    }
+  ]
+}

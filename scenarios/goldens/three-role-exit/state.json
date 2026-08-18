@@ -20,7 +20,10 @@
       "ID": "scn-exit",
       "Name": "Exit Hall",
       "GridWidth": 10,
-      "GridHeight": 10
+      "GridHeight": 10,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {}
     }
   },
   "Sessions": [

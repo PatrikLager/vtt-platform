@@ -42,6 +42,24 @@ import (
 // own overflow gives every other consumer.
 const eventBuffer = 256
 
+// readLimit raises coder/websocket's own default read cap (32768 bytes —
+// internal/gateway/server.go's maxWSFrameBytes documents that this is the
+// library default, undocumented upstream but pinned exactly by version) far
+// enough that a real SceneCreated can arrive whole. maps-as-geometry Task 4
+// made SceneCreated carry one TileRef per grid square; a modest scene (e.g.
+// goblin-ambush's 32x32 = 1024 squares) already compiles to a single
+// envelope north of 40KB, well past the default — a Dial that left the
+// library default in place would silently and permanently desync the moment
+// any scene of real size loaded, exactly the failure mode
+// internal/gateway/server_internal_test.go's own bigSceneName fixture named
+// and worked around locally (its comment: "Every connection that might
+// legitimately RECEIVE bigSceneName-sized broadcasts needs its read limit
+// raised above coder/websocket's default 32KB cap"). 200KiB matches that
+// existing precedent rather than inventing a second number for the same
+// problem; it is not derived from any hard ceiling elsewhere in the wire
+// contract, so a future map larger than this will need the same fix again.
+const readLimit = 200 * 1024
+
 // ErrEventsOverflow is the error a Client tears itself down with when a
 // caller isn't draining Events() fast enough to keep up with the server's
 // broadcast stream (see eventBuffer's doc comment).
@@ -149,6 +167,7 @@ func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error
 		// see TestDialErrorNeverIncludesTheRawToken.
 		return nil, fmt.Errorf("harness: dial: %s", redactURL(err.Error()))
 	}
+	conn.SetReadLimit(readLimit)
 
 	readCtx, cancel := context.WithCancel(context.Background())
 	c := &Client{

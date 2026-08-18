@@ -47,6 +47,12 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// (an adventure load is not scoped to any actor a participant
 	// controls).
 	"load_adventure": {identity.RoleDM: true, identity.RoleAgent: true},
+	// load_map (whole-branch-review C1 remediation): dm/agent only, exactly
+	// the same shape and reasoning as load_adventure directly above —
+	// loading a standalone map rewrites the table's world just as loading
+	// an adventure does, and no additional ownership check applies (a map
+	// load is not scoped to any actor a participant controls).
+	"load_map": {identity.RoleDM: true, identity.RoleAgent: true},
 	// grant/revoke_actor_control (presence-and-actor-control Task 3, spec
 	// §5.3). Handing a character to someone is the DM's call, so grant has
 	// no player row at all. Revoke does: a player may put a character DOWN,
@@ -65,6 +71,13 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// PARTICIPANTS, and rotation is the only way to close a leaked link.
 	"set_join_door":    {identity.RoleDM: true, identity.RoleAgent: true},
 	"rotate_join_link": {identity.RoleDM: true, identity.RoleAgent: true},
+	// open_door/close_door (maps-as-geometry Task 1 fix, spec §6: "hard for
+	// players, free for DM"). Same role set as move_token: dm/agent/player
+	// may all issue it, spectator may not. The additional adjacency check —
+	// "a player may work a door only if a token they control is adjacent to
+	// it" — is mayWorkDoor, below, wired into Authorize's switch (Task 6).
+	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -102,8 +115,55 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 		return authorizeActorOwnership(p, cmd.GetRemoveCondition().GetActorId(), st)
 	case "revoke_actor_control":
 		return authorizeSelfRevoke(p, cmd.GetRevokeActorControl(), st)
+	case "open_door":
+		od := cmd.GetOpenDoor()
+		return mayWorkDoor(p, st, od.GetSceneId(), od.GetAt())
+	case "close_door":
+		cd := cmd.GetCloseDoor()
+		return mayWorkDoor(p, st, cd.GetSceneId(), cd.GetAt())
 	}
 	return nil
+}
+
+// mayWorkDoor enforces the player-only adjacency rule for open_door/
+// close_door (maps-as-geometry Task 6, spec §6: "hard for players, free for
+// DM"). A non-player role returns nil immediately — the DM and the agent
+// author the world and are free of it, the same bypass move_token's
+// ownership check never applies to them either.
+//
+// SPATIAL ONLY, deliberately (CLAUDE.md rule 5): this asks WHERE a
+// participant's tokens are, never what edition or ruleset is in play — no
+// reach, no movement cost, nothing a rule module would own. Adjacency uses
+// Chebyshev distance (max of the two axis deltas <= 1), matching a
+// standard 8-neighbour grid: the four orthogonal squares and the four
+// diagonals all count as "next to".
+func mayWorkDoor(p *identity.Participant, st *engine.State, sceneID string, at *vttv1.GridPosition) error {
+	if p.Role != identity.RolePlayer {
+		return nil
+	}
+	for _, tok := range st.Tokens {
+		if tok.SceneID != sceneID {
+			continue
+		}
+		actor, ok := st.Actors[tok.ActorID]
+		if !ok || !controls(actor, p.ID) {
+			continue
+		}
+		if abs(tok.X-at.GetX()) <= 1 && abs(tok.Y-at.GetY()) <= 1 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: participant %q has no token adjacent to that door", ErrUnauthorized, p.ID)
+}
+
+// abs returns the absolute value of a grid-coordinate delta. Small enough
+// that pulling in a generic math package for one int32 subtraction is not
+// worth it; mayWorkDoor is its only caller.
+func abs(n int32) int32 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // authorizeTokenOwnership enforces the player-only ownership rule: the token
@@ -240,12 +300,18 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "delete_note"
 	case *vttv1.ClientCommand_LoadAdventure:
 		return "load_adventure"
+	case *vttv1.ClientCommand_LoadMap:
+		return "load_map"
 	case *vttv1.ClientCommand_GrantActorControl:
 		return "grant_actor_control"
 	case *vttv1.ClientCommand_RevokeActorControl:
 		return "revoke_actor_control"
 	case *vttv1.ClientCommand_PromoteParticipant:
 		return "promote_participant"
+	case *vttv1.ClientCommand_OpenDoor:
+		return "open_door"
+	case *vttv1.ClientCommand_CloseDoor:
+		return "close_door"
 	default:
 		return ""
 	}

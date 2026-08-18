@@ -305,3 +305,108 @@ test("adding an actor lets the set override the declared controller", () => {
   expect(st.Actors["a2"]!.controllerIds).toEqual([]);
   expect(st.Actors["a2"]!.controllerId).toBe("");
 });
+
+// --- terrain and doors (maps-as-geometry) --------------------------------
+//
+// Same argument as this file's header, and the corpus misses these for the
+// same reason: no scenario golden contains a door event at all, and the
+// SceneCreated arm's terrain loops only run when a scene actually declares
+// tiles. So the whole of fold.ts's door handling — added in Task 5 PRECISELY
+// to keep the cross-language fold-parity keystone honest — shipped with
+// nothing exercising it. If the TS fold and internal/engine/apply.go
+// disagreed about doors, the keystone would not have noticed, which is the
+// one failure it exists to prevent.
+
+/** A 2x2 scene: floor everywhere but a wood door at (0,1). */
+function sceneWithADoor(): Envelope[] {
+  const tiles: Record<string, unknown> = {};
+  for (let y = 0; y < 2; y++) {
+    for (let x = 0; x < 2; x++) {
+      tiles[`${x},${y}`] =
+        x === 0 && y === 1
+          ? { kind: "door", material: "wood", art: "" }
+          : { kind: "floor", material: "stone", art: "" };
+    }
+  }
+  return [
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, {
+      sceneCreated: {
+        sceneId: "s1", name: "Cell", gridWidth: 2, gridHeight: 2, tiles,
+        objects: [
+          {
+            objectId: "pillar-1", kind: "pillar", at: { x: 1, y: 0 },
+            width: 1, height: 1, rotationDegrees: 90,
+            blocksSight: true, blocksMove: true, art: "pillar-stone",
+          },
+        ],
+      },
+    }),
+  ];
+}
+
+test("a scene's tiles and objects survive the fold with every field intact", () => {
+  const st = fold(sceneWithADoor());
+  const sc = st.Scenes["s1"]!;
+  expect(Object.keys(sc.Tiles ?? {})).toHaveLength(4);
+  expect(sc.Tiles!["0,1"]).toEqual({ Kind: "door", Material: "wood", Art: "" });
+  expect(sc.Tiles!["1,1"]).toEqual({ Kind: "floor", Material: "stone", Art: "" });
+
+  // Every object field, not just the ones a renderer happens to read today:
+  // rotation and the blocks_* flags are what the visibility arc will consume,
+  // and a field silently dropped here would be found by that arc, not by this
+  // one.
+  expect(sc.Objects).toHaveLength(1);
+  expect(sc.Objects![0]).toEqual({
+    ObjectID: "pillar-1", Kind: "pillar", X: 1, Y: 0,
+    Width: 1, Height: 1, RotationDegrees: 90,
+    BlocksSight: true, BlocksMove: true, Art: "pillar-stone",
+  });
+});
+
+test("a door is CLOSED until opened, and closing restores the never-touched state", () => {
+  // Mirrors internal/engine/apply.go's arms exactly, which is the point: Go
+  // initialises OpenDoors empty and DELETES on close rather than storing
+  // false, so "just shut" and "never touched" are indistinguishable. If TS
+  // stored false instead, the two folds would diverge on a scene nobody had
+  // touched, and every golden would still pass.
+  const base = sceneWithADoor();
+  const st0 = fold(base);
+  expect(st0.Scenes["s1"]!.OpenDoors ?? {}).toEqual({});
+
+  const opened = fold([...base, env(3, { doorOpened: { sceneId: "s1", at: { x: 0, y: 1 } } })]);
+  expect(opened.Scenes["s1"]!.OpenDoors!["0,1"]).toBe(true);
+
+  const closed = fold([
+    ...base,
+    env(3, { doorOpened: { sceneId: "s1", at: { x: 0, y: 1 } } }),
+    env(4, { doorClosed: { sceneId: "s1", at: { x: 0, y: 1 } } }),
+  ]);
+  expect(closed.Scenes["s1"]!.OpenDoors).toEqual({});
+  expect("0,1" in closed.Scenes["s1"]!.OpenDoors!).toBe(false);
+});
+
+test("a door event naming an unknown scene or no position is refused", () => {
+  const base = sceneWithADoor();
+  for (const bad of [
+    { doorOpened: { sceneId: "nope", at: { x: 0, y: 1 } } },
+    { doorClosed: { sceneId: "nope", at: { x: 0, y: 1 } } },
+    { doorOpened: { sceneId: "s1" } },
+    { doorClosed: { sceneId: "s1" } },
+  ]) {
+    expect(() => fold([...base, env(3, bad)])).toThrow(FoldError);
+  }
+});
+
+test("terrain and door state reach the dump the parity keystone compares", () => {
+  // foldToDumpJSON is the half the Go/TS keystone actually diffs. Terrain that
+  // folds correctly but never reaches the dump would make the keystone blind
+  // to exactly the fields this arc added.
+  const dump = JSON.parse(
+    foldToDumpJSON([...sceneWithADoor(), env(3, { doorOpened: { sceneId: "s1", at: { x: 0, y: 1 } } })]),
+  );
+  const sc = dump.Scenes["s1"];
+  expect(sc.Tiles["0,1"]).toEqual({ Kind: "door", Material: "wood", Art: "" });
+  expect(sc.Objects[0].RotationDegrees).toBe(90);
+  expect(sc.OpenDoors["0,1"]).toBe(true);
+});

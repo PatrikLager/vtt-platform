@@ -41,6 +41,26 @@ export interface AdventureMeta {
   name: string;
 }
 
+/** The pack a map declares (maps-as-geometry spec §4.2) — enough to draw
+ *  at the right scale (cellPx) and to find its files (id), without a
+ *  second request just to learn the pack's own name. */
+export interface PackRef {
+  id: string;
+  name: string;
+  cellPx: number;
+}
+
+/** One entry from GET /api/maps (metadata.go's mapMetaJSON): a standalone
+ *  map --maps-dir has loaded and validated at boot. pack is absent for a
+ *  map that names none (mapdef.Map.Pack "" is legal). */
+export interface MapMeta {
+  id: string;
+  name: string;
+  gridWidth: number;
+  gridHeight: number;
+  pack?: PackRef;
+}
+
 async function getJSON<T>(base: string, path: string, token: string): Promise<T | null> {
   const resp = await fetch(base + path, {
     headers: { Authorization: `Bearer ${token}` },
@@ -80,6 +100,22 @@ export async function fetchRuleset(base: string, token: string): Promise<Ruleset
 export async function fetchAdventures(base: string, token: string): Promise<AdventureMeta[]> {
   const body = await getJSON<{ adventures: AdventureMeta[] }>(base, "/api/adventures", token);
   return body?.adventures ?? [];
+}
+
+/**
+ * fetchMaps lists every standalone map --maps-dir has loaded (GET
+ * /api/maps). The wire carries no pack reference on a live Scene —
+ * SceneCreated resolves art names into facts at compile time and stops
+ * there (design spec §5) — so this list is the only way a client learns
+ * which pack goes with which map at all; pack-assets.ts's own header
+ * comment explains what it does with the answer. A 404 (no --maps-dir
+ * configured) degrades to an empty list, matching fetchAdventures' own
+ * posture, rather than surfacing as an error the DM console has no route
+ * naming maps to explain.
+ */
+export async function fetchMaps(base: string, token: string): Promise<MapMeta[]> {
+  const body = await getJSON<{ maps: MapMeta[] }>(base, "/api/maps", token);
+  return body?.maps ?? [];
 }
 
 export async function fetchRulesetGuide(base: string, token: string): Promise<string | null> {

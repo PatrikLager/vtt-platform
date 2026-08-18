@@ -1,0 +1,8 @@
+{
+  "id": "cell",
+  "name": "A Single Square",
+  "grid_width": 1,
+  "grid_height": 1,
+  "tiles": { "0,0": "stone" },
+  "placements": [{ "token_id": "tok-1", "actor_id": "act-1", "x": 0, "y": 0 }]
+}

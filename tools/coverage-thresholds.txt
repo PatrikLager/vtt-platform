@@ -35,9 +35,11 @@ github.com/PatrikLager/vtt-platform/internal/engine                  97.5
 github.com/PatrikLager/vtt-platform/internal/gateway                 88.5
 github.com/PatrikLager/vtt-platform/internal/harness                 85.0
 github.com/PatrikLager/vtt-platform/internal/identity                92.1
+github.com/PatrikLager/vtt-platform/internal/mapdef                  96.0
 github.com/PatrikLager/vtt-platform/internal/testdb                   90.8
 github.com/PatrikLager/vtt-platform/internal/mcp                     87.5
 github.com/PatrikLager/vtt-platform/internal/rules                   89.0
 github.com/PatrikLager/vtt-platform/internal/rules/conformance       85.5
 github.com/PatrikLager/vtt-platform/internal/store                   90.0
 github.com/PatrikLager/vtt-platform/tools/toolgen                    85.0
+github.com/PatrikLager/vtt-platform/tools/genmappack                 90.0

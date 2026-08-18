@@ -44,11 +44,14 @@
 # of its entries down by six.
 # ------------------------------------------------------------------------
 
-internal/engine  apply.go:206:15  CONDITIONALS_BOUNDARY
+internal/engine  apply.go:293:15  CONDITIONALS_BOUNDARY
     `computed < 0` -> `<=`: when computed is 0 the branch assigns 0, the value it already holds. computed is a local int64 whose only uses are a value comparison, a %d format and an int32() conversion — no pointer, no map, no nil-ness, so nothing can observe the assignment.
 
-internal/engine  apply.go:209:30  CONDITIONALS_BOUNDARY
-    `computed > int64(res.Max)` -> `>=`: when computed == Max the branch assigns Max, the value it already holds. Same reasoning as above. NOTE the sibling `res.Max > 0` on this line is NOT equivalent and IS killed — apply_test.go pins "max == 0 means unlimited".
+internal/engine  apply.go:296:30  CONDITIONALS_BOUNDARY
+    `computed > int64(res.Max)` -> `>=`: when computed == Max the branch assigns Max, the value it already holds. Same reasoning as above. NOTE the sibling `res.Max > 0` on this line is NOT equivalent and IS killed — apply_test.go pins "max == 0 means unlimited". Re-pointed 2026-08-17 from 206:15/209:30: maps-as-geometry added the DoorOpened/DoorClosed arms ABOVE this one, moving both entries down 87 lines. Both new locations were read and confirmed to hold the same two expressions.
+
+internal/gateway  authz.go:163:7  CONDITIONALS_BOUNDARY
+    `if n < 0` -> `<=` inside abs(). At n == 0 the mutated branch returns -0, and for an int32 that IS 0 — the same value the unmutated path returns. No caller can distinguish them; there is no signed-zero to observe as there would be for a float. The SIBLING mutations in this function are NOT equivalent and ARE killed: `return -n` -> `return n` (164:10, both mutators) is killed by TestAuthorizePlayerMayNotWorkADoorItStandsWestOrNorthOf, which puts a door four squares east and four squares south of the token.
 
 internal/campaign  campaign.go:448:55  ARITHMETIC_BASE
     Map CAPACITY HINT: `make(map[int64]bool, len(already)+int(to-from)+1)`. The hint affects only initial allocation — maps grow as needed and no read distinguishes a different starting capacity. NOTE these mutations can make the hint NEGATIVE with ordinary inputs (len(already)=0, from=1, to=10 gives -8): the Go SPEC says a negative size panics at run time, but gc does not implement that for maps (verified: make(map[int64]bool, -1000) is fine) though it does for slices. So this verdict holds on gc and only on gc.
@@ -77,8 +80,8 @@ internal/rules/conformance  conformance.go:207:11  CONDITIONALS_BOUNDARY
 internal/rules/conformance  conformance.go:361:11  CONDITIONALS_NEGATION
     `scene == ""` -> `!=`, choosing between a golden's own scene name and the default "scene". EQUIVALENT ONLY BECAUSE OF THE GOLDEN FORMAT, and the reason matters more than the verdict here. An empty scene id is NOT generally interchangeable with a name: resolve.go:677 is `if sceneID != "" && tok.SceneID != sceneID`, so "" DISABLES the same-scene filter. Demonstrated at the Resolve boundary — caster in "" with target in "elsewhere" is ACCEPTED, while caster in "scene" with target in "elsewhere" is rejected with "has no token in the active scene". What makes the mutant unkillable is that goldenFile has ONE `scene` field (conformance.go:278) which runGolden stamps onto every token (:365, :373), so the caster/target scene MISMATCH that filter exists to catch cannot be expressed by any golden. An earlier version of this entry claimed the string was "used uniformly, so any two names are identical" — true of the golden path, false of the mechanism, and exactly the "true, and irrelevant" shape this file's header records for conformance.go:319/:325. THIS ENTRY EXPIRES IF goldenActor GAINS A PER-ACTOR SCENE. goldenActor already carries per-actor x/y, so that is a natural extension; the moment it lands, a golden can place caster and target in different scenes and this mutant becomes killable. Delete the entry then, do not re-point it.
 
-internal/adventure  load.go:84:58  ARITHMETIC_BASE
-    Map CAPACITY HINT: `make(map[string]bool, len(rs.Attributes)+len(rs.Defenses))`. Same as the internal/campaign entries above and equivalent for the same reason — the hint affects only initial allocation, maps grow as needed, and no read distinguishes a different starting capacity. The negative-hint caveat carries too: this can go negative with an ordinary ruleset (more defenses than attributes), the Go SPEC says a negative size panics, and gc does not implement that for maps. Verdict holds on gc and only on gc.
+internal/adventure  load.go:85:58  ARITHMETIC_BASE
+    Map CAPACITY HINT: `make(map[string]bool, len(rs.Attributes)+len(rs.Defenses))`. Same as the internal/campaign entries above and equivalent for the same reason — the hint affects only initial allocation, maps grow as needed, and no read distinguishes a different starting capacity. The negative-hint caveat carries too: this can go negative with an ordinary ruleset (more defenses than attributes), the Go SPEC says a negative size panics, and gc does not implement that for maps. Verdict holds on gc and only on gc. Re-pointed 2026-08-17 from 84:58: maps-as-geometry added a line above it. NOTE THE CONTRAST that makes "capacity hint" insufficient as a reason on its own — the identical-looking mutation at internal/mapdef compile.go:23:38 is a SLICE capacity, where gc DOES panic ("makeslice: cap out of range"), so that one is NOT equivalent and is killed by TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne. Check which you are looking at before reusing this reason.
 
 # --- internal/rules -----------------------------------------------------------
 #

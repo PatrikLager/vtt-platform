@@ -28,12 +28,72 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
+
+// --- /api/maps and /api/packs/{pack}/{file} (maps-as-geometry Task 7) -----
+//
+// Both routes are open to EVERY role, unlike the adventure guide (DM/agent
+// only — DM secrets) or the join link (admission control): a map's geometry
+// and a pack's art carry neither. Spec §7 states this plainly — "everyone
+// still sees the whole map, no filtering in this arc" — so the gate here is
+// simply s.authed, the same shape /api/ruleset and the /api/adventures
+// LIST already use.
+//
+// CONTENT TYPE AND TRUST BOUNDARY (decided here, not left implicit — and
+// corrected once already by review, see the note below on what changed).
+//
+// handlePackFile does NOT let Content-Type be inferred from the file the
+// way server.go's WithStatic route does for the client bundle
+// (http.FileServerFS's extension/sniffing inference). Instead it serves
+// under a CLOSED ALLOWLIST of genuine tile-art extensions
+// (packFileContentTypes below) with their real Content-Type and
+// X-Content-Type-Options: nosniff; anything not on that list is served as
+// application/octet-stream with Content-Disposition: attachment (still
+// nosniff), so a browser navigating directly to it downloads rather than
+// executes it, whatever it turns out to be.
+//
+// WHY THIS IS NOT THE SAME CALL AS THE STATIC BUNDLE, even though both are
+// "serve a directory of files this process did not author": the static
+// bundle is FIRST-PARTY — built by this repo's own `task build:client`,
+// committed, embedded into the binary. A pack is directory content an
+// OPERATOR installs, potentially from a third party (spec §4.2 states a
+// pack carries the same trust as an adventure's guide.md — but a guide is
+// hand-authored markdown a browser never executes; a pack is more likely to
+// be community content, and unlike a guide, this route serves it as raw,
+// content-type-labelled bytes rather than JSON-wrapped text). An
+// operator-installed pack containing an .html or .js file, served with a
+// browser-executable Content-Type at a same-origin URL, would let script
+// read this client's own Bearer token — it is stored in localStorage
+// (client/src/auth.ts) and sent on every /api/* request (client/src/
+// metadata.ts) — and call any authenticated route as that participant.
+// Markdown can never do that; same-origin JavaScript can. That is the
+// actual difference in KIND review found and this comment previously
+// missed: "same trust as guide.md" does not mean "safe to serve as
+// browser-executable content," because guide.md was never executable to
+// begin with.
+//
+// SVG is deliberately treated as UNSAFE and left OFF the allowlist (forced
+// down the attachment/octet-stream path) even though it is nominally an
+// image format some pack authors might reach for: an SVG document can
+// embed <script>, so "it has an image extension" is not the same claim as
+// "a browser cannot execute anything in it" the way it is for PNG/JPEG/GIF/
+// WebP, which carry no script-execution surface in any current browser.
+//
+// This is layered ON TOP of, not instead of, the filesystem-level boundary
+// (an fs.FS built via os.OpenRoot cannot be walked outside the directory it
+// was rooted at, by construction or by symlink — see WithPackFiles' doc
+// comment) and the authentication boundary (every pack/map route requires
+// the same Bearer header every other /api route does). A hostile pack
+// directory can still make ITS OWN images ugly, wrong, or offensive — that
+// remains the operator's call to vet, same as an adventure's content — but
+// it can no longer turn into script running in this origin.
 
 // adventureGuideRoles mirrors the dm/agent shape load_adventure carries
 // (authz.go) — adventure guides hold DM secrets (adventure/format.go), so a
@@ -388,4 +448,129 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 		out = append(out, participantJSON{ParticipantID: q.ID, Name: q.Name, Role: string(q.Role)})
 	}
 	writeJSON(w, out)
+}
+
+// --- /api/maps ---------------------------------------------------------
+
+type packRefJSON struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	CellPx int32  `json:"cellPx"`
+}
+
+type mapMetaJSON struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	GridWidth  int32  `json:"gridWidth"`
+	GridHeight int32  `json:"gridHeight"`
+	// Pack is a pointer, omitted entirely for a map that names no pack
+	// (mapdef.Map.Pack "" is legal — a map using only standard tiles) rather
+	// than a zero-valued packRefJSON, which would read as "a pack named
+	// empty-string" instead of "no pack".
+	Pack *packRefJSON `json:"pack,omitempty"`
+}
+
+// handleMaps lists every boot-loaded standalone map (maps-as-geometry Task
+// 7), open to every role (this file's own doc comment above explains why).
+// Each entry's Pack is looked up from s.packs by the map's OWN declared
+// Pack id — enriching the listing with the pack's display name and cell
+// size so a client can render at the right scale without a second request;
+// nil if the map declares no pack, or (should not happen past boot
+// validation, but handled rather than assumed) the id is not one of s.packs.
+func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
+	if s.authed(w, r) == nil {
+		return
+	}
+	out := []mapMetaJSON{}
+	for id, m := range s.maps {
+		item := mapMetaJSON{ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH}
+		if p, ok := s.packs[m.Pack]; ok {
+			item.Pack = &packRefJSON{ID: p.ID, Name: p.Name, CellPx: p.CellPx}
+		}
+		out = append(out, item)
+	}
+	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })
+	writeJSON(w, map[string]any{"maps": out})
+}
+
+// --- /api/packs/{pack}/{file} -------------------------------------------
+
+// handlePackFile serves one raw file out of a pack's own directory
+// (maps-as-geometry Task 7), open to every role. Escape is refused by the
+// fs.FS s.packFS[pack] IS, not by anything this handler checks itself — two
+// independent mechanisms, both load-bearing (packfile_internal_test.go
+// proves each separately, because a fix for one says nothing about the
+// other):
+//
+//  1. A literal ".." in the requested name: fs.FS's own contract
+//     (fs.ValidPath) refuses any name containing a ".." element, so
+//     http.ServeFileFS's underlying fsys.Open call rejects it regardless of
+//     what this handler does or forgets to do. (http.ServeFileFS also has
+//     its own separate precaution against a dirty r.URL.Path, and
+//     net/http's ServeMux redirects a dirty path before routing even gets
+//     here — both incidental, neither one is what this handler depends on.)
+//  2. A file that is, on disk, a symlink pointing OUTSIDE the pack
+//     directory — no ".." anywhere in the request, so mechanism 1 does not
+//     apply. This one is NOT fs.FS's contract in general (os.DirFS,
+//     otherwise a valid fs.FS, explicitly does not stop it — see its own
+//     doc comment) — it depends on s.packFS[pack] specifically being built
+//     from os.OpenRoot(dir).FS(), which cmd/vtt does (see WithPackFiles'
+//     doc comment for the full reasoning; this was found missing by
+//     review, after DirFS shipped first).
+//
+// An unknown pack id 404s before ever touching the filesystem, rather than
+// serving a directory listing or leaking which packs exist through a
+// different status code.
+//
+// Content-Type is NOT inferred (this section's own package-doc comment
+// explains why): the extension of the requested name is looked up against
+// packFileContentTypes, a closed allowlist. A hit gets served with its real
+// Content-Type, inline. A miss — including pack.json itself, which is
+// structured data a client fetches programmatically rather than tile art a
+// browser renders, and including .svg, deliberately excluded from the
+// allowlist — gets application/octet-stream and Content-Disposition:
+// attachment, so a browser navigating to it downloads rather than executes
+// whatever it turns out to be. X-Content-Type-Options: nosniff is set on
+// EVERY response from this handler, allowlisted or not, so a browser never
+// second-guesses either header.
+//
+// Content-Type/Content-Disposition are set BEFORE calling http.ServeFileFS
+// deliberately: net/http's serveContent only infers a type when the
+// response's Content-Type header is still unset at that point, so setting
+// it here first is what suppresses ServeFileFS's own inference rather than
+// racing it.
+func (s *Server) handlePackFile(w http.ResponseWriter, r *http.Request) {
+	if s.authed(w, r) == nil {
+		return
+	}
+	fsys, ok := s.packFS[r.PathValue("pack")]
+	if !ok {
+		http.Error(w, "gateway: unknown pack", http.StatusNotFound)
+		return
+	}
+
+	name := r.PathValue("file")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if ct, ok := packFileContentTypes[strings.ToLower(filepath.Ext(name))]; ok {
+		w.Header().Set("Content-Type", ct)
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(name)))
+	}
+	http.ServeFileFS(w, r, fsys, name)
+}
+
+// packFileContentTypes is the closed allowlist handlePackFile serves WITH
+// their real Content-Type — genuine tile-art raster formats only, all of
+// them carrying no script-execution surface in any current browser. .svg
+// is deliberately NOT here (this section's own package-doc comment
+// explains why) despite nominally being an image format: it can embed
+// <script>, so it is routed down the octet-stream/attachment path with
+// everything else this map does not name.
+var packFileContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
 }

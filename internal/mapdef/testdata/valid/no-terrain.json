@@ -1,0 +1,10 @@
+{
+  "id": "featureless",
+  "name": "Featureless Field",
+  "grid_width": 2,
+  "grid_height": 2,
+
+  "placements": [
+    {"token_id": "tok-scout", "actor_id": "act-scout", "x": 0, "y": 0}
+  ]
+}

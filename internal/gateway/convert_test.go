@@ -94,6 +94,53 @@ func TestToEventCreateSceneProducesSceneCreated(t *testing.T) {
 	}
 }
 
+// TestToEventCreateSceneCarriesTilesAndObjects pins that a CreateScene
+// declaring terrain does not get it silently discarded on the way to
+// SceneCreated — maps-as-geometry Task 1 added Tiles/Objects to CreateScene
+// and tools/toolgen advertises both to MCP as part of create_scene's
+// contract, so an agent-issued command with terrain must produce an event
+// carrying that SAME terrain, not a scene with none. This is the same class
+// of defect Task 1 already fixed once for OpenDoor/CloseDoor, but silent
+// rather than an error: without this test, ToEvent's CreateScene arm could
+// drop Tiles/Objects and every other test here (which never sets them)
+// would still pass.
+func TestToEventCreateSceneCarriesTilesAndObjects(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	tiles := map[string]*vttv1.TileRef{
+		"0,0": {Kind: "wall", Material: "stone"},
+		"1,0": {Kind: "floor", Material: "wood", Art: "planks-3"},
+	}
+	objects := []*vttv1.SceneObject{{
+		ObjectId: "o1", Kind: "boulder",
+		At: &vttv1.GridPosition{X: 1, Y: 0}, Width: 1, Height: 1,
+		BlocksSight: true, BlocksMove: true,
+	}}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{
+		CreateScene: &vttv1.CreateScene{
+			SceneId: "scn", Name: "Cave", GridWidth: 2, GridHeight: 1,
+			Tiles: tiles, Objects: objects,
+		},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, ok := env.Payload.(*vttv1.Envelope_SceneCreated)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_SceneCreated", env.Payload)
+	}
+	if len(sc.SceneCreated.GetTiles()) != 2 {
+		t.Fatalf("Tiles = %v, want 2 entries (Tiles was dropped)", sc.SceneCreated.GetTiles())
+	}
+	if got := sc.SceneCreated.GetTiles()["1,0"]; got.GetArt() != "planks-3" || got.GetMaterial() != "wood" {
+		t.Fatalf("Tiles[1,0] = %v, want art planks-3, material wood", got)
+	}
+	if len(sc.SceneCreated.GetObjects()) != 1 || sc.SceneCreated.GetObjects()[0].GetObjectId() != "o1" {
+		t.Fatalf("Objects = %v, want one entry with object_id o1 (Objects was dropped)", sc.SceneCreated.GetObjects())
+	}
+}
+
 func TestToEventAddActorProducesActorAdded(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleAgent}
 	actor := &vttv1.Actor{ActorId: "a1", Name: "Goblin"}
@@ -289,6 +336,50 @@ func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
 	}
 }
 
+// TestToEventOpenDoorProducesDoorOpened and its CloseDoor counterpart below
+// are maps-as-geometry Task 1's fix: OpenDoor/CloseDoor carry scene_id and
+// at straight through to DoorOpened/DoorClosed, the same plain
+// single-Envelope conversion as remove_condition/grant_actor_control above
+// — no movement/adjacency check here, that is Task 6's job at the call
+// site (engine.State.Blocked doesn't exist until Task 5).
+func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
+		OpenDoor: &vttv1.OpenDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	do, ok := env.Payload.(*vttv1.Envelope_DoorOpened)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_DoorOpened", env.Payload)
+	}
+	if do.DoorOpened.GetSceneId() != "cellar" || do.DoorOpened.GetAt().GetX() != 0 || do.DoorOpened.GetAt().GetY() != 1 {
+		t.Fatalf("DoorOpened = %+v, want cellar/(0,1)", do.DoorOpened)
+	}
+}
+
+func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
+		CloseDoor: &vttv1.CloseDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dc, ok := env.Payload.(*vttv1.Envelope_DoorClosed)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_DoorClosed", env.Payload)
+	}
+	if dc.DoorClosed.GetSceneId() != "cellar" || dc.DoorClosed.GetAt().GetX() != 0 || dc.DoorClosed.GetAt().GetY() != 1 {
+		t.Fatalf("DoorClosed = %+v, want cellar/(0,1)", dc.DoorClosed)
+	}
+}
+
 func TestToEventUnknownCommandErrors(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	if env, err := gateway.ToEvent(&vttv1.ClientCommand{}, p); err == nil {
@@ -320,6 +411,8 @@ func TestEveryClientCommandConverts(t *testing.T) {
 	notConverted := map[string]string{
 		"use_ability":    "resolved through the ruleset, which emits its own events (server.go)",
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
+		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
+			"same shape as load_adventure directly above",
 		"retract_events": "a retraction range, not a single event (handleRetraction)",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +

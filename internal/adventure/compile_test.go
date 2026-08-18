@@ -10,7 +10,33 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
+
+// TestASceneWithNoTilesLoadsAndCompilesWithNoTerrain pins Patrik's ruling
+// (2026-08-13): a scene declaring no "tiles" key at all is legal — exactly
+// what every scene was before maps-as-geometry existed — and must load and
+// compile cleanly forever, since this format is written by third parties
+// and by an LLM and an existing scene file must keep working. testdata/valid
+// is the fixture for this (none of its five scenes/*.json files declares
+// "tiles" — deliberately: that fixture's own point is scene/actor/placement
+// ORDER, not terrain, so its natural no-tiles shape doubles as this
+// contract's proof rather than needing a second, purpose-built fixture).
+func TestASceneWithNoTilesLoadsAndCompilesWithNoTerrain(t *testing.T) {
+	rs := loadFixtureRuleset(t)
+	adv, err := adventure.Load("testdata/valid", rs)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got, err := adventure.Compile(adv, engine.NewState())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	sc := firstSceneCreated(t, got)
+	if len(sc.GetTiles()) != 0 {
+		t.Fatalf("Tiles = %v, want empty (testdata/valid declares no terrain)", sc.GetTiles())
+	}
+}
 
 // TestCompileValidFixtureExactEnvelopeList is the hand-derived golden the
 // brief requires: every field of every envelope Compile produces for
@@ -43,7 +69,13 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 		{Payload: &vttv1.Envelope_AdventureLoaded{AdventureLoaded: &vttv1.AdventureLoaded{
 			AdventureId: "brace-yard", Name: "Brace Yard",
 		}}},
-		// scenes/*.json file-name order: cellar, gate, hall, loft, yard.
+		// scenes/*.json file-name order: cellar, gate, hall, loft, yard. None
+		// of these fixture scenes declares "tiles" (Patrik's ruling,
+		// 2026-08-13: tiles is optional, and this fixture is about
+		// scene/actor/placement ORDER, not terrain — terrain fidelity is
+		// internal/mapdef's own concern and internal/adventure's cross-path
+		// test, TestBothLoadPathsEmitIdenticalSceneEvents, below), so each
+		// SceneCreated below carries no Tiles at all.
 		{Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 			SceneId: "cellar", Name: "The Cellar", GridWidth: 6, GridHeight: 6,
 		}}},
@@ -127,6 +159,82 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 		}
 	}
 }
+
+// TestBothLoadPathsEmitIdenticalSceneEvents is maps-as-geometry Task 4's
+// central guard: a standalone map and the same scene embedded in an
+// adventure must produce byte-identical scene events, or the two formats
+// will drift and only one of them will ever be tested. testdata/cellar-adv's
+// single scene carries the same tiles/overrides/objects/placements as
+// internal/mapdef/testdata/valid/cellar.json, and its tiles/pack.json is the
+// same pack (mossy-keep) as internal/mapdef/testdata/packs/mossy-keep.
+//
+// This test lives HERE rather than in internal/mapdef (where the maps-as-
+// geometry task brief's own draft placed it) deliberately: it must import
+// both mapdef and adventure to exercise both load paths, and mapdef must
+// never import adventure (.go-arch-lint.yml; a map loads standalone, spec
+// §4.3) — adventure, which already may depend on mapdef, is the one
+// direction that needs no arch-lint exception to host a genuine two-path
+// test. It is also not two calls into the same helper: mapdef.Compile
+// (called via mapdef.Load+LoadPack) and adventure.Compile (called via
+// adventure.Load) are two independently-invoked public entry points that
+// happen to share ONE construction site inside (mapdef.BuildSceneCreated,
+// internal/mapdef/compile.go) — this test is what proves that sharing is
+// real, not merely claimed.
+func TestBothLoadPathsEmitIdenticalSceneEvents(t *testing.T) {
+	m, err := mapdef.Load("../mapdef/testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := mapdef.LoadPack("../mapdef/testdata/packs/mossy-keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	standalone, _, err := mapdef.Compile(m, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rs := loadFixtureRuleset(t)
+	adv, err := adventure.Load("testdata/cellar-adv", rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded, err := adventure.Compile(adv, engine.NewState())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := firstSceneCreated(t, standalone)
+	got := firstSceneCreated(t, embedded)
+	if !proto.Equal(want, got) {
+		t.Fatalf("the two load paths diverged:\nstandalone: %v\nembedded:   %v", want, got)
+	}
+}
+
+// firstSceneCreated pulls the one SceneCreated payload a compiled batch must
+// carry.
+func firstSceneCreated(t *testing.T, envs []*vttv1.Envelope) *vttv1.SceneCreated {
+	t.Helper()
+	for _, e := range envs {
+		if sc := e.GetSceneCreated(); sc != nil {
+			return sc
+		}
+	}
+	t.Fatal("no SceneCreated found in the compiled batch")
+	return nil
+}
+
+// TestCompileFailsLoudWhenAnOverrideHasNoPackToResolveAgainst moved to
+// load_test.go's TestLoadInvalidFixtures ("scene-override-unresolvable"
+// case): the check itself moved from Compile to Load (loadScenes now calls
+// mapdef.BuildSceneCreated as a dry run — see load.go's doc comment on that
+// call), because an adventure-format spec §7 violation belongs at boot, not
+// at the table. Compile's own delegation into mapdef.BuildSceneCreated
+// (compile.go) is unchanged and still wraps any error with the failing
+// scene's id — a hand-constructed *Adventure that bypasses Load entirely
+// (the same shape TestCompileHandlesLopsidedAdventureShapes already
+// exercises for other reasons) can in principle still reach it, but that is
+// no longer the primary guarantee this package tests for.
 
 func assertEnvelopes(t *testing.T, got, want []*vttv1.Envelope) {
 	t.Helper()
@@ -296,6 +404,9 @@ func TestCompileHandlesLopsidedAdventureShapes(t *testing.T) {
 	scene := func(i int, placements ...adventure.Placement) adventure.AdventureScene {
 		return adventure.AdventureScene{
 			ID: "s" + string(rune('a'+i)), Name: "S", GridW: 10, GridH: 10,
+			// No Tiles: this test is about envelope-count/capacity for
+			// lopsided shapes, not terrain, and tiles is optional (Patrik's
+			// ruling, 2026-08-13).
 			Placements: placements,
 		}
 	}

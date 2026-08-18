@@ -1,0 +1,17 @@
+{
+  "id": "cellar",
+  "name": "The Cellar",
+  "grid_width": 6,
+  "grid_height": 6,
+  "placements": [
+    {
+      "token_id": "tok-scout",
+      "actor_id": "grit-scout",
+      "x": 1,
+      "y": 1
+    }
+  ],
+  "overrides": {
+    "1,1": "nonexistent-tile"
+  }
+}

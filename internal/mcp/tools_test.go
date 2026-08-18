@@ -20,17 +20,24 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// wantCommandToolNames are the 13 oneof-field names in vttv1.ClientCommand's
+// wantCommandToolNames are the 16 oneof-field names in vttv1.ClientCommand's
 // "command" oneof, restated here (not derived from the SDK under test) so
 // this test pins the actual expected set rather than trivially re-deriving
 // whatever tools.go happened to register. Grew from 7 to 9 with
 // use_ability/remove_condition (ruleset-interpreter sub-project 5a, Task 1
 // — contract's rules vocabulary), 9 to 12 with add_narration/upsert_note/
-// delete_note (world-layer sub-project 8, P11 Task 1), and 12 to 13 with
+// delete_note (world-layer sub-project 8, P11 Task 1), 12 to 13 with
 // load_adventure (adventure-format sub-project 9, P12 Task 1 — fix-wave F5
 // sweep: this pin had silently stopped growing with the oneof itself,
 // leaving load_adventure unpinned here even though it landed on this
-// branch).
+// branch), 13 to 15 with open_door/close_door (maps-as-geometry
+// sub-project, Task 1 — contract's terrain and door vocabulary; not yet
+// authorized or convertible by the gateway, which is Task 6's job, but
+// already a real MCP tool per spec §5: "open_door and close_door appear as
+// MCP tools automatically, the way load_adventure did"), and 15 to 16 with
+// load_map (maps-as-geometry whole-branch review C1: a standalone map could
+// be validated, listed and have its art served, but never loaded into a
+// campaign — load_map is load_adventure's sibling for a standalone map).
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",
@@ -40,6 +47,8 @@ var wantCommandToolNames = []string{
 	"grant_actor_control", "revoke_actor_control",
 	"promote_participant",
 	"set_join_door", "rotate_join_link",
+	"open_door", "close_door",
+	"load_map",
 }
 
 // This test scopes itself to "the command tools are present by name" — it

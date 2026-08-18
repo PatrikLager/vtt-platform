@@ -29,7 +29,10 @@
       "ID": "scn-keep",
       "Name": "The Keep",
       "GridWidth": 8,
-      "GridHeight": 8
+      "GridHeight": 8,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {}
     }
   },
   "Sessions": [

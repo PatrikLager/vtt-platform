@@ -17,6 +17,11 @@ exclude:
   - .stryker-tmp
 excludeFiles:
   - contract/roundtrip_test\.go$
+  # Same reason as roundtrip_test.go above: package contract_test lives
+  # directly in contract/, which the "contract" component's `in:` pattern
+  # (contract/gen/go/**) does not cover, so any *_test.go sitting beside it
+  # is unattached the same way.
+  - contract/contract_test\.go$
   # identity is self-only in production code (mayDependOn: [identity]), but
   # its test file legitimately proves coexistence with store.Store on the
   # same campaign file (task-3-brief.md Step 1) — that one behavioral case
@@ -37,6 +42,12 @@ components:
   engine:   { in: internal/engine }
   campaign: { in: internal/campaign }
   toolgen:  { in: tools/toolgen }
+  # tools/genmappack (maps-as-geometry Task 10): generates the standard tile
+  # pack's images and manifest. A GENERATOR rather than committed-and-forgotten
+  # binaries, so the pack's provenance is unambiguous (no borrowed art of
+  # unclear licence), it is re-tunable, and it doubles as a worked example of
+  # what a pack author must produce (design spec §4.2).
+  genmappack: { in: tools/genmappack }
   identity: { in: internal/identity }
   gateway:  { in: internal/gateway }
   harness:  { in: internal/harness }
@@ -59,6 +70,16 @@ components:
   # from adventure's own: it imports adventure AND rules, neither of which
   # adventure itself may import back).
   adventureconformance: { in: internal/adventure/conformance }
+  # internal/mapdef (Task 2, maps-as-geometry design spec §4.1/§4.4): parses
+  # and validates one standalone map file — walls, floors, doors, objects,
+  # placements; Task 4 (spec §5) adds Compile, building *vttv1.Envelope
+  # values, which is the one and only reason this component now depends on
+  # contract (see the matching deps: entry below). It still consumes
+  # nothing from adventure (a map loads standalone per spec §4.3, "the
+  # ability to be loaded outside the adventure" — mapdef must not gain a
+  # reason to import adventure just because the two formats happen to
+  # share a Placement shape).
+  mapdef: { in: internal/mapdef }
   # internal/testdb (2026-08-11): a SQLite driver that fails one statement on
   # demand, so the error arms every store in this repo carries are reachable
   # at all. TEST-ONLY — nothing in cmd/ or the server imports it — but it is a
@@ -71,6 +92,14 @@ deps:
   engine:   { mayDependOn: [contract, engine] }
   campaign: { mayDependOn: [contract, store, engine, campaign] }
   toolgen:  { mayDependOn: [contract] }
+  # genmappack may read mapdef, and ONLY for the reason its own test states:
+  # the standard pack must cover EXACTLY internal/mapdef's standard vocabulary,
+  # neither missing a nature nor inventing one, and the only honest way to
+  # check that is to read the vocabulary from its source. Duplicating the list
+  # into the test would let the two drift silently, which is the defect the
+  # test exists to prevent. It still writes only PNGs and pack.json — it has no
+  # business knowing the WIRE vocabulary, so contract stays off this list.
+  genmappack: { mayDependOn: [genmappack, mapdef] }
   identity: { mayDependOn: [identity] }
   # Self-only, and self is needed: testdb's own tests are an EXTERNAL package
   # (testdb_test) so they can drive the driver the way a caller does, which
@@ -88,7 +117,13 @@ deps:
   # 2's own adventure component, rather than left for Task 4 to add — Task
   # 2's brief pre-authorizes this edge so arch-lint never blocks Task 4's
   # gateway wiring on a forgotten dependency-graph update.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure] }
+  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7): GET /api/maps
+  # and GET /api/packs/{pack}/{file} (metadata.go) hold boot-time-loaded
+  # *mapdef.Map/*mapdef.Pack values directly (Server.WithMaps), the same
+  # "gateway does no file I/O, cmd/vtt owns the filesystem" shape rules and
+  # adventure already established above — gateway reads only the already-
+  # validated Go values, never a map.json/pack.json itself.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -135,13 +170,33 @@ deps:
   # directory and call adventure.Load per subdirectory at boot, the same
   # as-needed discipline rules' own cmd edge followed (added at Task 6, not
   # pre-declared earlier).
-  adventure: { mayDependOn: [engine, contract, rules, adventure] }
+  #
+  # mapdef added maps-as-geometry Task 4 (design spec §4.3: "an adventure
+  # still carries its own maps"): a scene IS a map, so loadScenes
+  # (load.go) reuses mapdef's own tiles/overrides/objects/placement
+  # validation instead of re-implementing it, and compile.go delegates
+  # each scene's SceneCreated construction to mapdef.BuildSceneCreated —
+  # the ONE construction site both load paths share (see that function's
+  # own doc comment). This is the direction the arrow is allowed to run:
+  # mapdef may NOT import adventure back (see mapdef's own components:
+  # entry above) — a map loads standalone, so the dependency is
+  # necessarily one-way.
+  adventure: { mayDependOn: [engine, contract, rules, mapdef, adventure] }
   # internal/adventure/conformance (Task 3, adventure-format spec §6): mirrors
   # rules/conformance's own registration exactly — Run resolves+loads a
   # ruleset (rules dep), loads+compiles an adventure against it (adventure
   # dep), compiles against an engine.State (engine dep), and builds
   # *vttv1.Envelope-shaped goldens (contract dep).
   adventureconformance: { mayDependOn: [adventure, rules, engine, contract, adventureconformance] }
+  # internal/mapdef (Task 2, maps-as-geometry design spec §4.1; Task 4 spec
+  # §5): Load's standard-vocabulary check is pure data (standard.go) and
+  # needs no other component; Compile (compile.go) builds *vttv1.Envelope
+  # values (SceneCreated, TokenPlaced), which is the ONE new dependency —
+  # contract — Task 4 adds. mapdef still may NOT depend on adventure: a map
+  # loads standalone (spec §4.3), and internal/adventure is the one
+  # component that depends on mapdef, not the reverse (see adventure's own
+  # deps: entry).
+  mapdef: { mayDependOn: [mapdef, contract] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide
@@ -153,4 +208,9 @@ deps:
   # NOT import adventure — its Config carries only the already-loaded guide
   # strings (map[adventure_id]guide.md content), so the P1 wire-client
   # boundary is untouched here too.
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure] }
+  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7 wiring): `vtt
+  # serve --maps-dir` walks the maps directory and calls mapdef.Load/
+  # mapdef.LoadPack/mapdef.Compile per subdirectory directly (cmd composes,
+  # same shape as rules/adventure above) — see cmd/vtt/maps.go's
+  # loadMapsDir.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef] }

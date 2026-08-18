@@ -1,0 +1,26 @@
+{
+  "id": "cellar",
+  "name": "The Cellar",
+  "grid_width": 3,
+  "grid_height": 3,
+  "pack": "mossy-keep",
+
+  "tiles": {
+    "0,0": "stone-wall", "1,0": "stone-wall", "2,0": "stone-wall",
+    "0,1": "wood",       "1,1": "wood",       "2,1": "wood",
+    "0,2": "stone-wall", "1,2": "stone-wall", "2,2": "stone-wall"
+  },
+
+  "overrides": {
+    "1,1": "planks-split-3"
+  },
+
+  "objects": [
+    {"id": "boulder-1", "kind": "boulder", "at": [0, 1], "size": [1, 1], "rot": 0,
+     "blocks_sight": true, "blocks_move": true, "art": "boulder-mossy-2"}
+  ],
+
+  "placements": [
+    {"token_id": "tok-fighter", "actor_id": "act-fighter", "x": 0, "y": 0}
+  ]
+}

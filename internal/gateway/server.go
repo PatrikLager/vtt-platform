@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -181,6 +183,39 @@ type Server struct {
 	// `vtt serve` without a bundle still serves the API, and a browser gets
 	// an honest 404 rather than a panic. Set via WithStatic, boot time only.
 	static fs.FS
+
+	// maps is OPTIONAL server config (maps-as-geometry Task 7, spec §4.3/
+	// §4.4): nil/empty is today's behavior for a server with no
+	// --maps-dir — GET /api/maps answers 200 with an empty list, the same
+	// "empty is not an error" posture handleAdventures already gives (spec
+	// §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
+	// its own doc comment for why), keyed by each map's own declared id
+	// (Map.ID), not any directory name — cmd/vtt's loadMapsDir refuses a
+	// collision there before either map ever reaches here.
+	maps map[string]*mapdef.Map
+
+	// packs mirrors maps' own keying but for packs (Pack.ID, set together
+	// via WithMaps): used to enrich GET /api/maps with each map's pack name
+	// and cell size, so a client can render at the right scale without a
+	// second request. loadMapsDir refuses two packs sharing an id before
+	// either reaches here, so this map's keys already match packFS's
+	// key-for-key.
+	packs map[string]*mapdef.Pack
+
+	// packFS is OPTIONAL server config, boot time only, set via
+	// WithPackFiles: one fs.FS PER PACK, each rooted AT that pack's own
+	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over an
+	// operator-installed --maps-dir — NOT os.DirFS; see WithPackFiles' own
+	// doc comment for why that distinction is load-bearing, not stylistic).
+	// GET /api/packs/{pack}/{file} (metadata.go's handlePackFile) serves
+	// straight out of the matching entry. A SEPARATE field from packs
+	// rather than folding an fs.FS onto *mapdef.Pack itself: a Pack value
+	// carries no notion of "where it came from" (mapdef is a pure parser —
+	// see its own package doc — and reusable independent of any one
+	// directory), so the directory-rooted serving capability has to live
+	// here, at the layer that actually owns the filesystem boundary
+	// (ADR-008).
+	packFS map[string]fs.FS
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -237,6 +272,48 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 	return s
 }
 
+// WithMaps configures s to answer GET /api/maps from m/packs, keyed by each
+// map's/pack's own declared id (maps-as-geometry Task 7). Both are expected
+// already fully loaded and validated (cmd/vtt's loadMapsDir: mapdef.Load,
+// mapdef.LoadPack, and a boot-time dry-run mapdef.Compile per map — fail
+// loud at boot, spec §4.4); this method does no I/O and no validation of
+// its own, mirroring WithAdventures. Returns s for call-site chaining;
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic. Pack file BYTES are a separate concern — see
+// WithPackFiles.
+func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pack) *Server {
+	s.maps = m
+	s.packs = packs
+	return s
+}
+
+// WithPackFiles configures s to answer GET /api/packs/{pack}/{file} from
+// fsys, keyed by each pack's own declared id — the SAME keys WithMaps'
+// packs argument uses, kept as a separate call because it is a genuinely
+// different kind of thing (raw filesystem access for byte serving, not a
+// parsed Go value) rather than because the two could disagree in practice.
+//
+// Each fsys entry MUST be rooted AT that pack's own directory via
+// os.OpenRoot(dir).FS() (go1.24+) — NOT os.DirFS. This distinction was
+// found missing by review and is the whole reason this doc comment exists:
+// fs.FS's contract (fs.ValidPath) refuses any NAME containing a ".."
+// element, which stops a request like ".../../../etc/passwd", but it says
+// nothing about a file that is, on disk, a symlink pointing outside the
+// tree — os.DirFS's own doc comment states plainly that "using DirFS does
+// not stop the access any more than using os.Open does" in that case, and
+// nothing about the NAME "evil.png" would ever look wrong. A community-
+// authored pack (spec §4.2's own trust framing: same trust as guide.md, but
+// an installed pack is more likely third-party than a hand-authored guide)
+// could ship exactly that. os.Root closes it: "Methods on Root will follow
+// symbolic links, but symbolic links may not reference a location outside
+// the root" (go doc os.Root). Both mechanisms are proven independently in
+// internal/gateway/packfile_internal_test.go, because a fix for one says
+// nothing about the other. Boot time only, like WithMaps.
+func (s *Server) WithPackFiles(fsys map[string]fs.FS) *Server {
+	s.packFS = fsys
+	return s
+}
+
 // Handler returns the http.Handler routing /healthz and /ws (spec §3).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -255,6 +332,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/participants", s.handleParticipants)
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
+	mux.HandleFunc("GET /api/maps", s.handleMaps)
+	mux.HandleFunc("GET /api/packs/{pack}/{file}", s.handlePackFile)
 
 	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
 	// the most specific pattern, so the explicit routes above always win — a
@@ -700,6 +779,30 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 }
 
+// describeBlockage turns engine.State.Blocked's reason into a clause a
+// player reading a CommandResult.Error can act on. This is the FIRST place a
+// Blocked answer reaches a human rather than a source reader or a test
+// failure (task-5 review finding) — terrain.go's own reasons are written for
+// the latter, and read inconsistently as a result: "a wall" and "a closed
+// door" already pass for plain English, but "scenery: <kind>" is a
+// colon-joined debug tag, and `unknown scene %q` is a raw Go-quoted literal
+// naming an internal scene id nobody at the table chose. Only those two get
+// rewritten; the rest pass through unchanged rather than being forced
+// through a "sentence-ifier" that would just be paraphrasing prose that
+// already reads fine. engine/terrain.go stays untouched (Task 6 does not
+// touch internal/engine) — this list has to be kept in sync by hand if
+// Blocked's reasons ever change, which is the cost of the fix living on the
+// consuming side instead.
+func describeBlockage(why string) string {
+	if kind, ok := strings.CutPrefix(why, "scenery: "); ok {
+		return "something (a " + kind + ") is in the way"
+	}
+	if strings.HasPrefix(why, "unknown scene ") {
+		return "that destination is not part of any scene this table has created"
+	}
+	return why
+}
+
 // handleCommand runs the authorize → convert → persist pipeline for one
 // inbound ClientCommand (spec §3): authz/validation failures produce an
 // ok=false CommandResult and leave the connection open; only a persisted
@@ -717,15 +820,63 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// use_ability/load_adventure do not become a single Envelope via ToEvent
-	// (they each produce a whole ordered batch instead — ruleset.go/
-	// adventure.go); every other command, including remove_condition, still
-	// flows through the plain ToEvent -> campaign.Append path below.
+	// The map constrains PLAYERS; the DM and the agent author the world and
+	// are free of it (maps-as-geometry spec §6, Patrik: "hard for players,
+	// free for DM"). Staging a creature inside stone is a legitimate thing
+	// for a DM to do.
+	//
+	// Checked HERE, not in engine.Apply: Apply is the FOLD — by the time an
+	// event reaches it the move is already history, and history is not the
+	// place to say no. This is the seam where a command is still a request,
+	// the last point a refusal can mean "you may not" rather than "this
+	// never happened".
+	if p.Role == identity.RolePlayer {
+		if mt, ok := cmd.GetCommand().(*vttv1.ClientCommand_MoveToken); ok {
+			if tok, known := st.Tokens[mt.MoveToken.GetTokenId()]; known {
+				to := mt.MoveToken.GetTo()
+				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
+					return &vttv1.CommandResult{
+						RequestId: requestID, Ok: false,
+						Error: "gateway: cannot move there — " + describeBlockage(why),
+					}
+				}
+			}
+		}
+	}
+
+	// create_scene's terrain gets the SAME seam and the SAME reasoning as the
+	// movement check just above, applied to a different command (whole-
+	// branch-review finding C5): checked HERE, not in engine.Apply, because
+	// Apply is the fold and by the time an event reaches it the scene is
+	// already history — history is not the place to say no.
+	//
+	// UNLIKE the movement check, this does NOT gate on p.Role. "Hard for
+	// players, free for DM" (spec §6) is a rule about MOVEMENT freedom: an
+	// author is allowed to stage a creature inside a wall. It is not a rule
+	// about FORMAT validity — a tile kind of "banana" is never a legitimate
+	// thing for anyone to author, DM or agent included, because the engine
+	// (terrain.go) understands exactly three kinds and nothing reads a
+	// fourth. So every actor who may issue create_scene is held to the same
+	// closed vocabulary Authorize already decided they may use the command
+	// at all.
+	if cs, ok := cmd.GetCommand().(*vttv1.ClientCommand_CreateScene); ok {
+		if err := validateCreateSceneTerrain(cs.CreateScene); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
+	// use_ability/load_adventure/load_map do not become a single Envelope via
+	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
+	// adventure.go/map.go); every other command, including remove_condition,
+	// still flows through the plain ToEvent -> campaign.Append path below.
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
 	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
 		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)
+	}
+	if lm, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadMap); ok {
+		return s.handleLoadMap(requestID, lm.LoadMap, p)
 	}
 	// promote_participant produces NO EVENT AT ALL, unlike the two above which
 	// produce a batch. A role lives in participants.role beside the token —

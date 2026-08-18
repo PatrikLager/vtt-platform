@@ -219,7 +219,7 @@ func TestServeBootsAMixedAdventuresDirServingOnlyThisTable(t *testing.T) {
 	// under the amended binding no longer fails — so it BOOTED and blocked
 	// the suite on :8080 until it was killed.
 	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir,
-		filepath.Join(root, "adventures"))
+		filepath.Join(root, "adventures"), "")
 	if err != nil {
 		t.Fatalf("composeServer against the real mixed adventures/ = %v; "+
 			"a library holding one adventure for another table must still boot", err)

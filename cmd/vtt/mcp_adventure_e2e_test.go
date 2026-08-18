@@ -46,7 +46,7 @@ func startMCPFixtureWithRulesetAndAdventures(t *testing.T, rulesetDir, adventure
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir)
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir, "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}

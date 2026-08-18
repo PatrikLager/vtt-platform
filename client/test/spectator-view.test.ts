@@ -10,11 +10,14 @@ import {
   AttackRolledSchema, AdventureLoadedSchema, EventsRetractedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
-import { renderSpectator, describe as describeEvent, CELL } from "../src/view/spectator";
+import { renderSpectator, describe as describeEvent, CELL, boardCamera } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
 import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
+import { worldFromScreen } from "../src/view/camera";
+import { cellFromPoint, type Geometry } from "../src/view/grid";
 
 /** Move an actor's control to someone else, mirror and set together. */
 function reassign(a: { controllerId: string; controllerIds: string[] }, to: string): void {
@@ -65,10 +68,15 @@ test("every condition shows as a dot carrying its name", () => {
   expect(dot.title).toBe("dazed");
 });
 
-test("a token is positioned by its grid coordinates", () => {
+test("a token is positioned by its grid coordinates, through the board camera", () => {
+  // world()'s scene is 6x4, whose fit is scale 640/264 (binds on width) with
+  // a non-zero offsetY -- NOT scale 1 / offset 0, so this cannot pass simply
+  // because the camera was skipped. See boardCamera and fix round 1's finding.
   const tok = render(world()).querySelector(".token") as HTMLElement;
-  expect(tok.style.left).toBe("88px"); // x=2 * 44
-  expect(tok.style.top).toBe("44px"); // y=1 * 44
+  const cam = boardCamera(6, 4);
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+  expect(px(tok.style.left)).toBeCloseTo(2 * CELL * cam.scale + cam.offsetX, 6); // x=2
+  expect(px(tok.style.top)).toBeCloseTo(1 * CELL * cam.scale + cam.offsetY, 6); // y=1
 });
 
 test("notes render with title and body", () => {
@@ -272,13 +280,22 @@ test("a board click maps to the cell under the pointer, offset by the board's bo
   // survives every existing test because happy-dom's rect is all zeros, and in
   // a real browser it sends a player's token to the wrong square — silently,
   // plausibly, and only for boards not at the page origin.
+  //
+  // Expected cell is derived through the SAME boardCamera + worldFromScreen +
+  // cellFromPoint composition renderGrid uses (fix round 1), not hand-picked:
+  // world()'s 6x4 fit is scale 80/33 with a non-zero offsetY, so a raw-pixel
+  // (camera-free) resolution of this same click would land on a DIFFERENT
+  // cell -- see the dedicated camera test above for that guard explicitly.
   const cells: { x: number; y: number }[] = [];
   const { el } = board(world(), (c) => cells.push(c));
 
-  // CELL is 44. A click 100px right and 40px down from the board's own
-  // top-left is cell (2, 0): (190-100)/44 = 2.04, (58-40)/44 = 0.4.
+  const cam = boardCamera(6, 4);
+  const geom: Geometry = { cell: CELL, width: 6, height: 4 };
+  const world_ = worldFromScreen(190 - 100, 58 - 40, cam);
+  const want = cellFromPoint(world_.x, world_.y, geom);
+
   clickAt(el, 190, 58);
-  expect(cells).toEqual([{ x: 2, y: 0 }]);
+  expect(cells).toEqual([want]);
 });
 
 test("the same pixel maps to a DIFFERENT cell when the board moves", () => {
@@ -298,14 +315,343 @@ test("a click past the last cell is clamped onto the board", () => {
   expect(cells).toEqual([{ x: 5, y: 3 }]);
 });
 
-test("the board is sized by its scene, in cells times CELL", () => {
-  // `geom.width * CELL` -> `/ CELL` renders a 6-cell board 0.13px wide.
+test("the board draws no CSS lattice — the canvas owns the grid", () => {
+  // THE CSS LATTICE IS GONE, and its removal is the point of this test.
+  //
+  // It tiled the WHOLE PANE from the pane's own origin, while the canvas grid
+  // (planGrid) starts at the camera's offset and spans only the SCENE. Two
+  // consequences, both visible in a screenshot and invisible to any assertion
+  // this repo can write, since happy-dom has no canvas:
+  //
+  //   - OUT OF PHASE at most scene sizes. A tiling that starts at 0 and one
+  //     that starts at offsetX agree only when offsetX is a whole multiple of
+  //     the step. Measured: the 10x9 demo map happens to align (offsetX is
+  //     exactly one step) — and a 32x32 scene, the size session zero actually
+  //     played on, does NOT. Aligning on the map you happen to be looking at
+  //     is the worst kind of correct.
+  //   - LINES WHERE THERE ARE NO SQUARES. A letterboxed margin is outside the
+  //     scene entirely; ruling it suggests a grid the map does not have and
+  //     the server would refuse to move a token onto.
+  //
+  // Its old job — a lattice before art loads — is covered: planGrid needs no
+  // images, so the canvas draws the grid whether or not a single tile resolves.
   const root = render(world());
   const grid = root.querySelector(".grid") as HTMLElement;
-  expect(grid.style.width).toBe(`${6 * CELL}px`);
-  expect(grid.style.height).toBe(`${4 * CELL}px`);
-  expect(grid.style.backgroundSize).toBe(`${CELL}px ${CELL}px`);
+  const cam = boardCamera(6, 4);
+  expect(cam.scale).not.toBe(1); // a scale of 1 would hide a phase error
+
+  expect(grid.style.backgroundSize).toBe("");
   expect(grid.dataset["sceneId"]).toBe("s1");
+});
+
+/** A scene big enough to reproduce backlog T1/#19 (32x32 -> 1408px tall). */
+function bigSceneState(w: number, h: number): State {
+  const st = newState();
+  st.Scenes["big"] = { ID: "big", Name: "Vast Hall", GridWidth: w, GridHeight: h };
+  return st;
+}
+
+test("the board does not size itself to the scene", () => {
+  // Backlog T1/#19: the board was gridWidth*CELL px tall (1408 for 32x32), so
+  // the controls sat ~1450px down the page, below every laptop fold.
+  //
+  // Task 9 brief's illustrative version of this test queried `.board` (the
+  // outer <section>), which never carried the inline pixel styles and so
+  // passes unconditionally, before AND after any fix -- confirmed by probing
+  // unmodified spectator.ts: board.style.height was already "" while
+  // grid.style.height was "1408px". `.grid` is the element renderGrid
+  // actually resizes (the local variable holding it is confusingly named
+  // `board`), so that is what this test queries to reproduce the regression.
+  const root = document.createElement("div");
+  renderSpectator(root, bigSceneState(32, 32), [], "open", {});
+  const grid = root.querySelector(".grid") as HTMLElement;
+  expect(grid.style.height).toBe("");        // not "1408px"
+  expect(grid.style.width).toBe("");
+});
+
+// --- one transform governs the WHOLE board, not just the canvas ------------
+//
+// Fix round 1 finding: the canvas terrain drew through boardCamera(), but
+// token discs positioned at raw `x * CELL` and the click handler resolved
+// raw pixels through cellFromPoint with no camera at all. On a scene whose
+// fitted scale happens to be 1 with a zero offset that bug is invisible,
+// which is exactly how it shipped unnoticed -- so both tests below use the
+// 32x32 fixture, whose fit is scale 15/44 (not 1) and offsetX 80 (not 0),
+// and both assert that the "camera-free" answer would have been WRONG, so
+// neither test can pass vacuously regardless of whether the camera is wired.
+
+test("a token's screen position and size scale with the camera, not just its grid coordinates", () => {
+  const st = bigSceneState(32, 32);
+  st.Actors["a1"] = {
+    actorId: "a1", name: "Scout", moduleId: "", attributes: {},
+    resources: {}, controllerId: "", controllerIds: [],
+  };
+  st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
+
+  const root = document.createElement("div");
+  renderSpectator(root, st, [], "connected");
+  const tok = root.querySelector(".token") as HTMLElement;
+
+  const cam = boardCamera(32, 32);
+  expect(cam.scale).not.toBe(1);      // guards against a vacuous pass at scale 1
+  expect(cam.offsetX).not.toBe(0);    // guards against a vacuous pass at offset 0
+
+  // toBeCloseTo, not toBe: happy-dom's CSSOM re-serializes a length value on
+  // read, which normalizes away float noise (measured: an assignment of
+  // "155.00000000000003px" reads back as "155px") -- a property of the DOM
+  // layer this test does not care about, not of the camera transform it does.
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+  expect(px(tok.style.left)).toBeCloseTo(5 * CELL * cam.scale + cam.offsetX, 6);
+  expect(px(tok.style.top)).toBeCloseTo(3 * CELL * cam.scale + cam.offsetY, 6);
+  expect(px(tok.style.width)).toBeCloseTo(CELL * cam.scale, 6);
+  expect(px(tok.style.height)).toBeCloseTo(CELL * cam.scale, 6);
+
+  // The bug this test was written to catch: raw grid-coordinate pixels with
+  // no camera applied at all. 5*CELL=220 is nowhere near the ~155 the camera
+  // transform actually produces, so toBeCloseTo above already fails hard
+  // against it -- this assertion just says so directly.
+  expect(px(tok.style.left)).not.toBeCloseTo(5 * CELL, 0);
+});
+
+test("a token's INNER content shrinks with the camera too, not just its outer box", () => {
+  // Task 10 cosmetic fix: the outer .token box was already scaled (the test
+  // above), but its children -- the initial letter's circle, a resource
+  // chip's font, a condition dot -- carried FIXED pixel sizes from style.css
+  // (30px, 8px, 5px) regardless of cam.scale. At this fixture's scale
+  // (15/44 =~ 0.34) the token box shrinks to about 15px while the initial's
+  // circle stayed 30px, overflowing its own box -- the exact symptom the
+  // brief names ("the letter overflows at small scale").
+  const st = bigSceneState(32, 32);
+  st.Actors["a1"] = {
+    actorId: "a1", name: "Scout", moduleId: "", attributes: { vigor: 1 },
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [],
+  };
+  st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
+  st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
+
+  const root = document.createElement("div");
+  renderSpectator(root, st, [], "connected");
+  const tok = root.querySelector(".token") as HTMLElement;
+  const initial = tok.querySelector(".initial") as HTMLElement;
+  const chip = tok.querySelector(".chip") as HTMLElement;
+  const dot = tok.querySelector(".dot") as HTMLElement;
+
+  const cam = boardCamera(32, 32);
+  expect(cam.scale).toBeLessThan(0.5); // guards against a vacuous pass near scale 1
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+
+  // The circle SHRINKS below its 30px CSS default -- proportionally, not to
+  // some other fixed size.
+  expect(px(initial.style.width)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.height)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.width)).toBeLessThan(30);
+  // And the letter's own font, or it still overflows the now-smaller circle.
+  expect(px(initial.style.fontSize)).toBeGreaterThan(0);
+  expect(px(initial.style.fontSize)).toBeLessThan(16);
+
+  expect(px(chip.style.fontSize)).toBeCloseTo(8 * cam.scale, 6);
+  expect(px(chip.style.fontSize)).toBeLessThan(8);
+
+  expect(px(dot.style.width)).toBeCloseTo(5 * cam.scale, 6);
+  expect(px(dot.style.height)).toBeCloseTo(5 * cam.scale, 6);
+  expect(px(dot.style.width)).toBeLessThan(5);
+});
+
+test("at a large-enough camera scale a token's inner content does not shrink below its CSS default", () => {
+  // The other direction, so the fix cannot be "always shrink regardless of
+  // scale" -- world()'s 6x4 scene fits at scale ~2.42 (see the background-size
+  // test above), so a token here should be LARGER than the 30px/8px/5px
+  // defaults, not clamped to them.
+  const root = render(world());
+  const tok = root.querySelector(".token") as HTMLElement;
+  const initial = tok.querySelector(".initial") as HTMLElement;
+  const cam = boardCamera(6, 4);
+  const px = (s: string) => parseFloat(s.replace("px", ""));
+  expect(px(initial.style.width)).toBeCloseTo(30 * cam.scale, 6);
+  expect(px(initial.style.width)).toBeGreaterThan(30);
+});
+
+test("a click resolves through the camera, not raw pixels, at a non-unit scale and non-zero offset", () => {
+  const cells: { x: number; y: number }[] = [];
+  const { el } = board(bigSceneState(32, 32), (c) => cells.push(c), { left: 100, top: 40 });
+
+  const cam = boardCamera(32, 32);
+  const geom: Geometry = { cell: CELL, width: 32, height: 32 };
+
+  // A point picked well away from any cell boundary so float rounding cannot
+  // make the two candidate answers coincide by chance.
+  const clientX = 400; // 300px into the board's own box (rect.left = 100)
+  const clientY = 170; // 130px into the board's own box (rect.top = 40)
+
+  const world = worldFromScreen(clientX - 100, clientY - 40, cam);
+  const wantThroughCamera = cellFromPoint(world.x, world.y, geom);
+  const wantRawPixels = cellFromPoint(clientX - 100, clientY - 40, geom);
+  // If these two ever coincided the test below would pass whether or not the
+  // camera is actually wired in -- that is precisely the failure mode this
+  // fix round is closing, so assert they differ before relying on either.
+  expect(wantThroughCamera).not.toEqual(wantRawPixels);
+
+  clickAt(el, clientX, clientY);
+  expect(cells).toEqual([wantThroughCamera]);
+});
+
+// --- canvas.ts's paint(): the thin drawImage loop --------------------------
+
+/** Records every drawImage call as "drawImage:<image key>" and every fillRect
+ *  call as "fillRect:<fillStyle at call time>:<x>,<y>,<w>,<h>" (C3's
+ *  missing-tile marker draws with fillRect, never drawImage) — everything
+ *  else paint()/strokeGrid() may call (save/restore/translate/rotate/
+ *  beginPath/moveTo/lineTo/stroke) is a no-op it does NOT record, so a test
+ *  asserting on `calls` sees only what was actually drawn, in order. */
+function fakeCtx(calls: string[]): CanvasRenderingContext2D {
+  return {
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 0,
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
+    drawImage(image: unknown) {
+      calls.push(`drawImage:${image as string}`);
+    },
+    fillRect(x: number, y: number, w: number, h: number) {
+      calls.push(`fillRect:${(this as { fillStyle: string }).fillStyle}:${x},${y},${w},${h}`);
+    },
+  } as unknown as CanvasRenderingContext2D;
+}
+
+/** Every key resolves to ITSELF, so fakeCtx's drawImage can report which key
+ *  a DrawOp resolved to without a real CanvasImageSource ever existing. */
+function stubImages(): ImageMap {
+  return new Proxy(
+    {},
+    { get: (_target, prop: string) => prop },
+  ) as unknown as ImageMap;
+}
+
+test("paint issues one drawImage per op, in order", () => {
+  const calls: string[] = [];
+  const ctx = fakeCtx(calls);                 // records drawImage/save/restore
+  paint(ctx, [
+    { image: "tile:a", sx: 0,  sy: 0,  sw: 44, sh: 44, rot: 0 },
+    { image: "tile:b", sx: 44, sy: 0,  sw: 44, sh: 44, rot: 0 },
+  ], stubImages());
+  expect(calls).toEqual(["drawImage:tile:a", "drawImage:tile:b"]);
+});
+
+test("paint draws a visible missing-tile marker for an op whose image is not in the map, rather than skipping it silently", () => {
+  // RE-DERIVED (review finding C3, 2026-08-16) from this test's own prior
+  // form, "paint skips an op whose image is not in the map, rather than
+  // throwing", which asserted `expect(calls).toEqual([])`. That assertion
+  // was WRONG, not merely incomplete: spec §7 requires "An art name that
+  // resolves nowhere draws a visible missing-tile marker, not a blank
+  // square... it must be obvious rather than silently absent", and this
+  // test pinned exactly the blank-square behaviour the spec forbids —
+  // actively locking in review finding C2's defect (every square of both
+  // shipped adventures, having no art override, drew nothing) rather than
+  // catching it. Kept as one test, re-derived rather than deleted, so that
+  // mistake stays visible in history instead of quietly vanishing.
+  const calls: string[] = [];
+  const ctx = fakeCtx(calls);
+  expect(() =>
+    paint(ctx, [{ image: "tile:missing", sx: 0, sy: 0, sw: 44, sh: 44, rot: 0 }], {}),
+  ).not.toThrow();
+  // Something was drawn — via fillRect, never drawImage, since nothing
+  // resolved this key.
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.some((c) => c.startsWith("drawImage:"))).toBe(false);
+  expect(calls.every((c) => c.startsWith("fillRect:"))).toBe(true);
+  // In the spec's own "obvious, not a shade that could pass for real art"
+  // convention: the marker's own magenta appears among what was drawn.
+  expect(calls.some((c) => c.includes(missingTileColors[0]))).toBe(true);
+});
+
+test("a resolved image still draws via drawImage, never the missing-tile marker", () => {
+  // The other direction from the test above, so "always draw the marker
+  // regardless of whether the key resolved" cannot pass unnoticed.
+  const calls: string[] = [];
+  const ctx = fakeCtx(calls);
+  paint(ctx, [{ image: "tile:a", sx: 0, sy: 0, sw: 44, sh: 44, rot: 0 }], stubImages());
+  expect(calls).toEqual(["drawImage:tile:a"]);
+});
+
+// --- renderSpectator's canvas SEAM (review finding C4, 2026-08-16) ---------
+//
+// Everything above tests paint()/strokeGrid() DIRECTLY, by calling them with
+// a hand-built ctx. That proves those two functions behave correctly in
+// isolation, but proves NOTHING about spectator.ts's renderGrid, which is
+// the only code that actually WIRES them together against a real canvas —
+// `const ctx = canvas.getContext("2d"); if (ctx) { paint(...); strokeGrid(...) }`.
+// Under happy-dom, canvas.getContext("2d") always returns null, so that
+// whole `if` body — the actual production wiring — runs ZERO times anywhere
+// in this suite. A reviewer mutated it seven ways (delete the strokeGrid
+// call; delete both draws; ignore extras.images; draw every op at 0,0 size
+// 0; rotate about the corner; draw the grid BEFORE terrain — the exact
+// defect that once shipped) and every one of the 532 tests that existed
+// before this section stayed green.
+//
+// getContext on ViewExtras (spectator.ts) is the seam this section needs:
+// an OPTIONAL override for how renderGrid obtains its 2D context, used only
+// by this test. Never set by app.ts — a real browser's canvas.getContext
+// always returns a context on its own, so production code has no reason to
+// override it.
+
+/** Every key resolves to itself (like stubImages above), so a scene with
+ *  real terrain produces resolvable DrawOps without any real pack art. */
+function tiledScene(): State {
+  const st = newState();
+  st.Scenes["s1"] = {
+    ID: "s1", Name: "Room", GridWidth: 2, GridHeight: 2,
+    Tiles: {
+      "0,0": { Kind: "floor", Material: "earth", Art: "" },
+      "1,0": { Kind: "floor", Material: "earth", Art: "" },
+      "0,1": { Kind: "floor", Material: "earth", Art: "" },
+      "1,1": { Kind: "floor", Material: "earth", Art: "" },
+    },
+    Objects: [], OpenDoors: {},
+  };
+  return st;
+}
+
+/** Records drawImage as "drawImage" and stroke() as "stroke", in call
+ *  order, with nothing else recorded — the two facts the ordering test
+ *  needs and nothing more, so a mutation this section is not aimed at
+ *  cannot accidentally flip the assertion for an unrelated reason. */
+function recordingCtx(calls: string[]): CanvasRenderingContext2D {
+  return {
+    fillStyle: "", strokeStyle: "", lineWidth: 0,
+    save() {}, restore() {}, translate() {}, rotate() {},
+    beginPath() {}, moveTo() {}, lineTo() {},
+    drawImage() { calls.push("drawImage"); },
+    fillRect() { calls.push("fillRect"); },
+    stroke() { calls.push("stroke"); },
+  } as unknown as CanvasRenderingContext2D;
+}
+
+test("renderSpectator paints terrain, strokes the grid, and strokes it AFTER the terrain", () => {
+  const calls: string[] = [];
+  const ctx = recordingCtx(calls);
+  const root = document.createElement("div");
+  renderSpectator(root, tiledScene(), [], "connected", {
+    images: stubImages(),
+    getContext: () => ctx,
+  });
+
+  const lastDrawImage = calls.lastIndexOf("drawImage");
+  const strokeIndex = calls.indexOf("stroke");
+  // Terrain was actually painted (via drawImage — stubImages resolves every
+  // key, so nothing here should hit the missing-tile marker's fillRect).
+  expect(lastDrawImage).toBeGreaterThanOrEqual(0);
+  // The grid was actually stroked.
+  expect(strokeIndex).toBeGreaterThanOrEqual(0);
+  // AND the stroke comes after the LAST terrain draw — the ordering defect
+  // that once shipped (grid drawn first, then painted over by every tile).
+  expect(strokeIndex).toBeGreaterThan(lastDrawImage);
 });
 
 test("a board with no click handler is not dressed as clickable", () => {

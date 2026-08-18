@@ -11,7 +11,10 @@ import {
   newState,
   type Actor,
   type Resource,
+  type Scene,
+  type SceneObject,
   type State,
+  type Tile,
 } from "./state";
 
 /**
@@ -62,12 +65,63 @@ function apply(st: State, env: Envelope): void {
     case "sceneCreated": {
       const v = p.value;
       if (st.Scenes[v.sceneId]) throw new FoldError(`duplicate scene "${v.sceneId}"`);
+      // Translate the wire terrain into engine-shaped Tile/SceneObject,
+      // mirroring apply.go's SceneCreated arm. tiles/objects may be empty —
+      // a terrain-free scene is legal (Patrik's ruling 2026-08-13) — but
+      // protobuf-es always materialises a map field as {} and a repeated
+      // field as [] (never undefined; see copyActor's comment below for the
+      // same guarantee on a repeated field), so no `?? {}` is needed here.
+      const tiles: Record<string, Tile> = {};
+      for (const [k, t] of Object.entries(v.tiles)) {
+        tiles[k] = { Kind: t.kind, Material: t.material, Art: t.art };
+      }
+      const objects: SceneObject[] = v.objects.map((o) => ({
+        ObjectID: o.objectId,
+        Kind: o.kind,
+        X: o.at?.x ?? 0,
+        Y: o.at?.y ?? 0,
+        Width: o.width,
+        Height: o.height,
+        RotationDegrees: o.rotationDegrees,
+        BlocksSight: o.blocksSight,
+        BlocksMove: o.blocksMove,
+        Art: o.art,
+      }));
       st.Scenes[v.sceneId] = {
         ID: v.sceneId,
         Name: v.name,
         GridWidth: v.gridWidth,
         GridHeight: v.gridHeight,
+        Tiles: tiles,
+        Objects: objects,
+        // Doors start CLOSED, mirroring apply.go's SceneCreated arm: a door
+        // whose state was never recorded is shut — the fail-closed
+        // direction (a door wrongly shut is a puzzle, a door wrongly open
+        // is an ambush that does not happen). Initialised as a real empty
+        // object, not left absent, so doorOpened/doorClosed below never
+        // need their lazy-init guard for a scene built HERE.
+        OpenDoors: {},
       };
+      return;
+    }
+    case "doorOpened": {
+      const v = p.value;
+      const sc = st.Scenes[v.sceneId];
+      if (!sc) throw new FoldError(`door opened in unknown scene "${v.sceneId}"`);
+      if (!v.at) throw new FoldError(`door opened without position`);
+      ensureOpenDoors(sc)[doorKey(v.at.x, v.at.y)] = true;
+      return;
+    }
+    case "doorClosed": {
+      const v = p.value;
+      const sc = st.Scenes[v.sceneId];
+      if (!sc) throw new FoldError(`door closed in unknown scene "${v.sceneId}"`);
+      if (!v.at) throw new FoldError(`door closed without position`);
+      // delete rather than set-false: restores the "never toggled" state
+      // exactly, matching apply.go's DoorClosed arm — a door that is closed
+      // either because it was just shut or because it was never touched
+      // reads identically.
+      delete ensureOpenDoors(sc)[doorKey(v.at.x, v.at.y)];
       return;
     }
     case "actorAdded": {
@@ -217,6 +271,30 @@ function apply(st: State, env: Envelope): void {
 }
 
 /**
+ * doorKey matches Go's gridKey: "x,y", column then row, comma-separated
+ * (maps-as-geometry spec §4.1) — SceneCreated's Tiles map and OpenDoors are
+ * both keyed this way, so this fold and apply.go's have to agree on it.
+ */
+function doorKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+/**
+ * ensureOpenDoors is the TS analogue of apply.go's fix-round-2 nil-map
+ * guard. OpenDoors is optional on Scene ONLY to let bare Scene literals
+ * elsewhere in this test suite keep compiling (see state.ts's comment on
+ * Scene) — fold's own sceneCreated arm above always sets it, but a Scene
+ * built some other way might not have it, and writing straight into a
+ * missing property throws instead of erroring cleanly. Go's equivalent bug
+ * was a nil-map panic in the fold; this is the same shape of mistake,
+ * caught here before it needed its own fix round.
+ */
+function ensureOpenDoors(sc: Scene): Record<string, boolean> {
+  if (!sc.OpenDoors) sc.OpenDoors = {};
+  return sc.OpenDoors;
+}
+
+/**
  * requireControlTarget resolves the actor a control event names, rejecting an
  * unknown actor and an empty participant — the same two rejections
  * internal/engine's controlTarget makes, for the same reasons: an event naming
@@ -318,6 +396,24 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       Name: s.Name,
       GridWidth: s.GridWidth,
       GridHeight: s.GridHeight,
+      // `?? {}` / `?? []` are the same defaulting state.ts's comment on
+      // Scene calls for: these fields are optional only to let bare test
+      // fixtures compile, but a real fold always sets them, so this is
+      // belt-and-braces rather than a path any golden actually exercises.
+      Tiles: sortedMap(s.Tiles ?? {}, (t) => ({ Kind: t.Kind, Material: t.Material, Art: t.Art })),
+      Objects: (s.Objects ?? []).map((o) => ({
+        ObjectID: o.ObjectID,
+        Kind: o.Kind,
+        X: o.X,
+        Y: o.Y,
+        Width: o.Width,
+        Height: o.Height,
+        RotationDegrees: o.RotationDegrees,
+        BlocksSight: o.BlocksSight,
+        BlocksMove: o.BlocksMove,
+        Art: o.Art,
+      })),
+      OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
     })),
     // A Go nil slice marshals as null, not [].
     Sessions: st.Sessions.length === 0 ? null : st.Sessions.map((s) => ({

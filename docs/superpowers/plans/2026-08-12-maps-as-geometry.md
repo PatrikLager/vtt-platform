@@ -719,6 +719,22 @@ git commit   # message: the map decides where you can stand, and doors fold
 
 ## Task 6: Gateway — enforce movement for players, free for the DM
 
+> **AMENDED 2026-08-13, after Task 1 shipped.** This task's Files list below
+> still claims the `convert.go` arms and the two `commandRoles` rows as its own
+> work. **They already exist**, added in commit 092381a. The plan was wrong to
+> defer them: adding a `ClientCommand` oneof arm makes a command reachable from
+> the wire AND publishes it as an MCP tool immediately, because the tool surface
+> is generated from that oneof — so deferring the wiring left `open_door` and
+> `close_door` advertised to a live agent and unable to convert. The repo's own
+> completeness gate named it: *"it is reachable from the wire and from MCP, so
+> this command is advertised and dead."*
+>
+> **Task 6 therefore owns only:** the movement check (the `Blocked()` call site
+> in `handleCommand`) and the door-adjacency rule for players. Recorded rather
+> than rewritten, so the sequencing error stays visible — it is the same class
+> of mistake as deferring anything else that a generated surface publishes on
+> sight.
+
 **Files:**
 - Modify: `internal/gateway/server.go:745-775` (validate before Append)
 - Modify: `internal/gateway/convert.go:58-70` (OpenDoor/CloseDoor → events)

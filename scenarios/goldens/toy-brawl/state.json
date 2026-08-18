@@ -54,7 +54,10 @@
       "ID": "scn-tavern",
       "Name": "The Rusty Flagon",
       "GridWidth": 5,
-      "GridHeight": 5
+      "GridHeight": 5,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {}
     }
   },
   "Sessions": [

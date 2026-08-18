@@ -24,6 +24,30 @@ vtt revoke --campaign campaign.db --id <participant-id>
 
 Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
 
+## Content directories: rulesets, adventures, maps
+
+Three optional flags on `vtt serve` point at directories of content, each
+loaded and validated fully at boot — never at the table:
+
+```sh
+vtt serve --campaign campaign.db --addr :8080 \
+  --ruleset rulesets/dnd45e-minimal \
+  --adventures-dir adventures \
+  --maps-dir maps
+```
+
+`--maps-dir` serves every subdirectory of `maps/` as a standalone map (one
+`map.json` plus an optional `tiles/pack.json` and its images, e.g.
+`maps/cellar/`) over `GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
+[`docs/map-format.md`](docs/map-format.md) for the format itself, including a
+complete worked example and every standard tile name. A map loads
+independently of any adventure (design spec
+`docs/superpowers/specs/2026-08-12-maps-as-geometry-design.md` §4.3): drop a
+directory in, restart, and it is servable. `maps/cellar` is the platform's
+own demo map — a small room with real cover (pillars, crates, an interior
+wall and a door), generated art included (`tools/genmappack`, see that
+package's own doc comment for how to re-run it).
+
 ## Simulation harness: scenarios and soak
 
 `vtt client run <scenario.json>` drives a declarative scenario (see

@@ -6,7 +6,17 @@
 // Compile turns a loaded Adventure into the ordinary setup events (spec
 // §3) one atomic AppendBatch will apply — the platform gains no new
 // runtime concept, an adventure simply becomes log history.
+//
+// A scene is a map (maps-as-geometry spec §4.3: "an adventure still carries
+// its own maps"): AdventureScene's Tiles/Overrides/Objects mirror
+// mapdef.Map's own two-layer shape field-for-field, and Compile
+// (compile.go) builds each scene's SceneCreated through the exact same
+// mapdef.BuildSceneCreated function the standalone maps/ load path calls —
+// see compile.go's doc comment for why that single construction site is the
+// point of the whole task.
 package adventure
+
+import "github.com/PatrikLager/vtt-platform/internal/mapdef"
 
 // Adventure is one fully-loaded, fully-validated adventure directory.
 // GuidePath names dir/guide.md — served verbatim to the DM via MCP
@@ -28,15 +38,47 @@ type Adventure struct {
 	Actors []AdventureActor
 	Notes  []AdventureNote
 
+	// Pack is the adventure's own embedded art pack (dir/tiles/pack.json),
+	// loaded once at Load and shared by every scene's Overrides. It mirrors
+	// a standalone map's Pack reference (maps-as-geometry spec §4.2's two
+	// resolution levels) but is embedded rather than named by id, because
+	// the adventure format is self-contained (adventure-format spec §2.2:
+	// "No bestiary format" — shared content libraries were rejected). Nil
+	// when the adventure directory has no tiles/pack.json; legal as long as
+	// no scene declares an Overrides entry — Compile's delegated call into
+	// mapdef.BuildSceneCreated fails loud, through Resolve, the moment one
+	// does and Pack is nil.
+	Pack *mapdef.Pack
+
 	GuidePath string
 }
 
-// AdventureScene is one scenes/*.json file: a scene plus its token
-// placements, in declared (array) order.
+// AdventureScene is one scenes/*.json file: a scene plus its terrain and
+// token placements, in declared (array) order. Tiles/Overrides/Objects
+// mirror mapdef.Map's own fields exactly (see this file's package doc) —
+// Objects reuses mapdef.Object directly rather than a local type, since the
+// two formats' object shape is not merely similar but IDENTICAL by design.
 type AdventureScene struct {
 	ID, Name     string
 	GridW, GridH int32
+	Tiles        map[string]string
+	Overrides    map[string]string
+	Objects      []mapdef.Object
 	Placements   []Placement
+}
+
+// asMap builds the *mapdef.Map compile.go hands to mapdef.BuildSceneCreated
+// — the ONE construction site a SceneCreated event comes from, shared with
+// the standalone maps/ load path (internal/mapdef/compile.go's own Compile).
+// Placements is deliberately left unset: BuildSceneCreated never reads it
+// (only the scene half of a compile — Compile's TokenPlaced loop is
+// adventure's own, unchanged, since placements carry an ActorID a map
+// alone knows nothing about).
+func (sc AdventureScene) asMap() *mapdef.Map {
+	return &mapdef.Map{
+		ID: sc.ID, Name: sc.Name, GridW: sc.GridW, GridH: sc.GridH,
+		Tiles: sc.Tiles, Overrides: sc.Overrides, Objects: sc.Objects,
+	}
 }
 
 // Placement is one token placement, declared inline in its owning scene's

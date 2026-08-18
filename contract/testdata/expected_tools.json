@@ -46,8 +46,90 @@
         "name": {
           "type": "string"
         },
+        "objects": {
+          "description": "Optional; omit unless placing scenery inline. Scenery is normally authored as part of a map file rather than built field by field here.",
+          "items": {
+            "properties": {
+              "art": {
+                "type": "string"
+              },
+              "at": {
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  },
+                  "y": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              },
+              "blocksMove": {
+                "type": "boolean"
+              },
+              "blocksSight": {
+                "type": "boolean"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "objectId": {
+                "type": "string"
+              },
+              "rotationDegrees": {
+                "type": "integer"
+              },
+              "width": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "objectId",
+              "kind",
+              "at",
+              "width",
+              "height",
+              "rotationDegrees",
+              "blocksSight",
+              "blocksMove",
+              "art"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "sceneId": {
           "type": "string"
+        },
+        "tiles": {
+          "additionalProperties": {
+            "properties": {
+              "art": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "material": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "material",
+              "art"
+            ],
+            "type": "object"
+          },
+          "description": "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+          "type": "object"
         }
       },
       "required": [
@@ -431,5 +513,82 @@
       "type": "object"
     },
     "name": "rotate_join_link"
+  },
+  {
+    "description": "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+    "inputSchema": {
+      "properties": {
+        "at": {
+          "properties": {
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "sceneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sceneId",
+        "at"
+      ],
+      "type": "object"
+    },
+    "name": "open_door"
+  },
+  {
+    "description": "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+    "inputSchema": {
+      "properties": {
+        "at": {
+          "properties": {
+            "x": {
+              "type": "integer"
+            },
+            "y": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "sceneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sceneId",
+        "at"
+      ],
+      "type": "object"
+    },
+    "name": "close_door"
+  },
+  {
+    "description": "Load a standalone map into the campaign — compiles its terrain and scenery into one SceneCreated plus one TokenPlaced per placement the map declares, atomically. DM/agent only. Unlike load_adventure, a map brings no actors, notes or opening narration — just terrain and placements; a placement's actor must already exist (add_actor it first) or the whole load is rejected.",
+    "inputSchema": {
+      "properties": {
+        "mapId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mapId"
+      ],
+      "type": "object"
+    },
+    "name": "load_map"
   }
 ]

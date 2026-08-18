@@ -1,0 +1,13 @@
+{
+  "id": "other-keep",
+  "name": "Other Keep",
+  "cell_px": 64,
+
+  "tiles": [
+    {"name": "planks-split-3", "file": "different_planks.png",
+     "kind": "floor", "material": "wood",
+     "desc": "a same-named tile in a DIFFERENT pack -- exists so a test can prove Resolve refuses a pack that is not the map's own by identity, not merely because a lookup happened to miss"}
+  ],
+
+  "objects": []
+}

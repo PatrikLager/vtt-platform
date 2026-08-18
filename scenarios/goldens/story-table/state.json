@@ -22,7 +22,10 @@
       "ID": "scn-table",
       "Name": "The Rusty Flagon",
       "GridWidth": 10,
-      "GridHeight": 10
+      "GridHeight": 10,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {}
     }
   },
   "Sessions": [

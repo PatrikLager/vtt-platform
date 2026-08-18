@@ -5,6 +5,7 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
 // Compile turns adv into the deterministic, ordered list of setup envelopes
@@ -41,10 +42,18 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, error) {
 	})
 
 	for _, sc := range adv.Scenes {
+		// Delegated, not built here: mapdef.BuildSceneCreated is the ONE
+		// construction site a SceneCreated comes from, shared with the
+		// standalone maps/ load path — see that function's own doc comment
+		// (internal/mapdef/compile.go). Any Resolve warning is discarded
+		// (the `_`) — surfacing it is deliberately out of scope for this
+		// arc (maps-as-geometry implementation plan, self-review notes).
+		created, _, err := mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)
+		if err != nil {
+			return nil, fmt.Errorf("adventure: compile: scene %q: %w", sc.ID, err)
+		}
 		envs = append(envs, &vttv1.Envelope{
-			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-				SceneId: sc.ID, Name: sc.Name, GridWidth: sc.GridW, GridHeight: sc.GridH,
-			}},
+			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: created},
 		})
 	}
 

@@ -61,11 +61,21 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			To:      c.MoveToken.GetTo(),
 		}}
 	case *vttv1.ClientCommand_CreateScene:
+		// Tiles/Objects carried through (maps-as-geometry Task 1 added both
+		// fields to CreateScene; tools/toolgen advertises them to MCP as
+		// part of create_scene's contract). Dropping them here would be the
+		// same class of defect Task 1 already fixed once for OpenDoor/
+		// CloseDoor — worse, in fact: this failure mode is SILENT, not an
+		// error, so an agent calling create_scene with terrain would see
+		// ok=true and only discover the loss later, reading back a scene
+		// with no tiles at all.
 		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 			SceneId:    c.CreateScene.GetSceneId(),
 			Name:       c.CreateScene.GetName(),
 			GridWidth:  c.CreateScene.GetGridWidth(),
 			GridHeight: c.CreateScene.GetGridHeight(),
+			Tiles:      c.CreateScene.GetTiles(),
+			Objects:    c.CreateScene.GetObjects(),
 		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
@@ -136,6 +146,23 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
 			ActorId:       c.RevokeActorControl.GetActorId(),
 			ParticipantId: c.RevokeActorControl.GetParticipantId(),
+		}}
+	case *vttv1.ClientCommand_OpenDoor:
+		// maps-as-geometry Task 1 fix. Plain single-Envelope conversion, same
+		// shape as grant/revoke_actor_control above: no adjacency check HERE
+		// — that lives in Authorize (authz.go's mayWorkDoor, Task 6), which
+		// runs before ToEvent ever sees the command. By the time control
+		// reaches this switch, Authorize has already decided this
+		// participant may issue it, and there is nothing else to validate at
+		// this layer.
+		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
+			SceneId: c.OpenDoor.GetSceneId(),
+			At:      c.OpenDoor.GetAt(),
+		}}
+	case *vttv1.ClientCommand_CloseDoor:
+		env.Payload = &vttv1.Envelope_DoorClosed{DoorClosed: &vttv1.DoorClosed{
+			SceneId: c.CloseDoor.GetSceneId(),
+			At:      c.CloseDoor.GetAt(),
 		}}
 	default:
 		return nil, ErrUnknownCommand

@@ -27,7 +27,10 @@
 // sibling objects populated, matching that "type" value:
 //
 //	{"type": "adventure_loaded", "adventure_loaded": {"adventure_id": "...", "name": "..."}}
-//	{"type": "scene_created", "scene_created": {"scene_id": "...", "name": "...", "grid_width": 0, "grid_height": 0}}
+//	{"type": "scene_created", "scene_created": {"scene_id": "...", "name": "...", "grid_width": 0, "grid_height": 0,
+//	  "tiles": {"...": {"kind": "...", "material": "...", "art": "..."}},
+//	  "objects": [{"object_id": "...", "kind": "...", "at": {"x": 0, "y": 0}, "width": 0, "height": 0,
+//	    "rotation_degrees": 0, "blocks_sight": false, "blocks_move": false, "art": "..."}]}}
 //	{"type": "actor_added", "actor_added": {"actor_id": "...", "name": "...",
 //	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}}}}
 //	{"type": "token_placed", "token_placed": {"token_id": "...", "scene_id": "...", "actor_id": "...", "x": 0, "y": 0}}
@@ -236,11 +239,44 @@ type adventureLoadedDump struct {
 	Name        string `json:"name"`
 }
 
+// sceneCreatedDump gained Tiles/Objects at maps-as-geometry Task 4, the same
+// task that made mapdef.BuildSceneCreated populate them on the real
+// SceneCreated: without this, a compiled-batch golden would silently stop
+// pinning most of what a SceneCreated now carries, and a regression in
+// terrain compilation could pass every conformance fixture undetected.
+// Both fields carry omitempty for the same reason actorAddedDump's own
+// Attributes/Resources do (see toActorAddedDump) — an object-free scene
+// need not clutter its golden with an empty array.
 type sceneCreatedDump struct {
-	SceneID    string `json:"scene_id"`
-	Name       string `json:"name"`
-	GridWidth  int32  `json:"grid_width"`
-	GridHeight int32  `json:"grid_height"`
+	SceneID    string                 `json:"scene_id"`
+	Name       string                 `json:"name"`
+	GridWidth  int32                  `json:"grid_width"`
+	GridHeight int32                  `json:"grid_height"`
+	Tiles      map[string]tileRefDump `json:"tiles,omitempty"`
+	Objects    []sceneObjectDump      `json:"objects,omitempty"`
+}
+
+type tileRefDump struct {
+	Kind     string `json:"kind"`
+	Material string `json:"material"`
+	Art      string `json:"art,omitempty"`
+}
+
+type sceneObjectDump struct {
+	ObjectID        string        `json:"object_id"`
+	Kind            string        `json:"kind"`
+	At              gridPointDump `json:"at"`
+	Width           int32         `json:"width"`
+	Height          int32         `json:"height"`
+	RotationDegrees int32         `json:"rotation_degrees,omitempty"`
+	BlocksSight     bool          `json:"blocks_sight,omitempty"`
+	BlocksMove      bool          `json:"blocks_move,omitempty"`
+	Art             string        `json:"art,omitempty"`
+}
+
+type gridPointDump struct {
+	X int32 `json:"x"`
+	Y int32 `json:"y"`
 }
 
 type actorAddedDump struct {
@@ -285,6 +321,7 @@ func toEnvelopeDump(env *vttv1.Envelope) (envelopeDump, error) {
 		sc := p.SceneCreated
 		return envelopeDump{Type: typeSceneCreated, SceneCreated: &sceneCreatedDump{
 			SceneID: sc.SceneId, Name: sc.Name, GridWidth: sc.GridWidth, GridHeight: sc.GridHeight,
+			Tiles: toTilesDump(sc.GetTiles()), Objects: toObjectsDump(sc.GetObjects()),
 		}}, nil
 
 	case *vttv1.Envelope_ActorAdded:
@@ -312,6 +349,40 @@ func toEnvelopeDump(env *vttv1.Envelope) (envelopeDump, error) {
 	default:
 		return envelopeDump{}, fmt.Errorf("unsupported envelope payload type %T (compiled-batch goldens cover only what Compile emits)", env.Payload)
 	}
+}
+
+// toTilesDump mirrors toActorAddedDump's own omitempty-friendly
+// nil-when-empty convention: an empty/nil input returns nil (never an empty,
+// non-nil map), so a scene with no tiles at all (defensive-only — every real
+// SceneCreated compiles one entry per grid square) does not clutter its
+// golden with `"tiles": {}`.
+func toTilesDump(tiles map[string]*vttv1.TileRef) map[string]tileRefDump {
+	if len(tiles) == 0 {
+		return nil
+	}
+	out := make(map[string]tileRefDump, len(tiles))
+	for k, v := range tiles {
+		out[k] = tileRefDump{Kind: v.GetKind(), Material: v.GetMaterial(), Art: v.GetArt()}
+	}
+	return out
+}
+
+func toObjectsDump(objects []*vttv1.SceneObject) []sceneObjectDump {
+	if len(objects) == 0 {
+		return nil
+	}
+	out := make([]sceneObjectDump, len(objects))
+	for i, o := range objects {
+		out[i] = sceneObjectDump{
+			ObjectID: o.GetObjectId(), Kind: o.GetKind(),
+			At:    gridPointDump{X: o.GetAt().GetX(), Y: o.GetAt().GetY()},
+			Width: o.GetWidth(), Height: o.GetHeight(),
+			RotationDegrees: o.GetRotationDegrees(),
+			BlocksSight:     o.GetBlocksSight(), BlocksMove: o.GetBlocksMove(),
+			Art: o.GetArt(),
+		}
+	}
+	return out
 }
 
 func toActorAddedDump(a *vttv1.Actor) *actorAddedDump {

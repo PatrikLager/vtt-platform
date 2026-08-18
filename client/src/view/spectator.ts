@@ -12,8 +12,40 @@ import type { Participant } from "../session";
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
+import { fitCamera, worldFromScreen, type Camera } from "./camera";
+import { planGrid, planScene } from "./scene-plan";
+import { paint, strokeGrid, type ImageMap } from "./canvas";
 
 export const CELL = 44;
+
+// The pane is a FIXED size, independent of the scene's grid dimensions —
+// this is backlog T1/#19 (spec §1.4, §7): the old board was gridWidth*CELL
+// px tall (1408 for a 32x32 scene), so the page grew with the map and the
+// controls sat ~1450px down it, below every laptop fold. A 200x200 outdoor
+// map and a 10x10 room now lay out identically; the camera (fitCamera) is
+// what makes the whole scene visible inside whichever of the two binds.
+const PANE_W = 640;
+const PANE_H = 480;
+
+// The default when app.ts has not (yet, or ever) supplied one: extras.images
+// is optional (a spectator view built directly in a test, say, rarely has a
+// live pack to load), and an empty map keeps the canvas honestly blank
+// rather than inventing a picture — canvas.ts's paint() already skips an
+// unresolved key rather than throwing (see its own test). pack-assets.ts
+// (Task 10) is what actually populates a real one, over HTTP from
+// GET /api/packs/{pack}/{file}; app.ts wires its result in as extras.images.
+const NO_IMAGES: ImageMap = {};
+
+/**
+ * boardCamera is the ONE fit renderGrid uses -- for the canvas terrain, for
+ * token discs, and for click resolution alike. Exported so a test can derive
+ * the exact expected transform (via this, not a hand-copied PANE_W/PANE_H
+ * pair) rather than duplicating the fit arithmetic and risking silent drift
+ * from whatever this function actually computes.
+ */
+export function boardCamera(width: number, height: number): Camera {
+  return fitCamera(width, height, CELL, PANE_W, PANE_H);
+}
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
@@ -69,7 +101,21 @@ export function describe(e: Envelope): string {
 function renderGrid(
   st: State,
   sceneId: string,
+  images: ImageMap,
   onCell?: (c: { x: number; y: number }) => void,
+  // TEST-ONLY SEAM (review finding C4, 2026-08-16): how this function
+  // obtains a 2D context. Defaults to the real canvas.getContext, which is
+  // what every production call site gets — app.ts never passes
+  // extras.getContext, and there is no reason it ever should; a real
+  // browser's canvas always answers "2d" with a context. The override
+  // exists because happy-dom's canvas.getContext ALWAYS returns null (this
+  // file's own comment on `ctx` below), so nothing past that call — the
+  // actual paint()/strokeGrid() wiring, including their relative order —
+  // was reachable by the suite before this seam existed. Kept minimal
+  // deliberately: one optional function parameter, not a restructuring of
+  // the drawing layer (spectator.ts's thinness is the design, not an
+  // oversight to fix).
+  getContext: (canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null = (c) => c.getContext("2d"),
 ): HTMLElement {
   const scene = st.Scenes[sceneId];
   const wrap = el("section", "board");
@@ -80,36 +126,107 @@ function renderGrid(
   wrap.appendChild(el("h2", undefined, scene.Name));
 
   const geom: Geometry = { cell: CELL, width: scene.GridWidth, height: scene.GridHeight };
+  // Computed BEFORE anything below reads it (fix round: this used to run
+  // after the backgroundSize assignment, which is what let backgroundSize
+  // hardcode CELL instead of CELL * cam.scale unnoticed for as long as
+  // nothing was drawn on the canvas to visibly disagree with it -- see the
+  // backgroundSize assignment's own comment).
+  const cam = boardCamera(scene.GridWidth, scene.GridHeight);
+
   const board = el("div", "grid");
-  board.style.width = `${geom.width * CELL}px`;
-  board.style.height = `${geom.height * CELL}px`;
-  board.style.backgroundSize = `${CELL}px ${CELL}px`;
+  // NO inline width/height keyed to the scene (T1/#19, see PANE_W/PANE_H
+  // above) -- the pane's size comes from style.css and stays fixed.
+  //
+  // NO CSS BACKGROUND LATTICE EITHER: strokeGrid draws the grid on the canvas
+  // below, through the camera. A CSS tiling cannot be made to agree with it,
+  // because it tiles the whole pane from the PANE's origin while the canvas
+  // grid starts at the camera's OFFSET and spans only the SCENE. Those line up
+  // only when the offset is a whole multiple of the step -- true for the 10x9
+  // demo map by coincidence, false for a 32x32 one. It also ruled the
+  // letterboxed margin, drawing squares outside the map that the server would
+  // refuse to move a token onto.
   board.dataset["sceneId"] = sceneId;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = PANE_W;
+  canvas.height = PANE_H;
+  board.appendChild(canvas);
+
+  // Fit the WHOLE scene into the pane (spec §7: "always start seeing the
+  // whole map"), turn that into draw instructions (Task 8, pure and fully
+  // tested), and hand them to Task 9's thin drawImage loop. ctx is null under
+  // happy-dom -- canvas.ts's header comment explains why -- but never in a
+  // real browser, which always returns one for "2d". getContext is the
+  // TEST-ONLY seam above; production always uses its default, the real
+  // canvas.getContext.
+  const ctx = getContext(canvas);
+  if (ctx) {
+    const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
+    paint(ctx, ops, images);
+    // AFTER the tiles, deliberately: the lattice divides the terrain, so it
+    // belongs on top of it. Drawn first, every tile would paint over it and the
+    // board would be uncountable again — which is exactly what happened to the
+    // old CSS background-size lattice the moment canvas terrain arrived.
+    strokeGrid(ctx, planGrid(st, sceneId, cam, CELL, PANE_W, PANE_H));
+  }
 
   if (onCell) {
     board.style.cursor = "crosshair";
     board.addEventListener("click", (ev) => {
       // Offset from the board's own box, so the cell is right regardless of
-      // where the board sits in the page or how far it is scrolled.
+      // where the board sits in the page or how far it is scrolled -- THEN
+      // through worldFromScreen (Task 8, algebraically exact inverse of the
+      // same cam the canvas terrain draws through), so a click resolves to
+      // the square under the cursor at any scale/offset, not just at the
+      // scale-1/offset-0 case where skipping this step is invisible.
       const r = board.getBoundingClientRect();
-      onCell(cellFromPoint(ev.clientX - r.left, ev.clientY - r.top, geom));
+      const world = worldFromScreen(ev.clientX - r.left, ev.clientY - r.top, cam);
+      onCell(cellFromPoint(world.x, world.y, geom));
     });
   }
 
   for (const d of tokensOnScene(st, sceneId)) {
-    board.appendChild(renderDisc(d));
+    board.appendChild(renderDisc(d, cam));
   }
   wrap.appendChild(board);
   return wrap;
 }
 
-function renderDisc(d: TokenDisc): HTMLElement {
+/**
+ * renderDisc positions and SIZES a token disc through the SAME camera the
+ * canvas terrain and click resolution use -- both, because a token scaled in
+ * position but not in size would float free of its own square at any scale
+ * but 1 (fix round 1 finding: this drew at raw `x * CELL`, invisible only
+ * because nothing yet on the canvas gave it anything to visibly disagree
+ * with).
+ *
+ * The disc's INNER content is scaled too (Task 10 cosmetic fix), by the same
+ * cam.scale: style.css's 30px/8px/5px figures are the scale-1 defaults, and
+ * were the ONLY sizes anything drew at before a camera existed at all. Once
+ * fitCamera can shrink a token well below 44px (goblin-ambush's 32x32 fits
+ * at ~15px per cell), the 30px initial circle overflowed its own now-smaller
+ * box -- invisible until there was real art on the canvas to judge it
+ * against, same story as the backgroundSize fix above. Scaling the CHIP and
+ * DOT sizes too, not just the initial, for the same reason: nothing about a
+ * token's content should be the one part of the board immune to the camera
+ * that governs everything else on it.
+ */
+function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
   const t = el("div", "token");
-  t.style.left = `${d.x * CELL}px`;
-  t.style.top = `${d.y * CELL}px`;
+  const size = CELL * cam.scale;
+  const scale = cam.scale;
+  t.style.left = `${d.x * CELL * cam.scale + cam.offsetX}px`;
+  t.style.top = `${d.y * CELL * cam.scale + cam.offsetY}px`;
+  t.style.width = `${size}px`;
+  t.style.height = `${size}px`;
   t.title = d.name || d.actorId;
   t.dataset["tokenId"] = d.tokenId;
-  t.appendChild(el("span", "initial", d.initial));
+
+  const initial = el("span", "initial", d.initial);
+  initial.style.width = `${30 * scale}px`;
+  initial.style.height = `${30 * scale}px`;
+  initial.style.fontSize = `${16 * scale}px`;
+  t.appendChild(initial);
 
   // ALL resources, ALL conditions — no notion of a "primary" one exists in
   // the ruleset format, and inventing one here would bake in a genre.
@@ -118,6 +235,7 @@ function renderDisc(d: TokenDisc): HTMLElement {
     for (const r of d.resources) {
       const chip = el("span", "chip", `${r.current}/${r.max}`);
       chip.title = r.name; // the NAME on hover, never abbreviated on the face
+      chip.style.fontSize = `${8 * scale}px`;
       chips.appendChild(chip);
     }
     t.appendChild(chips);
@@ -127,6 +245,8 @@ function renderDisc(d: TokenDisc): HTMLElement {
     for (const c of d.conditions) {
       const dot = el("span", "dot");
       dot.title = c.id; // hover names, per the spectator floor
+      dot.style.width = `${5 * scale}px`;
+      dot.style.height = `${5 * scale}px`;
       dots.appendChild(dot);
     }
     t.appendChild(dots);
@@ -240,6 +360,20 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
+  /**
+   * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task
+   * 10) — keyed exactly as canvas.ts's paint() expects. Omitted (or not yet
+   * resolved) draws NO_IMAGES, which is not a failure: paint() skips an
+   * unresolved key rather than throwing, so a scene renders with whatever
+   * art has loaded so far.
+   */
+  images?: ImageMap | undefined;
+  /**
+   * TEST-ONLY SEAM (review finding C4, 2026-08-16): overrides how renderGrid
+   * obtains its 2D context. Never set by app.ts — see renderGrid's own doc
+   * comment on the parameter this threads into for the full reasoning.
+   */
+  getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
 }
 
 export function renderSpectator(
@@ -256,7 +390,7 @@ export function renderSpectator(
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.onCell),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.onCell, extras.getContext),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),

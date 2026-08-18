@@ -29,7 +29,7 @@ import (
 func TestServeComposeEndToEnd(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 	rulesetDir := filepath.Join("..", "..", "rulesets", "dnd45e-minimal")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, advRoot)
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, advRoot, "")
 	if err == nil {
 		if closeFn != nil {
 			_ = closeFn()
@@ -290,7 +290,7 @@ func TestComposeServerLoadsAdventureGuidesAtBoot(t *testing.T) {
 	srv, closeFn, err := composeServer(
 		campaignPath, "127.0.0.1:0",
 		filepath.Join("..", "..", "rulesets", "dnd45e-minimal"),
-		advRoot,
+		advRoot, "",
 	)
 	if err != nil {
 		t.Fatalf("composeServer with the committed adventures dir: %v", err)
