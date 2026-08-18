@@ -72,11 +72,19 @@ Each is a plausible thing to start doing halfway through.
 **A seat sees the union of what its controlled actors see.** Sight belongs to
 actors; a participant inherits it from the actors they control.
 
-**A seat with no actor sees a black board.** That is how everyone starts —
-onboarding assigns no character, the DM grants one afterwards — so arriving in
-the dark and then being given eyes is the normal first minute at a table, not
-an edge case. Spectators, having no actors, are in the same position
-permanently.
+**A seat with no actor sees no scene at all** — not a black board, but no board,
+because scene knowledge follows actor presence (§4.2). That is how everyone
+starts: onboarding assigns no character and the DM grants one afterwards, so
+arriving with nothing and then being given both a character and a place to
+stand is the normal first minute at a table.
+
+**This makes a spectator blind, and that is a real product consequence**, not a
+detail. A spectator has no actor, so under this ruling they see nothing at all
+— which is a strange shape for a role whose name means "one who watches", and
+session zero had a spectator seat that could follow the game. Called out here
+rather than settled: if a spectator should see something, the honest options are
+that the DM grants them sight explicitly, or that spectator becomes a seat you
+are promoted OUT of rather than one you watch from. Not resolved in this spec.
 
 **DM and agent see everything.** Their projection is the identity function, so
 their stream is byte-for-byte what it is today.
@@ -182,12 +190,24 @@ player's replay filters identically and the gaps are invisible to them.
   since the tiles-optional ruling (2026-08-13), so a redacted scene needs no new
   shape.
 
-**A player learns that a scene exists, and how large it is, before seeing any
-of it.** That is accepted: the board has to have bounds to draw, and a campaign
-with several scenes loaded reveals only their names and dimensions, never their
-contents. If a scene's NAME is itself a spoiler ("The Dragon's Lair"), that is
-an authoring concern, not a platform one — the same way an adventure's guide
-already trusts the DM with what it says.
+**A scene a player has not entered does not exist for them.** Patrik,
+2026-08-18: *"we can not have that players know anything about a campaign's
+scenes that have not yet [been] encountered… You can only know/see a scene that
+you participate in."*
+
+So `SceneCreated` is projected like everything else. A player receives it at
+the moment their actor is placed in that scene — synthesized, stamped with the
+causing sequence, exactly as a token's introduction is (§4.2). Before that they
+do not learn its name, its dimensions, or that it is there at all.
+
+This closes a leak an earlier draft of this spec accepted. A campaign with six
+scenes loaded would otherwise have handed every player a list of six names and
+sizes — *The Dragon's Lair, 40×40* — which is the shape of finding 14 with the
+map rather than a goblin as its subject. A scene list is a table of contents for
+the adventure, and the players are not supposed to have read ahead.
+
+**A player who leaves a scene keeps it**, dimmed, under §3.2's terrain memory:
+they were there, and that is knowledge they legitimately hold.
 
 **Synthesized events carry the sequence of the event that caused the visibility
 change.** Retraction is a range over sequence NUMBERS — `EventsRetracted`
@@ -363,11 +383,14 @@ gate, neither in scope here:
    see through it.
 3. A player who leaves a room keeps its terrain, dimmed, and loses the creatures
    in it.
-4. A seat with no actor sees a black board; being granted a character gives it
-   eyes.
-5. **Session zero cannot happen again:** the goblin is not on the wire, not on
+4. A seat with no actor sees no scene at all — not its name, not its size.
+   Being granted a character gives it both a place to stand and eyes.
+5. **A scene a player has never entered is absent from their stream entirely.**
+   Load six scenes into a campaign; a player in one of them can enumerate
+   exactly one.
+6. **Session zero cannot happen again:** the goblin is not on the wire, not on
    the board, and its square cannot be targeted by a player who cannot see it.
-6. The DM's stream is byte-for-byte unchanged, and the MCP agent seat notices
+7. The DM's stream is byte-for-byte unchanged, and the MCP agent seat notices
    nothing.
-7. `task check` green, no gate weakened, the new package mutation-gated from its
+8. `task check` green, no gate weakened, the new package mutation-gated from its
    first commit.
