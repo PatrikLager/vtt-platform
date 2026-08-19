@@ -203,19 +203,27 @@ func Clear(from, to [2]float64, blockers []Rect) bool {
 // door adjacency (internal/gateway/authz.go), so two spatial rules in this
 // codebase do not disagree about what "one square away" means.
 func VisibleFrom(sc engine.Scene, ox, oy int32, rangeSquares int32, tolerance int) map[string]bool {
-	// DELIBERATELY REDUNDANT as the loop below is now written, and kept anyway.
-	// The early exit tests `reached >= want` only AFTER `reached++`, so reached
-	// is at least 1 wherever want is read, and every want <= 1 selects exactly
-	// the squares with one reachable sample — 0 and 1 are the same predicate.
-	// The mutation gate agrees: weakening this to `< 0` is adjudicated
-	// equivalent in tools/mutation-equivalents.txt.
+	// REDUNDANT as the loop below is written, and kept anyway.
 	//
-	// It stays because it is the only place the CONTRACT exists as code.
-	// Delete it and "tolerance <= 0 means 1" becomes an emergent property of
-	// where that test happens to sit, so moving the test back outside the
-	// sample loop — a reasonable-looking simplification — would silently turn
-	// tolerance 0 into "every square visible", to every player, with nothing
-	// failing.
+	// Redundant because the early exit tests `reached >= want` only AFTER
+	// `reached++`, so reached is at least 1 wherever want is read and every
+	// want <= 1 selects the same squares. Checked over 40,000 random scenes x
+	// 15 tolerances, and the mutation gate agrees — weakening this to `< 0` is
+	// adjudicated equivalent in tools/mutation-equivalents.txt.
+	//
+	// Kept because this is where the documented contract is written down as
+	// code, rather than emerging from where a test happens to sit.
+	//
+	// WHAT IT IS NOT is the thing standing between that contract and a silent
+	// regression. An earlier version of this comment said deleting it and
+	// hoisting the reachability test back out of the sample loop would turn
+	// tolerance 0 into "every square visible" WITH NOTHING FAILING. That was a
+	// falsifiable claim written without falsifying it, and it is false: making
+	// exactly that change fails four tests and six assertions, because most
+	// call sites in the suite pass tolerance 0 and several of them assert a
+	// square is HIDDEN. TestToleranceAtOrBelowZeroMeansAnySinglePoint now
+	// states both halves of the contract by name, so the protection is
+	// deliberate rather than incidental.
 	want := tolerance
 	if want <= 0 {
 		want = 1

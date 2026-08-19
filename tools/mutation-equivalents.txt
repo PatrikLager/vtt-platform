@@ -153,30 +153,30 @@ internal/rules  compile.go:409:35  CONDITIONALS_BOUNDARY
 # re-run with a mutant gremlins had KILLED (`t0 > t1` -> `>=` at :194) spliced
 # in as a control, and it found a difference within 200,000 samples.
 #
-# RE-POINTED TWICE, and each time every new location was READ and confirmed to
-# hold the same expression in unchanged surrounding code rather than derived
-# from the offset — the header above says to do exactly that, and a shift that
-# looks uniform is the case where skipping the check is most tempting and least
-# safe. 2026-08-19 by +94 when nine-point sampling and the tolerance parameter
-# landed above them; again the same day when the early exit and its comment
-# did. The second move was NOT uniform (+51, +51, +51, +51, +51 against a
-# sixth entry that did not exist before), which is the whole argument.
+# RE-POINTED THREE TIMES, all on 2026-08-19: +94 when nine-point sampling and
+# the tolerance parameter landed above them, +51 when the early exit did (and a
+# sixth entry appeared), +8 when a comment above them was rewritten. Each time
+# every new location was READ and confirmed to hold the same expression in
+# unchanged surrounding code rather than derived from the offset — the header
+# above says to do exactly that, and the +8 move is why: it was caused by
+# editing a COMMENT, so nothing about the code changed and nothing but the
+# gate would have noticed the keys going stale.
 # ------------------------------------------------------------------------
 
-internal/sight  sight.go:292:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:300:8  CONDITIONALS_BOUNDARY
     chebyshev's `if dx > dy { return dx }; return dy` -> `>=`: at dx == dy the mutant returns dx where the original returns dy, and those are the same int32. Identical in shape to internal/rules resolve.go:698:8 above, and to the maximum at compile.go:395:36.
 
-internal/sight  sight.go:299:7  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:307:7  CONDITIONALS_BOUNDARY
     abs32's `if n < 0 { return -n }` -> `<=`: at n == 0 the mutant returns -0, and for an int32 that IS 0 — there is no signed zero to observe as there would be for a float. The same entry as internal/gateway authz.go:163:7 above, in a second copy of abs(); its siblings here are NOT equivalent and ARE killed.
 
-internal/sight  sight.go:330:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:338:8  CONDITIONALS_BOUNDARY
     segmentHitsRect's `if a > b { a, b = b, a }` -> `>=` swaps only when a == b, and two float64s that compare equal are bit-identical unless they are +0.0 and -0.0 — which these two cannot be, because both quotients share the divisor d[i] and a zero numerator is always +0.0 (x - x is +0.0 for every finite x, -0.0 included), so a pair of zeros here necessarily carries the SAME sign.
 
-internal/sight  sight.go:333:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:341:8  CONDITIONALS_BOUNDARY
     `if a > t0 { t0 = a }` -> `>=` assigns t0 a value equal to the one it already holds; the one case where those are distinguishable is a == -0.0 against t0 == +0.0, and t0 is only ever compared numerically (`t0 > t1`, and the next axis's own `a > t0`) — never returned, formatted, or used as a key — so the sign of that zero has no observable.
 
-internal/sight  sight.go:336:8  CONDITIONALS_BOUNDARY
-    `if b < t1 { t1 = b }` -> `<=`, the same clamp on the other end of the parameter range: it assigns t1 the value t1 already holds, and t1's only uses are the numeric `t0 > t1` and the next axis's `b < t1`, so a +0.0/-0.0 substitution is unobservable for exactly the reason given at :333.
+internal/sight  sight.go:344:8  CONDITIONALS_BOUNDARY
+    `if b < t1 { t1 = b }` -> `<=`, the same clamp on the other end of the parameter range: it assigns t1 the value t1 already holds, and t1's only uses are the numeric `t0 > t1` and the next axis's `b < t1`, so a +0.0/-0.0 substitution is unobservable for exactly the reason given at :341.
 
-internal/sight  sight.go:220:10  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:228:10  CONDITIONALS_BOUNDARY
     `if want <= 0 { want = 1 }` -> `< 0`, which differs only at tolerance 0: the early-exit loop evaluates `reached >= want` ONLY after `reached++`, so reached is at least 1 wherever want is read, and every want <= 1 therefore selects exactly the squares with one reachable sample — 0 and 1 are the same predicate. Verified over 40,000 random scenes x 15 tolerances. COUPLED to that test's placement, deliberately: move `reached >= want` back outside the sample loop and tolerance 0 becomes "every square visible", which kills this mutant and correctly makes this entry go stale rather than silently pre-approving the change.

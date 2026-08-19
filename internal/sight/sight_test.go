@@ -140,14 +140,29 @@ func TestToleranceAtOrBelowZeroMeansAnySinglePoint(t *testing.T) {
 	// answer, a sliver of exposure reveals you. Both 0 and a negative are
 	// spelled out because "<= 0" is one comparison and a test of only 0 leaves
 	// `== 0` passing.
+	//
+	// BOTH HALVES, and the second is the one that matters. "Behaves as 1" says
+	// a partly-exposed square is SEEN *and* that a covered one is not. Only the
+	// first half was asserted here, which left the whole contract resting on a
+	// clamp in VisibleFrom: hoist the reachability test back out of the sample
+	// loop and drop that clamp, and tolerance 0 becomes `reached >= 0` — true
+	// for every square on the map, so a filtered player would be handed the
+	// entire scene. The negative half below fails on exactly that change.
 	sc := oneWall()
-	want := sight.VisibleFrom(sc, 0, 0, 0, 1)["1,1"]
-	if !want {
+	if !sight.VisibleFrom(sc, 0, 0, 0, 1)["1,1"] {
 		t.Fatal("premise: 1,1 must be visible at tolerance 1, or this test proves nothing")
+	}
+	if sight.VisibleFrom(sc, 0, 0, 0, 1)["2,1"] {
+		t.Fatal("premise: 2,1 must be hidden at tolerance 1 — all nine of its points " +
+			"are covered by the wall at 1,0 — or the negative half proves nothing")
 	}
 	for _, tol := range []int{0, -1, -9} {
 		if !sight.VisibleFrom(sc, 0, 0, 0, tol)["1,1"] {
-			t.Errorf("tolerance %d must behave as 1, so 1,1 must be visible", tol)
+			t.Errorf("tolerance %d must behave as 1, so partly-exposed 1,1 must be visible", tol)
+		}
+		if sight.VisibleFrom(sc, 0, 0, 0, tol)["2,1"] {
+			t.Errorf("tolerance %d must behave as 1, NOT as \"no points needed\" — fully "+
+				"covered 2,1 must stay hidden", tol)
 		}
 	}
 }
