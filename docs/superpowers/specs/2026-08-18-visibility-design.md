@@ -159,6 +159,41 @@ ignores it for movement. Its reasoning holds here: no spec defines how rotation
 reshapes a footprint, and inventing that transform for sight alone would make
 sight and movement disagree about the same object.
 
+### 3.3.1 Nine points, a tolerance, and NO symmetry
+
+**Sight is measured from the viewer's CENTRE to NINE points on the target** —
+its four corners, its four edge midpoints, and its centre. A **tolerance**
+says how many of the nine must be reachable before the target counts as seen.
+
+This is MapTool's design, adopted deliberately after reading it (Patrik,
+2026-08-19: *"keep the asymmetry and use the nine points"*). Tolerance is an
+INPUT in the same sense sight range is (§3.4): tolerance 1 means a sliver of
+exposure reveals you, tolerance 9 means you must be fully in the open, and
+which it should be is a rules question rather than a platform one.
+
+**SIGHT IS THEREFORE NOT SYMMETRIC, and this spec previously claimed it was.**
+An earlier draft made symmetry a keystone property — *"if A sees B, B sees A,
+same ray, same blockers"* — which is false under centre-to-many sampling, and
+the test written for it could not fail because its fixture was an open
+corridor. A Task 1 review found the counterexample by exhaustive search:
+
+    3x3 grid, all floor except one wall at 1,0.
+      from 0,0 the square 2,1 is NOT visible
+      from 2,1 the square 0,0 IS     visible
+
+The cause is structural, not rounding: one point at the viewer against many at
+the target is not a symmetric relation, whatever the geometry.
+
+**Kept rather than fixed, for two reasons.** MapTool has shipped exactly this
+for two decades, so asymmetry is not a defect that sinks a virtual tabletop.
+And symmetry would foreclose something we will want: MapTool's **Hill VBL and
+Pit VBL** are deliberately one-directional — outside a hill you see into it but
+not beyond, inside it you see out — which is cover AND vantage, the thing maps
+§11.3 said the pillar model could not reach, achieved with **no coordinate
+system at all**. §2 excludes elevation as "a whole coordinate system"; direction
+dependent blockers are how that exclusion gets lifted later without one.
+A symmetric predicate cannot express a hill.
+
 ### 3.4 Sight range is an input
 
 Patrik, 2026-08-18: *"this should not be driven by the engine. It should be
@@ -362,8 +397,12 @@ per load-bearing assertion.
 
 **Three properties, each catching a class of bug:**
 
-- **Symmetry.** If A sees B, B sees A — same ray, same blockers. Asymmetric
-  sight is the classic geometry bug and is invisible in a screenshot.
+- **Asymmetry is PINNED, not assumed.** An earlier draft asserted symmetry
+  here and was wrong (§3.3.1). Assert the counterexample instead — from 0,0 the
+  square 2,1 is unseen while from 2,1 the square 0,0 is seen — so that anyone
+  who later "fixes" the sampling into symmetry has to come here and read why it
+  is that way. A property this spec got wrong once is worth a test that states
+  the truth out loud.
 - **Purity.** The projection computed live and from catch-up are identical.
   That is what makes a mid-fight reconnect safe.
 - **Monotonic memory.** Explored terrain never shrinks.
