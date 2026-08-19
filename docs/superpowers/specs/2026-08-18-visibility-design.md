@@ -216,12 +216,36 @@ Concealment stays **binary**. The graded feel of a wood emerges from **density**
 — deeper sightlines meet more trunks, and along a forest edge the gaps line up.
 No degree-valued predicate.
 
-maps §11.2 says a trunk is smaller than its square, and **the format cannot
-express that**: `SceneObject.width/height` are `int32` with a 1×1 minimum. Ruled
-2026-08-18: **squares now, fractional later.** This arc ships whole-square
-blockers. The seam is not an interface with one implementation — it is that the
-sight test consumes **rectangles in continuous coordinates**, so a later arc
-hands it narrower ones and the test never learns the difference.
+maps §11.2 says a trunk is smaller than its square, and **the schema cannot
+express that**: `SceneObject.width/height` are `int32`, so a trunk occupying
+0.4 of a square is not a value the wire can carry. That is why "fractional
+later" needs an additive contract change and not merely a looser loader.
+
+Ruled 2026-08-18: **squares now, fractional later.** This arc ships
+whole-square blockers. The seam is not an interface with one implementation —
+it is that the sight test consumes **rectangles in continuous coordinates**, so
+a later arc hands it narrower ones and the test never learns the difference.
+
+**Three separate facts, which an earlier draft of this section ran together
+and which `internal/sight`'s own comments then got wrong in both directions
+(Task 1, rounds 1–2).** Keep them apart:
+
+1. **The proto type cannot express a fractional footprint** — `int32`. This is
+   the sentence above, and it is about EXPRESSIVENESS.
+2. **The 1×1 minimum is not in the type; every ingest path enforces it.**
+   `create_scene` goes through `validateCreateSceneTerrain` →
+   `mapdef.CheckObjectFootprints` before anything is appended, and the map-file
+   and adventure loaders call the same check. MCP is not a bypass: a tool call
+   becomes a `ClientCommand` into the same handler.
+3. **The fold does not re-validate replayed history.** `campaign.foldEvents` →
+   `engine.Apply` copies stored objects verbatim, so a log persisted before
+   that validation existed can still carry a degenerate footprint.
+
+Fact 3 is why `internal/sight` guards its input rather than trusting it: a
+geometry library cannot see which path produced the `engine.Scene` it was
+handed, and a zero-width blocker casts a shadow line while movement walks
+straight through it — sight and movement disagreeing about the same object,
+which §3.3's rotation ruling exists to prevent.
 
 ---
 
