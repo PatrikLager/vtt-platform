@@ -92,10 +92,23 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return openDoorCmd("scn", 0, 1)
 	case "close_door":
 		return closeDoorCmd("scn", 0, 1)
+	case "set_viewpoint":
+		return setViewpointCmd("hero")
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
 	}
+}
+
+// setViewpointCmd builds a minimal, valid SetViewpoint ClientCommand naming
+// actorID as the shoulder to perch on (visibility spec §3.1.1). Authorize
+// only checks role here — MayPerch's player-controlled-actor check is
+// Task 6's, wired into Authorize's switch there the same way mayWorkDoor was
+// for open_door/close_door above.
+func setViewpointCmd(actorID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_SetViewpoint{
+		SetViewpoint: &vttv1.SetViewpoint{ActorId: actorID},
+	}}
 }
 
 // loadAdventureCmd builds a minimal, valid LoadAdventure ClientCommand

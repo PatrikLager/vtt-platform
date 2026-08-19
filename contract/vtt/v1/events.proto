@@ -166,6 +166,31 @@ message SceneCreated {
   repeated SceneObject objects = 6;
 }
 
+// TokenHidden says a token left YOUR view. PROJECTION-ONLY: no command
+// produces it, so it can never reach the log — internal/gateway synthesizes
+// it per recipient (visibility spec §4.2). It is a fact about a viewer's
+// knowledge, not about the world, which is why the world's log does not
+// carry it.
+message TokenHidden {
+  string token_id = 1;
+}
+
+// SceneSeen carries what a viewer can see of a scene RIGHT NOW — the whole
+// current visible set, never a delta.
+//
+// Whole-set is deliberate: it is idempotent, so the projection needs no
+// per-connection memory of what it already sent, and visibility spec §4.1's
+// purity (a function of log-so-far and viewer, with nothing stored per
+// connection) survives. The client UNIONS these into its explored set, which
+// is what makes terrain remembered and creatures not.
+//
+// PROJECTION-ONLY, like TokenHidden.
+message SceneSeen {
+  string scene_id = 1;
+  map<string, TileRef> tiles = 2;
+  repeated SceneObject objects = 3;
+}
+
 // A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
 // whether it is open is folded state here, never part of the tile name —
 // encoding openness in the vocabulary would put a mutable fact in an
@@ -278,5 +303,13 @@ message Envelope {
     ActorControlRevoked actor_control_revoked = 27;
     DoorOpened door_opened = 28;
     DoorClosed door_closed = 29;
+    // Field numbers 30/31, not the brief's 28/29 — 27 was not the highest
+    // in use: DoorOpened/DoorClosed already hold 28/29 (maps-as-geometry
+    // Task 1 fix, landed after the plan's signatures were captured). Reusing
+    // 28/29 here would silently collide two payload types onto the same
+    // wire tag, which ADR-007/check:breaking exists to catch — corrected to
+    // the actual next-free numbers instead (visibility Task 2 report).
+    TokenHidden token_hidden = 30;
+    SceneSeen scene_seen = 31;
   }
 }

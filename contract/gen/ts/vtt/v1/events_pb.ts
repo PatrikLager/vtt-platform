@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSKICQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIAEIJCgdwYXlsb2FkQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIh8KC1Rva2VuSGlkZGVuEhAKCHRva2VuX2lkGAEgASgJIq8BCglTY2VuZVNlZW4SEAoIc2NlbmVfaWQYASABKAkSKwoFdGlsZXMYAiADKAsyHC52dHQudjEuU2NlbmVTZWVuLlRpbGVzRW50cnkSJAoHb2JqZWN0cxgDIAMoCzITLnZ0dC52MS5TY2VuZU9iamVjdBo9CgpUaWxlc0VudHJ5EgsKA2tleRgBIAEoCRIeCgV2YWx1ZRgCIAEoCzIPLnZ0dC52MS5UaWxlUmVmOgI4ASJACgpEb29yT3BlbmVkEhAKCHNjZW5lX2lkGAEgASgJEiAKAmF0GAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiJACgpEb29yQ2xvc2VkEhAKCHNjZW5lX2lkGAEgASgJEiAKAmF0GAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiIqCgpBY3RvckFkZGVkEhwKBWFjdG9yGAEgASgLMg0udnR0LnYxLkFjdG9yImsKC1Rva2VuUGxhY2VkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEiYKCHBvc2l0aW9uGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiIeCg5TZXNzaW9uU3RhcnRlZBIMCgRuYW1lGAEgASgJIg4KDFNlc3Npb25FbmRlZCJNCg9FdmVudHNSZXRyYWN0ZWQSFQoNZnJvbV9zZXF1ZW5jZRgBIAEoAxITCgt0b19zZXF1ZW5jZRgCIAEoAxIOCgZyZWFzb24YAyABKAkixQEKC0FiaWxpdHlVc2VkEhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCRInCgVyb2xscxgEIAMoCzIYLnZ0dC52MS5BYmlsaXR5VXNlZC5Sb2xsEhcKD291dGNvbWVfc3VtbWFyeRgFIAEoCRo6CgRSb2xsEhIKCmV4cHJlc3Npb24YASABKAkSDwoHcmVzdWx0cxgCIAMoBRINCgV0b3RhbBgDIAEoBSJnCg9SZXNvdXJjZUNoYW5nZWQSEAoIYWN0b3JfaWQYASABKAkSEAoIcmVzb3VyY2UYAiABKAkSDQoFZGVsdGEYAyABKAUSEQoJbmV3X3ZhbHVlGAQgASgFEg4KBnJlYXNvbhgFIAEoCSJKChBDb25kaXRpb25BcHBsaWVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZzb3VyY2UYAyABKAkiSgoQQ29uZGl0aW9uUmVtb3ZlZBIQCghhY3Rvcl9pZBgBIAEoCRIUCgxjb25kaXRpb25faWQYAiABKAkSDgoGcmVhc29uGAMgASgJIloKDk5hcnJhdGlvbkFkZGVkEgwKBHRleHQYASABKAkSCgoCYXMYAiABKAkSFwoPYW5jaG9yX2Zyb21fc2VxGAMgASgDEhUKDWFuY2hvcl90b19zZXEYBCABKAMiOAoMTm90ZVVwc2VydGVkEgsKA2tleRgBIAEoCRINCgV0aXRsZRgCIAEoCRIMCgR0ZXh0GAMgASgJIhoKC05vdGVEZWxldGVkEgsKA2tleRgBIAEoCSI1Cg9BZHZlbnR1cmVMb2FkZWQSFAoMYWR2ZW50dXJlX2lkGAEgASgJEgwKBG5hbWUYAiABKAki3gkKCEVudmVsb3BlEhAKCGV2ZW50X2lkGAEgASgJEhAKCHNlcXVlbmNlGAIgASgDEi8KC29jY3VycmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCmFjdG9yX3JvbGUYBSABKAkSFgoOcGFydGljaXBhbnRfaWQYBiABKAkSKQoLdG9rZW5fbW92ZWQYCiABKAsyEi52dHQudjEuVG9rZW5Nb3ZlZEgAEi0KDWF0dGFja19yb2xsZWQYCyABKAsyFC52dHQudjEuQXR0YWNrUm9sbGVkSAASLQoNc2NlbmVfY3JlYXRlZBgMIAEoCzIULnZ0dC52MS5TY2VuZUNyZWF0ZWRIABIpCgthY3Rvcl9hZGRlZBgNIAEoCzISLnZ0dC52MS5BY3RvckFkZGVkSAASKwoMdG9rZW5fcGxhY2VkGA4gASgLMhMudnR0LnYxLlRva2VuUGxhY2VkSAASMQoPc2Vzc2lvbl9zdGFydGVkGA8gASgLMhYudnR0LnYxLlNlc3Npb25TdGFydGVkSAASLQoNc2Vzc2lvbl9lbmRlZBgQIAEoCzIULnZ0dC52MS5TZXNzaW9uRW5kZWRIABIzChBldmVudHNfcmV0cmFjdGVkGBEgASgLMhcudnR0LnYxLkV2ZW50c1JldHJhY3RlZEgAEisKDGFiaWxpdHlfdXNlZBgSIAEoCzITLnZ0dC52MS5BYmlsaXR5VXNlZEgAEjMKEHJlc291cmNlX2NoYW5nZWQYEyABKAsyFy52dHQudjEuUmVzb3VyY2VDaGFuZ2VkSAASNQoRY29uZGl0aW9uX2FwcGxpZWQYFCABKAsyGC52dHQudjEuQ29uZGl0aW9uQXBwbGllZEgAEjUKEWNvbmRpdGlvbl9yZW1vdmVkGBUgASgLMhgudnR0LnYxLkNvbmRpdGlvblJlbW92ZWRIABIxCg9uYXJyYXRpb25fYWRkZWQYFiABKAsyFi52dHQudjEuTmFycmF0aW9uQWRkZWRIABItCg1ub3RlX3Vwc2VydGVkGBcgASgLMhQudnR0LnYxLk5vdGVVcHNlcnRlZEgAEisKDG5vdGVfZGVsZXRlZBgYIAEoCzITLnZ0dC52MS5Ob3RlRGVsZXRlZEgAEjMKEGFkdmVudHVyZV9sb2FkZWQYGSABKAsyFy52dHQudjEuQWR2ZW50dXJlTG9hZGVkSAASPAoVYWN0b3JfY29udHJvbF9ncmFudGVkGBogASgLMhsudnR0LnYxLkFjdG9yQ29udHJvbEdyYW50ZWRIABI8ChVhY3Rvcl9jb250cm9sX3Jldm9rZWQYGyABKAsyGy52dHQudjEuQWN0b3JDb250cm9sUmV2b2tlZEgAEikKC2Rvb3Jfb3BlbmVkGBwgASgLMhIudnR0LnYxLkRvb3JPcGVuZWRIABIpCgtkb29yX2Nsb3NlZBgdIAEoCzISLnZ0dC52MS5Eb29yQ2xvc2VkSAASKwoMdG9rZW5faGlkZGVuGB4gASgLMhMudnR0LnYxLlRva2VuSGlkZGVuSAASJwoKc2NlbmVfc2VlbhgfIAEoCzIRLnZ0dC52MS5TY2VuZVNlZW5IAEIJCgdwYXlsb2FkQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -496,6 +496,67 @@ export const SceneCreatedSchema: GenMessage<SceneCreated> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 11);
 
 /**
+ * TokenHidden says a token left YOUR view. PROJECTION-ONLY: no command
+ * produces it, so it can never reach the log — internal/gateway synthesizes
+ * it per recipient (visibility spec §4.2). It is a fact about a viewer's
+ * knowledge, not about the world, which is why the world's log does not
+ * carry it.
+ *
+ * @generated from message vtt.v1.TokenHidden
+ */
+export type TokenHidden = Message<"vtt.v1.TokenHidden"> & {
+  /**
+   * @generated from field: string token_id = 1;
+   */
+  tokenId: string;
+};
+
+/**
+ * Describes the message vtt.v1.TokenHidden.
+ * Use `create(TokenHiddenSchema)` to create a new message.
+ */
+export const TokenHiddenSchema: GenMessage<TokenHidden> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 12);
+
+/**
+ * SceneSeen carries what a viewer can see of a scene RIGHT NOW — the whole
+ * current visible set, never a delta.
+ *
+ * Whole-set is deliberate: it is idempotent, so the projection needs no
+ * per-connection memory of what it already sent, and visibility spec §4.1's
+ * purity (a function of log-so-far and viewer, with nothing stored per
+ * connection) survives. The client UNIONS these into its explored set, which
+ * is what makes terrain remembered and creatures not.
+ *
+ * PROJECTION-ONLY, like TokenHidden.
+ *
+ * @generated from message vtt.v1.SceneSeen
+ */
+export type SceneSeen = Message<"vtt.v1.SceneSeen"> & {
+  /**
+   * @generated from field: string scene_id = 1;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: map<string, vtt.v1.TileRef> tiles = 2;
+   */
+  tiles: { [key: string]: TileRef };
+
+  /**
+   * @generated from field: repeated vtt.v1.SceneObject objects = 3;
+   */
+  objects: SceneObject[];
+};
+
+/**
+ * Describes the message vtt.v1.SceneSeen.
+ * Use `create(SceneSeenSchema)` to create a new message.
+ */
+export const SceneSeenSchema: GenMessage<SceneSeen> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 13);
+
+/**
  * A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
  * whether it is open is folded state here, never part of the tile name —
  * encoding openness in the vocabulary would put a mutable fact in an
@@ -520,7 +581,7 @@ export type DoorOpened = Message<"vtt.v1.DoorOpened"> & {
  * Use `create(DoorOpenedSchema)` to create a new message.
  */
 export const DoorOpenedSchema: GenMessage<DoorOpened> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 12);
+  messageDesc(file_vtt_v1_events, 14);
 
 /**
  * DoorOpened's counterpart; see DoorOpened's comment above — the same
@@ -545,7 +606,7 @@ export type DoorClosed = Message<"vtt.v1.DoorClosed"> & {
  * Use `create(DoorClosedSchema)` to create a new message.
  */
 export const DoorClosedSchema: GenMessage<DoorClosed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13);
+  messageDesc(file_vtt_v1_events, 15);
 
 /**
  * @generated from message vtt.v1.ActorAdded
@@ -562,7 +623,7 @@ export type ActorAdded = Message<"vtt.v1.ActorAdded"> & {
  * Use `create(ActorAddedSchema)` to create a new message.
  */
 export const ActorAddedSchema: GenMessage<ActorAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 14);
+  messageDesc(file_vtt_v1_events, 16);
 
 /**
  * @generated from message vtt.v1.TokenPlaced
@@ -594,7 +655,7 @@ export type TokenPlaced = Message<"vtt.v1.TokenPlaced"> & {
  * Use `create(TokenPlacedSchema)` to create a new message.
  */
 export const TokenPlacedSchema: GenMessage<TokenPlaced> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 15);
+  messageDesc(file_vtt_v1_events, 17);
 
 /**
  * @generated from message vtt.v1.SessionStarted
@@ -611,7 +672,7 @@ export type SessionStarted = Message<"vtt.v1.SessionStarted"> & {
  * Use `create(SessionStartedSchema)` to create a new message.
  */
 export const SessionStartedSchema: GenMessage<SessionStarted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 16);
+  messageDesc(file_vtt_v1_events, 18);
 
 /**
  * @generated from message vtt.v1.SessionEnded
@@ -624,7 +685,7 @@ export type SessionEnded = Message<"vtt.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 17);
+  messageDesc(file_vtt_v1_events, 19);
 
 /**
  * Compensating undo marker (spec §6). Retraction events cannot themselves
@@ -654,7 +715,7 @@ export type EventsRetracted = Message<"vtt.v1.EventsRetracted"> & {
  * Use `create(EventsRetractedSchema)` to create a new message.
  */
 export const EventsRetractedSchema: GenMessage<EventsRetracted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 18);
+  messageDesc(file_vtt_v1_events, 20);
 
 /**
  * @generated from message vtt.v1.AbilityUsed
@@ -691,7 +752,7 @@ export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
  * Use `create(AbilityUsedSchema)` to create a new message.
  */
 export const AbilityUsedSchema: GenMessage<AbilityUsed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19);
+  messageDesc(file_vtt_v1_events, 21);
 
 /**
  * @generated from message vtt.v1.AbilityUsed.Roll
@@ -718,7 +779,7 @@ export type AbilityUsed_Roll = Message<"vtt.v1.AbilityUsed.Roll"> & {
  * Use `create(AbilityUsed_RollSchema)` to create a new message.
  */
 export const AbilityUsed_RollSchema: GenMessage<AbilityUsed_Roll> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19, 0);
+  messageDesc(file_vtt_v1_events, 21, 0);
 
 /**
  * @generated from message vtt.v1.ResourceChanged
@@ -755,7 +816,7 @@ export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
  * Use `create(ResourceChangedSchema)` to create a new message.
  */
 export const ResourceChangedSchema: GenMessage<ResourceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 20);
+  messageDesc(file_vtt_v1_events, 22);
 
 /**
  * @generated from message vtt.v1.ConditionApplied
@@ -782,7 +843,7 @@ export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
  * Use `create(ConditionAppliedSchema)` to create a new message.
  */
 export const ConditionAppliedSchema: GenMessage<ConditionApplied> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 21);
+  messageDesc(file_vtt_v1_events, 23);
 
 /**
  * @generated from message vtt.v1.ConditionRemoved
@@ -809,7 +870,7 @@ export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
  * Use `create(ConditionRemovedSchema)` to create a new message.
  */
 export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 22);
+  messageDesc(file_vtt_v1_events, 24);
 
 /**
  * @generated from message vtt.v1.NarrationAdded
@@ -841,7 +902,7 @@ export type NarrationAdded = Message<"vtt.v1.NarrationAdded"> & {
  * Use `create(NarrationAddedSchema)` to create a new message.
  */
 export const NarrationAddedSchema: GenMessage<NarrationAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 23);
+  messageDesc(file_vtt_v1_events, 25);
 
 /**
  * @generated from message vtt.v1.NoteUpserted
@@ -868,7 +929,7 @@ export type NoteUpserted = Message<"vtt.v1.NoteUpserted"> & {
  * Use `create(NoteUpsertedSchema)` to create a new message.
  */
 export const NoteUpsertedSchema: GenMessage<NoteUpserted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 24);
+  messageDesc(file_vtt_v1_events, 26);
 
 /**
  * @generated from message vtt.v1.NoteDeleted
@@ -885,7 +946,7 @@ export type NoteDeleted = Message<"vtt.v1.NoteDeleted"> & {
  * Use `create(NoteDeletedSchema)` to create a new message.
  */
 export const NoteDeletedSchema: GenMessage<NoteDeleted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 25);
+  messageDesc(file_vtt_v1_events, 27);
 
 /**
  * Pure testimony (AbilityUsed's pattern — engine no-op): the compile
@@ -912,7 +973,7 @@ export type AdventureLoaded = Message<"vtt.v1.AdventureLoaded"> & {
  * Use `create(AdventureLoadedSchema)` to create a new message.
  */
 export const AdventureLoadedSchema: GenMessage<AdventureLoaded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 26);
+  messageDesc(file_vtt_v1_events, 28);
 
 /**
  * @generated from message vtt.v1.Envelope
@@ -1073,6 +1134,25 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: DoorClosed;
     case: "doorClosed";
+  } | {
+    /**
+     * Field numbers 30/31, not the brief's 28/29 — 27 was not the highest
+     * in use: DoorOpened/DoorClosed already hold 28/29 (maps-as-geometry
+     * Task 1 fix, landed after the plan's signatures were captured). Reusing
+     * 28/29 here would silently collide two payload types onto the same
+     * wire tag, which ADR-007/check:breaking exists to catch — corrected to
+     * the actual next-free numbers instead (visibility Task 2 report).
+     *
+     * @generated from field: vtt.v1.TokenHidden token_hidden = 30;
+     */
+    value: TokenHidden;
+    case: "tokenHidden";
+  } | {
+    /**
+     * @generated from field: vtt.v1.SceneSeen scene_seen = 31;
+     */
+    value: SceneSeen;
+    case: "sceneSeen";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1081,5 +1161,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 27);
+  messageDesc(file_vtt_v1_events, 29);
 

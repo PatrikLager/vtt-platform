@@ -37,7 +37,11 @@ import (
 // MCP tools automatically, the way load_adventure did"), and 15 to 16 with
 // load_map (maps-as-geometry whole-branch review C1: a standalone map could
 // be validated, listed and have its art served, but never loaded into a
-// campaign — load_map is load_adventure's sibling for a standalone map).
+// campaign — load_map is load_adventure's sibling for a standalone map), and
+// 16 to 17 with set_viewpoint (visibility sub-project, Task 2 — a spectator's
+// perch; not yet authorized beyond the role check or convertible by the
+// gateway, which is Task 6's job, but already a real MCP tool the moment the
+// oneof carries it, same as open_door/close_door were before their Task 6).
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",
@@ -49,6 +53,7 @@ var wantCommandToolNames = []string{
 	"set_join_door", "rotate_join_link",
 	"open_door", "close_door",
 	"load_map",
+	"set_viewpoint",
 }
 
 // This test scopes itself to "the command tools are present by name" — it

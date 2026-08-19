@@ -78,6 +78,17 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// it" — is mayWorkDoor, below, wired into Authorize's switch (Task 6).
 	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	// set_viewpoint (visibility spec §3.1.1, Task 6). Pre-registered here in
+	// Task 2, ahead of Task 6's handler, purely so the reflection gates below
+	// (TestEveryClientCommandConverts/TestEveryClientCommandHasRoleCells,
+	// which run the instant a oneof arm exists, with no allowance for "not
+	// wired yet") stay green the moment the wire message exists. Spectator
+	// only, per the plan's own Task 6 text: a perch is how a spectator with
+	// no character of their own borrows someone else's eyes. Until Task 6
+	// adds the handleSetViewpoint special case, Authorize will let this
+	// through but ToEvent's default case still refuses it as unknown, so a
+	// spectator sending it today gets an honest error, never a silent no-op.
+	"set_viewpoint": {identity.RoleSpectator: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -312,6 +323,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "open_door"
 	case *vttv1.ClientCommand_CloseDoor:
 		return "close_door"
+	case *vttv1.ClientCommand_SetViewpoint:
+		return "set_viewpoint"
 	default:
 		return ""
 	}

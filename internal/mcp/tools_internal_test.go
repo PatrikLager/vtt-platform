@@ -50,6 +50,7 @@ var theCommandTools = []string{
 	"open_door",
 	"close_door",
 	"load_map",
+	"set_viewpoint",
 }
 
 func TestParseToolsJSONRejectsMalformedInput(t *testing.T) {
