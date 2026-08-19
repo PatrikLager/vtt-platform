@@ -8,6 +8,10 @@ import { FoldError } from "../src/state";
 // scenarios roll dice and are excluded until a roller seam exists (see
 // scenarios/goldens/README.md), which leaves resourceChanged,
 // conditionApplied/Removed and the ability/adventure no-ops unexercised.
+// tokenHidden/sceneSeen are unexercised for a different, permanent reason:
+// visibility spec §5 says both are PROJECTION-ONLY — no command produces
+// them, so they cannot structurally reach the real log the corpus is
+// recorded from, ever.
 //
 // Shipping them on the strength of "the corpus is green" would be shipping
 // untested code behind a passing gate. These are hand-written against
@@ -409,4 +413,104 @@ test("terrain and door state reach the dump the parity keystone compares", () =>
   expect(sc.Tiles["0,1"]).toEqual({ Kind: "door", Material: "wood", Art: "" });
   expect(sc.Objects[0].RotationDegrees).toBe(90);
   expect(sc.OpenDoors["0,1"]).toBe(true);
+});
+
+// --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
+//
+// Both arms are PROJECTION-ONLY: no command produces them (spec §5), so they
+// never reach scenarios/goldens' recorded streams. Mirrors
+// internal/engine/visibility_fold_test.go's three tests exactly — same
+// scenario shapes, same assertions — because the two folds are the load-
+// bearing mirror the keystone (spec §4.3) depends on.
+
+/** A 3x3 scene with two actors, each carrying a token. */
+function twoTokenScene(): Envelope[] {
+  return [
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 3, gridHeight: 3 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "a1" } } }),
+    env(3, { actorAdded: { actor: { actorId: "a2", name: "a2" } } }),
+    env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s", actorId: "a1", position: { x: 0, y: 0 } } }),
+    env(5, { tokenPlaced: { tokenId: "t2", sceneId: "s", actorId: "a2", position: { x: 1, y: 1 } } }),
+  ];
+}
+
+test("tokenHidden forgets only that token", () => {
+  const st = fold([...twoTokenScene(), env(6, { tokenHidden: { tokenId: "t1" } })]);
+  expect(st.Tokens["t1"]).toBeUndefined();
+  expect(st.Tokens["t2"]).toBeDefined();
+});
+
+test("hiding a token twice is not an error", () => {
+  // The projection is idempotent by design; a repeated hide must not throw.
+  //
+  // `not.toThrow()` alone would pass even with no tokenHidden arm at all —
+  // fold.ts's default case SKIPS an unrecognised variant rather than
+  // throwing (forward compatibility), so an unwired case is silently
+  // tolerant too and this assertion could not tell the two apart. Asserting
+  // t1 is actually GONE after the first hide forces the arm to be real:
+  // that assertion fails if tokenHidden falls through to the skip-default
+  // instead of deleting.
+  const once = fold([...twoTokenScene(), env(6, { tokenHidden: { tokenId: "t1" } })]);
+  expect(once.Tokens["t1"]).toBeUndefined();
+  expect(once.Tokens["t2"]).toBeDefined();
+
+  // Hiding it again must not throw (this call itself is the assertion — an
+  // uncaught throw fails the test) and must leave the same state behind.
+  const twice = fold([
+    ...twoTokenScene(),
+    env(6, { tokenHidden: { tokenId: "t1" } }),
+    env(7, { tokenHidden: { tokenId: "t1" } }),
+  ]);
+  expect(twice.Tokens["t1"]).toBeUndefined();
+  expect(twice.Tokens["t2"]).toBeDefined();
+});
+
+test("sceneSeen unions into Explored and never shrinks", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 3, gridHeight: 3 } }),
+    env(3, { sceneSeen: { sceneId: "s", tiles: { "0,0": { kind: "floor" } } } }),
+    env(4, { sceneSeen: { sceneId: "s", tiles: { "1,1": { kind: "wall" } } } }),
+  ]);
+  const sc = st.Scenes["s"]!;
+  expect(sc.Explored!["0,0"]).toBe(true); // seen first, still explored
+  expect(sc.Explored!["1,1"]).toBe(true); // seen second
+  expect(sc.Tiles!["1,1"]!.Kind).toBe("wall"); // a seen tile lands in Tiles too
+});
+
+test("sceneSeen's objects REPLACE a repeated id in place and APPEND a new one", () => {
+  // Mirrors internal/engine/visibility_fold_test.go's
+  // TestSceneSeenObjectsMergeReplacingDuplicatesAndAppendingNew — same
+  // scenario, same assertions. SceneSeen carries the whole currently-visible
+  // set each time (spec §5), so the same object arrives on every frame it
+  // stays visible and must not accumulate duplicates.
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 3, gridHeight: 3 } }),
+    env(3, {
+      sceneSeen: {
+        sceneId: "s",
+        objects: [{ objectId: "crate-1", kind: "crate", at: { x: 0, y: 0 }, blocksSight: false }],
+      },
+    }),
+    env(4, {
+      sceneSeen: {
+        sceneId: "s",
+        objects: [
+          // crate-1 moved AND its sight-blocking changed: same id, must replace.
+          { objectId: "crate-1", kind: "crate", at: { x: 1, y: 0 }, blocksSight: true },
+          // pillar-1 is new: must append, not disturb crate-1's slot.
+          { objectId: "pillar-1", kind: "pillar", at: { x: 2, y: 2 } },
+        ],
+      },
+    }),
+  ]);
+
+  const objs = st.Scenes["s"]!.Objects!;
+  expect(objs).toHaveLength(2);
+  const crate = objs.find((o) => o.ObjectID === "crate-1");
+  const pillar = objs.find((o) => o.ObjectID === "pillar-1");
+  expect(crate).toMatchObject({ X: 1, BlocksSight: true });
+  expect(pillar).toBeDefined();
 });

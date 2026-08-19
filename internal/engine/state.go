@@ -67,6 +67,27 @@ type Scene struct {
 	// would turn writing into a Go panic — crashing the fold instead of the
 	// validation error Apply's own doc comment promises.
 	OpenDoors map[string]bool
+
+	// Explored is the squares this VIEWER has ever seen, keyed like Tiles.
+	// Client-side memory mirrored here so the same fold runs in both
+	// languages (visibility spec §6). It only ever grows: terrain is
+	// remembered, creatures are not.
+	//
+	// EMPTY FOR THE DM AND FOR THE LOG. Nothing in a campaign's log produces
+	// SceneSeen, so a Scene folded from the real log has Explored nil — this
+	// field is populated only when folding a PROJECTION.
+	//
+	// `json:",omitempty"` is load-bearing, not decoration: Scene has no other
+	// json tags (every other field always marshals, per this file's own
+	// header comment), and cmd/vtt's dump plus internal/harness's golden
+	// comparison both call json.Marshal(State) directly with no field
+	// allowlist. Every existing scenarios/goldens/*/state.json fixture folds
+	// from the real log, so Explored is nil there — an untagged field would
+	// have serialized as `"Explored": null` on every one of them and failed
+	// every golden byte-comparison this same commit is supposed to leave
+	// green. Confirmed by running the golden suite both ways (see
+	// task-3-report.md).
+	Explored map[string]bool `json:",omitempty"`
 }
 
 type Token struct {
@@ -135,12 +156,28 @@ func (st *State) Snapshot() *State {
 		for dk, dv := range v.OpenDoors {
 			doors[dk] = dv
 		}
+		// Explored gets the same treatment as OpenDoors, for the same
+		// reason: the SceneSeen fold arm mutates it after the Scene is
+		// created, so a nil-check-then-share copy would let a snapshot
+		// holder watch a projection's fog of war clear out from under it.
+		// Unlike OpenDoors, nil stays nil here rather than becoming
+		// `map[string]bool{}` — a DM/log-folded Scene's Explored is nil by
+		// design (state.go's own doc comment on the field), and Snapshot
+		// promises a deep COPY, not a change of zero value.
+		var explored map[string]bool
+		if v.Explored != nil {
+			explored = make(map[string]bool, len(v.Explored))
+			for ek, ev := range v.Explored {
+				explored[ek] = ev
+			}
+		}
 		out.Scenes[k] = Scene{
 			ID: v.ID, Name: v.Name,
 			GridWidth: v.GridWidth, GridHeight: v.GridHeight,
 			Tiles:     tiles,
 			Objects:   append([]SceneObject(nil), v.Objects...),
 			OpenDoors: doors,
+			Explored:  explored,
 		}
 	}
 	for k, v := range st.Actors {

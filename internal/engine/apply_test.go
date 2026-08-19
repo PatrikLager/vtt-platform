@@ -45,6 +45,10 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
 	case *vttv1.AdventureLoaded:
 		e.Payload = &vttv1.Envelope_AdventureLoaded{AdventureLoaded: p}
+	case *vttv1.TokenHidden:
+		e.Payload = &vttv1.Envelope_TokenHidden{TokenHidden: p}
+	case *vttv1.SceneSeen:
+		e.Payload = &vttv1.Envelope_SceneSeen{SceneSeen: p}
 	}
 	return e
 }

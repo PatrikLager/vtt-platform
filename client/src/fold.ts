@@ -101,6 +101,12 @@ function apply(st: State, env: Envelope): void {
         // object, not left absent, so doorOpened/doorClosed below never
         // need their lazy-init guard for a scene built HERE.
         OpenDoors: {},
+        // Explored starts empty too, mirroring apply.go's SceneCreated arm
+        // (which leaves it nil — Go's zero value for "nothing"). `{}` here
+        // rather than nil for the same reason OpenDoors is `{}`: TypeScript
+        // has no implicit "absent means empty" read, so sceneSeen below can
+        // always write into it without its own lazy-init guard.
+        Explored: {},
       };
       return;
     }
@@ -168,6 +174,55 @@ function apply(st: State, env: Envelope): void {
       // `from` and `sceneId` are ignored entirely, exactly as Go does.
       tok.X = v.to.x;
       tok.Y = v.to.y;
+      return;
+    }
+    case "tokenHidden": {
+      // PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
+      // token left their view. Deleting an absent token is deliberately NOT
+      // an error — the projection is idempotent by construction (spec §5:
+      // sceneSeen/tokenHidden carry the whole current visible set, so there
+      // is no per-connection "what did I already send" bookkeeping to
+      // desynchronise), and this arm mirrors apply.go's TokenHidden case so
+      // whichever language folds a re-sent hide, the outcome agrees.
+      //
+      // Verified, not assumed: a thrown FoldError here would not merely fail
+      // this one event. session.ts's Session.ingest re-folds the ENTIRE
+      // accumulated log on every new event (see its own doc comment on why),
+      // and the log is append-only, so a poisoned entry would recur on
+      // every future fold call — freezing this viewer's derived state for
+      // the rest of the session, not just skipping one redraw. That is the
+      // concrete shape of the "worst failure" spec §8 warns a strict fold
+      // would produce here.
+      delete st.Tokens[p.value.tokenId];
+      return;
+    }
+    case "sceneSeen": {
+      const v = p.value;
+      const sc = st.Scenes[v.sceneId];
+      if (!sc) throw new FoldError(`scene seen for unknown scene "${v.sceneId}"`);
+      // sceneCreated above always sets Tiles, Objects and Explored on any
+      // Scene built through the fold, but Scene marks all three optional
+      // (state.ts) to let bare test literals elsewhere keep compiling — so
+      // this arm defaults defensively before writing, the same guard shape
+      // ensureOpenDoors below uses for doorOpened/doorClosed.
+      if (!sc.Tiles) sc.Tiles = {};
+      if (!sc.Explored) sc.Explored = {};
+      if (!sc.Objects) sc.Objects = [];
+      for (const [key, ref] of Object.entries(v.tiles)) {
+        sc.Tiles[key] = { Kind: ref.kind, Material: ref.material, Art: ref.art };
+        sc.Explored[key] = true;
+      }
+      for (const o of v.objects) {
+        const i = sc.Objects.findIndex((e) => e.ObjectID === o.objectId);
+        const got = {
+          ObjectID: o.objectId, Kind: o.kind,
+          X: o.at?.x ?? 0, Y: o.at?.y ?? 0,
+          Width: o.width, Height: o.height,
+          RotationDegrees: o.rotationDegrees,
+          BlocksSight: o.blocksSight, BlocksMove: o.blocksMove, Art: o.art,
+        };
+        if (i >= 0) sc.Objects[i] = got; else sc.Objects.push(got);
+      }
       return;
     }
     case "conditionApplied": {

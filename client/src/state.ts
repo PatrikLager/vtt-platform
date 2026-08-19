@@ -69,6 +69,19 @@ export interface Scene {
   Tiles?: Record<string, Tile>;
   Objects?: SceneObject[];
   OpenDoors?: Record<string, boolean>;
+  /**
+   * Explored is the squares THIS VIEWER has ever seen, keyed like Tiles.
+   * Mirrors internal/engine's Scene.Explored (state.go) so the same fold
+   * runs in both languages (visibility spec §6). It only ever grows: terrain
+   * is remembered, creatures are not.
+   *
+   * EMPTY for a scene folded from the real log — nothing in a campaign's log
+   * produces sceneSeen, so this is populated only when folding a
+   * PROJECTION. Optional for the same reason Tiles/Objects/OpenDoors are:
+   * bare Scene literals built directly in other test suites must keep
+   * compiling. fold.ts's sceneCreated arm always sets it to `{}` explicitly.
+   */
+  Explored?: Record<string, boolean>;
 }
 
 export interface Token {

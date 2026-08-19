@@ -371,6 +371,51 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		delete(st.Notes, nd.Key)
 		return nil
 
+	case *vttv1.Envelope_TokenHidden:
+		// PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
+		// token left their view. Deleting an absent token is deliberately
+		// NOT an error — the projection is idempotent by construction (spec
+		// §5: SceneSeen/TokenHidden carry the whole current visible set, so
+		// there is no per-connection "what did I already send" bookkeeping
+		// to desynchronise), and this arm stays tolerant in lockstep with
+		// fold.ts's mirror of it: whichever language folds a re-sent hide,
+		// the outcome must be the same no-op. Refusing it here would fail
+		// the keystone equality (spec §4.3) over traffic the projection
+		// itself considers ordinary. Spec §8 names the failure a STRICT fold
+		// produces as the worst available for this arc — "the strict fold
+		// throws, taking the whole client down" — verified concretely on
+		// the TS side (client/src/fold.ts, client/src/session.ts): Session
+		// re-folds its ENTIRE accumulated log on every new event, so one
+		// throw would not just fail the offending event, it would recur on
+		// every future fold and freeze that viewer's derived state for the
+		// rest of the session.
+		delete(st.Tokens, p.TokenHidden.GetTokenId())
+		return nil
+
+	case *vttv1.Envelope_SceneSeen:
+		ss := p.SceneSeen
+		sc, ok := st.Scenes[ss.GetSceneId()]
+		if !ok {
+			return fmt.Errorf("engine: scene seen for unknown scene %q", ss.GetSceneId())
+		}
+		if sc.Tiles == nil {
+			sc.Tiles = map[string]Tile{}
+		}
+		if sc.Explored == nil {
+			sc.Explored = map[string]bool{}
+		}
+		for key, ref := range ss.GetTiles() {
+			sc.Tiles[key] = Tile{
+				Kind: ref.GetKind(), Material: ref.GetMaterial(), Art: ref.GetArt(),
+			}
+			sc.Explored[key] = true
+		}
+		if objs := ss.GetObjects(); len(objs) > 0 {
+			sc.Objects = mergeObjects(sc.Objects, objs)
+		}
+		st.Scenes[ss.GetSceneId()] = sc
+		return nil
+
 	case *vttv1.Envelope_ConditionRemoved:
 		cr := p.ConditionRemoved
 		if _, ok := st.Actors[cr.ActorId]; !ok {
@@ -416,6 +461,33 @@ func controlTarget(st *State, actorID, participantID, event string) (*vttv1.Acto
 		return nil, fmt.Errorf("engine: %s names unknown actor %q", event, actorID)
 	}
 	return actor, nil
+}
+
+// mergeObjects unions incoming objects into have, replacing by ObjectID.
+// SceneSeen carries the whole currently-visible set each time, so the same
+// object arrives repeatedly and must not accumulate duplicates.
+func mergeObjects(have []SceneObject, incoming []*vttv1.SceneObject) []SceneObject {
+	byID := make(map[string]int, len(have))
+	for i, o := range have {
+		byID[o.ObjectID] = i
+	}
+	for _, o := range incoming {
+		got := SceneObject{
+			ObjectID: o.GetObjectId(), Kind: o.GetKind(),
+			X: o.GetAt().GetX(), Y: o.GetAt().GetY(),
+			Width: o.GetWidth(), Height: o.GetHeight(),
+			RotationDegrees: o.GetRotationDegrees(),
+			BlocksSight:     o.GetBlocksSight(), BlocksMove: o.GetBlocksMove(),
+			Art: o.GetArt(),
+		}
+		if i, dup := byID[got.ObjectID]; dup {
+			have[i] = got
+			continue
+		}
+		byID[got.ObjectID] = len(have)
+		have = append(have, got)
+	}
+	return have
 }
 
 // mirrorControl restores the invariant every reader depends on:
