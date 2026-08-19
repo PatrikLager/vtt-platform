@@ -179,10 +179,14 @@ function apply(st: State, env: Envelope): void {
     case "tokenHidden": {
       // PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
       // token left their view. Deleting an absent token is deliberately NOT
-      // an error — the projection is idempotent by construction (spec §5:
-      // sceneSeen/tokenHidden carry the whole current visible set, so there
-      // is no per-connection "what did I already send" bookkeeping to
-      // desynchronise), and this arm mirrors apply.go's TokenHidden case so
+      // an error — deleting a map key that is already gone is naturally a
+      // no-op, and nothing about tokenHidden's own shape (spec §5: a bare
+      // token_id) requires refusing a second one. Unlike sceneSeen, whose
+      // idempotency spec §5 derives structurally from carrying the whole
+      // current visible set every time, tokenHidden's comes from the
+      // operation itself: the projection may legitimately re-send a hide —
+      // recomputed visibility that already excluded the token, at-least-once
+      // delivery — and this arm mirrors apply.go's TokenHidden case so
       // whichever language folds a re-sent hide, the outcome agrees.
       //
       // Verified, not assumed: a thrown FoldError here would not merely fail
@@ -446,30 +450,47 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
     Actors: sortedMap(st.Actors, actorJSON),
     Conditions: sortedMap(st.Conditions, (cs) => cs.map((c) => ({ ...c }))),
     Notes: sortedMap(st.Notes, (n) => ({ Title: n.Title, Text: n.Text, UpdatedSeq: n.UpdatedSeq })),
-    Scenes: sortedMap(st.Scenes, (s) => ({
-      ID: s.ID,
-      Name: s.Name,
-      GridWidth: s.GridWidth,
-      GridHeight: s.GridHeight,
+    Scenes: sortedMap(st.Scenes, (s) => {
       // `?? {}` / `?? []` are the same defaulting state.ts's comment on
       // Scene calls for: these fields are optional only to let bare test
       // fixtures compile, but a real fold always sets them, so this is
       // belt-and-braces rather than a path any golden actually exercises.
-      Tiles: sortedMap(s.Tiles ?? {}, (t) => ({ Kind: t.Kind, Material: t.Material, Art: t.Art })),
-      Objects: (s.Objects ?? []).map((o) => ({
-        ObjectID: o.ObjectID,
-        Kind: o.Kind,
-        X: o.X,
-        Y: o.Y,
-        Width: o.Width,
-        Height: o.Height,
-        RotationDegrees: o.RotationDegrees,
-        BlocksSight: o.BlocksSight,
-        BlocksMove: o.BlocksMove,
-        Art: o.Art,
-      })),
-      OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
-    })),
+      const scene: Record<string, unknown> = {
+        ID: s.ID,
+        Name: s.Name,
+        GridWidth: s.GridWidth,
+        GridHeight: s.GridHeight,
+        Tiles: sortedMap(s.Tiles ?? {}, (t) => ({ Kind: t.Kind, Material: t.Material, Art: t.Art })),
+        Objects: (s.Objects ?? []).map((o) => ({
+          ObjectID: o.ObjectID,
+          Kind: o.Kind,
+          X: o.X,
+          Y: o.Y,
+          Width: o.Width,
+          Height: o.Height,
+          RotationDegrees: o.RotationDegrees,
+          BlocksSight: o.BlocksSight,
+          BlocksMove: o.BlocksMove,
+          Art: o.Art,
+        })),
+        OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
+      };
+      // Explored mirrors Go's `json:",omitempty"` tag on Scene.Explored
+      // (state.go): OMITTED entirely when empty, not serialized as `{}`.
+      // Every existing scenarios/goldens/*/state.json was hand-derived from
+      // a stream with no SceneSeen, so Explored is empty on all of them —
+      // an unconditional key here (even an empty object) fails every one of
+      // those byte comparisons (client/test/fold-parity.test.ts), because Go
+      // never emits the key at all in that case. This is Correction 1's
+      // reasoning carried across the language boundary: the FIELD needed
+      // omitempty on the Go side; the DUMP needs the equivalent conditional
+      // omission here, since TS has no struct-tag mechanism to do it for us.
+      const explored = s.Explored ?? {};
+      if (Object.keys(explored).length > 0) {
+        scene.Explored = sortedMap(explored, (v) => v);
+      }
+      return scene;
+    }),
     // A Go nil slice marshals as null, not [].
     Sessions: st.Sessions.length === 0 ? null : st.Sessions.map((s) => ({
       ID: s.ID,

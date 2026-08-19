@@ -415,6 +415,30 @@ test("terrain and door state reach the dump the parity keystone compares", () =>
   expect(sc.OpenDoors["0,1"]).toBe(true);
 });
 
+test("Explored reaches the dump when populated, and is OMITTED (not {}) when empty", () => {
+  // Fix-round-1 finding (C1): this is the same "reaches the dump" property
+  // as the test above, but Explored needed a SECOND, opposite-direction
+  // assertion the terrain/door test above didn't need. Go's Scene.Explored
+  // carries `json:",omitempty"` (state.go), so json.Marshal DROPS the key
+  // entirely whenever the map is nil or empty — not just when it is nil.
+  // foldToDumpJSON has no struct tags to lean on, so it must reproduce that
+  // omission by hand; naively always emitting `Explored: {}` looks harmless
+  // in isolation but fails all seven scenarios/goldens/*/state.json byte
+  // comparisons (client/test/fold-parity.test.ts), because none of them was
+  // derived from a stream containing SceneSeen. Verified directly: adding
+  // `Explored: sortedMap(s.Explored ?? {}, v => v)` unconditionally and
+  // running `bun test client/test/fold-parity.test.ts` fails all 7
+  // scenarios with an unexpected `"Explored": {}` in every Scene; reverting
+  // to the conditional-omission form in fold.ts passes all 7 again.
+  const unseen = JSON.parse(foldToDumpJSON(sceneWithADoor()));
+  expect("Explored" in unseen.Scenes["s1"]).toBe(false);
+
+  const seen = JSON.parse(
+    foldToDumpJSON([...sceneWithADoor(), env(3, { sceneSeen: { sceneId: "s1", tiles: { "0,0": { kind: "floor" } } } })]),
+  );
+  expect(seen.Scenes["s1"].Explored).toEqual({ "0,0": true });
+});
+
 // --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
 //
 // Both arms are PROJECTION-ONLY: no command produces them (spec §5), so they

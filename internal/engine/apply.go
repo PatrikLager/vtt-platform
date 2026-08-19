@@ -374,12 +374,18 @@ func Apply(st *State, env *vttv1.Envelope) error {
 	case *vttv1.Envelope_TokenHidden:
 		// PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
 		// token left their view. Deleting an absent token is deliberately
-		// NOT an error — the projection is idempotent by construction (spec
-		// §5: SceneSeen/TokenHidden carry the whole current visible set, so
-		// there is no per-connection "what did I already send" bookkeeping
-		// to desynchronise), and this arm stays tolerant in lockstep with
-		// fold.ts's mirror of it: whichever language folds a re-sent hide,
-		// the outcome must be the same no-op. Refusing it here would fail
+		// NOT an error — deleting a map key that is already gone is
+		// naturally a no-op, and nothing about TokenHidden's own shape (spec
+		// §5: `message TokenHidden { string token_id = 1; }`, a bare id)
+		// requires refusing a second one the way it might if the message
+		// carried state to reconcile. Unlike SceneSeen, whose idempotency
+		// spec §5 derives structurally from carrying the whole current
+		// visible set every time, TokenHidden's comes from the operation
+		// itself: the projection may legitimately re-send a hide —
+		// recomputed visibility that already excluded the token,
+		// at-least-once delivery — and this arm stays tolerant in lockstep
+		// with fold.ts's mirror of it: whichever language folds a re-sent
+		// hide, the outcome must be the same no-op. Refusing it here would fail
 		// the keystone equality (spec §4.3) over traffic the projection
 		// itself considers ordinary. Spec §8 names the failure a STRICT fold
 		// produces as the worst available for this arc — "the strict fold

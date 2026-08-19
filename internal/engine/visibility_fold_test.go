@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"reflect"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -63,6 +64,70 @@ func TestSceneSeenUnionsIntoExploredAndNeverShrinks(t *testing.T) {
 	}
 	if sc.Tiles["1,1"].Kind != "wall" {
 		t.Error("a seen tile must land in Tiles so it can be drawn")
+	}
+}
+
+// TestSceneSeenForUnknownSceneIsRejectedAndLeavesStateUnchanged pins the
+// STRICT half of SceneSeen's contract, which fix-round-1 found unpinned on
+// the Go side: fold.ts's mirror of this arm already asserts the exact
+// message (client/test/fold-rejections.test.ts, "scene seen for unknown
+// scene..."), but nothing in this package exercised apply.go's own
+// `if !ok { return ... }` branch at all — so a change that made Go's arm
+// silently tolerant here, or drifted the message, would have passed every
+// existing Go test while the TS test alone caught the divergence. Asserts
+// the exact message (matching fold-rejections.test.ts's rigor, "engine: "
+// namespace prefix aside — every other arm's Go message carries that same
+// prefix TS never does, e.g. TokenPlaced's "engine: token placed on unknown
+// scene..." vs fold.ts's "token placed on unknown scene...") and that state
+// is byte-for-byte unchanged after the rejection, matching Apply's own
+// "validates BEFORE mutating" doc comment promise (internal/engine/apply.go)
+// and TestApplyRejections' established pattern for every other arm.
+func TestSceneSeenForUnknownSceneIsRejectedAndLeavesStateUnchanged(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	before := st.Snapshot()
+
+	err := engine.Apply(st, env(2, &vttv1.SceneSeen{SceneId: "nope",
+		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}}))
+
+	const want = `engine: scene seen for unknown scene "nope"`
+	if err == nil || err.Error() != want {
+		t.Fatalf("got error %v, want %q", err, want)
+	}
+
+	after := st.Snapshot()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("state changed after a rejected SceneSeen\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+// TestSceneSeenInitializesANilTilesMapWithoutPanicking exercises the OTHER
+// branch fix-round-1 found at 0% coverage: the `if sc.Tiles == nil` guard
+// (apply.go). Every Scene built through the SceneCreated arm already has a
+// non-nil Tiles (even when empty — SceneCreated always calls `make`), so no
+// test using the normal SceneCreated->SceneSeen path can ever reach this
+// guard's true branch. It exists for the same reason DoorOpened/DoorClosed's
+// nil-OpenDoors guards do (apply.go's own comments on those arms): a Scene
+// can land in st.Scenes some other way — internal/rules/conformance's
+// synthetic tooling assigns bare Scene{} literals directly, semgrep-exempted
+// from the fold-only-writer rule — and writing into a nil map would panic
+// instead of erroring, breaking Apply's "validates BEFORE mutating" promise
+// by crashing the whole fold over one malformed-looking Scene.
+func TestSceneSeenInitializesANilTilesMapWithoutPanicking(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	// Bypass SceneCreated deliberately, mirroring conformance.go's pattern,
+	// so Tiles starts nil rather than an empty-but-non-nil map.
+	st.Scenes["s"] = engine.Scene{ID: "s", Name: "S", GridWidth: 3, GridHeight: 3}
+	if st.Scenes["s"].Tiles != nil {
+		t.Fatal("test setup bug: Tiles must start nil to exercise the guard")
+	}
+
+	must(t, engine.Apply(st, env(2, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+
+	if st.Scenes["s"].Tiles["0,0"].Kind != "floor" {
+		t.Error("SceneSeen must lazily initialize a nil Tiles map, not panic or silently drop the tile")
 	}
 }
 
