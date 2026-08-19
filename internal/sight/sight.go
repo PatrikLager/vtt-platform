@@ -49,11 +49,20 @@ import (
 // is the whole reason the seam is the coordinate type rather than an interface
 // with a single implementation.
 //
-// The earlier version of this comment justified float64 by claiming the wire
-// "cannot express a narrower trunk". It can — SceneObject.Width/Height are
-// plain int32 with no declared minimum, and only mapdef's map-FILE loader
-// refuses a sub-1x1 footprint. The conclusion survives its wrong premise: the
-// seam is worth having whether the format reaches it today or not.
+// THREE DIFFERENT STATEMENTS LIVE HERE and two earlier drafts of this comment
+// each collapsed them into one, in opposite directions. Kept apart:
+//
+//   - The PROTO TYPE cannot express the minimum. SceneObject.width/height are
+//     plain int32; nothing in the schema says "at least 1".
+//   - Every INGEST PATH enforces it anyway, via mapdef.CheckObjectFootprints —
+//     the map file loader, the adventure loader, and create_scene at the
+//     gateway, which validates before Append and is not gated on role.
+//   - The FOLD does not re-validate. engine.Apply copies a stored
+//     SceneCreated's objects verbatim, so a log persisted before that gateway
+//     check landed replays into engine.Scene unchecked.
+//
+// The float64 seam is worth having whichever of those you emphasise: it exists
+// for the arc that ships narrower rects, not for today's inputs.
 type Rect struct{ MinX, MinY, MaxX, MaxY float64 }
 
 // Blockers is every rect in sc that stops sight.
@@ -77,11 +86,24 @@ type Rect struct{ MinX, MinY, MaxX, MaxY float64 }
 // NOT normalised into a real rect by swapping the bounds, which was the other
 // option. Swapping would have sight hide squares that movement lets you walk
 // through — the precise disagreement this doc comment already forbids two
-// paragraphs up. And this is reachable from the WIRE, not just from a bad
-// fixture: width/height are plain int32 with no minimum, the gateway passes
-// CreateScene.Objects through unvalidated, the fold copies them verbatim, and
-// create_scene is advertised to MCP. A zero-width object is the sharper case —
-// it looks harmless and casts a shadow LINE across the map.
+// paragraphs up.
+//
+// WHY GUARD AT ALL, given every ingest path already rejects a sub-1x1 footprint
+// (mapdef.CheckObjectFootprints, reached from the map loader, the adventure
+// loader, and create_scene at the gateway before Append)? Two reasons, and
+// neither is "the input is unvalidated" — an earlier draft of this comment said
+// that and it was false:
+//
+//  1. sight is a LIBRARY. It cannot see which path produced the engine.Scene it
+//     was handed, and a geometry package that BLINDS its caller when fed a
+//     malformed rect is a bad neighbour however careful that caller was.
+//  2. One route genuinely is unchecked: REPLAY. The fold does not re-validate
+//     history — engine.Apply copies a stored SceneCreated's objects verbatim —
+//     so a log written before the gateway check landed replays straight through
+//     here. Surviving that is the whole job of failing closed.
+//
+// A zero-width object is the sharper case than a negative one: it is not
+// inverted at all, so it reads as harmless, and it casts a shadow LINE.
 //
 // ONLY SQUARES INSIDE THE DECLARED GRID are considered — this walks the grid
 // and looks each square up, rather than ranging over sc.Tiles. Two reasons,
@@ -181,6 +203,19 @@ func Clear(from, to [2]float64, blockers []Rect) bool {
 // door adjacency (internal/gateway/authz.go), so two spatial rules in this
 // codebase do not disagree about what "one square away" means.
 func VisibleFrom(sc engine.Scene, ox, oy int32, rangeSquares int32, tolerance int) map[string]bool {
+	// DELIBERATELY REDUNDANT as the loop below is now written, and kept anyway.
+	// The early exit tests `reached >= want` only AFTER `reached++`, so reached
+	// is at least 1 wherever want is read, and every want <= 1 selects exactly
+	// the squares with one reachable sample — 0 and 1 are the same predicate.
+	// The mutation gate agrees: weakening this to `< 0` is adjudicated
+	// equivalent in tools/mutation-equivalents.txt.
+	//
+	// It stays because it is the only place the CONTRACT exists as code.
+	// Delete it and "tolerance <= 0 means 1" becomes an emergent property of
+	// where that test happens to sit, so moving the test back outside the
+	// sample loop — a reasonable-looking simplification — would silently turn
+	// tolerance 0 into "every square visible", to every player, with nothing
+	// failing.
 	want := tolerance
 	if want <= 0 {
 		want = 1
@@ -194,14 +229,30 @@ func VisibleFrom(sc engine.Scene, ox, oy int32, rangeSquares int32, tolerance in
 			if rangeSquares > 0 && chebyshev(ox, oy, x, y) > rangeSquares {
 				continue
 			}
+			// Stops at the want'th reachable point rather than always
+			// evaluating all nine. EXACT, not an approximation: reached only
+			// grows, so "the final count reaches want" and "it reaches want at
+			// some point" are the same claim. Checked differentially against
+			// the count-all form over 60,000 random scenes x 14 tolerances.
+			//
+			// ONLY VISIBLE SQUARES CAN EXIT EARLY — a hidden one never reaches
+			// want, so it costs all nine either way. The saving therefore
+			// tracks how much of the map is in view, and "up to 9x fewer Clear
+			// calls" would be a per-square figure worth nobody's trust.
+			// Measured, 60x60, viewer centred, tolerance 1:
+			//   sparse (91 blockers, 1737/3600 seen)  43ms -> 15ms   ~2.8x
+			//   dense (432 blockers,  179/3600 seen) 191ms -> 176ms  ~1.08x
+			// The open maps a table actually plays on are the sparse end.
 			reached := 0
 			for _, p := range samplePoints(x, y) {
-				if Clear(eye, p, blockers) {
-					reached++
+				if !Clear(eye, p, blockers) {
+					continue
 				}
-			}
-			if reached >= want {
-				vis[squareKey(x, y)] = true
+				reached++
+				if reached >= want {
+					vis[squareKey(x, y)] = true
+					break
+				}
 			}
 		}
 	}

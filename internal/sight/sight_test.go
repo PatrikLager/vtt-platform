@@ -273,12 +273,14 @@ func TestBlockersComeBackInGridOrder(t *testing.T) {
 }
 
 func TestAnObjectWithNoFootprintBlocksNothing(t *testing.T) {
-	// A footprint narrower than one square is NOT merely a bad fixture. The
-	// wire declares width/height as plain int32 with no minimum, the gateway
-	// passes CreateScene.Objects through unvalidated and the fold copies them
-	// verbatim; mapdef's `>= 1` check guards the map-FILE path only, and
-	// create_scene is advertised to MCP. An agent emitting size [-2,-2] gets
-	// here.
+	// A footprint narrower than one square is NOT merely a bad fixture, though
+	// it is also not the unvalidated-input story an earlier version of this
+	// comment told: mapdef.CheckObjectFootprints rejects W or H below 1 on
+	// every ingest path, create_scene at the gateway included. What is
+	// unchecked is REPLAY — the fold copies a stored SceneCreated's objects
+	// verbatim — so a log written before that check landed arrives here intact.
+	// And sight is a library besides: it cannot see which path built the scene
+	// it was handed.
 	//
 	// engine's covers() asks `x >= X && x < X+Width`, which NO square satisfies
 	// once Width < 1 — movement treats such an object as occupying nothing. So
@@ -408,12 +410,12 @@ func northSouthCorridor() engine.Scene {
 }
 
 func TestAWallHidesWhatIsEastAndWestOfIt(t *testing.T) {
-	// THE SAMPLE POINTS ARE THE SUBJECT HERE. A square is visible when any of
-	// its centre or four corners can be reached, and every one of those five
-	// points must lie INSIDE the square it belongs to. A corner that spills
+	// THE SAMPLE POINTS ARE THE SUBJECT HERE. A square is tested at nine points
+	// — its centre, its four corners and its four edge midpoints — and every one
+	// of the nine must lie INSIDE the square it belongs to. A point that spills
 	// over its own edge lands in the neighbouring wall, and Clear exempts a
-	// blocker containing the destination — so a corner one part in a billion
-	// too far west would see straight through the wall it is buried in.
+	// blocker containing the destination — so a point one part in a billion too
+	// far west would see straight through the wall it is buried in.
 	//
 	// Hence a wall immediately beside each target: it is the one arrangement
 	// where "just inside" and "just outside" give opposite answers.
@@ -435,9 +437,9 @@ func TestAWallHidesWhatIsEastAndWestOfIt(t *testing.T) {
 }
 
 func TestAWallHidesWhatIsNorthAndSouthOfIt(t *testing.T) {
-	// The north-south half of the case above. Both axes are asserted because
-	// the five sample points are built from two independent coordinates, and a
-	// scene laid out along one axis cannot tell the other one apart.
+	// The north-south half of the case above. Both axes are asserted because the
+	// nine sample points are built from two independent coordinates, and a scene
+	// laid out along one axis cannot tell the other one apart.
 	vis := sight.VisibleFrom(northSouthCorridor(), 0, 2, 0, 0)
 
 	if vis["0,0"] {
