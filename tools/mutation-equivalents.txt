@@ -152,19 +152,27 @@ internal/rules  compile.go:409:35  CONDITIONALS_BOUNDARY
 # three float ones. NOT a clean sweep taken on faith: the same harness was
 # re-run with a mutant gremlins had KILLED (`t0 > t1` -> `>=` at :194) spliced
 # in as a control, and it found a difference within 200,000 samples.
+#
+# RE-POINTED 2026-08-19, all five by +94 lines, when the nine-point sampling and
+# the tolerance parameter landed above them. The shift happens to be uniform,
+# but each new location was READ and confirmed to hold the same expression in
+# unchanged surrounding code rather than assumed from the offset — the header
+# above says to do exactly that, and a uniform shift is the case where skipping
+# it is most tempting and least safe. Their reasons are unaffected: none of the
+# five is in code this round touched.
 # ------------------------------------------------------------------------
 
-internal/sight  sight.go:147:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:241:8  CONDITIONALS_BOUNDARY
     chebyshev's `if dx > dy { return dx }; return dy` -> `>=`: at dx == dy the mutant returns dx where the original returns dy, and those are the same int32. Identical in shape to internal/rules resolve.go:698:8 above, and to the maximum at compile.go:395:36.
 
-internal/sight  sight.go:154:7  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:248:7  CONDITIONALS_BOUNDARY
     abs32's `if n < 0 { return -n }` -> `<=`: at n == 0 the mutant returns -0, and for an int32 that IS 0 — there is no signed zero to observe as there would be for a float. The same entry as internal/gateway authz.go:163:7 above, in a second copy of abs(); its siblings here are NOT equivalent and ARE killed.
 
-internal/sight  sight.go:185:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:279:8  CONDITIONALS_BOUNDARY
     segmentHitsRect's `if a > b { a, b = b, a }` -> `>=` swaps only when a == b, and two float64s that compare equal are bit-identical unless they are +0.0 and -0.0 — which these two cannot be, because both quotients share the divisor d[i] and a zero numerator is always +0.0 (x - x is +0.0 for every finite x, -0.0 included), so a pair of zeros here necessarily carries the SAME sign.
 
-internal/sight  sight.go:188:8  CONDITIONALS_BOUNDARY
+internal/sight  sight.go:282:8  CONDITIONALS_BOUNDARY
     `if a > t0 { t0 = a }` -> `>=` assigns t0 a value equal to the one it already holds; the one case where those are distinguishable is a == -0.0 against t0 == +0.0, and t0 is only ever compared numerically (`t0 > t1`, and the next axis's own `a > t0`) — never returned, formatted, or used as a key — so the sign of that zero has no observable.
 
-internal/sight  sight.go:191:8  CONDITIONALS_BOUNDARY
-    `if b < t1 { t1 = b }` -> `<=`, the same clamp on the other end of the parameter range: it assigns t1 the value t1 already holds, and t1's only uses are the numeric `t0 > t1` and the next axis's `b < t1`, so a +0.0/-0.0 substitution is unobservable for exactly the reason given at :188.
+internal/sight  sight.go:285:8  CONDITIONALS_BOUNDARY
+    `if b < t1 { t1 = b }` -> `<=`, the same clamp on the other end of the parameter range: it assigns t1 the value t1 already holds, and t1's only uses are the numeric `t0 > t1` and the next axis's `b < t1`, so a +0.0/-0.0 substitution is unobservable for exactly the reason given at :282.

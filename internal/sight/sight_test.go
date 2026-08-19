@@ -2,6 +2,7 @@ package sight_test
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -31,7 +32,7 @@ func room() engine.Scene {
 
 func TestAWallBlocksSightAndTheFloorBesideItDoesNot(t *testing.T) {
 	sc := room()
-	vis := sight.VisibleFrom(sc, 1, 1, 0)
+	vis := sight.VisibleFrom(sc, 1, 1, 0, 0)
 
 	if !vis["3,1"] {
 		t.Error("floor at 3,1 is down an open row from 1,1 and must be visible")
@@ -73,20 +74,90 @@ func TestAClosedDoorBlocksAndAnOpenOneDoesNot(t *testing.T) {
 	}
 }
 
-func TestSightIsSymmetric(t *testing.T) {
-	sc := room()
-	a := sight.VisibleFrom(sc, 1, 1, 0)
-	b := sight.VisibleFrom(sc, 3, 1, 0)
-	// The agreement below is vacuously true when nothing is visible from
-	// anywhere, so pin the value first: a symmetry claim over two falses is
-	// satisfied by a VisibleFrom that always returns an empty map.
-	if !a["3,1"] {
-		t.Fatal("1,1 must see 3,1 down the open row, or the symmetry check below " +
-			"is satisfied by a VisibleFrom that sees nothing at all")
+// oneWall is spec §3.3.1's counterexample scene: a 3x3 of open floor with a
+// single wall at 1,0.
+func oneWall() engine.Scene {
+	sc := openGrid(3, 3)
+	sc.ID = "one-wall"
+	sc.Tiles["1,0"] = engine.Tile{Kind: "wall"}
+	return sc
+}
+
+func TestSightIsNotSymmetric(t *testing.T) {
+	// THIS TEST EXISTS TO STOP SOMEBODY "FIXING" IT. Spec §7 asks for the
+	// counterexample asserted out loud, because an earlier draft of §3.3.1 made
+	// symmetry a keystone property and it is false.
+	//
+	// The cause is structural, not rounding: the VIEWER is sampled at one point
+	// (its centre) while the TARGET is sampled at nine, and one-against-many is
+	// not a symmetric relation whatever the geometry. Making it symmetric would
+	// mean sampling the viewer at nine points too — which is a different design
+	// and, per §3.3.1, the wrong one: MapTool has shipped this exact asymmetry
+	// for two decades, and its one-directional Hill/Pit VBL is how elevation
+	// gets modelled later with no coordinate system at all. A symmetric
+	// predicate cannot express a hill.
+	sc := oneWall()
+	from00 := sight.VisibleFrom(sc, 0, 0, 0, 0)
+	from21 := sight.VisibleFrom(sc, 2, 1, 0, 0)
+
+	if from00["2,1"] {
+		t.Error("from 0,0 the square 2,1 must NOT be visible — the wall at 1,0 " +
+			"covers all nine of its sample points")
 	}
-	if a["3,1"] != b["1,1"] {
-		t.Errorf("asymmetric sight: 1,1 sees 3,1 = %v but 3,1 sees 1,1 = %v",
-			a["3,1"], b["1,1"])
+	if !from21["0,0"] {
+		t.Error("from 2,1 the square 0,0 MUST be visible — and that it is, while " +
+			"the reverse is not, is exactly the asymmetry this test pins")
+	}
+}
+
+func TestToleranceIsAnInputAndNineDemandsFullExposure(t *testing.T) {
+	// Tolerance says how many of the nine sample points must be reachable
+	// before a square counts as seen (§3.3.1). It is an INPUT in the same sense
+	// rangeSquares is: 1 means a sliver of exposure reveals you, 9 means you
+	// must be fully in the open, and which it should be is a rules question the
+	// platform must not answer.
+	//
+	// 1,1 sits diagonally behind the wall at 1,0 and is PARTIALLY exposed from
+	// 0,0 — some of its nine points are reachable and some are not, which is
+	// the only fixture on which a tolerance can be observed at all.
+	sc := oneWall()
+	if !sight.VisibleFrom(sc, 0, 0, 0, 1)["1,1"] {
+		t.Error("tolerance 1: one reachable point is enough, so 1,1 must be visible")
+	}
+	if sight.VisibleFrom(sc, 0, 0, 0, 9)["1,1"] {
+		t.Error("tolerance 9: 1,1 is only partly exposed from 0,0, so demanding all " +
+			"nine points must hide it")
+	}
+	// Not vacuous — tolerance 9 must not hide EVERYTHING. 0,1 is straight north
+	// of the viewer with nothing between, so all nine of its points are clear.
+	if !sight.VisibleFrom(sc, 0, 0, 0, 9)["0,1"] {
+		t.Error("tolerance 9: 0,1 is fully in the open and must stay visible")
+	}
+}
+
+func TestToleranceAtOrBelowZeroMeansAnySinglePoint(t *testing.T) {
+	// The default keeps the behaviour this package shipped with: absent a rules
+	// answer, a sliver of exposure reveals you. Both 0 and a negative are
+	// spelled out because "<= 0" is one comparison and a test of only 0 leaves
+	// `== 0` passing.
+	sc := oneWall()
+	want := sight.VisibleFrom(sc, 0, 0, 0, 1)["1,1"]
+	if !want {
+		t.Fatal("premise: 1,1 must be visible at tolerance 1, or this test proves nothing")
+	}
+	for _, tol := range []int{0, -1, -9} {
+		if !sight.VisibleFrom(sc, 0, 0, 0, tol)["1,1"] {
+			t.Errorf("tolerance %d must behave as 1, so 1,1 must be visible", tol)
+		}
+	}
+}
+
+func TestANegativeSightRangeIsUnlimited(t *testing.T) {
+	// Both doc comments say `rangeSquares <= 0` is unlimited, but only 0 was
+	// ever asserted — an implementation written `rangeSquares != 0` passed the
+	// whole suite while treating -1 as a range of minus one square.
+	if vis := sight.VisibleFrom(room(), 1, 1, -1, 0); !vis["3,1"] {
+		t.Error("a negative sight range means unlimited, so 3,1 must be visible")
 	}
 }
 
@@ -107,11 +178,11 @@ func TestAnObjectBlocksSightOnlyWhenItSaysSo(t *testing.T) {
 
 func TestSightRangeIsAnInputAndZeroMeansUnlimited(t *testing.T) {
 	sc := room()
-	near := sight.VisibleFrom(sc, 1, 1, 1)
+	near := sight.VisibleFrom(sc, 1, 1, 1, 0)
 	if near["3,1"] {
 		t.Error("3,1 is two squares away and must be outside a range of 1")
 	}
-	far := sight.VisibleFrom(sc, 1, 1, 0)
+	far := sight.VisibleFrom(sc, 1, 1, 0, 0)
 	if !far["3,1"] {
 		t.Error("range 0 means unlimited, so 3,1 must be visible")
 	}
@@ -121,7 +192,7 @@ func TestASquareExactlyAtTheSightRangeIsVisible(t *testing.T) {
 	// The range is "how far can this creature see", so the square AT that
 	// distance is the last one it sees, not the first one it does not.
 	// 3,1 is Chebyshev 2 from 1,1.
-	if vis := sight.VisibleFrom(room(), 1, 1, 2); !vis["3,1"] {
+	if vis := sight.VisibleFrom(room(), 1, 1, 2, 0); !vis["3,1"] {
 		t.Error("3,1 is exactly 2 squares away and must be inside a range of 2")
 	}
 }
@@ -131,7 +202,7 @@ func TestSightRangeIsMeasuredOnBothAxesAsADifference(t *testing.T) {
 	// differences: 1,2 is one square north of 1,1, not three. Stated on both
 	// axes because they are separate expressions, and a scene walked along one
 	// of them cannot tell the other apart.
-	vis := sight.VisibleFrom(room(), 1, 1, 1)
+	vis := sight.VisibleFrom(room(), 1, 1, 1, 0)
 	if !vis["2,1"] {
 		t.Error("2,1 is one square east of 1,1 and must be inside a range of 1")
 	}
@@ -167,6 +238,99 @@ func TestATileRecordedOutsideTheGridIsNotABlocker(t *testing.T) {
 	}
 }
 
+func TestBlockersComeBackInGridOrder(t *testing.T) {
+	// The SECOND reason Blockers walks the grid rather than ranging over
+	// sc.Tiles, and the one that has no other test: Go randomises map
+	// iteration, so a Blockers built from a map range would return the same
+	// SET in a different ORDER on every run. Row-major, column within row,
+	// then objects in scene order.
+	//
+	// Nothing in this package's own answers depends on that — Clear consults
+	// every blocker — so this is the assertion that keeps the claim in
+	// Blockers' doc comment true rather than aspirational.
+	sc := room()
+	sc.Objects = []engine.SceneObject{
+		{ObjectID: "pillar", Kind: "pillar", X: 2, Y: 1, Width: 1, Height: 1, BlocksSight: true},
+	}
+	want := []sight.Rect{
+		// y=0: four walls and the CLOSED door at 2,0.
+		{MinX: 0, MinY: 0, MaxX: 1, MaxY: 1}, {MinX: 1, MinY: 0, MaxX: 2, MaxY: 1},
+		{MinX: 2, MinY: 0, MaxX: 3, MaxY: 1}, {MinX: 3, MinY: 0, MaxX: 4, MaxY: 1},
+		{MinX: 4, MinY: 0, MaxX: 5, MaxY: 1},
+		// y=1: the two side walls; the floor between them is not a blocker.
+		{MinX: 0, MinY: 1, MaxX: 1, MaxY: 2}, {MinX: 4, MinY: 1, MaxX: 5, MaxY: 2},
+		// y=2: the back wall.
+		{MinX: 0, MinY: 2, MaxX: 1, MaxY: 3}, {MinX: 1, MinY: 2, MaxX: 2, MaxY: 3},
+		{MinX: 2, MinY: 2, MaxX: 3, MaxY: 3}, {MinX: 3, MinY: 2, MaxX: 4, MaxY: 3},
+		{MinX: 4, MinY: 2, MaxX: 5, MaxY: 3},
+		// Objects come after every tile, in scene order.
+		{MinX: 2, MinY: 1, MaxX: 3, MaxY: 2},
+	}
+	if got := sight.Blockers(sc); !reflect.DeepEqual(got, want) {
+		t.Errorf("Blockers must come back in grid order, tiles then objects\n got %+v\nwant %+v",
+			got, want)
+	}
+}
+
+func TestAnObjectWithNoFootprintBlocksNothing(t *testing.T) {
+	// A footprint narrower than one square is NOT merely a bad fixture. The
+	// wire declares width/height as plain int32 with no minimum, the gateway
+	// passes CreateScene.Objects through unvalidated and the fold copies them
+	// verbatim; mapdef's `>= 1` check guards the map-FILE path only, and
+	// create_scene is advertised to MCP. An agent emitting size [-2,-2] gets
+	// here.
+	//
+	// engine's covers() asks `x >= X && x < X+Width`, which NO square satisfies
+	// once Width < 1 — movement treats such an object as occupying nothing. So
+	// sight skips it rather than normalising it into a real rect, because the
+	// stated reason Blockers ignores rotation is that sight and movement must
+	// not disagree about the same object, and a swapped rect would have sight
+	// hiding squares movement walks straight through.
+	//
+	// Left unhandled this is worse than a wrong shape: MinX > MaxX makes
+	// containsPoint unsatisfiable, so the open-endpoint exemption dies and the
+	// rect BLINDS whoever stands inside it.
+	for _, o := range []engine.SceneObject{
+		{ObjectID: "negative", Kind: "glitch", X: 5, Y: 3, Width: -2, Height: -2, BlocksSight: true},
+		{ObjectID: "zero", Kind: "glitch", X: 5, Y: 3, Width: 0, Height: 0, BlocksSight: true},
+		{ObjectID: "flat-column", Kind: "glitch", X: 5, Y: 3, Width: 0, Height: 4, BlocksSight: true},
+		{ObjectID: "flat-row", Kind: "glitch", X: 5, Y: 3, Width: 4, Height: 0, BlocksSight: true},
+		{ObjectID: "negative-w", Kind: "glitch", X: 5, Y: 3, Width: -2, Height: 2, BlocksSight: true},
+		{ObjectID: "negative-h", Kind: "glitch", X: 5, Y: 3, Width: 2, Height: -2, BlocksSight: true},
+	} {
+		sc := openGrid(8, 8)
+		sc.Objects = []engine.SceneObject{o}
+
+		if got := sight.Blockers(sc); len(got) != 0 {
+			t.Errorf("%s (%dx%d): an object covering no square must produce no blocker, got %+v",
+				o.ObjectID, o.Width, o.Height, got)
+		}
+		if vis := sight.VisibleFrom(sc, 0, 0, 0, 0); len(vis) != 64 {
+			t.Errorf("%s (%dx%d): open ground must stay wholly visible, got %d of 64 squares",
+				o.ObjectID, o.Width, o.Height, len(vis))
+		}
+	}
+}
+
+func TestEveryBlockerIsAWellFormedRect(t *testing.T) {
+	// Rect's documented invariant: MinX <= MaxX and MinY <= MaxY. Asserted over
+	// every producer path in one place, because an inverted rect does not fail
+	// loudly — it quietly disables containsPoint and blinds a viewer standing
+	// in it.
+	sc := room()
+	sc.Objects = []engine.SceneObject{
+		{ObjectID: "pillar", Kind: "pillar", X: 2, Y: 1, Width: 1, Height: 1, BlocksSight: true},
+		{ObjectID: "slab", Kind: "slab", X: 1, Y: 1, Width: 3, Height: 2, BlocksSight: true},
+		{ObjectID: "glitch", Kind: "glitch", X: 4, Y: 2, Width: -3, Height: -1, BlocksSight: true},
+	}
+	for _, r := range sight.Blockers(sc) {
+		if r.MinX > r.MaxX || r.MinY > r.MaxY {
+			t.Errorf("inverted blocker %+v: Rect promises Min <= Max on both axes, and "+
+				"containsPoint can never be true for one that breaks it", r)
+		}
+	}
+}
+
 func TestASceneWithNoTerrainRecordedBlocksNothing(t *testing.T) {
 	// engine.Scene's own doc comment pins this: Tiles, Objects and OpenDoors
 	// may all be nil — a scene created before maps-as-geometry, or one
@@ -179,7 +343,7 @@ func TestASceneWithNoTerrainRecordedBlocksNothing(t *testing.T) {
 		t.Errorf("a scene with no tiles recorded must have no blockers, got %d: %+v",
 			len(got), got)
 	}
-	if vis := sight.VisibleFrom(sc, 1, 1, 0); len(vis) != 9 {
+	if vis := sight.VisibleFrom(sc, 1, 1, 0, 0); len(vis) != 9 {
 		t.Errorf("every square of a terrain-free 3x3 scene must be visible, got %d: %v",
 			len(vis), vis)
 	}
@@ -189,18 +353,9 @@ func TestVisibleFromNamesOnlySquaresInsideTheGrid(t *testing.T) {
 	// Open ground, so every square that CAN be named is visible and the set is
 	// exactly the grid. A caller keys its own state off these strings; a key
 	// for a square the scene does not have is a lie it cannot check.
-	sc := engine.Scene{
-		ID: "open", GridWidth: 3, GridHeight: 3,
-		Tiles:     map[string]engine.Tile{},
-		OpenDoors: map[string]bool{},
-	}
-	for y := 0; y < 3; y++ {
-		for x := 0; x < 3; x++ {
-			sc.Tiles[key(x, y)] = engine.Tile{Kind: "floor"}
-		}
-	}
+	sc := openGrid(3, 3)
 
-	vis := sight.VisibleFrom(sc, 1, 1, 0)
+	vis := sight.VisibleFrom(sc, 1, 1, 0, 0)
 	for y := 0; y < 3; y++ {
 		for x := 0; x < 3; x++ {
 			if !vis[key(x, y)] {
@@ -222,7 +377,7 @@ func TestAPillarHidesTheSquareBehindItButNotItself(t *testing.T) {
 	sc.Objects = []engine.SceneObject{
 		{ObjectID: "pillar", Kind: "pillar", X: 2, Y: 1, Width: 1, Height: 1, BlocksSight: true},
 	}
-	vis := sight.VisibleFrom(sc, 1, 1, 0)
+	vis := sight.VisibleFrom(sc, 1, 1, 0, 0)
 	if vis["3,1"] {
 		t.Error("the pillar stands between 1,1 and 3,1, so 3,1 must be hidden")
 	}
@@ -235,13 +390,8 @@ func TestAPillarHidesTheSquareBehindItButNotItself(t *testing.T) {
 // 2,0 stands against the first wall and four squares short of the second, so
 // 0,0 and 8,0 are each hidden by the wall immediately beside them.
 func eastWestCorridor() engine.Scene {
-	sc := engine.Scene{
-		ID: "east-west", GridWidth: 9, GridHeight: 1,
-		Tiles: map[string]engine.Tile{}, OpenDoors: map[string]bool{},
-	}
-	for x := 0; x < 9; x++ {
-		sc.Tiles[key(x, 0)] = engine.Tile{Kind: "floor"}
-	}
+	sc := openGrid(9, 1)
+	sc.ID = "east-west"
 	sc.Tiles["1,0"] = engine.Tile{Kind: "wall"}
 	sc.Tiles["7,0"] = engine.Tile{Kind: "wall"}
 	return sc
@@ -250,13 +400,8 @@ func eastWestCorridor() engine.Scene {
 // northSouthCorridor is eastWestCorridor turned ninety degrees: one column,
 // walls at 0,1 and 0,7, viewer at 0,2.
 func northSouthCorridor() engine.Scene {
-	sc := engine.Scene{
-		ID: "north-south", GridWidth: 1, GridHeight: 9,
-		Tiles: map[string]engine.Tile{}, OpenDoors: map[string]bool{},
-	}
-	for y := 0; y < 9; y++ {
-		sc.Tiles[key(0, y)] = engine.Tile{Kind: "floor"}
-	}
+	sc := openGrid(1, 9)
+	sc.ID = "north-south"
 	sc.Tiles["0,1"] = engine.Tile{Kind: "wall"}
 	sc.Tiles["0,7"] = engine.Tile{Kind: "wall"}
 	return sc
@@ -272,7 +417,7 @@ func TestAWallHidesWhatIsEastAndWestOfIt(t *testing.T) {
 	//
 	// Hence a wall immediately beside each target: it is the one arrangement
 	// where "just inside" and "just outside" give opposite answers.
-	vis := sight.VisibleFrom(eastWestCorridor(), 2, 0, 0)
+	vis := sight.VisibleFrom(eastWestCorridor(), 2, 0, 0, 0)
 
 	if vis["0,0"] {
 		t.Error("the wall at 1,0 stands between 2,0 and 0,0, so 0,0 must be hidden")
@@ -293,7 +438,7 @@ func TestAWallHidesWhatIsNorthAndSouthOfIt(t *testing.T) {
 	// The north-south half of the case above. Both axes are asserted because
 	// the five sample points are built from two independent coordinates, and a
 	// scene laid out along one axis cannot tell the other one apart.
-	vis := sight.VisibleFrom(northSouthCorridor(), 0, 2, 0)
+	vis := sight.VisibleFrom(northSouthCorridor(), 0, 2, 0, 0)
 
 	if vis["0,0"] {
 		t.Error("the wall at 0,1 stands between 0,2 and 0,0, so 0,0 must be hidden")
@@ -388,3 +533,18 @@ func TestANearlyParallelRayIsStillClippedByItsSlab(t *testing.T) {
 // production copy is unexported, and a test that reached for it would stop
 // being a test of the boundary.
 func key(x, y int) string { return fmt.Sprintf("%d,%d", x, y) }
+
+// openGrid is w by h squares of nothing but floor: no walls, no doors, no
+// objects, so every blocker in a scene built from it is one the test put there.
+func openGrid(w, h int32) engine.Scene {
+	sc := engine.Scene{
+		ID: "open", GridWidth: w, GridHeight: h,
+		Tiles: map[string]engine.Tile{}, OpenDoors: map[string]bool{},
+	}
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			sc.Tiles[key(int(x), int(y))] = engine.Tile{Kind: "floor"}
+		}
+	}
+	return sc
+}

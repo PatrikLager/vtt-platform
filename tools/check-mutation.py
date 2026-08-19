@@ -107,15 +107,16 @@ PACKAGES = [
     # was in neither this list nor mutation-scope.md, so it shipped silently
     # ungated; adding it later found 13 live mutants and one real bug.
     #
-    # 190-260s over four runs for only 85 mutants, which is out of proportion
-    # to the package and is worth knowing before anyone tries to speed it up:
-    # FOUR of them are INCREMENT_DECREMENT on the grid-walk loop counters and
-    # CANNOT TERMINATE, so each burns a full deadline rather than failing. The
-    # deadline is baseline x TIMEOUT_COEFFICIENT, so it moves with how warm the
-    # cache was — which is also why the spread above is 70s on identical code.
-    # See tools/mutation-scope.md on why those four are the one honest case in
-    # this repo for counting a timeout as a detection.
-    "./internal/sight/",                   # ~250s, much of it four unkillable timeouts
+    # 190-335s across runs for only ~106 mutants, which is out of proportion to
+    # the package and is worth knowing before anyone tries to speed it up: FOUR
+    # of them are INCREMENT_DECREMENT on the grid-walk loop counters and CANNOT
+    # TERMINATE, so each burns a full deadline rather than failing. The deadline
+    # is baseline x TIMEOUT_COEFFICIENT, so it moves with how warm the cache was
+    # AND with the suite's own runtime — which is why the spread is over two
+    # minutes on code that only grew by a third. See tools/mutation-scope.md on
+    # why those four are the one honest case in this repo for counting a timeout
+    # as a detection.
+    "./internal/sight/",                   # ~335s, much of it four unkillable timeouts
     "./internal/rules/",                   # ~393s -- the interpreter, 553 mutants
     "./internal/mcp/",                     # ~857s
 ]

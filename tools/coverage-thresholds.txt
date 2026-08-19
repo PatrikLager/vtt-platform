@@ -40,7 +40,7 @@ github.com/PatrikLager/vtt-platform/internal/testdb                   90.8
 github.com/PatrikLager/vtt-platform/internal/mcp                     87.5
 github.com/PatrikLager/vtt-platform/internal/rules                   89.0
 github.com/PatrikLager/vtt-platform/internal/rules/conformance       85.5
-github.com/PatrikLager/vtt-platform/internal/sight                   95.0
+github.com/PatrikLager/vtt-platform/internal/sight                   99.7
 github.com/PatrikLager/vtt-platform/internal/store                   90.0
 github.com/PatrikLager/vtt-platform/tools/toolgen                    85.0
 github.com/PatrikLager/vtt-platform/tools/genmappack                 90.0
