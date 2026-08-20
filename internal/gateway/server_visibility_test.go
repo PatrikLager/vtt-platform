@@ -53,6 +53,16 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "ambush", Name: "Ambush Corridor", GridWidth: 32, GridHeight: 32,
 			Tiles: tiles,
+			Objects: []*vttv1.SceneObject{
+				// EAST OF THE WALL, where the player cannot see it, and it
+				// BLOCKS MOVE without blocking sight. Its only job is to be a
+				// piece of terrain whose KIND a refusal could name — see
+				// TestAPlayerCannotProbeTheDarkWithMoveCommands.
+				{
+					ObjectId: "crate-1", Kind: "crate", At: &vttv1.GridPosition{X: 20, Y: 20},
+					Width: 1, Height: 1, BlocksMove: true,
+				},
+			},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
@@ -556,5 +566,197 @@ func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	}
 	if !mentions(t, stream, "The corridor narrows.") {
 		t.Fatal("a spectator must still hear the table: narration is addressed, not drawn")
+	}
+}
+
+// TestAPlayerCannotProbeTheDarkWithMoveCommands closes a leak this arc's own
+// wiring created, and it is worth stating plainly because it is the shape the
+// whole arc is about: redacting the board turned a REFUSAL MESSAGE into a
+// terrain oracle.
+//
+// engine.Blocked answers for any square in the scene, sight-independent — it
+// was written when every player received every tile and so leaked nothing.
+// Once SceneCreated is redacted and terrain arrives square by square through
+// SceneSeen, a refusal that says "a wall", "a closed door" or "something (a
+// crate) is in the way" hands back the contents of the black area one
+// move_token at a time. Spec §4.2: "you do not know what is in the black area
+// before you enter the black area."
+//
+// So for a PLAYER the sight question is asked FIRST and every unseen
+// destination gets the same answer whatever stands on it. The assertion is
+// byte-equality between the refusals, not a substring: a message that varied
+// by terrain would still be an oracle even if no single word gave it away.
+func TestAPlayerCannotProbeTheDarkWithMoveCommands(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	playerConn := f.dial(f.playerToken, 0)
+
+	probe := func(id string, x, y int32) string {
+		t.Helper()
+		sendCommand(t, playerConn, &vttv1.ClientCommand{
+			RequestId: id,
+			Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+				TokenId: "tok-fighter", To: &vttv1.GridPosition{X: x, Y: y},
+			}},
+		})
+		r := readResult(t, playerConn)
+		if r.Ok {
+			t.Fatalf("%s: (%d,%d) was accepted; this probe only means something for a REFUSED move", id, x, y)
+		}
+		return r.Error
+	}
+
+	// Four unseen squares, four different things standing on them: blocking
+	// scenery, a hidden creature, open floor, and nothing at all because the
+	// square is off the grid.
+	answers := map[string]string{
+		"scenery":  probe("probe-crate", 20, 20),
+		"creature": probe("probe-goblin", 19, 8),
+		"floor":    probe("probe-empty", 25, 25),
+		"offgrid":  probe("probe-offgrid", 40, 40),
+	}
+	var first, firstName string
+	for name, got := range answers {
+		if first == "" {
+			first, firstName = got, name
+			continue
+		}
+		if got != first {
+			t.Fatalf("the refusal distinguishes what is standing on an unseen square, which is the oracle:\n"+
+				"  %s -> %q\n  %s -> %q", firstName, first, name, got)
+		}
+	}
+	for _, forbidden := range []string{"wall", "door", "crate", "scenery", "in the way", "grid"} {
+		if strings.Contains(strings.ToLower(first), forbidden) {
+			t.Fatalf("the refusal for an unseen square names terrain (%q): %q", forbidden, first)
+		}
+	}
+
+	// THE CONTROL, and it is what stops the fix from being "refuse everything
+	// with one word". Terrain the player CAN see is terrain they have already
+	// been sent, so its refusal still says what is there.
+	if got := probe("probe-visible-wall", 15, 5); !strings.Contains(got, "wall") {
+		t.Fatalf("a wall the player can see must still be named: %q", got)
+	}
+}
+
+// TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee pins the COST of the
+// sight rule, which the rule's own doc comment names and no test reached.
+//
+// The two cases are not the same and only one of them was covered. A square
+// never seen and never explored is refused for the obvious reason. A square
+// whose terrain this player HAS been sent, and whose client still holds and
+// still draws it (spec §3.2, terrain is remembered and creatures are not), is
+// refused too — and that is the deliberate restriction, the one a reader of
+// "you may only move where you can see" would want to check before agreeing to
+// it. If it is ever relaxed to "seen OR explored", this is the test that has to
+// change, and it says so.
+func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	dmConn := f.dial(f.dmToken, 0)
+	playerConn := f.dial(f.playerToken, 0)
+
+	// The fighter starts at (5,5) and its SceneSeen carries that square's
+	// tile, so this player demonstrably HOLDS that terrain — without this the
+	// test below would be pinning "unseen", which is already covered.
+	seen := drainEvents(t, playerConn, 400*time.Millisecond)
+	if !mentions(t, seen, `"5,5"`) {
+		t.Fatal("precondition: the player must have been sent the terrain at (5,5), or this " +
+			"test pins UNSEEN rather than REMEMBERED and proves nothing new")
+	}
+
+	// The DM carries the fighter across the wall — free of the sight rule as
+	// it is free of the stone — so (5,5) is now behind it, remembered and
+	// unseen.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "dm-carries-the-fighter-across",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 20, Y: 5},
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("the DM must be free of the sight rule: %s", r.Error)
+	}
+	drainEvents(t, playerConn, 400*time.Millisecond)
+
+	sendCommand(t, playerConn, &vttv1.ClientCommand{
+		RequestId: "step-back-onto-remembered-ground",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 5, Y: 5},
+		}},
+	})
+	r := readResult(t, playerConn)
+	if r.Ok {
+		t.Fatal("a player stepped onto remembered-but-unseen ground — the sight rule is " +
+			"documented as forbidding exactly this, so either the rule or its doc comment moved")
+	}
+	if !strings.Contains(r.Error, "cannot see") {
+		t.Fatalf("refusal = %q, want the sight rule", r.Error)
+	}
+}
+
+// TestEverySeatCanReachTheCatchUpHeadItIsGiven closes a promise the server
+// could no longer keep.
+//
+// CatchUpHead is the boundary a client reads to: commands.proto says "a client
+// that wants a point-in-time snapshot reads until it has seen head_sequence",
+// and `vtt state dump` does exactly that (cmd/vtt/state_dump.go's drainToHead).
+// The head was the LOG's head, which was the same thing as this seat's head
+// while every seat received every event. It stopped being the same thing the
+// moment a seat's stream became a projection: the last few log events may be
+// entirely withheld from a player, so the number they are told to wait for
+// never arrives and the CLI burns its 30-second deadline before failing.
+//
+// It fails CLOSED, which is the right direction and not a defence — a
+// deterministic 30s failure on a shipped command is still a regression. So the
+// head a seat is given is now the last sequence THAT SEAT's catch-up carries.
+func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	logHead := f.log(t)[len(f.log(t))-1].GetSequence()
+
+	for _, seat := range []struct {
+		name  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		t.Run(seat.name, func(t *testing.T) {
+			conn := f.dial(seat.token, 0)
+			head := expectCatchUpHead(t, conn)
+			// expectCatchUpHead reads the socket directly; everything after it
+			// goes through the queue as usual.
+			stream := drainEvents(t, conn, 500*time.Millisecond)
+
+			var highest int64
+			for _, e := range stream {
+				if e.GetSequence() > highest {
+					highest = e.GetSequence()
+				}
+			}
+			if highest < head {
+				t.Fatalf("%s was told to read to sequence %d and its catch-up ends at %d — "+
+					"a client following commands.proto waits for a frame that never comes",
+					seat.name, head, highest)
+			}
+		})
+	}
+
+	// AND THE UNPROJECTED SEATS STILL GET THE LOG'S OWN HEAD, unchanged. The
+	// fix must not quietly turn the DM's boundary into something derived.
+	for _, seat := range []struct {
+		name  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+	} {
+		if head := expectCatchUpHead(t, f.dial(seat.token, 0)); head != logHead {
+			t.Fatalf("%s's catch-up head = %d, want the log's own head %d", seat.name, head, logHead)
+		}
 	}
 }

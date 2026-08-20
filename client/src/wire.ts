@@ -83,6 +83,14 @@ export class Wire {
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private rollbackHandlers: ((throughSeq: bigint) => void)[] = [];
+  // TWO CURSORS, because they answer different questions and sharing one made
+  // a reconnect rewind the board. `seenSeq` is the HIGH-WATER MARK — the
+  // highest sequence ever delivered, which only ever grows. `lastSeq` is where
+  // the next redial resumes from, and a redial deliberately sets it one below
+  // the high-water mark (see the replay-cursor note above). Derive the second
+  // from the first each time and repeated redials are idempotent; carry one
+  // value and every click of the Reconnect button steps back another event.
+  private seenSeq = 0n;
   private lastSeq = 0n;
   private nextID = 0;
 
@@ -91,7 +99,7 @@ export class Wire {
     private readonly token: string,
   ) {}
 
-  /** The highest sequence this client has observed. */
+  /** The sequence this client's next redial would resume after. */
   get head(): bigint {
     return this.lastSeq;
   }
@@ -184,7 +192,23 @@ export class Wire {
         }
         this.pending.clear();
       };
-      ws.onmessage = (ev) => this.handleFrame(String(ev.data));
+      // GUARDED ON IDENTITY, and this one line is the whole fix. The handler
+      // is bound per socket but knows nothing about which socket it belongs
+      // to, and close() does not cancel a `message` event already queued — so
+      // an envelope from an abandoned socket would be folded AFTER a rollback
+      // had truncated the log, re-adding the very sequence the redial is about
+      // to send again. Measured before the fix as log 1,2,2 and
+      // `duplicate actor "a1"`: the permanent freeze this design exists to
+      // avoid.
+      //
+      // It covers BOTH ways a socket is abandoned, which is why it is here
+      // rather than in reconnect(): a redial forgets its socket explicitly,
+      // and a bare second connect() simply overwrites this.ws and leaves the
+      // first one live with its handlers still bound. Each has its own test.
+      ws.onmessage = (ev) => {
+        if (this.ws !== ws) return;
+        this.handleFrame(String(ev.data));
+      };
     });
   }
 
@@ -195,8 +219,15 @@ export class Wire {
    * expressed once one event can be several envelopes.
    */
   async reconnect(): Promise<void> {
-    this.ws?.close();
-    const resume = this.lastSeq > 0n ? this.lastSeq - 1n : 0n;
+    // Abandon the old socket by forgetting it, then close it. Forgetting is
+    // what the message handler's identity check reads; closing is only how the
+    // socket is disposed of, and it does NOT stop an event already queued on
+    // it. Between the two assignments this wire has no socket, which is what
+    // send() reports.
+    const old = this.ws;
+    this.ws = null;
+    old?.close();
+    const resume = this.seenSeq > 0n ? this.seenSeq - 1n : 0n;
     this.lastSeq = resume;
     for (const fn of this.rollbackHandlers) fn(resume);
     await this.connect(resume);
@@ -222,6 +253,7 @@ export class Wire {
       }
       case "event": {
         const env = frame.frame.value;
+        if (env.sequence > this.seenSeq) this.seenSeq = env.sequence;
         if (env.sequence > this.lastSeq) this.lastSeq = env.sequence;
         for (const fn of this.eventHandlers) fn(env);
         return;

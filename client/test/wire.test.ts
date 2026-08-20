@@ -577,3 +577,141 @@ test("a snapshot entry with no state is skipped, and the rest still arrive", asy
   wire.close();
   gw.stop();
 });
+
+// A scripted WebSocket, so a stale frame can be delivered on a socket the wire
+// has already abandoned. The live-server fake above cannot do it: once the
+// client closes, the runtime decides whether a queued frame still lands, and a
+// test whose subject is a race must not be one.
+class ScriptedSocket {
+  static instances: ScriptedSocket[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onmessage: ((ev: { data: string }) => void) | null = null;
+  constructor(readonly url: string) {
+    ScriptedSocket.instances.push(this);
+  }
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  deliver(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
+  send() {}
+  close() {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+}
+
+test("a frame from the socket a reconnect abandoned is never folded", async () => {
+  // THE ROLLBACK'S OWN RACE. reconnect() closes the socket, announces the
+  // rollback, and redials — but the handler is bound per socket at connect
+  // time and knows nothing about which socket it belongs to. A `message` event
+  // queued before close() still runs, and its envelope lands AFTER the log was
+  // truncated: the rolled-back sequence is re-added, the redial delivers it a
+  // second time, and the duplicate introduction freezes the client
+  // permanently. Measured before the fix as log 1,2,2 and
+  // `duplicate actor "a1"`.
+  //
+  // Narrow through the UI today — the Reconnect button only shows on status
+  // "closed" — but reconnect() is public API and any automatic redial opens it
+  // wide.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const seen: bigint[] = [];
+    const rolledBack: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+    wire.onRollback((s) => rolledBack.push(s));
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(seen).toEqual([2n]);
+
+    const redial = wire.reconnect();
+    ScriptedSocket.instances[1]!.open();
+    await redial;
+
+    // The abandoned socket speaks anyway. Nothing it says may reach the fold,
+    // and nothing it says may move the cursor the redial just set.
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+
+    expect(seen).toEqual([2n]);
+    expect(rolledBack).toEqual([1n]);
+    expect(wire.head).toBe(1n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a second connect silences the socket the first one left behind", async () => {
+  // The other half of the same hazard, and the half detach() does not cover.
+  // reconnect() abandons its socket deliberately and clears its handlers;
+  // connect() called directly — Session.start() twice, a caller redialling by
+  // hand — simply overwrites this.ws and leaves the previous socket live with
+  // its handlers still bound. The identity check in the message handler is
+  // what makes that harmless, and this is the case that distinguishes the two
+  // guards: deleting the check leaves this test failing and the abandoned-
+  // socket test above still passing.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const seen: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+
+    const second = wire.connect(0n);
+    ScriptedSocket.instances[1]!.open();
+    await second;
+
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(4) });
+    expect(seen).toEqual([]);
+    expect(wire.head).toBe(0n);
+
+    ScriptedSocket.instances[1]!.deliver({ event: envelopeJSON(4) });
+    expect(seen).toEqual([4n]);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("reconnecting repeatedly does not walk the cursor backwards", async () => {
+  // The resume cursor steps back one sequence per redial so a torn batch can
+  // be taken again whole. It must step back from the HIGHEST SEQUENCE EVER
+  // SEEN, not from wherever the previous redial left it — otherwise every
+  // click of the Reconnect button rewinds the board by one more event, which
+  // is precisely when that button is on screen. The DM and the agent reach
+  // this too, and for them the tear it guards against cannot even happen.
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    await wire.connect(0n);
+    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(9) }));
+    await until(() => wire.head === 9n, "the cursor to reach 9");
+
+    for (let i = 0; i < 4; i++) {
+      await wire.reconnect();
+      await until(() => gw.queries.length === i + 2, `redial ${i + 1}`);
+    }
+
+    for (const q of gw.queries.slice(1)) {
+      expect(q).toContain("after=8");
+    }
+    expect(wire.head).toBe(8n);
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});

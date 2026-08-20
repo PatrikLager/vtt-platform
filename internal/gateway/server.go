@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -464,6 +465,11 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// the store closing `events` UNILATERALLY — which now means this
 	// connection made no progress for its whole no-progress budget, not that
 	// it briefly fell behind. See the force-close below the loop.
+	// PROJECTED FIRST, FOR A PROJECTED SEAT, so the head below is a sequence
+	// this seat can actually reach — see seat.catchUp, which also explains why
+	// the DM and the agent skip this entirely and keep the log's own head.
+	backlog, catchUpHead := sub.catchUp(ctx, events, catchUpHead)
+
 	// The catch-up head goes out FIRST, before any backlog, so a client knows
 	// what it is waiting for before it starts receiving it.
 	//
@@ -545,6 +551,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	go func() {
 		defer close(pumpDone)
 
+		// The backlog seat.catchUp already projected, sent from HERE rather
+		// than from serve directly, so it goes out behind the same revocation
+		// check and through the same writer as everything else. One check for
+		// the whole backlog rather than one per envelope: it was drained in a
+		// single pass milliseconds ago, and the loop below re-resolves on the
+		// very next event either way.
+		if len(backlog) > 0 && s.credentialGone(pc.participantID) {
+			if !closing.Load() {
+				_ = conn.Close(websocket.StatusPolicyViolation,
+					"gateway: credential no longer valid")
+			}
+			return
+		}
+		if err := enqueueEvents(backlog, outCh, writerDone); err != nil {
+			if errors.Is(err, errEncodeFrame) && !closing.Load() {
+				_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
+			}
+			return
+		}
+
 		for env := range events {
 			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
 			// cover. commandRoles has no spectator row anywhere, so a
@@ -561,7 +587,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// ErrInvalidToken ONLY. An operational failure must not silently
 			// drop an event: losing a frame is worse than a moment's delay in
 			// removing somebody, and the very next event catches them anyway.
-			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
+			if s.credentialGone(pc.participantID) {
 				// CLOSED WITH A REASON, not force-closed.
 				//
 				// There are two revocation paths — this one and the command
@@ -607,16 +633,15 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// SceneSeen, all stamped with the sequence that caused them. The
 			// DM and the agent still get exactly one frame per event, by
 			// pointer, unchanged.
-			for _, pe := range sub.receive(env) {
-				b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
-				if err != nil {
-					continue // a marshal failure here is a server bug, not this client's fault
+			// An encode failure TEARS THE CONNECTION DOWN rather than
+			// skipping to the next envelope — see enqueueEvents. conn.Close
+			// rather than shutdown(), because this IS the pump and shutdown
+			// waits on it.
+			if err := enqueueEvents(sub.receive(env), outCh, writerDone); err != nil {
+				if errors.Is(err, errEncodeFrame) && !closing.Load() {
+					_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
 				}
-				select {
-				case outCh <- b:
-				case <-writerDone:
-					return
-				}
+				return
 			}
 		}
 		// `events` is closed. If shutdown() didn't do it, the store dropped
@@ -853,15 +878,9 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		if mt, ok := cmd.GetCommand().(*vttv1.ClientCommand_MoveToken); ok {
 			if tok, known := st.Tokens[mt.MoveToken.GetTokenId()]; known {
 				to := mt.MoveToken.GetTo()
-				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
-					return &vttv1.CommandResult{
-						RequestId: requestID, Ok: false,
-						Error: "gateway: cannot move there — " + describeBlockage(why),
-					}
-				}
-				// AND YOU MAY ONLY MOVE WHERE YOU CAN SEE (visibility spec
-				// exit criterion 7: the goblin's square "cannot be targeted by
-				// a player who cannot see it"). This is the second half of
+				// YOU MAY ONLY MOVE WHERE YOU CAN SEE (visibility spec exit
+				// criterion 7: the goblin's square "cannot be targeted by a
+				// player who cannot see it"). This is the second half of
 				// session zero. Filtering the wire stops a player LOOKING at a
 				// hidden creature; without this they could still land on it,
 				// because move_token validates a destination and never a path
@@ -877,17 +896,41 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 				// SceneSeen just told them — so it leaks nothing, in the
 				// strong sense that they can compute it themselves.
 				//
+				// FIRST, AND THE ORDER IS THE WHOLE POINT. It ran second for
+				// one commit, so that every pre-existing refusal kept its exact
+				// wording, and that was a leak of its own: engine.Blocked
+				// answers for ANY square in the scene, sight-independent — it
+				// was written when a player received every tile, so it gave
+				// nothing away. Against a REDACTED board it hands back walls,
+				// closed doors and scenery kinds ("something (a crate) is in
+				// the way") for terrain SceneSeen has never sent, one
+				// move_token at a time, defeating spec §4.2 through an error
+				// string. TestAPlayerCannotProbeTheDarkWithMoveCommands sweeps
+				// unseen squares of four different kinds and requires the
+				// refusals to be byte-identical.
+				//
 				// The cost is real and deliberate: a square out of line of
 				// sight cannot be walked onto even when it is remembered
 				// terrain (spec §3.2), so a player cannot round a corner in
 				// one command. Fail closed (spec §4.4). And this is the
 				// PLAYER's branch only — "hard for players, free for DM"
 				// (maps-as-geometry spec §6) governs sight exactly as it
-				// governs stone.
+				// governs stone, so the DM's refusals are untouched, wording
+				// and ordering both.
 				if !canSee(viewerFor(p), st, tok.SceneID, to) {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — you cannot see that square",
+					}
+				}
+				// AND ONLY THEN WHAT IS ON IT. Reached only for a square this
+				// player can see, which is a square whose terrain they have
+				// already been sent — so naming it tells them nothing new and
+				// keeps the refusal useful.
+				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
+					return &vttv1.CommandResult{
+						RequestId: requestID, Ok: false,
+						Error: "gateway: cannot move there — " + describeBlockage(why),
 					}
 				}
 			}
@@ -1228,4 +1271,54 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	}
 	s.announcePromotion(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
+// credentialGone reports whether this participant's credential has been
+// revoked since the connection was accepted.
+//
+// ErrInvalidToken ONLY, and that narrowness is the point: an operational
+// failure must not silently drop an event or a connection. Losing a frame is
+// worse than a moment's delay in removing somebody, and the very next event
+// asks again.
+func (s *Server) credentialGone(participantID string) bool {
+	_, err := s.ids.Lookup(participantID)
+	return errors.Is(err, identity.ErrInvalidToken)
+}
+
+// The two ways enqueueEvents can stop short, as sentinels so the caller can
+// tell them apart without matching a sentence: one is this server's bug and
+// deserves a close frame saying so, the other is the connection already going
+// away underneath it.
+var (
+	errEncodeFrame = errors.New("gateway: encode event frame")
+	errWriterGone  = errors.New("gateway: writer stopped")
+)
+
+// enqueueEvents encodes each envelope as a ServerFrame and hands it to the
+// connection's writer, in order, stopping at the first failure.
+//
+// ALL OR NOTHING PER BATCH, and that is the reason this stops rather than
+// skipping. One log event is now several envelopes for a projected seat, and
+// project.go's ordering within them is LOAD-BEARING: an actor before its
+// token, a scene before what stands in it. Dropping one and sending the next
+// is "token placed for unknown actor" in both folds — the permanent client
+// freeze this arc keeps coming back to — so delivering an incoherent stream is
+// worse than delivering none. It used to `continue`, which was harmless while
+// one event was exactly one frame.
+//
+// A nil or empty batch is a no-op, which is what a projection that withheld
+// everything returns.
+func enqueueEvents(envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
+	for _, pe := range envs {
+		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
+		if err != nil {
+			return fmt.Errorf("%w: sequence %d: %w", errEncodeFrame, pe.GetSequence(), err)
+		}
+		select {
+		case outCh <- b:
+		case <-writerDone:
+			return errWriterGone
+		}
+	}
+	return nil
 }

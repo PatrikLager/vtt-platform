@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"log/slog"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -189,4 +190,62 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 func canSee(v Viewer, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
 	pr := NewProjector(v)
 	return pr.canSeeSquare(pr.look(st), sceneID, at)
+}
+
+// catchUp drains this seat's preloaded backlog, projects it, and answers the
+// two things serve needs: the frames to send, and the sequence THIS SEAT's
+// catch-up actually ends at.
+//
+// WHY THE HEAD CANNOT SIMPLY BE THE LOG'S. CatchUpHead is a promise — a client
+// wanting a point-in-time snapshot "reads until it has seen head_sequence"
+// (commands.proto), and `vtt state dump` does exactly that. While every seat
+// received every event, the log's head and a seat's head were the same number.
+// A projection breaks that: the last events in the log may be withheld from
+// this seat entirely, so it would wait for a frame that never comes and fail
+// on its deadline. Answering with the last sequence this seat will be SENT
+// keeps the promise keepable for every role.
+//
+// UNPROJECTED SEATS DO NOT ENTER THIS AT ALL. They return the log's head
+// untouched and drain nothing, so their opening frames and their timing are
+// what they have always been (spec §3.1, exit criterion 8).
+//
+// THE COST, since it inverts an ordering the pump's own comment defends: for a
+// projected seat the head frame now waits for the whole backlog to be
+// projected, where it used to go out first. Nothing else moves — the frames
+// still leave in the same order — and the wait is dominated by the projection
+// this seat was going to pay for anyway (visibility spec §8's cliff). A head
+// that arrives promptly and names a sequence that never comes is not the
+// better trade.
+func (s *seat) catchUp(ctx context.Context, events <-chan *vttv1.Envelope, logHead int64) ([]*vttv1.Envelope, int64) {
+	if s.pr == nil || logHead <= 0 {
+		return nil, logHead
+	}
+	var out []*vttv1.Envelope
+	var head int64
+	for {
+		select {
+		case env, ok := <-events:
+			if !ok {
+				// The subscription ended mid-backlog. Answer with what this
+				// seat actually got: the connection is finished either way,
+				// and a head it cannot reach would be a second failure on top
+				// of the first.
+				return out, head
+			}
+			projected := s.receive(env)
+			out = append(out, projected...)
+			for _, e := range projected {
+				if e.GetSequence() > head {
+					head = e.GetSequence()
+				}
+			}
+			// Envelopes arrive in order, so the first one at or past the log's
+			// head is the end of the backlog and everything after it is live.
+			if env.GetSequence() >= logHead {
+				return out, head
+			}
+		case <-ctx.Done():
+			return out, head
+		}
+	}
 }
