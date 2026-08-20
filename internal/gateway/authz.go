@@ -78,16 +78,17 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// it" — is mayWorkDoor, below, wired into Authorize's switch (Task 6).
 	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	// set_viewpoint (visibility spec §3.1.1, Task 6). Pre-registered here in
-	// Task 2, ahead of Task 6's handler, purely so the reflection gates below
-	// (TestEveryClientCommandConverts/TestEveryClientCommandHasRoleCells,
-	// which run the instant a oneof arm exists, with no allowance for "not
-	// wired yet") stay green the moment the wire message exists. Spectator
-	// only, per the plan's own Task 6 text: a perch is how a spectator with
-	// no character of their own borrows someone else's eyes. Until Task 6
-	// adds the handleSetViewpoint special case, Authorize will let this
-	// through but ToEvent's default case still refuses it as unknown, so a
-	// spectator sending it today gets an honest error, never a silent no-op.
+	// set_viewpoint (visibility spec §3.1.1). SPECTATOR ONLY, and it is the
+	// only row in this table shaped that way: a perch is how a watcher with no
+	// character of their own borrows someone else's eyes. "An unassigned
+	// PLAYER does not perch" — their answer to an empty board is to be GIVEN a
+	// character — and the DM and the agent see everything already, so there is
+	// no shoulder for them to gain.
+	//
+	// The row alone is not the whole rule. A perch may only target a
+	// player-controlled actor, which Authorize asks MayPerch below, in the
+	// section that runs for every role; the handler is serve's
+	// handleSetViewpoint, and it appends nothing.
 	"set_viewpoint": {identity.RoleSpectator: true},
 }
 
@@ -110,6 +111,20 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	// subject to it too (spec §3.1a).
 	if name == "promote_participant" {
 		if err := authorizePromotionTarget(cmd.GetPromoteParticipant()); err != nil {
+			return err
+		}
+	}
+	// set_viewpoint's own additional check, the same shape as the promotion
+	// target above and for the same reason: it bounds what the command may
+	// NAME, not who may issue it. A perch may only target a player-controlled
+	// actor (visibility spec §3.1.1) — see MayPerch, which is where that rule
+	// and its argument live.
+	//
+	// Above the player-only section deliberately. Every other additional check
+	// in this function is a rule about players; this one is a rule about
+	// spectators, and the switch below is unreachable for them.
+	if name == "set_viewpoint" {
+		if err := MayPerch(p, cmd.GetSetViewpoint().GetActorId(), st); err != nil {
 			return err
 		}
 	}

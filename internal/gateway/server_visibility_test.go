@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
 
 // --- session zero ---------------------------------------------------------
@@ -530,11 +531,13 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 // transport tests in this package had to be re-seated around, so that it is
 // pinned rather than merely relied upon.
 //
-// A spectator rides a shoulder (spec §3.1.1) and SetViewpoint — the command
-// that chooses one — is Task 6's. Until it exists a spectator perches on
-// nobody and therefore has no eyes, which is the fail-closed direction: the
-// alternative is a default perch the server picked, and a spectator perched on
-// the Goblin Archer would watch the ambush from inside it.
+// A spectator rides a shoulder (spec §3.1.1), and a connection opens perched
+// on NOBODY: SetViewpoint exists, but until this watcher sends one they have no
+// eyes and therefore no board. That is the fail-closed direction and the only
+// one available — the alternative is a shoulder the server picked for them, and
+// a spectator perched on the Goblin Archer would watch the ambush from inside
+// it. TestASpectatorHopsFromOneShoulderToAnother is the other half: what
+// arrives once they do choose.
 //
 // They still receive what is addressed to the table rather than drawn on the
 // board — narration is the case that matters, because withholding it would
@@ -566,6 +569,215 @@ func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	}
 	if !mentions(t, stream, "The corridor narrows.") {
 		t.Fatal("a spectator must still hear the table: narration is addressed, not drawn")
+	}
+}
+
+// --- the spectator perch (spec §3.1.1) ------------------------------------
+
+// seedArmak adds a SECOND party member, east of the wall the ambush fixture
+// splits its grid with, so that there are two shoulders to hop BETWEEN.
+//
+// Armak stands one square east of the Goblin Archer; Asme is on the far side of
+// the wall at x=15. That is what makes the hop observable in both directions:
+// the archer is invisible from one shoulder and in plain sight from the other,
+// and Asme herself disappears when the watcher leaves her.
+func (f *gwFixture) seedArmak(t *testing.T) {
+	t.Helper()
+	dmConn := f.dial(f.dmToken, 4)
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-ambush-scout",
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak", ControllerId: f.playerID},
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed AddActor act-scout: %s", r.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-ambush-tok-scout",
+		Command: &vttv1.ClientCommand_PlaceToken{PlaceToken: &vttv1.PlaceToken{
+			TokenId: "tok-scout", SceneId: "ambush", ActorId: "act-scout",
+			Position: &vttv1.GridPosition{X: 20, Y: 8},
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed PlaceToken tok-scout: %s", r.Error)
+	}
+}
+
+// perch sends one SetViewpoint and returns the frames it produced.
+//
+// The frames are drained WITHOUT anything else happening at the table, which is
+// the "whenever" in Patrik's sentence: a hop shows you the new view at once
+// rather than at the next event, and at a quiet table the next event may be
+// minutes away.
+func (f *gwFixture) perch(t *testing.T, conn *websocket.Conn, requestID, actorID string) []*vttv1.Envelope {
+	t.Helper()
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: requestID,
+		Command: &vttv1.ClientCommand_SetViewpoint{
+			SetViewpoint: &vttv1.SetViewpoint{ActorId: actorID},
+		},
+	})
+	if r := readResult(t, conn); !r.Ok {
+		t.Fatalf("perch on %q refused: %s", actorID, r.Error)
+	}
+	return drainEvents(t, conn, 500*time.Millisecond)
+}
+
+// hides reports whether the stream tells this viewer that tokenID left view.
+func hides(stream []*vttv1.Envelope, tokenID string) bool {
+	for _, e := range stream {
+		if th := e.GetTokenHidden(); th != nil && th.GetTokenId() == tokenID {
+			return true
+		}
+	}
+	return false
+}
+
+// TestASpectatorHopsFromOneShoulderToAnother is spec §3.1.1 end to end, and it
+// is Patrik's own image: "you as a spectator can jump between tokens — like a
+// bird hopping from one shoulder to another. You can sit on any of the
+// characters, and you can choose to shift to another character's view,
+// whenever — but you will only know as much as the party does, not what the DM
+// has planned to happen."
+//
+// Four claims, and the assertions below follow them in order. The watcher is
+// offered the party to choose from; sitting on Asme shows Asme's room AND NOT
+// the archer behind the wall; hopping to Armak shows the archer and takes Asme
+// away, because creatures are pure line of sight; and the terrain of BOTH rooms
+// is still theirs at the end, because the bird remembers every shoulder it has
+// sat on.
+func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	f.seedArmak(t)
+
+	watcher := f.dial(f.spectatorToken, 0)
+
+	// WHAT A WATCHER GETS FOR FREE: the roster, and nothing drawn. You cannot
+	// choose a shoulder you have not been told about (spec §5 — actors
+	// controlled by any player are always known).
+	roster := drainEvents(t, watcher, 500*time.Millisecond)
+	if !mentions(t, roster, "act-fighter") || !mentions(t, roster, "act-scout") {
+		t.Fatal("a watcher must be told which characters the party has, or there is no shoulder to choose")
+	}
+	if mentions(t, roster, "tok-") || mentions(t, roster, "ambush") {
+		t.Fatal("a spectator perched on nobody must have no board at all")
+	}
+
+	west := f.perch(t, watcher, "perch-asme", "act-fighter")
+	if !mentions(t, west, "tok-fighter") {
+		t.Fatal("sitting on Asme must show Asme's board, and show it at once")
+	}
+	if mentions(t, west, "goblin") {
+		t.Fatal("the Goblin Archer is behind the wall from Asme's shoulder: " +
+			"a watcher knows as much as the party does, not what the DM has planned")
+	}
+
+	east := f.perch(t, watcher, "perch-armak", "act-scout")
+	if !mentions(t, east, "tok-goblin-archer") {
+		t.Fatal("from Armak's shoulder the archer is one square away and in plain sight")
+	}
+	if !hides(east, "tok-fighter") {
+		t.Fatal("Asme is behind the wall from Armak's shoulder, and creatures are pure " +
+			"line of sight: her token must be taken off the watcher's board")
+	}
+
+	// THE BIRD REMEMBERS EVERY SHOULDER IT HAS SAT ON (spec §3.1.1/§3.2).
+	// Folded with the engine's own fold — the one client/src/fold.ts mirrors —
+	// the watcher's stream leaves them holding both rooms. Over an evening that
+	// converges on what the party collectively knows, and never on what the DM
+	// has planned, because there is no shoulder on the DM's side of the screen.
+	stream := make([]*vttv1.Envelope, 0, len(roster)+len(west)+len(east))
+	stream = append(stream, roster...)
+	stream = append(stream, west...)
+	stream = append(stream, east...)
+
+	viewed := engine.NewState()
+	for i, e := range stream {
+		if err := engine.Apply(viewed, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	explored := viewed.Scenes["ambush"].Explored
+	if !explored[gridKeyForTest(5, 5)] {
+		t.Error("hopping away from Asme must not un-explore the room she stands in")
+	}
+	if !explored[gridKeyForTest(20, 8)] {
+		t.Error("Armak's room must be explored once the watcher has sat on his shoulder")
+	}
+}
+
+// TestASpectatorMayNotPerchOnTheGoblinArcher is THE CONSTRAINT THE WHOLE IDEA
+// RESTS ON, end to end and over the real wire: MayPerch is unit-tested in
+// viewpoint_test.go, and this proves the server actually asks it before moving
+// anybody's eyes.
+//
+// A watcher inside the archer sees the ambush the party is walking into, which
+// is session zero with a different seat number.
+func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+
+	watcher := f.dial(f.spectatorToken, 0)
+	drainEvents(t, watcher, 500*time.Millisecond) // the roster, which is theirs
+
+	sendCommand(t, watcher, &vttv1.ClientCommand{
+		RequestId: "perch-archer",
+		Command: &vttv1.ClientCommand_SetViewpoint{
+			SetViewpoint: &vttv1.SetViewpoint{ActorId: "act-goblin-archer"},
+		},
+	})
+	if r := readResult(t, watcher); r.Ok {
+		t.Fatal("the server must refuse a perch on an NPC, whatever the client offered")
+	}
+	// AND NOTHING MOVES. A refusal that still shifted the eyes would leak the
+	// ambush and merely say no about it.
+	if after := drainEvents(t, watcher, 500*time.Millisecond); len(after) != 0 {
+		for _, e := range after {
+			raw, _ := protojson.Marshal(e)
+			t.Logf("after the refused perch: %s", raw)
+		}
+		t.Fatal("a refused perch must change nothing on the watcher's board")
+	}
+}
+
+// TestPerchingAppendsNothingToTheLog is the same shape as handleJoinDoor, whose
+// comment says it appends NOTHING, and it is Patrik's ruling: "we do not need
+// to log anything about what/where the spectator sees."
+//
+// Where a watcher points their camera is not a fact about the campaign. Logged,
+// it would replay forever, put rows in the story panel, and become RETRACTABLE
+// — a DM could undo somebody having looked at Asme.
+//
+// Two assertions, because "nothing was appended" and "nobody was told" are
+// different claims: the log's own length, and a DM sitting at the table who
+// must hear nothing at all while the watcher hops.
+func TestPerchingAppendsNothingToTheLog(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	f.seedArmak(t)
+
+	dmConn := f.dial(f.dmToken, 0)
+	drainEvents(t, dmConn, 500*time.Millisecond) // the DM's catch-up is not the subject
+	before := len(f.log(t))
+
+	watcher := f.dial(f.spectatorToken, 0)
+	f.perch(t, watcher, "perch-asme", "act-fighter")
+	f.perch(t, watcher, "perch-armak", "act-scout")
+	f.perch(t, watcher, "un-perch", "")
+
+	if after := len(f.log(t)); after != before {
+		t.Fatalf("perching appended %d event(s) to the campaign's history", after-before)
+	}
+	if heard := drainEvents(t, dmConn, 500*time.Millisecond); len(heard) != 0 {
+		for _, e := range heard {
+			raw, _ := protojson.Marshal(e)
+			t.Logf("the DM was told: %s", raw)
+		}
+		t.Fatal("a perch reaches nobody but the watcher who sent it")
 	}
 }
 

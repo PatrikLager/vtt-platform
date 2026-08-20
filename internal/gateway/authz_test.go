@@ -93,7 +93,12 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 	case "close_door":
 		return closeDoorCmd("scn", 0, 1)
 	case "set_viewpoint":
-		return setViewpointCmd("hero")
+		// "a1", not a name of its own: MayPerch (Task 6) now runs inside
+		// Authorize and only a PLAYER-CONTROLLED actor is a shoulder, so the
+		// spectator cell in the matrix needs the one actor ownershipFixture
+		// gives a controller. Same dependency the open_door/close_door cases
+		// above have on that fixture's token position.
+		return setViewpointCmd("a1")
 	default:
 		t.Fatalf("commandFor: unknown command name %q", name)
 		return nil
@@ -102,9 +107,9 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 
 // setViewpointCmd builds a minimal, valid SetViewpoint ClientCommand naming
 // actorID as the shoulder to perch on (visibility spec §3.1.1). Authorize
-// only checks role here — MayPerch's player-controlled-actor check is
-// Task 6's, wired into Authorize's switch there the same way mayWorkDoor was
-// for open_door/close_door above.
+// checks role AND the actor: MayPerch runs in the every-role section, above
+// the player-only switch that carries mayWorkDoor, because a perch is a
+// spectator's command and that switch never fires for one.
 func setViewpointCmd(actorID string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_SetViewpoint{
 		SetViewpoint: &vttv1.SetViewpoint{ActorId: actorID},
@@ -224,7 +229,8 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 84-cell matrix (spec §4/§7, grown from 80 by the
+// authzCases is the full 88-cell matrix (spec §4/§7, grown from 84 by
+// visibility Task 6's set_viewpoint row, from 80 by the
 // whole-branch-review C1 remediation's load_map row, from 72 by
 // maps-as-geometry Task 1's open_door/close_door rows, from 52 by
 // presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
@@ -389,6 +395,26 @@ var authzCases = []authzCase{
 	{"close_door", identity.RoleAgent, true},
 	{"close_door", identity.RolePlayer, true},
 	{"close_door", identity.RoleSpectator, false},
+
+	// set_viewpoint (visibility Task 6, spec §3.1.1). THE ONLY ROW IN THIS
+	// TABLE WHOSE ONLY TRUE CELL IS THE SPECTATOR'S, and it is the inverse of
+	// every row above for a reason: a perch is how a watcher with no character
+	// of their own borrows someone else's eyes, and "an unassigned PLAYER does
+	// not perch" — their answer to an empty board is to be GIVEN a character,
+	// which is the onboarding flow working as intended. The DM and the agent
+	// see everything already, so there is no shoulder for them to gain.
+	//
+	// The spectator cell is TRUE here only because commandFor names "a1", which
+	// ownershipFixture gives a controller — MayPerch, wired into Authorize's
+	// every-role section, refuses any other kind of actor.
+	// TestAuthorizeSpectatorMayNotPerchOnAnNpc proves that other direction: a
+	// row that only ever says yes is not a guard, the same argument the
+	// revoke_actor_control and open_door comments above make for their own
+	// player cells.
+	{"set_viewpoint", identity.RoleDM, false},
+	{"set_viewpoint", identity.RoleAgent, false},
+	{"set_viewpoint", identity.RolePlayer, false},
+	{"set_viewpoint", identity.RoleSpectator, true},
 }
 
 // ownershipFixture returns a State where actor "a1" is controlled by
@@ -415,8 +441,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 84 {
-		t.Fatalf("authzCases has %d entries, want 84 (21 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 88 {
+		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -615,6 +641,31 @@ func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 		if err := gateway.Authorize(p, closeDoorCmd("scn", 0, 1), st); err != nil {
 			t.Fatalf("%s must be free of the adjacency rule: %v", role, err)
 		}
+	}
+}
+
+// --- set_viewpoint: which shoulders exist (visibility Task 6) -------------
+
+// TestAuthorizeSpectatorMayNotPerchOnAnNpc is the direction the matrix cell
+// cannot prove. Its spectator cell is true because commandFor names a
+// player-controlled actor; this asks the same question about the Goblin Archer
+// and requires Authorize itself — not a menu, not a client — to say no.
+func TestAuthorizeSpectatorMayNotPerchOnAnNpc(t *testing.T) {
+	st := ownershipFixture()
+	// An actor with an EMPTY control set: DM/agent only, which is what "NPC"
+	// means everywhere else in this file (see authorizeTokenOwnership).
+	st.Actors["act-goblin-archer"] = &vttv1.Actor{ActorId: "act-goblin-archer", Name: "Goblin Archer"}
+
+	p := &identity.Participant{ID: "s-1", Role: identity.RoleSpectator}
+	if err := gateway.Authorize(p, setViewpointCmd("act-goblin-archer"), st); err == nil {
+		t.Fatal("a spectator perched on the Goblin Archer would watch the ambush from " +
+			"inside it: Authorize must refuse the perch")
+	}
+	// The control: the same spectator, the same command, an actor a player
+	// controls. Without this the test above would pass against an Authorize
+	// that refused every perch there is.
+	if err := gateway.Authorize(p, setViewpointCmd("a1"), st); err != nil {
+		t.Fatalf("a spectator may ride a party member's shoulder: %v", err)
 	}
 }
 

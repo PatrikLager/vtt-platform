@@ -25,8 +25,9 @@ import (
 // For a spectator it is the shoulder they are currently riding, and the perch
 // must be a PLAYER-CONTROLLED actor: "a spectator perched on the Goblin Archer
 // would watch the ambush from inside it, and the arc would be undone in a
-// single click." Task 6 refuses such a perch at the command; eyes below
-// refuses to honour one that arrived any other way.
+// single click." MayPerch refuses such a perch at the command (viewpoint.go,
+// wired into Authorize); eyes below refuses to honour one that arrived any
+// other way.
 type Viewer struct {
 	ParticipantID string
 	Role          identity.Role
@@ -178,11 +179,49 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 		// transitions are computed against state, not against history.
 		return nil
 	}
-	out := pr.transitions(env, now, st)
+	out := pr.transitions(env, env.GetSequence(), now, st)
 	if v == forwarded {
 		out = append(out, redactedFor(env))
 	}
 	return out
+}
+
+// reperch moves a spectator onto a new shoulder and returns the envelopes that
+// bring their board up to what those eyes can see (spec §3.1.1: "you can choose
+// to shift to another character's view, whenever").
+//
+// IT IS transitions WITH NO CAUSING EVENT, and that is the whole implementation
+// — which is the point. Nothing about hopping is a special case: the new view is
+// the same diff against the same memory that every event already produces, so a
+// perch introduces what the new eyes can see, hides the creatures the old
+// shoulder could see and this one cannot, and leaves TERRAIN alone. That last
+// one is not a decision taken here; it falls out of there being no message that
+// un-explores a square, which is why "the bird remembers every shoulder it has
+// sat on" is a property of the design rather than a feature of this function.
+//
+// seq is the sequence the seat last folded — see seat.perch, which is the only
+// caller and which owns the pairing of that number with st. No event caused
+// this, so there is no causing sequence in spec §4.2's sense; naming a HIGHER
+// one would put a sequence on this seat's wire that it has not reached.
+//
+// NO DOOR IS SKIPPED, unlike the event path: doorTransitions skips the square a
+// door event is ABOUT because classify forwards that event itself, and here
+// there is no event to forward. Every visible door this viewer believes wrong
+// is corrected, which is exactly what a new pair of eyes needs.
+func (pr *Projector) reperch(actorID string, seq int64, st *engine.State) []*vttv1.Envelope {
+	pr.viewer.Viewpoint = actorID
+	if st == nil {
+		// Omit rather than guess (spec §4.4), the same answer Project gives to
+		// the same input. MEASURED, not assumed: deleting this line ALONE
+		// changes nothing a test can see, because look guards nil itself and
+		// transitions reads st only inside loops that a viewer with no visible
+		// scene never enters. It stays because that is a fact about two other
+		// functions rather than about this one — delete look's guard too and
+		// the pair panics, which is what
+		// TestASeatPerchesOnlyAgainstAWorldItHasSeen catches.
+		return nil
+	}
+	return pr.transitions(nil, seq, pr.look(st), st)
 }
 
 // redactedFor is the envelope a projected viewer actually receives for a
@@ -378,8 +417,11 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // round they go. Chosen anyway, because it is the order under which the viewer
 // never holds more tokens than they are entitled to, not even for the length of
 // one batch.
-func (pr *Projector) transitions(env *vttv1.Envelope, now sightView, st *engine.State) []*vttv1.Envelope {
-	seq := env.GetSequence()
+// CAUSE MAY BE NIL, and that is how a perch says "no event caused this" (see
+// reperch). Everything below reads the ENVELOPE for exactly one thing — which
+// door square, if any, this event is already about — and doorSubject answers
+// nil the same way it answers any other payload that is not a door.
+func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
 	for _, id := range sortedSceneIDs(now.squares) {
@@ -407,7 +449,7 @@ func (pr *Projector) transitions(env *vttv1.Envelope, now sightView, st *engine.
 	// AFTER the scene introductions above and never before them: both folds
 	// reject a door in a scene they do not have ("door opened in unknown
 	// scene").
-	out = append(out, pr.doorTransitions(env, seq, now, st)...)
+	out = append(out, pr.doorTransitions(cause, seq, now, st)...)
 
 	for _, id := range sortedSet(now.actors) {
 		if pr.actors[id] {
@@ -837,9 +879,9 @@ func (pr *Projector) canSeeSquare(now sightView, sceneID string, at *vttv1.GridP
 // thing. The belief is still recorded, so the next event does not re-emit. When
 // the square is NOT visible the square is not walked at all, so the skip costs
 // nothing in that direction.
-func (pr *Projector) doorTransitions(env *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
+func (pr *Projector) doorTransitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
-	causeScene, causeSquare, causeIsDoor := doorSubject(env)
+	causeScene, causeSquare, causeIsDoor := doorSubject(cause)
 
 	for _, id := range sortedSceneIDs(now.squares) {
 		sc, ok := st.Scenes[id]
@@ -886,7 +928,9 @@ func (pr *Projector) doorTransitions(env *vttv1.Envelope, seq int64, now sightVi
 }
 
 // doorSubject reports the scene and square a door event is about, if env is
-// one. Any other payload reports ok=false and names no square.
+// one. Any other payload reports ok=false and names no square — and so does a
+// NIL envelope, which is the perch path saying no event caused this at all
+// (GetPayload is nil-safe, and the switch below has nothing to match).
 func doorSubject(env *vttv1.Envelope) (sceneID, square string, ok bool) {
 	switch p := env.GetPayload().(type) {
 	case *vttv1.Envelope_DoorOpened:

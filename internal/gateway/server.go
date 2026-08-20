@@ -16,6 +16,7 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -802,21 +803,14 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// — a lie, and one that throws them out of a live table over a
 		// transient. identity's own comment records this shared file blocking
 		// the full busy_timeout and then failing under another handle's write
-		// transaction, so it is measured, not hypothetical.
-		//
-		// Refuse the command and keep the connection, exactly as handleCommand
-		// already does for a campaign that cannot answer. Still fail-closed
-		// where it counts: nothing is authorized while we cannot say who is
-		// asking.
-		var result *vttv1.CommandResult
-		if err != nil {
-			result = &vttv1.CommandResult{
-				RequestId: cmd.GetRequestId(),
-				Ok:        false,
-				Error:     "gateway: identity unavailable",
-			}
-		} else {
-			result = s.handleCommand(now, cmd)
+		// transaction, so it is measured, not hypothetical. It is handed to
+		// answerCommand below, which refuses the command and keeps the
+		// connection; alive=false there is a TRANSPORT failure and nothing to
+		// do with this person's credential.
+		result, alive := s.answerCommand(now, err, cmd, sub, outCh, writerDone)
+		if !alive {
+			shutdown()
+			return
 		}
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
@@ -855,21 +849,127 @@ func describeBlockage(why string) string {
 	return why
 }
 
+// answerCommand produces the CommandResult for one decoded command, and
+// enqueues any frames that command produced FOR THIS CONNECTION ALONE.
+//
+// It returns alive=false when the connection is finished — the writer is gone,
+// or a frame could not be encoded. It never closes anything itself; serve owns
+// the connection's lifetime and answers false by tearing down.
+//
+// lookupErr is the identity re-resolution's OPERATIONAL failure, never a
+// revocation: serve has already dealt with that one and does not reach here.
+// See its comment on why a busy database must not be read as "your credential
+// is no longer valid".
+//
+// A separate function rather than a switch inline in serve, and the reason is
+// mechanical rather than aesthetic: written inline, the perch branch put serve
+// at gocyclo 31 against a limit of 30 and the lint gate refused it (MEASURED —
+// that is the failure this extraction answers, not an estimate of what it
+// would have been). Raising the threshold would have been weakening a gate to
+// pass it (CLAUDE.md rule 2); the split it forced runs along a seam that was
+// already there.
+func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vttv1.ClientCommand,
+	sub *seat, outCh chan<- []byte, writerDone <-chan struct{}) (result *vttv1.CommandResult, alive bool) {
+	switch sv, isPerch := cmd.GetCommand().(*vttv1.ClientCommand_SetViewpoint); {
+	case lookupErr != nil:
+		// Refuse the command and keep the connection, exactly as authorize
+		// already does for a campaign that cannot answer. Still fail-closed
+		// where it counts: nothing is authorized while we cannot say who is
+		// asking.
+		return &vttv1.CommandResult{
+			RequestId: cmd.GetRequestId(),
+			Ok:        false,
+			Error:     "gateway: identity unavailable",
+		}, true
+
+	case isPerch:
+		// THE ONE COMMAND ANSWERED OUTSIDE handleCommand, and the reason is the
+		// one handleCommand's own doc comment gives for owning no transport: a
+		// perch appends NOTHING to the log and changes nothing anyone else can
+		// observe. Its whole effect is on THIS connection's seat and THIS
+		// connection's wire. handleCommand runs authorize → convert → persist,
+		// and a perch is none of those three.
+		//
+		// The frames go out BEFORE the result: the new board is what the
+		// spectator asked for, and the ok is only the receipt.
+		// res, not result: shadowing the named return in a function whose
+		// second value decides whether the connection lives is how a wrong
+		// value gets returned by a later edit that adds a bare `return`.
+		res, frames := s.handleSetViewpoint(p, cmd, sv.SetViewpoint, sub)
+		if err := enqueueEvents(s.encodeFrame, frames, outCh, writerDone); err != nil {
+			// Either the writer is gone or a frame could not be encoded. Both
+			// end this connection, exactly as they do in the pump: a projected
+			// seat whose re-projection was dropped would be left holding a
+			// board that no longer matches its own eyes.
+			return nil, false
+		}
+		return res, true
+
+	default:
+		return s.handleCommand(p, cmd), true
+	}
+}
+
+// authorize is the preamble EVERY inbound command shares, in one place because
+// it has two callers: fetch the world the command is judged against, and ask
+// the one authorization function (spec §4). It returns either that state, or
+// the CommandResult that refuses the command — never both, and never neither.
+//
+// The nil-state arm is not a formality. campaign.State() answers nil for a
+// campaign that cannot be read, and authorizing against no world at all would
+// be deciding who may do what with nothing to decide it from; fail closed
+// (spec §4.4) and tell the caller so, keeping the connection.
+func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*engine.State, *vttv1.CommandResult) {
+	requestID := cmd.GetRequestId()
+	st := s.campaign.State()
+	if st == nil {
+		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
+	}
+	if err := Authorize(p, cmd, st); err != nil {
+		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return st, nil
+}
+
+// handleSetViewpoint moves a spectator onto the shoulder they named, and
+// returns the frames that bring their board up to what those eyes see.
+//
+// IT APPENDS NOTHING, and that is a ruling rather than an omission — the same
+// one handleJoinDoor's doc comment makes for the shared door. Patrik: "we do
+// not need to log anything about what/where the spectator sees." The log is
+// the campaign's history, and where a watcher points their camera is not a
+// fact about the campaign; it is a view preference, like zoom. Logged, it
+// would replay forever, add story-panel noise, and — absurdly — become
+// RETRACTABLE, so a DM could undo somebody having looked at Asme.
+//
+// The cost of that ruling is the perch not surviving a reconnect (spec
+// §3.1.1), because it lives on the connection like the catch-up point does.
+// The client re-sends it after redialling.
+//
+// The refusal path is Authorize's, which is where MayPerch enforces the one
+// rule this command has: a perch may only target a player-controlled actor.
+func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
+	req *vttv1.SetViewpoint, sub *seat) (*vttv1.CommandResult, []*vttv1.Envelope) {
+	if _, refusal := s.authorize(p, cmd); refusal != nil {
+		return refusal, nil
+	}
+	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true}, sub.perch(req.GetActorId())
+}
+
 // handleCommand runs the authorize → convert → persist pipeline for one
 // inbound ClientCommand (spec §3): authz/validation failures produce an
 // ok=false CommandResult and leave the connection open; only a persisted
 // event/marker produces ok=true. It never itself closes the connection or
 // writes to the wire — the caller (serve) owns transport.
+//
+// set_viewpoint never reaches here: it persists nothing and its whole effect
+// is on one connection, so serve answers it directly (handleSetViewpoint).
 func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
 	requestID := cmd.GetRequestId()
 
-	st := s.campaign.State()
-	if st == nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
-	}
-
-	if err := Authorize(p, cmd, st); err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	st, refusal := s.authorize(p, cmd)
+	if refusal != nil {
+		return refusal
 	}
 
 	// The map constrains PLAYERS; the DM and the agent author the world and

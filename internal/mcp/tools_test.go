@@ -39,9 +39,10 @@ import (
 // be validated, listed and have its art served, but never loaded into a
 // campaign — load_map is load_adventure's sibling for a standalone map), and
 // 16 to 17 with set_viewpoint (visibility sub-project, Task 2 — a spectator's
-// perch; not yet authorized beyond the role check or convertible by the
-// gateway, which is Task 6's job, but already a real MCP tool the moment the
-// oneof carries it, same as open_door/close_door were before their Task 6).
+// perch; it is a real MCP tool the moment the oneof carries it, same as
+// open_door/close_door were before their Task 6. It is now authorized and
+// handled too (visibility Task 6), though it converts to no event at all: a
+// perch appends nothing, so the gateway answers it without ToEvent).
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",

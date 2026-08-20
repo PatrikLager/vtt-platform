@@ -426,8 +426,8 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"set_viewpoint": "appends nothing, the same shape as set_join_door above: where a " +
 			"spectator points their camera is a view preference, not campaign history, so " +
 			"logging it would replay forever and make it retractable (visibility spec " +
-			"§3.1.1). Task 6 wires the handler; this arm exists only to keep this " +
-			"reflection gate honest about the oneof as it stands today.",
+			"§3.1.1). serve answers it directly (handleSetViewpoint) and it never reaches " +
+			"ToEvent at all.",
 	}
 
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")

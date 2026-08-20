@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -12,14 +13,20 @@ import (
 
 // viewerFor is the seat a participant occupies, as the projection sees it.
 //
-// Viewpoint is deliberately empty. It is the SPECTATOR PERCH — which shoulder
-// a watcher is riding — and it arrives from the client over SetViewpoint,
-// which is Task 6's command and does not exist yet. Until it does, a spectator
-// perches on nobody, Projector.eyes returns no eyes for them, and they see no
-// board at all. That is the fail-closed direction (spec §4.4) and it is the
-// direction a missing feature has to run in: a default perch chosen by the
-// server would be a shoulder nobody asked to ride, and Viewer's own doc
-// comment records why the wrong shoulder undoes this whole arc in one click.
+// Viewpoint is deliberately empty, and it STAYS empty until the spectator
+// themselves names a shoulder over SetViewpoint (seat.perch, below). A
+// connection therefore opens perched on nobody: eyes returns no eyes, and the
+// watcher sees no board at all until they choose one.
+//
+// That is the fail-closed direction (spec §4.4) and it is the only direction
+// available here, because the server has no way to know which shoulder this
+// person meant. A default chosen for them would be a shoulder nobody asked to
+// ride, and Viewer's own doc comment records why the wrong shoulder undoes
+// this whole arc in one click.
+//
+// IT IS ALSO WHY A PERCH DOES NOT SURVIVE A RECONNECT (spec §3.1.1): the perch
+// is connection state, like the catch-up point, so a client that had one
+// re-sends it after redialling.
 func viewerFor(p *identity.Participant) Viewer {
 	return Viewer{ParticipantID: p.ID, Role: p.Role}
 }
@@ -70,6 +77,17 @@ func projected(r identity.Role) bool {
 // So serve subscribes a projected seat from 0 regardless of the `after` it
 // asked for, and `resume` throws away what that seat already holds.
 type seat struct {
+	// mu guards everything below it, because a seat now has TWO callers on two
+	// goroutines: the broadcast pump (receive, per event) and the command loop
+	// (perch, when a spectator hops). Before Task 6 the pump was the only one
+	// and none of this needed a lock.
+	//
+	// pr ITSELF IS READ WITHOUT IT, in both methods' first line. That read is
+	// safe for a reason that does not generalise to the fields below: newSeat
+	// sets pr once, before serve hands the seat to any goroutine, and nothing
+	// ever assigns it again. What perch mutates is the Viewer INSIDE it.
+	mu sync.Mutex
+
 	// pr is nil for the DM and the agent. Not "a projector that happens to
 	// forward everything": nil, so that neither the fold below nor
 	// sight.VisibleFrom is ever reached on their path, and their stream stays
@@ -89,6 +107,18 @@ type seat struct {
 	// keeps for the same reason (client/src/session.ts re-folds its whole log
 	// on every event).
 	received []*vttv1.Envelope
+
+	// world and lastSeq are ONE VALUE in two fields: the state this seat last
+	// judged an event against, and the sequence of that event. They move
+	// together in receive and are never written apart, which is what lets
+	// perch answer "what can these new eyes see" against exactly the world the
+	// old eyes were last shown — not against HEAD, which during catch-up is
+	// the future (receive's own comment says why that matters).
+	//
+	// Both are zero until the first event folds: a seat that has been shown
+	// nothing has nothing to re-show, whatever shoulder it climbs onto.
+	world   *engine.State
+	lastSeq int64
 }
 
 // newSeat builds the seat for one connection. after is the client's resume
@@ -121,6 +151,8 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 	if s.pr == nil {
 		return []*vttv1.Envelope{env}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.received = append(s.received, env)
 	// The state AFTER env, which is what Project is specified to read. Not
@@ -162,16 +194,45 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 		return nil
 	}
 
-	out := s.pr.Project(env, world)
-	// NO FAST PATH FOR resume == 0, and its absence is deliberate. The obvious
-	// `if s.resume <= 0 { return out }` is a pure optimisation with no
-	// behavioural content — every logged envelope carries a sequence of at
-	// least 1, so at resume 0 the filter below keeps every one of them — and
-	// the mutation gate says so: weakening that guard to `< 0` survives every
-	// test in this package because nothing can distinguish the two. Removing
-	// it removes an unkillable mutant rather than adjudicating one, and the
-	// adjudications this branch has had to re-key four times are the argument
-	// for preferring the deletion.
+	// ONE VALUE, WRITTEN TOGETHER and only after the fold succeeded — see the
+	// fields' own comment. A failed fold leaves the last good pair in place
+	// rather than pointing lastSeq at a world nobody could build.
+	s.world, s.lastSeq = world, env.GetSequence()
+
+	return s.pastResume(s.pr.Project(env, world))
+}
+
+// pastResume drops what this seat's client already holds.
+//
+// NO FAST PATH FOR resume == 0, and its absence is deliberate. The obvious
+// `if s.resume <= 0 { return out }` is a pure optimisation with no behavioural
+// content — every logged envelope carries a sequence of at least 1, so at
+// resume 0 the filter below keeps every one of them — and the mutation gate
+// says so: weakening that guard to `< 0` survives every test in this package
+// because nothing can distinguish the two. Removing it removes an unkillable
+// mutant rather than adjudicating one, and the adjudications this branch has
+// had to re-key four times are the argument for preferring the deletion.
+//
+// EVERYTHING this seat emits passes through here, projected events and perch
+// re-projections alike — and for a perch this filter is very nearly a no-op,
+// which is worth stating plainly rather than leaving as reassurance. A perch
+// carries lastSeq, the head this seat has folded, so it is dropped only by a
+// client claiming a cursor AT OR PAST that head.
+//
+// THAT IS NOT THE RECONNECT CASE. client/src/wire.ts resumes at seenSeq-1 and
+// KEEPS its folded log, while a reborn seat's projector starts empty and,
+// perched on nobody, emits nothing at all during the replay. A perch re-sent on
+// such a connection therefore re-introduces a board the client is still
+// holding, and a duplicate introduction freezes a client's fold PERMANENTLY
+// (Projector's doc comment). Nothing here can tell the two apart: this filter
+// knows which SEQUENCE a client holds, never which projection produced it.
+//
+// Unreachable today — no client sends SetViewpoint at all — so this is a
+// constraint on whoever wires one, recorded in task-6-report.md: re-perch only
+// on a connection that resumed from 0 with an empty log, or give the perch to
+// the server AT CONNECT (a query parameter, like `after`) so that the replay
+// runs with the right eyes and this filter does its ordinary job.
+func (s *seat) pastResume(out []*vttv1.Envelope) []*vttv1.Envelope {
 	kept := make([]*vttv1.Envelope, 0, len(out))
 	for _, e := range out {
 		// STRICTLY GREATER, matching store.Subscribe's own `seq > afterSeq`:
@@ -181,6 +242,36 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 		}
 	}
 	return kept
+}
+
+// perch moves a spectator onto a new shoulder and returns the envelopes that
+// bring their board up to what those eyes can see (spec §3.1.1). The caller
+// sends them; this function touches no wire and appends nothing.
+//
+// AT ONCE, rather than at the next event, because that is what "you can choose
+// to shift to another character's view, whenever" means at a quiet table. It
+// costs one look() — the same sight computation every event already pays for —
+// against the world this seat last folded.
+//
+// AGAINST THAT WORLD AND NOT AGAINST HEAD, deliberately. The two differ during
+// catch-up, where head is the future, and judging a perch against a world this
+// seat has not been shown yet would introduce a token whose arrival it is still
+// replaying. `world` and `lastSeq` are one value for exactly this reason.
+//
+// CALLED FROM THE COMMAND LOOP while the pump may be inside receive on another
+// goroutine — hence the lock, which is why the seat has one at all.
+func (s *seat) perch(actorID string) []*vttv1.Envelope {
+	if s.pr == nil {
+		// The DM and the agent (see the field's comment). Authorize denies
+		// them set_viewpoint, so this is defence in depth rather than a path:
+		// an unprojected seat has no projection to re-run, and inventing one
+		// here would put a filtered stream on the one wire exit criterion 8
+		// says is byte-for-byte unchanged.
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pastResume(s.pr.reperch(actorID, s.lastSeq, s.world))
 }
 
 // canSee reports whether this viewer can see one square of one scene right
