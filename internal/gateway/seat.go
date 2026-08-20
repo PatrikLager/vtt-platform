@@ -162,9 +162,15 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 	}
 
 	out := s.pr.Project(env, world)
-	if s.resume <= 0 {
-		return out
-	}
+	// NO FAST PATH FOR resume == 0, and its absence is deliberate. The obvious
+	// `if s.resume <= 0 { return out }` is a pure optimisation with no
+	// behavioural content — every logged envelope carries a sequence of at
+	// least 1, so at resume 0 the filter below keeps every one of them — and
+	// the mutation gate says so: weakening that guard to `< 0` survives every
+	// test in this package because nothing can distinguish the two. Removing
+	// it removes an unkillable mutant rather than adjudicating one, and the
+	// adjudications this branch has had to re-key four times are the argument
+	// for preferring the deletion.
 	kept := make([]*vttv1.Envelope, 0, len(out))
 	for _, e := range out {
 		// STRICTLY GREATER, matching store.Subscribe's own `seq > afterSeq`:
