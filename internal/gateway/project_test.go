@@ -1094,6 +1094,40 @@ func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
 	}
 }
 
+func TestADoorYouCanSeeSwingShutReachesThePlayerOnce(t *testing.T) {
+	// The CLOSING direction, which the review named as the case that must not
+	// break: a closed door's square is visible from the adjacent room, so
+	// shutting a door in your own room does reach you.
+	//
+	// It is a separate test rather than a table row because the two directions
+	// run through separate arms of doorSubject, and the mutation gate proved
+	// that matters: with only the opening test written,
+	// CONDITIONALS_NEGATION on the DoorClosed arm's `at != nil`
+	// (project.go:897:73) SURVIVED while the identical mutant on the DoorOpened
+	// arm one line up was killed. Negating it makes doorSubject disown the
+	// event, so the diff stops recognising the causing square and emits a
+	// second DoorClosed alongside the forwarded one.
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	firstPlace(pr, st)
+
+	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	pr.Project(envelope(7, &vttv1.DoorOpened{
+		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
+
+	mustApply(st, 8, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	var closed int
+	for _, e := range pr.Project(envelope(8, &vttv1.DoorClosed{
+		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st) {
+		if e.GetDoorClosed() != nil {
+			closed++
+		}
+	}
+	if closed != 1 {
+		t.Fatalf("a player must watch the door in their own room swing shut, exactly once, got %d", closed)
+	}
+}
+
 func TestAVisibleTokensMoveDoesReachThePlayer(t *testing.T) {
 	// The control for TestAMoveIsWithheldWhileTheMoverIsOutOfSight: withholding
 	// EVERY move would satisfy it while making the board static.
