@@ -49,6 +49,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: p}
 	case *vttv1.NoteUpserted:
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
+	case *vttv1.NoteDeleted:
+		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
 	case *vttv1.EventsRetracted:
 		env.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.ActorControlGranted:
@@ -147,6 +149,28 @@ func TestTheDMReceivesEverythingUnchanged(t *testing.T) {
 	// on the path that today does no work at all.
 	if out[0] != in {
 		t.Fatal("the DM must receive the SAME envelope, not an equal copy of it")
+	}
+}
+
+func TestTheAgentSeatReceivesEverythingUnchangedToo(t *testing.T) {
+	// Exit criterion 8 names the agent seat explicitly, alongside the DM. It
+	// shares a case clause with RoleDM today, so this is cheap — but "shares a
+	// clause today" is precisely the kind of fact a later edit changes without
+	// noticing, and the agent is the seat an LLM sits in: a projected agent
+	// would be an LLM quietly reasoning about a board it has been given a
+	// redacted view of, which is worse than a wrong pixel.
+	st := twoRooms()
+	pr := gateway.NewProjector(gateway.Viewer{ParticipantID: "agent-1", Role: identity.RoleAgent})
+
+	in := envelope(6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	out := pr.Project(in, st)
+
+	if len(out) != 1 {
+		t.Fatalf("the agent's projection must be the identity function: one envelope, got %d", len(out))
+	}
+	if out[0] != in {
+		t.Fatal("the agent must receive the SAME envelope, not an equal copy of it")
 	}
 }
 
@@ -1052,14 +1076,21 @@ func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
 	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 	in := envelope(7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 
-	var opened bool
+	// EXACTLY ONE, because two code paths now know about doors: classify
+	// forwards this envelope, and doorTransitions corrects the viewer's belief
+	// about every door square they can see — and this square is one. The
+	// forwarded envelope is the one that should survive, since it carries the
+	// provenance a synthesized one cannot. A duplicate folds harmlessly (both
+	// folds are idempotent on doors) which is exactly why nothing else would
+	// report it.
+	var opened int
 	for _, e := range pr.Project(in, st) {
 		if e.GetDoorOpened() != nil {
-			opened = true
+			opened++
 		}
 	}
-	if !opened {
-		t.Fatal("a player must watch the door in their own room swing open")
+	if opened != 1 {
+		t.Fatalf("a player must watch the door in their own room swing open, exactly once, got %d", opened)
 	}
 }
 
@@ -1470,6 +1501,17 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 	for _, e := range pr.Project(note, st) {
 		if e.GetNoteUpserted() != nil {
 			t.Error("a note can say anything (spec §4.4) and must not reach a player")
+		}
+	}
+
+	// BOTH note arms, because classify rules on them together and a test that
+	// exercises one leaves the other free to drift to the opposite ruling. The
+	// KEY alone is the leak here: "ambush" names the DM's plan whether or not
+	// any text travels with it.
+	deleted := envelope(9, &vttv1.NoteDeleted{Key: "ambush"})
+	for _, e := range pr.Project(deleted, st) {
+		if e.GetNoteDeleted() != nil {
+			t.Error("deleting a note names the note, and must not reach a player either")
 		}
 	}
 }

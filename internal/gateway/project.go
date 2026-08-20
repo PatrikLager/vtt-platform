@@ -341,10 +341,30 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // pre-flight is a gateway decision, not a projection one. Filed in the task
 // report; spec §4.3's keystone is where it is catchable.
 //
-// Stamping also means several envelopes legitimately share one sequence.
-// Nothing downstream requires them to be unique: the folds key on nothing but
-// the number, and client/src/wire.ts advances its replay cursor with
-// `if (env.sequence > this.lastSeq)`.
+// Stamping also means several envelopes legitimately share one sequence, and
+// before this task every envelope had a unique one. An introduction batch can
+// be five. THE FOLDS TOLERATE THAT; THE RESUME CURSOR DOES NOT, and an earlier
+// version of this comment read the first half as a clearance for both.
+//
+// True: both folds key on nothing but the number, so a shared sequence is
+// nothing to them. Also true: client/src/wire.ts:175 advances its replay
+// cursor with `if (env.sequence > this.lastSeq)`. That second fact is not the
+// reassurance it looks like — it means lastSeq reaches N on the FIRST envelope
+// of a five-envelope batch, while the other four are still in flight, and
+// server.go resumes STRICTLY after a sequence (parseAfter at :363, handed to
+// SubscribeWithNoProgressTimeout at :411). So a connection dropped after 2 of 5
+// has NO EXPRESSIBLE RESUME POINT: `after=N` discards the three it never got,
+// and `after=N-1` re-sends the two it already folded.
+//
+// UNRESOLVED, AND IT BELONGS TO WHOEVER WIRES THE PUMP (Task 5), because
+// neither recovery is safe and the choice is not the projection's to make.
+// Losing the tail drops a TokenHidden, which leaves an enemy token on a
+// player's board — the leak direction this arc exists to close. Re-sending the
+// head double-folds it, and client/src/session.ts:158-160 pushes every
+// envelope onto its log with no dedupe, so a repeated ActorAdded is the
+// duplicate-introduction freeze described above. What is needed is a resume
+// point that can name a POSITION WITHIN a sequence, or a batch that cannot be
+// torn; this file cannot supply either.
 //
 // THE ORDER IS LOAD-BEARING, because both folds are strict about what must
 // already exist, in the same words: a scene before the tokens placed in it
