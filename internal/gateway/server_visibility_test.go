@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
 
@@ -741,6 +743,171 @@ func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
 			t.Logf("after the refused perch: %s", raw)
 		}
 		t.Fatal("a refused perch must change nothing on the watcher's board")
+	}
+}
+
+// TestHoppingWhileTheTableIsBusyKeepsOneOrder is the regression for a defect
+// review found and this commit fixes: TWO GOROUTINES WERE WRITING ONE SOCKET.
+//
+// Perch frames were computed on the command goroutine and enqueued there, while
+// the pump enqueued its own — so two batches computed in one order could reach
+// the wire in the other. A pump frame landed INSIDE a perch batch, and a
+// TokenMoved computed before a TokenHidden was delivered after it. The cost is
+// not a cosmetic reordering: the watcher's own stream stops folding, and on the
+// browser client that freeze is permanent (session.ts re-folds its whole log on
+// every event).
+//
+// THE ASSERTION IS THAT THE STREAM FOLDS, which is the property that actually
+// matters and the one a client would lose. Ordering is asserted through it
+// rather than directly, because "in the order the projector changed" is not
+// observable from outside — a fold that succeeds is exactly what it buys.
+//
+// It hops while the table is BUSY on purpose: the inversion needs both
+// producers active at once. Measured before the fix at 1 failure in 10 plain
+// runs and 2 in 2 under -race; after it, 25 plain runs and 8 under -race, clean.
+func TestHoppingWhileTheTableIsBusyKeepsOneOrder(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	f.seedArmak(t)
+
+	watcher := f.dial(f.spectatorToken, 0)
+	roster := drainEvents(t, watcher, 400*time.Millisecond)
+
+	dmConn := f.dial(f.dmToken, 0)
+	drainEvents(t, dmConn, 300*time.Millisecond)
+
+	// The table moves a token back and forth while the watcher hops, so the
+	// pump always has its own frames to interleave with the perch's.
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ys := []int32{5, 6, 7, 6}
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			sendCommand(t, dmConn, &vttv1.ClientCommand{
+				RequestId: "busy-move",
+				Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+					TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 5, Y: ys[i%len(ys)]},
+				}},
+			})
+			if r := readResult(t, dmConn); !r.Ok {
+				return
+			}
+		}
+	}()
+
+	shoulders := []string{"act-fighter", "act-scout", "", "act-fighter", ""}
+	for i := range 40 {
+		sendCommand(t, watcher, &vttv1.ClientCommand{
+			RequestId: "hop",
+			Command: &vttv1.ClientCommand_SetViewpoint{
+				SetViewpoint: &vttv1.SetViewpoint{ActorId: shoulders[i%len(shoulders)]},
+			},
+		})
+		if r := readResult(t, watcher); !r.Ok {
+			t.Fatalf("hop %d refused: %s", i, r.Error)
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	stream := append(roster, drainEvents(t, watcher, 1500*time.Millisecond)...)
+	viewed := engine.NewState()
+	for i, e := range stream {
+		if err := engine.Apply(viewed, e); err != nil {
+			t.Fatalf("the watcher's own stream stops folding at envelope %d of %d: %v",
+				i, len(stream), err)
+		}
+	}
+}
+
+// TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone is the regression for
+// the second defect review found: perch frames BORROWED a live sequence.
+//
+// Retraction is a range over sequence NUMBERS — campaign.retractedSet,
+// harness.Fold and client/src/fold.ts all expand [from,to] and skip by number —
+// so an undo of the number a perch had borrowed deleted envelopes no event ever
+// caused. The watcher's board emptied with no message, and the party's next
+// move then dangled against a token they no longer had.
+//
+// The DM here retracts an event THE WATCHER NEVER RECEIVED, which is what makes
+// the old behaviour indefensible rather than merely surprising.
+func TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+
+	watcher := f.dial(f.spectatorToken, 0)
+	roster := drainEvents(t, watcher, 400*time.Millisecond)
+	perch := f.perch(t, watcher, "perch-asme", "act-fighter")
+
+	dmConn := f.dial(f.dmToken, 0)
+	drainEvents(t, dmConn, 300*time.Millisecond)
+	head := int64(len(f.log(t)))
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "undo-head",
+		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
+			FromSequence: head, ToSequence: head, Reason: "wrong square",
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("undo: %s", r.Error)
+	}
+	tail := drainEvents(t, watcher, 700*time.Millisecond)
+
+	// And the party moves, as it would a moment later. This is where the old
+	// behaviour failed loudly rather than quietly.
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "after-undo-move",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 5, Y: 6},
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("move: %s", r.Error)
+	}
+	tail = append(tail, drainEvents(t, watcher, 700*time.Millisecond)...)
+
+	stream := make([]*vttv1.Envelope, 0, len(roster)+len(perch)+len(tail))
+	stream = append(stream, roster...)
+	stream = append(stream, perch...)
+	stream = append(stream, tail...)
+
+	st, err := campaign.FoldPrefix(stream)
+	if err != nil {
+		t.Fatalf("the watcher's stream does not fold after an unrelated undo: %v", err)
+	}
+	if _, ok := st.Scenes["ambush"]; !ok {
+		t.Error("an undo of an event the watcher never received erased the room they were shown")
+	}
+	if _, ok := st.Tokens["tok-fighter"]; !ok {
+		t.Error("an undo of an event the watcher never received erased the shoulder they perched on")
+	}
+}
+
+// TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard is the third of
+// review's findings: the server said yes and sent nothing.
+//
+// A spectator who dials with a cursor at the log's head — which a reconnecting
+// client legitimately does — had every perch frame dropped by the resume
+// filter, and got ok=true with an empty board and no way to tell.
+func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
+	f := newGWFixture(t)
+	f.seedAmbush(t)
+	head := int64(len(f.log(t)))
+
+	watcher := f.dial(f.spectatorToken, head)
+	drainEvents(t, watcher, 400*time.Millisecond)
+
+	got := f.perch(t, watcher, "perch-at-head", "act-fighter")
+	if !mentions(t, got, "tok-fighter") {
+		t.Fatalf("a perch answered ok must show the board, whatever cursor the connection "+
+			"resumed from; got %d frame(s)", len(got))
 	}
 }
 

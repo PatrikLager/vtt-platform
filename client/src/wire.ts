@@ -229,6 +229,29 @@ export class Wire {
    * sequence seen cannot be expressed once one event can be several
    * envelopes, and why the step back is taken from seenSeq rather than from
    * lastSeq.
+   *
+   * READ THIS BEFORE WIRING A SPECTATOR PERCH (visibility spec §3.1.1). A perch
+   * is CONNECTION state on the server, like the catch-up cursor: a redial
+   * forgets it, and the client is what re-sends it. Doing that naively breaks
+   * the client permanently, so the rule is worth stating before anyone writes
+   * the obvious three lines:
+   *
+   *   - a redial resumes at seenSeq-1 and this client KEEPS its folded log, but
+   *     the server's projector is reborn empty and — perched on nobody — sends
+   *     nothing at all during the replay. Re-sending the perch on that
+   *     connection therefore re-introduces a scene, actors and tokens this
+   *     client is still holding, and a duplicate introduction is a fold throw,
+   *     which freezes state for good (session.ts re-folds the whole log on
+   *     every event);
+   *   - perch frames carry SEQUENCE 0, deliberately, so that no undo can ever
+   *     name one (see the server's perchSequence). One consequence lands here:
+   *     `session.ts`'s rollback keeps everything at or below the cursor, and 0
+   *     is below every cursor, so perch frames SURVIVE a rollback that drops
+   *     ordinary ones.
+   *
+   * So re-perch on a connection that resumed from 0 with an empty log, or drop
+   * the sequence-0 frames from the log before re-sending. Do not simply call
+   * setViewpoint again after reconnect().
    */
   async reconnect(): Promise<void> {
     // Abandon the old socket by forgetting it, then close it. Forgetting is

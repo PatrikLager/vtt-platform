@@ -36,15 +36,22 @@ func TestASeatPerchesOnlyAgainstAWorldItHasSeen(t *testing.T) {
 	}
 }
 
-// TestAPerchIsStampedWithTheSequenceItsSeatLastFolded pins the number every
-// synthesized envelope on this path carries.
+// TestAPerchCarriesNoSequenceAtAll pins the number every frame on this path
+// carries, and the answer is that it carries none: zero.
 //
-// No event causes a perch, so there is no "causing sequence" in spec §4.2's
-// sense; the honest answer is the last event this seat was judged against,
-// which is exactly the world the new eyes are being shown. A HIGHER number
-// would name a sequence this seat has not reached, and the resume cursor is
-// keyed on that number.
-func TestAPerchIsStampedWithTheSequenceItsSeatLastFolded(t *testing.T) {
+// THIS TEST PINNED THE OPPOSITE UNTIL REVIEW. It required the seat's last
+// folded sequence, which is what spec §4.2 says for a synthesized envelope —
+// correct for every frame an EVENT caused, and wrong here, because no event
+// caused this one. Borrowing a live number put perch frames inside a range that
+// `vtt undo` can name: retracting that sequence deleted the watcher's board
+// with no message, and left the party's next move dangling against a token the
+// watcher no longer had. The test moved with the contract rather than the
+// contract with the test.
+//
+// Zero is unreachable by any retraction on either side of the wire — see
+// perchSequence, which names the two guards — so this assertion is the whole of
+// what protects a perched board from an unrelated undo.
+func TestAPerchCarriesNoSequenceAtAll(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range perchFixtureLog() {
 		s.receive(env)
@@ -55,10 +62,58 @@ func TestAPerchIsStampedWithTheSequenceItsSeatLastFolded(t *testing.T) {
 		t.Fatal("perching on the hero must show the hero's board")
 	}
 	for _, e := range out {
-		if e.GetSequence() != 6 {
-			t.Errorf("a perch frame carries the sequence its seat last folded (6), got %d: %v",
-				e.GetSequence(), e.GetPayload())
+		if e.GetSequence() != 0 {
+			t.Errorf("a perch frame must carry no sequence, got %d: %v — a live number is "+
+				"one an undo can name", e.GetSequence(), e.GetPayload())
 		}
+	}
+}
+
+// TestAPerchIsNotFilteredByTheResumeCursor is the seat-level half of the
+// "answered yes and sent nothing" defect.
+//
+// A perch used to pass through pastResume, which drops output at or below the
+// cursor a client resumed from. That question only means something for replayed
+// output — and now that a perch carries no sequence at all, asking it would
+// discard EVERY perch frame ever, at every cursor. The two halves are one fix,
+// so this test holds them together.
+func TestAPerchIsNotFilteredByTheResumeCursor(t *testing.T) {
+	log := perchFixtureLog()
+	// Resumed from the very head of the log: the strictest cursor a client can
+	// present, and the one that produced zero frames before the fix.
+	head := log[len(log)-1].GetSequence()
+
+	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, head)
+	for _, env := range log {
+		s.receive(env)
+	}
+	if got := len(s.perch("hero")); got == 0 {
+		t.Fatal("a spectator who resumed at the head must still be shown the shoulder " +
+			"they just climbed onto: a perch is not replay")
+	}
+}
+
+// TestARapidHopIsCoalescedToTheShoulderItEndedOn pins perchBox's latest-wins
+// slot, which is what keeps a hopping spectator from taxing the whole table
+// (forty queued hops timed a DM's own command out; see perchBox).
+//
+// Safe because transitions is a DIFF against what the viewer has already been
+// shown, so arriving directly at the last shoulder emits what passing through
+// every intermediate one would have converged on.
+func TestARapidHopIsCoalescedToTheShoulderItEndedOn(t *testing.T) {
+	b := newPerchBox()
+	b.set("hero")
+	b.set("goblin")
+	b.set("hero")
+
+	got, ok := b.take()
+	if !ok || got != "hero" {
+		t.Fatalf("the pump must see the shoulder the spectator ended on, got %q (ok=%v)", got, ok)
+	}
+	// And the slot is empty afterwards: a second wake-up with nothing new in it
+	// must not re-apply the last shoulder.
+	if _, ok := b.take(); ok {
+		t.Error("taking twice must not hand the same shoulder out again")
 	}
 }
 

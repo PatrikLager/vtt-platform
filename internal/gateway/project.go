@@ -186,6 +186,36 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	return out
 }
 
+// perchSequence is the sequence every frame a perch produces carries: ZERO,
+// which is not a sequence at all, and that is the point.
+//
+// A PERCH HAS NO CAUSING EVENT, so it has no number to inherit. Spec §4.2's
+// rule — a synthesized envelope carries the sequence of the event that caused
+// it — is right for every OTHER synthesized frame in this file and wrong here,
+// and the difference is not cosmetic. Retraction is a range over sequence
+// NUMBERS: campaign.retractedSet, harness.Fold and client/src/fold.ts all
+// expand an EventsRetracted's [from,to] and skip envelopes by number. A perch
+// stamped with the seat's last folded sequence was therefore DELETED by an undo
+// of that sequence — an event the watcher had never even received — which
+// emptied their board with no message and left the party's next move dangling
+// against a token that was no longer there ("moved unknown token").
+//
+// ZERO IS OUTSIDE EVERY RANGE THAT CAN EVER EXIST, on both sides of the wire,
+// and both refusals are explicit rather than incidental: campaign.Undo rejects
+// `from < 1` ("invalid retraction range") and client/src/undo.ts rejects the
+// same ("sequences start at 1"). So no retraction can name a perch frame.
+//
+// It also cannot move a replay cursor: client/src/wire.ts advances only on
+// `env.sequence > lastSeq`, and seat.catchUp takes its head from projected
+// output that a perch is never part of (the read loop that accepts a perch does
+// not run until catch-up has returned).
+//
+// The cost, stated so nobody has to rediscover it: a perch frame is not
+// addressable. It cannot be retracted, and a client cannot resume "just after"
+// one — on a reconnect the perch is gone anyway (spec §3.1.1) and the client
+// re-sends it, which is the same answer.
+const perchSequence int64 = 0
+
 // reperch moves a spectator onto a new shoulder and returns the envelopes that
 // bring their board up to what those eyes can see (spec §3.1.1: "you can choose
 // to shift to another character's view, whenever").
@@ -199,16 +229,11 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 // un-explores a square, which is why "the bird remembers every shoulder it has
 // sat on" is a property of the design rather than a feature of this function.
 //
-// seq is the sequence the seat last folded — see seat.perch, which is the only
-// caller and which owns the pairing of that number with st. No event caused
-// this, so there is no causing sequence in spec §4.2's sense; naming a HIGHER
-// one would put a sequence on this seat's wire that it has not reached.
-//
 // NO DOOR IS SKIPPED, unlike the event path: doorTransitions skips the square a
 // door event is ABOUT because classify forwards that event itself, and here
 // there is no event to forward. Every visible door this viewer believes wrong
 // is corrected, which is exactly what a new pair of eyes needs.
-func (pr *Projector) reperch(actorID string, seq int64, st *engine.State) []*vttv1.Envelope {
+func (pr *Projector) reperch(actorID string, st *engine.State) []*vttv1.Envelope {
 	pr.viewer.Viewpoint = actorID
 	if st == nil {
 		// Omit rather than guess (spec §4.4), the same answer Project gives to
@@ -221,7 +246,7 @@ func (pr *Projector) reperch(actorID string, seq int64, st *engine.State) []*vtt
 		// TestASeatPerchesOnlyAgainstAWorldItHasSeen catches.
 		return nil
 	}
-	return pr.transitions(nil, seq, pr.look(st), st)
+	return pr.transitions(nil, perchSequence, pr.look(st), st)
 }
 
 // redactedFor is the envelope a projected viewer actually receives for a

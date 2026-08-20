@@ -548,9 +548,20 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 
 	var closing atomic.Bool
 
+	// perches carries a spectator's chosen shoulder from the command goroutine
+	// to the pump, which is the only goroutine allowed to write this
+	// connection's envelopes (see handleSetViewpoint for what the second
+	// producer cost). One slot, latest wins — see perchBox.
+	perches := newPerchBox()
+
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
+
+		// env is declared out here because the loop below is a select rather
+		// than a range: the events arm assigns it, the perches arm does not
+		// reach it.
+		var env *vttv1.Envelope
 
 		// The backlog seat.catchUp already projected, sent from HERE rather
 		// than from serve directly, so it goes out behind the same revocation
@@ -573,14 +584,39 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			}
 			return
 		}
-		if err := enqueueEvents(s.encodeFrame, backlog, outCh, writerDone); err != nil {
-			if errors.Is(err, errEncodeFrame) && !closing.Load() {
-				_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
-			}
+		if !deliver(s.encodeFrame, backlog, outCh, writerDone, conn, &closing) {
 			return
 		}
 
-		for env := range events {
+		// TWO SOURCES, ONE PRODUCER. Everything this connection is ever sent is
+		// computed and enqueued by THIS goroutine: the log, through `events`,
+		// and a spectator's chosen shoulder, through `perches`. The command
+		// goroutine used to enqueue its own perch frames, and two producers on
+		// one socket delivered batches in the opposite order to the one they
+		// were computed in — see handleSetViewpoint for what that cost.
+		//
+		// A select rather than a second goroutine feeding the first: the whole
+		// point is that projecting and sending happen in the same goroutine, so
+		// the order envelopes are emitted in IS the order the projector's memory
+		// changed in.
+	pumping:
+		for {
+			select {
+			case <-perches.wake:
+				// The perch is APPLIED here, not merely sent here. sub.perch
+				// both moves the eyes and computes what those eyes newly see,
+				// and both must happen where sub.receive happens.
+				actorID, ok := perches.take()
+				if ok && !deliver(s.encodeFrame, sub.perch(actorID), outCh, writerDone, conn, &closing) {
+					return
+				}
+				continue
+			case e, ok := <-events:
+				if !ok {
+					break pumping
+				}
+				env = e
+			}
 			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
 			// cover. commandRoles has no spectator row anywhere, so a
 			// spectator may issue NO command — the lookup down there never
@@ -643,13 +679,10 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// DM and the agent still get exactly one frame per event, by
 			// pointer, unchanged.
 			// An encode failure TEARS THE CONNECTION DOWN rather than
-			// skipping to the next envelope — see enqueueEvents. conn.Close
-			// rather than shutdown(), because this IS the pump and shutdown
-			// waits on it.
-			if err := enqueueEvents(s.encodeFrame, sub.receive(env), outCh, writerDone); err != nil {
-				if errors.Is(err, errEncodeFrame) && !closing.Load() {
-					_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
-				}
+			// skipping to the next envelope — see enqueueEvents/deliver.
+			// conn.Close rather than shutdown(), because this IS the pump and
+			// shutdown waits on it.
+			if !deliver(s.encodeFrame, sub.receive(env), outCh, writerDone, conn, &closing) {
 				return
 			}
 		}
@@ -807,11 +840,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// answerCommand below, which refuses the command and keeps the
 		// connection; alive=false there is a TRANSPORT failure and nothing to
 		// do with this person's credential.
-		result, alive := s.answerCommand(now, err, cmd, sub, outCh, writerDone)
-		if !alive {
-			shutdown()
-			return
-		}
+		result := s.answerCommand(now, err, cmd, perches)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue
@@ -849,12 +878,12 @@ func describeBlockage(why string) string {
 	return why
 }
 
-// answerCommand produces the CommandResult for one decoded command, and
-// enqueues any frames that command produced FOR THIS CONNECTION ALONE.
+// answerCommand produces the CommandResult for one decoded command.
 //
-// It returns alive=false when the connection is finished — the writer is gone,
-// or a frame could not be encoded. It never closes anything itself; serve owns
-// the connection's lifetime and answers false by tearing down.
+// IT WRITES NO ENVELOPE, and that restriction is the whole of the C1 fix: this
+// runs on the COMMAND goroutine, and the pump is the only producer of a
+// connection's envelopes. A perch that needs frames sent asks the pump for them
+// through `perches` rather than enqueueing its own — see handleSetViewpoint.
 //
 // lookupErr is the identity re-resolution's OPERATIONAL failure, never a
 // revocation: serve has already dealt with that one and does not reach here.
@@ -869,7 +898,7 @@ func describeBlockage(why string) string {
 // pass it (CLAUDE.md rule 2); the split it forced runs along a seam that was
 // already there.
 func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vttv1.ClientCommand,
-	sub *seat, outCh chan<- []byte, writerDone <-chan struct{}) (result *vttv1.CommandResult, alive bool) {
+	perches *perchBox) *vttv1.CommandResult {
 	switch sv, isPerch := cmd.GetCommand().(*vttv1.ClientCommand_SetViewpoint); {
 	case lookupErr != nil:
 		// Refuse the command and keep the connection, exactly as authorize
@@ -880,7 +909,7 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 			RequestId: cmd.GetRequestId(),
 			Ok:        false,
 			Error:     "gateway: identity unavailable",
-		}, true
+		}
 
 	case isPerch:
 		// THE ONE COMMAND ANSWERED OUTSIDE handleCommand, and the reason is the
@@ -889,24 +918,10 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 		// observe. Its whole effect is on THIS connection's seat and THIS
 		// connection's wire. handleCommand runs authorize → convert → persist,
 		// and a perch is none of those three.
-		//
-		// The frames go out BEFORE the result: the new board is what the
-		// spectator asked for, and the ok is only the receipt.
-		// res, not result: shadowing the named return in a function whose
-		// second value decides whether the connection lives is how a wrong
-		// value gets returned by a later edit that adds a bare `return`.
-		res, frames := s.handleSetViewpoint(p, cmd, sv.SetViewpoint, sub)
-		if err := enqueueEvents(s.encodeFrame, frames, outCh, writerDone); err != nil {
-			// Either the writer is gone or a frame could not be encoded. Both
-			// end this connection, exactly as they do in the pump: a projected
-			// seat whose re-projection was dropped would be left holding a
-			// board that no longer matches its own eyes.
-			return nil, false
-		}
-		return res, true
+		return s.handleSetViewpoint(p, cmd, sv.SetViewpoint, perches)
 
 	default:
-		return s.handleCommand(p, cmd), true
+		return s.handleCommand(p, cmd)
 	}
 }
 
@@ -931,8 +946,7 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 	return st, nil
 }
 
-// handleSetViewpoint moves a spectator onto the shoulder they named, and
-// returns the frames that bring their board up to what those eyes see.
+// handleSetViewpoint authorizes a perch and HANDS IT TO THE PUMP.
 //
 // IT APPENDS NOTHING, and that is a ruling rather than an omission — the same
 // one handleJoinDoor's doc comment makes for the shared door. Patrik: "we do
@@ -946,14 +960,34 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // §3.1.1), because it lives on the connection like the catch-up point does.
 // The client re-sends it after redialling.
 //
+// IT DOES NOT APPLY THE PERCH ITSELF, and that division is C1's fix rather
+// than a preference. This function runs on the command goroutine; the seat's
+// projector and this connection's wire belong to the PUMP. When both goroutines
+// enqueued, two batches computed in one order reached the socket in the other:
+// a pump frame landed INSIDE a perch batch, and a TokenMoved computed before a
+// TokenHidden was delivered after it, so the watcher's own stream stopped
+// folding — permanently, on the browser client. Handing the shoulder over and
+// letting the pump do both the projecting and the sending makes that
+// unrepresentable rather than unlikely: one goroutine mutates the projector's
+// memory and emits the frames that describe the mutation, so emission order IS
+// mutation order.
+//
+// WHAT ok MEANS HERE, precisely, because the honest answer is narrower than the
+// usual one: the shoulder has been RECORDED and this connection's pump will
+// move to it. Not "the frames are on the wire" — they are computed a moment
+// later, by the pump. Handing over never blocks (perchBox.set), so a spectator
+// hopping quickly cannot stall their own command loop behind a projection, and
+// a hop that is superseded before the pump reaches it is simply skipped.
+//
 // The refusal path is Authorize's, which is where MayPerch enforces the one
 // rule this command has: a perch may only target a player-controlled actor.
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
-	req *vttv1.SetViewpoint, sub *seat) (*vttv1.CommandResult, []*vttv1.Envelope) {
+	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
 	if _, refusal := s.authorize(p, cmd); refusal != nil {
-		return refusal, nil
+		return refusal
 	}
-	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true}, sub.perch(req.GetActorId())
+	perches.set(req.GetActorId())
+	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true}
 }
 
 // handleCommand runs the authorize → convert → persist pipeline for one
@@ -1401,6 +1435,34 @@ var (
 	errEncodeFrame = errors.New("gateway: encode event frame")
 	errWriterGone  = errors.New("gateway: writer stopped")
 )
+
+// deliver is enqueueEvents plus the pump's standing answer to failing at it:
+// tear the connection down, and say why when the reason was ours.
+//
+// It exists because the pump now has THREE places that send (the backlog, a
+// perch, an event) and each carried the same six lines. Folding them into one
+// function is not only tidiness — it kept `serve` under the gocyclo limit that
+// the perch's select arm would otherwise have pushed it over, and it means a
+// future fourth sender cannot get the teardown subtly different from the other
+// three.
+//
+// closing is a POINTER because it is serve's own flag and the caller reads it
+// after this returns; taking it by value would copy an atomic.Bool, which vet
+// rejects outright.
+func deliver(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope,
+	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) bool {
+	err := enqueueEvents(encode, envs, outCh, writerDone)
+	if err == nil {
+		return true
+	}
+	// errWriterGone needs no close: the writer is already gone, and serve's
+	// deferred CloseNow does the disposing. An ENCODE failure is ours, and the
+	// client is owed a reason for a connection that ends mid-stream.
+	if errors.Is(err, errEncodeFrame) && !closing.Load() {
+		_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
+	}
+	return false
+}
 
 // enqueueEvents encodes each envelope as a ServerFrame and hands it to the
 // connection's writer, in order, stopping at the first failure.

@@ -19,6 +19,17 @@ import (
 // to offer. Projector.eyes refuses the same perch a second time, for one that
 // arrives by some route this function never saw (spec §8, defence in depth).
 //
+// WHAT IS ACTUALLY CHECKED IS "HAS ANY CONTROLLER", and the two are not quite
+// the same sentence, so the gap is written down rather than papered over.
+// controller_ids holds PARTICIPANT ids and carries no role, so this cannot ask
+// whether a controller is a player. If a DM grants themselves control of the
+// Goblin Archer, that actor becomes perchable — demonstrated in review, not
+// hypothesised. It takes a deliberate DM act, it is the same rule
+// authorizeTokenOwnership and spec §5's roster already run on ("actors
+// controlled by any player are always known"), and narrowing it would mean
+// reading roles out of identity from inside the projection. Left as it is
+// DELIBERATELY, and flagged for adjudication rather than changed quietly.
+//
 // ONLY A SPECTATOR. "An unassigned PLAYER does not perch" — their answer to an
 // empty board is to be GIVEN a character, which is the onboarding flow working
 // as intended, and the DM and the agent already see everything. commandRoles

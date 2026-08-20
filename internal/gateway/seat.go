@@ -76,18 +76,18 @@ func projected(r identity.Role) bool {
 //
 // So serve subscribes a projected seat from 0 regardless of the `after` it
 // asked for, and `resume` throws away what that seat already holds.
+// ONE GOROUTINE OWNS A SEAT, and there is no lock here because of it. serve
+// builds it and drains its catch-up; from the moment the pump goroutine starts,
+// the pump is the only thing that touches it — receive per event, perch when a
+// spectator hops. The command goroutine hands a shoulder ACROSS A CHANNEL
+// rather than reaching in.
+//
+// A mutex was tried and was the wrong tool: it made the fields safe and left
+// the ORDER of what reached the socket to chance, because each goroutine
+// computed its batch under the lock and sent it after releasing. Serialising
+// the memory without serialising the emission is the bug, not the fix. If a
+// second goroutine ever needs a seat, give it a channel, not a lock.
 type seat struct {
-	// mu guards everything below it, because a seat now has TWO callers on two
-	// goroutines: the broadcast pump (receive, per event) and the command loop
-	// (perch, when a spectator hops). Before Task 6 the pump was the only one
-	// and none of this needed a lock.
-	//
-	// pr ITSELF IS READ WITHOUT IT, in both methods' first line. That read is
-	// safe for a reason that does not generalise to the fields below: newSeat
-	// sets pr once, before serve hands the seat to any goroutine, and nothing
-	// ever assigns it again. What perch mutates is the Viewer INSIDE it.
-	mu sync.Mutex
-
 	// pr is nil for the DM and the agent. Not "a projector that happens to
 	// forward everything": nil, so that neither the fold below nor
 	// sight.VisibleFrom is ever reached on their path, and their stream stays
@@ -108,17 +108,68 @@ type seat struct {
 	// on every event).
 	received []*vttv1.Envelope
 
-	// world and lastSeq are ONE VALUE in two fields: the state this seat last
-	// judged an event against, and the sequence of that event. They move
-	// together in receive and are never written apart, which is what lets
-	// perch answer "what can these new eyes see" against exactly the world the
-	// old eyes were last shown — not against HEAD, which during catch-up is
+	// world is the state this seat last judged an event against, which is what
+	// lets perch answer "what can these new eyes see" against exactly the world
+	// the old eyes were last shown — not against HEAD, which during catch-up is
 	// the future (receive's own comment says why that matters).
 	//
-	// Both are zero until the first event folds: a seat that has been shown
-	// nothing has nothing to re-show, whatever shoulder it climbs onto.
-	world   *engine.State
-	lastSeq int64
+	// Nil until the first event folds: a seat that has been shown nothing has
+	// nothing to re-show, whatever shoulder it climbs onto.
+	world *engine.State
+}
+
+// perchBox is the one slot a spectator's chosen shoulder travels in, from the
+// command goroutine to the pump that owns the seat.
+//
+// LATEST WINS, and the coalescing is the point rather than a side effect. A
+// perch is a SETTING — which shoulder am I on — not an operation to be queued,
+// so a shoulder that was never applied has no trace to leave: transitions
+// computes its frames as a diff against what the viewer has ALREADY been shown,
+// so going straight to the newest shoulder emits exactly what going through
+// every intermediate one would have converged on.
+//
+// It is also what keeps a hopping spectator from taxing the table. MEASURED:
+// with the perch applied on the pump and every hop queued, forty hops sent as
+// fast as a socket allows made a DM's own command time out (>3s) once in every
+// four runs; at five hops it never did, so the cost scaled with the number of
+// re-projections rather than being a stall. Coalescing bounds that work by the
+// pump's speed instead of by the sender's.
+//
+// The mutex here is not the one seat's comment warns about: it guards a single
+// string being HANDED ACROSS, never the order anything reaches the socket.
+type perchBox struct {
+	mu       sync.Mutex
+	shoulder string
+	full     bool
+	// wake has capacity 1 and carries no data. A signal already waiting is a
+	// signal for whatever the slot holds when the pump gets there, which is why
+	// dropping a second one loses nothing.
+	wake chan struct{}
+}
+
+func newPerchBox() *perchBox { return &perchBox{wake: make(chan struct{}, 1)} }
+
+// set records a shoulder and wakes the pump. It NEVER BLOCKS: the command
+// goroutine must not wait on the pump, or a busy projection would stall the
+// connection's whole command loop.
+func (b *perchBox) set(actorID string) {
+	b.mu.Lock()
+	b.shoulder, b.full = actorID, true
+	b.mu.Unlock()
+	select {
+	case b.wake <- struct{}{}:
+	default: // already signalled; the pump will read whatever the slot holds
+	}
+}
+
+// take empties the slot. ok is false for a wake-up whose shoulder a previous
+// take already collected — see set's dropped second signal.
+func (b *perchBox) take() (actorID string, ok bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	actorID, ok = b.shoulder, b.full
+	b.full = false
+	return actorID, ok
 }
 
 // newSeat builds the seat for one connection. after is the client's resume
@@ -151,8 +202,6 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 	if s.pr == nil {
 		return []*vttv1.Envelope{env}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.received = append(s.received, env)
 	// The state AFTER env, which is what Project is specified to read. Not
@@ -194,10 +243,9 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 		return nil
 	}
 
-	// ONE VALUE, WRITTEN TOGETHER and only after the fold succeeded — see the
-	// fields' own comment. A failed fold leaves the last good pair in place
-	// rather than pointing lastSeq at a world nobody could build.
-	s.world, s.lastSeq = world, env.GetSequence()
+	// Only after the fold succeeded: a failed fold leaves the last good world
+	// in place rather than a nil one a perch would then have nothing to look at.
+	s.world = world
 
 	return s.pastResume(s.pr.Project(env, world))
 }
@@ -213,25 +261,15 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 // mutant rather than adjudicating one, and the adjudications this branch has
 // had to re-key four times are the argument for preferring the deletion.
 //
-// EVERYTHING this seat emits passes through here, projected events and perch
-// re-projections alike — and for a perch this filter is very nearly a no-op,
-// which is worth stating plainly rather than leaving as reassurance. A perch
-// carries lastSeq, the head this seat has folded, so it is dropped only by a
-// client claiming a cursor AT OR PAST that head.
-//
-// THAT IS NOT THE RECONNECT CASE. client/src/wire.ts resumes at seenSeq-1 and
-// KEEPS its folded log, while a reborn seat's projector starts empty and,
-// perched on nobody, emits nothing at all during the replay. A perch re-sent on
-// such a connection therefore re-introduces a board the client is still
-// holding, and a duplicate introduction freezes a client's fold PERMANENTLY
-// (Projector's doc comment). Nothing here can tell the two apart: this filter
-// knows which SEQUENCE a client holds, never which projection produced it.
-//
-// Unreachable today — no client sends SetViewpoint at all — so this is a
-// constraint on whoever wires one, recorded in task-6-report.md: re-perch only
-// on a connection that resumed from 0 with an empty log, or give the perch to
-// the server AT CONNECT (a query parameter, like `after`) so that the replay
-// runs with the right eyes and this filter does its ordinary job.
+// REPLAYED OUTPUT ONLY. A perch does NOT come through here, and that is a
+// correction rather than an omission: it was filtered here at first, and a
+// spectator who dialled with a cursor at or past the log's head was then
+// answered ok and sent no board at all — measured at resume=6 against a seat
+// whose head was 6, three frames became zero. The filter's question is "does
+// this client already hold this?", and it answers it by SEQUENCE, which only
+// means anything for output the log caused. A perch is caused by no event
+// (perchSequence says why it carries no number), so the question does not apply
+// to it and asking it anyway silently discarded the answer.
 func (s *seat) pastResume(out []*vttv1.Envelope) []*vttv1.Envelope {
 	kept := make([]*vttv1.Envelope, 0, len(out))
 	for _, e := range out {
@@ -256,10 +294,14 @@ func (s *seat) pastResume(out []*vttv1.Envelope) []*vttv1.Envelope {
 // AGAINST THAT WORLD AND NOT AGAINST HEAD, deliberately. The two differ during
 // catch-up, where head is the future, and judging a perch against a world this
 // seat has not been shown yet would introduce a token whose arrival it is still
-// replaying. `world` and `lastSeq` are one value for exactly this reason.
+// replaying.
 //
-// CALLED FROM THE COMMAND LOOP while the pump may be inside receive on another
-// goroutine — hence the lock, which is why the seat has one at all.
+// CALLED ONLY BY THE PUMP, like receive, and that is what makes the two safe
+// beside each other: the goroutine that changes what this seat has been shown
+// is the goroutine that says so on the wire. See the type's own comment for the
+// mutex that used to be here and why it was the wrong tool.
+//
+// ITS OUTPUT SKIPS pastResume — see that function; a perch is not replay.
 func (s *seat) perch(actorID string) []*vttv1.Envelope {
 	if s.pr == nil {
 		// The DM and the agent (see the field's comment). Authorize denies
@@ -269,9 +311,7 @@ func (s *seat) perch(actorID string) []*vttv1.Envelope {
 		// says is byte-for-byte unchanged.
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.pastResume(s.pr.reperch(actorID, s.lastSeq, s.world))
+	return s.pr.reperch(actorID, s.world)
 }
 
 // canSee reports whether this viewer can see one square of one scene right
