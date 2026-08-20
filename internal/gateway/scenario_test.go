@@ -34,6 +34,13 @@ type exitFixture struct {
 	playerToken, playerID       string
 	agentToken, agentID         string
 	spectatorToken, spectatorID string
+	// observerToken is a second AGENT seat that never connects during the run
+	// — the "brand-new, never-before-connected client" the catch-up assertion
+	// at the end needs. It used to be the spectator's second connection, which
+	// stopped being a fair comparison when the visibility projection landed:
+	// a spectator's stream is projected, so it is not the DM's stream and must
+	// not be asserted to equal it.
+	observerToken string
 }
 
 func newExitFixture(t *testing.T) *exitFixture {
@@ -71,6 +78,10 @@ func newExitFixture(t *testing.T) *exitFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	observerToken, _, err := ids.CreateInvite("Observer", identity.RoleAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	srv := gateway.New(c, ids)
 	httpSrv := httptest.NewServer(srv.Handler())
@@ -82,6 +93,7 @@ func newExitFixture(t *testing.T) *exitFixture {
 		playerToken: playerToken, playerID: playerID,
 		agentToken: agentToken, agentID: agentID,
 		spectatorToken: spectatorToken, spectatorID: spectatorID,
+		observerToken: observerToken,
 	}
 }
 
@@ -200,6 +212,21 @@ func (sc *scenarioConn) assertNoFrameWithin(t *testing.T, d time.Duration) {
 	}
 }
 
+// drainToQuiet reads and discards Envelopes until none has arrived for d.
+// Results are left untouched.
+func (sc *scenarioConn) drainToQuiet(t *testing.T, d time.Duration) {
+	t.Helper()
+	for {
+		select {
+		case <-sc.q.events:
+		case <-sc.q.closed:
+			t.Fatalf("scenarioConn.drainToQuiet: connection closed: %v", sc.q.err)
+		case <-time.After(d):
+			return
+		}
+	}
+}
+
 func (sc *scenarioConn) sendCommand(t *testing.T, cmd *vttv1.ClientCommand) {
 	t.Helper()
 	raw, err := protojson.Marshal(cmd)
@@ -290,6 +317,15 @@ func issueAndVerify(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, 
 // spectator→StartSession.
 func expectDenied(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, all []participant) {
 	t.Helper()
+	// SETTLE THE PROJECTED SEATS FIRST, and this is not tidying. issueAndVerify
+	// reads only the seats whose stream is the log, so a player's or a
+	// spectator's own projected envelopes for earlier commands are still
+	// queued when this is called — and "no frame within 300ms" cannot tell a
+	// broadcast caused by THIS command from a backlog caused by an earlier
+	// one. Draining to quiet first is what keeps the claim about the denial.
+	for _, p := range all {
+		p.conn.drainToQuiet(t, 200*time.Millisecond)
+	}
 	issuer.conn.sendCommand(t, cmd)
 	result := issuer.conn.readResult(t)
 	if result.Ok {
@@ -347,6 +383,22 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	spectator := participant{name: "spectator", id: f.spectatorID, role: "spectator", conn: f.dial(f.spectatorToken, 0)}
 	all := []participant{dm, player, agent, spectator}
 
+	// unfiltered is the subset whose stream IS the log: the DM and the agent
+	// (visibility spec §3.1, exit criterion 8). issueAndVerify asserts every
+	// connection it is handed saw the IDENTICAL envelope, and since the
+	// projection landed that is true only of these two — a player receives
+	// what their actors can see and a spectator with no perch receives no
+	// board at all. `all` is still the right set for expectDenied, which
+	// asserts SILENCE everywhere: a refused command appends nothing, so
+	// nobody hears anything regardless of how their stream is filtered, and
+	// keeping all four there keeps that the stronger claim.
+	//
+	// What a PLAYER's stream contains, live and on reconnect, is pinned in
+	// server_visibility_test.go — it is a different claim, not a weaker one,
+	// and it cannot be made here because equality with the DM is exactly what
+	// this arc made false.
+	unfiltered := []participant{dm, agent}
+
 	// dmLive is the ordered record of every envelope the DM client received
 	// LIVE across the whole run — the baseline the final reconnect/catch-up
 	// check compares against.
@@ -357,7 +409,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env := issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-start-session",
 		Command:   &vttv1.ClientCommand_StartSession{StartSession: &vttv1.StartSession{Name: "Exit Scenario"}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionStarted); !ok {
 		t.Fatalf("dm-start-session: payload = %T, want SessionStarted", env.Payload)
 	}
@@ -368,7 +420,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "scn-exit", Name: "Exit Hall", GridWidth: 10, GridHeight: 10,
 		}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SceneCreated); !ok {
 		t.Fatalf("dm-create-scene: payload = %T, want SceneCreated", env.Payload)
 	}
@@ -379,7 +431,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
 			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus"}, // ControllerId left empty: DM/agent-only.
 		}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	aa, ok := env.Payload.(*vttv1.Envelope_ActorAdded)
 	if !ok {
 		t.Fatalf("dm-add-ursus: payload = %T, want ActorAdded", env.Payload)
@@ -394,7 +446,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
 			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera", ControllerId: player.id},
 		}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	aa, ok = env.Payload.(*vttv1.Envelope_ActorAdded)
 	if !ok {
 		t.Fatalf("dm-add-lera: payload = %T, want ActorAdded", env.Payload)
@@ -410,7 +462,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			TokenId: "tok-ursus", SceneId: "scn-exit", ActorId: "act-ursus",
 			Position: &vttv1.GridPosition{X: 0, Y: 0},
 		}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenPlaced); !ok {
 		t.Fatalf("dm-place-ursus: payload = %T, want TokenPlaced", env.Payload)
 	}
@@ -422,7 +474,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			TokenId: "tok-lera", SceneId: "scn-exit", ActorId: "act-lera",
 			Position: &vttv1.GridPosition{X: 1, Y: 1},
 		}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenPlaced); !ok {
 		t.Fatalf("dm-place-lera: payload = %T, want TokenPlaced", env.Payload)
 	}
@@ -435,7 +487,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 			TokenId: "tok-lera", To: &vttv1.GridPosition{X: 2, Y: 2},
 		}},
-	}, player.id, true, all)
+	}, player.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenMoved); !ok {
 		t.Fatalf("player-move-lera: payload = %T, want TokenMoved", env.Payload)
 	}
@@ -455,7 +507,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 			TokenId: "tok-ursus", To: &vttv1.GridPosition{X: 5, Y: 5},
 		}},
-	}, agent.id, true, all)
+	}, agent.id, true, unfiltered)
 	tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved)
 	if !ok {
 		t.Fatalf("agent-move-ursus: payload = %T, want TokenMoved", env.Payload)
@@ -479,7 +531,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
 			FromSequence: retractSeq, ToSequence: retractSeq, Reason: "test retraction",
 		}},
-	}, agent.id, false, all)
+	}, agent.id, false, unfiltered)
 	er, ok := env.Payload.(*vttv1.Envelope_EventsRetracted)
 	if !ok {
 		t.Fatalf("agent-retract-move: payload = %T, want EventsRetracted", env.Payload)
@@ -502,7 +554,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-end-session",
 		Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
-	}, dm.id, true, all)
+	}, dm.id, true, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionEnded); !ok {
 		t.Fatalf("dm-end-session: payload = %T, want SessionEnded", env.Payload)
 	}
@@ -516,14 +568,22 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 
 	// --- Player reconnects with after=0: full catch-up ---
 
-	playerReconn := f.dial(f.playerToken, 0)
+	// --- An unfiltered seat reconnects with after=0: full catch-up ---
+	//
+	// The AGENT reconnects here, where the player used to. The claim is
+	// "catch-up replay equals what was received live, envelope for envelope",
+	// and it can only be made between streams that are the same stream: a
+	// projected seat's catch-up equals its own live stream, not the DM's.
+	// That half is pinned in server_visibility_test.go against a player, which
+	// is the seat it means something for.
+	playerReconn := f.dial(f.agentToken, 0)
 	playerCatchup := drainEnvelopes(t, playerReconn, len(dmLive))
 	playerReconn.assertNoFrameWithin(t, 300*time.Millisecond) // exactly len(dmLive), nothing more
 
 	// A brand-new, never-before-connected client (also after=0) must see the
 	// identical catch-up replay — "full catch-up equals what a fresh
 	// subscriber sees".
-	freshConn := f.dial(f.spectatorToken, 0)
+	freshConn := f.dial(f.observerToken, 0)
 	freshCatchup := drainEnvelopes(t, freshConn, len(dmLive))
 	freshConn.assertNoFrameWithin(t, 300*time.Millisecond)
 

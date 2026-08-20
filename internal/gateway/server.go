@@ -408,7 +408,12 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		defer s.onServeDone()
 	}
 
-	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(after, s.buffer, s.noProgress)
+	// The seat decides what this connection may receive AND where its
+	// subscription starts — for a projected seat those are two different
+	// numbers, which is the one thing about this arc that is easy to get
+	// wrong (see seat's doc comment).
+	sub := newSeat(p, after)
+	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(sub.subscribeFrom(after), s.buffer, s.noProgress)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -581,23 +586,37 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 				return
 			}
 
+			// PROJECTED PER RECIPIENT (visibility spec §4), and this is the
+			// seam the whole arc turns on. It already existed: this goroutine
+			// holds p for the connection's life and already marshaled per
+			// connection, so what one seat may see is decided in the one place
+			// that was already per-seat.
+			//
 			// Marshaled per connection, deliberately: each pump encodes
 			// straight off its own subscription channel with no shared
 			// cache. At table scale (a handful of participants, not
 			// thousands of fan-out sockets) a few extra protojson.Marshal
-			// calls per event is cheap, and it keeps this goroutine
-			// entirely stateless — no retained pointers, nothing to evict,
-			// nothing that can leak. Revisit with a real broadcast hub
+			// calls per event is cheap. Revisit with a real broadcast hub
 			// (marshal once, shared bytes) only if client count per
-			// campaign ever grows past table scale (say, >10).
-			b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: env}})
-			if err != nil {
-				continue // a marshal failure here is a server bug, not this client's fault
-			}
-			select {
-			case outCh <- b:
-			case <-writerDone:
-				return
+			// campaign ever grows past table scale (say, >10) — and note that
+			// a hub can only ever share bytes between seats with the SAME
+			// projection, which is the DM and the agent.
+			//
+			// ONE EVENT IS NOW ZERO, ONE OR SEVERAL FRAMES for a projected
+			// seat: an arrival is an ActorAdded plus a TokenPlaced plus a
+			// SceneSeen, all stamped with the sequence that caused them. The
+			// DM and the agent still get exactly one frame per event, by
+			// pointer, unchanged.
+			for _, pe := range sub.receive(env) {
+				b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
+				if err != nil {
+					continue // a marshal failure here is a server bug, not this client's fault
+				}
+				select {
+				case outCh <- b:
+				case <-writerDone:
+					return
+				}
 			}
 		}
 		// `events` is closed. If shutdown() didn't do it, the store dropped
@@ -838,6 +857,37 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — " + describeBlockage(why),
+					}
+				}
+				// AND YOU MAY ONLY MOVE WHERE YOU CAN SEE (visibility spec
+				// exit criterion 7: the goblin's square "cannot be targeted by
+				// a player who cannot see it"). This is the second half of
+				// session zero. Filtering the wire stops a player LOOKING at a
+				// hidden creature; without this they could still land on it,
+				// because move_token validates a destination and never a path
+				// — the whole grid was one command away.
+				//
+				// PHRASED AS "CAN YOU SEE THE SQUARE", NOT "IS SOMETHING
+				// STANDING THERE", and the difference is the whole design. A
+				// refusal that depends on the occupant is an ORACLE: a player
+				// could sweep the map with move commands and read the hidden
+				// creatures off the refusals, which is session zero again with
+				// more typing. This refusal depends on nothing the player does
+				// not already hold — their own visible set is exactly what
+				// SceneSeen just told them — so it leaks nothing, in the
+				// strong sense that they can compute it themselves.
+				//
+				// The cost is real and deliberate: a square out of line of
+				// sight cannot be walked onto even when it is remembered
+				// terrain (spec §3.2), so a player cannot round a corner in
+				// one command. Fail closed (spec §4.4). And this is the
+				// PLAYER's branch only — "hard for players, free for DM"
+				// (maps-as-geometry spec §6) governs sight exactly as it
+				// governs stone.
+				if !canSee(viewerFor(p), st, tok.SceneID, to) {
+					return &vttv1.CommandResult{
+						RequestId: requestID, Ok: false,
+						Error: "gateway: cannot move there — you cannot see that square",
 					}
 				}
 			}

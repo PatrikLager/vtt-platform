@@ -237,8 +237,13 @@ type ProbeResult struct {
 //     NO participant observes any event broadcast within a 300ms absence
 //     window;
 //   - an accepted step (Expect.OK) asserts the result is ok=true, AND that
-//     the event it produced (matched by Sequence) is observed by EVERY
-//     participant;
+//     the event it produced (matched by Sequence) is observed by every
+//     UNPROJECTED participant — the DM and the agent, whose streams are the
+//     log itself. A player's or a spectator's stream is a projection of it
+//     (visibility spec §3.1), so the number of envelopes they receive for one
+//     event is between zero and several and no count can be required of them;
+//     what they DO receive is still collected, because the two assertions
+//     below are computed from it;
 //   - a reconnect step closes that participant's Conn, redials via dial
 //     with the given afterSequence, and asserts the resulting catch-up
 //     replay equals — in event_id order — the subset of that participant's
@@ -270,6 +275,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 
 	conns := make(map[string]Conn, len(sc.Participants))
 	history := make(map[string][]*vttv1.Envelope, len(sc.Participants))
+	projected := projectedSeats(sc.Participants)
 	for _, p := range sc.Participants {
 		c, err := dial(p.Name, 0)
 		if err != nil {
@@ -330,7 +336,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 		var sr StepResult
 		switch {
 		case len(st.Command) > 0:
-			sr = runCommandStep(ctx, i, st, conns, history)
+			sr = runCommandStep(ctx, i, st, conns, projected, history)
 		case st.Reconnect != nil:
 			sr = runReconnectStep(i, st, dial, conns, history)
 		default:
@@ -498,7 +504,7 @@ func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witn
 // runCommandStep sends st.Command on the issuing participant's connection
 // and checks it against st.Expect (denial or acceptance — see RunScenario's
 // doc comment for the exact contract of each).
-func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, history map[string][]*vttv1.Envelope) StepResult {
+func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
 	sr := StepResult{Index: idx, By: st.By, Kind: "command"}
 
 	conn, ok := conns[st.By]
@@ -569,7 +575,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	// event, matched by observeOnAll below.
 	if isBatchCommand(&cmd) {
 		sr.firstSeq = result.Sequence
-		missing, detail := observeBatchOnAll(conns, history, result.Sequence, observeTimeout, denialAbsenceWindow)
+		missing, detail := observeBatchOnAll(conns, projected, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 		if len(missing) > 0 {
 			sr.Detail = fmt.Sprintf("batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
 			return sr
@@ -579,7 +585,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	}
 
 	sr.firstSeq = result.Sequence
-	missing, ended := observeOnAll(conns, history, result.Sequence, observeTimeout)
+	missing, ended := observeOnAll(conns, projected, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 	if len(ended) > 0 || len(missing) > 0 {
 		// Both facts, never one instead of the other: "did not observe" sends
 		// the reader after a broadcast that may have been perfect, and a
@@ -716,12 +722,16 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 	return sr
 }
 
-// observeOnAll reads exactly one new event from every participant's
-// connection (in parallel, each bounded by timeout), records it into
-// history regardless of outcome, and returns the names of participants that
-// either didn't see anything in time or saw an event with the wrong
+// observeOnAll reads exactly one new event from every UNPROJECTED
+// participant's connection (in parallel, each bounded by timeout), records it
+// into history regardless of outcome, and returns the names of participants
+// that either didn't see anything in time or saw an event with the wrong
 // Sequence.
-func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, wantSeq int64, timeout time.Duration) (missingNames, endedNames []string) {
+//
+// Projected participants are drained rather than matched — see the block
+// below for why that is the only honest contract once a seat's stream is a
+// projection of the log rather than the log.
+func observeOnAll(conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope, wantSeq int64, timeout, quietWindow time.Duration) (missingNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
 		name  string
@@ -731,8 +741,13 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 	results := make(chan outcome, len(names))
 	var mu sync.Mutex
 
+	required := 0
 	for _, name := range names {
 		name, conn := name, conns[name]
+		if projected[name] {
+			continue // drained below, after the required seats have observed
+		}
+		required++
 		go func() {
 			select {
 			case env, chOK := <-conn.Events():
@@ -754,7 +769,7 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 	}
 
 	var missing, ended []string
-	for range names {
+	for i := 0; i < required; i++ {
 		r := <-results
 		switch {
 		case r.ended:
@@ -763,6 +778,49 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 			missing = append(missing, r.name)
 		}
 	}
+
+	// A PROJECTED SEAT IS NOT REQUIRED TO OBSERVE ANYTHING, and that is the
+	// visibility arc's doing rather than a relaxation: what such a seat
+	// receives for one event is between zero and several envelopes, and zero
+	// is the right answer for an event about a room they are not standing in
+	// (visibility spec §4.2). Requiring one would fail every honest
+	// projection.
+	//
+	// It is still DRAINED, and that half is load-bearing twice over: the
+	// denial checks prove a negative by counting what arrived since
+	// (leakedSince), and a reconnect step compares catch-up against what the
+	// seat saw LIVE. Both read history, so a seat nobody collected would make
+	// one assertion vacuous and the other wrong.
+	//
+	// AFTER the required seats, never beside them, and that ordering is a
+	// measured requirement rather than tidiness. The drain is bounded by a
+	// quiet window and the required read by a much longer timeout, so a
+	// broadcast that arrives late — which is exactly the shape of the leak
+	// TestDeniedCommandLeakFailsTheDeniedStep injects — reaches the required
+	// seat and would have been missed entirely by a projected one running in
+	// parallel with it. Starting the drain once the event has demonstrably
+	// been delivered somewhere means the projected copy is already queued.
+	if len(names) > required {
+		var wg sync.WaitGroup
+		var endedMu sync.Mutex
+		for _, name := range names {
+			if !projected[name] {
+				continue
+			}
+			name, conn := name, conns[name]
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if drainQuietInto(name, conn, history, &mu, quietWindow) {
+					endedMu.Lock()
+					ended = append(ended, name)
+					endedMu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+	}
+
 	sort.Strings(missing)
 	sort.Strings(ended)
 	return missing, ended
@@ -806,8 +864,17 @@ func observeOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, w
 // the first participant's own run) — one atomic AppendBatch broadcast to
 // every subscriber must look identical to every observer, or the step
 // fails naming which participant(s) diverged and how.
-func observeBatchOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
-	names := sortedParticipantNames(conns)
+func observeBatchOnAll(conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
+	all := sortedParticipantNames(conns)
+	// Same split, same reason, as observeOnAll's: a projected seat receives a
+	// projection of the batch, which is legitimately shorter than the batch
+	// and legitimately empty, so it is drained rather than matched.
+	var names []string
+	for _, n := range all {
+		if !projected[n] {
+			names = append(names, n)
+		}
+	}
 	results := make(chan batchOutcome, len(names))
 	var mu sync.Mutex
 
@@ -824,6 +891,24 @@ func observeBatchOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelo
 		byName[r.name] = r
 	}
 
+	// Projected seats: drained, never matched, and drained AFTER — the same
+	// split and the same ordering reason as observeOnAll's.
+	if len(all) > len(names) {
+		var wg sync.WaitGroup
+		for _, name := range all {
+			if !projected[name] {
+				continue
+			}
+			name, conn := name, conns[name]
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				drainQuietInto(name, conn, history, &mu, quietWindow)
+			}()
+		}
+		wg.Wait()
+	}
+
 	for _, name := range names {
 		if o := byName[name]; o.err != "" {
 			missing = append(missing, name)
@@ -837,6 +922,15 @@ func observeBatchOnAll(conns map[string]Conn, history map[string][]*vttv1.Envelo
 		return missing, detail
 	}
 
+	if len(names) == 0 {
+		// EVERY seat is projected, so there is no unfiltered stream to compare
+		// the batch against and this function has nothing left to assert. Not
+		// silently: the drain above still recorded what each seat received, so
+		// the denial and reconnect checks downstream keep their evidence. A
+		// scenario that wants the batch itself pinned needs a DM or an agent
+		// in it, which every committed scenario has.
+		return nil, ""
+	}
 	want := byName[names[0]].envs
 	for _, name := range names[1:] {
 		got := byName[name].envs
@@ -1096,5 +1190,62 @@ func evaluateProbe(idx int, p Probe, state *engine.State) ProbeResult {
 		}
 	default:
 		return ProbeResult{Index: idx, Kind: "unknown", Detail: "probe has none of tokenAt/sessionCount/actorExists/resourceAt/hasCondition/noteAt set"}
+	}
+}
+
+// projectedSeats names the participants whose stream is a PROJECTION of the
+// log rather than the log itself (visibility spec §3.1): a player sees what
+// their actors can see, a spectator sees over the shoulder they are perched
+// on, and the DM and the agent receive every event unchanged (exit criterion
+// 8).
+//
+// BY NAMING THE PROJECTED ROLES, which is the OPPOSITE direction from
+// gateway.projected — and the difference is deliberate rather than an
+// oversight. The gateway decides what goes on a wire, so an unrecognised role
+// there must receive nothing: fail closed, silently, on the safe side. This is
+// a TEST HARNESS, and its job is to notice. An unrecognised role here is
+// treated as an ordinary observer, so a scenario that introduces one FAILS its
+// steps ("not observed matching by: ...") instead of quietly asserting nothing
+// about it. Both defaults put the failure where it can be seen; they differ
+// because "seen" means different things at the two ends.
+//
+// An EMPTY role is likewise an ordinary observer: identity mints no invite for
+// one, so it cannot reach a real gateway — it only ever names a hand-built
+// connection in this package's own tests, where every participant is an
+// observer by construction.
+//
+// Role strings, not identity.Role: this package may not import
+// internal/identity (the P1 boundary — the harness proves a client can drive a
+// table using the wire constitution alone), and the scenario format carries
+// the role as the same string the invite does.
+func projectedSeats(ps []Participant) map[string]bool {
+	out := make(map[string]bool, len(ps))
+	for _, p := range ps {
+		switch p.Role {
+		case "player", "spectator":
+			out[p.Name] = true
+		}
+	}
+	return out
+}
+
+// drainQuietInto collects everything conn has to offer, into history, until
+// nothing further arrives within quiet. Reports whether the stream ENDED,
+// which is a fault even for a seat that is entitled to receive nothing:
+// silence and a dead socket are different facts, and the assertions that read
+// history downstream rely on the difference.
+func drainQuietInto(name string, conn Conn, history map[string][]*vttv1.Envelope, mu *sync.Mutex, quiet time.Duration) (ended bool) {
+	for {
+		select {
+		case env, ok := <-conn.Events():
+			if !ok {
+				return true
+			}
+			mu.Lock()
+			history[name] = append(history[name], env)
+			mu.Unlock()
+		case <-time.After(quiet):
+			return false
+		}
 	}
 }

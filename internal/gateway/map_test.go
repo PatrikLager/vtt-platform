@@ -71,6 +71,11 @@ type mapFixture struct {
 	dmToken        string
 	playerToken    string
 	spectatorToken string
+	// agentToken: the other seat that receives the log unfiltered (spec §3.1,
+	// exit criterion 8), for the same reason adventureFixture grew one — a
+	// load_map batch is a dungeon nobody has walked into yet, and the
+	// visibility projection withholds exactly that from a player.
+	agentToken string
 }
 
 func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
@@ -101,6 +106,10 @@ func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	srv := gateway.New(c, ids)
 	if withMaps {
@@ -113,6 +122,7 @@ func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
 	return &mapFixture{
 		t: t, srv: httpSrv,
 		dmToken: dmToken, playerToken: playerToken, spectatorToken: spectatorToken,
+		agentToken: agentToken,
 	}
 }
 
@@ -237,7 +247,10 @@ func mapPayloadKind(env *vttv1.Envelope) string {
 func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 	f := newMapFixture(t, true)
 	dmConn := f.dial(f.dmToken, 0)
-	playerConn := f.dial(f.playerToken, 0)
+	// The AGENT seat reads the batch back, not the player: this test follows a
+	// whole load_map batch envelope for envelope, and a map is terrain a player
+	// has not entered — the visibility projection withholds it by design.
+	agentConn := f.dial(f.agentToken, 0)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
@@ -249,9 +262,9 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 		t.Fatalf("seed AddActor act-fighter: %s", r0.Error)
 	}
 	// Drain the seed actor's own broadcast off the second connection before
-	// reading the load_map batch below — playerConn is a participant too,
+	// reading the load_map batch below — agentConn is a participant too,
 	// so it receives every broadcast, including this seed.
-	readEvent(t, playerConn)
+	readEvent(t, agentConn)
 
 	sendCommand(t, dmConn, loadMapCmdFor("cellar"))
 	res := readResult(t, dmConn)
@@ -272,7 +285,7 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 	// all, so readEvent on it is race-free — the identical reasoning
 	// adventure_test.go's own multi-adventure test gives for the same
 	// choice.
-	sceneEnv := readEvent(t, playerConn)
+	sceneEnv := readEvent(t, agentConn)
 	if got := mapPayloadKind(sceneEnv); got != "sceneCreated" {
 		t.Fatalf("first batch envelope kind = %q, want sceneCreated", got)
 	}
@@ -314,7 +327,7 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 		t.Fatalf("pillar-west-1 = %+v, want at (2,2), blocks sight and move", pillar)
 	}
 
-	tokEnv := readEvent(t, playerConn)
+	tokEnv := readEvent(t, agentConn)
 	if got := mapPayloadKind(tokEnv); got != "tokenPlaced" {
 		t.Fatalf("second batch envelope kind = %q, want tokenPlaced", got)
 	}

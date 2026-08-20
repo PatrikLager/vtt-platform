@@ -102,6 +102,13 @@ type adventureFixture struct {
 	dmToken        string
 	playerToken    string
 	spectatorToken string
+	// agentToken is the OTHER seat that receives the log unfiltered (spec
+	// §3.1, exit criterion 8). Tests here that need "a second, uninvolved
+	// connection" to read a whole batch off use it rather than the player:
+	// since the visibility projection landed, a player receives what their
+	// actors can see, and an adventure's batch is precisely a pile of world
+	// the player has not walked into yet.
+	agentToken string
 }
 
 func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
@@ -132,6 +139,10 @@ func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	srv := gateway.New(c, ids)
 	if withAdventures {
@@ -145,6 +156,7 @@ func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
 	return &adventureFixture{
 		t: t, srv: httpSrv,
 		dmToken: dmToken, playerToken: playerToken, spectatorToken: spectatorToken,
+		agentToken: agentToken,
 	}
 }
 
@@ -185,6 +197,10 @@ func newMultiAdventureFixture(t *testing.T) *adventureFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	goblinRS := loadDnd45eMinimal(t)
 	goblinAdv := loadGoblinAmbush(t, goblinRS)
@@ -201,6 +217,7 @@ func newMultiAdventureFixture(t *testing.T) *adventureFixture {
 	return &adventureFixture{
 		t: t, srv: httpSrv,
 		dmToken: dmToken, playerToken: playerToken, spectatorToken: spectatorToken,
+		agentToken: agentToken,
 	}
 }
 
@@ -325,7 +342,15 @@ func adventurePayloadKind(env *vttv1.Envelope) string {
 func TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants(t *testing.T) {
 	f := newAdventureFixture(t, true)
 	dmConn := f.dial(f.dmToken, 0)
-	playerConn := f.dial(f.playerToken, 0)
+	// The AGENT is the second connection, not the player. The batch this test
+	// follows envelope for envelope is a whole adventure — a scene the player
+	// has not entered and three actors they have not met — and the visibility
+	// projection withholds exactly that. What is under test here is that a
+	// BATCH fans out whole and in Compile's order, which the agent seat proves
+	// (spec §3.1: agent and DM receive the log unchanged); what a player
+	// receives of an adventure is the projection's business and is pinned in
+	// project_test.go and server_visibility_test.go.
+	agentConn := f.dial(f.agentToken, 0)
 
 	sendCommand(t, dmConn, loadAdventureCmdFor("goblin-ambush"))
 	res := readResult(t, dmConn)
@@ -343,7 +368,7 @@ func TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants(t *testin
 		"noteUpserted", "narrationAdded",
 	}
 	for i, want := range wantKinds {
-		env := readEvent(t, playerConn)
+		env := readEvent(t, agentConn)
 		if env.Sequence != res.Sequence+int64(i) {
 			t.Fatalf("batch event %d: sequence = %d, want %d", i, env.Sequence, res.Sequence+int64(i))
 		}
@@ -414,7 +439,7 @@ func TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) 
 // cellar-rats' is "cellar" — the two never collide) — so serving the
 // OTHER loaded adventure's content would fail both assertions.
 //
-// The batch is read from a SECOND, uninvolved connection (playerConn),
+// The batch is read from a SECOND, uninvolved connection (agentConn),
 // exactly like TestLoadAdventureProducesBatchFirstSequenceReachesAll
 // Participants above — not the commanding dmConn: readResult "skips any
 // Envelope frames that race ahead of it" (server_test.go's own doc
@@ -439,7 +464,10 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 		t.Run(c.requestID, func(t *testing.T) {
 			f := newMultiAdventureFixture(t)
 			dmConn := f.dial(f.dmToken, 0)
-			playerConn := f.dial(f.playerToken, 0)
+			// The agent seat, for the same reason as the test above: this
+			// follows a whole adventure batch, which is world a player has
+			// not walked into.
+			agentConn := f.dial(f.agentToken, 0)
 
 			sendCommand(t, dmConn, loadAdventureCmdFor(c.requestID))
 			res := readResult(t, dmConn)
@@ -447,7 +475,7 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 				t.Fatalf("want ok=true loading %q from a server with two adventures loaded, got %+v", c.requestID, res)
 			}
 
-			loaded := readEvent(t, playerConn)
+			loaded := readEvent(t, agentConn)
 			al := loaded.GetAdventureLoaded()
 			if al == nil {
 				t.Fatalf("first batch envelope = %+v, want AdventureLoaded", loaded)
@@ -463,7 +491,7 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 			// REQUESTED adventure declares — proof the whole batch, not just
 			// the AdventureLoaded testimony's own id field, matches the
 			// requested content.
-			sceneEnv := readEvent(t, playerConn)
+			sceneEnv := readEvent(t, agentConn)
 			sc := sceneEnv.GetSceneCreated()
 			if sc == nil {
 				t.Fatalf("second batch envelope = %+v, want SceneCreated", sceneEnv)
@@ -475,7 +503,7 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 			// Drain the rest of the batch so this subtest's connection
 			// teardown doesn't leave unread frames behind.
 			for i := 2; i < c.wantBatchLength; i++ {
-				readEvent(t, playerConn)
+				readEvent(t, agentConn)
 			}
 		})
 	}

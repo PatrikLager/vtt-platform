@@ -73,6 +73,8 @@ func mustAppend(t *testing.T, c *campaign.Campaign, id string, payload any) int6
 		env.Payload = p
 	case *vttv1.Envelope_TokenPlaced:
 		env.Payload = p
+	case *vttv1.Envelope_NarrationAdded:
+		env.Payload = p
 	default:
 		t.Fatalf("mustAppend: unsupported payload type %T", payload)
 	}
@@ -448,7 +450,13 @@ func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, 4)
-	watcherConn := f.dial(f.spectatorToken, 4)
+	// The AGENT watches, not the spectator. Fan-out is what this test is
+	// about, and since the visibility projection landed a spectator with no
+	// perch has no eyes, so a SceneCreated for a room they are not standing in
+	// is correctly withheld from them (spec §4.2, exit criterion 6). The agent
+	// receives the log unchanged (exit criterion 8), which is what "a second
+	// client also receives the broadcast" needs to mean here.
+	watcherConn := f.dial(f.agentToken, 4)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-1",
@@ -1680,8 +1688,17 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 	// — on an unhealthy database would make a transient look like everyone
 	// being thrown out at once. Losing an event is worse than a moment's delay
 	// in removing somebody, and the very next event catches a revoked watcher.
-	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_SceneCreated{
-		SceneCreated: &vttv1.SceneCreated{SceneId: "attic", Name: "Attic", GridWidth: 4, GridHeight: 4},
+	//
+	// A NARRATION rather than the SceneCreated this used to append, and the
+	// change makes the assertion stronger rather than weaker. This connection
+	// is a PLAYER, so since the visibility projection landed its stream is a
+	// projected one — and a scene the player is not standing in is withheld
+	// from it by design (spec §4.2), which would have made this assertion fail
+	// for a reason that has nothing to do with an unhealthy identity DB.
+	// Narration is addressed to the table and is forwarded to every seat, so
+	// this now proves delivery survives THROUGH the projection.
+	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_NarrationAdded{
+		NarrationAdded: &vttv1.NarrationAdded{Text: "The attic stairs creak."},
 	})
 	// This connection dialed at 0, so the seeded history is queued ahead of it.
 	// readEvent fails the test outright if the connection ends instead.

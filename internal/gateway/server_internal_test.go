@@ -125,11 +125,18 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	victimToken, _, err := ids.CreateInvite("Victim", identity.RoleSpectator, nil)
+	// AGENT, not spectator, and the role is now load-bearing rather than
+	// flavour. This test wedges a connection by FLOODING it, and since the
+	// visibility projection landed a spectator with no perch receives almost
+	// nothing — no scene, no tokens — so a spectator victim could never be
+	// flooded and this test would pass for having nothing to deliver. The
+	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
+	// which is what this test needs and what it always assumed it had.
+	victimToken, _, err := ids.CreateInvite("Victim", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthyToken, _, err := ids.CreateInvite("Healthy", identity.RoleSpectator, nil)
+	healthyToken, _, err := ids.CreateInvite("Healthy", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +498,14 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deafToken, _, err := ids.CreateInvite("Deaf", identity.RoleSpectator, nil)
+	// AGENT, not spectator, and the role is now load-bearing rather than
+	// flavour. This test wedges a connection by FLOODING it, and since the
+	// visibility projection landed a spectator with no perch receives almost
+	// nothing — no scene, no tokens — so a spectator victim could never be
+	// flooded and this test would pass for having nothing to deliver. The
+	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
+	// which is what this test needs and what it always assumed it had.
+	deafToken, _, err := ids.CreateInvite("Deaf", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +615,14 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deafToken, deafID, err := ids.CreateInvite("Deaf", identity.RoleSpectator, nil)
+	// AGENT, not spectator, and the role is now load-bearing rather than
+	// flavour. This test wedges a connection by FLOODING it, and since the
+	// visibility projection landed a spectator with no perch receives almost
+	// nothing — no scene, no tokens — so a spectator victim could never be
+	// flooded and this test would pass for having nothing to deliver. The
+	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
+	// which is what this test needs and what it always assumed it had.
+	deafToken, deafID, err := ids.CreateInvite("Deaf", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,11 +922,18 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	}
 	defer ids.Close()
 
-	wedgedToken, _, err := ids.CreateInvite("Wedged", identity.RoleSpectator, nil)
+	// AGENT, not spectator, and the role is now load-bearing rather than
+	// flavour. This test wedges a connection by FLOODING it, and since the
+	// visibility projection landed a spectator with no perch receives almost
+	// nothing — no scene, no tokens — so a spectator victim could never be
+	// flooded and this test would pass for having nothing to deliver. The
+	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
+	// which is what this test needs and what it always assumed it had.
+	wedgedToken, _, err := ids.CreateInvite("Wedged", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	joinerToken, _, err := ids.CreateInvite("Joiner", identity.RoleSpectator, nil)
+	joinerToken, _, err := ids.CreateInvite("Joiner", identity.RoleAgent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
