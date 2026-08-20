@@ -16,13 +16,23 @@
 //
 // # The replay cursor
 //
-// First connect asks for after=0 and folds the whole log. Every event seen
-// advances lastSeq. Resuming from 0 instead would replay events the client has
-// already folded, duplicating them into a state that disagrees with the
-// server's.
+// First connect asks for after=0 and folds the whole log. Resuming from 0
+// instead would replay events the client has already folded, duplicating them
+// into a state that disagrees with the server's.
 //
-// A RECONNECT ASKS FOR after=<lastSeq - 1>, AND ROLLS THE LAST SEQUENCE BACK
-// OUT OF THE LOG FIRST. One event is now several envelopes.
+// TWO CURSORS ADVANCE ON EVERY EVENT AND ONLY ONE OF THEM IS THE RESUME
+// POINT. `seenSeq` is the HIGH-WATER MARK, the highest sequence ever
+// delivered, and it only ever grows. `lastSeq` is where the next redial
+// resumes from, and a redial sets it BELOW the high-water mark — so it is the
+// one number here that can go down, and it is never the number to derive the
+// next resume point from.
+//
+// A RECONNECT ASKS FOR after=<seenSeq - 1>, AND ROLLS THE LAST SEQUENCE BACK
+// OUT OF THE LOG FIRST. Deriving that from lastSeq instead is the regression
+// this pair of cursors exists to prevent: after one redial lastSeq already IS
+// seenSeq - 1, so the next redial would step back again, and the board rewinds
+// one event per click of the Reconnect button — which is exactly when that
+// button is on screen. One event is now several envelopes.
 //
 // Since the visibility projection landed (internal/gateway/project.go), a
 // player's or a spectator's stream carries SYNTHESIZED envelopes stamped with
@@ -31,8 +41,9 @@
 // several envelopes share one sequence, and the server resumes STRICTLY after
 // a sequence (internal/store/subscribe.go: `seq > afterSeq`).
 //
-// That makes a cursor of exactly lastSeq unusable, because lastSeq reaches N on
-// the FIRST envelope of the batch while the rest are still in flight. A socket
+// That makes a cursor of exactly the high-water mark unusable, because it
+// reaches N on the FIRST envelope of the batch while the rest are still in
+// flight. A socket
 // that dies after 2 of 5 leaves this client holding two thirds of a sequence
 // and no way to say so: after=N discards the three it never got — and a lost
 // TokenHidden leaves an enemy token on the board, which is the leak the whole
@@ -84,12 +95,11 @@ export class Wire {
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private rollbackHandlers: ((throughSeq: bigint) => void)[] = [];
   // TWO CURSORS, because they answer different questions and sharing one made
-  // a reconnect rewind the board. `seenSeq` is the HIGH-WATER MARK — the
-  // highest sequence ever delivered, which only ever grows. `lastSeq` is where
-  // the next redial resumes from, and a redial deliberately sets it one below
-  // the high-water mark (see the replay-cursor note above). Derive the second
-  // from the first each time and repeated redials are idempotent; carry one
-  // value and every click of the Reconnect button steps back another event.
+  // a reconnect rewind the board — see the replay-cursor note at the top of
+  // this file, which names seenSeq as the one a resume point is derived from.
+  // Deriving from seenSeq each time makes repeated redials idempotent;
+  // deriving from lastSeq, which a redial has already moved down, steps back
+  // again on every click.
   private seenSeq = 0n;
   private lastSeq = 0n;
   private nextID = 0;
@@ -213,10 +223,12 @@ export class Wire {
   }
 
   /**
-   * Redial from one sequence BEFORE the last one seen, having first told
+   * Redial from one sequence BELOW the high-water mark, having first told
    * whoever holds the log to drop that last sequence — see the replay-cursor
-   * note at the top of this file for why a cursor of exactly lastSeq cannot be
-   * expressed once one event can be several envelopes.
+   * note at the top of this file for why a cursor of exactly the highest
+   * sequence seen cannot be expressed once one event can be several
+   * envelopes, and why the step back is taken from seenSeq rather than from
+   * lastSeq.
    */
   async reconnect(): Promise<void> {
     // Abandon the old socket by forgetting it, then close it. Forgetting is
@@ -259,9 +271,9 @@ export class Wire {
         return;
       }
       case "presenceSnapshot": {
-        // Deliberately NOT advancing lastSeq: presence is not an event and
-        // carries no sequence. lastSeq is the replay cursor reconnect resumes
-        // from, so touching it here would skip real events on the next redial.
+        // Deliberately NOT advancing either cursor: presence is not an event
+        // and carries no sequence. They are what a reconnect resumes from, so
+        // touching them here would skip real events on the next redial.
         const batch: PresenceEvent[] = [];
         for (const e of frame.frame.value.present) {
           const one = this.one(e.participantId, e.displayName, e.state);

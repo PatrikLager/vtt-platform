@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1224,5 +1225,114 @@ func TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough(t 
 				t.Fatalf("describeBlockage(%q) = %q, want %q", c.why, got, c.want)
 			}
 		})
+	}
+}
+
+// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch pins what happens
+// when one envelope of a batch cannot be encoded, which since the visibility
+// projection landed is a question with two possible answers.
+//
+// The pump used to `continue` past a frame it could not encode. That was
+// harmless while one log event was exactly one frame: the client missed one
+// event and the stream stayed coherent. It stopped being harmless when a
+// projected seat began receiving SEVERAL envelopes per event, because
+// project.go's order within them is load-bearing — an actor before its token,
+// a scene before what stands in it. Skipping one and sending the next delivers
+// "token placed for unknown actor" to both folds, which is the permanent
+// client freeze this arc keeps returning to. Delivering an incoherent stream
+// is worse than delivering none, so the connection goes instead.
+//
+// UNREACHABLE IN PRODUCTION AND STILL WORTH DRIVING, exactly like
+// TestCatchUpHeadEncodeFailureClosesTheConnection above: protojson does not
+// fail on envelopes the projection builds. What makes it testable at all is
+// that enqueueEvents takes Server.encodeFrame's seam rather than calling the
+// package-level EncodeFrame — until it did, this branch was unreachable by
+// WIRING rather than by construction, and its behaviour was a claim in a
+// comment that nothing checked.
+func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ids, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+
+	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// EVENT FRAMES ONLY, and only after the first one. Failing every frame
+	// would trip the catch-up head instead and prove nothing about this path;
+	// failing the first event would be indistinguishable from a connection
+	// that never got going. Letting one through and then failing is the shape
+	// of a torn batch, so `continue` and `stop` give visibly different
+	// outcomes: with `continue` the connection stays open and delivers the
+	// envelope AFTER the failure, with `stop` it hangs up.
+	srv := New(c, ids)
+	var events atomic.Int32
+	realEncode := srv.encodeFrame
+	srv.encodeFrame = func(f *vttv1.ServerFrame) ([]byte, error) {
+		if f.GetEvent() != nil && events.Add(1) > 1 {
+			return nil, errors.New("gateway: injected event-frame encode failure")
+		}
+		return realEncode(f)
+	}
+	httpSrv := httptest.NewServer(srv.Handler())
+	defer httpSrv.Close()
+
+	if _, err := c.Append(&vttv1.Envelope{
+		EventId: "e1",
+		Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Append(&vttv1.Envelope{
+		EventId: "e2",
+		Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+			SceneId: "scn", Name: "S", GridWidth: 4, GridHeight: 4,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, httpSrv.URL+"/ws?token="+token+"&after=0", nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+
+	// Read until the connection ends. The frames that DO arrive must stop at
+	// the failure: nothing from beyond it may be delivered, which is the half
+	// that fails if the pump skips instead of stopping.
+	var closeErr error
+	for i := 0; i < 12 && closeErr == nil; i++ {
+		_, raw, err := conn.Read(ctx)
+		if err != nil {
+			closeErr = err
+			break
+		}
+		var f vttv1.ServerFrame
+		if err := protojson.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("frame did not decode: %v (raw=%s)", err, raw)
+		}
+		if e := f.GetEvent(); e != nil && e.GetEventId() == "e2" {
+			t.Fatal("the envelope after the encode failure was delivered — the pump skipped a " +
+				"frame and carried on, which is the torn batch this stop exists to prevent")
+		}
+	}
+	if closeErr == nil {
+		t.Fatal("want the connection closed after an event frame could not be encoded, " +
+			"got a stream that kept serving")
+	}
+	if status := websocket.CloseStatus(closeErr); status != websocket.StatusInternalError {
+		t.Fatalf("close status = %v, want StatusInternalError (err=%v)", status, closeErr)
 	}
 }

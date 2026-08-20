@@ -557,14 +557,22 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// the whole backlog rather than one per envelope: it was drained in a
 		// single pass milliseconds ago, and the loop below re-resolves on the
 		// very next event either way.
-		if len(backlog) > 0 && s.credentialGone(pc.participantID) {
+		//
+		// UNGUARDED BY len(backlog), which costs one identity read on a
+		// connection that has no backlog — every DM and agent — and buys a
+		// check that cannot be skipped. The guard was there and the mutation
+		// gate found it unkillable in both directions: nothing can observe
+		// whether a lookup is made before a delivery of nothing. Deleting it
+		// beats adjudicating it, and it makes the check below reachable by the
+		// revocation tests rather than only by the window it was written for.
+		if s.credentialGone(pc.participantID) {
 			if !closing.Load() {
 				_ = conn.Close(websocket.StatusPolicyViolation,
 					"gateway: credential no longer valid")
 			}
 			return
 		}
-		if err := enqueueEvents(backlog, outCh, writerDone); err != nil {
+		if err := enqueueEvents(s.encodeFrame, backlog, outCh, writerDone); err != nil {
 			if errors.Is(err, errEncodeFrame) && !closing.Load() {
 				_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
 			}
@@ -637,7 +645,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// skipping to the next envelope — see enqueueEvents. conn.Close
 			// rather than shutdown(), because this IS the pump and shutdown
 			// waits on it.
-			if err := enqueueEvents(sub.receive(env), outCh, writerDone); err != nil {
+			if err := enqueueEvents(s.encodeFrame, sub.receive(env), outCh, writerDone); err != nil {
 				if errors.Is(err, errEncodeFrame) && !closing.Load() {
 					_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
 				}
@@ -1308,9 +1316,17 @@ var (
 //
 // A nil or empty batch is a no-op, which is what a projection that withheld
 // everything returns.
-func enqueueEvents(envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
+//
+// THE ENCODER IS PASSED IN, through Server.encodeFrame's seam, and that is the
+// difference between a branch nothing can reach and one a test can drive. It
+// called the package-level EncodeFrame at first, which left the error path
+// above unreachable BY WIRING — not by construction, since the seam sits in
+// this same file and five other frames already go through it. Reviewers
+// spotted the distinction before I did; the branch below is now killable, and
+// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch drives it.
+func enqueueEvents(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
 	for _, pe := range envs {
-		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
+		b, err := encode(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
 		if err != nil {
 			return fmt.Errorf("%w: sequence %d: %w", errEncodeFrame, pe.GetSequence(), err)
 		}
