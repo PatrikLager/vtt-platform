@@ -87,12 +87,22 @@ test("connect replays from after=0 and delivers events", async () => {
   }
 });
 
-test("a reconnect resumes from the last sequence seen, not from zero", async () => {
+test("a reconnect resumes one sequence below the last one seen, and says so", async () => {
   // Resuming from 0 would replay the whole log into a client that already
   // folded it — duplicated events, and a state that disagrees with the server.
+  //
+  // Resuming from exactly 7 is the OTHER wrong answer, and the one that only
+  // became wrong when the gateway started projecting per seat: several
+  // envelopes can now share a sequence, the cursor reaches 7 on the first of
+  // them, and the server resumes strictly ABOVE a sequence — so a socket that
+  // died mid-batch would never be sent the rest. Resuming from 6 and taking
+  // sequence 7 again is the only expressible answer, and it is safe precisely
+  // because the tail is rolled back first.
   const gw = fakeGateway(() => {});
   try {
     const wire = new Wire(gw.url, "tok-1");
+    const rolledBackThrough: bigint[] = [];
+    wire.onRollback((seq) => rolledBackThrough.push(seq));
     await wire.connect(0n);
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(7) }));
     await until(() => wire.head === 7n, "the cursor to advance to 7");
@@ -101,7 +111,33 @@ test("a reconnect resumes from the last sequence seen, not from zero", async () 
     await until(() => gw.queries.length === 2, "the redial to reach the gateway");
 
     expect(gw.queries.length).toBe(2);
-    expect(gw.queries[1]).toContain("after=7");
+    expect(gw.queries[1]).toContain("after=6");
+    // The rollback is announced BEFORE the redial and names the same cursor,
+    // so whoever holds the log drops sequence 7 rather than folding it twice.
+    expect(rolledBackThrough).toEqual([6n]);
+    expect(wire.head).toBe(6n);
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+test("a reconnect before anything was ever seen still resumes from zero", async () => {
+  // lastSeq - 1 must not go negative: a client that dropped before its first
+  // event has nothing folded, and asking for after=-1 would be a 400 from
+  // parseAfter's own caller rather than a replay.
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    const rolledBackThrough: bigint[] = [];
+    wire.onRollback((seq) => rolledBackThrough.push(seq));
+    await wire.connect(0n);
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+
+    expect(gw.queries[1]).toContain("after=0");
+    expect(rolledBackThrough).toEqual([0n]);
     wire.close();
   } finally {
     gw.stop();
@@ -318,8 +354,10 @@ test("an out-of-order replay never walks the resume cursor backwards", async () 
     await until(() => seen.length === 2, "the older event");
 
     await wire.reconnect();
-    // Two connections: the redial must resume from 5, not from 3.
-    expect(gw.queries[1]).toContain("after=5");
+    // Two connections: the redial must resume from the HIGHEST sequence seen,
+    // 5, not from the older 3 that arrived after it. One below either way (see
+    // the reconnect test above), so the discriminator is 4 against 2.
+    expect(gw.queries[1]).toContain("after=4");
   } finally {
     gw.stop();
   }

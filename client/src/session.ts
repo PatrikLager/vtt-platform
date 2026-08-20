@@ -27,7 +27,7 @@ export interface Participant {
 
 export class Session {
   private readonly wire: Wire;
-  private readonly log: Envelope[] = [];
+  private log: Envelope[] = [];
   private derived: State = newState();
   private changeHandlers: (() => void)[] = [];
   // Keyed by participant id, NOT a list: a client that reconnects receives a
@@ -42,6 +42,7 @@ export class Session {
     this.wire = new Wire(url, token);
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
+    this.wire.onRollback((throughSeq) => this.rollback(throughSeq));
   }
 
   get state(): State {
@@ -152,6 +153,30 @@ export class Session {
       }
     }
     for (const fn of this.presenceHandlers) fn(batch);
+    for (const fn of this.changeHandlers) fn();
+  }
+
+  /**
+   * Drop everything above throughSeq, because the server is about to send it
+   * again.
+   *
+   * A reconnect resumes one sequence BEFORE the highest this client saw (see
+   * wire.ts's replay-cursor note): one event is now several envelopes for a
+   * projected seat, and a socket that dies mid-batch leaves this log holding
+   * part of a sequence with no way to ask for the rest. Rolling that sequence
+   * off and taking it whole again is what makes the resume point expressible.
+   *
+   * Truncating a log is always safe to FOLD — what remains is a prefix of
+   * something that folded a moment ago — so this deliberately does not report
+   * an error path it cannot reach. It re-folds rather than trusting the
+   * previous state, because dropping a retraction marker legitimately restores
+   * what that marker had removed.
+   */
+  private rollback(throughSeq: bigint): void {
+    const kept = this.log.filter((e) => e.sequence <= throughSeq);
+    if (kept.length === this.log.length) return;
+    this.log = kept;
+    this.derived = fold(this.log);
     for (const fn of this.changeHandlers) fn();
   }
 

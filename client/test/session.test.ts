@@ -154,22 +154,38 @@ test("reconnect redials and resumes from the last folded sequence", async () => 
   // The discriminator is a SECOND connection carrying an event the first one
   // never sent, and the `after` cursor it resumes from, which is what makes
   // this a resume rather than a fresh replay.
+  //
+  // The fake gateway REPLAYS BY CURSOR rather than scripting each connection,
+  // because the cursor is now the thing under test: a reconnect resumes one
+  // sequence before the highest seen (wire.ts's replay-cursor note), so a
+  // server that ignored `after` would hide both halves of that — the sequence
+  // rolled off the log and the same sequence arriving again.
   const seen: string[] = [];
   let opened = 0;
+  let pendingAfter = 0n;
+  const all = [
+    ...world,
+    { event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 3 } }) }) },
+  ];
   const server = Bun.serve({
     port: 0,
     fetch(req, srv) {
-      seen.push(new URL(req.url).searchParams.get("after") ?? "");
+      const after = new URL(req.url).searchParams.get("after") ?? "";
+      seen.push(after);
+      pendingAfter = BigInt(after || "0");
       if (srv.upgrade(req)) return undefined;
       return new Response("expected websocket", { status: 400 });
     },
     websocket: {
       open(ws) {
+        // The log GREW while this client was away — sequence 5 is the event
+        // the reconnect exists to collect — and the replay is `seq > afterSeq`,
+        // exactly as internal/store/subscribe.go resumes.
         opened += 1;
-        const frames = opened === 1
-          ? world
-          : [{ event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 3 } }) }) }];
-        for (const f of frames) ws.send(JSON.stringify(f));
+        const after = pendingAfter;
+        for (const f of opened === 1 ? world : all) {
+          if (BigInt((f as any).event.sequence) > after) ws.send(JSON.stringify(f));
+        }
       },
       message() {},
     },
@@ -185,10 +201,12 @@ test("reconnect redials and resumes from the last folded sequence", async () => 
 
     expect(s.head).toBe(5n);
     expect(s.state.Tokens["t1"]).toMatchObject({ X: 3, Y: 3 });
-    // Two connections, and the second asked to resume rather than replay.
+    // Two connections, and the second asked to resume rather than replay —
+    // from 3, one sequence below the 4 it had folded, because sequence 4 may
+    // have been a torn batch and is taken again whole.
     expect(seen.length).toBe(2);
     expect(seen[0]).toBe("0");
-    expect(seen[1]).toBe("4");
+    expect(seen[1]).toBe("3");
     s.close();
   } finally {
     server.stop(true);
@@ -382,5 +400,76 @@ test("a departure for someone never seen leaves the list alone", async () => {
     s.close();
   } finally {
     gw.stop();
+  }
+});
+
+test("a reconnect after a torn batch takes that sequence again, and folds it exactly once", async () => {
+  // THE CASE THE PROJECTION CREATED. Since internal/gateway projects per seat,
+  // one log event can reach a player as SEVERAL envelopes sharing one
+  // sequence — something coming into view is an ActorAdded plus a
+  // TokenPlaced. A socket that dies between them leaves this client holding
+  // half of sequence 4.
+  //
+  // Both of the obvious cursors are wrong, which is why this test exists.
+  // after=4 asks the server for events strictly above 4, so the TokenPlaced is
+  // never sent again and the token is silently missing forever — and when the
+  // torn envelope is a TokenHidden instead, the thing left behind is an enemy
+  // token on a player's board, which is the leak this whole arc closes.
+  // after=3 without dropping the half-batch first would fold the ActorAdded
+  // twice, and a duplicate actor is a fold error, which Session turns into a
+  // permanently frozen board.
+  let opened = 0;
+  let pendingAfter = 0n;
+  const before = [
+    { event: env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }) },
+    { event: env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "scn", name: "Cave", gridWidth: 8, gridHeight: 8 }) }) },
+    { event: env(3, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a1", name: "Hero" } }) }) },
+  ];
+  // One log event, two envelopes, one sequence: the goblin coming into view.
+  const batch = [
+    { event: env(4, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a2", name: "Goblin" } }) }) },
+    { event: env(4, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t2", sceneId: "scn", actorId: "a2", position: { x: 6, y: 6 } }) }) },
+  ];
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      pendingAfter = BigInt(new URL(req.url).searchParams.get("after") ?? "0");
+      if (srv.upgrade(req)) return undefined;
+      return new Response("expected websocket", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        opened += 1;
+        const after = pendingAfter;
+        for (const f of [...before, ...batch]) {
+          if (BigInt((f as any).event.sequence) <= after) continue;
+          // THE TEAR: on the first connection the socket dies after the first
+          // envelope of sequence 4.
+          if (opened === 1 && (f as any).event.sequence === "4" && (f as any).event.tokenPlaced) break;
+          ws.send(JSON.stringify(f));
+        }
+      },
+      message() {},
+    },
+  });
+  const url = `ws://localhost:${server.port}/ws`;
+  try {
+    const s = new Session(url, "tok");
+    const errors: string[] = [];
+    s.onError((e) => errors.push(e.message));
+    await s.start();
+    await until(() => s.head === 4n, "the torn batch's first envelope");
+    expect(s.state.Actors["a2"]).toBeDefined();
+    expect(s.state.Tokens["t2"]).toBeUndefined(); // the tear, before recovery
+
+    await s.reconnect();
+    await until(() => s.state.Tokens["t2"] !== undefined, "the re-sent batch to complete the sighting");
+
+    expect(errors).toEqual([]); // a duplicate ActorAdded would be here
+    expect(s.state.Actors["a2"]).toBeDefined();
+    expect(s.state.Tokens["t2"]).toMatchObject({ X: 6, Y: 6 });
+    s.close();
+  } finally {
+    server.stop(true);
   }
 });

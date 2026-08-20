@@ -17,9 +17,36 @@
 // # The replay cursor
 //
 // First connect asks for after=0 and folds the whole log. Every event seen
-// advances lastSeq, and a reconnect asks for after=<lastSeq>. Resuming from 0
-// instead would replay events the client has already folded, duplicating them
-// into a state that disagrees with the server's.
+// advances lastSeq. Resuming from 0 instead would replay events the client has
+// already folded, duplicating them into a state that disagrees with the
+// server's.
+//
+// A RECONNECT ASKS FOR after=<lastSeq - 1>, AND ROLLS THE LAST SEQUENCE BACK
+// OUT OF THE LOG FIRST. One event is now several envelopes.
+//
+// Since the visibility projection landed (internal/gateway/project.go), a
+// player's or a spectator's stream carries SYNTHESIZED envelopes stamped with
+// the sequence of the event that caused them: something coming into view is an
+// ActorAdded plus a TokenPlaced plus a SceneSeen, all at sequence N. So
+// several envelopes share one sequence, and the server resumes STRICTLY after
+// a sequence (internal/store/subscribe.go: `seq > afterSeq`).
+//
+// That makes a cursor of exactly lastSeq unusable, because lastSeq reaches N on
+// the FIRST envelope of the batch while the rest are still in flight. A socket
+// that dies after 2 of 5 leaves this client holding two thirds of a sequence
+// and no way to say so: after=N discards the three it never got — and a lost
+// TokenHidden leaves an enemy token on the board, which is the leak the whole
+// arc exists to close — while re-sending the two it already folded is a
+// duplicate ActorAdded, which fold() rejects and Session turns into a
+// permanent freeze.
+//
+// Resuming one sequence EARLIER makes the resume point expressible again. A
+// sequence lower than the highest one seen is provably complete: envelopes
+// arrive in order, so observing sequence N is proof that N-1's batch was
+// finished. The possibly-torn tail is dropped from the log (onRollback, which
+// Session uses to truncate and re-fold) and the server re-sends it whole. The
+// cost is one sequence re-sent per reconnect; the alternative has no correct
+// answer at all.
 
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
@@ -55,6 +82,7 @@ export class Wire {
   private eventHandlers: ((e: Envelope) => void)[] = [];
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
+  private rollbackHandlers: ((throughSeq: bigint) => void)[] = [];
   private lastSeq = 0n;
   private nextID = 0;
 
@@ -74,6 +102,20 @@ export class Wire {
 
   onStatus(fn: (s: WireStatus) => void): void {
     this.statusHandlers.push(fn);
+  }
+
+  /**
+   * Called before a reconnect with the sequence the redial will resume AFTER:
+   * everything above it is about to be sent again and must be dropped first.
+   *
+   * A handler is required for correctness, not a convenience. The redial asks
+   * for one sequence earlier than the highest seen (see the replay-cursor note
+   * at the top of this file), so a holder of the log that does not truncate
+   * would fold the re-sent batch twice — which is the duplicate introduction
+   * the server's fold and this client's both refuse.
+   */
+  onRollback(fn: (throughSeq: bigint) => void): void {
+    this.rollbackHandlers.push(fn);
   }
 
   /**
@@ -146,10 +188,18 @@ export class Wire {
     });
   }
 
-  /** Redial from the last sequence seen, so replay does not repeat history. */
+  /**
+   * Redial from one sequence BEFORE the last one seen, having first told
+   * whoever holds the log to drop that last sequence — see the replay-cursor
+   * note at the top of this file for why a cursor of exactly lastSeq cannot be
+   * expressed once one event can be several envelopes.
+   */
   async reconnect(): Promise<void> {
     this.ws?.close();
-    await this.connect(this.lastSeq);
+    const resume = this.lastSeq > 0n ? this.lastSeq - 1n : 0n;
+    this.lastSeq = resume;
+    for (const fn of this.rollbackHandlers) fn(resume);
+    await this.connect(resume);
   }
 
   close(): void {

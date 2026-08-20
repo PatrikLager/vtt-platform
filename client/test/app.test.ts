@@ -936,8 +936,14 @@ test("the board is painted with a status before any metadata request goes out", 
 
 test("clicking Reconnect redials from the last folded sequence", () => {
   // The whole T5 wiring end to end: status "closed" surfaces the control, the
-  // click reaches session.reconnect(), and the redial resumes at
-  // after=<lastSeq> instead of replaying the campaign from zero.
+  // click reaches session.reconnect(), and the redial resumes near where the
+  // client left off instead of replaying the campaign from zero.
+  //
+  // after=6 rather than after=7, and that is the cursor's own contract rather
+  // than a fudge here: since the gateway projects per seat, several envelopes
+  // can share one sequence, so the last sequence seen may be incomplete and is
+  // rolled back and taken again (see wire.ts's replay-cursor note). What this
+  // test is for is unchanged — an emptied handler redials nothing at all.
   //
   // Without this the app.ts handler body could be emptied and every other test
   // still passed — the button existed and did nothing.
@@ -956,7 +962,7 @@ test("clicking Reconnect redials from the last folded sequence", () => {
   btn!.click();
 
   expect(FakeSocket.instances).toHaveLength(2);
-  expect(FakeSocket.instances[1]!.url).toContain("after=7");
+  expect(FakeSocket.instances[1]!.url).toContain("after=6");
   session?.close();
 });
 
