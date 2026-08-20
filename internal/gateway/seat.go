@@ -234,10 +234,15 @@ func (s *seat) catchUp(ctx context.Context, events <-chan *vttv1.Envelope, logHe
 			}
 			projected := s.receive(env)
 			out = append(out, projected...)
-			for _, e := range projected {
-				if e.GetSequence() > head {
-					head = e.GetSequence()
-				}
+			// THE LAST ONE, not the largest of them, and they are the same
+			// number by construction: every envelope Project returns for one
+			// event carries that event's sequence — the synthesized ones are
+			// stamped with it and the forwarded one IS it — so a batch is flat
+			// and batches only ascend. Written as a max comparison first,
+			// which the mutation gate correctly called unkillable: taking the
+			// max of equal values cannot tell `>` from `>=`.
+			if n := len(projected); n > 0 {
+				head = projected[n-1].GetSequence()
 			}
 			// Envelopes arrive in order, so the first one at or past the log's
 			// head is the end of the backlog and everything after it is live.

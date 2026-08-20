@@ -738,10 +738,17 @@ func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 					highest = e.GetSequence()
 				}
 			}
-			if highest < head {
+			// EQUAL, not merely reachable, and the difference is a truncated
+			// snapshot. A head ABOVE the seat's last catch-up envelope is the
+			// hang this test was written for. A head BELOW it is the failure
+			// CatchUpHead itself was introduced to prevent: `vtt state dump`
+			// stops the moment it sees the number it was given, so a head that
+			// undershoots prints a state missing everything after it — and
+			// looks complete doing so.
+			if highest != head {
 				t.Fatalf("%s was told to read to sequence %d and its catch-up ends at %d — "+
-					"a client following commands.proto waits for a frame that never comes",
-					seat.name, head, highest)
+					"too high and the client waits for a frame that never comes, too low and it "+
+					"prints a truncated snapshot that looks whole", seat.name, head, highest)
 			}
 		})
 	}
