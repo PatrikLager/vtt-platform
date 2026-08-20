@@ -3,6 +3,8 @@ package gateway
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"google.golang.org/protobuf/proto"
 
@@ -33,7 +35,7 @@ type Viewer struct {
 
 // Projector is one connection's projection of the log.
 //
-// WHAT THE FOUR MAPS ARE, because "per-connection state" is exactly the thing
+// WHAT THE FIVE MAPS ARE, because "per-connection state" is exactly the thing
 // visibility spec §4.1 says this design does not have. They are not a cache of
 // anything derivable from the current engine.State, and they are not an
 // optimisation that could be deleted for a slower-but-equal recomputation.
@@ -95,6 +97,11 @@ type Projector struct {
 	// view emits no SceneSeen. Compared, never merged: SceneSeen carries the
 	// whole CURRENT set (spec §5) and the client is what accumulates.
 	seen map[string]map[string]bool
+	// doors: the door squares this viewer believes OPEN, per scene. Unlike
+	// tokens this is a belief about TERRAIN, so it is only ever corrected for
+	// squares the viewer can currently see — a door that falls out of sight
+	// keeps whatever the viewer last saw, exactly as explored terrain does.
+	doors map[string]map[string]bool
 }
 
 func NewProjector(v Viewer) *Projector {
@@ -104,6 +111,7 @@ func NewProjector(v Viewer) *Projector {
 		actors: map[string]bool{},
 		tokens: map[string]bool{},
 		seen:   map[string]map[string]bool{},
+		doors:  map[string]map[string]bool{},
 	}
 }
 
@@ -170,7 +178,7 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 		// transitions are computed against state, not against history.
 		return nil
 	}
-	out := pr.transitions(env.GetSequence(), now, st)
+	out := pr.transitions(env, now, st)
 	if v == forwarded {
 		out = append(out, redactedFor(env))
 	}
@@ -350,7 +358,8 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // round they go. Chosen anyway, because it is the order under which the viewer
 // never holds more tokens than they are entitled to, not even for the length of
 // one batch.
-func (pr *Projector) transitions(seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
+func (pr *Projector) transitions(env *vttv1.Envelope, now sightView, st *engine.State) []*vttv1.Envelope {
+	seq := env.GetSequence()
 	var out []*vttv1.Envelope
 
 	for _, id := range sortedSceneIDs(now.squares) {
@@ -374,6 +383,11 @@ func (pr *Projector) transitions(seq int64, now sightView, st *engine.State) []*
 			}}})
 		pr.scenes[id] = true
 	}
+
+	// AFTER the scene introductions above and never before them: both folds
+	// reject a door in a scene they do not have ("door opened in unknown
+	// scene").
+	out = append(out, pr.doorTransitions(env, seq, now, st)...)
 
 	for _, id := range sortedSet(now.actors) {
 		if pr.actors[id] {
@@ -776,6 +790,115 @@ func (pr *Projector) canSeeSquare(now sightView, sceneID string, at *vttv1.GridP
 		return false
 	}
 	return now.squares[sceneID][squareKey(at.GetX(), at.GetY())]
+}
+
+// doorTransitions corrects what this viewer believes about the doors they can
+// SEE, and is the scene-layer twin of the conditions that ride along with an
+// actor's introduction.
+//
+// WHY IT HAS TO EXIST. engine.Scene.OpenDoors is not a field of anything the
+// introduction already carries: the outline is a redacted SceneCreated and
+// SceneSeen carries tiles and objects, so a door's OPEN state travels in
+// neither. Without this, every door worked before a seat had eyes — every door
+// in the onboarding gap between logging in and being assigned a character —
+// stays shut on that player's board for the rest of the session. It never
+// self-corrects, because OpenDoors is written only by the two door arms, and it
+// never throws, because both folds treat a repeat as idempotent. That
+// combination is why it is found at a table rather than by CI.
+//
+// VISIBLE SQUARES ONLY, which is what makes this a correction rather than a
+// leak. A door the viewer cannot see is left exactly as they last saw it — the
+// same rule explored terrain follows — so this tells them nothing classify
+// would have withheld.
+//
+// THE CAUSING EVENT IS SKIPPED, not suppressed. When the event being projected
+// IS the door event for this square, classify forwards it whenever the square
+// is visible, so emitting here as well would send two envelopes saying one
+// thing. The belief is still recorded, so the next event does not re-emit. When
+// the square is NOT visible the square is not walked at all, so the skip costs
+// nothing in that direction.
+func (pr *Projector) doorTransitions(env *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	causeScene, causeSquare, causeIsDoor := doorSubject(env)
+
+	for _, id := range sortedSceneIDs(now.squares) {
+		sc, ok := st.Scenes[id]
+		if !ok {
+			continue
+		}
+		believed := pr.doors[id]
+		if believed == nil {
+			believed = map[string]bool{}
+			pr.doors[id] = believed
+		}
+		for _, sq := range sortedSet(now.squares[id]) {
+			open := sc.OpenDoors[sq]
+			if open == believed[sq] {
+				// Covers every ordinary square too: a square with no door is
+				// false on both sides and never reaches the emit below.
+				continue
+			}
+			if causeIsDoor && id == causeScene && sq == causeSquare {
+				believed[sq] = open
+				continue
+			}
+			at, ok := squareAt(sq)
+			if !ok {
+				// Unreachable: sq came out of sight.VisibleFrom, which builds
+				// every key through the same "%d,%d". Skipped rather than
+				// guessed at, because a door at a position nobody can name is
+				// not something to invent coordinates for.
+				continue
+			}
+			if open {
+				out = append(out, &vttv1.Envelope{Sequence: seq,
+					Payload: &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
+						SceneId: id, At: at}}})
+			} else {
+				out = append(out, &vttv1.Envelope{Sequence: seq,
+					Payload: &vttv1.Envelope_DoorClosed{DoorClosed: &vttv1.DoorClosed{
+						SceneId: id, At: at}}})
+			}
+			believed[sq] = open
+		}
+	}
+	return out
+}
+
+// doorSubject reports the scene and square a door event is about, if env is
+// one. Any other payload reports ok=false and names no square.
+func doorSubject(env *vttv1.Envelope) (sceneID, square string, ok bool) {
+	switch p := env.GetPayload().(type) {
+	case *vttv1.Envelope_DoorOpened:
+		at := p.DoorOpened.GetAt()
+		return p.DoorOpened.GetSceneId(), squareKey(at.GetX(), at.GetY()), at != nil
+	case *vttv1.Envelope_DoorClosed:
+		at := p.DoorClosed.GetAt()
+		return p.DoorClosed.GetSceneId(), squareKey(at.GetX(), at.GetY()), at != nil
+	}
+	return "", "", false
+}
+
+// squareAt is squareKey's inverse. It requires BOTH halves to be consumed
+// entirely by strconv — unlike fmt.Sscanf's "%d,%d", which stops at the first
+// non-digit and would read "1,1abc" as 1,1 — and reports ok=false rather than
+// panicking, so a key that cannot be a square is skipped instead of becoming a
+// door at coordinates nobody meant. Same reasoning as mapdef's parseSquareKey,
+// which this deliberately mirrors.
+func squareAt(sq string) (*vttv1.GridPosition, bool) {
+	xs, ys, found := strings.Cut(sq, ",")
+	if !found {
+		return nil, false
+	}
+	x, err := strconv.ParseInt(xs, 10, 32)
+	if err != nil {
+		return nil, false
+	}
+	y, err := strconv.ParseInt(ys, 10, 32)
+	if err != nil {
+		return nil, false
+	}
+	return &vttv1.GridPosition{X: int32(x), Y: int32(y)}, true
 }
 
 // squareKey formats a square the way the wire does: column then row, comma

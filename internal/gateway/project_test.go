@@ -1264,6 +1264,111 @@ func keysOf(m map[string]*vttv1.TileRef) []string {
 	return out
 }
 
+func TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen(t *testing.T) {
+	// THE ONBOARDING FLOW, which is how this defect actually reaches a table:
+	// you log in with no character and the DM assigns one afterwards. Every
+	// door worked before that assignment was withheld — correctly, the seat had
+	// no eyes — so the introduction batch is the ONLY chance to tell the viewer
+	// which doors stand open.
+	//
+	// engine.Scene.OpenDoors is NOT a field of anything the introduction already
+	// carries. The outline is a redacted SceneCreated, and SceneSeen carries
+	// tiles and objects; a door's OPEN state lives in neither. This is the
+	// conditions problem at the scene layer: a fact that does not ride along
+	// with the thing it belongs to.
+	//
+	// It never self-corrects and never throws — OpenDoors is written only by the
+	// two door arms, and both folds treat a repeat as idempotent — so the seat
+	// sees a lit room through a door its client draws SHUT
+	// (client/src/view/scene-plan.ts:74,89), for the rest of the session.
+	st := twoRooms()
+	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+
+	// A seat with no actor yet: the door event is rightly withheld. The batch
+	// is KEPT — it already carries ActorAdded for the party (spec §5 knows a
+	// controlled actor before it can see one), and a batch is not a fold unit.
+	pr := gateway.NewProjector(gateway.Viewer{ParticipantID: "p-2", Role: identity.RolePlayer})
+	before := pr.Project(envelope(7, &vttv1.DoorOpened{
+		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
+	for _, e := range before {
+		if e.GetDoorOpened() != nil {
+			t.Fatal("a seat with no actor is in no scene and must not hear a door")
+		}
+	}
+
+	// The DM assigns them a character. THIS is the introduction batch.
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-2"})
+	out := pr.Project(envelope(8, &vttv1.ActorControlGranted{
+		ActorId: "hero", ParticipantId: "p-2"}), st)
+
+	viewer := engine.NewState()
+	for i, e := range append(append([]*vttv1.Envelope{}, before...), out...) {
+		if err := engine.Apply(viewer, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	got := viewer.Scenes["s"].OpenDoors
+	if !got[key(3, 1)] {
+		t.Fatalf("the introduced scene must arrive with its open doors open, got %v", got)
+	}
+	if len(got) != len(st.Scenes["s"].OpenDoors) {
+		t.Errorf("the viewer's doors must agree with the table's, got %v want %v",
+			got, st.Scenes["s"].OpenDoors)
+	}
+}
+
+func TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView(t *testing.T) {
+	// The sibling of the test above, and the same defect without any
+	// introduction involved. The viewer is already IN the scene; a door they
+	// cannot see is opened, which classify rightly withholds; then they walk far
+	// enough to see that square. SceneSeen brings them the door TILE, which says
+	// a door is there and nothing about whether it stands open.
+	//
+	// So the viewer's belief about a door has to be refreshed whenever its
+	// square comes into view, not only when the scene is first introduced.
+	st := oneRoomWithAGapInTheWall()
+	pr := gateway.NewProjector(player())
+	pr.Project(envelope(4, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 2, Y: 4}}), st)
+
+	// 0,1 is dark from 2,4 — TestAnObjectIsRevealedOnlyByTheSquaresItStandsOn
+	// pins that. Opening a door there must tell this viewer nothing yet.
+	mustApply(st, 5, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 0, Y: 1}})
+	for _, e := range pr.Project(envelope(5, &vttv1.DoorOpened{
+		SceneId: "s", At: &vttv1.GridPosition{X: 0, Y: 1}}), st) {
+		if e.GetDoorOpened() != nil {
+			t.Fatal("a door on a square this viewer cannot see must stay silent")
+		}
+	}
+
+	// Now they walk north through the gap, and 0,1 comes into view.
+	mustApply(st, 6, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+		From: &vttv1.GridPosition{X: 2, Y: 4}, To: &vttv1.GridPosition{X: 1, Y: 1}})
+	out := pr.Project(envelope(6, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+		From: &vttv1.GridPosition{X: 2, Y: 4}, To: &vttv1.GridPosition{X: 1, Y: 1}}), st)
+
+	var seen *vttv1.SceneSeen
+	var opened bool
+	for _, e := range out {
+		if ss := e.GetSceneSeen(); ss != nil {
+			seen = ss
+		}
+		if do := e.GetDoorOpened(); do != nil && do.GetAt().GetX() == 0 && do.GetAt().GetY() == 1 {
+			opened = true
+		}
+	}
+	if seen == nil {
+		t.Fatal("moving must re-report what the viewer can see")
+	}
+	if _, lit := seen.GetTiles()[key(0, 1)]; !lit {
+		t.Fatalf("fixture: 0,1 must be VISIBLE from 1,1 or this proves nothing, lit %v", keysOf(seen.GetTiles()))
+	}
+	if !opened {
+		t.Fatal("a door that comes into view must arrive in the state it is actually in, " +
+			"or the client draws it shut for the rest of the session")
+	}
+}
+
 func TestAnEventNamingAnUnknownActorIsWithheld(t *testing.T) {
 	// Spec §4.4 names three of these: "AttackRolled names a target,
 	// ConditionApplied names an actor". None of them carries a position, so
