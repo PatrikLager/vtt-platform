@@ -65,14 +65,22 @@ export function cellFromPoint(px: number, py: number, geom: Geometry): Cell {
  * does not have (§9), and guessing which one matters is precisely the genre
  * assumption this platform refuses to make.
  *
- * VISIBLE IS AN INPUT, AND THAT IS THE POINT (visibility spec §6/§6.1). A
- * creature is pure line of sight — you remember the room, not the goblin
- * standing in it — so a token on ground this seat merely REMEMBERS produces no
- * disc AT ALL, rather than a disc something downstream declines to paint.
- * Passing the set in rather than deriving it here is what keeps the decision
- * out of the painting layer, which is where a leak would hide; RPTool reached
- * this same seam, published a visible-token set from it, and then handed its
- * renderer the full list anyway (spec §6.1). This is that migration finished.
+ * VISIBLE IS AN INPUT, AND SINCE 2026-08-22 IT IS THE SERVER'S OWN SET rather
+ * than anything derived here. That changes what this filter IS. It is no longer
+ * an independent visibility decision — the projection already decided, withheld
+ * every token this seat may not see, and now says in the same message which
+ * squares it judged visible (SceneSeen field 4). So this is a CONSISTENCY
+ * CHECK against that answer, and with the correct set the two cannot disagree:
+ * a token the server sent stands on a square the server listed.
+ *
+ * It is kept because the check costs one map lookup and the failure it guards
+ * is silent — a creature drawn on ground this seat only remembers. The earlier
+ * rationale here argued the filter was the last line against a leak, which was
+ * true while the set was derived from terrain and is not any more: deriving it
+ * was itself the bug (it hid a player's own token on a scene with no tiles).
+ * RPTool reached this same seam, published a visible-token set from it, and
+ * then handed its renderer the full list anyway (spec §6.1); this is that
+ * migration finished, now against the set the server actually publishes.
  *
  * UNDEFINED IS NOT AN EMPTY SET. Undefined means this stream carries no
  * projection at all — the DM's and the agent's, which are the identity

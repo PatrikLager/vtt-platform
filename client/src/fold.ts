@@ -212,20 +212,29 @@ function apply(st: State, env: Envelope): void {
       if (!sc.Tiles) sc.Tiles = {};
       if (!sc.Explored) sc.Explored = {};
       if (!sc.Objects) sc.Objects = [];
-      // REPLACED, not merged, and built fresh before the loop rather than
-      // emptied in place — the two halves of this arm pull in opposite
-      // directions deliberately. Explored is memory and unions; Visible is the
-      // whole current visible set (spec §5) and is therefore whatever THIS
-      // message says and nothing else. A sceneSeen carrying no tiles is the
-      // projection reporting a scene gone dark, and it must leave an empty
-      // object here rather than the `undefined` that means no projection ever
-      // arrived (state.ts's Scene.Visible on why those differ). The three
-      // Visible lines mirror internal/engine/apply.go's SceneSeen arm exactly.
+      // TWO FIELDS, TWO SOURCES, and they are no longer the same set. Visible
+      // comes from v.visible — the server's own sight answer, which owes
+      // nothing to terrain — and is REPLACED wholesale, because sceneSeen
+      // carries the whole current visible set every time (spec §5). Explored
+      // keeps unioning TILE keys: it is terrain remembered, and a square with
+      // no terrain has nothing to remember and nothing to fog.
+      //
+      // It read `sc.Visible[key] = true` inside the tile loop until 2026-08-22,
+      // which made "visible" mean "visible AND declares terrain" and hid a
+      // player's own token on a scene with no tiles. The list becomes a set
+      // here rather than on the wire because a set has no second axis (see the
+      // field's own comment in events.proto).
+      //
+      // EMPTY IS NOT UNDEFINED. A sceneSeen with no visible squares is the
+      // projection reporting a scene gone dark, and it must leave `{}` rather
+      // than the `undefined` that means no projection ever arrived (state.ts's
+      // Scene.Visible on why those differ). Mirrors
+      // internal/engine/apply.go's SceneSeen arm.
       sc.Visible = {};
+      for (const sq of v.visible) sc.Visible[sq] = true;
       for (const [key, ref] of Object.entries(v.tiles)) {
         sc.Tiles[key] = { Kind: ref.kind, Material: ref.material, Art: ref.art };
         sc.Explored[key] = true;
-        sc.Visible[key] = true;
       }
       for (const o of v.objects) {
         const i = sc.Objects.findIndex((e) => e.ObjectID === o.objectId);

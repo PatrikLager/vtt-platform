@@ -647,7 +647,26 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 // construction, which is what lets the projection keep no record of which
 // squares it has already sent.
 func sceneSeenFor(sc engine.Scene, squares map[string]bool) *vttv1.SceneSeen {
-	ss := &vttv1.SceneSeen{SceneId: sc.ID, Tiles: map[string]*vttv1.TileRef{}}
+	// THE SQUARE SET ITSELF, carried as itself rather than inferred downstream
+	// from the terrain below. Everything after this line projects `squares`
+	// through Tiles and loses whichever squares declare none — which is every
+	// square of a bare canvas, and the server has already decided those are
+	// visible and already sent the tokens standing on them. Field 4 is what
+	// stops the client re-deriving a different answer from a lossy proxy
+	// (visibility spec §5, Patrik's ruling 2026-08-22).
+	//
+	// SORTED, because `visible` is the only ordered field this function builds
+	// FROM A MAP. `objects` is repeated too, but it walks the sc.Objects slice
+	// and inherits its order, and the tiles map cannot betray Go's randomised
+	// iteration because a map has no order to betray on the wire. This can,
+	// and an unsorted walk would make two runs of one log emit different bytes.
+	// TestTheVisibleSetIsSentInAStableOrder pins it directly rather than
+	// leaving it to the determinism property to catch by coin flip.
+	ss := &vttv1.SceneSeen{
+		SceneId: sc.ID,
+		Tiles:   map[string]*vttv1.TileRef{},
+		Visible: sortedSet(squares),
+	}
 	for sq := range squares {
 		t, ok := sc.Tiles[sq]
 		if !ok {
@@ -1091,7 +1110,7 @@ func squareAt(sq string) (*vttv1.GridPosition, bool) {
 // immediately and loudly.
 func squareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 
-// The two sorters below exist for one reason: Go randomises map iteration,
+// The three sorters below exist for one reason: Go randomises map iteration,
 // and this file turns sets into an ORDERED stream of envelopes. Unsorted, two
 // runs of the same log would emit the same envelopes in different orders — a
 // coin flip under the byte-for-byte parity the keystone (spec §4.3) rests on,

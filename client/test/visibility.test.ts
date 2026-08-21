@@ -53,9 +53,10 @@ function walkedThrough(): Envelope[] {
       sceneSeen: {
         sceneId: "s1",
         tiles: { "0,1": floor, "1,1": floor, "2,1": floor },
+        visible: ["0,1", "1,1", "2,1"],
       },
     }),
-    env(4, { sceneSeen: { sceneId: "s1", tiles: { "1,1": floor } } }),
+    env(4, { sceneSeen: { sceneId: "s1", tiles: { "1,1": floor }, visible: ["1,1"] } }),
   ];
 }
 
@@ -257,58 +258,56 @@ test("a token on remembered-but-unseen ground produces NO disc at all", () => {
   expect(ids).toEqual(["t-hero"]);
 });
 
-test("a token on a LIT square that declares no terrain silently loses its disc", () => {
-  // THE CLIENT MIRROR of internal/gateway's
-  // TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet: a 3x3 room that
-  // declares floor on EVERY square but 1,1, folded in the order and shape the
-  // projection actually emits — the redacted sceneCreated first, then the
-  // actors, then the tokens, and sceneSeen LAST (it is the final loop in
-  // transitions). The sceneSeen below therefore carries all eight squares that
-  // declare terrain and omits only 1,1, which is exactly the 8 -> 7 the Go test
-  // measures. The hero stands on the one square that cannot be reported.
+test("a token on a bare canvas is drawn: sight does not need terrain", () => {
+  // THE DEFECT THIS ROUND CLOSED, on the client side. A scene may declare no
+  // terrain at all — mapdef.CheckEverySquarePresent is all-or-nothing and zero
+  // tiles passes it, on both the map-file and CreateScene paths — and a token
+  // is a FREE OBJECT that needs no ground under it (Patrik's ruling
+  // 2026-08-22). The server computes sight over the GRID, finds every square of
+  // a bare canvas visible, and sends the tokens.
   //
-  // WHAT THIS TEST CAN AND CANNOT OBSERVE, because the previous version of it
-  // claimed more than it had. It is a mirror in SHAPE, not a check on the
-  // server: the sceneSeen is written here, so no change to sceneSeenFor can
-  // move it — the gateway test is the pin for what the projection emits. What
-  // this pins is the half that lives on this side: that the fold turns such a
-  // message into a hole in all three maps, and that a token standing in that
-  // hole draws nothing.
+  // It used to reach here and be thrown away: Visible was built from sceneSeen's
+  // TILE KEYS, so a message with no tiles produced an empty set and this board
+  // hid every token including the player's own. sceneSeen now carries the
+  // square set as itself, so the client uses the server's answer instead of
+  // re-deriving a worse one.
   //
-  // PINNING TODAY'S BEHAVIOUR, not endorsing it — the ruling is Patrik's, and
-  // this is what makes either answer a deliberate change. Neither shipped
-  // adventure can reach it: both declare a tile for every square.
-  const lit: Record<string, unknown> = {};
-  for (let y = 0; y < 3; y++) {
-    for (let x = 0; x < 3; x++) {
-      if (x === 1 && y === 1) continue; // the square with no terrain to send
-      lit[`${x},${y}`] = floor;
-    }
-  }
+  // The mirror of internal/gateway's
+  // TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain and internal/engine's
+  // TestVisibleComesFromItsOwnFieldNotFromTheTiles.
   const st = fold([
     env(1, { sessionStarted: { name: "S" } }),
-    env(2, { sceneCreated: { sceneId: "s1", name: "Room", gridWidth: 3, gridHeight: 3 } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "Field", gridWidth: 3, gridHeight: 3 } }),
     env(3, { actorAdded: { actor: { actorId: "hero", name: "Hero" } } }),
     env(4, { actorAdded: { actor: { actorId: "goblin", name: "Goblin" } } }),
     env(5, { tokenPlaced: { tokenId: "t-hero", sceneId: "s1", actorId: "hero", position: { x: 1, y: 1 } } }),
-    env(6, { tokenPlaced: { tokenId: "t-gob", sceneId: "s1", actorId: "goblin", position: { x: 2, y: 1 } } }),
-    env(7, { sceneSeen: { sceneId: "s1", tiles: lit } }),
+    env(6, { tokenPlaced: { tokenId: "t-gob", sceneId: "s1", actorId: "goblin", position: { x: 2, y: 2 } } }),
+    // No tiles: nothing to draw, everything in sight.
+    env(7, { sceneSeen: { sceneId: "s1", visible: ["0,0", "0,1", "0,2", "1,0", "1,1", "1,2", "2,0", "2,1", "2,2"] } }),
   ]);
   const sc = st.Scenes["s1"]!;
 
-  // Eight of nine squares, and the hero's own is in NONE of the three maps —
-  // which is the inference itself, and why this client cannot tell "you cannot
-  // see that square" from "that square declares no terrain".
-  expect(Object.keys(sc.Visible!)).toHaveLength(8);
-  expect(sc.Visible!["1,1"]).toBeUndefined();
-  expect(sc.Explored!["1,1"]).toBeUndefined();
-  expect(sc.Tiles!["1,1"]).toBeUndefined();
-  // The control: the square beside it was reported and is whole.
-  expect(sc.Visible!["2,1"]).toBe(true);
+  expect(Object.keys(sc.Visible!)).toHaveLength(9);
+  // Nothing to remember and nothing to draw — the two fields have different
+  // sources now and this is where they are furthest apart.
+  expect(sc.Explored).toEqual({});
+  expect(sc.Tiles).toEqual({});
 
-  // So the goblin at 2,1 IS drawn — the board is working, seven eighths of it
-  // lit — and the hero at 1,1, standing in plain sight, is not.
-  expect(tokensOnScene(st, "s1", sc.Visible).map((d) => d.tokenId)).toEqual(["t-gob"]);
+  // BOTH tokens are drawn. The player's own is the one that used to vanish.
+  expect(tokensOnScene(st, "s1", sc.Visible).map((d) => d.tokenId)).toEqual(["t-gob", "t-hero"]);
+});
+
+test("terrain arrives for ground that is NOT currently visible, and stays remembered", () => {
+  // The opposite corner, so the pair cannot be assumed to track each other.
+  // This is the fog: Explored minus Visible.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "Room", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { sceneSeen: { sceneId: "s1", tiles: { "0,0": floor, "1,1": floor }, visible: ["0,0"] } }),
+  ]);
+  const sc = st.Scenes["s1"]!;
+  expect(sc.Explored).toEqual({ "0,0": true, "1,1": true });
+  expect(sc.Visible).toEqual({ "0,0": true });
 });
 
 test("a seat that can currently see nothing draws no token, including its own", () => {

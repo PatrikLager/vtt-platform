@@ -57,6 +57,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
 	case *vttv1.ActorControlRevoked:
 		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
+	case *vttv1.SceneSeen:
+		env.Payload = &vttv1.Envelope_SceneSeen{SceneSeen: p}
 	case *vttv1.ConditionApplied:
 		env.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
 	case *vttv1.ConditionRemoved:
@@ -657,6 +659,144 @@ func TestASceneThatComesBackBringsItsOpenDoorsBack(t *testing.T) {
 	if !again {
 		t.Error("a scene the viewer is being introduced to again must arrive with its " +
 			"doors open, not left shut by a belief that outlived the scene")
+	}
+}
+
+// bareCanvas is a scene that declares NO terrain: 3x3, two tokens, nothing
+// underfoot. Legal, and not degenerate — mapdef.CheckEverySquarePresent is
+// all-or-nothing (zero tiles passes; one tile means all must be present) and it
+// guards both the map-file path and the CreateScene command path, so this is
+// the shape a caller gets by simply not sending tiles. A token is a FREE OBJECT
+// that needs no terrain to stand on (Patrik's ruling 2026-08-22).
+func bareCanvas() *engine.State {
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 2}})
+	return st
+}
+
+// TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain is the defect this
+// round exists to close, at the point where it starts.
+//
+// The server already decides correctly: sight.VisibleFrom walks the GRID, not
+// the tile map, so a scene with no terrain has no blockers and every in-range
+// square is visible; look() marks the tokens on those squares visible without
+// terrain entering it at all; and a TokenPlaced duly goes out. Then sceneSeenFor
+// projected the square set through Tiles and DROPPED every square with no tile,
+// so the set was destroyed on the wire and the client re-derived a different,
+// smaller one — overruling a decision the server had already made. Measured
+// before the fix: both tokens sent, SceneSeen carrying 0 tiles and 0 objects.
+//
+// The visible set now travels as itself.
+func TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain(t *testing.T) {
+	st := bareCanvas()
+	pr := gateway.NewProjector(player())
+	out := pr.Project(envelope(6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 2}}), st)
+
+	var sent []string
+	for _, e := range out {
+		if tp := e.GetTokenPlaced(); tp != nil {
+			sent = append(sent, tp.GetTokenId())
+		}
+	}
+	sort.Strings(sent)
+	if len(sent) != 2 {
+		t.Fatalf("the control fails: the server must send both tokens, got %v", sent)
+	}
+
+	seen := sceneSeenIn(out, "s")
+	if seen == nil {
+		t.Fatal("a player standing in a scene must be told what they can see of it")
+	}
+	if n := len(seen.GetTiles()); n != 0 {
+		t.Errorf("there is no terrain to describe, got %d tiles", n)
+	}
+	// All nine squares: no terrain means no blockers, and range is unlimited.
+	if n := len(seen.GetVisible()); n != 9 {
+		t.Fatalf("every square of a bare 3x3 is visible, got %d: %v", n, seen.GetVisible())
+	}
+	for _, sq := range []string{key(1, 1), key(2, 2)} {
+		var found bool
+		for _, v := range seen.GetVisible() {
+			if v == sq {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("square %s carries a token the server just sent and must be visible", sq)
+		}
+	}
+}
+
+// TestTheVisibleSetIsSentInAStableOrder guards the property every emitting loop
+// in project.go is sorted for: `repeated string` is ORDERED on the wire, unlike
+// the maps beside it, so an unsorted walk would make two runs of one log emit
+// different bytes. TestTheSameLogProjectsTheSameStreamEveryTime would catch it
+// eventually and by coin flip; this catches it directly.
+func TestTheVisibleSetIsSentInAStableOrder(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		seen := sceneSeenIn(pr20(), "s")
+		got := seen.GetVisible()
+		// THE CONTROL, and it is not decoration: sort.StringsAreSorted(nil) is
+		// TRUE, and sceneSeenIn returns nil for a batch with no SceneSeen at
+		// all, so without this the test PASSES against a sceneSeenFor that
+		// emits no visible set whatsoever — measured, it reported PASS with the
+		// field deleted. An ordering test that cannot tell "sorted" from
+		// "absent" is checking nothing.
+		if len(got) != 9 {
+			t.Fatalf("the control fails: a bare 3x3 has nine visible squares, got %v", got)
+		}
+		if !sort.StringsAreSorted(got) {
+			t.Fatalf("the visible set must be emitted sorted, got %v", got)
+		}
+	}
+}
+
+// pr20 is one fresh projection of bareCanvas, the shape the ordering test
+// repeats. Split out so the loop above reads as twenty independent draws
+// against Go's randomised map iteration rather than twenty uses of one fixture.
+func pr20() []*vttv1.Envelope {
+	st := bareCanvas()
+	return gateway.NewProjector(player()).Project(
+		envelope(6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+			ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 2}}), st)
+}
+
+// TestVisibleAndExploredComeFromDifferentSourcesAndMayDiffer pins the pair a
+// future reader will assume matches. They no longer share a source: Explored is
+// TERRAIN remembered (unioned from tiles, and a square with no terrain has
+// nothing to remember, so there is nothing to fog there), while Visible is the
+// server's own sight answer and owes nothing to terrain. On a bare canvas they
+// are maximally apart — everything visible, nothing explored.
+func TestVisibleAndExploredComeFromDifferentSourcesAndMayDiffer(t *testing.T) {
+	seen := sceneSeenIn(pr20(), "s")
+
+	viewer := engine.NewState()
+	mustApply(viewer, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(viewer, 2, &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})
+	must3(t, engine.Apply(viewer, envelope(3, seen)))
+
+	sc := viewer.Scenes["s"]
+	if len(sc.Visible) != 9 {
+		t.Errorf("every square is visible on a bare canvas, got %d", len(sc.Visible))
+	}
+	if len(sc.Explored) != 0 {
+		t.Errorf("there is no terrain to remember, so nothing is explored, got %v", sc.Explored)
+	}
+}
+
+func must3(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("fold: %v", err)
 	}
 }
 

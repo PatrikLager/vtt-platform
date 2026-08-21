@@ -240,9 +240,11 @@ func TestSceneSeenReplacesTheVisibleSetWithoutForgettingTheExploredOne(t *testin
 		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
 
 	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
-		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+		Tiles:   map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}},
+		Visible: []string{"0,0"}})))
 	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s",
-		Tiles: map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}}})))
+		Tiles:   map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}},
+		Visible: []string{"1,1"}})))
 
 	sc := st.Scenes["s"]
 	if !sc.Visible["1,1"] {
@@ -267,7 +269,8 @@ func TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain(t *testing.T) {
 	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
 		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
 	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
-		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+		Tiles:   map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}},
+		Visible: []string{"0,0"}})))
 
 	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s"})))
 
@@ -305,12 +308,14 @@ func TestASnapshotHoldsTheVisibleSetItWasTakenAt(t *testing.T) {
 	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
 		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
 	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
-		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+		Tiles:   map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}},
+		Visible: []string{"0,0"}})))
 
 	snap := st.Snapshot()
 
 	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s",
-		Tiles: map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}}})))
+		Tiles:   map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}},
+		Visible: []string{"1,1"}})))
 
 	if !snap.Scenes["s"].Visible["0,0"] {
 		t.Error("the snapshot must still hold what was visible when it was taken")
@@ -336,5 +341,63 @@ func TestSnapshotOfUnprojectedSceneLeavesVisibleNil(t *testing.T) {
 	if snap := st.Snapshot(); snap.Scenes["s"].Visible != nil {
 		t.Errorf("a scene with no SceneSeen ever applied must snapshot with Visible nil, got %#v",
 			snap.Scenes["s"].Visible)
+	}
+}
+
+// TestVisibleComesFromItsOwnFieldNotFromTheTiles pins the change of source
+// this arm underwent on 2026-08-22, and it is written so that reverting to the
+// old rule fails it rather than merely looking different.
+//
+// Before, Visible was built inside the tile loop, so "visible" silently meant
+// "visible AND declares terrain". SceneSeen now carries the square set as
+// itself, and the two fields no longer share a source at all: Visible is the
+// server's sight answer, Explored is terrain remembered. A message can
+// therefore say "you can see these nine squares, and none of them has terrain",
+// which is exactly a bare canvas — and the old rule could not express it.
+func TestVisibleComesFromItsOwnFieldNotFromTheTiles(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 2, GridHeight: 2})))
+
+	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
+		Visible: []string{"0,0", "0,1", "1,0", "1,1"}})))
+
+	sc := st.Scenes["s"]
+	if len(sc.Visible) != 4 {
+		t.Errorf("all four squares are visible whether or not they declare terrain, got %v", sc.Visible)
+	}
+	if len(sc.Explored) != 0 {
+		t.Errorf("no terrain arrived, so nothing is explored, got %v", sc.Explored)
+	}
+	if len(sc.Tiles) != 0 {
+		t.Errorf("and nothing is drawable, got %v", sc.Tiles)
+	}
+}
+
+// TestTerrainWithoutSightIsRememberedButNotVisible is the opposite corner, and
+// the pair is what stops a reader assuming the two fields track each other. A
+// message may carry terrain for a square it does NOT list as visible — that is
+// what the projection sends for ground you have walked out of, and it is the
+// fog (Explored minus Visible).
+func TestTerrainWithoutSightIsRememberedButNotVisible(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 2, GridHeight: 2})))
+
+	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
+		Tiles:   map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}, "1,1": {Kind: "wall"}},
+		Visible: []string{"0,0"}})))
+
+	sc := st.Scenes["s"]
+	if !sc.Explored["1,1"] {
+		t.Error("terrain that arrived is remembered, whether or not it is currently in sight")
+	}
+	if sc.Visible["1,1"] {
+		t.Error("but it is NOT visible: the visible set is the server's own answer, not the tile keys")
+	}
+	if !sc.Visible["0,0"] || !sc.Explored["0,0"] {
+		t.Error("the square that is both must be both")
 	}
 }

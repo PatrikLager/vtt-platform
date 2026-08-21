@@ -189,6 +189,30 @@ message SceneSeen {
   string scene_id = 1;
   map<string, TileRef> tiles = 2;
   repeated SceneObject objects = 3;
+
+  // visible is the squares this viewer can see right now, keyed "x,y" (column
+  // then row, maps-as-geometry spec §4.1). The whole current set, never a
+  // delta, exactly as tiles is.
+  //
+  // IT IS NOT THE KEYS OF tiles, and that is the entire reason it exists. A
+  // token is a FREE OBJECT that needs no terrain to stand on (Patrik's ruling
+  // 2026-08-22): sight is computed over the GRID, so on a scene that declares
+  // no terrain every in-range square is visible and every token on it is
+  // legitimately sent. tiles could not carry those squares — there is no
+  // TileRef to put in them — so a client deriving visibility from tiles
+  // overruled a decision the server had already made correctly, and hid a
+  // player's own token on a bare canvas. Field 4 carries the decision itself
+  // rather than a proxy for it.
+  //
+  // REPEATED STRING RATHER THAN map<string, bool>, for two reasons. A set has
+  // no second axis, so a bool value is a slot with no meaning and one more
+  // state ("present but false") for readers to disagree about. And it is
+  // cheaper by 39.5%, measured with protojson.Marshal on a real SceneSeen
+  // carrying all 3600 squares of a 60x60: 7.67 bytes a square (27.0 KiB)
+  // against 12.67 (44.5 KiB). Go and TS both hold this concept as
+  // map[string]bool / Record<string, boolean>, so both folds turn the list
+  // into a set on arrival.
+  repeated string visible = 4;
 }
 
 // A door is one nature, not two (spec §3.3): TileRef.kind is "door", and

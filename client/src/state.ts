@@ -83,23 +83,26 @@ export interface Scene {
    */
   Explored?: Record<string, boolean>;
   /**
-   * Visible is the squares this viewer can see right now THAT ALSO DECLARE
-   * TERRAIN, keyed like Tiles, and Explored's opposite number in how it moves:
-   * REPLACED wholesale by each sceneSeen rather than unioned, so it shrinks as
-   * freely as it grows. Mirrors internal/engine's Scene.Visible (state.go),
-   * that qualification included — it is built from sceneSeen's TILE KEYS, and
-   * the projection cannot report a visible square that declares no Tile
-   * because there is nothing to put in the map for it. So a hole in a room's
-   * terrain reads here as a hole in sight, and a creature standing on it is
-   * not drawn. TWO PINS, because the two halves live on different sides: what
-   * the projection can report is internal/gateway's
-   * TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet, and what this
-   * client then does with it is "a token on a LIT square that declares no
-   * terrain silently loses its disc" in client/test/visibility.test.ts. The
-   * second cannot observe the first — it writes its own sceneSeen.
+   * Visible is the squares this viewer can see RIGHT NOW, keyed like Tiles,
+   * and Explored's opposite number in how it moves: REPLACED wholesale by each
+   * sceneSeen rather than unioned, so it shrinks as freely as it grows.
+   * Mirrors internal/engine's Scene.Visible (state.go).
    *
-   * The pair is what the board
-   * needs and neither half gives alone — `Explored − Visible` is ground you
+   * IT DOES NOT COME FROM Explored'S SOURCE. Visible is folded from
+   * sceneSeen's own `visible` field (events.proto field 4) — the server's
+   * sight answer, computed over the GRID and owing nothing to terrain —
+   * while Explored unions that message's TILE keys. So the two may differ
+   * completely: a bare canvas is wholly visible and wholly unexplored, and
+   * ground walked out of is explored and not visible. Do not assume they
+   * track; both corners are pinned in client/test/visibility.test.ts.
+   *
+   * UNTIL 2026-08-22 THIS WAS BUILT FROM THE TILE KEYS, which made it mean
+   * "visible AND declares terrain" — a lossy proxy for a decision the server
+   * had already made, which on a scene with no tiles hid the player's own
+   * token. A token is a free object and needs no ground under it.
+   *
+   * The pair is what the board needs and neither half gives alone —
+   * `Explored − Visible` is ground you
    * remember and cannot currently see, which is the fog (visibility spec
    * §6.1).
    *

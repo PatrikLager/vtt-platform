@@ -410,22 +410,32 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if sc.Explored == nil {
 			sc.Explored = map[string]bool{}
 		}
-		// REPLACED, not merged, and built fresh before the loop rather than
-		// cleared in place — the two halves of this arm pull in opposite
-		// directions on purpose. Explored is memory and unions; Visible is the
-		// whole current visible set (spec §5) and therefore is whatever THIS
-		// message says and nothing else. A SceneSeen carrying no tiles is the
-		// projection reporting a scene gone dark (internal/gateway's
-		// transitions), and it must leave an empty set here rather than the nil
-		// that means no projection ever arrived. client/src/fold.ts's sceneSeen
-		// arm is the mirror of these six lines.
-		sc.Visible = make(map[string]bool, len(ss.GetTiles()))
+		// TWO FIELDS, TWO SOURCES, and they are no longer the same set. Visible
+		// comes from ss.Visible — the server's own sight answer, which owes
+		// nothing to terrain — and is REPLACED wholesale, because SceneSeen
+		// carries the whole current visible set every time (spec §5). Explored
+		// keeps unioning TILE keys: it is terrain remembered, and a square with
+		// no terrain has nothing to remember and nothing to fog.
+		//
+		// It read `sc.Visible[key] = true` inside the tile loop until
+		// 2026-08-22, which made "visible" mean "visible AND declares terrain"
+		// and hid a player's own token on a scene with no tiles. The list is
+		// turned into a set here rather than on the wire because a set has no
+		// second axis (see the field's own comment in events.proto).
+		//
+		// EMPTY IS NOT NIL. A SceneSeen with no visible squares is the
+		// projection reporting a scene gone dark, and it must leave an empty set
+		// rather than the nil that means no projection ever arrived.
+		// client/src/fold.ts's sceneSeen arm is the mirror of these lines.
+		sc.Visible = make(map[string]bool, len(ss.GetVisible()))
+		for _, sq := range ss.GetVisible() {
+			sc.Visible[sq] = true
+		}
 		for key, ref := range ss.GetTiles() {
 			sc.Tiles[key] = Tile{
 				Kind: ref.GetKind(), Material: ref.GetMaterial(), Art: ref.GetArt(),
 			}
 			sc.Explored[key] = true
-			sc.Visible[key] = true
 		}
 		if objs := ss.GetObjects(); len(objs) > 0 {
 			sc.Objects = mergeObjects(sc.Objects, objs)

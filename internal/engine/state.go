@@ -89,26 +89,30 @@ type Scene struct {
 	// task-3-report.md).
 	Explored map[string]bool `json:",omitempty"`
 
-	// Visible is the squares this VIEWER can see right now THAT ALSO DECLARE
-	// TERRAIN, keyed like Tiles. It is Explored's opposite number in how it
+	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles.
+	// It is Explored's opposite number in how it
 	// moves — REPLACED wholesale by each SceneSeen rather than unioned, so it
 	// shrinks as freely as it grows — and the pair is what the client needs,
 	// since terrain you remember but cannot currently see is `Explored −
 	// Visible`, which is the fog (visibility spec §6.1).
 	//
-	// THE "THAT ALSO DECLARE TERRAIN" IS NOT PEDANTRY, and this doc comment
-	// said plain "can see right now" until review caught it. SceneSeen has one
-	// place to put squares — its `tiles` map — so a visible square with no Tile
-	// has nothing to send and internal/gateway's sceneSeenFor skips it. This
-	// field is built from those keys, so it cannot distinguish "you cannot see
-	// that square" from "that square declares no terrain". Explored has carried
-	// the same inference since Task 3 and it was harmless there (a square with
-	// no Tile draws nothing either way); Task 7 made it govern what is DRAWN,
-	// so the consequence is now a creature that vanishes rather than a square
-	// that goes unshaded. Pinned in both languages by
-	// TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet
-	// (internal/gateway) and its client half in client/test/visibility.test.ts,
-	// so a ruling either way is a deliberate change.
+	// IT DOES NOT COME FROM Explored'S SOURCE, and the pair must not be assumed
+	// to track each other. Visible is folded from SceneSeen's own `visible`
+	// field (events.proto field 4) — the server's sight answer, computed over
+	// the GRID and owing nothing to terrain. Explored unions the TILE keys of
+	// the same message. So a scene can be wholly visible and wholly unexplored
+	// (a bare canvas, which is a legal scene and not a degenerate one), or
+	// carry terrain for squares it does not list as visible (ground walked out
+	// of, which is the fog). Both corners are pinned:
+	// TestVisibleComesFromItsOwnFieldNotFromTheTiles and
+	// TestTerrainWithoutSightIsRememberedButNotVisible, with TS mirrors in
+	// client/test/visibility.test.ts.
+	//
+	// UNTIL 2026-08-22 THIS FIELD WAS BUILT FROM THE TILE KEYS, which made it
+	// mean "visible AND declares terrain". That is a lossy proxy for a decision
+	// the server had already made correctly, and on a scene with no tiles it
+	// hid a player's own token — the client overruling its own server. Field 4
+	// carries the decision instead of a stand-in for it.
 	//
 	// NIL AND EMPTY MEAN DIFFERENT THINGS, which is why this field is never
 	// initialised by the SceneCreated arm the way OpenDoors is. Nil is "no

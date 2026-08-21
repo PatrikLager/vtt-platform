@@ -988,10 +988,33 @@ func (x *TokenHidden) GetTokenId() string {
 //
 // PROJECTION-ONLY, like TokenHidden.
 type SceneSeen struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	Tiles         map[string]*TileRef    `protobuf:"bytes,2,rep,name=tiles,proto3" json:"tiles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Objects       []*SceneObject         `protobuf:"bytes,3,rep,name=objects,proto3" json:"objects,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	Tiles   map[string]*TileRef    `protobuf:"bytes,2,rep,name=tiles,proto3" json:"tiles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Objects []*SceneObject         `protobuf:"bytes,3,rep,name=objects,proto3" json:"objects,omitempty"`
+	// visible is the squares this viewer can see right now, keyed "x,y" (column
+	// then row, maps-as-geometry spec §4.1). The whole current set, never a
+	// delta, exactly as tiles is.
+	//
+	// IT IS NOT THE KEYS OF tiles, and that is the entire reason it exists. A
+	// token is a FREE OBJECT that needs no terrain to stand on (Patrik's ruling
+	// 2026-08-22): sight is computed over the GRID, so on a scene that declares
+	// no terrain every in-range square is visible and every token on it is
+	// legitimately sent. tiles could not carry those squares — there is no
+	// TileRef to put in them — so a client deriving visibility from tiles
+	// overruled a decision the server had already made correctly, and hid a
+	// player's own token on a bare canvas. Field 4 carries the decision itself
+	// rather than a proxy for it.
+	//
+	// REPEATED STRING RATHER THAN map<string, bool>, for two reasons. A set has
+	// no second axis, so a bool value is a slot with no meaning and one more
+	// state ("present but false") for readers to disagree about. And it is
+	// cheaper by 39.5%, measured with protojson.Marshal on a real SceneSeen
+	// carrying all 3600 squares of a 60x60: 7.67 bytes a square (27.0 KiB)
+	// against 12.67 (44.5 KiB). Go and TS both hold this concept as
+	// map[string]bool / Record<string, boolean>, so both folds turn the list
+	// into a set on arrival.
+	Visible       []string `protobuf:"bytes,4,rep,name=visible,proto3" json:"visible,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1043,6 +1066,13 @@ func (x *SceneSeen) GetTiles() map[string]*TileRef {
 func (x *SceneSeen) GetObjects() []*SceneObject {
 	if x != nil {
 		return x.Objects
+	}
+	return nil
+}
+
+func (x *SceneSeen) GetVisible() []string {
+	if x != nil {
+		return x.Visible
 	}
 	return nil
 }
@@ -2516,11 +2546,12 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
 	"\x05value\x18\x02 \x01(\v2\x0f.vtt.v1.TileRefR\x05value:\x028\x01\"(\n" +
 	"\vTokenHidden\x12\x19\n" +
-	"\btoken_id\x18\x01 \x01(\tR\atokenId\"\xd4\x01\n" +
+	"\btoken_id\x18\x01 \x01(\tR\atokenId\"\xee\x01\n" +
 	"\tSceneSeen\x12\x19\n" +
 	"\bscene_id\x18\x01 \x01(\tR\asceneId\x122\n" +
 	"\x05tiles\x18\x02 \x03(\v2\x1c.vtt.v1.SceneSeen.TilesEntryR\x05tiles\x12-\n" +
-	"\aobjects\x18\x03 \x03(\v2\x13.vtt.v1.SceneObjectR\aobjects\x1aI\n" +
+	"\aobjects\x18\x03 \x03(\v2\x13.vtt.v1.SceneObjectR\aobjects\x12\x18\n" +
+	"\avisible\x18\x04 \x03(\tR\avisible\x1aI\n" +
 	"\n" +
 	"TilesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +

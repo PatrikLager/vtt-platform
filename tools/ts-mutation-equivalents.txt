@@ -87,22 +87,30 @@
 # THE DELTAS ARE NOT UNIFORM, which is exactly why this file's own procedure
 # says to READ the new location rather than assume the shift. Measured by
 # comparing this file against main entry by entry, in order: the 28 moved keys
-# span +1 (session.ts 66 -> 67) to +197 (fold.ts 350 -> 547), and every one of
-# the 64 kept its COLUMN — only lines moved. Anyone repeating that comparison
+# span +1 (session.ts 66 -> 67) to +208 (fold.ts 350 -> 558), and every one of
+# the 64 kept its COLUMN — only lines moved. Per file the shifts are
+# app.ts +2, session.ts +1, wire.ts +117, view/grid.ts +31,
+# view/spectator.ts +144, and fold.ts a spread of +3/+133/+157/+208. Anyone repeating that comparison
 # should pair the entries POSITIONALLY, not by (file, mutator, replacement): the
 # file contains repeated triples on purpose, twelve of them — for instance
 # app.ts's two `StringLiteral
-# "Stryker was here!"`, view/grid.ts's two `StringLiteral ""` (121:45 and
-# 121:57) and its two `EqualityOperator a.tokenId <= b.tokenId` (131:32 and
-# 131:61) — and a dict keyed that way silently drops them and reports 22 instead
-# of 28. That happened here. NOTE the four entries at 131:61 are NOT an example:
+# "Stryker was here!"`, view/grid.ts's two `StringLiteral ""` (129:45 and
+# 129:57) and its two `EqualityOperator a.tokenId <= b.tokenId` (139:32 and
+# 139:61) — and a dict keyed that way silently drops them and reports 22 instead
+# of 28. That happened here. NOTE the four entries at 139:61 are NOT an example:
 # they are four DISTINCT triples at one location, which is exactly what keying
 # on the replacement text is for.
 #
-# Task 7's own contribution is the smaller half: +11 in fold.ts's sceneSeen arm
-# and +11 in its dump, +23 in view/grid.ts, +10 in view/spectator.ts, and
-# nothing at all in wire.ts, session.ts or app.ts — those three it never
-# touched.
+# Task 7's own contribution, across its landing commit and two fix rounds, is
+# the smaller half: +20 in fold.ts's sceneSeen arm and +11 in its dump, +31 in
+# view/grid.ts, +10 in view/spectator.ts, and nothing at all in wire.ts,
+# session.ts or app.ts — those three it never touched.
+#
+# THIS HEADER'S OWN CITATIONS ARE PART OF THE RE-KEY, and round 2 found them
+# stale after round 2's edits: it re-pointed the entries and left the numbers
+# quoted up here pointing at the old lines. A preamble that disagrees with its
+# own contents is the failure this file exists to prevent, so when you move an
+# entry, grep this header for its old line before you stop.
 #
 # UNVERIFIED BY THE GATE, and that is stated rather than glossed: check:
 # ts-mutation skips on macOS (kernel bug FB21686886, see Taskfile.yml), so these
@@ -129,40 +137,40 @@ client/src/fold.ts 40:9 ConditionalExpression false
 client/src/fold.ts 40:30 StringLiteral ""
     Same line, same effect by another route: the case name becomes "", the comparison is false for every envelope, and markers reach apply()'s no-op default arm. A payload-less envelope has case undefined, not "", so it cannot collide with the emptied literal.
 
-client/src/fold.ts 262:48 ArrayDeclaration ["Stryker was here"]
+client/src/fold.ts 271:48 ArrayDeclaration ["Stryker was here"]
     `st.Conditions[v.actorId] ?? []` -> `?? ["Stryker was here"]` in conditionRemoved. The fallback fires only when the actor has NEVER had a condition (an emptied list is retained as [], which is not nullish). findIndex then compares `c.ID` on a string element — undefined — against the condition id, yielding -1, so the fold throws the same "not present" error it would have thrown. The assignment that would leak the sentinel is after that throw.
 
-client/src/fold.ts 291:19 OptionalChaining actor.resources[v.resource]
+client/src/fold.ts 300:19 OptionalChaining actor.resources[v.resource]
     `actor.resources?.[v.resource]` -> `actor.resources[v.resource]`. Removing the guard only matters if a stored Actor can have undefined resources. It cannot: line 137 is the only writer to st.Actors and it always goes through copyActor, which builds `resources` as an object literal before returning.
 
-client/src/fold.ts 300:11 EqualityOperator computed <= 0
+client/src/fold.ts 309:11 EqualityOperator computed <= 0
     `computed < 0` -> `<= 0` in the resource clamp. The arms differ only at computed === 0, where the mutant assigns 0 over 0.
 
-client/src/fold.ts 301:26 EqualityOperator computed >= res.max
+client/src/fold.ts 310:26 EqualityOperator computed >= res.max
     `computed > res.max` -> `>=`. Differ only at computed === res.max, where the mutant assigns max over max.
 
-client/src/fold.ts 332:10 StringLiteral ""
+client/src/fold.ts 341:10 StringLiteral ""
     `case "attackRolled":` -> `case "":`. The case body is a bare `return`, and an attackRolled event whose label no longer matches falls through to `default:`, which is also a bare `return`. A no-op reached two ways.
 
-client/src/fold.ts 333:10 StringLiteral ""
+client/src/fold.ts 342:10 StringLiteral ""
     `case "abilityUsed":` -> `case "":`, same no-op-vs-no-op as above.
 
-client/src/fold.ts 334:5 ConditionalExpression case "adventureLoaded":
+client/src/fold.ts 343:5 ConditionalExpression case "adventureLoaded":
     Rewrites the `case "adventureLoaded":` clause itself. Every arm involved returns without touching state, so no reordering of them is observable.
 
-client/src/fold.ts 334:10 StringLiteral ""
+client/src/fold.ts 343:10 StringLiteral ""
     `case "adventureLoaded":` -> `case "":`, same no-op-vs-no-op as above.
 
-client/src/fold.ts 336:5 ConditionalExpression default:
+client/src/fold.ts 345:5 ConditionalExpression default:
     Rewrites the `default:` clause. Its body is a bare `return`, shared with the three no-effect event kinds above it; nothing distinguishes reaching it from reaching them.
 
-client/src/fold.ts 457:34 EqualityOperator Number(e.sequence) >= head
+client/src/fold.ts 466:34 EqualityOperator Number(e.sequence) >= head
     `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".)
 
-client/src/fold.ts 547:7 ConditionalExpression true
+client/src/fold.ts 558:7 ConditionalExpression true
     `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 137 is the only writer, and line 135 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true.
 
-client/src/fold.ts 547:21 StringLiteral "Stryker was here!"
+client/src/fold.ts 558:21 StringLiteral "Stryker was here!"
     Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.
 
 # --- client/src/view/dm.ts --------------------------------------------------
@@ -271,25 +279,25 @@ client/src/auth.ts 37:12 ConditionalExpression false
 # a three-way comparator over values that are MAP KEYS, so the equal case it
 # guards cannot occur.
 
-client/src/view/grid.ts 121:45 StringLiteral ""
+client/src/view/grid.ts 129:45 StringLiteral ""
     `[...(name || tok.ActorID || "?")][0] ?? "?"` — the FIRST "?" only. It and the `??` fallback beside it are redundant with each other, so neither is observable alone. Blanking this one makes the spread source "" exactly when name and ActorID are both empty; the spread of "" is [], [0] is undefined, and the `?? "?"` then yields the same "?" the original produced directly. Every other input never reaches this operand at all. Identical string out, and initial is the only thing this expression feeds.
 
-client/src/view/grid.ts 121:57 StringLiteral ""
+client/src/view/grid.ts 129:57 StringLiteral ""
     The `?? "?"` half of the same pair, and unreachable while the operand above is intact: `name || tok.ActorID || "?"` cannot evaluate to an empty string, because "?" is truthy and terminates the chain. So `[...s][0]` is always defined and the `??` branch never runs. It cannot be deleted despite that — `[...s][0]` is typed `string | undefined`, so the fallback is load-bearing for the TYPE even where it is unreachable at run time.
 
-client/src/view/grid.ts 131:32 EqualityOperator a.tokenId <= b.tokenId
+client/src/view/grid.ts 139:32 EqualityOperator a.tokenId <= b.tokenId
     `a.tokenId < b.tokenId ? -1 : ...` -> `<=`. The two differ only when the ids are EQUAL, and they cannot be: disc.tokenId comes from tok.ID for tokens read out of st.Tokens, which is keyed by that id, so two discs in one call always carry distinct ids.
 
-client/src/view/grid.ts 131:61 ConditionalExpression true
+client/src/view/grid.ts 139:61 ConditionalExpression true
     The second arm, `a.tokenId > b.tokenId ? 1 : 0`, forced to 1. It is only reached when the first arm was false, i.e. a >= b, and with equal ids impossible that means a > b — where the original also yields 1. No input reaches it with a different answer.
 
-client/src/view/grid.ts 131:61 ConditionalExpression false
+client/src/view/grid.ts 139:61 ConditionalExpression false
     The same arm forced to 0, so a > b returns 0 ("equal") instead of 1 ("after"). Not observable through Array.prototype.sort: both engines' sorts branch on `comparator(...) < 0`, never on the difference between 0 and a positive result, so "not less" is the only fact either value conveys. Checked rather than assumed — a 20-element reversed board, enough to leave insertion sort and enter the merge paths, still sorts correctly under this mutant. Note this holds because of how sort CONSULTS the comparator; a caller that used the comparator directly for a three-way answer would distinguish them, and none exists.
 
-client/src/view/grid.ts 131:61 EqualityOperator a.tokenId >= b.tokenId
+client/src/view/grid.ts 139:61 EqualityOperator a.tokenId >= b.tokenId
     Same arm, `>` -> `>=`: differs only on equal ids, which map keys make impossible.
 
-client/src/view/grid.ts 131:61 EqualityOperator a.tokenId <= b.tokenId
+client/src/view/grid.ts 139:61 EqualityOperator a.tokenId <= b.tokenId
     Same arm, `>` -> `<=`. Reached only when a >= b; with equality impossible, `a <= b` is false there and the arm yields 0 where the original yields 1 — the 0-versus-positive case shown above to be invisible to sort.
 
 # --- client/src/wire.ts -----------------------------------------------------
@@ -344,7 +352,7 @@ client/src/view/feed.ts 106:43 ConditionalExpression true
     Second arm `a.seq > b.seq ? 1 : 0` forced to 1; reached only when a >= b, and equality being impossible leaves a > b, where the original also yields 1.
 
 client/src/view/feed.ts 106:43 ConditionalExpression false
-    Same arm forced to 0, so a > b reports "equal" rather than "after". Array.prototype.sort branches on `comparator(...) < 0` and never distinguishes 0 from a positive value, so the ordering is unchanged — the same reasoning, and the same 20-element check, recorded for view/grid.ts:131:61.
+    Same arm forced to 0, so a > b reports "equal" rather than "after". Array.prototype.sort branches on `comparator(...) < 0` and never distinguishes 0 from a positive value, so the ordering is unchanged — the same reasoning, and the same 20-element check, recorded for view/grid.ts:139:61.
 
 client/src/view/feed.ts 106:43 EqualityOperator a.seq >= b.seq
     Same arm, `>` -> `>=`: differs only on equal seqs, impossible for map keys.
