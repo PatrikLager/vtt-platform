@@ -64,12 +64,35 @@ export function cellFromPoint(px: number, py: number, geom: Geometry): Cell {
  * "primary" resource to feature would need ruleset client-hints the format
  * does not have (§9), and guessing which one matters is precisely the genre
  * assumption this platform refuses to make.
+ *
+ * VISIBLE IS AN INPUT, AND THAT IS THE POINT (visibility spec §6/§6.1). A
+ * creature is pure line of sight — you remember the room, not the goblin
+ * standing in it — so a token on ground this seat merely REMEMBERS produces no
+ * disc AT ALL, rather than a disc something downstream declines to paint.
+ * Passing the set in rather than deriving it here is what keeps the decision
+ * out of the painting layer, which is where a leak would hide; RPTool reached
+ * this same seam, published a visible-token set from it, and then handed its
+ * renderer the full list anyway (spec §6.1). This is that migration finished.
+ *
+ * UNDEFINED IS NOT AN EMPTY SET. Undefined means this stream carries no
+ * projection at all — the DM's and the agent's, which are the identity
+ * function (spec §3.1) — and every token is drawn. `{}` means a projection
+ * arrived and this seat can currently see nothing, and NOTHING is drawn. The
+ * parameter is required rather than optional so no call site can slide into
+ * the draw-everything answer by omission; state.ts's Scene.Visible is what to
+ * pass, and it carries exactly that distinction.
  */
-export function tokensOnScene(st: State, sceneId: string): TokenDisc[] {
+export function tokensOnScene(
+  st: State,
+  sceneId: string,
+  visible: Record<string, boolean> | undefined,
+): TokenDisc[] {
   const discs: TokenDisc[] = [];
 
   for (const tok of Object.values(st.Tokens)) {
     if (tok.SceneID !== sceneId) continue;
+    // Keyed like Tiles/Explored/Visible: column,row (maps-as-geometry §4.1).
+    if (visible !== undefined && !visible[`${tok.X},${tok.Y}`]) continue;
     const actor = st.Actors[tok.ActorID];
 
     // Resources are sorted by name: st.Actors[].resources is a plain object

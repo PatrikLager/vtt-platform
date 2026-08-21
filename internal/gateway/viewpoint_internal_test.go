@@ -172,8 +172,17 @@ func TestAPerchArrivesWithTheDoorsItCanSeeAlreadyOpen(t *testing.T) {
 // A bird between shoulders sees nothing, so the creatures it was shown go: they
 // are pure line of sight (spec §3.2). The TERRAIN does not, and cannot — there
 // is no message that un-explores a square, which is the same structural fact
-// that makes memory accumulate across a hop. So an un-perch emits TokenHidden
-// and no SceneSeen at all.
+// that makes memory accumulate across a hop.
+//
+// RE-DERIVED FOR TASK 7, and the earlier form of this test was the reason the
+// hole it closes went unnoticed: it asserted `e.GetSceneSeen() != nil` was an
+// error, which is STRONGER than the sentence above it and pinned the defect.
+// "Un-explores a square" and "reports that you can see nothing right now" are
+// different claims, and only the first is forbidden. Leaving a shoulder must
+// darken the board — the watcher's eyes are gone, so their current visible set
+// is empty — while every square they have already mapped stays mapped. An
+// EMPTY SceneSeen says exactly that and no more: it withdraws nothing, because
+// both folds union its tiles into Explored and it has none.
 func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range perchFixtureLog() {
@@ -184,13 +193,23 @@ func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 	}
 
 	var hidden []string
+	var darkened int
 	for _, e := range s.perch("") {
 		if th := e.GetTokenHidden(); th != nil {
 			hidden = append(hidden, th.GetTokenId())
 		}
-		if e.GetSceneSeen() != nil {
-			t.Error("leaving a shoulder must not re-describe terrain: what was explored stays explored")
+		if ss := e.GetSceneSeen(); ss != nil {
+			darkened++
+			if n := len(ss.GetTiles()); n != 0 {
+				t.Errorf("leaving a shoulder must not re-describe terrain, got %d tiles", n)
+			}
+			if n := len(ss.GetObjects()); n != 0 {
+				t.Errorf("leaving a shoulder must not re-describe scenery, got %d objects", n)
+			}
 		}
+	}
+	if darkened != 1 {
+		t.Errorf("the one room this watcher was shown must go dark exactly once, got %d", darkened)
 	}
 	if len(hidden) != 1 || hidden[0] != "t-hero" {
 		t.Fatalf("the hero's own token must leave a board with no eyes on it, got %v", hidden)

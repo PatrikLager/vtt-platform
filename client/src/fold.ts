@@ -212,9 +212,20 @@ function apply(st: State, env: Envelope): void {
       if (!sc.Tiles) sc.Tiles = {};
       if (!sc.Explored) sc.Explored = {};
       if (!sc.Objects) sc.Objects = [];
+      // REPLACED, not merged, and built fresh before the loop rather than
+      // emptied in place — the two halves of this arm pull in opposite
+      // directions deliberately. Explored is memory and unions; Visible is the
+      // whole current visible set (spec §5) and is therefore whatever THIS
+      // message says and nothing else. A sceneSeen carrying no tiles is the
+      // projection reporting a scene gone dark, and it must leave an empty
+      // object here rather than the `undefined` that means no projection ever
+      // arrived (state.ts's Scene.Visible on why those differ). The three
+      // Visible lines mirror internal/engine/apply.go's SceneSeen arm exactly.
+      sc.Visible = {};
       for (const [key, ref] of Object.entries(v.tiles)) {
         sc.Tiles[key] = { Kind: ref.kind, Material: ref.material, Art: ref.art };
         sc.Explored[key] = true;
+        sc.Visible[key] = true;
       }
       for (const o of v.objects) {
         const i = sc.Objects.findIndex((e) => e.ObjectID === o.objectId);
@@ -488,6 +499,17 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);
+      }
+      // Visible mirrors Go's `json:",omitempty"` on Scene.Visible exactly as
+      // Explored above mirrors its own, and the omission collapses the
+      // undefined/`{}` distinction the FIELD carries — deliberately, because
+      // Go's tag collapses nil and empty the same way. The dump is what the
+      // cross-language keystone (spec §4.3) diffs, so what it holds the two
+      // folds to is the populated case; the distinction itself is a live-state
+      // matter and is pinned separately, in both languages.
+      const visible = s.Visible ?? {};
+      if (Object.keys(visible).length > 0) {
+        scene.Visible = sortedMap(visible, (v) => v);
       }
       return scene;
     }),

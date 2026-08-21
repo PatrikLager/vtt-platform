@@ -6,7 +6,7 @@
 // (backlog #13). Every decision therefore lives in planScene, which is pure and
 // fully tested; this loop is small enough to verify by reading.
 
-import type { DrawOp, GridLine } from "./scene-plan";
+import type { DrawOp, FogRect, GridLine } from "./scene-plan";
 
 /**
  * ImageMap resolves a DrawOp's `image` to something drawImage can consume.
@@ -124,5 +124,46 @@ export function strokeGrid(ctx: CanvasRenderingContext2D, lines: GridLine[]): vo
     ctx.lineTo(l.x2, l.y2);
   }
   ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * fogInk is what remembered-but-unseen ground is shaded with, and the second
+ * judgement this file makes, allowed here for the same reason gridInk is:
+ * WHERE the fog goes is planFog's decision and is asserted; how it looks is
+ * presentation, and presentation is the only thing this untestable layer may
+ * own (spec §6.1 makes that division the whole reason fog is a pass rather
+ * than a per-op `dim` flag).
+ *
+ * Darker than gridInk's 0.22 by enough that "I remember this" is never
+ * mistaken for "I can see this", and light enough that the terrain underneath
+ * stays legible — you are meant to read your own map, not be denied it. The
+ * figure follows the precedent spec §6.1 records for the same purpose in
+ * RPTool's FogRenderer, 100/255 ≈ 0.39, rounded.
+ *
+ * Exported so a test can assert the fog was filled with THIS, rather than
+ * merely that some fillRect happened — the same reason missingTileColors is
+ * exported above.
+ */
+export const fogInk = "rgba(0, 0, 0, 0.4)";
+
+/**
+ * shadeFog fills planFog's regions, and is strokeGrid's twin in every respect:
+ * it decides nothing, it is called between the two draws whose order matters,
+ * and it returns early on an empty list rather than opening a pointless
+ * save/restore.
+ *
+ * BETWEEN paint AND strokeGrid, which spectator.ts's renderGrid is what
+ * actually establishes. Terrain, then fog, then grid: the lattice stays crisp
+ * over remembered ground, because you remember a room's SHAPE and dimming its
+ * squares would make remembered floor harder to count for no gain (spec §6.1).
+ */
+export function shadeFog(ctx: CanvasRenderingContext2D, rects: FogRect[]): void {
+  if (rects.length === 0) return;
+  ctx.save();
+  ctx.fillStyle = fogInk;
+  for (const r of rects) {
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+  }
   ctx.restore();
 }

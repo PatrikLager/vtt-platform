@@ -55,6 +55,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.ActorControlGranted:
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
+	case *vttv1.ActorControlRevoked:
+		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
 	case *vttv1.ConditionApplied:
 		env.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
 	case *vttv1.ConditionRemoved:
@@ -369,6 +371,114 @@ func TestSceneSeenCarriesOnlyTheSquaresInSight(t *testing.T) {
 	}
 	if _, ok := seen.GetTiles()[key(5, 1)]; ok {
 		t.Error("the far room is behind a closed door and must not be in the visible set")
+	}
+}
+
+// sceneSeenFor picks the SceneSeen for one scene out of a batch, or nil.
+func sceneSeenIn(out []*vttv1.Envelope, sceneID string) *vttv1.SceneSeen {
+	var found *vttv1.SceneSeen
+	for _, e := range out {
+		if ss := e.GetSceneSeen(); ss != nil && ss.GetSceneId() == sceneID {
+			found = ss
+		}
+	}
+	return found
+}
+
+func TestASceneThatLeavesSightEntirelyIsReportedDark(t *testing.T) {
+	// THE HOLE TASK 7 CLOSES. transitions emits SceneSeen by walking the scenes
+	// currently IN sight, so a scene that drops out of sight entirely has no
+	// entry to walk and no envelope is emitted at all. The viewer's last
+	// SceneSeen for it therefore stands forever — and the client reads the
+	// newest SceneSeen as its CURRENT visible set (client/src/fold.ts's
+	// sceneSeen arm), so that room stays lit on their board with nobody in it.
+	//
+	// The DM reassigning a character is how a seat loses every eye it had:
+	// eyes() derives a player's actors from ControllerIds live off state, so a
+	// revoke leaves them with none.
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+
+	if lit := sceneSeenIn(firstPlace(pr, st), "s"); lit == nil || len(lit.GetTiles()) == 0 {
+		t.Fatalf("the control fails: the hero's room must be reported LIT first, got %v", lit)
+	}
+
+	mustApply(st, 7, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
+	out := pr.Project(envelope(7, &vttv1.ActorControlRevoked{
+		ActorId: "hero", ParticipantId: "p-1"}), st)
+
+	dark := sceneSeenIn(out, "s")
+	if dark == nil {
+		t.Fatal("a scene this seat can no longer see anything of must be reported dark, " +
+			"not left at whatever it last saw")
+	}
+	if n := len(dark.GetTiles()); n != 0 {
+		t.Errorf("dark means the whole current visible set is EMPTY, got %d tiles", n)
+	}
+}
+
+func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
+	// The other half of the same behaviour: emitting the empty set must not
+	// become a per-event heartbeat for every scene the seat has ever seen. It
+	// cannot, because the scene is dropped from the projector's record in the
+	// same step — but "cannot" is the kind of claim this arc has been wrong
+	// about in prose, so it is asserted instead.
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	firstPlace(pr, st)
+
+	mustApply(st, 7, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
+	pr.Project(envelope(7, &vttv1.ActorControlRevoked{
+		ActorId: "hero", ParticipantId: "p-1"}), st)
+
+	again := pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the room falls quiet"}), st)
+	if ss := sceneSeenIn(again, "s"); ss != nil {
+		t.Errorf("a scene already reported dark must stay silent, got %v", ss)
+	}
+}
+
+func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
+	// The union walk above reaches a scene the projector REMEMBERS, and memory
+	// can outlive the world. engine.State.Scenes is a VALUE map, so a missing
+	// key reads as the zero Scene with an empty ID — and a SceneSeen naming ""
+	// is the worst envelope this file can send. Both folds reject it ("scene
+	// seen for unknown scene"), and client/src/session.ts re-folds its entire
+	// accumulated log on every event, so the throw would recur forever and
+	// freeze that viewer for the rest of the session.
+	//
+	// It is REACHABLE, not hypothetical. seat.receive rebuilds the world with
+	// campaign.FoldPrefix, which skips retracted ranges, so an undo covering a
+	// SceneCreated (together with what depends on it) removes that scene from
+	// the state while pr.seen still holds its id. Modelled here by projecting
+	// against a world that no longer has the scene, which is exactly what that
+	// re-fold hands this function.
+	//
+	// SILENTLY, and that is the second half. Naming the scene correctly would
+	// not help: the retraction reached this viewer too, so their own fold has
+	// no such scene either and a well-formed dark SceneSeen would throw just
+	// the same. There is nothing to report about a scene that no longer exists.
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	if lit := sceneSeenIn(firstPlace(pr, st), "s"); lit == nil {
+		t.Fatal("the control fails: the projector must remember this room first")
+	}
+
+	gone := engine.NewState()
+	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
+	out := pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+
+	for _, e := range out {
+		if ss := e.GetSceneSeen(); ss != nil {
+			t.Errorf("a scene the world no longer has must produce no SceneSeen at all, got %v", ss)
+		}
+	}
+
+	// And it is forgotten, so nothing re-fires it once the world moves on.
+	again := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "quiet"}), gone)
+	for _, e := range again {
+		if ss := e.GetSceneSeen(); ss != nil {
+			t.Errorf("the scene was already forgotten and must stay silent, got %v", ss)
+		}
 	}
 }
 

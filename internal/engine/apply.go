@@ -410,11 +410,22 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if sc.Explored == nil {
 			sc.Explored = map[string]bool{}
 		}
+		// REPLACED, not merged, and built fresh before the loop rather than
+		// cleared in place — the two halves of this arm pull in opposite
+		// directions on purpose. Explored is memory and unions; Visible is the
+		// whole current visible set (spec §5) and therefore is whatever THIS
+		// message says and nothing else. A SceneSeen carrying no tiles is the
+		// projection reporting a scene gone dark (internal/gateway's
+		// transitions), and it must leave an empty set here rather than the nil
+		// that means no projection ever arrived. client/src/fold.ts's sceneSeen
+		// arm is the mirror of these six lines.
+		sc.Visible = make(map[string]bool, len(ss.GetTiles()))
 		for key, ref := range ss.GetTiles() {
 			sc.Tiles[key] = Tile{
 				Kind: ref.GetKind(), Material: ref.GetMaterial(), Art: ref.GetArt(),
 			}
 			sc.Explored[key] = true
+			sc.Visible[key] = true
 		}
 		if objs := ss.GetObjects(); len(objs) > 0 {
 			sc.Objects = mergeObjects(sc.Objects, objs)

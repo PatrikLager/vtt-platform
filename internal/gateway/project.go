@@ -555,15 +555,58 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		pr.tokens[id] = true
 	}
 
-	for _, id := range sortedSceneIDs(now.squares) {
-		if sameSet(pr.seen[id], now.squares[id]) {
+	// THE UNION of what this viewer was last told and what they can see now,
+	// never merely the latter. A scene the viewer can no longer see ANYTHING of
+	// has no entry in now.squares at all — look() creates one per scene an eye's
+	// token stands in, so a seat with no eye left in a scene has no key for it —
+	// and a walk over now.squares alone would emit nothing, leaving pr.seen at
+	// whatever was last visible. That is a leak on the client, which reads the
+	// newest SceneSeen as its CURRENT visible set: the room stays lit forever.
+	// Walking the union keeps the scene in play for exactly one more step, and
+	// sameSet reports the difference between the last non-empty set and nothing.
+	for _, id := range sortedSceneIDsUnion(pr.seen, now.squares) {
+		sc, exists := st.Scenes[id]
+		if !exists {
+			// MEMORY CAN OUTLIVE THE WORLD, which the old walk over now.squares
+			// alone could not reach: every id there came from a successful
+			// st.Scenes lookup in look(). pr.seen has no such guarantee — an
+			// undo covering a SceneCreated removes the scene from the state
+			// seat.receive re-folds (campaign.FoldPrefix skips retracted
+			// ranges) while this map still holds its id. st.Scenes is a VALUE
+			// map, so reporting it would name the ZERO Scene, and a SceneSeen
+			// with an empty scene id is rejected by both folds and freezes the
+			// viewer forever. Naming it correctly would fare no better: the
+			// retraction reached this viewer too, so their fold has no such
+			// scene either. Forget it and say nothing.
+			delete(pr.seen, id)
 			continue
 		}
+		lit, inSight := now.squares[id]
+		if sameSet(pr.seen[id], lit) {
+			continue
+		}
+		// An EMPTY SceneSeen when the scene has gone dark, which needs no new
+		// message and no new field: sceneSeenFor's contract is "the whole of
+		// what this viewer can see of sc right now", and right now that is
+		// nothing. It unions nothing into the client's Explored either, so
+		// remembered terrain survives being darkened — pinned by
+		// TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain in
+		// internal/engine and by "an empty sceneSeen darkens the scene and
+		// forgets no terrain" in client/test/visibility.test.ts, both of which
+		// send an EMPTY one and then assert Explored is intact.
 		out = append(out, &vttv1.Envelope{Sequence: seq,
-			Payload: &vttv1.Envelope_SceneSeen{SceneSeen: sceneSeenFor(st.Scenes[id], now.squares[id])}})
+			Payload: &vttv1.Envelope_SceneSeen{SceneSeen: sceneSeenFor(sc, lit)}})
+		if !inSight {
+			// FORGOTTEN, so the union no longer contains this scene and the
+			// empty envelope cannot become a per-event heartbeat. Re-entering
+			// the scene later starts from nil again, which is what an absent
+			// key already meant.
+			delete(pr.seen, id)
+			continue
+		}
 		// Stored, not merged. now.squares is rebuilt from scratch by every
 		// look, so this never aliases anything a later call mutates.
-		pr.seen[id] = now.squares[id]
+		pr.seen[id] = lit
 	}
 
 	return out
@@ -1035,6 +1078,27 @@ func sortedSceneIDs(m map[string]map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedSceneIDsUnion is sortedSceneIDs over every id in EITHER map, each once.
+//
+// Its one caller needs to walk a scene that has left sight as well as those
+// still in it, and those two facts live in two different maps: what the viewer
+// was last told (pr.seen) and what they can see now (now.squares).
+func sortedSceneIDsUnion(a, b map[string]map[string]bool) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, m := range []map[string]map[string]bool{a, b} {
+		for k := range m {
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, k)
+		}
 	}
 	sort.Strings(out)
 	return out

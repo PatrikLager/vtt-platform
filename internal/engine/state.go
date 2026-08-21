@@ -88,6 +88,29 @@ type Scene struct {
 	// green. Confirmed by running the golden suite both ways (see
 	// task-3-report.md).
 	Explored map[string]bool `json:",omitempty"`
+
+	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles,
+	// and it is Explored's opposite number in every respect: REPLACED wholesale
+	// by each SceneSeen rather than unioned, so it shrinks as freely as it
+	// grows. The pair is what the client needs and neither half supplies alone —
+	// terrain you remember but cannot currently see is `Explored − Visible`, and
+	// that difference is the fog (visibility spec §6.1).
+	//
+	// NIL AND EMPTY MEAN DIFFERENT THINGS, which is why this field is never
+	// initialised by the SceneCreated arm the way OpenDoors is. Nil is "no
+	// SceneSeen has ever arrived for this scene" — the DM, the agent, and any
+	// scene folded from the real log, none of which is a projection at all.
+	// Empty is "a projection arrived and this seat can see nothing here". A
+	// renderer that conflated them would blank the DM's board, so the
+	// distinction is load-bearing rather than incidental, and client/src/state.ts
+	// carries the same one as `undefined` versus `{}`.
+	//
+	// `json:",omitempty"` for exactly the reason Explored's carries it, and with
+	// the same consequence: nil and empty both vanish from the dump, so the
+	// goldens are untouched and the nil/empty distinction above lives in memory
+	// only. The keystone (spec §4.3) compares dumps, so what it holds the two
+	// folds to is the populated case.
+	Visible map[string]bool `json:",omitempty"`
 }
 
 type Token struct {
@@ -171,6 +194,30 @@ func (st *State) Snapshot() *State {
 				explored[ek] = ev
 			}
 		}
+		// Visible copies exactly as Explored does, nil-preservation included —
+		// but for a WEAKER reason, and the difference was measured rather than
+		// assumed. Explored's copy is load-bearing today: the SceneSeen arm
+		// writes into that map in place, so sharing it is observable. Visible's
+		// is not, because the same arm REPLACES this map wholesale on every
+		// message and never touches the one a snapshot took; substituting
+		// `visible := v.Visible` here leaves the whole engine suite green (run,
+		// not reasoned). It is copied anyway because Snapshot's promise is
+		// unconditional — "readers never alias live state" — and the day
+		// anything writes into Visible in place, the alias becomes a silent bug
+		// rather than a caught one.
+		//
+		// Nil-preservation IS observable, and is pinned:
+		// TestSnapshotOfUnprojectedSceneLeavesVisibleNil fails when nil is
+		// promoted to empty, because that would tell a reader that a DM's scene
+		// had received a projection reporting nothing visible (see the field's
+		// own doc comment on why those two are not the same thing).
+		var visible map[string]bool
+		if v.Visible != nil {
+			visible = make(map[string]bool, len(v.Visible))
+			for vk, vv := range v.Visible {
+				visible[vk] = vv
+			}
+		}
 		out.Scenes[k] = Scene{
 			ID: v.ID, Name: v.Name,
 			GridWidth: v.GridWidth, GridHeight: v.GridHeight,
@@ -178,6 +225,7 @@ func (st *State) Snapshot() *State {
 			Objects:   append([]SceneObject(nil), v.Objects...),
 			OpenDoors: doors,
 			Explored:  explored,
+			Visible:   visible,
 		}
 	}
 	for k, v := range st.Actors {

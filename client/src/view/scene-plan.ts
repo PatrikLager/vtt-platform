@@ -186,6 +186,89 @@ export function planGrid(
   return lines;
 }
 
+/**
+ * FogRect is one region of remembered-but-unseen ground, in SCREEN
+ * coordinates, already through the camera.
+ *
+ * A THIRD shape beside DrawOp and GridLine, for the reason GridLine gives for
+ * being the second: fog is neither an image nor a line, and widening DrawOp
+ * with a `dim` flag instead would move the decision into canvas.ts — the one
+ * layer no test in this repo can see — and let it be forgotten on one op kind,
+ * which is a brightly lit door in a room the player has walked out of (spec
+ * §6.1, Patrik's ruling 2026-08-21).
+ *
+ * NOT WELDED TO TILE EDGES, hence a free rect rather than a square key: when
+ * §3's "squares now, fractional later" arrives, a fog region costs a constant
+ * rather than a redesign.
+ */
+export interface FogRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * planFog emits the ground this viewer REMEMBERS but cannot currently see —
+ * `Explored − Visible` — culled to the viewport.
+ *
+ * TWO SETS, NOT ONE, and neither answers alone. Explored only grows (terrain
+ * is remembered, spec §3.2), so it can never say what is lit now; Visible is
+ * replaced by every sceneSeen, so it can never say what has been mapped. The
+ * difference is the fog, and it is the whole visibility decision this file
+ * makes.
+ *
+ * NOTHING IS DRAWN FOR UNEXPLORED GROUND, which is not an omission: the server
+ * redacts terrain this seat has never seen before it reaches the wire, so
+ * unexplored is the ABSENCE of a DrawOp with the background showing through.
+ * A heavy second fog level for it — RPTool draws one — would imply this client
+ * holds terrain it is concealing, which is the model this whole arc removes
+ * (spec §6.1).
+ *
+ * A SCENE WITH NO Visible AT ALL FOGS NOTHING, and that is an explicit early
+ * return rather than something the arithmetic happens to produce. It is the DM
+ * and the agent: their stream is the identity projection and carries no
+ * sceneSeen, so no role check is needed here or anywhere else on the board.
+ * Defaulting `Visible` to `{}` and letting the subtraction fall out would give
+ * the same answer TODAY only because Explored is also empty on such a stream —
+ * a fact about fold.ts's sceneCreated arm, in another file, holding up a claim
+ * made here. Populate Explored without Visible and that version greys out the
+ * DM's entire board. The guard makes the invariant local and killable:
+ * "a DM's board fogs nothing" in client/test/visibility.test.ts uses a scene
+ * whose Explored IS populated, so it fails without this line.
+ */
+export function planFog(
+  st: State,
+  sceneId: string,
+  cam: Camera,
+  cell: number,
+  viewW: number,
+  viewH: number,
+): FogRect[] {
+  const scene = st.Scenes[sceneId];
+  if (!scene) return [];
+  if (scene.Visible === undefined) return [];
+  const explored = scene.Explored ?? {};
+  const visible = scene.Visible;
+
+  const rects: FogRect[] = [];
+  // The same world-order walk planTiles does, so fog and terrain can never
+  // disagree about which square is which.
+  for (let gy = 0; gy < scene.GridHeight; gy++) {
+    for (let gx = 0; gx < scene.GridWidth; gx++) {
+      const sq = `${gx},${gy}`;
+      if (!explored[sq] || visible[sq]) continue;
+
+      const x = gx * cell * cam.scale + cam.offsetX;
+      const y = gy * cell * cam.scale + cam.offsetY;
+      const size = cell * cam.scale;
+      if (!intersectsViewport(x, y, size, size, viewW, viewH)) continue;
+      rects.push({ x, y, w: size, h: size });
+    }
+  }
+  return rects;
+}
+
 /** intersectsViewport: true when a screen rect overlaps [0,viewW)x[0,viewH). */
 function intersectsViewport(
   sx: number,

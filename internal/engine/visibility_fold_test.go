@@ -223,3 +223,118 @@ func TestSnapshotOfUnprojectedSceneLeavesExploredNil(t *testing.T) {
 			snap.Scenes["s"].Explored)
 	}
 }
+
+// TestSceneSeenReplacesTheVisibleSetWithoutForgettingTheExploredOne pins the
+// half of SceneSeen that Explored alone cannot express.
+//
+// Explored is a union and never shrinks, which is right for terrain memory and
+// useless for answering "can this seat see that square RIGHT NOW". Both answers
+// are needed at once, because the fog the client draws is the DIFFERENCE
+// (visibility spec §6.1): Explored − Visible is ground you remember and cannot
+// currently see. SceneSeen carries the whole current visible set every time
+// (spec §5), so the newest one IS that set — hence replaced, never merged.
+func TestSceneSeenReplacesTheVisibleSetWithoutForgettingTheExploredOne(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
+
+	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}}})))
+
+	sc := st.Scenes["s"]
+	if !sc.Visible["1,1"] {
+		t.Error("the newest SceneSeen is the whole current visible set: 1,1 must be visible")
+	}
+	if sc.Visible["0,0"] {
+		t.Error("0,0 was visible one event ago and is not now — Visible is REPLACED, never unioned")
+	}
+	if !sc.Explored["0,0"] || !sc.Explored["1,1"] {
+		t.Errorf("both squares have been seen at some point and must stay explored, got %v", sc.Explored)
+	}
+}
+
+// TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain is the wire message
+// the projection sends when a seat can no longer see anything of a scene it has
+// been in (internal/gateway's transitions). It must land as "you see nothing
+// here now", NOT as "you were never here" — the second would erase a player's
+// map every time they walked out of a room.
+func TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
+	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+
+	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s"})))
+
+	sc := st.Scenes["s"]
+	if len(sc.Visible) != 0 {
+		t.Errorf("an empty SceneSeen means nothing is visible, got %v", sc.Visible)
+	}
+	if sc.Visible == nil {
+		t.Error("a seat that has received a projection must be distinguishable from one that " +
+			"never has: darkened is an EMPTY set, not the nil that means 'no SceneSeen ever'")
+	}
+	if !sc.Explored["0,0"] {
+		t.Error("terrain already mapped survives the room going dark")
+	}
+	if sc.Tiles["0,0"].Kind != "floor" {
+		t.Error("and so does the terrain itself — there is no message that un-explores a square")
+	}
+}
+
+// TestASnapshotHoldsTheVisibleSetItWasTakenAt is TestSnapshotDeepCopiesExplored's
+// twin in shape, and deliberately NOT in its claim.
+//
+// It does not prove Snapshot deep-copies Visible, and it cannot: replacing the
+// copy with `visible := v.Visible` was tried and the whole engine suite stayed
+// green. The reason is in the fold — the SceneSeen arm ASSIGNS a new Visible
+// map on every message and never writes into the one a snapshot is holding, so
+// the alias has nothing to observe. What this test does hold is that the
+// snapshot carries the set as it stood, both directions: what was visible then
+// is there, and what became visible afterwards is not. The second half is the
+// one that would start failing the day anything mutates Visible in place, which
+// is when state.go's copy stops being belt-and-braces.
+func TestASnapshotHoldsTheVisibleSetItWasTakenAt(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
+	must(t, engine.Apply(st, env(3, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "floor"}}})))
+
+	snap := st.Snapshot()
+
+	must(t, engine.Apply(st, env(4, &vttv1.SceneSeen{SceneId: "s",
+		Tiles: map[string]*vttv1.TileRef{"1,1": {Kind: "wall"}}})))
+
+	if !snap.Scenes["s"].Visible["0,0"] {
+		t.Error("the snapshot must still hold what was visible when it was taken")
+	}
+	if snap.Scenes["s"].Visible["1,1"] {
+		t.Error("a snapshot must not pick up what became visible after it was taken")
+	}
+}
+
+// TestSnapshotOfUnprojectedSceneLeavesVisibleNil is the nil/empty distinction
+// state.go calls load-bearing, held at the Snapshot boundary: promoting nil to
+// an empty map here would tell a renderer downstream that a DM's scene had
+// received a projection saying "you see nothing".
+func TestSnapshotOfUnprojectedSceneLeavesVisibleNil(t *testing.T) {
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})))
+
+	if st.Scenes["s"].Visible != nil {
+		t.Errorf("SceneCreated must leave Visible nil, got %#v", st.Scenes["s"].Visible)
+	}
+	if snap := st.Snapshot(); snap.Scenes["s"].Visible != nil {
+		t.Errorf("a scene with no SceneSeen ever applied must snapshot with Visible nil, got %#v",
+			snap.Scenes["s"].Visible)
+	}
+}

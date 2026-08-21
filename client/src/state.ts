@@ -82,6 +82,31 @@ export interface Scene {
    * compiling. fold.ts's sceneCreated arm always sets it to `{}` explicitly.
    */
   Explored?: Record<string, boolean>;
+  /**
+   * Visible is the squares this viewer can see RIGHT NOW, keyed like Tiles,
+   * and Explored's opposite number: REPLACED wholesale by each sceneSeen
+   * rather than unioned, so it shrinks as freely as it grows. Mirrors
+   * internal/engine's Scene.Visible (state.go). The pair is what the board
+   * needs and neither half gives alone — `Explored − Visible` is ground you
+   * remember and cannot currently see, which is the fog (visibility spec
+   * §6.1).
+   *
+   * UNDEFINED AND `{}` MEAN DIFFERENT THINGS, which is why sceneCreated
+   * leaves this absent while it sets Explored to `{}`. Undefined is "no
+   * sceneSeen has ever arrived for this scene" — the DM and the agent, whose
+   * streams are the identity projection and contain none. `{}` is "a
+   * projection arrived and this seat can see nothing here". Conflating them
+   * would blank the DM's board.
+   *
+   * So every reader that decides what to DRAW must branch on the distinction
+   * rather than defaulting with `?? {}` — that is the one place `?? {}` is
+   * wrong on a Scene field, and view/scene-plan.ts's planFog and view/grid.ts's
+   * tokensOnScene are the two that must not take it. The DUMP is the exception,
+   * and it is not a violation: foldToDumpJSON reproduces Go's `omitempty`,
+   * which drops nil and empty alike, so `?? {}` there is the correct mirror of
+   * a distinction JSON does not carry.
+   */
+  Visible?: Record<string, boolean>;
 }
 
 export interface Token {

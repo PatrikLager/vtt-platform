@@ -13,8 +13,8 @@ import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
-import { planGrid, planScene } from "./scene-plan";
-import { paint, strokeGrid, type ImageMap } from "./canvas";
+import { planFog, planGrid, planScene } from "./scene-plan";
+import { paint, shadeFog, strokeGrid, type ImageMap } from "./canvas";
 
 export const CELL = 44;
 
@@ -163,6 +163,12 @@ function renderGrid(
   if (ctx) {
     const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
     paint(ctx, ops, images);
+    // THEN the fog, over the terrain it dims and under the lattice that
+    // divides it (spec §6.1's order: terrain, fog, grid). Drawn before the
+    // terrain it would be painted over and remembered ground would look lit;
+    // drawn after the grid it would dim the lattice too, making a room you
+    // remember harder to count for no gain.
+    shadeFog(ctx, planFog(st, sceneId, cam, CELL, PANE_W, PANE_H));
     // AFTER the tiles, deliberately: the lattice divides the terrain, so it
     // belongs on top of it. Drawn first, every tile would paint over it and the
     // board would be uncountable again — which is exactly what happened to the
@@ -185,7 +191,11 @@ function renderGrid(
     });
   }
 
-  for (const d of tokensOnScene(st, sceneId)) {
+  // scene.Visible, NOT a set derived here: the seam is grid.ts's, and this
+  // call site's only job is to hand it the one this seat was actually sent.
+  // Undefined (the DM's stream, which carries no sceneSeen) draws every token;
+  // see tokensOnScene on why that is not the same as an empty set.
+  for (const d of tokensOnScene(st, sceneId, scene.Visible)) {
     board.appendChild(renderDisc(d, cam));
   }
   wrap.appendChild(board);
