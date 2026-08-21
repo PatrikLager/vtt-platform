@@ -846,10 +846,33 @@ type SceneCreated struct {
 	// which matches neither "wall" nor "door", so it blocks nothing. That is
 	// the same answer a reader gets for a scene that opted out entirely.
 	//
-	// Size: one TileRef per tile, roughly 45.5 bytes each as protojson, so a
-	// fully tiled scene past about 60x60 exceeds the read limit clients set
-	// and the frame never arrives. internal/mapdef.MaxWireTiles enforces that
-	// ceiling at compile; spec §7 files the compact encoding that lifts it.
+	// SIZE, AND WHY IT IS TWO NUMBERS EVERYWHERE. One TileRef per tile. But
+	// protojson appends a space after every comma in roughly half of all builds:
+	// internal/detrand seeds that choice from a hash of the binary, on purpose,
+	// so that "the output is unstable across different builds". Every byte
+	// figure about this message therefore has two honest values about 2 bytes a
+	// tile apart, and a reader who measures one and finds the doc quoting the
+	// other will "correct" it into the same trap. Quote BOTH or neither — the
+	// `visible` field below carries the full warning and the method for settling
+	// it.
+	//
+	// Measured across differently-sized builds of this repo, on the real 32x32
+	// ravine through mapdef.BuildSceneCreated and on synthetic grids:
+	//
+	//	        per tile   32x32      60x60 (3600 tiles)   200x200
+	//	compact  43.5 B    43.5 KiB   153.6 KiB            1.71 MiB
+	//	spaced   45.5 B    45.5 KiB   160.6 KiB            1.79 MiB
+	//
+	// A fully tiled scene eventually exceeds the 200 KiB read limit Go clients
+	// set (internal/harness/client.go) and the frame never arrives. WHERE
+	// depends on art as much as on size: with no override the crossover is
+	// 69x69 compact / 68x68 spaced, but overriding every square with an art name
+	// of ordinary length — 7 to 11 characters in every shipped pack — puts even
+	// 60x60 over in BOTH regimes (209.8 / 220.4 KiB for a 7-character name).
+	// internal/mapdef.MaxWireTiles caps the tile COUNT at 3600, which refuses
+	// 69x69 but admits that overridden 60x60, so the cap and the limit do not
+	// line up. That mismatch is recorded, not fixed here. spec §7 files the
+	// compact encoding that lifts the whole ceiling.
 	Tiles         map[string]*TileRef `protobuf:"bytes,5,rep,name=tiles,proto3" json:"tiles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Objects       []*SceneObject      `protobuf:"bytes,6,rep,name=objects,proto3" json:"objects,omitempty"`
 	unknownFields protoimpl.UnknownFields

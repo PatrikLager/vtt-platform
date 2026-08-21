@@ -1001,11 +1001,12 @@ func (pr *Projector) canSeeSquare(now sightView, sceneID string, at *vttv1.GridP
 // self-corrects, because the SceneCreated arms build OpenDoors EMPTY and only
 // the two door arms ever write it afterwards, so a DoorOpened nobody sends is a
 // door nothing will ever open. And it never throws, because both folds treat a
-// repeat as idempotent. (Corrected 2026-08-21: this said OpenDoors was written
-// "only by the two door arms", which reads past the initialisation in
-// apply.go's and fold.ts's SceneCreated arms — the write that makes the door
-// shut in the first place.) That
-// combination is why it is found at a table rather than by CI.
+// repeat as idempotent. That combination is why it is found at a table rather
+// than by CI.
+//
+// (Corrected 2026-08-21: this said OpenDoors was written "only by the two door
+// arms", which reads past the initialisation in apply.go's and fold.ts's
+// SceneCreated arms — the write that makes the door shut in the first place.)
 //
 // VISIBLE SQUARES ONLY, which is what makes this a correction rather than a
 // leak. A door the viewer cannot see is left exactly as they last saw it — the

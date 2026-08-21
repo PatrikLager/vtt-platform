@@ -424,7 +424,13 @@ map and a 10x10 room lay out identically. **This is the T1/#19 fix.**
 **Amended 2026-08-13 (Patrik's ruling), because the sentence above was true of
 LAYOUT and false of the WIRE.** Task 4 measured it: `SceneCreated` carries one
 `TileRef` per square as protojson, so a 32x32 scene is **45.5 KiB** and a
-200x200 scene is **~1.79 MiB in a single frame**. coder/websocket's default
+200x200 scene is **~1.79 MiB in a single frame**. (Re-measured 2026-08-22:
+both figures are the SPACED protojson regime. That encoder adds a space after
+every comma in roughly half of all builds, seeded from a hash of the binary by
+`internal/detrand`, deliberately — the same scenes are **43.5 KiB** and
+**~1.71 MiB** in a compact build. Task 4's numbers are correct, not stale; they
+simply have a twin. The argument is unaffected: both are far past the 32768-byte
+default.) coder/websocket's default
 read limit is 32768 bytes, which is why loading `goblin-ambush` tore down every
 connection until the reading side raised it — a bug this arc found and fixed
 only because an implementer read "existing adventures must still compile" as

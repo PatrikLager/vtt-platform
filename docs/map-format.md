@@ -496,12 +496,22 @@ wall drawn as floorboards is still a wall.
 
 This is a limit on how much terrain one map can *send*, not on how large the
 grid may be, and the two are different numbers because `tiles` is optional.
-A scene event carries one entry per declared tile, roughly 45.5 bytes each,
-against a 200 KiB read limit on the client side. 3600 tiles lands near
-160 KiB and leaves room for the objects and placements that travel in the
-same message; past that the message never arrives at all, and the way that
-shows up is a player's connection dropping mid-session rather than an error
-anyone can read. So it is refused when the map loads instead.
+A scene event carries one entry per declared tile, against a 200 KiB read
+limit on the client side. The per-tile cost has **two correct values** —
+43.5 bytes or 45.5 — because protojson adds a space after every comma in
+roughly half of all builds, seeded from a hash of the binary on purpose. So
+3600 tiles lands near **153.6 KiB or 160.6 KiB**, and if you measure one of
+those and find this page quoting the other, the page is not wrong: measure
+again from a differently sized build. Either way it leaves room for the
+objects and placements that travel in the same message; past that the message
+never arrives at all, and the way that shows up is a player's connection
+dropping mid-session rather than an error anyone can read. So it is refused
+when the map loads instead.
+
+Those figures assume you have not overridden the art on every square. An art
+name of ordinary length costs about 16 bytes a tile more, which puts a full
+3600-tile map over the 200 KiB limit while still inside the 3600 cap — the
+cap counts tiles and the limit counts bytes, and they do not line up.
 
 **A grid larger than 60x60 is fine as long as it does not tile all of it.**
 `grid_width: 200, grid_height: 200` with no `tiles` at all costs nothing to

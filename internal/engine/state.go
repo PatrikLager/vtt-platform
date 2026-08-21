@@ -92,9 +92,9 @@ type Scene struct {
 	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles. It
 	// is Explored's opposite number in how it moves — REPLACED wholesale by each
 	// SceneSeen rather than unioned, so it shrinks as freely as it grows — and
-	// the pair is what the client needs,
-	// since terrain you remember but cannot currently see is `Explored −
-	// Visible`, which is the fog (visibility spec §6.1).
+	// the pair is what the client needs, since terrain you remember but cannot
+	// currently see is `Explored − Visible`, which is the fog (visibility spec
+	// §6.1).
 	//
 	// IT DOES NOT COME FROM Explored'S SOURCE, and the pair must not be assumed
 	// to track each other. Visible is folded from SceneSeen's own `visible`
