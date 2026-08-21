@@ -657,9 +657,14 @@ func sceneSeenFor(sc engine.Scene, squares map[string]bool) *vttv1.SceneSeen {
 	//
 	// SORTED, because `visible` is the only ordered field this function builds
 	// FROM A MAP. `objects` is repeated too, but it walks the sc.Objects slice
-	// and inherits its order, and the tiles map cannot betray Go's randomised
-	// iteration because a map has no order to betray on the wire. This can,
-	// and an unsorted walk would make two runs of one log emit different bytes.
+	// and inherits its order. The tiles MAP is stable for a different reason
+	// again, and it is worth naming precisely: not because a JSON object has no
+	// order — it plainly does — but because protojson SORTS map entries before
+	// writing them (encoding/protojson's marshalMap calls order.RangeEntries
+	// with GenericKeyOrder). That is a guarantee of the ENCODER, so it would
+	// stop holding if the encoder changed; this field's is a guarantee of this
+	// line. An unsorted walk here would make two runs of one log emit different
+	// bytes.
 	// TestTheVisibleSetIsSentInAStableOrder pins it directly rather than
 	// leaving it to the determinism property to catch by coin flip.
 	ss := &vttv1.SceneSeen{

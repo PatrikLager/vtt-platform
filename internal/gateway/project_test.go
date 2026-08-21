@@ -736,10 +736,13 @@ func TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain(t *testing.T) {
 	}
 }
 
-// TestTheVisibleSetIsSentInAStableOrder guards the property every emitting loop
-// in project.go is sorted for: `repeated string` is ORDERED on the wire, unlike
-// the maps beside it, so an unsorted walk would make two runs of one log emit
-// different bytes. TestTheSameLogProjectsTheSameStreamEveryTime would catch it
+// TestTheVisibleSetIsSentInAStableOrder guards the one field sceneSeenFor builds
+// FROM A MAP into an ordered wire field, which is what makes it the only one Go's
+// randomised iteration can reach. Not "every emitting loop is sorted" — that was
+// this test's opening sentence until 2026-08-22 and it is false: sceneSeenFor
+// also emits `repeated SceneObject objects = 3`, ordered on the wire, by walking
+// the sc.Objects SLICE, which already has an order and needs no sorter.
+// TestTheSameLogProjectsTheSameStreamEveryTime would catch an unsorted walk
 // eventually and by coin flip; this catches it directly.
 func TestTheVisibleSetIsSentInAStableOrder(t *testing.T) {
 	for i := 0; i < 20; i++ {

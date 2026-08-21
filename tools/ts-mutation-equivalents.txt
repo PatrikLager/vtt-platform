@@ -101,10 +101,19 @@
 # they are four DISTINCT triples at one location, which is exactly what keying
 # on the replacement text is for.
 #
-# Task 7's own contribution, across its landing commit and two fix rounds, is
-# the smaller half: +20 in fold.ts's sceneSeen arm and +11 in its dump, +31 in
-# view/grid.ts, +10 in view/spectator.ts, and nothing at all in wire.ts,
-# session.ts or app.ts — those three it never touched.
+# Task 7's own contribution, across its landing commit and three fix rounds,
+# measured as two hunks against 1f34407: +20 in fold.ts's sceneSeen arm
+# (@@ -212,6 +212,26 @@) and +16 in its dump (@@ -489,6 +509,22 @@), which sum
+# to fold.ts's total of +36; +31 in view/grid.ts; +10 in view/spectator.ts; and
+# nothing at all in wire.ts, session.ts or app.ts — those three it never
+# touched.
+#
+# "THE SMALLER HALF" IS TRUE OF fold.ts AND FALSE OF view/grid.ts, and an
+# earlier draft said it of everything. grid.ts is byte-identical between main
+# and 1f34407, so Task 7's +31 is the WHOLE of that file's shift; fold.ts's +36
+# sits under a further +157 that Tasks 1-6 put in. The dump figure was +11 in
+# that draft, carried forward unexamined from before the round that was supposed
+# to re-measure all of it — it had already been +16 at 15cd2c7.
 #
 # THIS HEADER'S OWN CITATIONS ARE PART OF THE RE-KEY, and round 2 found them
 # stale after round 2's edits: it re-pointed the entries and left the numbers

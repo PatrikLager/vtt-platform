@@ -1009,11 +1009,30 @@ type SceneSeen struct {
 	// REPEATED STRING RATHER THAN map<string, bool>, for two reasons. A set has
 	// no second axis, so a bool value is a slot with no meaning and one more
 	// state ("present but false") for readers to disagree about. And it is
-	// cheaper by 39.5%, measured with protojson.Marshal on a real SceneSeen
-	// carrying all 3600 squares of a 60x60: 7.67 bytes a square (27.0 KiB)
-	// against 12.67 (44.5 KiB). Go and TS both hold this concept as
-	// map[string]bool / Record<string, boolean>, so both folds turn the list
-	// into a set on arrival.
+	// cheaper — but the size of the saving depends on which BUILD you measure,
+	// and that is a fact about protojson rather than a sloppy measurement.
+	//
+	// PROTOJSON DELIBERATELY RANDOMISES ITS OUTPUT. encoding/json/encode.go's
+	// prepareNext appends a space after every comma when detrand.Bool() is true,
+	// and internal/detrand seeds that from an FNV hash of the binary itself:
+	// "the output does not change within a program, while ensuring that the
+	// output is unstable across different builds". So one binary emits
+	// {"visible":["0,0","1,0"]} and the next emits {"visible":["0,0", "1,0"]},
+	// and every per-square figure below has two honest values exactly 1.00 B
+	// apart. Measured across fourteen binaries of this repo, varying only their
+	// size: seven of each regime.
+	//
+	//	compact  7.67 B/square (27.0 KiB per 3600) vs 12.67 — 39.5% cheaper
+	//	spaced   8.67 B/square (30.5 KiB per 3600) vs 13.67 — 36.6% cheaper
+	//
+	// Quote BOTH or neither. The repo's own long-standing figure is in the
+	// spaced regime — mapdef.MaxWireTiles records "a 32x32 scene at 45.5 KiB,
+	// about 45.5 bytes a tile", and BuildSceneCreated on the real ravine returns
+	// exactly that in a spaced build and 43.5 KiB / 43.5 B a tile in a compact
+	// one.
+	//
+	// Go and TS both hold this concept as map[string]bool /
+	// Record<string, boolean>, so both folds turn the list into a set on arrival.
 	Visible       []string `protobuf:"bytes,4,rep,name=visible,proto3" json:"visible,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

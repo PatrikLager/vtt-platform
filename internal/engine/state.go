@@ -89,10 +89,10 @@ type Scene struct {
 	// task-3-report.md).
 	Explored map[string]bool `json:",omitempty"`
 
-	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles.
-	// It is Explored's opposite number in how it
-	// moves — REPLACED wholesale by each SceneSeen rather than unioned, so it
-	// shrinks as freely as it grows — and the pair is what the client needs,
+	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles. It
+	// is Explored's opposite number in how it moves — REPLACED wholesale by each
+	// SceneSeen rather than unioned, so it shrinks as freely as it grows — and
+	// the pair is what the client needs,
 	// since terrain you remember but cannot currently see is `Explored −
 	// Visible`, which is the fog (visibility spec §6.1).
 	//

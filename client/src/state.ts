@@ -102,9 +102,8 @@ export interface Scene {
    * token. A token is a free object and needs no ground under it.
    *
    * The pair is what the board needs and neither half gives alone —
-   * `Explored − Visible` is ground you
-   * remember and cannot currently see, which is the fog (visibility spec
-   * §6.1).
+   * `Explored − Visible` is ground you remember and cannot currently see,
+   * which is the fog (visibility spec §6.1).
    *
    * UNDEFINED AND `{}` MEAN DIFFERENT THINGS, which is why sceneCreated
    * leaves this absent while it sets Explored to `{}`. Undefined is "no
