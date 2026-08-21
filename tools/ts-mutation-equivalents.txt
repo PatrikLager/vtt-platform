@@ -41,39 +41,73 @@
 # longer survives, because it was killed or the line moved — is a hard error,
 # since it would otherwise pre-approve whatever mutant lands there next.
 #
-# RE-KEYED WHOLESALE 2026-08-21 (visibility Task 7), and it was a re-derivation
-# rather than an offset, because these were already pointing at the wrong lines
-# before this task touched anything — and, measured, before this BRANCH did.
-# All fourteen fold.ts entries (eleven distinct lines) and the one
-# spectator.ts entry named a line that does not hold the code its own reason
-# describes, on main as well as at 1f34407:
+# RE-KEYED 2026-08-21 (visibility Task 7), in two passes, and it was a
+# re-derivation rather than an offset. 28 of the 64 keys moved; 36 were already
+# right. The drift has two separate causes and the earlier drafts of this note
+# ran them together: SOME of these keys were already wrong on main (fold.ts's
+# eleven lines, view/spectator.ts's one, app.ts's two), while OTHERS were
+# correct on main and were moved by this branch (view/grid.ts, wire.ts,
+# session.ts). Neither group is "all of them".
 #
-#   entry says          on main it is at   description
-#   fold.ts 37          40                 the eventsRetracted guard
-#   fold.ts 138         192                conditionRemoved's `?? []`
-#   fold.ts 208-212     262-266            case "attackRolled" and neighbours
-#   fold.ts 350         446                actorJSON's actorId guard
-#   spectator.ts 255    389                the sceneId `?? ""` fallback
+# WHAT THE FIRST PASS COVERED, stated because the first draft of this note said
+# "wholesale" and that is a completeness claim it did not have. It swept only
+# the files Task 7 edited: all fourteen fold.ts entries (eleven distinct lines),
+# the seven in view/grid.ts (two lines), and the one in view/spectator.ts. It
+# left six stale
+# keys standing in files it never opened, which review found:
 #
-# So the deltas are not uniform (3 to 134 lines on main alone: fold.ts 37->40
-# at one end, spectator.ts 255->389 at the other), which is exactly
-# why this file's own procedure says to read the new location rather than
-# assume the shift. Nothing on this branch caused it; the branch merely added
-# to it.
+#   entry said           actually at   note
+#   wire.ts 175:13       292:13        moved by this branch; a COMMENT line
+#   wire.ts 199:7        316:7         moved by this branch
+#   app.ts 64:32         66:32         stale on MAIN; a COMMENT line
+#   app.ts 127:32        129:32        stale on MAIN; a COMMENT line
+#   session.ts 66:12     67:12         moved by this branch; a COMMENT line
+#   session.ts 67:12     68:12         moved by this branch; landed on the
+#                                      SIBLING comparison, right shape wrong
+#                                      operand — the worst of the six, because
+#                                      it looks plausible at the new location
 #
-# So each entry below was RE-FOUND by searching for the expression its reason
-# names, not by adding a delta, and every recorded COLUMN was then read at the
-# new location and confirmed to start the described expression. Task 7's own
-# edits are folded into the same numbers, and they are much the smaller half:
-# +11 in fold.ts's sceneSeen arm and +11 in its dump, +23 in view/grid.ts, +10
-# in view/spectator.ts. The one entry Task 7 did NOT move is the clearest
-# illustration of the rest — fold.ts's `eventsRetracted` guard was at line 40
-# at 1f34407 and is at line 40 now, while its entry said 37.
+# Four of the six named a line Stryker generates no mutant on at all. A key that
+# points at a comment is not a near miss; it is an adjudication for a mutant
+# that does not exist, beside a real survivor nobody has excused.
+#
+# THE SECOND PASS IS MECHANICAL AND COVERS EVERY ENTRY. All 64 were parsed and
+# each one's file:line:col was read out of the working tree and compared against
+# the expression its own replacement text names. It re-pointed the six above,
+# plus the two fold.ts keys its OWN edit to that file had just moved.
+#
+# WRITE THAT CHECK CAREFULLY IF YOU RE-RUN IT. The first version here had two
+# holes and reported "0 suspect" over a key that had drifted three lines onto a
+# `/**` line: it tested `startswith("//")`, which a `/**` doc comment does not
+# match, and it had no branch for the mutator on that entry so it silently
+# skipped it. A checker that cannot fail is worse than no checker, and this one
+# said everything was fine twice. Test it against a key you have deliberately
+# broken before believing it.
+#
+# THE DELTAS ARE NOT UNIFORM, which is exactly why this file's own procedure
+# says to READ the new location rather than assume the shift. Measured by
+# comparing this file against main entry by entry, in order: the 28 moved keys
+# span +1 (session.ts 66 -> 67) to +197 (fold.ts 350 -> 547), and every one of
+# the 64 kept its COLUMN — only lines moved. Anyone repeating that comparison
+# should pair the entries POSITIONALLY, not by (file, mutator, replacement): the
+# file contains repeated triples on purpose, twelve of them — for instance
+# app.ts's two `StringLiteral
+# "Stryker was here!"`, view/grid.ts's two `StringLiteral ""` (121:45 and
+# 121:57) and its two `EqualityOperator a.tokenId <= b.tokenId` (131:32 and
+# 131:61) — and a dict keyed that way silently drops them and reports 22 instead
+# of 28. That happened here. NOTE the four entries at 131:61 are NOT an example:
+# they are four DISTINCT triples at one location, which is exactly what keying
+# on the replacement text is for.
+#
+# Task 7's own contribution is the smaller half: +11 in fold.ts's sceneSeen arm
+# and +11 in its dump, +23 in view/grid.ts, +10 in view/spectator.ts, and
+# nothing at all in wire.ts, session.ts or app.ts — those three it never
+# touched.
 #
 # UNVERIFIED BY THE GATE, and that is stated rather than glossed: check:
-# ts-mutation skips on macOS (kernel bug FB21686886, see Taskfile.yml), so
-# these keys were derived by reading the source, not by watching Stryker agree.
-# The first Linux run is what confirms or corrects them.
+# ts-mutation skips on macOS (kernel bug FB21686886, see Taskfile.yml), so these
+# keys were derived by reading the source, not by watching Stryker agree. The
+# first Linux run is what confirms or corrects them.
 
 client/src/undo.ts 39:26 EqualityOperator e.sequence >= best
     `e.sequence > best` -> `>=` in lastUndoable. The two differ only when e.sequence equals best, and in that case the mutant's extra assignment writes the value best already holds. The guard `best === null ||` short-circuits before this operand on the first iteration, so the null case never reaches it. No observable: not the return value, not the number of iterations, not identity (BigInt is a value type).
@@ -125,10 +159,10 @@ client/src/fold.ts 336:5 ConditionalExpression default:
 client/src/fold.ts 457:34 EqualityOperator Number(e.sequence) >= head
     `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".)
 
-client/src/fold.ts 544:7 ConditionalExpression true
+client/src/fold.ts 547:7 ConditionalExpression true
     `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 137 is the only writer, and line 135 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true.
 
-client/src/fold.ts 544:21 StringLiteral "Stryker was here!"
+client/src/fold.ts 547:21 StringLiteral "Stryker was here!"
     Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.
 
 # --- client/src/view/dm.ts --------------------------------------------------
@@ -260,10 +294,10 @@ client/src/view/grid.ts 131:61 EqualityOperator a.tokenId <= b.tokenId
 
 # --- client/src/wire.ts -----------------------------------------------------
 
-client/src/wire.ts 175:13 EqualityOperator env.sequence >= this.lastSeq
+client/src/wire.ts 292:13 EqualityOperator env.sequence >= this.lastSeq
     `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. Equality makes the assignment write the value lastSeq already holds. Same shape as the two undo.ts entries above, and lastSeq's only consumer is reconnect's resume cursor, which sees an unchanged number either way.
 
-client/src/wire.ts 199:7 ConditionalExpression default:
+client/src/wire.ts 316:7 ConditionalExpression default:
     Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
 
 # --- client/src/view/feed.ts ------------------------------------------------
@@ -344,15 +378,15 @@ client/src/view/feed.ts 106:43 EqualityOperator a.seq <= b.seq
 # mutants were unobservable, so claiming equivalence would have been a lie.
 # It moved to client/src/main.ts, which is excluded from `mutate`.
 
-client/src/app.ts 64:32 StringLiteral "Stryker was here!"
+client/src/app.ts 66:32 StringLiteral "Stryker was here!"
     `history.replaceState(null, "", location.pathname)` on the INVITE path — the TITLE argument. The HTML specification says user agents must ignore it, and none implement it; the call is made for its third argument, which strips the bearer token from the address bar. No value passed here reaches the DOM, the history entry, or anything a test or a user can read. (Was keyed 49:30 until 2026-08-09; the column moved when boot's token handling gained an `if`.)
 
-client/src/app.ts 127:32 StringLiteral "Stryker was here!"
+client/src/app.ts 129:32 StringLiteral "Stryker was here!"
     The SAME argument at the join path's call, which strips the join secret rather than a token. Two entries rather than one covering both, deliberately: the file header's rule is that an equivalence claim is about a specific call site, and these two strip different credentials for different reasons even though the argument is ignored identically.
 
-client/src/session.ts 66:12 EqualityOperator a.participantId <= b.participantId
+client/src/session.ts 67:12 EqualityOperator a.participantId <= b.participantId
     Tie-break on participant id, reached only when two participants share a display name. `<` -> `<=` differs ONLY when the two ids are equal, and they cannot be: participantId is the KEY of the `present` map (session.ts, `this.present.set(p.participantId, ...)`), so two distinct entries never carry the same one, and Array.prototype.sort never compares an element with itself. The premise is stronger than the equivalent adjudications on player.ts, which depend on uniqueness established in another file: here the key and the field are assigned together, four lines apart, in this file.
-client/src/session.ts 67:12 EqualityOperator a.displayName <= b.displayName
+client/src/session.ts 68:12 EqualityOperator a.displayName <= b.displayName
     Display-name comparison, reached ONLY on the else branch of `a.displayName === b.displayName` — so by construction the two names differ, and `<` and `<=` agree on every input that reaches it. Not a claim about names being unique (they are not, which is why the tie-break above exists); a claim about which branch this expression lives on.
 
 client/src/view/dm.ts 342:62 EqualityOperator x.actorId <= y.actorId

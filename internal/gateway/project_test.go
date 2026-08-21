@@ -482,6 +482,184 @@ func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
 	}
 }
 
+// twoRoomsMissing is twoRooms with ONE square's terrain removed — a legal
+// scene, since tiles are optional per square (Patrik's ruling 2026-08-13) and
+// nothing in the fold requires a grid to be fully declared.
+func twoRoomsMissing(sq string) *engine.State {
+	tiles := twoRoomsTiles()
+	delete(tiles, sq)
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: tiles})
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	return st
+}
+
+// TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet PINS AN INFERENCE
+// THE WIRE FORCES, so that changing it is a decision rather than an accident.
+//
+// SceneSeen has one place to put squares — `tiles` — so the only current-sight
+// signal it can carry is "here is the terrain you can see". sceneSeenFor
+// therefore skips a visible square that declares no Tile: there is nothing to
+// send for it. Since Task 7 the client derives Scene.Visible from exactly those
+// keys, so "visible" on the client means "visible AND declares terrain".
+//
+// FOR EXPLORED THAT INFERENCE WAS HARMLESS. Explored has carried it since Task
+// 3, and a square with no Tile produces no DrawOp either (scene-plan.ts's
+// planTiles skips it), so not remembering it changed nothing anyone could see.
+// Task 7 is where it starts governing what is DRAWN, and the consequence is no
+// longer "a square goes unshaded" but "a creature standing there is not drawn"
+// — see the client half of this pin in client/test/visibility.test.ts.
+//
+// A WHOLLY tile-less scene fails LOUDLY (nothing renders, so nobody ships it).
+// A single missing square fails SILENTLY, which is why the hole is the case
+// worth pinning: MEASURED here, the complete room reports 8 squares and the
+// holed one reports 7, with the hero's own square the one that vanishes.
+//
+// NOT AN ASSERTION THAT THIS IS RIGHT. It is what the wire does today, awaiting
+// Patrik's ruling; whichever way that goes, this test is what makes the change
+// deliberate. Neither shipped adventure can reach it — cellar-rats declares 36
+// tiles for 6x6 and goblin-ambush 1024 for 32x32 — so nothing in the product
+// depends on the answer yet.
+func TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet(t *testing.T) {
+	full := sceneSeenIn(firstPlace(gateway.NewProjector(player()), twoRooms()), "s")
+	if n := len(full.GetTiles()); n != 8 {
+		t.Fatalf("the control fails: a complete room must report 8 visible squares, got %d", n)
+	}
+	if full.GetTiles()[key(1, 1)] == nil {
+		t.Fatal("the control fails: the hero's own square must be in the complete room's set")
+	}
+
+	holed := sceneSeenIn(firstPlace(gateway.NewProjector(player()), twoRoomsMissing(key(1, 1))), "s")
+	if n := len(holed.GetTiles()); n != 7 {
+		t.Errorf("removing one square's terrain must remove exactly it, got %d squares", n)
+	}
+	if holed.GetTiles()[key(1, 1)] != nil {
+		t.Error("a square with no Tile has nothing to send, so it cannot be in the set")
+	}
+	// The rest of the room is untouched, which is what makes this SILENT: the
+	// board still renders, and only the one square is missing from it.
+	if holed.GetTiles()[key(2, 1)] == nil {
+		t.Error("every square that DOES declare terrain must still be reported")
+	}
+}
+
+// TestASceneThatComesBackIsUsableAgain pins what forgetting a vanished scene
+// actually has to mean, which is more than dropping its visible set.
+//
+// A scene id is CALLER-SUPPLIED (CreateScene.scene_id, passed straight through
+// convert.go), so re-creating one under the same id after an undo removed it is
+// ordinary, not exotic: the "scene %q already exists" check has nothing left to
+// collide with. When that happens the viewer's own fold has dropped the scene
+// too — EventsRetracted is forwarded to players — so everything the projection
+// then says about it lands on a scene they do not have. Both folds answer that
+// with a hard error, and client/src/session.ts re-folds its whole log on every
+// event, so the throw recurs forever.
+//
+// THE ASSERTION IS THAT THE BATCH FOLDS, not that some particular envelope
+// appears. That is the only thing the viewer cares about and the only thing
+// that cannot be satisfied by a stub: measured before the fix, the returning
+// scene produced a TokenPlaced and a SceneSeen and BOTH were unfoldable —
+// "token placed in unknown scene" and "scene seen for unknown scene" — because
+// pr.scenes still marked the scene introduced, so no introduction was re-sent.
+func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
+	pr := gateway.NewProjector(player())
+	if lit := sceneSeenIn(firstPlace(pr, twoRooms()), "s"); lit == nil {
+		t.Fatal("the control fails: the projector must remember this room first")
+	}
+
+	// The world after an undo that took the scene and the tokens standing in it
+	// but left the actors — the shape a retraction has when the actors were
+	// created before the scene, which is the ordinary order. Isolating it that
+	// way keeps this test about the SCENE: pr.actors deliberately never forgets
+	// (see the Projector doc comment), so an undo reaching the actors as well is
+	// a separate gap one layer up, and not what this pins.
+	gone := engine.NewState()
+	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
+	pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+
+	// The same room again, which is what a re-created scene folds to.
+	out := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "and rebuilt"}), twoRooms())
+
+	// A viewer who dropped the scene when they folded the retraction, and who
+	// still holds the actors it did not reach.
+	viewer := gone.Snapshot()
+	for _, e := range out {
+		if err := engine.Apply(viewer, e); err != nil {
+			t.Fatalf("a returning scene must arrive foldable, got %v", err)
+		}
+	}
+	if _, ok := viewer.Scenes["s"]; !ok {
+		t.Fatal("the viewer must end up holding the scene they are standing in again")
+	}
+	if n := len(viewer.Scenes["s"].Visible); n != 8 {
+		t.Errorf("and told the whole of what they can see of it, got %d squares", n)
+	}
+}
+
+// TestASceneThatComesBackBringsItsOpenDoorsBack pins the `doors` half of the
+// forgetting loop, which the foldability test above cannot: dropping only
+// `delete(pr.doors, id)` leaves every other test in this package green.
+//
+// It is the same defect TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen
+// guards for a first introduction, reached the other way round. A door's open
+// state travels in neither the redacted SceneCreated nor SceneSeen, so
+// doorTransitions is the only thing that can correct it — and it only emits
+// when the world disagrees with what the viewer is BELIEVED to think. Leave
+// that belief behind after the scene vanishes and a returning scene whose door
+// is still open matches it exactly, so nothing is emitted and the viewer is
+// re-introduced to a room with a door their board draws shut. It never
+// self-corrects, and the re-introduction is what guarantees that rather than
+// merely failing to help: the redacted SceneCreated rebuilds OpenDoors EMPTY in
+// both folds (apply.go's and fold.ts's SceneCreated arms), and after that only
+// the two door arms ever write it — so a DoorOpened that is never sent is a
+// door that stays shut for the rest of the session.
+func TestASceneThatComesBackBringsItsOpenDoorsBack(t *testing.T) {
+	open := func() *engine.State {
+		st := twoRooms()
+		mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+		return st
+	}
+	pr := gateway.NewProjector(player())
+	var believed bool
+	for _, e := range firstPlace(pr, open()) {
+		if e.GetDoorOpened() != nil {
+			believed = true
+		}
+	}
+	if !believed {
+		t.Fatal("the control fails: the viewer must be told the door is open the first time")
+	}
+
+	gone := engine.NewState()
+	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
+	pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+
+	var again bool
+	for _, e := range pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "and rebuilt"}), open()) {
+		if d := e.GetDoorOpened(); d != nil && d.GetSceneId() == "s" {
+			again = true
+		}
+	}
+	if !again {
+		t.Error("a scene the viewer is being introduced to again must arrive with its " +
+			"doors open, not left shut by a belief that outlived the scene")
+	}
+}
+
 func TestASpectatorRidesTheShoulderTheyPerchOn(t *testing.T) {
 	// Spec §3.1.1: "like a bird hopping from one shoulder to another". A
 	// spectator perched on the hero sees the hero's room and, once the door

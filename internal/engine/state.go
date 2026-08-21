@@ -89,12 +89,26 @@ type Scene struct {
 	// task-3-report.md).
 	Explored map[string]bool `json:",omitempty"`
 
-	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles,
-	// and it is Explored's opposite number in every respect: REPLACED wholesale
-	// by each SceneSeen rather than unioned, so it shrinks as freely as it
-	// grows. The pair is what the client needs and neither half supplies alone —
-	// terrain you remember but cannot currently see is `Explored − Visible`, and
-	// that difference is the fog (visibility spec §6.1).
+	// Visible is the squares this VIEWER can see right now THAT ALSO DECLARE
+	// TERRAIN, keyed like Tiles. It is Explored's opposite number in how it
+	// moves — REPLACED wholesale by each SceneSeen rather than unioned, so it
+	// shrinks as freely as it grows — and the pair is what the client needs,
+	// since terrain you remember but cannot currently see is `Explored −
+	// Visible`, which is the fog (visibility spec §6.1).
+	//
+	// THE "THAT ALSO DECLARE TERRAIN" IS NOT PEDANTRY, and this doc comment
+	// said plain "can see right now" until review caught it. SceneSeen has one
+	// place to put squares — its `tiles` map — so a visible square with no Tile
+	// has nothing to send and internal/gateway's sceneSeenFor skips it. This
+	// field is built from those keys, so it cannot distinguish "you cannot see
+	// that square" from "that square declares no terrain". Explored has carried
+	// the same inference since Task 3 and it was harmless there (a square with
+	// no Tile draws nothing either way); Task 7 made it govern what is DRAWN,
+	// so the consequence is now a creature that vanishes rather than a square
+	// that goes unshaded. Pinned in both languages by
+	// TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet
+	// (internal/gateway) and its client half in client/test/visibility.test.ts,
+	// so a ruling either way is a deliberate change.
 	//
 	// NIL AND EMPTY MEAN DIFFERENT THINGS, which is why this field is never
 	// initialised by the SceneCreated arm the way OpenDoors is. Nil is "no
@@ -108,8 +122,22 @@ type Scene struct {
 	// `json:",omitempty"` for exactly the reason Explored's carries it, and with
 	// the same consequence: nil and empty both vanish from the dump, so the
 	// goldens are untouched and the nil/empty distinction above lives in memory
-	// only. The keystone (spec §4.3) compares dumps, so what it holds the two
-	// folds to is the populated case.
+	// only.
+	//
+	// WHAT THE KEYSTONE ACTUALLY HOLDS THIS TO IS ABSENCE, not agreement on a
+	// value, and the first draft of this comment said the opposite. The
+	// keystone (spec §4.3) diffs dumps over scenarios/goldens, and
+	// `grep -ric sceneseen scenarios/` returns zero on every file — no golden
+	// contains a SceneSeen, so in all seven this field is NIL, never empty. What
+	// that corpus pins is only that neither fold emits the key for the NIL case
+	// (emitting `Visible: {}` unconditionally fails all seven goldens, in both
+	// languages; that was run). It says nothing about the EMPTY case: a fold
+	// that emitted the key whenever the map is non-nil passes every golden, and
+	// that was run too. Using "empty" for the nil case here would be the exact
+	// conflation the paragraph above warns against.
+	// The two folds are mirrors because they are written as mirrors and each
+	// language pins its own arm — internal/engine/visibility_fold_test.go and
+	// client/test/visibility.test.ts — not because anything compares them here.
 	Visible map[string]bool `json:",omitempty"`
 }
 

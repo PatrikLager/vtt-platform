@@ -257,6 +257,60 @@ test("a token on remembered-but-unseen ground produces NO disc at all", () => {
   expect(ids).toEqual(["t-hero"]);
 });
 
+test("a token on a LIT square that declares no terrain silently loses its disc", () => {
+  // THE CLIENT MIRROR of internal/gateway's
+  // TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet: a 3x3 room that
+  // declares floor on EVERY square but 1,1, folded in the order and shape the
+  // projection actually emits — the redacted sceneCreated first, then the
+  // actors, then the tokens, and sceneSeen LAST (it is the final loop in
+  // transitions). The sceneSeen below therefore carries all eight squares that
+  // declare terrain and omits only 1,1, which is exactly the 8 -> 7 the Go test
+  // measures. The hero stands on the one square that cannot be reported.
+  //
+  // WHAT THIS TEST CAN AND CANNOT OBSERVE, because the previous version of it
+  // claimed more than it had. It is a mirror in SHAPE, not a check on the
+  // server: the sceneSeen is written here, so no change to sceneSeenFor can
+  // move it — the gateway test is the pin for what the projection emits. What
+  // this pins is the half that lives on this side: that the fold turns such a
+  // message into a hole in all three maps, and that a token standing in that
+  // hole draws nothing.
+  //
+  // PINNING TODAY'S BEHAVIOUR, not endorsing it — the ruling is Patrik's, and
+  // this is what makes either answer a deliberate change. Neither shipped
+  // adventure can reach it: both declare a tile for every square.
+  const lit: Record<string, unknown> = {};
+  for (let y = 0; y < 3; y++) {
+    for (let x = 0; x < 3; x++) {
+      if (x === 1 && y === 1) continue; // the square with no terrain to send
+      lit[`${x},${y}`] = floor;
+    }
+  }
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "Room", gridWidth: 3, gridHeight: 3 } }),
+    env(3, { actorAdded: { actor: { actorId: "hero", name: "Hero" } } }),
+    env(4, { actorAdded: { actor: { actorId: "goblin", name: "Goblin" } } }),
+    env(5, { tokenPlaced: { tokenId: "t-hero", sceneId: "s1", actorId: "hero", position: { x: 1, y: 1 } } }),
+    env(6, { tokenPlaced: { tokenId: "t-gob", sceneId: "s1", actorId: "goblin", position: { x: 2, y: 1 } } }),
+    env(7, { sceneSeen: { sceneId: "s1", tiles: lit } }),
+  ]);
+  const sc = st.Scenes["s1"]!;
+
+  // Eight of nine squares, and the hero's own is in NONE of the three maps —
+  // which is the inference itself, and why this client cannot tell "you cannot
+  // see that square" from "that square declares no terrain".
+  expect(Object.keys(sc.Visible!)).toHaveLength(8);
+  expect(sc.Visible!["1,1"]).toBeUndefined();
+  expect(sc.Explored!["1,1"]).toBeUndefined();
+  expect(sc.Tiles!["1,1"]).toBeUndefined();
+  // The control: the square beside it was reported and is whole.
+  expect(sc.Visible!["2,1"]).toBe(true);
+
+  // So the goblin at 2,1 IS drawn — the board is working, seven eighths of it
+  // lit — and the hero at 1,1, standing in plain sight, is not.
+  expect(tokensOnScene(st, "s1", sc.Visible).map((d) => d.tokenId)).toEqual(["t-gob"]);
+});
+
 test("a seat that can currently see nothing draws no token, including its own", () => {
   const st = playerBoard();
   expect(tokensOnScene(st, "s1", {})).toEqual([]);

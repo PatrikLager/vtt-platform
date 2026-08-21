@@ -503,10 +503,15 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       // Visible mirrors Go's `json:",omitempty"` on Scene.Visible exactly as
       // Explored above mirrors its own, and the omission collapses the
       // undefined/`{}` distinction the FIELD carries — deliberately, because
-      // Go's tag collapses nil and empty the same way. The dump is what the
-      // cross-language keystone (spec §4.3) diffs, so what it holds the two
-      // folds to is the populated case; the distinction itself is a live-state
-      // matter and is pinned separately, in both languages.
+      // Go's tag collapses nil and empty the same way. What the keystone (spec
+      // §4.3) holds this to is ABSENCE: no golden contains a sceneSeen, so in
+      // all seven this field is UNDEFINED, never `{}`. The corpus pins only
+      // that neither fold emits the key for THAT case — emitting it
+      // unconditionally fails all seven goldens, which was run — and says
+      // nothing about the empty one, since a version emitting the key whenever
+      // Visible is defined also passes all seven. Not a cross-language check on
+      // the contents either way; the distinction is a live-state matter, pinned
+      // separately in each language.
       const visible = s.Visible ?? {};
       if (Object.keys(visible).length > 0) {
         scene.Visible = sortedMap(visible, (v) => v);

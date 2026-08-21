@@ -83,10 +83,22 @@ export interface Scene {
    */
   Explored?: Record<string, boolean>;
   /**
-   * Visible is the squares this viewer can see RIGHT NOW, keyed like Tiles,
-   * and Explored's opposite number: REPLACED wholesale by each sceneSeen
-   * rather than unioned, so it shrinks as freely as it grows. Mirrors
-   * internal/engine's Scene.Visible (state.go). The pair is what the board
+   * Visible is the squares this viewer can see right now THAT ALSO DECLARE
+   * TERRAIN, keyed like Tiles, and Explored's opposite number in how it moves:
+   * REPLACED wholesale by each sceneSeen rather than unioned, so it shrinks as
+   * freely as it grows. Mirrors internal/engine's Scene.Visible (state.go),
+   * that qualification included — it is built from sceneSeen's TILE KEYS, and
+   * the projection cannot report a visible square that declares no Tile
+   * because there is nothing to put in the map for it. So a hole in a room's
+   * terrain reads here as a hole in sight, and a creature standing on it is
+   * not drawn. TWO PINS, because the two halves live on different sides: what
+   * the projection can report is internal/gateway's
+   * TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet, and what this
+   * client then does with it is "a token on a LIT square that declares no
+   * terrain silently loses its disc" in client/test/visibility.test.ts. The
+   * second cannot observe the first — it writes its own sceneSeen.
+   *
+   * The pair is what the board
    * needs and neither half gives alone — `Explored − Visible` is ground you
    * remember and cannot currently see, which is the fog (visibility spec
    * §6.1).

@@ -461,6 +461,45 @@ func (pr *Projector) eyes(st *engine.State) []string {
 func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
+	// MEMORY CAN OUTLIVE THE WORLD, and forgetting has to be total. An undo
+	// covering a SceneCreated removes that scene from the state seat.receive
+	// re-folds (campaign.FoldPrefix skips retracted ranges) while these maps
+	// still hold it. Two things then go wrong, and dropping only `seen` fixes
+	// neither. st.Scenes is a VALUE map, so anything reported about the scene
+	// names the ZERO Scene and puts an empty scene id on the wire. And a scene
+	// id is CALLER-SUPPLIED, so the same id can be created again — at which
+	// point `scenes` still says "introduced", no introduction is re-sent, and
+	// every envelope about it lands on a scene the viewer's own fold dropped
+	// when it folded the retraction. Measured before this loop existed: the
+	// returning scene produced a TokenPlaced and a SceneSeen, and BOTH were
+	// rejected ("token placed in unknown scene", "scene seen for unknown
+	// scene") — spec §8's "the strict fold throws, taking the whole client down
+	// rather than merely showing too much", which is permanent here because
+	// client/src/session.ts re-folds its whole log on every event.
+	//
+	// POSITION IS FOR READING, NOT FOR CORRECTNESS, and that was measured
+	// rather than assumed: moving this loop below the introduction loop leaves
+	// the whole gateway suite green. The two cannot both fire for one scene in
+	// a single call, because they read the SAME st — a scene is either in it,
+	// in which case nothing here forgets it, or absent, in which case look()
+	// gave it no squares and the introduction loop never reaches it. It sits
+	// first because "forget what is gone, then introduce what is new" is the
+	// order a reader needs, not because anything depends on it.
+	//
+	// `actors` is deliberately NOT touched. Actors are not scene-scoped and
+	// pr.actors never forgets by design (see the Projector doc comment). An undo
+	// that reaches the ActorAdded itself leaves that map stale in the same way
+	// this loop fixes for scenes, and no test here covers it — a separate gap,
+	// recorded rather than quietly widened into by this loop.
+	for _, id := range sortedSet(pr.scenes) {
+		if _, exists := st.Scenes[id]; exists {
+			continue
+		}
+		delete(pr.scenes, id)
+		delete(pr.seen, id)
+		delete(pr.doors, id)
+	}
+
 	for _, id := range sortedSceneIDs(now.squares) {
 		if pr.scenes[id] {
 			continue
@@ -565,22 +604,13 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	// Walking the union keeps the scene in play for exactly one more step, and
 	// sameSet reports the difference between the last non-empty set and nothing.
 	for _, id := range sortedSceneIDsUnion(pr.seen, now.squares) {
-		sc, exists := st.Scenes[id]
-		if !exists {
-			// MEMORY CAN OUTLIVE THE WORLD, which the old walk over now.squares
-			// alone could not reach: every id there came from a successful
-			// st.Scenes lookup in look(). pr.seen has no such guarantee — an
-			// undo covering a SceneCreated removes the scene from the state
-			// seat.receive re-folds (campaign.FoldPrefix skips retracted
-			// ranges) while this map still holds its id. st.Scenes is a VALUE
-			// map, so reporting it would name the ZERO Scene, and a SceneSeen
-			// with an empty scene id is rejected by both folds and freezes the
-			// viewer forever. Naming it correctly would fare no better: the
-			// retraction reached this viewer too, so their fold has no such
-			// scene either. Forget it and say nothing.
-			delete(pr.seen, id)
-			continue
-		}
+		// st.Scenes[id] IS PRESENT for every id this walk can produce, and the
+		// forgetting loop at the top of this function is what guarantees it:
+		// now.squares only holds scenes look() found in st, and pr.seen has just
+		// had every scene the world lost removed from it. A plain lookup rather
+		// than a guarded one, because a guard here would be a branch no test
+		// could reach.
+		sc := st.Scenes[id]
 		lit, inSight := now.squares[id]
 		if sameSet(pr.seen[id], lit) {
 			continue
@@ -944,8 +974,13 @@ func (pr *Projector) canSeeSquare(now sightView, sceneID string, at *vttv1.GridP
 // neither. Without this, every door worked before a seat had eyes — every door
 // in the onboarding gap between logging in and being assigned a character —
 // stays shut on that player's board for the rest of the session. It never
-// self-corrects, because OpenDoors is written only by the two door arms, and it
-// never throws, because both folds treat a repeat as idempotent. That
+// self-corrects, because the SceneCreated arms build OpenDoors EMPTY and only
+// the two door arms ever write it afterwards, so a DoorOpened nobody sends is a
+// door nothing will ever open. And it never throws, because both folds treat a
+// repeat as idempotent. (Corrected 2026-08-21: this said OpenDoors was written
+// "only by the two door arms", which reads past the initialisation in
+// apply.go's and fold.ts's SceneCreated arms — the write that makes the door
+// shut in the first place.) That
 // combination is why it is found at a table rather than by CI.
 //
 // VISIBLE SQUARES ONLY, which is what makes this a correction rather than a
