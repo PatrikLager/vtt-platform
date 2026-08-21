@@ -95,20 +95,33 @@ func TestAPerchIsNotFilteredByTheResumeCursor(t *testing.T) {
 
 // TestARapidHopIsCoalescedToTheShoulderItEndedOn pins perchBox's latest-wins
 // slot, which is what keeps a hopping spectator from taxing the whole table
-// (forty queued hops timed a DM's own command out; see perchBox).
+// (forty hops over a blocking handoff timed a DM's own command out 12 runs in
+// 12; see perchBox for that measurement and for what coalescing costs).
 //
-// Safe because transitions is a DIFF against what the viewer has already been
-// shown, so arriving directly at the last shoulder emits what passing through
-// every intermediate one would have converged on.
+// IT ENDS SOMEWHERE THE BURST DID NOT START, and that is the design of the
+// sequence rather than an incidental. It ran hero → goblin → hero and required
+// "hero" until review, which a FIRST-WINS box passes identically — measured, by
+// injecting `if !b.full { b.shoulder, b.full = actorID, true }` into set and
+// watching this test and the whole package stay green. A first-wins box parks a
+// spectator on the shoulder they hopped AWAY from, so the direction that matters
+// had nothing pinning it. Ending on a value that is neither the first set nor
+// the second refuses first-wins and "keeps the second" alike.
+//
+// THE LAST SET IS THE EMPTY SHOULDER on purpose: un-perching travels through
+// this slot as a VALUE, and `full` is the only thing that says the slot is
+// occupied. A box that read "" as "nothing here" would strand a bird trying to
+// leave, and the ok below is what catches that.
 func TestARapidHopIsCoalescedToTheShoulderItEndedOn(t *testing.T) {
 	b := newPerchBox()
 	b.set("hero")
 	b.set("goblin")
 	b.set("hero")
+	b.set("") // and off again, between shoulders
 
 	got, ok := b.take()
-	if !ok || got != "hero" {
-		t.Fatalf("the pump must see the shoulder the spectator ended on, got %q (ok=%v)", got, ok)
+	if !ok || got != "" {
+		t.Fatalf("the pump must see the shoulder the spectator ended on — here, none at all: "+
+			"got %q (ok=%v)", got, ok)
 	}
 	// And the slot is empty afterwards: a second wake-up with nothing new in it
 	// must not re-apply the last shoulder.
@@ -181,6 +194,155 @@ func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 	if len(hidden) != 1 || hidden[0] != "t-hero" {
 		t.Fatalf("the hero's own token must leave a board with no eyes on it, got %v", hidden)
 	}
+}
+
+// TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt is the premise
+// perchBox's whole design rests on, and until this test nothing held it.
+//
+// Coalescing a burst of hops to the one it ended on DROPS FRAMES — measured, and
+// written up at perchBox: the rooms passed through never reach the board. That
+// is affordable for exactly one reason, which is that nothing dropped is lost.
+// reperch computes a diff against MEMORY and current sight, and it keeps no
+// record of which shoulders it has been asked for, so a shoulder a burst flew
+// past is served in full the moment somebody asks for it again.
+//
+// EVERY ASSERTION BELOW WAS INJECTED AGAINST, one fault each, all four
+// realistic rather than arithmetic — this test was written after the code it
+// guards, so nothing in it is trusted for looking reasonable:
+//
+//   - "only the room it ended in" fails when reperch hands the new eyes the
+//     whole scene list (`for id := range st.Scenes` folded into look's squares);
+//     it reports r-a.
+//   - "must be shown its room" fails when the projector's memory is
+//     fast-forwarded over every scene in st inside transitions — r-c is marked
+//     introduced during catch-up, before anybody perches, so the burst's own
+//     room never arrives either.
+//   - "must introduce its room" fails when reperch marks every scene introduced
+//     AFTER computing its frames ("we coalesced past those rooms, so count them
+//     as shown"). That is the dangerous form of this optimisation, and the one
+//     the empty assertion above cannot see: the burst's own room still arrives,
+//     the board is silently wrong only for the rooms flown past, and hopping
+//     back cannot repair it.
+//   - "the whole of the room" fails when introducing a room is taken to have
+//     described it (`pr.seen[id] = now.squares[id]` in the introduction loop);
+//     the room arrives with 0 of its 9 tiles.
+//
+// A FIFTH INJECTION DID NOT BITE and is recorded because it was the one this
+// comment first claimed: giving reperch a `served` set and returning nil for a
+// repeat changes nothing here, since no shoulder below is asked for twice. It
+// was written down before it was run, which is the exact defect this round of
+// review exists to fix — and the two entries above it are the second instance
+// of the same thing, since the first draft of this list gave ONE fault for
+// "must introduce its room" and review found it landed on a different
+// assertion once the empty-perch check was added.
+//
+// If this property ever goes, coalescing stops being defensible and perchBox has
+// to become the FIFO its comment explains away.
+func TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt(t *testing.T) {
+	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
+	for _, env := range threeRoomLog() {
+		s.receive(env)
+	}
+
+	// The seat as a coalesced burst leaves it: perchBox dropped the hops naming
+	// a-a and a-b, so the pump applied a-c and only a-c. This calls the seat
+	// directly — the box is pinned one test up — so what is asserted here is the
+	// consequence: r-a and r-b were never introduced.
+	var sawEnd bool
+	for _, e := range s.perch("a-c") {
+		sc := e.GetSceneCreated()
+		if sc == nil {
+			continue
+		}
+		if sc.GetSceneId() != "r-c" {
+			t.Fatalf("a coalesced burst must show only the room it ended in, got %q",
+				sc.GetSceneId())
+		}
+		sawEnd = true
+	}
+	// ONLY r-c is half a claim; the other half is that r-c ARRIVED. Without this
+	// the loop above passes on an empty perch, and it measurably does: injecting
+	// the whole-scene-list fault into look() rather than into reperch introduces
+	// every room during catch-up instead, and this loop then falls silent.
+	if !sawEnd {
+		t.Fatal("the shoulder the burst ended on must be shown its room")
+	}
+
+	// And now they ask for one of the shoulders the burst flew past.
+	var room *vttv1.SceneCreated
+	var seen *vttv1.SceneSeen
+	for _, e := range s.perch("a-b") {
+		if sc := e.GetSceneCreated(); sc != nil && sc.GetSceneId() == "r-b" {
+			room = sc
+		}
+		if ss := e.GetSceneSeen(); ss != nil && ss.GetSceneId() == "r-b" {
+			seen = ss
+		}
+	}
+	if room == nil {
+		t.Fatal("hopping back to a shoulder a burst flew past must introduce its room: " +
+			"coalescing is only affordable because nothing it drops is lost")
+	}
+	if got := len(seen.GetTiles()); got != 9 {
+		t.Fatalf("the whole of the room this shoulder can see must arrive with it, "+
+			"got %d of 9 tiles", got)
+	}
+}
+
+// threeRoomLog is three separate 3x3 rooms with one player-controlled actor
+// standing in the middle of each, so hopping between shoulders means changing
+// SCENE rather than changing view of one. THREE and not two, because a burst
+// needs a shoulder to start on, one to fly past, and one to end on.
+//
+// It is the bench perchBox's FRAME COUNTS were taken on — the 11-against-3 and
+// the recoverability figures. Its STALL numbers are from somewhere else and
+// could not have come from here: a blocking handoff timing a DM's own command
+// out needs a server, a second connection and two goroutines, none of which this
+// fixture has. That bench is TestHoppingWhileTheTableIsBusyKeepsOneOrder.
+func threeRoomLog() []*vttv1.Envelope {
+	rooms := []string{"r-a", "r-b", "r-c"}
+	actors := []string{"a-a", "a-b", "a-c"}
+
+	tiles := func() map[string]*vttv1.TileRef {
+		t := map[string]*vttv1.TileRef{}
+		for x := int32(0); x < 3; x++ {
+			for y := int32(0); y < 3; y++ {
+				t[squareKey(x, y)] = &vttv1.TileRef{Kind: "floor"}
+			}
+		}
+		return t
+	}
+
+	out := []*vttv1.Envelope{{Sequence: 1, EventId: "e",
+		Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "n"}}}}
+	seq := int64(1)
+	add := func(p any) {
+		seq++
+		env := &vttv1.Envelope{Sequence: seq, EventId: "e"}
+		switch v := p.(type) {
+		case *vttv1.Envelope_SceneCreated:
+			env.Payload = v
+		case *vttv1.Envelope_ActorAdded:
+			env.Payload = v
+		case *vttv1.Envelope_TokenPlaced:
+			env.Payload = v
+		}
+		out = append(out, env)
+	}
+	for _, id := range rooms {
+		add(&vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+			SceneId: id, Name: id, GridWidth: 3, GridHeight: 3, Tiles: tiles()}})
+	}
+	for _, id := range actors {
+		add(&vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: id, Name: id, ControllerIds: []string{"p-1"}}}})
+	}
+	for i, id := range actors {
+		add(&vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+			TokenId: "t-" + id, SceneId: rooms[i], ActorId: id,
+			Position: &vttv1.GridPosition{X: 1, Y: 1}}})
+	}
+	return out
 }
 
 // perchFixtureLog is twoRooms' history as a LOG rather than as a folded state:

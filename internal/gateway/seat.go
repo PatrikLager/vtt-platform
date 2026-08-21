@@ -122,18 +122,47 @@ type seat struct {
 // command goroutine to the pump that owns the seat.
 //
 // LATEST WINS, and the coalescing is the point rather than a side effect. A
-// perch is a SETTING — which shoulder am I on — not an operation to be queued,
-// so a shoulder that was never applied has no trace to leave: transitions
-// computes its frames as a diff against what the viewer has ALREADY been shown,
-// so going straight to the newest shoulder emits exactly what going through
-// every intermediate one would have converged on.
+// perch is a SETTING — which shoulder am I on — not an operation to be queued.
 //
-// It is also what keeps a hopping spectator from taxing the table. MEASURED:
-// with the perch applied on the pump and every hop queued, forty hops sent as
-// fast as a socket allows made a DM's own command time out (>3s) once in every
-// four runs; at five hops it never did, so the cost scaled with the number of
-// re-projections rather than being a stall. Coalescing bounds that work by the
-// pump's speed instead of by the sender's.
+// IT EMITS A STRICT SUBSET of what applying every hop would have, and NOT the
+// same frames. This comment claimed the same frames until somebody ran it.
+// Three rooms with one shoulder standing in each: hopping a→b→c one at a time
+// emits 11 frames, going straight to c emits 3, and all 3 are among the 11.
+// FOUR of the other 8 are the ROOMS PASSED THROUGH — a SceneCreated for r-a and
+// r-b and a SceneSeen of nine tiles each — and those are the ones that stay,
+// because transitions never un-introduces a scene (nothing deletes from
+// pr.scenes) and re-emits SceneSeen only for the scenes CURRENTLY in sight. So
+// the queued path leaves r-a, r-b and their 18 tiles on the client's board
+// permanently, while the coalesced one leaves the board the final shoulder
+// actually justifies. The remaining four are token churn and cancel: a
+// TokenPlaced the burst skipped is undone by the TokenHidden the next hop
+// brings, so both paths end holding t-a-c and nothing else.
+//
+// NOTHING RECOVERABLE IS LOST, which is what makes that difference affordable.
+// reperch re-emits a shoulder on demand, so a spectator who burst past b can hop
+// back to b and be sent SceneCreated(r-b), its nine tiles and its token again —
+// measured at the same bench. An intermediate view is not shown unasked; it is
+// not destroyed.
+//
+// AND THE STALL WAS THE HANDOFF, not the re-projections. MEASURED on this tree,
+// forty hops against the same busy table every time: a blocking one-slot handoff
+// (unbuffered wake, blocking set) timed a DM's own command out (>3s) 12 runs in
+// 12, and a NON-BLOCKING FIFO that applies all forty re-projections did it 0 in
+// 32. This comment used to conclude the opposite — "the cost scaled with the
+// number of re-projections rather than being a stall" — from 40 hops failing
+// ~1 in 4 while 5 hops failed 0 in 6 (reproduced here: blocking, five hops, 0 in
+// 6). That evidence cannot separate the two, because fewer hops is fewer
+// re-projections AND fewer blocking handoffs at once. Varying the LOAD leaves
+// both explanations standing; only varying the handoff decides between them.
+//
+// SO WHAT COALESCING STANDS ON IS NOT "less work". It is that this pump's work
+// is bounded by the PUMP's speed rather than the sender's — no client can buy
+// itself more re-projections by hopping faster, because the pump takes one
+// shoulder per iteration whatever arrived. The COMMAND goroutine still pays per
+// hop, in an authorize and an identity lookup; it is the re-projection that
+// coalesces — plus the recoverability above. A
+// non-blocking FIFO clears the stall too and keeps every intermediate shoulder;
+// it is refused for its DEPTH, which is a buffer whose length the client picks.
 //
 // The mutex here is not the one seat's comment warns about: it guards a single
 // string being HANDED ACROSS, never the order anything reaches the socket.
@@ -259,7 +288,11 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 // says so: weakening that guard to `< 0` survives every test in this package
 // because nothing can distinguish the two. Removing it removes an unkillable
 // mutant rather than adjudicating one, and the adjudications this branch has
-// had to re-key four times are the argument for preferring the deletion.
+// had to re-point on EIGHT separate occasions are the argument for preferring
+// the deletion. (Ten commits, not eight: twice, the header re-key landed and the
+// body references it missed took a second commit behind it. This line said "four
+// times" for a while — the count on the day it was written, wrong ever since,
+// and the number climbs on its own, which is rather the point.)
 //
 // REPLAYED OUTPUT ONLY. A perch does NOT come through here, and that is a
 // correction rather than an omission: it was filtered here at first, and a

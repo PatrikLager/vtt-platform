@@ -229,6 +229,18 @@ const perchSequence int64 = 0
 // un-explores a square, which is why "the bird remembers every shoulder it has
 // sat on" is a property of the design rather than a feature of this function.
 //
+// SAT ON MEANS SAT ON, and the sentence needs that qualification now: it is
+// every shoulder this function was CALLED with, which is not every shoulder the
+// spectator named. perchBox coalesces a burst of hops to the one it ended on, so
+// a shoulder superseded before the pump takes it is never applied here and its
+// rooms never reach the board — measured, and written up at perchBox with what
+// the difference is. The bird still remembers everywhere it alighted; it is only
+// the places it flew over that leave nothing behind. And they are recoverable at
+// any time: hop back and this function serves that shoulder in full, because
+// what it computes is a diff against MEMORY, and the memory never held it.
+// TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt pins that, because
+// coalescing is indefensible without it.
+//
 // NO DOOR IS SKIPPED, unlike the event path: doorTransitions skips the square a
 // door event is ABOUT because classify forwards that event itself, and here
 // there is no event to forward. Every visible door this viewer believes wrong

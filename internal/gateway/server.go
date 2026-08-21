@@ -837,9 +837,24 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// transient. identity's own comment records this shared file blocking
 		// the full busy_timeout and then failing under another handle's write
 		// transaction, so it is measured, not hypothetical. It is handed to
-		// answerCommand below, which refuses the command and keeps the
-		// connection; alive=false there is a TRANSPORT failure and nothing to
-		// do with this person's credential.
+		// answerCommand below, which refuses THE COMMAND and keeps the
+		// connection: one CommandResult with ok=false, and nothing else about
+		// this seat changes.
+		//
+		// A TRANSPORT failure is the other thing entirely, and where that one
+		// lives is worth saying, because it used to be visible on this very
+		// line. answerCommand answered `(result, alive)` while it still enqueued
+		// a perch's own frames, and alive=false meant the writer was gone or a
+		// frame would not encode — never anything about this person's
+		// credential. The perch stopped writing envelopes (see answerCommand),
+		// so the only frame this READ LOOP still enqueues is the one below —
+		// serve's opening frames go out before the loop starts, on their own
+		// arms — and a dead writer is what its `<-writerDone` arm sees. The two
+		// still end
+		// differently, which is the whole of the ruling: an operational lookup
+		// error costs one command, a dead writer costs the connection, and a
+		// revoked credential — dealt with above — is the only one of the three
+		// that closes because of WHO IS ASKING.
 		result := s.answerCommand(now, err, cmd, perches)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
