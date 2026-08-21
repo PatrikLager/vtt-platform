@@ -403,12 +403,66 @@ fresh page load — which `wire.ts` already does on first connect.
 
 **Rendering keeps the split maps-as-geometry established**, for the same reason:
 happy-dom has no canvas, so nothing drawn can be asserted. `scene-plan.ts` stays
-pure and gains the visibility decision, emitting `DrawOp`s tagged bright,
-dimmed, or absent. `canvas.ts` stays thin.
+pure and gains the visibility decision. `canvas.ts` stays thin.
 
-**The planner takes visible tokens as INPUT.** It must never receive all tokens
-and filter at paint time — that is where a leak would hide, drawing a goblin
-over remembered terrain in a room the player has left.
+**The visible set is INPUT, never a filter at the draw site.** Nothing that
+paints may receive everything and decide what to skip — that is where a leak
+would hide, drawing a goblin over remembered terrain in a room the player has
+left. This holds for tokens and terrain alike; only the mechanism differs, and
+§6.1 records which is which and why.
+
+### 6.1 Where each decision lives
+
+AMENDED 2026-08-21, Patrik's ruling, after reading how RPTool solves the same
+problem. The original §6 said the planner "takes visible tokens as INPUT" and
+emits `DrawOp`s "tagged bright, dimmed, or absent". Half of that was
+unbuildable and half was worse than the alternative.
+
+**Tokens stay DOM discs, and the visible set is passed in.** The planner does
+not draw tokens and never did — `planScene` emits tiles and objects, and tokens
+are discs from `tokensOnScene`, appended by `renderGrid`, which is
+`renderSpectator`'s own private helper and has no other caller. So `tokensOnScene`
+is the seam, and it takes the visible set as an argument rather than deriving
+one. RPTool reached the same seam: `ZoneViewModel.updateVisibleTokens()` decides
+which tokens exist for a viewer with no `Graphics2D` anywhere in it, publishing
+a `Set<GUID>`. But it then hands its renderer the FULL layer list and skips
+inside the paint loop — and beside that renderer sits `ZoneCompositor`, whose
+comment says it is "responsible for providing the Zone Renderer with what needs
+to be rendered" and whose body is a `// placeholder` nothing calls. That stub is
+the migration they began and abandoned. The cost is legible: across all 57 of
+their test files, not one exercises token visibility, and the pure seam that
+could have been tested reaches a Swing frame singleton, so it cannot be built
+without a window. Ours is reachable under happy-dom. Finishing the move they
+abandoned costs us a parameter and buys the tests they never got.
+
+**Remembered-but-unseen terrain is a FOG PASS, not a per-tile flag.** `planFog`
+returns the geometry, `shadeFog` fills it — the same division `planGrid` and
+`strokeGrid` already are, and for the same reason `canvas.ts` gives for owning
+`gridInk`: *where* is planning and is asserted, *how it looks* is presentation
+and is the only thing that untestable layer may own. A per-op `dim` flag fails
+that test twice. It makes `canvas.ts` decide what dim means for each op kind,
+and it can be forgotten on one — a brightly lit door in a remembered room, which
+tells the player they can see it right now. The overlay makes that impossible by
+construction. It also survives §3.5's "squares now, fractional later": a fog region
+is not welded to tile edges, so the fractional seam costs a constant instead of a
+redesign.
+
+**One fog level, not RPTool's two.** They fill explored ground at partial alpha
+(`FogRenderer`, 100/255) and never-seen ground opaque, because their client holds
+the whole campaign and hides what you may not know. Ours never receives it: the
+server redacts unexplored terrain before it reaches the wire. Unexplored is
+therefore the ABSENCE of a `DrawOp`, with the background showing through, and
+building a heavy fog for it would imply the client has terrain to conceal —
+quietly reinstating the model this entire arc exists to remove.
+
+**Order: terrain, then fog, then grid.** The lattice stays crisp over remembered
+ground. You remember a room's shape; dimming its grid would make remembered floor
+harder to count for no gain.
+
+**Tokens on remembered-but-unseen ground are not drawn at all**, which is §3.2
+restated at the render layer. RPTool agrees and arrived there independently:
+`updateVisibleTokens` tests current line of sight, never the explored area. You
+remember the room, not the goblin standing in it.
 
 ---
 
