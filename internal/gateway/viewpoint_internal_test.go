@@ -95,8 +95,9 @@ func TestAPerchIsNotFilteredByTheResumeCursor(t *testing.T) {
 
 // TestARapidHopIsCoalescedToTheShoulderItEndedOn pins perchBox's latest-wins
 // slot, which is what keeps a hopping spectator from taxing the whole table
-// (forty hops over a blocking handoff timed a DM's own command out 12 runs in
-// 12; see perchBox for that measurement and for what coalescing costs).
+// (forty hops over a blocking one-slot handoff time a DM's own command out in
+// roughly two runs in three, and never once over the box that is here; see
+// perchBox for the measurement and for what coalescing costs).
 //
 // IT ENDS SOMEWHERE THE BURST DID NOT START, and that is the design of the
 // sequence rather than an incidental. It ran hero → goblin → hero and required
@@ -235,6 +236,14 @@ func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 // of the same thing, since the first draft of this list gave ONE fault for
 // "must introduce its room" and review found it landed on a different
 // assertion once the empty-perch check was added.
+//
+// WHAT THIS PINS IS THE PER-SCENE FORM, and the fifth injection is exactly why
+// that has to be said out loud: a reperch that skipped by SHOULDER passes here.
+// The property held is that reperch's output is a function of memory and current
+// sight — so an optimisation that touches the MEMORY is caught, and one that
+// short-circuits on the request is not. Coalescing's premise needs the former,
+// since the memory is the only thing that can lose a room; a shoulder asked for
+// twice is a different question, and no test in this package asks it.
 //
 // If this property ever goes, coalescing stops being defensible and perchBox has
 // to become the FIFO its comment explains away.

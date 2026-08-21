@@ -144,11 +144,26 @@ type seat struct {
 // measured at the same bench. An intermediate view is not shown unasked; it is
 // not destroyed.
 //
-// AND THE STALL WAS THE HANDOFF, not the re-projections. MEASURED on this tree,
-// forty hops against the same busy table every time: a blocking one-slot handoff
-// (unbuffered wake, blocking set) timed a DM's own command out (>3s) 12 runs in
-// 12, and a NON-BLOCKING FIFO that applies all forty re-projections did it 0 in
-// 32. This comment used to conclude the opposite — "the cost scaled with the
+// AND THE STALL WAS THE HANDOFF, not the re-projections. MEASURED with
+// TestHoppingWhileTheTableIsBusyKeepsOneOrder, forty hops against the same busy
+// table every time. Replace this box with a BLOCKING one-slot handoff — wake
+// unbuffered, set waiting on the send rather than dropping it — and a DM's own
+// command times out (>3s) in roughly two runs in three. Three rebuilds, none of
+// them agreeing to better than a percentage point or two: 15 in 24, 23 in 36,
+// 8 in 12. Replace it instead with a NON-BLOCKING FIFO that applies every one of
+// the forty re-projections and the DM times out 0 in 24 in the same sitting,
+// 0 in 72 across three. A stall, then, and not a volume of work.
+//
+// THE SHARE MOVES AND THE CONTRAST DOES NOT — between sittings, and between two
+// readings of what "blocking set" meant. NO SECOND MACHINE WAS EVER TRIED, so
+// this says nothing about hardware; it is why the first number is quoted as a
+// rough share rather than a rate. This comment said "12 runs in 12" on one
+// sitting that has not reproduced since — not for review, and not for me
+// re-running my own variant. What survives every sitting is the gap between an
+// arm that fails most of the time and an arm that has never failed once, so that
+// is what the claim rests on now. Quote the gap, not the percentage.
+//
+// This comment used to conclude the opposite — "the cost scaled with the
 // number of re-projections rather than being a stall" — from 40 hops failing
 // ~1 in 4 while 5 hops failed 0 in 6 (reproduced here: blocking, five hops, 0 in
 // 6). That evidence cannot separate the two, because fewer hops is fewer
@@ -291,8 +306,12 @@ func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
 // had to re-point on EIGHT separate occasions are the argument for preferring
 // the deletion. (Ten commits, not eight: twice, the header re-key landed and the
 // body references it missed took a second commit behind it. This line said "four
-// times" for a while — the count on the day it was written, wrong ever since,
-// and the number climbs on its own, which is rather the point.)
+// times" for a while, and that was ALREADY STALE WHEN IT LANDED: `git log -S`
+// puts the sentence at 2fac46e, the branch's 24th commit, and the tally had been
+// five since its 20th. "Four" was not the count on the day this was written; it
+// had stopped being the count four commits and one whole occasion earlier. A
+// line that arrives out of date about how often lines go out of date is the
+// argument making itself.)
 //
 // REPLAYED OUTPUT ONLY. A perch does NOT come through here, and that is a
 // correction rather than an omission: it was filtered here at first, and a
