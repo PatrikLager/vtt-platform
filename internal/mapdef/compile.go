@@ -23,13 +23,20 @@ import (
 // placements and names that ride in the same frame.
 //
 // THE HEADROOM ABOVE ASSUMES NO ART OVERRIDES, which is where this constant
-// and the read limit stop agreeing. Overriding every square with a name of
-// ordinary length — 7 to 11 characters in every shipped pack — costs about
-// 16 bytes a tile more, putting a 3600-tile scene at 209.8 KiB compact and
-// 220.4 KiB spaced: over the limit while still inside this cap, because this
-// counts TILES and the limit counts BYTES. Recorded here rather than repaired,
-// since changing the cap is a decision about the wire format rather than a
-// correction to a number. Past it the frame simply does not arrive, and the way that presents
+// and the read limit stop agreeing. Overriding a square costs exactly
+// len(name) + 9 bytes compact and +10 spaced — the `,"art":""` scaffolding
+// plus the name. Shipped TILE names run 7 to 11 characters: the only shipped
+// map that declares a pack is maps/cellar/map.json, and cellar-basics names
+// earth-1, masonry-1, flagstone-1 and cellar-door. (client/public/std-pack is
+// a client-side rendering manifest, never loaded through LoadPack, and that
+// pack's object names ride in SceneObject.art, not TileRef.art — counting
+// either widens the range spuriously.) So overriding all 3600 tiles lands
+// between 209.8 and 223.9 KiB compact, 220.4 and 234.4 spaced: over the limit
+// while still inside this cap, because this counts TILES and the limit counts
+// BYTES. Recorded here rather than repaired, since changing the cap is a
+// decision about the wire format rather than a correction to a number.
+//
+// Past the cap the frame simply does not arrive, and the way that presents
 // is a connection torn down mid-session — which is exactly how loading
 // goblin-ambush killed every connection before that read limit was raised.
 // Refusing at compile turns a mystery at the table into a message at load.

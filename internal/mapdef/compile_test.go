@@ -222,10 +222,13 @@ func fullyTiledMap(w, h int32) *mapdef.Map {
 // internal/detrand, on purpose. So a 32x32 is 43.5 KiB or 45.5 KiB, and both
 // are correct. See MaxWireTiles's own doc comment; quote both or neither.
 //
-// The frame stops arriving somewhere past 60x60 — 69x69 compact, 68x68 spaced,
-// with no art overrides, and as early as 60x60 with them — against the 200 KiB
-// read limit Go clients set (internal/harness/client.go). The failure lands as
-// a torn-down connection mid-session, not as a load error, which is how loading
+// The frame stops arriving somewhere past 60x60 — the first grid over is 69x69
+// compact and 67x67 spaced with no art overrides, and as early as 60x60 with
+// them — against the 200 KiB read limit Go clients set
+// (internal/harness/client.go). Compare in BYTES: 67x67 spaced is 205224
+// against readLimit's 204800, over by 424, and a KiB display rounds it to
+// "200.4", which is how it was first recorded as 68x68. The failure lands as a
+// torn-down connection mid-session, not as a load error, which is how loading
 // goblin-ambush used to kill every connection before that limit was raised.
 //
 // THE LIMIT IS ON TILES, NOT ON GRID AREA, and the difference is not academic:

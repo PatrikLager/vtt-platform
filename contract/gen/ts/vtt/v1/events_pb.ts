@@ -492,10 +492,22 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
    *
    * A fully tiled scene eventually exceeds the 200 KiB read limit Go clients
    * set (internal/harness/client.go) and the frame never arrives. WHERE
-   * depends on art as much as on size: with no override the crossover is
-   * 69x69 compact / 68x68 spaced, but overriding every square with an art name
-   * of ordinary length — 7 to 11 characters in every shipped pack — puts even
-   * 60x60 over in BOTH regimes (209.8 / 220.4 KiB for a 7-character name).
+   * depends on art as much as on size: with no override the first grid over the
+   * limit is 69x69 compact / 67x67 spaced — compared in BYTES against
+   * readLimit's 204800, not against a rounded KiB figure, because 67x67 spaced
+   * is 205224 B and reads as "200.4 KiB", which looks under a 200 KiB limit and
+   * is not. Overriding every square with art puts even 60x60 over in BOTH
+   * regimes: the cost is exactly len(name) + 9 bytes a tile compact and +10
+   * spaced — the `,"art":""` scaffolding plus the name — so a 7-character name
+   * takes a 3600-tile scene to 209.8 / 220.4 KiB and an 11-character one to
+   * 223.9 / 234.4. SHIPPED TILE NAMES RUN 7 TO 11 CHARACTERS, and that range
+   * needs its definition attached or it drifts: it means the names in a pack
+   * that mapdef.LoadPack actually loads and Resolve consults. Exactly one
+   * shipped map declares one — maps/cellar/map.json names cellar-basics, whose
+   * four TILE names are earth-1, masonry-1, flagstone-1 and cellar-door.
+   * client/public/std-pack is NOT in that set: it is a client-side rendering
+   * manifest served as static files, never a mapdef.Pack. Nor are that pack's
+   * OBJECT names, which travel in SceneObject.art rather than TileRef.art.
    * internal/mapdef.MaxWireTiles caps the tile COUNT at 3600, which refuses
    * 69x69 but admits that overridden 60x60, so the cap and the limit do not
    * line up. That mismatch is recorded, not fixed here. spec §7 files the

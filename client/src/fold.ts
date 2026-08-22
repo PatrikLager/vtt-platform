@@ -228,8 +228,8 @@ function apply(st: State, env: Envelope): void {
       // EMPTY IS NOT UNDEFINED. A sceneSeen with no visible squares is the
       // projection reporting a scene gone dark, and it must leave `{}` rather
       // than the `undefined` that means no projection ever arrived (state.ts's
-      // Scene.Visible on why those differ). Mirrors
-      // internal/engine/apply.go's SceneSeen arm.
+      // Scene.Visible on why those differ). Mirrors internal/engine/apply.go's
+      // SceneSeen arm.
       sc.Visible = {};
       for (const sq of v.visible) sc.Visible[sq] = true;
       for (const [key, ref] of Object.entries(v.tiles)) {
