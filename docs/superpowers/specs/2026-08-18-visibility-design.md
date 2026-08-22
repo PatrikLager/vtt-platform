@@ -345,6 +345,54 @@ Today's `scenarios/goldens/` corpus becomes the `viewer = DM` case, where
 projection is identity. The cross-language parity work extends rather than gets
 replaced.
 
+**AMENDED 2026-08-22, Patrik's ruling: the keystone runs at EVERY PREFIX.**
+
+The equation above says the right-hand side is computed "with the sight test
+over `engine.State`" — a function of the FINAL state. `Explored` cannot be
+computed that way. It is terrain MEMORY: the union of every visible set across
+history, and it is populated only by `SceneSeen`, which exists only in
+projections. So folding a real log leaves `Explored` empty on every scene while
+folding that same log's projection leaves it populated, and the two sides differ
+on that field BY CONSTRUCTION. No final-state oracle can close the gap. §4.3 was
+written before `Explored` had the shape §6 gave it.
+
+Running the keystone at every prefix fixes this and makes the test STRONGER
+rather than narrower:
+
+- **`Visible`, tokens and actors are compared at every prefix, both
+  directions.** A prefix-wise check catches a leak at the step it happens
+  rather than only if it survives to the end — and a leak that appears and is
+  then covered by later events is exactly the kind a final-state check misses.
+- **`Explored` leaves the direct comparison, and is IMPLIED IN ONE DIRECTION —
+  the one that matters.** Be precise about why, because an earlier draft of this
+  amendment was not: `Explored` is unioned from each `SceneSeen`'s **`tiles`
+  keys**, NOT from its `visible` set (`apply.go`'s and `fold.ts`'s SceneSeen
+  arms). Those are different parts of the message. `sceneSeenFor` only ever
+  builds `tiles` from the visible squares, so per message `tiles ⊆ visible` —
+  and that SUBSET relation, not an identity, is what the exclusion rests on.
+  It gives exactly the guarantee needed: **nothing can be remembered that was
+  never visible**, so verifying `Visible` at every prefix bounds `Explored` from
+  above and a leak must first appear as a currently-visible square at some
+  prefix, where the check catches it. It does NOT pin `Explored` from below, and
+  that is correct rather than a gap: a visible square carrying no terrain is
+  deliberately never remembered, because there is no terrain to remember. On a
+  bare-canvas scene `Explored` therefore stays empty however much is visible.
+- The reason `Explored` is excluded must be stated where the test lives, not
+  only here. "Excluded because it is path-dependent and implied by the
+  prefix-wise result" and "excluded because we could not make it pass" look
+  identical in a diff a year from now.
+
+**The corpus must gain projected streams.** As of this amendment
+`scenarios/goldens/` contains no `sceneSeen` at all, so the existing corpus pins
+`Visible` and `Explored` being ABSENT — which is the correct DM case and proves
+nothing about the populated one. A keystone run only over today's goldens would
+be a test of the identity projection wearing the name of the general one.
+
+**The oracle must be INDEPENDENT of the projection.** If `visibleState` is
+implemented by calling the projection code, the equation becomes a tautology
+that holds however wrong the projection is. Two derivations that share an
+implementation agree about their shared bug.
+
 ### 4.4 Failure direction
 
 **When the projection is uncertain, it omits.** A player losing a sighting is a
@@ -463,6 +511,63 @@ harder to count for no gain.
 restated at the render layer. RPTool agrees and arrived there independently:
 `updateVisibleTokens` tests current line of sight, never the explored area. You
 remember the room, not the goblin standing in it.
+
+### 6.2 A token is a free object, so sight travels as itself
+
+AMENDED 2026-08-22, Patrik's ruling. §6.1 left the client deriving its
+visible-square set from the terrain it had been sent. That was wrong, and the
+way it was wrong is worth keeping because it took two false framings to reach.
+
+**The false framings, recorded so neither is repeated.** First: "a hole in a
+map's terrain silently deletes a creature." Unreachable —
+`mapdef.CheckEverySquarePresent` is all-or-nothing, and it guards both doors,
+the map-file path and the `CreateScene` command path. A partial tile map cannot
+arrive. Second: "a scene with no terrain is a degenerate case to tolerate." Also
+wrong. **A token is a FREE OBJECT and needs no terrain to exist** (Patrik,
+2026-08-22). A scene with no tiles is not a broken map; it is a bare canvas, and
+creatures standing on it are real. RPTool settles it: it has no per-cell terrain
+data at all, token position is unbounded pixels, `Zone.putToken` performs no
+bounds or terrain validation, and sight is blocked by separate `Area` geometry
+independent of any board image. Nothing there gates a token's existence,
+position or rendering on map data.
+
+**The actual defect was a disagreement, not an edge case.** `sight.VisibleFrom`
+walks the GRID, not the tile map, so a scene with no tiles still has every
+square in range as a candidate. (`Blockers` draws from two INDEPENDENT sources —
+wall and closed-door entries in `Tiles`, and objects carrying `blocks_sight` —
+so a tile-less scene has no TERRAIN blockers but can still be shadowed by
+objects. Sight needs no terrain; it simply has less to stop it.) `look()` marks a token visible from that
+square set, with terrain never entering. **So the server decides correctly and
+sends the token.** Then `sceneSeenFor` projected those squares into `Tiles` and
+dropped every square with no terrain, destroying the square set on the wire —
+and the client re-derived a visible set from those tiles and hid the token. The
+client was overruling a correct server decision using a lossy proxy for a
+decision the server had already made. The terrain-free scene is merely where the
+disagreement becomes total.
+
+**The ruling.** `SceneSeen` carries the visible-square set explicitly, as an
+additive field. `Scene.Visible` comes from that field, never from the keys of
+`tiles`. `Scene.Explored` keeps its terrain-keyed meaning — a square with no
+terrain has none to remember, so there is nothing to fog there — which means the
+two fields now come from DIFFERENT SOURCES and may legitimately differ; that is
+pinned in both languages rather than left for a reader to assume. The token
+filter stays, but it is no longer an independent decision: it is a consistency
+check against the server's own set, and with the correct set the two cannot
+disagree.
+
+**Server decides what you may see; the client draws it.** Every visibility fact
+on the client now originates server-side. The client owns exactly one thing —
+MEMORY — because §4.1 keeps the projection a pure function of
+`(log-so-far, viewer)` and so holds no per-viewer history. That is not a
+loophole: `Explored` is unioned from each `SceneSeen`'s `tiles` keys, and
+`sceneSeenFor` builds those only from squares this viewer can currently see, so
+`Explored` can contain nothing that was withheld. (It is a SUBSET of what was
+sent, not an identity with it — see §4.3's amendment, where the distinction is
+load-bearing.) RPTool's client memory has the
+identical shape and the opposite guarantee, purely because its clients are sent
+the entire campaign to begin with — every zone, every token including GM-only
+ones, with no per-recipient filtering anywhere in its server. Borrow its
+geometry; never its distribution.
 
 ---
 
