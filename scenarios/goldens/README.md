@@ -79,11 +79,48 @@ projection from one that forwards the whole log to everybody.
 `internal/gateway.TestTheKeystoneCorpusCanTellAProjectionFromAPassthrough` is
 that guard, kept as a test so the corpus cannot quietly regress to it.
 
-MEASURED, by deleting `session-zero` and re-running three fault injections
-against the keystone: **two of the three then pass unnoticed, and both are
-OVER-SEND** — including a projection that shows every creature in any scene the
-viewer can see part of, which is session zero itself. Only the under-send fault
-survived the deletion, and under-send is the safe direction.
+MEASURED, by deleting `session-zero` and re-running **six** fault injections
+against the keystone: **three then pass unnoticed, and all three are OVER-SEND**
+— a projection that shows every creature in any scene the viewer can see part of
+(session zero itself), one that ignores sight blockers entirely, and one that
+ships a scene's whole tile map. All three under-send and roster faults survived
+the deletion. Every fault the old corpus missed was an over-send, and over-send
+is the direction this arc exists to close.
+
+### What `session-zero` deliberately does NOT do
+
+**It never retracts an event that CAUSED an introduction**, and that is an
+exclusion rather than an oversight — the two look identical in a diff a year
+from now, so it is written down here rather than only in a task report.
+
+Synthesized envelopes carry the sequence of the event that caused them
+(visibility spec §4.2), so retracting the event that first revealed a scene
+deletes the viewer's own `SceneCreated` for it. `transitions` then still emits an
+empty `SceneSeen` for that scene at the retraction's sequence — its union walk
+keeps a scene in play for one more step — and the recipient's fold rejects it
+with `scene seen for unknown scene`. Both folds are strict and
+`client/src/session.ts` re-folds its whole log on every event, so that is a
+permanent freeze rather than one bad frame.
+
+The defect is pre-existing, and `internal/gateway/project.go`'s `transitions` doc
+comment is where it is recorded — as the DANGLING-REFERENCE form, a later
+forwarded event about a retracted introduction failing with `moved unknown
+token`. The prediction "spec §4.3's keystone is where it is catchable" sits
+there, verbatim, and is correct.
+
+**Do not read the forgetting-loop comment further down that function as the same
+thing.** It contains the string `scene seen for unknown scene` too, which makes it
+look like the nearer match, and it is not: its case is an undo covering the
+`SceneCreated` ITSELF, its cause is `pr.scenes`/`pr.seen` outliving `st.Scenes`
+rather than an introduction stamped at a retracted sequence, and it says
+"Measured before this loop existed" — the loop directly beneath it **fixed** that
+case. Shared error string, different defect, already closed.
+
+Putting the shape above into this scenario would leave the gate red, and the fix
+is a design decision (a per-viewer pre-flight in `campaign.Undo`, or a different
+sequence for a synthesized introduction) that belongs to whoever makes it, not to
+a corpus entry. `three-role-exit` DOES retract, and the keystone folds it cleanly,
+because what it retracts is a MOVE.
 
 ### Deriving a projected golden
 

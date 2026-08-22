@@ -497,14 +497,26 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       };
       // Explored mirrors Go's `json:",omitempty"` tag on Scene.Explored
       // (state.go): OMITTED entirely when empty, not serialized as `{}`.
-      // Every existing scenarios/goldens/*/state.json was hand-derived from
-      // a stream with no SceneSeen, so Explored is empty on all of them —
-      // an unconditional key here (even an empty object) fails every one of
-      // those byte comparisons (client/test/fold-parity.test.ts), because Go
-      // never emits the key at all in that case. This is Correction 1's
-      // reasoning carried across the language boundary: the FIELD needed
-      // omitempty on the Go side; the DUMP needs the equivalent conditional
-      // omission here, since TS has no struct-tag mechanism to do it for us.
+      // Every scenarios/goldens/*/state.json was hand-derived from a stream
+      // with no sceneSeen — those are the LOGS — so Explored is empty on all
+      // of them, and an unconditional key here (even an empty object) fails
+      // every one of those byte comparisons (client/test/fold-parity.test.ts),
+      // because Go never emits the key at all in that case. This is
+      // Correction 1's reasoning carried across the language boundary: the
+      // FIELD needed omitempty on the Go side; the DUMP needs the equivalent
+      // conditional omission here, since TS has no struct-tag mechanism to do
+      // it for us.
+      //
+      // AMENDED 2026-08-22, in step with Visible's comment below so the pair
+      // cannot drift: the corpus now also carries PROJECTED halves under
+      // scenarios/goldens/*/projections/*/, and those DO populate Explored
+      // wherever the scene declares terrain. Re-measured against the enlarged
+      // corpus — an unconditional `Explored: {}` fails all 8 log goldens AND
+      // BOTH projected seats in client/test/projection-parity.test.ts
+      // (session-zero/player and session-zero/spectator), because each holds
+      // the bare-canvas `camp`, which has a visible set and no terrain to
+      // remember. TEN corpus cases in total, which is why this omission is
+      // among the most heavily pinned things in either fold.
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);

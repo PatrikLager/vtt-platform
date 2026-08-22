@@ -63,7 +63,7 @@ const seats: ProjectedSeat[] = readdirSync(goldensDir)
     // is right. A permissions error or a corrupt directory is a different
     // thing entirely and must not be swallowed into "this golden has no
     // seats" — that reads as a shrinking corpus rather than as a broken one,
-    // and the "the projected corpus is not empty" guard above is the only
+    // and the "the projected corpus is not empty" guard below is the only
     // thing that would notice, and only if EVERY golden failed at once.
     let entries: string[];
     try {
@@ -78,9 +78,39 @@ const seats: ProjectedSeat[] = readdirSync(goldensDir)
   });
 
 test("the projected corpus is not empty", () => {
-  // Without this every case below is vacuous, and vacuous is the exact failure
-  // spec §4.3 warns about: "a keystone run only over today's goldens would be a
-  // test of the identity projection wearing the name of the general one".
+  // WHAT AN EMPTY CORPUS ACTUALLY DOES, since "every case below is vacuous" — what
+  // this said — is not it. The three property tests below assert
+  // toBeGreaterThan(0) and would go RED on their own. What vanishes SILENTLY is
+  // the generated `projection parity: <golden>/<seat>` cases: a for-loop over an
+  // empty list emits no tests and no failures, and the file reports green with
+  // nothing compared. This test is what makes that disappearance loud.
+  //
+  // MEASURED, by moving scenarios/goldens/session-zero/projections aside: the
+  // file drops from 6 tests to 4, the two per-seat comparisons gone without a
+  // word, and the 4 that remain all fail. So the loud half is loud and the
+  // silent half is silent, exactly as split above.
+  //
+  // The disappearance is the exact failure spec §4.3 warns about: "a keystone run
+  // only over today's goldens would be a test of the identity projection wearing
+  // the name of the general one".
+  //
+  // IT GUARDS THE CORPUS EMPTYING, NOT A NEW GOLDEN SKIPPING PROJECTION, and the
+  // difference was measured rather than assumed: add a ninth golden with no
+  // projections/ directory and this file stays green, because it only ever
+  // counts what is there. Most goldens legitimately have none, so counting is
+  // the right thing to do HERE.
+  //
+  // The stronger per-golden rule — a golden that HIDES something owes projected
+  // seats — is enforced on the Go side, in
+  // TestTheProjectedGoldensAreWhatTheProjectionActuallySends, because deciding
+  // whether a golden hides anything means running internal/sight and there is no
+  // TypeScript sight to run. That is the same division this whole file rests on.
+  //
+  // ONE DIRECTION, not "exactly when", which is how this sentence read until the
+  // two copies were compared: a golden may carry projected seats without hiding
+  // anything, and that is extra coverage rather than a defect. The Go comment
+  // says so explicitly; this one stated the rule as a biconditional and dropped
+  // the qualifier, which is how two copies of one rule start to disagree.
   expect(seats.length).toBeGreaterThan(0);
 });
 

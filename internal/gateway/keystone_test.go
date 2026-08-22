@@ -64,10 +64,47 @@ type keystoneSeat struct {
 // accumulator is where the path-dependent decisions live: what has already been
 // introduced, what is on the board right now, what was last reported visible.
 //
-// THAT IS A NARROWER CLAIM THAN "not a second copy of the thing under test",
-// which is what this comment said until a review pushed back on it. See
-// visibleState's own INDEPENDENCE section for exactly how far it reaches and
-// where it stops.
+// THE SHARED DEPENDENCY WHOSE BUGS PASS THIS TEST SILENTLY IS internal/sight —
+// measured, along with the one other shape that does. See visibleState's own
+// INDEPENDENCE section, which says what is caught and what is not, and which
+// injection established each.
+//
+// NOT THE ONLY THING THE TWO SHARE, and an earlier draft said "the one thing" —
+// the kind of unqualified count this file exists to stop. They also share
+// campaign.FoldPrefix: walkKeystone folds the log once and hands that same world
+// to Project and to visibleState.
+//
+// AND THAT SHARING HAS A CONSEQUENCE OF THE SAME KIND, though a smaller one
+// than sight's, and the difference is worth keeping: a broken sight leaves this
+// whole test reporting `ok`, while a broken fold still reds it — through the
+// identity arm rather than through the oracle. What the two share is that the
+// EQUATION stops being what notices. Measured rather than waved at: make
+// engine.Apply land a TokenMoved on its `from` instead of its `to`, so every
+// token lags one move behind, and THIS TEST'S ORACLE COMPARISON DOES NOT NOTICE
+// — the session-zero player and spectator seats both still pass, because a wrong
+// shared fold moves the world and the seat's board together. What reds inside
+// this test is the identity arm: the dm and agent seats, whose fold is compared
+// against the committed hand-derived state.json.
+//
+// THE PACKAGE IS NOT BLIND TO IT, and the first draft of this paragraph said
+// something close to that by listing only the gates it liked and concluding
+// "what a shared dependency breaks, only a hand-derived fixture catches". FALSE,
+// and counted: the injection reds SEVEN top-level tests here. Two are
+// fixture-backed — this one and TestTheProjectedGoldensAreWhatTheProjectionActuallySends,
+// with internal/harness's golden gate failing a package over — and FIVE are
+// ordinary behavioural tests that never open a golden
+// (TestSteppingIntoViewArrivesRatherThanMoves,
+// TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView,
+// TestAPlayerMayOnlyWorkADoorTheyAreNextTo,
+// TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway,
+// TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee).
+//
+// So the claim that survives is about THIS TEST and not about the suite: where a
+// dependency is shared by both sides of the equation, the equation itself stops
+// being the thing that catches a bug in it, and what catches it here is the
+// comparison against a file a human wrote. That is why the identity arm compares
+// against state.json rather than re-folding the same slice twice, which would
+// have been the tautology it replaced.
 type oracleView struct {
 	// squares is scene id -> visible square keys, with an entry for every
 	// scene this viewer has an eye standing in (even one it can see nothing
@@ -94,7 +131,20 @@ type oracleView struct {
 //     did, the equation would be a tautology that holds however wrong the
 //     projection is: two derivations sharing an implementation agree about
 //     their shared bug.
-//   - It DOES call internal/sight, deliberately, because §4.3 says the
+//   - A BUG INSIDE look() IS CAUGHT, four injections for four, and an earlier
+//     version of this comment claimed the opposite. It said "a bug INSIDE look()
+//     would move both sides of the equation together and this test would stay
+//     green" — on the reasoning that the rules below are, statement for
+//     statement, what look() and eyes() do. THAT REASONING CONFUSED RESEMBLANCE
+//     WITH SHARING. Two transcriptions of one rule are still two, and an edit to
+//     one of them diverges from the other. The task report's injections A, B, C
+//     and D are all edits to look()'s body — its VisibleFrom call, its token
+//     loop, its actor loop — and all four red this test. The comment was written
+//     without running what it asserted, which is the branch's own recurring
+//     defect, and it mattered more than usual here: it told a reader to distrust
+//     the half that works.
+//
+//   - IT DOES CALL internal/sight, deliberately, because §4.3 says the
 //     right-hand side is computed "with the sight test over engine.State".
 //     sight is pure geometry with its own boundary tests
 //     (internal/sight/sight_test.go); sharing it means this test measures the
@@ -103,30 +153,38 @@ type oracleView struct {
 //     objects carrying blocks_sight (see sight.Blockers) — so a scene with no
 //     terrain at all can still be shadowed, and this oracle inherits that for
 //     free by asking VisibleFrom rather than reasoning about tiles.
-//   - THE RESIDUAL IS BIGGER THAN "a rule both sides read wrong", and pretending
-//     otherwise would be the exact self-deception §4.3 warns about. The rules
-//     below ARE, statement for statement, what project.go's look() and eyes()
-//     do — same eye loop, same nil-map-index idiom, same unconditional
-//     player-controlled pass. Nothing calls into the projection, so §4.3's rule
-//     is kept; but a bug INSIDE look() would move both sides of the equation
-//     together and this test would stay green. What is genuinely independent is
-//     the Projector's fold — its five maps, every introduction decision,
-//     classify, transitions, sceneSeenFor, and both language folds — and that is
-//     the great majority of the code the arc added.
 //
-//     WHERE THE REST OF THE INDEPENDENCE LIVES is the hand-derived
-//     scenarios/goldens/*/projections/*/state.json, which no machine produced
-//     and which look() had no hand in: a human wrote 36 squares down from the
-//     scene's geometry and both folds have to land on them.
-//     TestTheProjectedGoldensAreWhatTheProjectionActuallySends is what holds the
-//     projection to those files, and it is the check that survives a wrong
-//     look(). Rewriting the rules below to be structurally UNLIKE look() would
-//     make this comment easier to write and the test no stronger — the honest
-//     answer is that the oracle covers the fold and the fixtures cover the
-//     geometry.
+//     THAT SHARING IS WHERE THE REAL HOLE IS, and it is the consequence the same
+//     earlier comment left out while listing only the benefit. TWO THINGS PASS
+//     THIS TEST SILENTLY, both measured rather than reasoned:
 //
-//     Each rule cites the spec section it comes from, so the check a reader can
-//     perform is against the spec and not against project.go.
+//       1. A WRONG internal/sight. Break Blockers so wall tiles stop casting a
+//          shadow and this test still reports `ok` — both sides ask the same
+//          broken oracle and agree. The bug is not invisible; it is invisible TO
+//          THE KEYSTONE. 11 other top-level tests in this package fail, and so
+//          does internal/sight's own suite.
+//       2. A RULE MIS-TRANSCRIBED INTO BOTH SIDES. Delete spec §5's "actors
+//          controlled by any player are always known" from look() AND from
+//          visibleState below, and this test stays green. Only 2 other top-level
+//          tests in this package fail, which is the thinner margin of the two.
+//
+//     Counted as TOP-LEVEL tests and with the fixture gate excluded from the
+//     tally deliberately: it is the thing being credited in the next paragraph,
+//     so counting it among "other tests" would be crediting it twice. An earlier
+//     draft said 13 and 5 by counting subtests and including that gate — the
+//     same failure to check a number that this whole comment exists to correct.
+//
+//     IN BOTH CASES THE THING THAT CATCHES IT IS THE HAND-DERIVED FIXTURE, and
+//     that is verified rather than hoped: under each of the two injections above,
+//     TestTheProjectedGoldensAreWhatTheProjectionActuallySends FAILS.
+//     scenarios/goldens/*/projections/*/state.json is a file no machine produced
+//     and neither look() nor sight had any hand in — a human wrote 36 squares
+//     down from the scene's geometry — so it is the independent measurement that
+//     survives a wrong shared dependency. The oracle covers the fold; the
+//     fixtures cover the geometry. Neither alone is the keystone.
+//
+//     Each rule below cites the spec section it comes from, so the check a
+//     reader can perform is against the spec and not against project.go.
 //
 // The rules, each from the spec and not from the implementation:
 //
@@ -237,13 +295,25 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 // where it lives.
 //
 // IT RUNS AT EVERY PREFIX (§4.3 as amended 2026-08-22), not only over the final
-// state. A leak that appears and is then covered by later events is invisible to
-// a final-state check and is exactly what a prefix-wise one catches. The left
-// side is built the way a real seat builds it — one Projector fed the log from
-// the beginning, judging each event against campaign.FoldPrefix of the log so
-// far, which is what internal/gateway/seat.go's receive does — so retraction,
-// introductions and the projector's memory are all exercised rather than
-// stepped around.
+// state. The left side is built the way a real seat builds it — one Projector
+// fed the log from the beginning, judging each event against campaign.FoldPrefix
+// of the log so far, which is what internal/gateway/seat.go's receive does — so
+// retraction, introductions and the projector's memory are all exercised rather
+// than stepped around.
+//
+// THE PREFIX-WISE PROPERTY HAS A WITNESS, and it is worth naming because most
+// faults do not need it: of the six injections in the task report, a
+// last-prefix-only variant of this walk catches all six, so for those the extra
+// prefixes buy the SEQUENCE the divergence starts at and nothing more. The case
+// that needs them is a leak the projection LATER CORRECTS ITSELF, and one exists:
+// give transitions a STALE sightView for its departure decision — hide against
+// the previous event's visibility rather than this one's, which is what a cached
+// look() would do — and every TokenHidden goes out one event late. In
+// session-zero the Goblin Archer returns to (19,8) at sequence 12 and the hide
+// does not follow until 13, so the seat holds a creature it cannot see for
+// exactly one prefix. Measured: this test fails at `prefix 12 (seq 12)`, and the
+// last-prefix-only variant MISSES it entirely, because by prefix 13 the
+// projection has already put it right.
 //
 // EXPLORED IS EXCLUDED FROM THE COMPARISON, AND IMPLIED IN ONE DIRECTION — the
 // one that matters. Stated here and not only in the spec, because "excluded
@@ -875,6 +945,107 @@ func TestTheProjectedGoldensAreWhatTheProjectionActuallySends(t *testing.T) {
 			"pins Visible and Explored being ABSENT and nothing about the populated case " +
 			"(visibility spec §4.3: \"the corpus must gain projected streams\")")
 	}
+
+	// PER GOLDEN, NOT JUST OVER THE CORPUS, and the difference was measured
+	// rather than assumed: with only the `checked == 0` guard above, adding a
+	// ninth golden that carries no projections/ directory leaves BOTH languages
+	// green. That guard catches the corpus EMPTYING; it does not catch a new
+	// golden diluting it.
+	//
+	// THE RULE IS DERIVED, NOT A LIST. An exemption list would be the obvious
+	// shape and it is the wrong one here — it needs maintaining, and a list of
+	// goldens that "do not need projections" is exactly the kind of file that
+	// goes stale silently. Instead the requirement follows the SIGHT: a golden
+	// owes projected seats precisely when it HIDES something, because that is
+	// when a projection is more than the identity and when the TypeScript fold
+	// has a populated Visible to be held to. Most goldens hide nothing and are
+	// therefore not asked for any.
+	//
+	// It is one direction only. A golden may carry projected seats without
+	// hiding anything — that is extra coverage, not a defect.
+	for _, g := range keystoneCorpus(t) {
+		if len(hiddenCreatures(t, g)) == 0 {
+			continue
+		}
+		// SOME seat, not THE seat the creature is hidden from, and the weaker
+		// property is deliberate. hiddenCreatures knows which seat it was, and
+		// matching that against a committed viewer.json would compare a DERIVED
+		// seat (this file invents "p-watcher" for every spectator perch) against a
+		// DECLARED one (session-zero's spectator fixture is "p-spectator"), so the
+		// check would demand fixtures for seats nobody wrote and could not write.
+		// What this catches is a golden that hides something and ships NO projected
+		// seat at all, which is the dilution that actually happens.
+		if len(projectedSeatDirs(t, g)) == 0 {
+			t.Errorf("golden %q hides a creature from at least one seat but carries no "+
+				"projections/ directory, so client/src/fold.ts is never held to a populated "+
+				"Visible for it. Add scenarios/goldens/%s/projections/<seat>/ "+
+				"(visibility spec §4.3).", g.name, g.name)
+		}
+	}
+}
+
+// projectedSeatDirs are the seat directories committed under one golden.
+func projectedSeatDirs(t *testing.T, g keystoneGolden) []string {
+	t.Helper()
+	entries, err := filepath.Glob(filepath.Join(g.dir, "projections", "*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dirs []string
+	for _, e := range entries {
+		info, err := os.Stat(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.IsDir() {
+			dirs = append(dirs, e)
+		}
+	}
+	return dirs
+}
+
+// hiddenCreatures is every (seat, prefix) at which a creature stands in a scene
+// that seat has an eye in and the seat still cannot see it — the smallest thing
+// a corpus cannot fake, and the one this file's two guards both rest on.
+//
+// THREE THINGS DO NOT COUNT, and all three exclusions are here rather than split
+// across the two callers. A DM or agent seat is skipped outright: it receives the
+// log, so it hides nothing from anyone by construction and counting it would make
+// every corpus look like it proved something. A creature in ANOTHER scene does
+// not count either — that is redaction by scene, not by sight. Nor does a seat
+// with no eyes, which sees nothing for a reason that has nothing to do with
+// geometry.
+func hiddenCreatures(t *testing.T, g keystoneGolden) []string {
+	t.Helper()
+	var out []string
+	for _, seat := range keystoneSeats(t, g) {
+		if seat.viewer.Role == identity.RoleDM || seat.viewer.Role == identity.RoleAgent {
+			continue
+		}
+		var received []*vttv1.Envelope
+		for _, env := range g.log {
+			received = append(received, env)
+			world, err := campaign.FoldPrefix(received)
+			if err != nil {
+				t.Fatalf("%s: folding the log failed: %v", g.name, err)
+			}
+			want := visibleState(world, seat.viewer)
+			if len(want.squares) == 0 {
+				continue // no eyes: nothing geometric is being proven here
+			}
+			for id, tok := range world.Tokens {
+				if _, inScene := want.squares[tok.SceneID]; !inScene {
+					continue
+				}
+				if _, visible := want.tokens[id]; visible {
+					continue
+				}
+				out = append(out, fmt.Sprintf("%s / %s: %s at %s in scene %s, at sequence %d",
+					g.name, seat.name, id, oracleSquareKey(tok.X, tok.Y), tok.SceneID, env.GetSequence()))
+			}
+		}
+	}
+	return out
 }
 
 // projectWholeLog is `project(log, viewer)` the way a real seat computes it:
@@ -951,44 +1122,16 @@ func marshalStream(t *testing.T, envs []*vttv1.Envelope) []byte {
 // from one that forwards the whole log to everybody. The keystone would go green
 // on day one against such a corpus, which is the tell.
 //
-// What it demands is the smallest thing that cannot be faked: SOME golden, SOME
-// non-DM seat, SOME prefix at which a creature stands in a scene that seat has
-// an eye in and the seat still cannot see it. A creature in another scene does
-// not count — that is redaction by scene, not by sight — and neither does a seat
-// with no eyes, which sees nothing for a reason that has nothing to do with
-// geometry.
+// What it demands is the smallest thing that cannot be faked, and hiddenCreatures
+// is where that is defined — including why a creature in another scene and a seat
+// with no eyes both fail to count. Stated once, there, rather than twice: this
+// comment carried its own copy of that prose until the two guards started sharing
+// the function, and two copies of one sentence in a file whose recurring defect is
+// prose drift is a defect waiting to happen.
 func TestTheKeystoneCorpusCanTellAProjectionFromAPassthrough(t *testing.T) {
 	var witnesses []string
-
 	for _, g := range keystoneCorpus(t) {
-		for _, seat := range keystoneSeats(t, g) {
-			if seat.viewer.Role == identity.RoleDM || seat.viewer.Role == identity.RoleAgent {
-				continue
-			}
-			var received []*vttv1.Envelope
-			for _, env := range g.log {
-				received = append(received, env)
-				world, err := campaign.FoldPrefix(received)
-				if err != nil {
-					t.Fatalf("%s: folding the log failed: %v", g.name, err)
-				}
-				want := visibleState(world, seat.viewer)
-				if len(want.squares) == 0 {
-					continue // no eyes: nothing geometric is being proven here
-				}
-				for id, tok := range world.Tokens {
-					if _, inScene := want.squares[tok.SceneID]; !inScene {
-						continue
-					}
-					if _, visible := want.tokens[id]; visible {
-						continue
-					}
-					witnesses = append(witnesses,
-						fmt.Sprintf("%s / %s: %s at %s in scene %s, at sequence %d",
-							g.name, seat.name, id, oracleSquareKey(tok.X, tok.Y), tok.SceneID, env.GetSequence()))
-				}
-			}
-		}
+		witnesses = append(witnesses, hiddenCreatures(t, g)...)
 	}
 
 	if len(witnesses) == 0 {

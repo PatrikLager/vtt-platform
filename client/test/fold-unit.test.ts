@@ -4,14 +4,96 @@ import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/even
 import { fold, foldToDumpJSON } from "../src/fold";
 import { FoldError } from "../src/state";
 
-// The golden corpus cannot reach every fold variant: three of the seven
-// scenarios roll dice and are excluded until a roller seam exists (see
-// scenarios/goldens/README.md), which leaves resourceChanged,
-// conditionApplied/Removed and the ability/adventure no-ops unexercised.
-// tokenHidden/sceneSeen are unexercised for a different, permanent reason:
-// visibility spec §5 says both are PROJECTION-ONLY — no command produces
-// them, so they cannot structurally reach the real log the corpus is
-// recorded from, ever.
+// The golden corpus cannot reach every fold variant, and the gap is a MEASURED
+// list rather than an argument. Across all eight `scenarios/goldens/*/
+// stream.json` AND both projected streams under `projections/*/`, three of
+// fold.ts's twenty-one arms are never folded: **attackRolled, doorOpened and
+// doorClosed**. Said at the level of the EVENT VARIANT, which is the level that
+// matters for parity: `attackRolled` shares its arm BODY with `abilityUsed` and
+// `adventureLoaded`, both of which the corpus does fold, so that code path runs —
+// it is the variant that no corpus stream carries, and
+// client/test/fold-rejections.test.ts's "an event kind the fold does not know is
+// skipped, not fatal" is what folds one directly. Named rather than cited by line
+// for the reason this file states below: an offset into another file rots the
+// moment anything is inserted above it, and nothing pins it.
+//
+// The door pair has its own note at the terrain section, which owns why it
+// matters. Not restated here — and the reason is worth one sentence, because this
+// one pointed AND copied. The owner scopes its claim to "no CORPUS STREAM
+// exercising it"; the copy here had already lost that scope and read "nothing
+// exercising it", which is plainly false, since tests in this very file fold both
+// door arms. A second copy does not stay a copy.
+//
+// (That read "four folds" for one draft, and the replacement count was wrong too:
+// it tallied only the folds that SUCCEED, silently dropping the door envelopes
+// that "a door event naming an unknown scene or no position is refused" folds —
+// which enter both arms and throw from inside them, and which are themselves
+// instances of the very claim being annotated. No number survives here,
+// deliberately: the point needs none, and every number written in this spot has
+// turned out to be one more thing that was not true. The first draft of THIS
+// sentence still had one in it.)
+//
+// DICE ARE NOT THE CAUSE, and two earlier versions of this header said they
+// were. It read "three of the seven scenarios roll dice and are excluded until a
+// roller seam exists, which leaves resourceChanged, conditionApplied/Removed and
+// the ability/adventure no-ops unexercised". Every clause was wrong: the corpus
+// is EIGHT; TWO scenarios roll dice (adventure-night, toy-brawl) and both ARE in
+// it; and those two do emit resourceChanged, conditionApplied, conditionRemoved,
+// abilityUsed and adventureLoaded, so none of those arms is unexercised. Only
+// goblin-fight is absent, and scenarios/goldens/README.md says of it that "it
+// costs nothing in coverage: every command type it uses is already covered by
+// toy-brawl" — so its absence explains none of the gap above either.
+//
+// tokenHidden/sceneSeen used to be listed here as a fourth, PERMANENT gap. That
+// is no longer true. Visibility spec §5 makes both projection-only — no command
+// produces them, so they cannot structurally reach a real LOG — but the corpus
+// gained PROJECTED halves with the keystone, and those are not logs:
+// scenarios/goldens/session-zero/projections/player/stream.json carries sceneSeen
+// twice and tokenHidden once, and client/test/projection-parity.test.ts folds
+// both arms against a hand-derived state.
+//
+// So what the 34 hand-written cases below are for is the ARMS' EDGES. THREE of
+// the four in this file's tokenHidden/sceneSeen section are reached by no stream
+// at all, recorded or derived: a re-sent hide (the corpus holds exactly one
+// tokenHidden), Explored unioning across messages (no single stream folds two
+// sceneSeen for one scene, and only one of the corpus's three carries `tiles` at
+// all — Explored unions from tile keys, never from `visible`), and sceneSeen's
+// objects replacing a repeated id (no sceneSeen anywhere carries objects).
+//
+// The remaining one — "tokenHidden forgets only that token", a hide that leaves
+// its neighbours standing — is no longer one of them: session-zero's projected
+// player stream places tok-goblin-archer at sequence 11 and hides it at 12 while
+// tok-fighter and tok-healer stay on the board, and projection-parity.test.ts
+// byte-compares the result against a hand-derived state holding exactly those
+// two. Kept, since a fixture and a unit test fail differently and the unit test
+// names the property; but it is coverage now, not absence.
+//
+// SCOPE IS WHERE THE sceneSeen-UNIONING PARENTHETICAL KEEPS GOING WRONG, so it
+// is written per-stream now. (Named rather than called "the middle" one, which
+// is an index into a list that has already changed size once and would have no
+// middle at all if the corpus ever gained an objects-carrying sceneSeen.)
+//
+// It read "its two sceneSeen events are one per scene" until somebody counted it
+// at the scope it is written at: its neighbours are corpus-wide, so it reads
+// corpus-wide, and corpus-wide there are THREE —
+// `camp` gets one in each projected stream. "Two" was the PLAYER stream's count,
+// borrowed from the paragraph above into a sentence whose scope had widened.
+// Unioning is a within-stream operation, so per-stream is both the scope that
+// makes the claim true and the stronger reason.
+//
+// NO LINE-DISTANCE REFERENCES ANYWHERE IN THIS FILE, and that is a rule rather
+// than a preference. Two were written during these corrections and both were
+// wrong on arrival — "eleven lines up" was off by four, "twenty-two lines above"
+// by three — because every re-wrap moves everything beneath it. Name the thing,
+// not its offset.
+//
+// Two neighbouring edges live in neighbouring files, because that is where their
+// subject lives — an EMPTY visible set in client/test/visibility.test.ts ("an
+// empty sceneSeen darkens the scene and forgets no terrain") and a scene that
+// never arrived in client/test/fold-rejections.test.ts ("sceneSeen naming an
+// unknown scene is rejected"). Named with their paths rather than gestured at,
+// because the sentence they replace claimed all three were in this file and
+// neither of those two was.
 //
 // Shipping them on the strength of "the corpus is green" would be shipping
 // untested code behind a passing gate. These are hand-written against
@@ -312,14 +394,54 @@ test("adding an actor lets the set override the declared controller", () => {
 
 // --- terrain and doors (maps-as-geometry) --------------------------------
 //
-// Same argument as this file's header, and the corpus misses these for the
-// same reason: no scenario golden contains a door event at all, and the
-// SceneCreated arm's terrain loops only run when a scene actually declares
-// tiles. So the whole of fold.ts's door handling — added in Task 5 PRECISELY
-// to keep the cross-language fold-parity keystone honest — shipped with
-// nothing exercising it. If the TS fold and internal/engine/apply.go
-// disagreed about doors, the keystone would not have noticed, which is the
-// one failure it exists to prevent.
+// DOORS AND TERRAIN ARE NO LONGER THE SAME CASE, and this comment treated them
+// as one until 2026-08-22. It said the corpus misses both "for the same reason:
+// no scenario golden contains a door event at all, and the SceneCreated arm's
+// terrain loops only run when a scene actually declares tiles" — true of doors,
+// and already misleading about terrain on the day it was written. The dates, since
+// "already" is the load-bearing word: adventure-night entered the corpus on
+// 2026-07-31 with ZERO tiles, gained its 1024 on 2026-08-13 when the map compiler
+// landed, and this comment was written on 2026-08-16 — three days after the thing
+// it says is not covered became covered.
+//
+// Counted rather than reasoned, over all eight logs and both projected streams:
+//
+//   doors    — ZERO doorOpened/doorClosed events, and ZERO tiles of kind "door".
+//              Nothing folds either arm, and nothing puts a closed door in front
+//              of the SceneCreated arm's OpenDoors initialisation.
+//   terrain  — REACHED. adventure-night declares 1024 tiles and session-zero
+//              declares 180, so the tile loops run under fold-parity.
+//
+// So the door half of the original point stands in full: fold.ts's door handling
+// was added in Task 5 PRECISELY to keep the cross-language keystone honest and
+// still ships with no corpus stream exercising it — if the TS fold and
+// internal/engine/apply.go disagreed about doors, the keystone would not notice.
+// The terrain cases below therefore stand on DIFFERENT ground than they used to,
+// and the parenthetical that first said so got two of its three examples wrong.
+// Counted:
+//
+//   an object's every field surviving  — UNREACHED, and comfortably so. Zero
+//       scene objects appear in any of the ten corpus streams and zero in any
+//       state.json, so nothing pins the object round-trip but the case below.
+//   the dump shape                     — REACHED FOR TERRAIN, unreached for the
+//       rest. adventure-night's state.json byte-compares 1024 Tiles entries and
+//       session-zero's 180; OpenDoors is empty in every one, and Objects has
+//       nothing to carry (above). That case makes three assertions — Tiles,
+//       Objects[0].RotationDegrees and OpenDoors — and the corpus reaches only
+//       the first, so it is the DOOR and OBJECT assertions it misses, not the
+//       case. (This said "the DOOR half", which undercounted its own detail one
+//       bullet after stating it.)
+//   Explored's omission                — REACHED HARDEST OF ANYTHING HERE, and
+//       listing it as unreached was flatly wrong. Emitting `Explored: {}`
+//       unconditionally reds TEN corpus cases: all 8 fold-parity goldens and both
+//       projection-parity seats. This file says exactly that in the test named
+//       "Explored reaches the dump when populated, and is OMITTED (not {}) when
+//       empty" — the very case the parenthetical was describing — and
+//       client/src/fold.ts says it a third time. Only the summary was wrong.
+//
+// The lesson is the one this file keeps re-learning: a summary written from
+// memory of the cases below it drifts from them, and the cases were right all
+// three times.
 
 /** A 2x2 scene: floor everywhere but a wood door at (0,1). */
 function sceneWithADoor(): Envelope[] {
@@ -446,11 +568,47 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
 
 // --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
 //
-// Both arms are PROJECTION-ONLY: no command produces them (spec §5), so they
-// never reach scenarios/goldens' recorded streams. Mirrors
-// internal/engine/visibility_fold_test.go's three tests exactly — same
-// scenario shapes, same assertions — because the two folds are the load-
-// bearing mirror the keystone (spec §4.3) depends on.
+// Both arms are PROJECTION-ONLY (spec §5). HOW they nonetheless reach the corpus,
+// and WHICH of the four cases below it reaches, are both the HEADER's subject and
+// neither is restated here.
+//
+// One fact, one place — the rule internal/gateway/keystone_test.go's own
+// de-duplication follows. This banner carried a second copy of the coverage split
+// until the two were compared, and then a second copy of the recorded-versus-
+// derived argument after that; both are the header's. Pointing at the owner of a
+// fact is not the same as deferring a fact: the pointer cannot go stale into a
+// false statement, whereas a second copy of the fact silently can, which is this
+// file's documented recurring defect.
+//
+// What this banner owns instead is PARITY. All FOUR have a named counterpart in
+// internal/engine/visibility_fold_test.go —
+// TestTokenHiddenForgetsOnlyThatToken, TestHidingATokenTwiceIsNotAnError,
+// TestSceneSeenUnionsIntoExploredAndNeverShrinks and
+// TestSceneSeenObjectsMergeReplacingDuplicatesAndAppendingNew — because the two
+// folds are the load-bearing mirror the keystone (spec §4.3) depends on.
+//
+// THREE OF THE FOUR MIRROR THEIRS EXACTLY, same scenario shape and same
+// assertions. The re-sent hide does NOT, deliberately: its Go counterpart hides
+// a token that never existed on a state with no scene at all and asserts only
+// that Apply returned nil, while the TS one builds a two-token scene and asserts
+// the neighbour survives. That test's own comment says why the weaker form would
+// not do here — fold.ts's default case SKIPS an unrecognised variant, so
+// `not.toThrow()` alone cannot tell a wired arm from an unwired one. Said here
+// because "same assertions" was claimed for all four until 2026-08-22, in this
+// very banner, while the comment explaining why one of them is different sat
+// inside "hiding a token twice is not an error" the whole time. ("three tests"
+// until the same date, when the count was finally taken.)
+//
+// Named, not placed: that read "the test just below it", which pointed at
+// "tokenHidden forgets only that token" — the wrong one, and wrong the moment it
+// was written. The explaining comment has always sat inside "hiding a token twice
+// is not an error" and never inside "tokenHidden forgets only that token".
+//
+// The first draft of THIS correction said "the SECOND test of this section rather
+// than the first", which is two ordinals in the paragraph that forbids them, and
+// carrying no information the two names above do not already carry. An ordinal is
+// an offset into a list, and this section's membership is something the header
+// actively counts and revises.
 
 /** A 3x3 scene with two actors, each carrying a token. */
 function twoTokenScene(): Envelope[] {
