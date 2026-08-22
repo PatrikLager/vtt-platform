@@ -58,8 +58,9 @@ class CheckCommentWrap(unittest.TestCase):
         self.assertEqual([], got)
 
     def test_benign_twin_is_exempt(self):
-        # A short line before an unsplittable token is CORRECT wrapping. Without
-        # this exemption the check cries wolf on internal/gateway/project.go:257.
+        # A short line before an unsplittable token is CORRECT wrapping.
+        # The name below is long enough that no wrap could have fitted it on
+        # the line above, which is the whole condition the exemption tests.
         got = flags("""\
             // the pair panics, which is what
             // TestASeatPerchesOnlyAgainstAWorldItHasSeenAndThenSomeMoreWords catches.

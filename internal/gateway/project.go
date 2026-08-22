@@ -248,14 +248,14 @@ const perchSequence int64 = 0
 func (pr *Projector) reperch(actorID string, st *engine.State) []*vttv1.Envelope {
 	pr.viewer.Viewpoint = actorID
 	if st == nil {
-		// Omit rather than guess (spec §4.4), the same answer Project gives to
-		// the same input. MEASURED, not assumed: deleting this line ALONE
-		// changes nothing a test can see, because look guards nil itself and
-		// transitions reads st only inside loops that a viewer with no visible
-		// scene never enters. It stays because that is a fact about two other
-		// functions rather than about this one — delete look's guard too and
-		// the pair panics, which is what
-		// TestASeatPerchesOnlyAgainstAWorldItHasSeen catches.
+		// Omit rather than guess (spec §4.4), the same answer Project
+		// gives to the same input. MEASURED, not assumed: deleting this
+		// line ALONE changes nothing a test can see, because look guards
+		// nil itself and transitions reads st only inside loops that a
+		// viewer with no visible scene never enters. It stays because
+		// that is a fact about two other functions rather than about
+		// this one — delete look's guard too and the pair panics, which
+		// is what TestASeatPerchesOnlyAgainstAWorldItHasSeen catches.
 		return nil
 	}
 	return pr.transitions(nil, perchSequence, pr.look(st), st)

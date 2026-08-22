@@ -15,10 +15,10 @@ TWO SHAPES, which are inverses of each other:
          of an existing sentence without rewrapping.
 
 THE BENIGN TWIN, and it must be exempted or this cries wolf. A short line before
-an unsplittable token is CORRECT wrapping: `internal/gateway/project.go` wraps
-early so that `TestASeatPerchesOnlyAgainstAWorldItHasSeen` — 41 characters, no
-break possible — fits on the next line. Any line whose successor leads with a
-token longer than the slack is therefore allowed to be short.
+an unsplittable token is CORRECT wrapping: a long test name with no break in it
+has to start a line of its own, and the line before it is short for that reason
+rather than from a splice. Any line whose successor leads with a token longer
+than the slack is therefore allowed to be short.
 
 NOT A GATE. It reports; it does not fail a build. The band is a convention, not
 a rule, and this repo has legitimate long lines (tables, quoted errors, URLs).

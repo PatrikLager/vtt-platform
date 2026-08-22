@@ -1489,11 +1489,11 @@ func TestADoorInARoomYouAreNotInStaysSilent(t *testing.T) {
 }
 
 func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
-	// THE CONTROL FOR THE TEST ABOVE, and it was missing until a mutation run
-	// said so. Withholding EVERY door satisfies
-	// TestADoorInARoomYouAreNotInStaysSilent completely while making every
-	// door in the game silent, so that test alone pins only half the ruling
-	// ("forward iff the square is visible").
+	// THE CONTROL FOR THE TEST ABOVE, and it was missing until a
+	// mutation run said so. Withholding EVERY door satisfies
+	// TestADoorInARoomYouAreNotInStaysSilent completely while
+	// making every door in the game silent, so that test alone pins
+	// only half the ruling ("forward iff the square is visible").
 	//
 	// Found rather than guessed: CONDITIONALS_NEGATION on canSeeSquare's nil
 	// guard — `if at == nil` -> `if at != nil`, which returns false for every
@@ -1530,14 +1530,14 @@ func TestADoorYouCanSeeSwingShutReachesThePlayerOnce(t *testing.T) {
 	// break: a closed door's square is visible from the adjacent room, so
 	// shutting a door in your own room does reach you.
 	//
-	// It is a separate test rather than a table row because the two directions
-	// run through separate arms of doorSubject, and the mutation gate proved
-	// that matters: with only the opening test written,
-	// CONDITIONALS_NEGATION on the DoorClosed arm's `at != nil`
-	// (project.go:897:73) SURVIVED while the identical mutant on the DoorOpened
-	// arm one line up was killed. Negating it makes doorSubject disown the
-	// event, so the diff stops recognising the causing square and emits a
-	// second DoorClosed alongside the forwarded one.
+	// It is a separate test rather than a table row because the two
+	// directions run through separate arms of doorSubject, and the
+	// mutation gate proved that matters: with only the opening test
+	// written, CONDITIONALS_NEGATION on the DoorClosed arm's `at != nil`
+	// SURVIVED while the identical mutant on the DoorOpened arm was
+	// killed. Negating it makes doorSubject disown the event, so the diff
+	// stops recognising the causing square and emits a second DoorClosed
+	// alongside the forwarded one.
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)

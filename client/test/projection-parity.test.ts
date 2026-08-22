@@ -27,8 +27,8 @@ import { foldToDumpJSON } from "../src/fold";
 // two identically-wrong folds cannot agree their way past a file neither of them
 // produced.
 //
-// The independent sight oracle reaches these fixtures too, but TRANSITIVELY and
-// it is worth being exact about how: the Go side pins
+// The independent sight oracle reaches these fixtures too, but TRANSITIVELY
+// and it is worth being exact about how: the Go side pins
 // projections/<seat>/stream.json by recomputing the projection and comparing
 // BYTES, and the keystone runs its oracle against a fold of that same
 // recomputed projection. So the oracle and this file are measured against the

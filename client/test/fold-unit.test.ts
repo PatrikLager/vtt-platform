@@ -544,15 +544,14 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
   // carries `json:",omitempty"` (state.go), so json.Marshal DROPS the key
   // entirely whenever the map is nil or empty — not just when it is nil.
   // foldToDumpJSON has no struct tags to lean on, so it must reproduce that
-  // omission by hand; naively always emitting `Explored: {}` looks harmless
-  // in isolation but fails every scenarios/goldens/*/state.json byte
-  // comparison (client/test/fold-parity.test.ts), because none of those is
-  // derived from a stream containing SceneSeen — they are the LOGS, and no
-  // log produces one. Verified directly: adding
-  // `Explored: sortedMap(s.Explored ?? {}, v => v)` unconditionally and
-  // running `bun test client/test/fold-parity.test.ts` fails all 8
-  // scenarios with an unexpected `"Explored": {}` in every Scene; reverting
-  // to the conditional-omission form in fold.ts passes all 8 again.
+  // omission by hand; naively always emitting `Explored: {}` looks harmless in
+  // isolation but fails every scenarios/goldens/*/state.json byte comparison
+  // (client/test/fold-parity.test.ts), because none of those is derived from a
+  // stream containing SceneSeen — they are the LOGS, and no log produces one.
+  // Verified directly: adding `Explored: sortedMap(s.Explored ?? {}, v => v)`
+  // unconditionally and running `bun test client/test/fold-parity.test.ts` fails
+  // all 8 scenarios with an unexpected `"Explored": {}` in every Scene;
+  // reverting to the conditional-omission form in fold.ts passes all 8 again.
   // (Re-measured 2026-08-22, when session-zero took the corpus from 7 to 8.
   // The same injection also fails 2 of the PROJECTED cases in
   // client/test/projection-parity.test.ts — the bare-canvas scene, which has

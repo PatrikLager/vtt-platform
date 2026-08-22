@@ -41,15 +41,15 @@
 // several envelopes share one sequence, and the server resumes STRICTLY after
 // a sequence (internal/store/subscribe.go: `seq > afterSeq`).
 //
-// That makes a cursor of exactly the high-water mark unusable, because it
-// reaches N on the FIRST envelope of the batch while the rest are still in
-// flight. A socket
-// that dies after 2 of 5 leaves this client holding two thirds of a sequence
-// and no way to say so: after=N discards the three it never got — and a lost
-// TokenHidden leaves an enemy token on the board, which is the leak the whole
-// arc exists to close — while re-sending the two it already folded is a
-// duplicate ActorAdded, which fold() rejects and Session turns into a
-// permanent freeze.
+// That makes a cursor of exactly the high-water mark unusable,
+// because it reaches N on the FIRST envelope of the batch while
+// the rest are still in flight. A socket that dies after 2 of 5
+// leaves this client holding two thirds of a sequence and no
+// way to say so: after=N discards the three it never got — and
+// a lost TokenHidden leaves an enemy token on the board, which
+// is the leak the whole arc exists to close — while re-sending
+// the two it already folded is a duplicate ActorAdded, which
+// fold() rejects and Session turns into a permanent freeze.
 //
 // Resuming one sequence EARLIER makes the resume point expressible again. A
 // sequence lower than the highest one seen is provably complete: envelopes

@@ -90,8 +90,9 @@ type keystoneSeat struct {
 // something close to that by listing only the gates it liked and concluding
 // "what a shared dependency breaks, only a hand-derived fixture catches". FALSE,
 // and counted: the injection reds SEVEN top-level tests here. Two are
-// fixture-backed — this one and TestTheProjectedGoldensAreWhatTheProjectionActuallySends,
-// with internal/harness's golden gate failing a package over — and FIVE are
+// fixture-backed — this one and
+// TestTheProjectedGoldensAreWhatTheProjectionActuallySends, with
+// internal/harness's golden gate failing a package over — and FIVE are
 // ordinary behavioural tests that never open a golden
 // (TestSteppingIntoViewArrivesRatherThanMoves,
 // TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView,

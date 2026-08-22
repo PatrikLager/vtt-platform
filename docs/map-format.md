@@ -147,10 +147,9 @@ standard tile name, and never anything that changes what the square *is*.
 ```
 
 Square `4,2` is still, structurally, a wall — a token still cannot walk
-through it, and nothing about line of sight (a later feature that reads this
-same nature) changes. Only the picture drawn for it changes, from whatever
-the standard `stone-wall` default is to the pack's `mossy-blockwork-3`
-picture.
+through it, and nothing about line of sight changes. Only the picture drawn
+for it changes, from whatever the standard `stone-wall` default is to the
+pack's `mossy-blockwork-3` picture.
 
 **Resolution has exactly two levels, and only two.** A tile name resolves
 first against the map's own pack (if it declares one and the square is
@@ -205,13 +204,16 @@ the *entire* mechanical effect an object has. A `"boulder"` with both flags
 `false` is, mechanically, nothing more than a picture; a `"curtain"` with
 `blocks_sight: true` is real cover.
 
-**`blocks_move` is enforced today. `blocks_sight` is not — nothing reads it
-yet.** It is carried faithfully from your file all the way into the engine's
-state and sits there inert, waiting for line of sight to arrive in a later
-cycle. Declare it truthfully now and it will start working when that lands;
-just do not expect a `blocks_sight` object to hide anything at the table
-today. The same goes for a `wall` tile: it stops movement, and at present it
-conceals nothing. Right now every participant sees the whole board.
+**Both flags are enforced today, at a player's seat.** `blocks_move` stops a
+player's token entering the footprint. `blocks_sight` blocks line of sight
+through the footprint, and the platform reads it when deciding what a player
+or a spectator may see.
+
+**Terrain blocks sight independently of any object.** A `wall` tile always
+blocks; a `door` tile blocks while it is closed and stops blocking when it is
+opened. Objects carrying `blocks_sight` and sight-blocking tiles are two
+separate sources of the same rule, so a room walled in terrain is already
+hidden from a player outside it with no object placed at all.
 
 **`art` is required on every object, and the standard vocabulary has no
 object art in it.** Tiles have a standard fallback; objects do not. That means

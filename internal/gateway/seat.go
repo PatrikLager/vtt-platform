@@ -173,11 +173,11 @@ type seat struct {
 // SO WHAT COALESCING STANDS ON IS NOT "less work". It is that this pump's work
 // is bounded by the PUMP's speed rather than the sender's — no client can buy
 // itself more re-projections by hopping faster, because the pump takes one
-// shoulder per iteration whatever arrived. The COMMAND goroutine still pays per
-// hop, in an authorize and an identity lookup; it is the re-projection that
-// coalesces — plus the recoverability above. A
-// non-blocking FIFO clears the stall too and keeps every intermediate shoulder;
-// it is refused for its DEPTH, which is a buffer whose length the client picks.
+// shoulder per iteration whatever arrived. The COMMAND goroutine still pays
+// per hop, in an authorize and an identity lookup; it is the re-projection
+// that coalesces — plus the recoverability above. A non-blocking FIFO clears
+// the stall too and keeps every intermediate shoulder; it is refused for its
+// DEPTH, which is a buffer whose length the client picks.
 //
 // The mutex here is not the one seat's comment warns about: it guards a single
 // string being HANDED ACROSS, never the order anything reaches the socket.
