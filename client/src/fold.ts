@@ -512,15 +512,21 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       // Visible mirrors Go's `json:",omitempty"` on Scene.Visible exactly as
       // Explored above mirrors its own, and the omission collapses the
       // undefined/`{}` distinction the FIELD carries — deliberately, because
-      // Go's tag collapses nil and empty the same way. What the keystone (spec
-      // §4.3) holds this to is ABSENCE: no golden contains a sceneSeen, so in
-      // all seven this field is UNDEFINED, never `{}`. The corpus pins only
-      // that neither fold emits the key for THAT case — emitting it
-      // unconditionally fails all seven goldens, which was run — and says
-      // nothing about the empty one, since a version emitting the key whenever
-      // Visible is defined also passes all seven. Not a cross-language check on
-      // the contents either way; the distinction is a live-state matter, pinned
-      // separately in each language.
+      // Go's tag collapses nil and empty the same way. What the LOG-LEVEL
+      // corpus holds this to is ABSENCE: scenarios/goldens/*/stream.json are
+      // real logs and nothing in a log produces a sceneSeen, so in all eight
+      // this field is UNDEFINED, never `{}`. That half pins only the
+      // key-omission for THAT case — emitting it unconditionally fails all
+      // eight, re-measured 2026-08-22 — and says nothing about the empty one,
+      // since a version emitting the key whenever Visible is defined also
+      // passes every one of them.
+      //
+      // AMENDED 2026-08-22: the POPULATED case IS a cross-language check now.
+      // scenarios/goldens/*/projections/*/ carries projected streams that do
+      // contain sceneSeen, and client/test/projection-parity.test.ts folds them
+      // against the same hand-derived state.json the Go fold is held to. The
+      // nil/`{}` distinction is still a live-state matter pinned separately in
+      // each language.
       const visible = s.Visible ?? {};
       if (Object.keys(visible).length > 0) {
         scene.Visible = sortedMap(visible, (v) => v);

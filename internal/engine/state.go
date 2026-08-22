@@ -81,12 +81,18 @@ type Scene struct {
 	// json tags (every other field always marshals, per this file's own
 	// header comment), and cmd/vtt's dump plus internal/harness's golden
 	// comparison both call json.Marshal(State) directly with no field
-	// allowlist. Every existing scenarios/goldens/*/state.json fixture folds
-	// from the real log, so Explored is nil there — an untagged field would
-	// have serialized as `"Explored": null` on every one of them and failed
-	// every golden byte-comparison this same commit is supposed to leave
-	// green. Confirmed by running the golden suite both ways (see
-	// task-3-report.md).
+	// allowlist. Every scenarios/goldens/*/state.json fixture folds from the
+	// real log, so Explored is nil there — an untagged field would have
+	// serialized as `"Explored": null` on every one of them and failed every
+	// golden byte-comparison this same commit is supposed to leave green.
+	// Confirmed by running the golden suite both ways (see task-3-report.md),
+	// and re-measured after the corpus gained session-zero: dropping the tag
+	// fails all EIGHT (2026-08-22).
+	//
+	// The corpus's PROJECTED halves — scenarios/goldens/*/projections/*/state.json
+	// — are the other case, and they are why that glob is written with one star
+	// rather than two: those fold a projection, so Explored is populated there
+	// wherever the scene declares terrain.
 	Explored map[string]bool `json:",omitempty"`
 
 	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles. It
@@ -128,17 +134,25 @@ type Scene struct {
 	// goldens are untouched and the nil/empty distinction above lives in memory
 	// only.
 	//
-	// WHAT THE KEYSTONE ACTUALLY HOLDS THIS TO IS ABSENCE, not agreement on a
-	// value, and the first draft of this comment said the opposite. The
-	// keystone (spec §4.3) diffs dumps over scenarios/goldens, and
-	// `grep -ric sceneseen scenarios/` returns zero on every file — no golden
-	// contains a SceneSeen, so in all seven this field is NIL, never empty. What
-	// that corpus pins is only that neither fold emits the key for the NIL case
-	// (emitting `Visible: {}` unconditionally fails all seven goldens, in both
-	// languages; that was run). It says nothing about the EMPTY case: a fold
-	// that emitted the key whenever the map is non-nil passes every golden, and
-	// that was run too. Using "empty" for the nil case here would be the exact
-	// conflation the paragraph above warns against.
+	// WHAT THE LOG-LEVEL CORPUS HOLDS THIS TO IS ABSENCE, not agreement on a
+	// value, and the first draft of this comment said the opposite. Every
+	// scenarios/goldens/*/stream.json is a real LOG, nothing in a log produces
+	// SceneSeen, so in all eight this field is NIL and never empty. What that
+	// half of the corpus pins is only that neither fold emits the key for the
+	// NIL case — emitting `Visible: {}` unconditionally fails all eight, in both
+	// languages, re-measured 2026-08-22. It says nothing about the EMPTY case: a
+	// fold that emitted the key whenever the map is non-nil passes every one of
+	// them, and that was run too. Using "empty" for the nil case here would be
+	// the exact conflation the paragraph above warns against.
+	//
+	// AMENDED 2026-08-22, when the keystone (spec §4.3) landed and brought
+	// PROJECTED goldens with it. `grep -ric sceneseen scenarios/` no longer
+	// returns zero: scenarios/goldens/session-zero/projections/*/stream.json
+	// carry SceneSeen, and their hand-derived state.json files carry a populated
+	// Visible. So the POPULATED case is pinned cross-language now, by
+	// client/test/projection-parity.test.ts and
+	// internal/gateway.TestTheProjectedGoldensAreWhatTheProjectionActuallySends.
+	// The nil/empty distinction is still each language's own to keep.
 	// The two folds are mirrors because they are written as mirrors and each
 	// language pins its own arm — internal/engine/visibility_fold_test.go and
 	// client/test/visibility.test.ts — not because anything compares them here.

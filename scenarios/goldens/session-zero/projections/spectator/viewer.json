@@ -1,0 +1,7 @@
+{
+  "seat": "spectator",
+  "participantId": "p-spectator",
+  "role": "spectator",
+  "viewpoint": "act-healer",
+  "why": "One shoulder, and a party member's (spec 3.1.1). Perched on act-healer this seat sees the camp and NOTHING of ambush -- not its name, not its size (exit criterion 6) -- which is what makes it different from the player seat above rather than a second copy of it. The perch is declared here because it is connection state and never reaches the log."
+}
