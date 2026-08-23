@@ -450,23 +450,55 @@ calls the constraint the whole idea rests on. Nothing caught it: §4.3's oracle
 transcribes the same predicate, so both sides of the keystone agree while both
 are wrong.
 
-**The ruling: an actor carries its own KIND, and the exception keys on that.**
+**The ruling: an actor carries a KIND, and the GRANT is what declares it.**
 Party members are always known. Everything else is known only when seen — no
 matter who currently controls it.
 
-Kind is a property of the actor, not of whoever holds it at this moment, and
-that is the whole point. Control is transient; what a creature IS is not. The
-two cases that decide it:
+REVISED 2026-08-23, same day, by Patrik. A first draft of this section put kind
+on the actor, fixed at creation. That was wrong in a way worth recording,
+because the reasoning that replaced it is the useful part.
 
-- A player's character run by the DM while its player is offline is still a
-  party member, and the party must still know they exist. A rule keyed on the
-  controller's role would silently drop them from every roster.
-- A charmed monster handed to a player is still a monster. A rule keyed on the
-  controller's role would publish its stat block to the whole party.
+**Kind is not a fact about a character. It is a fact about that character's
+standing right now.** A charmed monster becomes a player's to run and then
+becomes a monster again. That is a TRANSITION, and a transition belongs on the
+event that makes it — `ActorControlGranted` — not on a property stamped once
+when the actor is created and never revisited.
 
-A controller-role lookup gets both backwards, and would also make the projection
-reach into the identity store on every event, per actor. Kind is already in
-state.
+Putting it on the grant resolves the ambiguity that made this defect
+unfixable-looking. Two grants are byte-identical in every other respect: the DM
+assigning Hollis Ketch to a player, and an agent taking the Goblin Archer to run
+it. No rule could tell them apart, because the information was not present.
+It was not present because nobody was asked. Ask at the grant and each case
+states its own answer.
+
+It also means **adventure content does not change at all.** Actors ship with no
+kind, which is correct — an unassigned pregenerated character is not yet in
+play, and both shipped adventures mix player characters and monsters in one
+directory with nothing distinguishing them (`cellar-rats` ships Hollis Ketch and
+Mara Voss; `goblin-ambush` ships a Human Fighter alongside two goblins). An
+earlier draft proposed having the compiler stamp every adventure actor as
+non-party. That would have dropped all three of those characters out of the
+party's roster the moment they turned a corner — the exact regression §5 exists
+to prevent, on the only two adventures that exist.
+
+**And it separates two things that were tangled.** Kind describes the
+character's standing in the fiction; control describes who is driving. They are
+independent, which is what lets an agent play a party member and a person play a
+monster without either becoming a special case.
+
+Three rules follow, and the third is load-bearing:
+
+- **An ungranted actor is NOT a party member.** A monster nobody has been
+  granted has no grant to carry a kind, so it defaults closed. Correct for every
+  actor both shipped adventures contain.
+- **Kind survives revocation.** A player leaving the table does not turn their
+  character into a monster. Revocation reassigns control; it does not restate
+  what the character is.
+- **A grant that does not state a kind is REFUSED.** proto3 has no `required`,
+  so the command handler enforces it. Without this an agent that simply omits
+  the field reproduces the original leak exactly, and the migration rule below
+  cannot save it — that rule cannot distinguish "a log written before this
+  existed" from "a grant issued today that forgot".
 
 RPTool arrived at the same shape independently: `Token.Type` is PC or NPC, and
 `StatSheetListener` gates the stat sheet on
@@ -475,11 +507,12 @@ own shows nothing at all. Same field, same purpose. (Theirs is a rendering
 convention over data every client already holds; ours is enforced on the wire.
 See §6.2.)
 
-**Migration, which is the part with a trap in it.** Every `ActorAdded` already
-written lacks the field, and a plain fail-closed default — absent means
-not-a-party-member — would retroactively drop existing party members from every
-roster the moment they turned a corner, breaking this very section for every
-campaign already recorded. The rule is instead:
+**Migration, which is the part with a trap in it, and which survives the
+revision unchanged.** Every grant already written lacks the field, and a plain
+fail-closed default — absent means not-a-party-member — would retroactively drop
+existing party members from every roster the moment they turned a corner,
+breaking this very section for every campaign already recorded. The rule is
+instead:
 
 > absent + has a controller → party member; absent + no controller → not.
 
@@ -487,6 +520,12 @@ That reproduces today's behaviour exactly for logs already written, while every
 new log states its intent. It is the same decision this contract already made
 for `controller_id`, kept as a mirror rather than reinterpreted, on the stated
 grounds that you cannot reinterpret history you have written.
+
+The rule reads the same under either draft, which is why moving kind onto the
+grant costs no migration work: an old log's grants set no kind, so their actors
+stay unspecified while holding controllers, and this rule catches them exactly
+as before. Going forward the case cannot arise, because a grant with no kind is
+refused.
 
 **One rule, both call sites.** The roster and `MayPerch`/`eyes()` read the same
 predicate today. Fixing only the roster leaves an agent-held monster perchable,

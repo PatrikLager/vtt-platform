@@ -1,5 +1,17 @@
 # Actor Kind Implementation Plan
 
+> **STATUS 2026-08-23: Task 1 LANDED as `80dfa0e` on `fix/actor-kind`, then the
+> design was revised. Task 2 below is the delta and is the live work.** Task 1
+> stands — its enum, its state field, its three call sites and its migration
+> rule are all still correct. What changed is WHO WRITES the field: spec §5.1
+> now puts it on the grant, not on actor creation. Read §5.1's revision before
+> Task 2; it explains why, and the reason is more useful than the change.
+>
+> Task 1 also left a hole it named honestly, which Task 2 is what closes:
+> adventure content cannot express kind, so every shipped actor — including the
+> Goblin Archer this arc is named after — is unspecified with no controller, and
+> one `grant_actor_control` on it makes it a party member again.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** An actor carries its own kind, and the visibility exception "always known" keys on that kind rather than on whether anyone happens to control it.
@@ -125,6 +137,84 @@ Expected: PASS. Do NOT run `check:mutation` or `check:ts-mutation` without confi
 ```bash
 git add contract internal/engine internal/gateway client/src client/test docs
 git commit -m "An actor knows what it is, so control cannot promote a monster"
+```
+
+---
+
+## Task 2: The grant declares the kind, and silence is refused
+
+**Files:**
+- Modify: `contract/vtt/v1/events.proto` (`ActorControlGranted`), `contract/vtt/v1/commands.proto` (`GrantActorControl`), `internal/engine/apply.go`, `internal/gateway/authz.go` or the command handler in `internal/gateway/server.go`, `cmd/vtt/tools.json`, `client/src/commands.ts`
+- Test: `internal/engine/actor_control_test.go`, `internal/gateway/project_test.go`, `internal/gateway/server_visibility_test.go`
+
+**Interfaces:**
+- Consumes: `ActorKind` and `Actor.kind` — both already exist from Task 1.
+- Produces: `ActorControlGranted.kind`, `GrantActorControl.kind`, and a refusal for a grant that omits it.
+
+**Governing design: spec §5.1 as revised 2026-08-23.** Its three rules are this task.
+
+- [ ] **Step 1: Write the failing tests**
+
+Four behaviours. The first is the one the arc is named after:
+
+```go
+// The archer, against SHIPPED content rather than a hand-built fixture. This is
+// what Task 1 could not reach: adventures/goblin-ambush/actors/act-archer.json
+// declares no kind and cannot, so before this task one grant promoted it.
+func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *testing.T)
+
+// Silence is refused. Without this, an agent that omits the field reproduces
+// the original leak and the migration rule cannot tell it from an old log.
+func TestAGrantWithNoKindIsRefused(t *testing.T)
+
+// Kind survives revocation: a player leaving does not turn their character
+// into a monster.
+func TestRevokingControlLeavesAPartyMemberAPartyMember(t *testing.T)
+
+// The migration rule still holds for history — an old log's grants set no
+// kind, and its party members must stay known.
+func TestAnOldLogsGrantsStillReadAsPartyMembers(t *testing.T)
+```
+
+Use the SHIPPED adventure for the first, not a fixture. Task 1's suite was green while the exposure was live precisely because every fixture it wrote declared its kind by hand.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Verify the RED **by seeing each test NAME in the output**. A `-run` filter matching nothing prints `ok`; that trap is in this repo's ledger and it would turn this step into a false pass.
+
+- [ ] **Step 3: The contract**
+
+`ActorControlGranted` and `GrantActorControl` each gain `ActorKind kind`. Read each message for its next free number rather than assuming. Additive; `check:breaking` has a real baseline for both (they predate the visibility branch). Regenerate with `task generate:contract`.
+
+- [ ] **Step 4: The fold sets kind from the grant**
+
+`engine.Apply`'s `ActorControlGranted` arm writes `Actor.Kind`. The `ActorControlRevoked` arm must NOT clear it — §5.1's second rule, and worth its own assertion because "revoke tidies up after itself" is the plausible-looking wrong thing to write.
+
+Mirror in `client/src/fold.ts`.
+
+- [ ] **Step 5: Refuse a grant with no kind**
+
+At the command boundary, alongside the other `grant_actor_control` checks. A refusal, not a default: a default is indistinguishable from an omission and that is the whole point of the rule.
+
+- [ ] **Step 6: The seams that issue grants**
+
+Three verified locations, and once Step 5 lands, a grant that does not carry the field is refused — so missing one of these breaks the DM console or the agent outright:
+
+- `cmd/vtt/tools.json` — the MCP tool definition, where the agent's grant comes from.
+- `client/src/commands.ts:224` — `grantActorControl(actorId, participantId)`, the builder.
+- `client/src/view/dm.ts:403` — its only caller, which must obtain a kind from the DM and pass it.
+
+**Search for callers in BOTH spellings.** The wire name is `grant_actor_control` and the generated TS is `grantActorControl`; a grep for the snake_case form alone finds `tools.json` and misses the entire client, which is exactly what happened while this plan was being written. `addActor` (`commands.ts:206`) already takes an optional `controllerId`, so consider whether creating an actor with a controller in one step needs a kind too, or whether it should stop taking a controller at all now that the grant is what confers standing.
+
+- [ ] **Step 7: Gates**
+
+`go test ./... && bun test client/test && task client:typecheck && task check:drift && task check:breaking`. Do NOT run `check:mutation`/`check:ts-mutation` without checking disk headroom first. If lines shift in a file with entries in `tools/mutation-equivalents.txt`, re-key after your LAST edit and byte-compare — Task 1 got this wrong by measuring before two later edits landed.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add contract internal client cmd docs
+git commit -m "A grant says what it is granting, and silence is not an answer"
 ```
 
 ---
