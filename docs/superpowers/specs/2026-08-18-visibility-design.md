@@ -433,6 +433,73 @@ when the rogue is two rooms away; you merely cannot see their token. Dropping a
 party member from your own roster because they turned a corner reads as a bug,
 not as fog.
 
+### 5.1 The exception is about WHAT an actor is, not who holds it
+
+AMENDED 2026-08-23, Patrik's ruling, after the whole-branch review found the
+rule delivered one degree looser than written.
+
+**The defect.** The sentence above says "controlled by any PLAYER". The code
+implements "has any CONTROLLER" — `len(a.GetControllerIds()) > 0`, evaluated
+over every actor in state with no visibility test. `controller_ids` holds
+participant ids and carries no role, and nothing constrains who a grant targets.
+So one `grant_actor_control` on a hidden monster publishes it to every player's
+roster in full — a whole cloned `Actor` with name, attributes, resources and
+`module_data`, plus its conditions — while its token stays correctly hidden. It
+simultaneously opens `MayPerch` and `eyes()` on that creature, which §3.1.1
+calls the constraint the whole idea rests on. Nothing caught it: §4.3's oracle
+transcribes the same predicate, so both sides of the keystone agree while both
+are wrong.
+
+**The ruling: an actor carries its own KIND, and the exception keys on that.**
+Party members are always known. Everything else is known only when seen — no
+matter who currently controls it.
+
+Kind is a property of the actor, not of whoever holds it at this moment, and
+that is the whole point. Control is transient; what a creature IS is not. The
+two cases that decide it:
+
+- A player's character run by the DM while its player is offline is still a
+  party member, and the party must still know they exist. A rule keyed on the
+  controller's role would silently drop them from every roster.
+- A charmed monster handed to a player is still a monster. A rule keyed on the
+  controller's role would publish its stat block to the whole party.
+
+A controller-role lookup gets both backwards, and would also make the projection
+reach into the identity store on every event, per actor. Kind is already in
+state.
+
+RPTool arrived at the same shape independently: `Token.Type` is PC or NPC, and
+`StatSheetListener` gates the stat sheet on
+`isGM() || playerOwns(token) || token.getType() != Type.NPC` — an NPC you do not
+own shows nothing at all. Same field, same purpose. (Theirs is a rendering
+convention over data every client already holds; ours is enforced on the wire.
+See §6.2.)
+
+**Migration, which is the part with a trap in it.** Every `ActorAdded` already
+written lacks the field, and a plain fail-closed default — absent means
+not-a-party-member — would retroactively drop existing party members from every
+roster the moment they turned a corner, breaking this very section for every
+campaign already recorded. The rule is instead:
+
+> absent + has a controller → party member; absent + no controller → not.
+
+That reproduces today's behaviour exactly for logs already written, while every
+new log states its intent. It is the same decision this contract already made
+for `controller_id`, kept as a mirror rather than reinterpreted, on the stated
+grounds that you cannot reinterpret history you have written.
+
+**One rule, both call sites.** The roster and `MayPerch`/`eyes()` read the same
+predicate today. Fixing only the roster leaves an agent-held monster perchable,
+which is the half `viewpoint.go` already flags for adjudication.
+
+**This does not close the neighbouring finding.** An actor legitimately glimpsed
+and then lost from sight still receives every `ResourceChanged`,
+`ConditionApplied`, `AttackRolled` and `AbilityUsed` naming it, permanently,
+because `pr.actors` never forgets. That is a separate rule and a separate
+decision; §3.2's "no memory of 'a goblin was here'" argues against it and the
+justification in code is written about party members. Not in scope here, and
+recorded so this amendment is not mistaken for closing it.
+
 ---
 
 ## 6. The client
