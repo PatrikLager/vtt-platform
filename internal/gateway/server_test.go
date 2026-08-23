@@ -1393,10 +1393,15 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	expectPresenceSnapshot(t, dm)
 
 	// a1 is seeded controlled by the player; grant it to a SECOND participant.
+	// The grant SAYS what it is granting (visibility spec §5.1, revised
+	// 2026-08-23): a1 is a shared character, so this is a party member. A
+	// grant that stated nothing would be refused before conversion —
+	// scenarios/denials.json pins that half of the flow end to end.
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "grant-1",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
 			ActorId: "a1", ParticipantId: "p-second",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		}},
 	})
 	res := readResult(t, dm)
@@ -1409,6 +1414,11 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	actor, ok := st.Actors["a1"]
 	if !ok {
 		t.Fatal("actor a1 vanished")
+	}
+	// The grant's word reached state, over the wire and through the fold —
+	// the whole path the field exists for, asserted where it is observable.
+	if got := actor.GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+		t.Fatalf("kind = %v, want the grant's declaration to have landed in state", got)
 	}
 	ids := actor.GetControllerIds()
 	if len(ids) != 2 || ids[1] != "p-second" {

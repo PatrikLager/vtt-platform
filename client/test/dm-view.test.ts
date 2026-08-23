@@ -837,11 +837,83 @@ test("the DM can hand a character to another participant", () => {
 
   const target = row.querySelector(".grant-target") as HTMLSelectElement;
   target.value = "p-bo";
+  (row.querySelector(".grant-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   (row.querySelector(".grant") as HTMLButtonElement).click();
 
   expect(h.sent).toHaveLength(1);
   expect(h.sent[0]!.command.case).toBe("grantActorControl");
-  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "act-warden", participantId: "p-bo" });
+  expect(h.sent[0]!.command.value).toMatchObject({
+    actorId: "act-warden",
+    participantId: "p-bo",
+    kind: ActorKind.PARTY_MEMBER,
+  });
+});
+
+// --- the grant says what it is granting (visibility spec §5.1) ---------------
+//
+// The DM console is one of the three seams that issue a grant, and the server
+// now REFUSES one that states no kind. Without these the console would send a
+// grant the server bounces, and the DM would read a protocol error where a
+// question belonged.
+
+test("the DM console makes the DM say what the actor is", () => {
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  const kind = row.querySelector(".grant-kind") as HTMLSelectElement;
+  expect(kind).not.toBeNull();
+
+  // BLANK by default, and deliberately so: a pre-selected value is
+  // indistinguishable from a DM who never looked, which is the exact reason
+  // the server refuses an unstated kind rather than defaulting one.
+  expect(kind.value).toBe("");
+  expect(Array.from(kind.options).map((o) => o.value)).toEqual([
+    "",
+    "ACTOR_KIND_PARTY_MEMBER",
+    "ACTOR_KIND_NON_PARTY",
+  ]);
+  // Every option must be readable as a sentence about the table, not as a
+  // wire constant — the DM is choosing between a character and a monster.
+  for (const o of Array.from(kind.options)) {
+    expect(o.textContent!.length).toBeGreaterThan(0);
+  }
+});
+
+test("a grant with no kind chosen is refused here, not sent and bounced", () => {
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  (row.querySelector(".grant-target") as HTMLSelectElement).value = "p-bo";
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(0);
+  // The TEXT, not just that something was said. Grant has TWO refusal paths —
+  // no participant and no kind — so `notices.length > 0` would stay green
+  // against a console that never renders the kind select at all, as long as
+  // the participant list also went missing. Its Go counterpart pins the same
+  // thing (grant_validate_test.go requires the refusal to name the field),
+  // and for the same reason: a refusal that does not teach the rule is not
+  // the refusal this feature needs.
+  expect(h.notices).toHaveLength(1);
+  expect(h.notices[0]).toMatch(/party member/i);
+});
+
+test("the DM can hand a monster to a participant without promoting it", () => {
+  // The agent's case, at the human console: somebody runs the goblin, and the
+  // goblin stays a goblin. The two grants are byte-identical apart from this
+  // field, which is why the field exists.
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  (row.querySelector(".grant-target") as HTMLSelectElement).value = "p-bo";
+  (row.querySelector(".grant-kind") as HTMLSelectElement).value = "ACTOR_KIND_NON_PARTY";
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.value).toMatchObject({ kind: ActorKind.NON_PARTY });
 });
 
 test("each current controller can be revoked individually", () => {
@@ -1024,6 +1096,25 @@ test("the DM's choice of participant survives a re-render", () => {
 
   const second = harness(st, [], { participants: parts });
   expect((second.node.querySelector(".grant-target") as HTMLSelectElement).value).toBe("p-bo");
+});
+
+test("the DM's answer to what the actor is survives a re-render too", () => {
+  // The same mechanism one field over, and it needs its own test rather than
+  // its neighbour's: the kind select is the field a DM is most likely to be
+  // part-way through when an event lands, because it is the question they have
+  // to stop and think about. Losing it silently resets to "what is it?", and
+  // the next Grant click is refused for a choice they already made.
+  const st = tableWithActor();
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const sel = first.node.querySelector(".grant-kind") as HTMLSelectElement;
+  sel.value = "ACTOR_KIND_NON_PARTY";
+  sel.dispatchEvent(new Event("change"));
+
+  const second = harness(st, [], { participants: parts });
+  expect((second.node.querySelector(".grant-kind") as HTMLSelectElement).value).toBe(
+    "ACTOR_KIND_NON_PARTY",
+  );
 });
 
 // --- sharing the table, and who may do what (plan J6) --------------------

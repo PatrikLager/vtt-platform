@@ -94,7 +94,7 @@ var manifest = []toolSpec{
 					"name":          "Optional display label for the actor.",
 					"controllerId":  "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player. Use EITHER this or controllerIds, never both — if they disagree, controllerIds wins and this is overwritten with its first entry.",
 					"controllerIds": "Optional; omit. Authoritative if set — controllerId is derived from it, so do not set both. The full set of participants who may act as this actor — control is normally granted AFTER creation with grant_actor_control, not seeded here. Setting it seeds the set; leaving it empty means DM/agent only, exactly as an empty controllerId does.",
-					"kind":          "What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. SET IT: an actor added without a kind falls back to \"is anyone controlling it\", which is how a monster you later hand to someone becomes public. It is not about who controls the actor — a character whose player is away is still a party member, and a charmed monster is still a monster.",
+					"kind":          "What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. SET IT WHENEVER YOU SET A CONTROLLER HERE: an actor added without a kind falls back to \"is anyone controlling it\", so seeding controllerId/controllerIds on a kindless actor publishes it to the whole party on the spot. (Handing control over LATER with grant_actor_control cannot do that — that command refuses to move a character without saying what it is.) Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster.",
 					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
@@ -210,12 +210,22 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.GrantActorControl",
 		name:        "grant_actor_control",
-		description: "Give a participant control of an actor, so they may move its token and use its abilities. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
+		description: "Give a participant control of an actor, so they may move its token and use its abilities, AND state what that actor is while doing it. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
 		descriptor:  (&vttv1.GrantActorControl{}).ProtoReflect().Descriptor(),
-		// Both fields are genuinely required — there is no meaning to
-		// granting control of nothing, or to nobody — so the derived
-		// required list is honest and needs no override (same check as
-		// load_adventure above).
+		// All THREE fields are genuinely required — there is no meaning to
+		// granting control of nothing, or to nobody, and a grant that does
+		// not say what it is granting is refused rather than guessed at
+		// (visibility spec §5.1) — so the derived required list is honest and
+		// needs no override (same check as load_adventure above). Only kind
+		// gets a description, because it is the one field whose meaning an
+		// LLM caller cannot infer from its name.
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.GrantActorControl": {
+				fieldDocs: map[string]string{
+					"kind": "REQUIRED. What this actor IS **right now**, which decides whether the whole party is told it exists. ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it; ACTOR_KIND_NON_PARTY when you are handing out a monster, NPC or creature for someone to operate — including when YOU take one over to run it. This is NOT about who is holding it: a character whose player is away is still a party member, and a goblin you are running yourself is still a goblin. It describes standing RIGHT NOW and it can change — grant again with the other value when a monster is charmed into the party's service, or when a charm ends.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.RevokeActorControl",

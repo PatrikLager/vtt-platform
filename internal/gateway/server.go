@@ -1116,6 +1116,25 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
+	// grant_actor_control's kind gets the SAME seam and the SAME reasoning as
+	// create_scene's terrain directly above, and for the third time the same
+	// argument: engine.Apply is the fold, and by the time an event reaches it
+	// the grant is already history — history is not the place to say no.
+	//
+	// It is HERE rather than in Authorize because it is not a rule about who:
+	// the DM and the agent are both entitled to hand a character over, and
+	// neither may do it without saying what they are handing over. And it is
+	// here rather than in ToEvent because ToEvent's own completeness gate
+	// (TestEveryClientCommandConverts) requires every command to convert from
+	// an EMPTY payload — that gate exists because grant_actor_control once
+	// shipped advertised and dead, so narrowing it for this command in
+	// particular would be trading one silent hole for another.
+	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
+		if err := validateGrantActorControl(g.GrantActorControl); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
 	// use_ability/load_adventure/load_map do not become a single Envelope via
 	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
 	// adventure.go/map.go); every other command, including remove_condition,

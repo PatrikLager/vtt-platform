@@ -138,6 +138,27 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if err != nil {
 			return err
 		}
+		// THE GRANT DECLARES WHAT THE ACTOR IS (visibility spec §5.1, revised
+		// 2026-08-23), and it does so BEFORE the idempotency check below.
+		// Idempotency is a rule about the CONTROL SET — do not duplicate a
+		// controller — and returning early would silently swallow a standing
+		// change stated in the same breath: charm the goblin the agent is
+		// already running and its kind must move even though its controller
+		// does not.
+		//
+		// The write is CONDITIONAL, and that is the load-bearing half. A grant
+		// that says nothing says nothing; it does not say UNSPECIFIED. Every
+		// ActorControlGranted already recorded lacks this field, so an
+		// unconditional write would reset a declared monster to UNSPECIFIED on
+		// replay — and UNSPECIFIED plus a controller is exactly what the
+		// migration rule reads as a party member, which is the leak §5.1
+		// exists to close. Refusing a kindless grant is possible only at the
+		// command boundary, where history is not being replayed
+		// (internal/gateway's validateGrantActorControl); the fold's job is to
+		// keep the log's own words.
+		if g.GetKind() != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+			actor.Kind = g.GetKind()
+		}
 		for _, id := range actor.GetControllerIds() {
 			if id == g.GetParticipantId() {
 				return nil // idempotent: already controls it
@@ -153,6 +174,16 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if err != nil {
 			return err
 		}
+		// KIND IS DELIBERATELY UNTOUCHED HERE (visibility spec §5.1's second
+		// rule). A player leaving the table does not turn their character into
+		// a monster: revocation reassigns CONTROL, and control and standing
+		// are independent — which is what lets an agent play a party member
+		// and a person play a monster without either being a special case.
+		// "Revoke tidies up after itself" is the plausible-looking wrong thing
+		// to write here, and its consequence is silent: the character simply
+		// stops being on the party's roster the next time they turn a corner.
+		// Pinned by TestRevokingControlLeavesAPartyMemberAPartyMember.
+		//
 		// A fresh slice rather than the in-place [:0] trick: sets here are one
 		// to three elements, so the allocation is free, and aliasing the
 		// backing array would corrupt any caller holding the old slice across

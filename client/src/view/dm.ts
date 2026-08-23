@@ -10,7 +10,7 @@
 import type { State } from "../state";
 import type { Participant } from "../session";
 import type { AdventureMeta, JoinLink, Roster } from "../metadata";
-import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, createScene, placeToken, loadAdventure,
@@ -54,6 +54,28 @@ const draft: Record<string, string> = {};
 /** Clear a field's remembered text, after the command it fed succeeded. */
 function clearDraft(...fields: string[]): void {
   for (const f of fields) delete draft[f];
+}
+
+/**
+ * The wire NAME a kind <select> carries, back to the enum the command needs.
+ *
+ * Returns null for "nothing chosen", and that is the point rather than an
+ * inconvenience: "the DM did not answer" is a THIRD state, distinct from both
+ * kinds (visibility spec §5.1). Collapsing it into ACTOR_KIND_UNSPECIFIED and
+ * sending it would reproduce on the client exactly the ambiguity the server
+ * refuses — an omission indistinguishable from a decision. An unrecognised
+ * string falls into the same bucket, which fails closed: a grant is not sent
+ * at all rather than sent saying something nobody chose.
+ */
+function actorKindFromWireName(name: string): ActorKind | null {
+  switch (name) {
+    case "ACTOR_KIND_PARTY_MEMBER":
+      return ActorKind.PARTY_MEMBER;
+    case "ACTOR_KIND_NON_PARTY":
+      return ActorKind.NON_PARTY;
+    default:
+      return null;
+  }
 }
 
 // Every input carries a stable data-field. Placeholders are prose — they get
@@ -389,6 +411,38 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     });
     row.appendChild(target);
 
+    // WHAT the actor is, asked at the grant (visibility spec §5.1). This is
+    // the second question, not a setting: kind describes a character's
+    // standing RIGHT NOW, and standing changes — a charmed monster becomes a
+    // player's to run and then becomes a monster again — so it is asked every
+    // time control moves rather than stamped once.
+    //
+    // The blank option is FIRST and is what the field starts on. Pre-selecting
+    // either value would be a default, and a default is indistinguishable from
+    // a DM who never looked — which is the exact reason the server refuses an
+    // unstated kind instead of guessing one. Pre-filling from the actor's
+    // CURRENT kind was considered and rejected for the same reason: it reads
+    // as an answer while being an assumption, and the one actor it would be
+    // wrong about is the monster somebody is being handed.
+    const kindPick = document.createElement("select");
+    kindPick.className = "grant-kind";
+    const kindField = `grant-kind-${a.actorId}`;
+    for (const [value, label] of [
+      ["", "what is it?"],
+      ["ACTOR_KIND_PARTY_MEMBER", "party member"],
+      ["ACTOR_KIND_NON_PARTY", "monster / NPC"],
+    ] as const) {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      kindPick.appendChild(o);
+    }
+    kindPick.value = draft[kindField] ?? "";
+    kindPick.addEventListener("change", () => {
+      draft[kindField] = kindPick.value;
+    });
+    row.appendChild(kindPick);
+
     const give = document.createElement("button");
     give.className = "chip grant";
     give.textContent = "Grant";
@@ -400,8 +454,17 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         d.notify("Grant to nobody: choose a participant first.");
         return;
       }
-      d.send(grantActorControl(a.actorId, target.value));
-      clearDraft(field);
+      // The same reasoning one field over. The server refuses a grant that
+      // states no kind (gateway validateGrantActorControl), so without this
+      // the DM would read a wire-level refusal for a question the console
+      // simply failed to ask.
+      const kind = actorKindFromWireName(kindPick.value);
+      if (kind === null) {
+        d.notify("Say what it is: a party member, or a monster the party has to find.");
+        return;
+      }
+      d.send(grantActorControl(a.actorId, target.value, kind));
+      clearDraft(field, kindField);
     });
     row.appendChild(give);
     controlRows.push(row);

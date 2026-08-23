@@ -6,7 +6,8 @@
       "controller_id": "p-eli",
       "controller_ids": [
         "p-eli"
-      ]
+      ],
+      "kind": 2
     },
     "act-scout": {
       "actor_id": "act-scout",
@@ -19,7 +20,8 @@
       "controller_ids": [
         "p-bo",
         "p-cy"
-      ]
+      ],
+      "kind": 1
     }
   },
   "Conditions": {},

@@ -20,7 +20,7 @@ import {
   JoinDoor,
   type ClientCommand,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { ActorSchema } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorSchema, type ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fromJson } from "@bufbuild/protobuf";
 
 export interface Point {
@@ -214,17 +214,29 @@ export function addActor(actorId: string, name: string, controllerId?: string): 
 }
 
 /**
- * Hand control of an actor to a participant (spec §5.3, dm/agent only).
+ * Hand control of an actor to a participant (spec §5.3, dm/agent only), SAYING
+ * what that actor is (visibility spec §5.1).
  *
  * Additive: the server ADDS to controller_ids rather than replacing, so
  * granting does not take the character away from whoever already holds it.
  * That is what makes a character shareable, and it is why there is no
  * "transfer" builder — a transfer is a grant and a revoke, two decisions.
+ *
+ * `kind` is a REQUIRED PARAMETER, not an optional one with a default, and
+ * that is the whole point: the server refuses a grant that states no kind,
+ * because an omitted value cannot be told from a deliberate one. Making it
+ * optional here would move the omission from the wire into this file, where
+ * nothing checks it — the caller would get a bounced command instead of a
+ * type error. Every caller must ASK, which is what dm.ts's kind selector is.
  */
-export function grantActorControl(actorId: string, participantId: string): ClientCommand {
+export function grantActorControl(
+  actorId: string,
+  participantId: string,
+  kind: ActorKind,
+): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "grantActorControl", value: { actorId, participantId } },
+    command: { case: "grantActorControl", value: { actorId, participantId, kind } },
   });
 }
 

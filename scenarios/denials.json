@@ -19,6 +19,8 @@
     {"by": "player", "command": {"retractEvents": {"fromSequence": 1, "toSequence": 1, "reason": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
     {"by": "player", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 2, "y": 2}}}, "expect": {"deniedContaining": "not authorized"}},
 
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-npc", "participantId": "{{id:player}}"}}, "expect": {"deniedContaining": "must say what the actor IS"}},
+
     {"by": "spectator", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 3, "y": 3}}}, "expect": {"deniedContaining": "not authorized"}},
     {"by": "spectator", "command": {"createScene": {"sceneId": "scn-spectator-deny", "name": "nope", "gridWidth": 1, "gridHeight": 1}}, "expect": {"deniedContaining": "not authorized"}},
     {"by": "spectator", "command": {"addActor": {"actor": {"actorId": "act-spectator-deny", "name": "nope"}}}, "expect": {"deniedContaining": "not authorized"}},

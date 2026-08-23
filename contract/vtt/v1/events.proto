@@ -61,8 +61,12 @@ message Resource {
 // enum is additive; every future value is "not a party member" to the rule
 // below until something deliberately says otherwise, so growth fails closed.
 //
-// UNSPECIFIED IS A REAL STATE HERE, not an error, and this is the one place
-// this contract does NOT treat absence as a defect. Every ActorAdded already
+// UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and that is
+// the one place this contract does NOT treat absence as a defect. It is NOT
+// tolerated on a COMMAND: GrantActorControl.kind is refused when absent, and
+// the two rules are the same rule seen from either end of time — history that
+// says nothing must keep meaning what it meant, and a caller who says nothing
+// today must be asked rather than guessed at. Every ActorAdded already
 // written lacks the field, and reading absence as "not a party member" would
 // retroactively drop existing party members from every roster the moment they
 // turned a corner. The migration rule is therefore:
@@ -124,12 +128,50 @@ message Actor {
   ActorKind kind = 9;
 }
 
-// ActorControlGranted adds a participant to an actor's controller set.
+// ActorControlGranted adds a participant to an actor's controller set, and
+// DECLARES WHAT THAT ACTOR IS while doing it.
 // Idempotent: granting to a participant who already holds control is not an
-// error and does not duplicate them.
+// error and does not duplicate them — but it still records the kind, so a
+// re-grant is how a charmed monster's standing is restated.
 message ActorControlGranted {
   string actor_id = 1;
   string participant_id = 2;
+  // What the actor IS, as of this grant (visibility spec §5.1, revised
+  // 2026-08-23).
+  //
+  // KIND LIVES HERE RATHER THAN ONLY ON Actor because kind is not a fact
+  // about a character — it is a fact about that character's STANDING RIGHT
+  // NOW. A charmed monster becomes a player's to run and then becomes a
+  // monster again. That is a TRANSITION, and a transition belongs on the
+  // event that makes it, not on a property stamped once at creation.
+  //
+  // It also dissolves an ambiguity no rule could have resolved. Two grants
+  // are byte-identical in every other respect: the DM assigning a pregen
+  // character to a player, and an agent taking a goblin to run it. The
+  // information that separates them was absent because nobody was asked.
+  // Ask at the grant and each case states its own answer.
+  //
+  // PRECEDENCE over Actor.kind, which ActorAdded also carries: THE LATER
+  // EVENT WINS, which is not a special rule but the fold's ordinary
+  // semantics — events in order, each stating the newer fact. ActorAdded's
+  // kind is what an actor is BORN as; a grant restates it. Any other
+  // precedence would freeze standing at creation, which is exactly the
+  // design this revision replaced.
+  //
+  // UNSPECIFIED here changes nothing. Every grant already recorded lacks
+  // this field, so a grant that says nothing must leave the actor's kind
+  // alone; clearing it would let history rewrite a declaration made after
+  // it. Revocation likewise never clears kind — a player leaving the table
+  // does not turn their character into a monster.
+  //
+  // GOING FORWARD A GRANT THAT SAYS NOTHING IS REFUSED, at the command
+  // boundary (internal/gateway's validateGrantActorControl, called from
+  // handleCommand) and never in the fold: proto3 has no `required`, and the
+  // fold must keep accepting every kindless grant already written. Without
+  // that refusal an agent that omits the field reproduces the original leak
+  // while ActorKind's migration rule stands helpless — it cannot tell a log
+  // written before this field existed from a grant issued today that forgot.
+  ActorKind kind = 3;
 }
 
 // ActorControlRevoked removes a participant from an actor's controller set.

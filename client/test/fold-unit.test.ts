@@ -369,9 +369,17 @@ test("the dump carries controller_ids alongside controller_id", () => {
 // BY HAND, so it is the one of the two folds that can silently drop a field —
 // and a dropped kind is not a display bug. It is the server's visibility rule
 // and the client's state disagreeing about which creatures the party knows,
-// which is exactly the divergence scenarios/goldens exists to catch and cannot
-// catch yet: no golden stream carries a kind, because all eight predate the
-// field. Until one does, these two tests ARE the parity surface for it.
+// which is exactly the divergence scenarios/goldens exists to catch.
+//
+// CORRECTED 2026-08-23 (actor-kind Task 2). This used to say the corpus
+// "cannot catch it yet: no golden stream carries a kind". True when it was
+// written and false now: shared-control's four grants each state one, so
+// `act-warden` ends PARTY_MEMBER and `act-herald` NON_PARTY in that
+// scenario's hand-derived state.json — and BOTH folds are byte-compared
+// against it (fold-parity.test.ts here, internal/harness's TestFoldGoldenCorpus
+// on the Go side). No golden ActorAdded declares a kind, so those two values
+// are derivable only through the GRANT arm. What these tests still own alone
+// is the ActorAdded arm below and the UNSPECIFIED shapes.
 //
 // NO MIGRATION HAPPENS HERE, mirroring Go. Absence stays absence in state; the
 // "absent + a controller means party member" reading belongs to whoever asks
@@ -414,6 +422,92 @@ test("the dump carries kind, and omits it when the log declared none", () => {
   ) as { Actors: Record<string, Record<string, unknown>> };
   expect(dumped.Actors["a1"]!["kind"]).toBe(2);
   expect(dumped.Actors["a2"]).not.toHaveProperty("kind");
+});
+
+// --- and the GRANT is what declares that kind --------------------------------
+//
+// The TS twins of internal/engine/actor_control_test.go's four grant/revoke
+// kind tests. Kind is not a fact about a character; it is a fact about that
+// character's standing RIGHT NOW (visibility spec §5.1, revised 2026-08-23),
+// so the event that changes standing is what states it.
+//
+// scenarios/goldens/shared-control DOES now cross-check the grant arm in both
+// languages (see the correction above), but only for the two DECLARED values
+// on a first grant. The three shapes below that it cannot reach are why these
+// stay: a kindless grant landing on a declared actor, a re-grant to a
+// controller who already holds the character, and a revoke.
+
+test("the grant declares the actor's kind, and overwrites what creation said", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "a1" } } }),
+    env(3, { actorAdded: { actor: { actorId: "a2", kind: "ACTOR_KIND_NON_PARTY" } } }),
+    env(4, {
+      actorControlGranted: { actorId: "a1", participantId: "p-1", kind: "ACTOR_KIND_NON_PARTY" },
+    }),
+    // The monster charmed into a player's hands: the LATER event states the
+    // newer fact, which is the fold's ordinary semantics rather than a special
+    // precedence rule. Freezing kind at creation is the design this revision
+    // replaced.
+    env(5, {
+      actorControlGranted: { actorId: "a2", participantId: "p-2", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  ]);
+  expect(st.Actors["a1"]!.kind).toBe(ActorKind.NON_PARTY);
+  expect(st.Actors["a2"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+});
+
+test("a grant that states no kind does not erase one already declared", () => {
+  // A grant that says nothing says NOTHING — it does not say UNSPECIFIED.
+  // Every grant already recorded lacks the field, so writing it
+  // unconditionally would reset a declared monster to UNSPECIFIED, and
+  // UNSPECIFIED plus a controller is what the migration rule reads as a party
+  // member. That is the original leak, reopened by a replay.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "archer", kind: "ACTOR_KIND_NON_PARTY" } } }),
+    env(3, { actorControlGranted: { actorId: "archer", participantId: "p-1" } }),
+  ]);
+  expect(st.Actors["archer"]!.kind).toBe(ActorKind.NON_PARTY);
+});
+
+test("a re-grant to an existing controller still restates the kind", () => {
+  // The grant's idempotency is about the CONTROL SET, never about kind: the
+  // early return that stops a controller being duplicated must not swallow a
+  // standing change with it.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "archer" } } }),
+    env(3, {
+      actorControlGranted: { actorId: "archer", participantId: "p-1", kind: "ACTOR_KIND_NON_PARTY" },
+    }),
+    env(4, {
+      actorControlGranted: {
+        actorId: "archer",
+        participantId: "p-1",
+        kind: "ACTOR_KIND_PARTY_MEMBER",
+      },
+    }),
+  ]);
+  expect(st.Actors["archer"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+  expect(st.Actors["archer"]!.controllerIds).toEqual(["p-1"]);
+});
+
+test("revoking control leaves a party member a party member", () => {
+  // Kind SURVIVES revocation: a player leaving the table does not turn their
+  // character into a monster. Asserted because "revoke tidies up after itself"
+  // is the plausible-looking wrong thing to write, and its consequence is
+  // invisible until the character turns a corner and drops off the roster.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "thorn" } } }),
+    env(3, {
+      actorControlGranted: { actorId: "thorn", participantId: "p-1", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+    env(4, { actorControlRevoked: { actorId: "thorn", participantId: "p-1" } }),
+  ]);
+  expect(st.Actors["thorn"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+  expect(st.Actors["thorn"]!.controllerIds).toEqual([]);
 });
 
 test("adding an actor drops empty ids from the control set", () => {

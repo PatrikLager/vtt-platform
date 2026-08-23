@@ -5,7 +5,10 @@
 // that quietly tolerates a malformed event would diverge from the server's
 // own view of history and show a player a state the log does not support.
 
-import type { ActorKind, Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+// ActorKind is imported as a VALUE, not just a type: the grant arm below
+// compares against ACTOR_KIND_UNSPECIFIED, and `v.kind !== 0` would state the
+// same rule in a form no reader can check against the contract.
+import { ActorKind, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import {
   FoldError,
   newState,
@@ -140,6 +143,17 @@ function apply(st: State, env: Envelope): void {
     case "actorControlGranted": {
       const v = p.value;
       const a = requireControlTarget(st, v.actorId, v.participantId, "actor control granted");
+      // The strict mirror of internal/engine's ActorControlGranted arm, down
+      // to the ORDER: the grant declares what the actor is (visibility spec
+      // §5.1) and it does so BEFORE the idempotent early return, because
+      // idempotency is a rule about the control set and returning first would
+      // swallow a standing change stated in the same event.
+      //
+      // CONDITIONAL, matching Go: a grant that says nothing says nothing, not
+      // UNSPECIFIED. Every grant already recorded lacks the field, and
+      // clearing a declared kind on replay would hand it back to the "absent
+      // + a controller means party member" reading — the leak §5.1 closes.
+      if (v.kind !== ActorKind.UNSPECIFIED) a.kind = v.kind;
       if (a.controllerIds.includes(v.participantId)) return; // idempotent
       Object.assign(a, mirrorControl([...a.controllerIds, v.participantId]));
       return;
@@ -147,6 +161,8 @@ function apply(st: State, env: Envelope): void {
     case "actorControlRevoked": {
       const v = p.value;
       const a = requireControlTarget(st, v.actorId, v.participantId, "actor control revoked");
+      // Kind is untouched here, mirroring Go: a player leaving the table does
+      // not turn their character into a monster (spec §5.1's second rule).
       Object.assign(a, mirrorControl(a.controllerIds.filter((id) => id !== v.participantId)));
       return;
     }

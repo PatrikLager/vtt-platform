@@ -151,6 +151,133 @@ func TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt(t *testing.T) {
 	}
 }
 
+// grantKindEnv is grantEnv's sibling for the world after visibility spec
+// §5.1's revision: a grant DECLARES what the actor is. Kept separate rather
+// than adding a parameter to grantEnv, because grantEnv's kindless shape is
+// exactly what every grant already recorded looks like and the tests below
+// need both shapes side by side.
+func grantKindEnv(seq int64, actorID, participantID string, kind vttv1.ActorKind) *vttv1.Envelope {
+	return &vttv1.Envelope{Sequence: seq, EventId: "grant", Payload: &vttv1.Envelope_ActorControlGranted{
+		ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: actorID, ParticipantId: participantID, Kind: kind},
+	}}
+}
+
+func TestTheGrantDeclaresTheActorsKind(t *testing.T) {
+	// THE REVISION, as a test (visibility spec §5.1, revised 2026-08-23).
+	// Kind is not a fact about a character; it is a fact about that
+	// character's STANDING RIGHT NOW, so the event that changes standing is
+	// what declares it. A charmed monster becomes a player's to run and then
+	// becomes a monster again — a transition, and a transition belongs on the
+	// event that makes it.
+	//
+	// The third row is the precedence rule, and it is the one worth stating
+	// out loud: a grant OVERWRITES whatever ActorAdded declared, because the
+	// later event states the newer fact. That is not a special rule, it is
+	// the fold's ordinary semantics; any other precedence would freeze an
+	// actor's standing at creation, which is the design this revision
+	// replaced.
+	for _, tc := range []struct {
+		name    string
+		created vttv1.ActorKind
+		granted vttv1.ActorKind
+		want    vttv1.ActorKind
+	}{
+		{"an undeclared actor granted as a party member", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED,
+			vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		{"an undeclared actor an agent takes to run", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED,
+			vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		{"a monster charmed into a player's hands", vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		{"a party member handed to the agent that runs the table", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+			vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := foldAll(t,
+				&vttv1.Envelope{Sequence: 1, EventId: "added",
+					Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+						Actor: &vttv1.Actor{ActorId: "a", Kind: tc.created}}}},
+				grantKindEnv(2, "a", "p-holder", tc.granted),
+			)
+			if got := st.Actors["a"].GetKind(); got != tc.want {
+				t.Fatalf("want the grant's %v to stand, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestAKindlessGrantDoesNotEraseAKindAlreadyDeclared(t *testing.T) {
+	// A GRANT THAT SAYS NOTHING SAYS NOTHING — it does not say UNSPECIFIED.
+	//
+	// Every ActorControlGranted already recorded lacks the field, so the fold
+	// must keep accepting them (the refusal for new ones lives at the command
+	// boundary, internal/gateway's validateGrantActorControl, precisely
+	// because the fold cannot refuse history). Writing the grant's kind
+	// UNCONDITIONALLY is the plausible-looking wrong thing here, and it
+	// REOPENS THE ORIGINAL LEAK: a monster declared NON_PARTY at creation
+	// would be reset to UNSPECIFIED by an old kindless grant, and UNSPECIFIED
+	// plus a controller is what §5.1's migration rule reads as a party
+	// member. The whole stat block goes back on every player's roster.
+	st := foldAll(t,
+		&vttv1.Envelope{Sequence: 1, EventId: "added",
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+				Actor: &vttv1.Actor{ActorId: "archer", Name: "Goblin Archer",
+					Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}}},
+		grantEnv(2, "archer", "p-holder"), // kindless: what an old log looks like
+	)
+	if got := st.Actors["archer"].GetKind(); got != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Fatalf("kind = %v, want the declaration to survive a grant that stated nothing — "+
+			"UNSPECIFIED plus a controller reads as a party member, which is the leak", got)
+	}
+}
+
+func TestARegrantToAnExistingControllerStillRestatesTheKind(t *testing.T) {
+	// The grant's idempotency is about the CONTROL SET, never about kind.
+	// Charm the goblin the agent is already running and it becomes that
+	// agent's party member; the early return that stops the controller being
+	// duplicated must not swallow the standing change with it — that failure
+	// is silent, and it leaves a monster on the roster or a character off it.
+	st := foldAll(t,
+		&vttv1.Envelope{Sequence: 1, EventId: "added",
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+				Actor: &vttv1.Actor{ActorId: "archer"}}}},
+		grantKindEnv(2, "archer", "p-agent", vttv1.ActorKind_ACTOR_KIND_NON_PARTY),
+		grantKindEnv(3, "archer", "p-agent", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER),
+	)
+	a := st.Actors["archer"]
+	if got := a.GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+		t.Fatalf("kind = %v, want the second grant's word to stand", got)
+	}
+	if ids := a.GetControllerIds(); len(ids) != 1 || ids[0] != "p-agent" {
+		t.Fatalf("want the control set still un-duplicated, got %v", ids)
+	}
+}
+
+func TestRevokingControlLeavesAPartyMemberAPartyMember(t *testing.T) {
+	// KIND SURVIVES REVOCATION (visibility spec §5.1's second rule). A player
+	// leaving the table does not turn their character into a monster:
+	// revocation reassigns control, it does not restate what a character IS.
+	//
+	// Asserted explicitly because "revoke tidies up after itself" is the
+	// plausible-looking wrong thing to write, and because its consequence is
+	// invisible at the revoke — the character simply stops being on the
+	// party's roster the next time they turn a corner.
+	st := foldAll(t,
+		&vttv1.Envelope{Sequence: 1, EventId: "added",
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+				Actor: &vttv1.Actor{ActorId: "thorn", Name: "Thorn"}}}},
+		grantKindEnv(2, "thorn", "p-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER),
+		revokeEnv(3, "thorn", "p-player"),
+	)
+	a := st.Actors["thorn"]
+	if got := a.GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+		t.Fatalf("kind = %v, want a departed player's character to still be a party member", got)
+	}
+	if ids := a.GetControllerIds(); len(ids) != 0 {
+		t.Fatalf("fixture check: control must actually have been given up, got %v", ids)
+	}
+}
+
 func TestGrantingASecondControllerKeepsTheFirstInControllerId(t *testing.T) {
 	// THE case the rejected rule got wrong. p-player must still see Thorn as
 	// theirs after someone else is added.

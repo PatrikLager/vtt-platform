@@ -137,10 +137,25 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		// the same shape as remove_condition: the fold owns every rule about
 		// what a control set may contain (unknown actor, empty participant,
 		// idempotent re-grant), and authz has already decided this participant
-		// may issue it. Nothing left to validate here.
+		// may issue it.
+		//
+		// Kind is carried THROUGH, and dropping it would be silent in the
+		// worst way — the same failure mode CreateScene's arm above records
+		// for Tiles/Objects, but with a security consequence rather than a
+		// cosmetic one: an accepted grant, written kindless, read back as a
+		// party member by §5.1's migration rule. That is the original leak,
+		// reached through the very field meant to close it, with ok=true. The
+		// completeness of this copy is pinned by
+		// TestToEventGrantActorControlCarriesTheKind.
+		//
+		// Whether the caller stated a kind AT ALL is not decided here.
+		// handleCommand refuses that before conversion is reached, beside
+		// create_scene's terrain check — see validateGrantActorControl for why
+		// that seam and not this one.
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
 			ActorId:       c.GrantActorControl.GetActorId(),
 			ParticipantId: c.GrantActorControl.GetParticipantId(),
+			Kind:          c.GrantActorControl.GetKind(),
 		}}
 	case *vttv1.ClientCommand_RevokeActorControl:
 		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{

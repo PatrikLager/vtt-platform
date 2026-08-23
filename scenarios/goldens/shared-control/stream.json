@@ -74,7 +74,8 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-warden",
-      "participantId": "p-bo"
+      "participantId": "p-bo",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
   {
@@ -85,7 +86,8 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-warden",
-      "participantId": "p-bo"
+      "participantId": "p-bo",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
   {
@@ -118,7 +120,8 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-warden",
-      "participantId": "p-cy"
+      "participantId": "p-cy",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
   {
@@ -153,7 +156,8 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-herald",
-      "participantId": "p-eli"
+      "participantId": "p-eli",
+      "kind": "ACTOR_KIND_NON_PARTY"
     }
   }
 ]

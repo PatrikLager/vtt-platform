@@ -1687,6 +1687,24 @@ type GrantActorControl struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	ParticipantId string                 `protobuf:"bytes,2,opt,name=participant_id,json=participantId,proto3" json:"participant_id,omitempty"`
+	// REQUIRED, and a grant that omits it is REFUSED rather than defaulted
+	// (visibility spec §5.1, revised 2026-08-23). See ActorControlGranted.kind
+	// in events.proto for why standing is declared at the grant at all.
+	//
+	// A DEFAULT WOULD BE THE WHOLE FAILURE MODE. proto3 cannot mark a field
+	// required, so an omitted enum arrives as UNSPECIFIED — indistinguishable
+	// from a caller that deliberately said nothing. Defaulting either way is
+	// wrong: default to party member and one forgotten field publishes a
+	// monster's stat block to the table; default to non-party and one
+	// forgotten field drops a character out of its own party's roster.
+	//
+	// The refusal is internal/gateway's validateGrantActorControl, called from
+	// handleCommand beside create_scene's terrain check and BEFORE ToEvent —
+	// not inside ToEvent itself, which structurally cannot host it: that
+	// function's own completeness gate requires every command to convert from
+	// an EMPTY payload, because grant_actor_control once shipped advertised
+	// and dead. See validateGrantActorControl for the full argument.
+	Kind          ActorKind `protobuf:"varint,3,opt,name=kind,proto3,enum=vtt.v1.ActorKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1733,6 +1751,13 @@ func (x *GrantActorControl) GetParticipantId() string {
 		return x.ParticipantId
 	}
 	return ""
+}
+
+func (x *GrantActorControl) GetKind() ActorKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ActorKind_ACTOR_KIND_UNSPECIFIED
 }
 
 // RevokeActorControl removes participant_id from actor_id's controller set.
@@ -2397,10 +2422,11 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\x04door\x18\x01 \x01(\x0e2\x10.vtt.v1.JoinDoorR\x04door\x12\x1f\n" +
 	"\vadmit_limit\x18\x02 \x01(\x05R\n" +
 	"admitLimit\"\x10\n" +
-	"\x0eRotateJoinLink\"U\n" +
+	"\x0eRotateJoinLink\"|\n" +
 	"\x11GrantActorControl\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12%\n" +
-	"\x0eparticipant_id\x18\x02 \x01(\tR\rparticipantId\"V\n" +
+	"\x0eparticipant_id\x18\x02 \x01(\tR\rparticipantId\x12%\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x11.vtt.v1.ActorKindR\x04kind\"V\n" +
 	"\x12RevokeActorControl\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12%\n" +
 	"\x0eparticipant_id\x18\x02 \x01(\tR\rparticipantId\"O\n" +
@@ -2488,8 +2514,9 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*TokenMoved)(nil),         // 33: vtt.v1.TokenMoved
 	(*SceneObject)(nil),        // 34: vtt.v1.SceneObject
 	(*Actor)(nil),              // 35: vtt.v1.Actor
-	(*Envelope)(nil),           // 36: vtt.v1.Envelope
-	(*TileRef)(nil),            // 37: vtt.v1.TileRef
+	(ActorKind)(0),             // 36: vtt.v1.ActorKind
+	(*Envelope)(nil),           // 37: vtt.v1.Envelope
+	(*TileRef)(nil),            // 38: vtt.v1.TileRef
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
 	32, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
@@ -2523,19 +2550,20 @@ var file_vtt_v1_commands_proto_depIdxs = []int32{
 	18, // 28: vtt.v1.ClientCommand.load_map:type_name -> vtt.v1.LoadMap
 	19, // 29: vtt.v1.ClientCommand.set_viewpoint:type_name -> vtt.v1.SetViewpoint
 	0,  // 30: vtt.v1.SetJoinDoor.door:type_name -> vtt.v1.JoinDoor
-	26, // 31: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	36, // 32: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	27, // 33: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
-	30, // 34: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
-	29, // 35: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
-	1,  // 36: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
-	29, // 37: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
-	37, // 38: vtt.v1.CreateScene.TilesEntry.value:type_name -> vtt.v1.TileRef
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	36, // 31: vtt.v1.GrantActorControl.kind:type_name -> vtt.v1.ActorKind
+	26, // 32: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	37, // 33: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	27, // 34: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
+	30, // 35: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
+	29, // 36: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
+	1,  // 37: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
+	29, // 38: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
+	38, // 39: vtt.v1.CreateScene.TilesEntry.value:type_name -> vtt.v1.TileRef
+	40, // [40:40] is the sub-list for method output_type
+	40, // [40:40] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
