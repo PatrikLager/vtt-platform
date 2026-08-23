@@ -101,6 +101,12 @@ function apply(st: State, env: Envelope): void {
         // object, not left absent, so doorOpened/doorClosed below never
         // need their lazy-init guard for a scene built HERE.
         OpenDoors: {},
+        // Explored starts empty too, mirroring apply.go's SceneCreated arm
+        // (which leaves it nil — Go's zero value for "nothing"). `{}` here
+        // rather than nil for the same reason OpenDoors is `{}`: TypeScript
+        // has no implicit "absent means empty" read, so sceneSeen below can
+        // always write into it without its own lazy-init guard.
+        Explored: {},
       };
       return;
     }
@@ -168,6 +174,79 @@ function apply(st: State, env: Envelope): void {
       // `from` and `sceneId` are ignored entirely, exactly as Go does.
       tok.X = v.to.x;
       tok.Y = v.to.y;
+      return;
+    }
+    case "tokenHidden": {
+      // PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
+      // token left their view. Deleting an absent token is deliberately NOT
+      // an error — deleting a map key that is already gone is naturally a
+      // no-op, and nothing about tokenHidden's own shape (spec §5: a bare
+      // token_id) requires refusing a second one. Unlike sceneSeen, whose
+      // idempotency spec §5 derives structurally from carrying the whole
+      // current visible set every time, tokenHidden's comes from the
+      // operation itself: the projection may legitimately re-send a hide —
+      // recomputed visibility that already excluded the token, at-least-once
+      // delivery — and this arm mirrors apply.go's TokenHidden case so
+      // whichever language folds a re-sent hide, the outcome agrees.
+      //
+      // Verified, not assumed: a thrown FoldError here would not merely fail
+      // this one event. session.ts's Session.ingest re-folds the ENTIRE
+      // accumulated log on every new event (see its own doc comment on why),
+      // and the log is append-only, so a poisoned entry would recur on
+      // every future fold call — freezing this viewer's derived state for
+      // the rest of the session, not just skipping one redraw. That is the
+      // concrete shape of the "worst failure" spec §8 warns a strict fold
+      // would produce here.
+      delete st.Tokens[p.value.tokenId];
+      return;
+    }
+    case "sceneSeen": {
+      const v = p.value;
+      const sc = st.Scenes[v.sceneId];
+      if (!sc) throw new FoldError(`scene seen for unknown scene "${v.sceneId}"`);
+      // sceneCreated above always sets Tiles, Objects and Explored on any
+      // Scene built through the fold, but Scene marks all three optional
+      // (state.ts) to let bare test literals elsewhere keep compiling — so
+      // this arm defaults defensively before writing, the same guard shape
+      // ensureOpenDoors below uses for doorOpened/doorClosed.
+      if (!sc.Tiles) sc.Tiles = {};
+      if (!sc.Explored) sc.Explored = {};
+      if (!sc.Objects) sc.Objects = [];
+      // TWO FIELDS, TWO SOURCES, and they are no longer the same set. Visible
+      // comes from v.visible — the server's own sight answer, which owes
+      // nothing to terrain — and is REPLACED wholesale, because sceneSeen
+      // carries the whole current visible set every time (spec §5). Explored
+      // keeps unioning TILE keys: it is terrain remembered, and a square with
+      // no terrain has nothing to remember and nothing to fog.
+      //
+      // It read `sc.Visible[key] = true` inside the tile loop until 2026-08-22,
+      // which made "visible" mean "visible AND declares terrain" and hid a
+      // player's own token on a scene with no tiles. The list becomes a set
+      // here rather than on the wire because a set has no second axis (see the
+      // field's own comment in events.proto).
+      //
+      // EMPTY IS NOT UNDEFINED. A sceneSeen with no visible squares is the
+      // projection reporting a scene gone dark, and it must leave `{}` rather
+      // than the `undefined` that means no projection ever arrived (state.ts's
+      // Scene.Visible on why those differ). Mirrors internal/engine/apply.go's
+      // SceneSeen arm.
+      sc.Visible = {};
+      for (const sq of v.visible) sc.Visible[sq] = true;
+      for (const [key, ref] of Object.entries(v.tiles)) {
+        sc.Tiles[key] = { Kind: ref.kind, Material: ref.material, Art: ref.art };
+        sc.Explored[key] = true;
+      }
+      for (const o of v.objects) {
+        const i = sc.Objects.findIndex((e) => e.ObjectID === o.objectId);
+        const got = {
+          ObjectID: o.objectId, Kind: o.kind,
+          X: o.at?.x ?? 0, Y: o.at?.y ?? 0,
+          Width: o.width, Height: o.height,
+          RotationDegrees: o.rotationDegrees,
+          BlocksSight: o.blocksSight, BlocksMove: o.blocksMove, Art: o.art,
+        };
+        if (i >= 0) sc.Objects[i] = got; else sc.Objects.push(got);
+      }
       return;
     }
     case "conditionApplied": {
@@ -391,30 +470,81 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
     Actors: sortedMap(st.Actors, actorJSON),
     Conditions: sortedMap(st.Conditions, (cs) => cs.map((c) => ({ ...c }))),
     Notes: sortedMap(st.Notes, (n) => ({ Title: n.Title, Text: n.Text, UpdatedSeq: n.UpdatedSeq })),
-    Scenes: sortedMap(st.Scenes, (s) => ({
-      ID: s.ID,
-      Name: s.Name,
-      GridWidth: s.GridWidth,
-      GridHeight: s.GridHeight,
+    Scenes: sortedMap(st.Scenes, (s) => {
       // `?? {}` / `?? []` are the same defaulting state.ts's comment on
       // Scene calls for: these fields are optional only to let bare test
       // fixtures compile, but a real fold always sets them, so this is
       // belt-and-braces rather than a path any golden actually exercises.
-      Tiles: sortedMap(s.Tiles ?? {}, (t) => ({ Kind: t.Kind, Material: t.Material, Art: t.Art })),
-      Objects: (s.Objects ?? []).map((o) => ({
-        ObjectID: o.ObjectID,
-        Kind: o.Kind,
-        X: o.X,
-        Y: o.Y,
-        Width: o.Width,
-        Height: o.Height,
-        RotationDegrees: o.RotationDegrees,
-        BlocksSight: o.BlocksSight,
-        BlocksMove: o.BlocksMove,
-        Art: o.Art,
-      })),
-      OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
-    })),
+      const scene: Record<string, unknown> = {
+        ID: s.ID,
+        Name: s.Name,
+        GridWidth: s.GridWidth,
+        GridHeight: s.GridHeight,
+        Tiles: sortedMap(s.Tiles ?? {}, (t) => ({ Kind: t.Kind, Material: t.Material, Art: t.Art })),
+        Objects: (s.Objects ?? []).map((o) => ({
+          ObjectID: o.ObjectID,
+          Kind: o.Kind,
+          X: o.X,
+          Y: o.Y,
+          Width: o.Width,
+          Height: o.Height,
+          RotationDegrees: o.RotationDegrees,
+          BlocksSight: o.BlocksSight,
+          BlocksMove: o.BlocksMove,
+          Art: o.Art,
+        })),
+        OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
+      };
+      // Explored mirrors Go's `json:",omitempty"` tag on Scene.Explored
+      // (state.go): OMITTED entirely when empty, not serialized as `{}`.
+      // Every scenarios/goldens/*/state.json was hand-derived from a stream
+      // with no sceneSeen — those are the LOGS — so Explored is empty on all
+      // of them, and an unconditional key here (even an empty object) fails
+      // every one of those byte comparisons (client/test/fold-parity.test.ts),
+      // because Go never emits the key at all in that case. This is
+      // Correction 1's reasoning carried across the language boundary: the
+      // FIELD needed omitempty on the Go side; the DUMP needs the equivalent
+      // conditional omission here, since TS has no struct-tag mechanism to do
+      // it for us.
+      //
+      // AMENDED 2026-08-22, in step with Visible's comment below so the pair
+      // cannot drift: the corpus now also carries PROJECTED halves under
+      // scenarios/goldens/*/projections/*/, and those DO populate Explored
+      // wherever the scene declares terrain. Re-measured against the enlarged
+      // corpus — an unconditional `Explored: {}` fails all 8 log goldens AND
+      // BOTH projected seats in client/test/projection-parity.test.ts
+      // (session-zero/player and session-zero/spectator), because each holds
+      // the bare-canvas `camp`, which has a visible set and no terrain to
+      // remember. TEN corpus cases in total, which is why this omission is
+      // among the most heavily pinned things in either fold.
+      const explored = s.Explored ?? {};
+      if (Object.keys(explored).length > 0) {
+        scene.Explored = sortedMap(explored, (v) => v);
+      }
+      // Visible mirrors Go's `json:",omitempty"` on Scene.Visible exactly as
+      // Explored above mirrors its own, and the omission collapses the
+      // undefined/`{}` distinction the FIELD carries — deliberately, because
+      // Go's tag collapses nil and empty the same way. What the LOG-LEVEL
+      // corpus holds this to is ABSENCE: scenarios/goldens/*/stream.json are
+      // real logs and nothing in a log produces a sceneSeen, so in all eight
+      // this field is UNDEFINED, never `{}`. That half pins only the
+      // key-omission for THAT case — emitting it unconditionally fails all
+      // eight, re-measured 2026-08-22 — and says nothing about the empty one,
+      // since a version emitting the key whenever Visible is defined also
+      // passes every one of them.
+      //
+      // AMENDED 2026-08-22: the POPULATED case IS a cross-language check now.
+      // scenarios/goldens/*/projections/*/ carries projected streams that do
+      // contain sceneSeen, and client/test/projection-parity.test.ts folds them
+      // against the same hand-derived state.json the Go fold is held to. The
+      // nil/`{}` distinction is still a live-state matter pinned separately in
+      // each language.
+      const visible = s.Visible ?? {};
+      if (Object.keys(visible).length > 0) {
+        scene.Visible = sortedMap(visible, (v) => v);
+      }
+      return scene;
+    }),
     // A Go nil slice marshals as null, not [].
     Sessions: st.Sessions.length === 0 ? null : st.Sessions.map((s) => ({
       ID: s.ID,

@@ -119,6 +119,17 @@ test("moving a token with no destination is rejected", () => {
     'token "t1" moved with no destination');
 });
 
+// --- sceneSeen (visibility spec §6) ------------------------------------------
+//
+// tokenHidden has no rejection case: hiding an absent token is deliberately a
+// no-op (see fold-unit.test.ts), not an error — that tolerance IS the parity
+// contract for this arm, so it belongs with the accept-path tests, not here.
+
+test("sceneSeen naming an unknown scene is rejected", () => {
+  rejects([started, env(2, { sceneSeen: { sceneId: "nope", tiles: { "0,0": { kind: "floor" } } } })],
+    'scene seen for unknown scene "nope"');
+});
+
 // --- conditions -------------------------------------------------------------
 
 test("a condition applied to an unknown actor is rejected", () => {

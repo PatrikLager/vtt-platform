@@ -431,6 +431,16 @@ The gate's own advice on each line is the right fix — make the test that block
 under the mutant fail fast — rather than adjudicating them or raising the
 timeout.
 
+`internal/sight`, gated 2026-08-18, is the one entry here whose timeouts are
+NOT that story and will not respond to that advice. It prints **4**, and the
+same 4 on every run rather than a figure that moves: they are the
+`INCREMENT_DECREMENT` mutants on the four grid-walk loop counters (`x++`/`y++`
+in `Blockers` and `VisibleFrom`), which count DOWN from zero and so never reach
+the bound. That is genuine non-termination, not a slow test, so no test can be
+made to fail fast under them — the suite cannot fail under a mutant that never
+returns to it. They are the honest case for the ruling that a timeout counts as
+a detection.
+
 ## The order, and why gating is the LAST step
 
 Adding a package to `PACKAGES` before its survivors are at zero turns

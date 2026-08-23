@@ -67,6 +67,96 @@ type Scene struct {
 	// would turn writing into a Go panic — crashing the fold instead of the
 	// validation error Apply's own doc comment promises.
 	OpenDoors map[string]bool
+
+	// Explored is the squares this VIEWER has ever seen, keyed like Tiles.
+	// Client-side memory mirrored here so the same fold runs in both
+	// languages (visibility spec §6). It only ever grows: terrain is
+	// remembered, creatures are not.
+	//
+	// EMPTY FOR THE DM AND FOR THE LOG. Nothing in a campaign's log produces
+	// SceneSeen, so a Scene folded from the real log has Explored nil — this
+	// field is populated only when folding a PROJECTION.
+	//
+	// `json:",omitempty"` is load-bearing, not decoration: Scene has no other
+	// json tags (every other field always marshals, per this file's own
+	// header comment), and cmd/vtt's dump plus internal/harness's golden
+	// comparison both call json.Marshal(State) directly with no field
+	// allowlist. Every scenarios/goldens/*/state.json fixture folds from the
+	// real log, so Explored is nil there — an untagged field would have
+	// serialized as `"Explored": null` on every one of them and failed every
+	// golden byte-comparison this same commit is supposed to leave green.
+	// Confirmed by running the golden suite both ways (see task-3-report.md),
+	// and re-measured after the corpus gained session-zero: dropping the tag
+	// fails all EIGHT (2026-08-22).
+	//
+	// The corpus's PROJECTED halves — scenarios/goldens/*/projections/*/state.json
+	// — are the other case, and they are why that glob is written with one star
+	// rather than two: those fold a projection, so Explored is populated there
+	// wherever the scene declares terrain.
+	Explored map[string]bool `json:",omitempty"`
+
+	// Visible is the squares this VIEWER can see RIGHT NOW, keyed like Tiles. It
+	// is Explored's opposite number in how it moves — REPLACED wholesale by each
+	// SceneSeen rather than unioned, so it shrinks as freely as it grows — and
+	// the pair is what the client needs, since terrain you remember but cannot
+	// currently see is `Explored − Visible`, which is the fog (visibility spec
+	// §6.1).
+	//
+	// IT DOES NOT COME FROM Explored'S SOURCE, and the pair must not be assumed
+	// to track each other. Visible is folded from SceneSeen's own `visible`
+	// field (events.proto field 4) — the server's sight answer, computed over
+	// the GRID and owing nothing to terrain. Explored unions the TILE keys of
+	// the same message. So a scene can be wholly visible and wholly unexplored
+	// (a bare canvas, which is a legal scene and not a degenerate one), or
+	// carry terrain for squares it does not list as visible (ground walked out
+	// of, which is the fog). Both corners are pinned:
+	// TestVisibleComesFromItsOwnFieldNotFromTheTiles and
+	// TestTerrainWithoutSightIsRememberedButNotVisible, with TS mirrors in
+	// client/test/visibility.test.ts.
+	//
+	// UNTIL 2026-08-22 THIS FIELD WAS BUILT FROM THE TILE KEYS, which made it
+	// mean "visible AND declares terrain". That is a lossy proxy for a decision
+	// the server had already made correctly, and on a scene with no tiles it
+	// hid a player's own token — the client overruling its own server. Field 4
+	// carries the decision instead of a stand-in for it.
+	//
+	// NIL AND EMPTY MEAN DIFFERENT THINGS, which is why this field is never
+	// initialised by the SceneCreated arm the way OpenDoors is. Nil is "no
+	// SceneSeen has ever arrived for this scene" — the DM, the agent, and any
+	// scene folded from the real log, none of which is a projection at all.
+	// Empty is "a projection arrived and this seat can see nothing here". A
+	// renderer that conflated them would blank the DM's board, so the
+	// distinction is load-bearing rather than incidental, and client/src/state.ts
+	// carries the same one as `undefined` versus `{}`.
+	//
+	// `json:",omitempty"` for exactly the reason Explored's carries it, and with
+	// the same consequence: nil and empty both vanish from the dump, so the
+	// goldens are untouched and the nil/empty distinction above lives in memory
+	// only.
+	//
+	// WHAT THE LOG-LEVEL CORPUS HOLDS THIS TO IS ABSENCE, not agreement on a
+	// value, and the first draft of this comment said the opposite. Every
+	// scenarios/goldens/*/stream.json is a real LOG, nothing in a log produces
+	// SceneSeen, so in all eight this field is NIL and never empty. What that
+	// half of the corpus pins is only that neither fold emits the key for the
+	// NIL case — emitting `Visible: {}` unconditionally fails all eight, in both
+	// languages, re-measured 2026-08-22. It says nothing about the EMPTY case: a
+	// fold that emitted the key whenever the map is non-nil passes every one of
+	// them, and that was run too. Using "empty" for the nil case here would be
+	// the exact conflation the paragraph above warns against.
+	//
+	// AMENDED 2026-08-22, when the keystone (spec §4.3) landed and brought
+	// PROJECTED goldens with it. `grep -ric sceneseen scenarios/` no longer
+	// returns zero: scenarios/goldens/session-zero/projections/*/stream.json
+	// carry SceneSeen, and their hand-derived state.json files carry a populated
+	// Visible. So the POPULATED case is pinned cross-language now, by
+	// client/test/projection-parity.test.ts and
+	// internal/gateway.TestTheProjectedGoldensAreWhatTheProjectionActuallySends.
+	// The nil/empty distinction is still each language's own to keep.
+	// The two folds are mirrors because they are written as mirrors and each
+	// language pins its own arm — internal/engine/visibility_fold_test.go and
+	// client/test/visibility.test.ts — not because anything compares them here.
+	Visible map[string]bool `json:",omitempty"`
 }
 
 type Token struct {
@@ -135,12 +225,53 @@ func (st *State) Snapshot() *State {
 		for dk, dv := range v.OpenDoors {
 			doors[dk] = dv
 		}
+		// Explored gets the same treatment as OpenDoors, for the same
+		// reason: the SceneSeen fold arm mutates it after the Scene is
+		// created, so a nil-check-then-share copy would let a snapshot
+		// holder watch a projection's fog of war clear out from under it.
+		// Unlike OpenDoors, nil stays nil here rather than becoming
+		// `map[string]bool{}` — a DM/log-folded Scene's Explored is nil by
+		// design (state.go's own doc comment on the field), and Snapshot
+		// promises a deep COPY, not a change of zero value.
+		var explored map[string]bool
+		if v.Explored != nil {
+			explored = make(map[string]bool, len(v.Explored))
+			for ek, ev := range v.Explored {
+				explored[ek] = ev
+			}
+		}
+		// Visible copies exactly as Explored does, nil-preservation included —
+		// but for a WEAKER reason, and the difference was measured rather than
+		// assumed. Explored's copy is load-bearing today: the SceneSeen arm
+		// writes into that map in place, so sharing it is observable. Visible's
+		// is not, because the same arm REPLACES this map wholesale on every
+		// message and never touches the one a snapshot took; substituting
+		// `visible := v.Visible` here leaves the whole engine suite green (run,
+		// not reasoned). It is copied anyway because Snapshot's promise is
+		// unconditional — "readers never alias live state" — and the day
+		// anything writes into Visible in place, the alias becomes a silent bug
+		// rather than a caught one.
+		//
+		// Nil-preservation IS observable, and is pinned:
+		// TestSnapshotOfUnprojectedSceneLeavesVisibleNil fails when nil is
+		// promoted to empty, because that would tell a reader that a DM's scene
+		// had received a projection reporting nothing visible (see the field's
+		// own doc comment on why those two are not the same thing).
+		var visible map[string]bool
+		if v.Visible != nil {
+			visible = make(map[string]bool, len(v.Visible))
+			for vk, vv := range v.Visible {
+				visible[vk] = vv
+			}
+		}
 		out.Scenes[k] = Scene{
 			ID: v.ID, Name: v.Name,
 			GridWidth: v.GridWidth, GridHeight: v.GridHeight,
 			Tiles:     tiles,
 			Objects:   append([]SceneObject(nil), v.Objects...),
 			OpenDoors: doors,
+			Explored:  explored,
+			Visible:   visible,
 		}
 	}
 	for k, v := range st.Actors {

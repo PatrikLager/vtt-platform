@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSKICQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIAEIJCgdwYXlsb2FkQkJaQGdpdGh1Yi5jb20vUGF0cmlrTGFnZXIvdnR0LXBsYXRmb3JtL2NvbnRyYWN0L2dlbi9nby92dHQvdjE7dnR0djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIh8KC1Rva2VuSGlkZGVuEhAKCHRva2VuX2lkGAEgASgJIsABCglTY2VuZVNlZW4SEAoIc2NlbmVfaWQYASABKAkSKwoFdGlsZXMYAiADKAsyHC52dHQudjEuU2NlbmVTZWVuLlRpbGVzRW50cnkSJAoHb2JqZWN0cxgDIAMoCzITLnZ0dC52MS5TY2VuZU9iamVjdBIPCgd2aXNpYmxlGAQgAygJGj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSLeCQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIABIrCgx0b2tlbl9oaWRkZW4YHiABKAsyEy52dHQudjEuVG9rZW5IaWRkZW5IABInCgpzY2VuZV9zZWVuGB8gASgLMhEudnR0LnYxLlNjZW5lU2VlbkgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -473,10 +473,45 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
    * which matches neither "wall" nor "door", so it blocks nothing. That is
    * the same answer a reader gets for a scene that opted out entirely.
    *
-   * Size: one TileRef per tile, roughly 45.5 bytes each as protojson, so a
-   * fully tiled scene past about 60x60 exceeds the read limit clients set
-   * and the frame never arrives. internal/mapdef.MaxWireTiles enforces that
-   * ceiling at compile; spec §7 files the compact encoding that lifts it.
+   * SIZE, AND WHY IT IS TWO NUMBERS EVERYWHERE. One TileRef per tile. But
+   * protojson appends a space after every comma in roughly half of all builds:
+   * internal/detrand seeds that choice from a hash of the binary, on purpose,
+   * so that "the output is unstable across different builds". Every byte
+   * figure about this message therefore has two honest values about 2 bytes a
+   * tile apart, and a reader who measures one and finds the doc quoting the
+   * other will "correct" it into the same trap. Quote BOTH or neither — the
+   * `visible` field below carries the full warning and the method for settling
+   * it.
+   *
+   * Measured across differently-sized builds of this repo, on the real 32x32
+   * ravine through mapdef.BuildSceneCreated and on synthetic grids:
+   *
+   *           per tile   32x32      60x60 (3600 tiles)   200x200
+   *   compact  43.5 B    43.5 KiB   153.6 KiB            1.71 MiB
+   *   spaced   45.5 B    45.5 KiB   160.6 KiB            1.79 MiB
+   *
+   * A fully tiled scene eventually exceeds the 200 KiB read limit Go clients
+   * set (internal/harness/client.go) and the frame never arrives. WHERE
+   * depends on art as much as on size: with no override the first grid over the
+   * limit is 69x69 compact / 67x67 spaced — compared in BYTES against
+   * readLimit's 204800, not against a rounded KiB figure, because 67x67 spaced
+   * is 205224 B and reads as "200.4 KiB", which looks under a 200 KiB limit and
+   * is not. Overriding every square with art puts even 60x60 over in BOTH
+   * regimes: the cost is exactly len(name) + 9 bytes a tile compact and +10
+   * spaced — the `,"art":""` scaffolding plus the name — so a 7-character name
+   * takes a 3600-tile scene to 209.8 / 220.4 KiB and an 11-character one to
+   * 223.9 / 234.4. SHIPPED TILE NAMES RUN 7 TO 11 CHARACTERS, and that range
+   * needs its definition attached or it drifts: it means the names in a pack
+   * that mapdef.LoadPack actually loads and Resolve consults. Exactly one
+   * shipped map declares one — maps/cellar/map.json names cellar-basics, whose
+   * four TILE names are earth-1, masonry-1, flagstone-1 and cellar-door.
+   * client/public/std-pack is NOT in that set: it is a client-side rendering
+   * manifest served as static files, never a mapdef.Pack. Nor are that pack's
+   * OBJECT names, which travel in SceneObject.art rather than TileRef.art.
+   * internal/mapdef.MaxWireTiles caps the tile COUNT at 3600, which refuses
+   * 69x69 but admits that overridden 60x60, so the cap and the limit do not
+   * line up. That mismatch is recorded, not fixed here. spec §7 files the
+   * compact encoding that lifts the whole ceiling.
    *
    * @generated from field: map<string, vtt.v1.TileRef> tiles = 5;
    */
@@ -494,6 +529,114 @@ export type SceneCreated = Message<"vtt.v1.SceneCreated"> & {
  */
 export const SceneCreatedSchema: GenMessage<SceneCreated> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 11);
+
+/**
+ * TokenHidden says a token left YOUR view. PROJECTION-ONLY: no command
+ * produces it, so it can never reach the log — internal/gateway synthesizes
+ * it per recipient (visibility spec §4.2). It is a fact about a viewer's
+ * knowledge, not about the world, which is why the world's log does not
+ * carry it.
+ *
+ * @generated from message vtt.v1.TokenHidden
+ */
+export type TokenHidden = Message<"vtt.v1.TokenHidden"> & {
+  /**
+   * @generated from field: string token_id = 1;
+   */
+  tokenId: string;
+};
+
+/**
+ * Describes the message vtt.v1.TokenHidden.
+ * Use `create(TokenHiddenSchema)` to create a new message.
+ */
+export const TokenHiddenSchema: GenMessage<TokenHidden> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 12);
+
+/**
+ * SceneSeen carries what a viewer can see of a scene RIGHT NOW — the whole
+ * current visible set, never a delta.
+ *
+ * Whole-set is deliberate: it is idempotent, so the projection needs no
+ * per-connection memory of what it already sent, and visibility spec §4.1's
+ * purity (a function of log-so-far and viewer, with nothing stored per
+ * connection) survives. The client UNIONS these into its explored set, which
+ * is what makes terrain remembered and creatures not.
+ *
+ * PROJECTION-ONLY, like TokenHidden.
+ *
+ * @generated from message vtt.v1.SceneSeen
+ */
+export type SceneSeen = Message<"vtt.v1.SceneSeen"> & {
+  /**
+   * @generated from field: string scene_id = 1;
+   */
+  sceneId: string;
+
+  /**
+   * @generated from field: map<string, vtt.v1.TileRef> tiles = 2;
+   */
+  tiles: { [key: string]: TileRef };
+
+  /**
+   * @generated from field: repeated vtt.v1.SceneObject objects = 3;
+   */
+  objects: SceneObject[];
+
+  /**
+   * visible is the squares this viewer can see right now, keyed "x,y" (column
+   * then row, maps-as-geometry spec §4.1). The whole current set, never a
+   * delta, exactly as tiles is.
+   *
+   * IT IS NOT THE KEYS OF tiles, and that is the entire reason it exists. A
+   * token is a FREE OBJECT that needs no terrain to stand on (Patrik's ruling
+   * 2026-08-22): sight is computed over the GRID, so on a scene that declares
+   * no terrain every in-range square is visible and every token on it is
+   * legitimately sent. tiles could not carry those squares — there is no
+   * TileRef to put in them — so a client deriving visibility from tiles
+   * overruled a decision the server had already made correctly, and hid a
+   * player's own token on a bare canvas. Field 4 carries the decision itself
+   * rather than a proxy for it.
+   *
+   * REPEATED STRING RATHER THAN map<string, bool>, for two reasons. A set has
+   * no second axis, so a bool value is a slot with no meaning and one more
+   * state ("present but false") for readers to disagree about. And it is
+   * cheaper — but the size of the saving depends on which BUILD you measure,
+   * and that is a fact about protojson rather than a sloppy measurement.
+   *
+   * PROTOJSON DELIBERATELY RANDOMISES ITS OUTPUT. encoding/json/encode.go's
+   * prepareNext appends a space after every comma when detrand.Bool() is true,
+   * and internal/detrand seeds that from an FNV hash of the binary itself:
+   * "the output does not change within a program, while ensuring that the
+   * output is unstable across different builds". So one binary emits
+   * {"visible":["0,0","1,0"]} and the next emits {"visible":["0,0", "1,0"]},
+   * and every per-square figure below has two honest values exactly 1.00 B
+   * apart. Measured across fourteen binaries of this repo, varying only their
+   * size: seven of each regime.
+   *
+   *   compact  7.67 B/square (27.0 KiB per 3600) vs 12.67 — 39.5% cheaper
+   *   spaced   8.67 B/square (30.5 KiB per 3600) vs 13.67 — 36.6% cheaper
+   *
+   * Quote BOTH or neither. The repo's own long-standing figure is in the
+   * spaced regime — mapdef.MaxWireTiles records "a 32x32 scene at 45.5 KiB,
+   * about 45.5 bytes a tile", and BuildSceneCreated on the real ravine returns
+   * exactly that in a spaced build and 43.5 KiB / 43.5 B a tile in a compact
+   * one.
+   *
+   * Go and TS both hold this concept as map[string]bool /
+   * Record<string, boolean>, so both folds turn the list into a set on arrival.
+   *
+   * @generated from field: repeated string visible = 4;
+   */
+  visible: string[];
+};
+
+/**
+ * Describes the message vtt.v1.SceneSeen.
+ * Use `create(SceneSeenSchema)` to create a new message.
+ */
+export const SceneSeenSchema: GenMessage<SceneSeen> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_events, 13);
 
 /**
  * A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
@@ -520,7 +663,7 @@ export type DoorOpened = Message<"vtt.v1.DoorOpened"> & {
  * Use `create(DoorOpenedSchema)` to create a new message.
  */
 export const DoorOpenedSchema: GenMessage<DoorOpened> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 12);
+  messageDesc(file_vtt_v1_events, 14);
 
 /**
  * DoorOpened's counterpart; see DoorOpened's comment above — the same
@@ -545,7 +688,7 @@ export type DoorClosed = Message<"vtt.v1.DoorClosed"> & {
  * Use `create(DoorClosedSchema)` to create a new message.
  */
 export const DoorClosedSchema: GenMessage<DoorClosed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 13);
+  messageDesc(file_vtt_v1_events, 15);
 
 /**
  * @generated from message vtt.v1.ActorAdded
@@ -562,7 +705,7 @@ export type ActorAdded = Message<"vtt.v1.ActorAdded"> & {
  * Use `create(ActorAddedSchema)` to create a new message.
  */
 export const ActorAddedSchema: GenMessage<ActorAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 14);
+  messageDesc(file_vtt_v1_events, 16);
 
 /**
  * @generated from message vtt.v1.TokenPlaced
@@ -594,7 +737,7 @@ export type TokenPlaced = Message<"vtt.v1.TokenPlaced"> & {
  * Use `create(TokenPlacedSchema)` to create a new message.
  */
 export const TokenPlacedSchema: GenMessage<TokenPlaced> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 15);
+  messageDesc(file_vtt_v1_events, 17);
 
 /**
  * @generated from message vtt.v1.SessionStarted
@@ -611,7 +754,7 @@ export type SessionStarted = Message<"vtt.v1.SessionStarted"> & {
  * Use `create(SessionStartedSchema)` to create a new message.
  */
 export const SessionStartedSchema: GenMessage<SessionStarted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 16);
+  messageDesc(file_vtt_v1_events, 18);
 
 /**
  * @generated from message vtt.v1.SessionEnded
@@ -624,7 +767,7 @@ export type SessionEnded = Message<"vtt.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 17);
+  messageDesc(file_vtt_v1_events, 19);
 
 /**
  * Compensating undo marker (spec §6). Retraction events cannot themselves
@@ -654,7 +797,7 @@ export type EventsRetracted = Message<"vtt.v1.EventsRetracted"> & {
  * Use `create(EventsRetractedSchema)` to create a new message.
  */
 export const EventsRetractedSchema: GenMessage<EventsRetracted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 18);
+  messageDesc(file_vtt_v1_events, 20);
 
 /**
  * @generated from message vtt.v1.AbilityUsed
@@ -691,7 +834,7 @@ export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
  * Use `create(AbilityUsedSchema)` to create a new message.
  */
 export const AbilityUsedSchema: GenMessage<AbilityUsed> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19);
+  messageDesc(file_vtt_v1_events, 21);
 
 /**
  * @generated from message vtt.v1.AbilityUsed.Roll
@@ -718,7 +861,7 @@ export type AbilityUsed_Roll = Message<"vtt.v1.AbilityUsed.Roll"> & {
  * Use `create(AbilityUsed_RollSchema)` to create a new message.
  */
 export const AbilityUsed_RollSchema: GenMessage<AbilityUsed_Roll> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 19, 0);
+  messageDesc(file_vtt_v1_events, 21, 0);
 
 /**
  * @generated from message vtt.v1.ResourceChanged
@@ -755,7 +898,7 @@ export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
  * Use `create(ResourceChangedSchema)` to create a new message.
  */
 export const ResourceChangedSchema: GenMessage<ResourceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 20);
+  messageDesc(file_vtt_v1_events, 22);
 
 /**
  * @generated from message vtt.v1.ConditionApplied
@@ -782,7 +925,7 @@ export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
  * Use `create(ConditionAppliedSchema)` to create a new message.
  */
 export const ConditionAppliedSchema: GenMessage<ConditionApplied> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 21);
+  messageDesc(file_vtt_v1_events, 23);
 
 /**
  * @generated from message vtt.v1.ConditionRemoved
@@ -809,7 +952,7 @@ export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
  * Use `create(ConditionRemovedSchema)` to create a new message.
  */
 export const ConditionRemovedSchema: GenMessage<ConditionRemoved> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 22);
+  messageDesc(file_vtt_v1_events, 24);
 
 /**
  * @generated from message vtt.v1.NarrationAdded
@@ -841,7 +984,7 @@ export type NarrationAdded = Message<"vtt.v1.NarrationAdded"> & {
  * Use `create(NarrationAddedSchema)` to create a new message.
  */
 export const NarrationAddedSchema: GenMessage<NarrationAdded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 23);
+  messageDesc(file_vtt_v1_events, 25);
 
 /**
  * @generated from message vtt.v1.NoteUpserted
@@ -868,7 +1011,7 @@ export type NoteUpserted = Message<"vtt.v1.NoteUpserted"> & {
  * Use `create(NoteUpsertedSchema)` to create a new message.
  */
 export const NoteUpsertedSchema: GenMessage<NoteUpserted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 24);
+  messageDesc(file_vtt_v1_events, 26);
 
 /**
  * @generated from message vtt.v1.NoteDeleted
@@ -885,7 +1028,7 @@ export type NoteDeleted = Message<"vtt.v1.NoteDeleted"> & {
  * Use `create(NoteDeletedSchema)` to create a new message.
  */
 export const NoteDeletedSchema: GenMessage<NoteDeleted> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 25);
+  messageDesc(file_vtt_v1_events, 27);
 
 /**
  * Pure testimony (AbilityUsed's pattern — engine no-op): the compile
@@ -912,7 +1055,7 @@ export type AdventureLoaded = Message<"vtt.v1.AdventureLoaded"> & {
  * Use `create(AdventureLoadedSchema)` to create a new message.
  */
 export const AdventureLoadedSchema: GenMessage<AdventureLoaded> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 26);
+  messageDesc(file_vtt_v1_events, 28);
 
 /**
  * @generated from message vtt.v1.Envelope
@@ -1073,6 +1216,25 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
      */
     value: DoorClosed;
     case: "doorClosed";
+  } | {
+    /**
+     * Field numbers 30/31, not the brief's 28/29 — 27 was not the highest
+     * in use: DoorOpened/DoorClosed already hold 28/29 (maps-as-geometry
+     * Task 1 fix, landed after the plan's signatures were captured). Reusing
+     * 28/29 here would silently collide two payload types onto the same
+     * wire tag, which ADR-007/check:breaking exists to catch — corrected to
+     * the actual next-free numbers instead (visibility Task 2 report).
+     *
+     * @generated from field: vtt.v1.TokenHidden token_hidden = 30;
+     */
+    value: TokenHidden;
+    case: "tokenHidden";
+  } | {
+    /**
+     * @generated from field: vtt.v1.SceneSeen scene_seen = 31;
+     */
+    value: SceneSeen;
+    case: "sceneSeen";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1081,5 +1243,5 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  * Use `create(EnvelopeSchema)` to create a new message.
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_events, 27);
+  messageDesc(file_vtt_v1_events, 29);
 

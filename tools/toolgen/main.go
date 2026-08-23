@@ -278,6 +278,18 @@ var manifest = []toolSpec{
 		// map without naming which one, the same reasoning load_adventure's
 		// own comment gives for adventure_id. No override needed.
 	},
+	{
+		message:     "vtt.v1.SetViewpoint",
+		name:        "set_viewpoint",
+		description: "Perch a spectator on a party member's shoulder, to see what that character sees (visibility spec §3.1.1). Send an empty actor_id to un-perch. The target must be a player-controlled actor — perching on an NPC or monster is refused server-side. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
+		descriptor:  (&vttv1.SetViewpoint{}).ProtoReflect().Descriptor(),
+		// requiredOverride check (the fabrication-trap lesson — see
+		// add_actor/add_narration above): SetViewpoint has exactly one
+		// field, actor_id, and it is genuinely required — but "required"
+		// here means "present", not "non-empty": an empty string IS the
+		// deliberate, meaningful un-perch value (see the message's own doc
+		// comment), never a fabricated one. No override needed.
+	},
 }
 
 func isOptional(f protoreflect.FieldDescriptor) bool {

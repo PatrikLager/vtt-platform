@@ -1,0 +1,62 @@
+{
+  "Actors": {
+    "act-fighter": {
+      "actor_id": "act-fighter",
+      "name": "Asme",
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
+    },
+    "act-healer": {
+      "actor_id": "act-healer",
+      "name": "Ilva",
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "camp": {
+      "ID": "camp",
+      "Name": "Night Camp",
+      "GridWidth": 3,
+      "GridHeight": 3,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {},
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Session Zero",
+      "StartSeq": 1,
+      "EndSeq": 13
+    }
+  ],
+  "Tokens": {
+    "tok-healer": {
+      "ID": "tok-healer",
+      "SceneID": "camp",
+      "ActorID": "act-healer",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 13
+}

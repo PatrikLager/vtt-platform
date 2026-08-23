@@ -1,0 +1,339 @@
+{
+  "Actors": {
+    "act-fighter": {
+      "actor_id": "act-fighter",
+      "name": "Asme",
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
+    },
+    "act-goblin-archer": {
+      "actor_id": "act-goblin-archer",
+      "name": "Goblin Archer"
+    },
+    "act-healer": {
+      "actor_id": "act-healer",
+      "name": "Ilva",
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ]
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "ambush": {
+      "ID": "ambush",
+      "Name": "Ambush Corridor",
+      "GridWidth": 20,
+      "GridHeight": 9,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,3": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,4": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,5": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,6": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,7": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,8": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,3": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,4": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,5": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,6": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,7": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,8": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,3": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,4": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,5": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,6": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,7": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,8": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "3,0": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,1": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,2": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,3": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,4": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,5": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,6": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,7": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        },
+        "3,8": {
+          "Kind": "wall",
+          "Material": "",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {},
+      "Explored": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "0,5": true,
+        "0,6": true,
+        "0,7": true,
+        "0,8": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "1,5": true,
+        "1,6": true,
+        "1,7": true,
+        "1,8": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "2,5": true,
+        "2,6": true,
+        "2,7": true,
+        "2,8": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "3,5": true,
+        "3,6": true,
+        "3,7": true,
+        "3,8": true
+      },
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "0,5": true,
+        "0,6": true,
+        "0,7": true,
+        "0,8": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "1,5": true,
+        "1,6": true,
+        "1,7": true,
+        "1,8": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "2,5": true,
+        "2,6": true,
+        "2,7": true,
+        "2,8": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "3,5": true,
+        "3,6": true,
+        "3,7": true,
+        "3,8": true
+      }
+    },
+    "camp": {
+      "ID": "camp",
+      "Name": "Night Camp",
+      "GridWidth": 3,
+      "GridHeight": 3,
+      "Tiles": {},
+      "Objects": [],
+      "OpenDoors": {},
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Session Zero",
+      "StartSeq": 1,
+      "EndSeq": 13
+    }
+  ],
+  "Tokens": {
+    "tok-fighter": {
+      "ID": "tok-fighter",
+      "SceneID": "ambush",
+      "ActorID": "act-fighter",
+      "X": 2,
+      "Y": 4
+    },
+    "tok-healer": {
+      "ID": "tok-healer",
+      "SceneID": "camp",
+      "ActorID": "act-healer",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 13
+}

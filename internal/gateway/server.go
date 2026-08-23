@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -408,7 +410,12 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		defer s.onServeDone()
 	}
 
-	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(after, s.buffer, s.noProgress)
+	// The seat decides what this connection may receive AND where its
+	// subscription starts — for a projected seat those are two different
+	// numbers, which is the one thing about this arc that is easy to get
+	// wrong (see seat's doc comment).
+	sub := newSeat(p, after)
+	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(sub.subscribeFrom(after), s.buffer, s.noProgress)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -459,6 +466,11 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// the store closing `events` UNILATERALLY — which now means this
 	// connection made no progress for its whole no-progress budget, not that
 	// it briefly fell behind. See the force-close below the loop.
+	// PROJECTED FIRST, FOR A PROJECTED SEAT, so the head below is a sequence
+	// this seat can actually reach — see seat.catchUp, which also explains why
+	// the DM and the agent skip this entirely and keep the log's own head.
+	backlog, catchUpHead := sub.catchUp(ctx, events, catchUpHead)
+
 	// The catch-up head goes out FIRST, before any backlog, so a client knows
 	// what it is waiting for before it starts receiving it.
 	//
@@ -536,11 +548,75 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 
 	var closing atomic.Bool
 
+	// perches carries a spectator's chosen shoulder from the command goroutine
+	// to the pump, which is the only goroutine allowed to write this
+	// connection's envelopes (see handleSetViewpoint for what the second
+	// producer cost). One slot, latest wins — see perchBox.
+	perches := newPerchBox()
+
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
 
-		for env := range events {
+		// env is declared out here because the loop below is a select rather
+		// than a range: the events arm assigns it, the perches arm does not
+		// reach it.
+		var env *vttv1.Envelope
+
+		// The backlog seat.catchUp already projected, sent from HERE rather
+		// than from serve directly, so it goes out behind the same revocation
+		// check and through the same writer as everything else. One check for
+		// the whole backlog rather than one per envelope: it was drained in a
+		// single pass milliseconds ago, and the loop below re-resolves on the
+		// very next event either way.
+		//
+		// UNGUARDED BY len(backlog), which costs one identity read on a
+		// connection that has no backlog — every DM and agent — and buys a
+		// check that cannot be skipped. The guard was there and the mutation
+		// gate found it unkillable in both directions: nothing can observe
+		// whether a lookup is made before a delivery of nothing. Deleting it
+		// beats adjudicating it, and it makes the check below reachable by the
+		// revocation tests rather than only by the window it was written for.
+		if s.credentialGone(pc.participantID) {
+			if !closing.Load() {
+				_ = conn.Close(websocket.StatusPolicyViolation,
+					"gateway: credential no longer valid")
+			}
+			return
+		}
+		if !deliver(s.encodeFrame, backlog, outCh, writerDone, conn, &closing) {
+			return
+		}
+
+		// TWO SOURCES, ONE PRODUCER. Everything this connection is ever sent is
+		// computed and enqueued by THIS goroutine: the log, through `events`,
+		// and a spectator's chosen shoulder, through `perches`. The command
+		// goroutine used to enqueue its own perch frames, and two producers on
+		// one socket delivered batches in the opposite order to the one they
+		// were computed in — see handleSetViewpoint for what that cost.
+		//
+		// A select rather than a second goroutine feeding the first: the whole
+		// point is that projecting and sending happen in the same goroutine, so
+		// the order envelopes are emitted in IS the order the projector's memory
+		// changed in.
+	pumping:
+		for {
+			select {
+			case <-perches.wake:
+				// The perch is APPLIED here, not merely sent here. sub.perch
+				// both moves the eyes and computes what those eyes newly see,
+				// and both must happen where sub.receive happens.
+				actorID, ok := perches.take()
+				if ok && !deliver(s.encodeFrame, sub.perch(actorID), outCh, writerDone, conn, &closing) {
+					return
+				}
+				continue
+			case e, ok := <-events:
+				if !ok {
+					break pumping
+				}
+				env = e
+			}
 			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
 			// cover. commandRoles has no spectator row anywhere, so a
 			// spectator may issue NO command — the lookup down there never
@@ -556,7 +632,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			// ErrInvalidToken ONLY. An operational failure must not silently
 			// drop an event: losing a frame is worse than a moment's delay in
 			// removing somebody, and the very next event catches them anyway.
-			if _, err := s.ids.Lookup(pc.participantID); errors.Is(err, identity.ErrInvalidToken) {
+			if s.credentialGone(pc.participantID) {
 				// CLOSED WITH A REASON, not force-closed.
 				//
 				// There are two revocation paths — this one and the command
@@ -581,22 +657,32 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 				return
 			}
 
+			// PROJECTED PER RECIPIENT (visibility spec §4), and this is the
+			// seam the whole arc turns on. It already existed: this goroutine
+			// holds p for the connection's life and already marshaled per
+			// connection, so what one seat may see is decided in the one place
+			// that was already per-seat.
+			//
 			// Marshaled per connection, deliberately: each pump encodes
 			// straight off its own subscription channel with no shared
 			// cache. At table scale (a handful of participants, not
 			// thousands of fan-out sockets) a few extra protojson.Marshal
-			// calls per event is cheap, and it keeps this goroutine
-			// entirely stateless — no retained pointers, nothing to evict,
-			// nothing that can leak. Revisit with a real broadcast hub
+			// calls per event is cheap. Revisit with a real broadcast hub
 			// (marshal once, shared bytes) only if client count per
-			// campaign ever grows past table scale (say, >10).
-			b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: env}})
-			if err != nil {
-				continue // a marshal failure here is a server bug, not this client's fault
-			}
-			select {
-			case outCh <- b:
-			case <-writerDone:
+			// campaign ever grows past table scale (say, >10) — and note that
+			// a hub can only ever share bytes between seats with the SAME
+			// projection, which is the DM and the agent.
+			//
+			// ONE EVENT IS NOW ZERO, ONE OR SEVERAL FRAMES for a projected
+			// seat: an arrival is an ActorAdded plus a TokenPlaced plus a
+			// SceneSeen, all stamped with the sequence that caused them. The
+			// DM and the agent still get exactly one frame per event, by
+			// pointer, unchanged.
+			// An encode failure TEARS THE CONNECTION DOWN rather than
+			// skipping to the next envelope — see enqueueEvents/deliver.
+			// conn.Close rather than shutdown(), because this IS the pump and
+			// shutdown waits on it.
+			if !deliver(s.encodeFrame, sub.receive(env), outCh, writerDone, conn, &closing) {
 				return
 			}
 		}
@@ -750,22 +836,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// — a lie, and one that throws them out of a live table over a
 		// transient. identity's own comment records this shared file blocking
 		// the full busy_timeout and then failing under another handle's write
-		// transaction, so it is measured, not hypothetical.
+		// transaction, so it is measured, not hypothetical. It is handed to
+		// answerCommand below, which refuses THE COMMAND and keeps the
+		// connection: one CommandResult with ok=false, and nothing else about
+		// this seat changes.
 		//
-		// Refuse the command and keep the connection, exactly as handleCommand
-		// already does for a campaign that cannot answer. Still fail-closed
-		// where it counts: nothing is authorized while we cannot say who is
-		// asking.
-		var result *vttv1.CommandResult
-		if err != nil {
-			result = &vttv1.CommandResult{
-				RequestId: cmd.GetRequestId(),
-				Ok:        false,
-				Error:     "gateway: identity unavailable",
-			}
-		} else {
-			result = s.handleCommand(now, cmd)
-		}
+		// A TRANSPORT failure is the other thing entirely, and where that
+		// one lives is worth saying, because it used to be visible on this
+		// very line. answerCommand answered `(result, alive)` while it
+		// still enqueued a perch's own frames, and alive=false meant the
+		// writer was gone or a frame would not encode — never anything
+		// about this person's credential. The perch stopped writing
+		// envelopes (see answerCommand), so the only frame this READ LOOP
+		// still enqueues is the one below — serve's opening frames go out
+		// before the loop starts, on their own arms — and a dead writer is
+		// what its `<-writerDone` arm sees. The two still end differently,
+		// which is the whole of the ruling: an operational lookup error
+		// costs one command, a dead writer costs the connection, and a
+		// revoked credential — dealt with above — is the only one of the
+		// three that closes because of WHO IS ASKING.
+		result := s.answerCommand(now, err, cmd, perches)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue
@@ -803,21 +893,132 @@ func describeBlockage(why string) string {
 	return why
 }
 
+// answerCommand produces the CommandResult for one decoded command.
+//
+// IT WRITES NO ENVELOPE, and that restriction is the whole of the C1 fix: this
+// runs on the COMMAND goroutine, and the pump is the only producer of a
+// connection's envelopes. A perch that needs frames sent asks the pump for them
+// through `perches` rather than enqueueing its own — see handleSetViewpoint.
+//
+// lookupErr is the identity re-resolution's OPERATIONAL failure, never a
+// revocation: serve has already dealt with that one and does not reach here.
+// See its comment on why a busy database must not be read as "your credential
+// is no longer valid".
+//
+// A separate function rather than a switch inline in serve, and the reason is
+// mechanical rather than aesthetic: written inline, the perch branch put serve
+// at gocyclo 31 against a limit of 30 and the lint gate refused it (MEASURED —
+// that is the failure this extraction answers, not an estimate of what it
+// would have been). Raising the threshold would have been weakening a gate to
+// pass it (CLAUDE.md rule 2); the split it forced runs along a seam that was
+// already there.
+func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vttv1.ClientCommand,
+	perches *perchBox) *vttv1.CommandResult {
+	switch sv, isPerch := cmd.GetCommand().(*vttv1.ClientCommand_SetViewpoint); {
+	case lookupErr != nil:
+		// Refuse the command and keep the connection, exactly as authorize
+		// already does for a campaign that cannot answer. Still fail-closed
+		// where it counts: nothing is authorized while we cannot say who is
+		// asking.
+		return &vttv1.CommandResult{
+			RequestId: cmd.GetRequestId(),
+			Ok:        false,
+			Error:     "gateway: identity unavailable",
+		}
+
+	case isPerch:
+		// THE ONE COMMAND ANSWERED OUTSIDE handleCommand, and the reason is the
+		// one handleCommand's own doc comment gives for owning no transport: a
+		// perch appends NOTHING to the log and changes nothing anyone else can
+		// observe. Its whole effect is on THIS connection's seat and THIS
+		// connection's wire. handleCommand runs authorize → convert → persist,
+		// and a perch is none of those three.
+		return s.handleSetViewpoint(p, cmd, sv.SetViewpoint, perches)
+
+	default:
+		return s.handleCommand(p, cmd)
+	}
+}
+
+// authorize is the preamble EVERY inbound command shares, in one place because
+// it has two callers: fetch the world the command is judged against, and ask
+// the one authorization function (spec §4). It returns either that state, or
+// the CommandResult that refuses the command — never both, and never neither.
+//
+// The nil-state arm is not a formality. campaign.State() answers nil for a
+// campaign that cannot be read, and authorizing against no world at all would
+// be deciding who may do what with nothing to decide it from; fail closed
+// (spec §4.4) and tell the caller so, keeping the connection.
+func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*engine.State, *vttv1.CommandResult) {
+	requestID := cmd.GetRequestId()
+	st := s.campaign.State()
+	if st == nil {
+		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
+	}
+	if err := Authorize(p, cmd, st); err != nil {
+		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return st, nil
+}
+
+// handleSetViewpoint authorizes a perch and HANDS IT TO THE PUMP.
+//
+// IT APPENDS NOTHING, and that is a ruling rather than an omission — the same
+// one handleJoinDoor's doc comment makes for the shared door. Patrik: "we do
+// not need to log anything about what/where the spectator sees." The log is
+// the campaign's history, and where a watcher points their camera is not a
+// fact about the campaign; it is a view preference, like zoom. Logged, it
+// would replay forever, add story-panel noise, and — absurdly — become
+// RETRACTABLE, so a DM could undo somebody having looked at Asme.
+//
+// The cost of that ruling is the perch not surviving a reconnect (spec
+// §3.1.1), because it lives on the connection like the catch-up point does.
+// The client re-sends it after redialling.
+//
+// IT DOES NOT APPLY THE PERCH ITSELF, and that division is C1's fix rather
+// than a preference. This function runs on the command goroutine; the seat's
+// projector and this connection's wire belong to the PUMP. When both goroutines
+// enqueued, two batches computed in one order reached the socket in the other:
+// a pump frame landed INSIDE a perch batch, and a TokenMoved computed before a
+// TokenHidden was delivered after it, so the watcher's own stream stopped
+// folding — permanently, on the browser client. Handing the shoulder over and
+// letting the pump do both the projecting and the sending makes that
+// unrepresentable rather than unlikely: one goroutine mutates the projector's
+// memory and emits the frames that describe the mutation, so emission order IS
+// mutation order.
+//
+// WHAT ok MEANS HERE, precisely, because the honest answer is narrower than the
+// usual one: the shoulder has been RECORDED and this connection's pump will
+// move to it. Not "the frames are on the wire" — they are computed a moment
+// later, by the pump. Handing over never blocks (perchBox.set), so a spectator
+// hopping quickly cannot stall their own command loop behind a projection, and
+// a hop that is superseded before the pump reaches it is simply skipped.
+//
+// The refusal path is Authorize's, which is where MayPerch enforces the one
+// rule this command has: a perch may only target a player-controlled actor.
+func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
+	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
+	if _, refusal := s.authorize(p, cmd); refusal != nil {
+		return refusal
+	}
+	perches.set(req.GetActorId())
+	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true}
+}
+
 // handleCommand runs the authorize → convert → persist pipeline for one
 // inbound ClientCommand (spec §3): authz/validation failures produce an
 // ok=false CommandResult and leave the connection open; only a persisted
 // event/marker produces ok=true. It never itself closes the connection or
 // writes to the wire — the caller (serve) owns transport.
+//
+// set_viewpoint never reaches here: it persists nothing and its whole effect
+// is on one connection, so serve answers it directly (handleSetViewpoint).
 func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
 	requestID := cmd.GetRequestId()
 
-	st := s.campaign.State()
-	if st == nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
-	}
-
-	if err := Authorize(p, cmd, st); err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	st, refusal := s.authorize(p, cmd)
+	if refusal != nil {
+		return refusal
 	}
 
 	// The map constrains PLAYERS; the DM and the agent author the world and
@@ -834,6 +1035,55 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		if mt, ok := cmd.GetCommand().(*vttv1.ClientCommand_MoveToken); ok {
 			if tok, known := st.Tokens[mt.MoveToken.GetTokenId()]; known {
 				to := mt.MoveToken.GetTo()
+				// YOU MAY ONLY MOVE WHERE YOU CAN SEE (visibility spec exit
+				// criterion 7: the goblin's square "cannot be targeted by a
+				// player who cannot see it"). This is the second half of
+				// session zero. Filtering the wire stops a player LOOKING at a
+				// hidden creature; without this they could still land on it,
+				// because move_token validates a destination and never a path
+				// — the whole grid was one command away.
+				//
+				// PHRASED AS "CAN YOU SEE THE SQUARE", NOT "IS SOMETHING
+				// STANDING THERE", and the difference is the whole design. A
+				// refusal that depends on the occupant is an ORACLE: a player
+				// could sweep the map with move commands and read the hidden
+				// creatures off the refusals, which is session zero again with
+				// more typing. This refusal depends on nothing the player does
+				// not already hold — their own visible set is exactly what
+				// SceneSeen just told them — so it leaks nothing, in the
+				// strong sense that they can compute it themselves.
+				//
+				// FIRST, AND THE ORDER IS THE WHOLE POINT. It ran second for
+				// one commit, so that every pre-existing refusal kept its exact
+				// wording, and that was a leak of its own: engine.Blocked
+				// answers for ANY square in the scene, sight-independent — it
+				// was written when a player received every tile, so it gave
+				// nothing away. Against a REDACTED board it hands back walls,
+				// closed doors and scenery kinds ("something (a crate) is in
+				// the way") for terrain SceneSeen has never sent, one
+				// move_token at a time, defeating spec §4.2 through an error
+				// string. TestAPlayerCannotProbeTheDarkWithMoveCommands sweeps
+				// unseen squares of four different kinds and requires the
+				// refusals to be byte-identical.
+				//
+				// The cost is real and deliberate: a square out of line of
+				// sight cannot be walked onto even when it is remembered
+				// terrain (spec §3.2), so a player cannot round a corner in
+				// one command. Fail closed (spec §4.4). And this is the
+				// PLAYER's branch only — "hard for players, free for DM"
+				// (maps-as-geometry spec §6) governs sight exactly as it
+				// governs stone, so the DM's refusals are untouched, wording
+				// and ordering both.
+				if !canSee(viewerFor(p), st, tok.SceneID, to) {
+					return &vttv1.CommandResult{
+						RequestId: requestID, Ok: false,
+						Error: "gateway: cannot move there — you cannot see that square",
+					}
+				}
+				// AND ONLY THEN WHAT IS ON IT. Reached only for a square this
+				// player can see, which is a square whose terrain they have
+				// already been sent — so naming it tells them nothing new and
+				// keeps the refusal useful.
 				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
@@ -1178,4 +1428,90 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	}
 	s.announcePromotion(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+}
+
+// credentialGone reports whether this participant's credential has been
+// revoked since the connection was accepted.
+//
+// ErrInvalidToken ONLY, and that narrowness is the point: an operational
+// failure must not silently drop an event or a connection. Losing a frame is
+// worse than a moment's delay in removing somebody, and the very next event
+// asks again.
+func (s *Server) credentialGone(participantID string) bool {
+	_, err := s.ids.Lookup(participantID)
+	return errors.Is(err, identity.ErrInvalidToken)
+}
+
+// The two ways enqueueEvents can stop short, as sentinels so the caller can
+// tell them apart without matching a sentence: one is this server's bug and
+// deserves a close frame saying so, the other is the connection already going
+// away underneath it.
+var (
+	errEncodeFrame = errors.New("gateway: encode event frame")
+	errWriterGone  = errors.New("gateway: writer stopped")
+)
+
+// deliver is enqueueEvents plus the pump's standing answer to failing at it:
+// tear the connection down, and say why when the reason was ours.
+//
+// It exists because the pump now has THREE places that send (the backlog, a
+// perch, an event) and each carried the same six lines. Folding them into one
+// function is not only tidiness — it kept `serve` under the gocyclo limit that
+// the perch's select arm would otherwise have pushed it over, and it means a
+// future fourth sender cannot get the teardown subtly different from the other
+// three.
+//
+// closing is a POINTER because it is serve's own flag and the caller reads it
+// after this returns; taking it by value would copy an atomic.Bool, which vet
+// rejects outright.
+func deliver(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope,
+	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) bool {
+	err := enqueueEvents(encode, envs, outCh, writerDone)
+	if err == nil {
+		return true
+	}
+	// errWriterGone needs no close: the writer is already gone, and serve's
+	// deferred CloseNow does the disposing. An ENCODE failure is ours, and the
+	// client is owed a reason for a connection that ends mid-stream.
+	if errors.Is(err, errEncodeFrame) && !closing.Load() {
+		_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
+	}
+	return false
+}
+
+// enqueueEvents encodes each envelope as a ServerFrame and hands it to the
+// connection's writer, in order, stopping at the first failure.
+//
+// ALL OR NOTHING PER BATCH, and that is the reason this stops rather than
+// skipping. One log event is now several envelopes for a projected seat, and
+// project.go's ordering within them is LOAD-BEARING: an actor before its
+// token, a scene before what stands in it. Dropping one and sending the next
+// is "token placed for unknown actor" in both folds — the permanent client
+// freeze this arc keeps coming back to — so delivering an incoherent stream is
+// worse than delivering none. It used to `continue`, which was harmless while
+// one event was exactly one frame.
+//
+// A nil or empty batch is a no-op, which is what a projection that withheld
+// everything returns.
+//
+// THE ENCODER IS PASSED IN, through Server.encodeFrame's seam, and that is the
+// difference between a branch nothing can reach and one a test can drive. It
+// called the package-level EncodeFrame at first, which left the error path
+// above unreachable BY WIRING — not by construction, since the seam sits in
+// this same file and five other frames already go through it. Reviewers
+// spotted the distinction before I did; the branch below is now killable, and
+// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch drives it.
+func enqueueEvents(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
+	for _, pe := range envs {
+		b, err := encode(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
+		if err != nil {
+			return fmt.Errorf("%w: sequence %d: %w", errEncodeFrame, pe.GetSequence(), err)
+		}
+		select {
+		case outCh <- b:
+		case <-writerDone:
+			return errWriterGone
+		}
+	}
+	return nil
 }

@@ -69,6 +69,58 @@ export interface Scene {
   Tiles?: Record<string, Tile>;
   Objects?: SceneObject[];
   OpenDoors?: Record<string, boolean>;
+  /**
+   * Explored is the squares THIS VIEWER has ever seen, keyed like Tiles.
+   * Mirrors internal/engine's Scene.Explored (state.go) so the same fold
+   * runs in both languages (visibility spec §6). It only ever grows: terrain
+   * is remembered, creatures are not.
+   *
+   * EMPTY for a scene folded from the real log — nothing in a campaign's log
+   * produces sceneSeen, so this is populated only when folding a
+   * PROJECTION. Optional for the same reason Tiles/Objects/OpenDoors are:
+   * bare Scene literals built directly in other test suites must keep
+   * compiling. fold.ts's sceneCreated arm always sets it to `{}` explicitly.
+   */
+  Explored?: Record<string, boolean>;
+  /**
+   * Visible is the squares this viewer can see RIGHT NOW, keyed like Tiles,
+   * and Explored's opposite number in how it moves: REPLACED wholesale by each
+   * sceneSeen rather than unioned, so it shrinks as freely as it grows.
+   * Mirrors internal/engine's Scene.Visible (state.go).
+   *
+   * IT DOES NOT COME FROM Explored'S SOURCE. Visible is folded from
+   * sceneSeen's own `visible` field (events.proto field 4) — the server's
+   * sight answer, computed over the GRID and owing nothing to terrain —
+   * while Explored unions that message's TILE keys. So the two may differ
+   * completely: a bare canvas is wholly visible and wholly unexplored, and
+   * ground walked out of is explored and not visible. Do not assume they
+   * track; both corners are pinned in client/test/visibility.test.ts.
+   *
+   * UNTIL 2026-08-22 THIS WAS BUILT FROM THE TILE KEYS, which made it mean
+   * "visible AND declares terrain" — a lossy proxy for a decision the server
+   * had already made, which on a scene with no tiles hid the player's own
+   * token. A token is a free object and needs no ground under it.
+   *
+   * The pair is what the board needs and neither half gives alone —
+   * `Explored − Visible` is ground you remember and cannot currently see,
+   * which is the fog (visibility spec §6.1).
+   *
+   * UNDEFINED AND `{}` MEAN DIFFERENT THINGS, which is why sceneCreated
+   * leaves this absent while it sets Explored to `{}`. Undefined is "no
+   * sceneSeen has ever arrived for this scene" — the DM and the agent, whose
+   * streams are the identity projection and contain none. `{}` is "a
+   * projection arrived and this seat can see nothing here". Conflating them
+   * would blank the DM's board.
+   *
+   * So every reader that decides what to DRAW must branch on the distinction
+   * rather than defaulting with `?? {}` — that is the one place `?? {}` is
+   * wrong on a Scene field, and view/scene-plan.ts's planFog and view/grid.ts's
+   * tokensOnScene are the two that must not take it. The DUMP is the exception,
+   * and it is not a violation: foldToDumpJSON reproduces Go's `omitempty`,
+   * which drops nil and empty alike, so `?? {}` there is the correct mirror of
+   * a distinction JSON does not carry.
+   */
+  Visible?: Record<string, boolean>;
 }
 
 export interface Token {

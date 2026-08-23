@@ -1,0 +1,84 @@
+[
+  {
+    "actorRole": "dm",
+    "eventId": "evt-1",
+    "participantId": "p-dm",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "sessionStarted": {
+      "name": "Session Zero"
+    }
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-fighter",
+        "controllerId": "p-player",
+        "controllerIds": [
+          "p-player"
+        ],
+        "name": "Asme"
+      }
+    },
+    "sequence": "4"
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-healer",
+        "controllerId": "p-player",
+        "controllerIds": [
+          "p-player"
+        ],
+        "name": "Ilva"
+      }
+    },
+    "sequence": "5"
+  },
+  {
+    "sceneCreated": {
+      "gridHeight": 3,
+      "gridWidth": 3,
+      "name": "Night Camp",
+      "sceneId": "camp"
+    },
+    "sequence": "8"
+  },
+  {
+    "sequence": "8",
+    "tokenPlaced": {
+      "actorId": "act-healer",
+      "position": {
+        "x": 1,
+        "y": 1
+      },
+      "sceneId": "camp",
+      "tokenId": "tok-healer"
+    }
+  },
+  {
+    "sceneSeen": {
+      "sceneId": "camp",
+      "visible": [
+        "0,0",
+        "0,1",
+        "0,2",
+        "1,0",
+        "1,1",
+        "1,2",
+        "2,0",
+        "2,1",
+        "2,2"
+      ]
+    },
+    "sequence": "8"
+  },
+  {
+    "actorRole": "dm",
+    "eventId": "evt-13",
+    "participantId": "p-dm",
+    "sequence": "13",
+    "sessionEnded": {},
+    "sessionId": "sess-1"
+  }
+]

@@ -196,7 +196,20 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	}
 
 	participants := SoakParticipants()
-	participantNames := make([]string, 0, len(participants))
+	// SPLIT BY WHAT THEIR STREAM IS, because since the visibility projection
+	// landed "everyone receives every event" is no longer true of this roster
+	// (visibility spec §3.1). The DM and the agent still do, so they can be
+	// waited on BY SEQUENCE. The two players receive what their actors can
+	// see, which for most of a soak's events is nothing at all — waiting for a
+	// sequence in their history would time out on a correct server.
+	//
+	// Both lists matter and for different assertions: the sequence wait is
+	// what makes the denial snapshots meaningful, and the projected seats
+	// still have to be SETTLED before those snapshots (see settle) or their
+	// legitimately-late envelopes are read as a leak.
+	projected := projectedSeats(participants)
+	unprojectedNames := make([]string, 0, len(participants))
+	projectedNames := make([]string, 0, len(participants))
 	conns := make(map[string]Conn, len(participants))
 	for _, p := range participants {
 		c, err := dial(p.Name, 0)
@@ -204,7 +217,11 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			return nil, fmt.Errorf("harness: soak: dial participant %q: %w", p.Name, err)
 		}
 		conns[p.Name] = c
-		participantNames = append(participantNames, p.Name)
+		if projected[p.Name] {
+			projectedNames = append(projectedNames, p.Name)
+		} else {
+			unprojectedNames = append(unprojectedNames, p.Name)
+		}
 	}
 	defer func() {
 		for _, c := range conns {
@@ -287,10 +304,11 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			// and be mistaken for a leaked broadcast from THIS denied
 			// command.
 			if lastAcceptedSeq > 0 {
-				if !histories.waitAllCaughtUp(participantNames, lastAcceptedSeq, observeTimeout) {
+				if !histories.waitAllCaughtUp(unprojectedNames, lastAcceptedSeq, observeTimeout) {
 					rep.Pass = false
-					fmt.Fprintf(report, "[action %d] FAIL: not every participant caught up to sequence %d within %s before the denial-attempt snapshot\n", i, lastAcceptedSeq, observeTimeout)
+					fmt.Fprintf(report, "[action %d] FAIL: not every unprojected participant caught up to sequence %d within %s before the denial-attempt snapshot\n", i, lastAcceptedSeq, observeTimeout)
 				}
+				histories.settle(projectedNames, denialAbsenceWindow, observeTimeout)
 			}
 			preLens = histories.lengths()
 		}
@@ -342,11 +360,15 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 				//
 				// This costs nothing on a healthy run: the witness event is
 				// one the server just accepted, so it is already in flight.
-				if !histories.waitAllCaughtUp(participantNames, result.Sequence, observeTimeout) {
+				if !histories.waitAllCaughtUp(unprojectedNames, result.Sequence, observeTimeout) {
 					rep.Pass = false
-					fmt.Fprintf(report, "[action %d] FAIL: not every participant observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
+					fmt.Fprintf(report, "[action %d] FAIL: not every unprojected participant observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
 						i, result.Sequence, observeTimeout)
 				}
+				// The projected seats cannot be waited on by sequence, but
+				// their late envelopes are exactly what leakedBelow would
+				// misread, so they are settled instead.
+				histories.settle(projectedNames, denialAbsenceWindow, observeTimeout)
 				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence); len(leaked) > 0 {
 					rep.Pass = false
 					fmt.Fprint(report, deniedLeakLine(pending, leaked))
@@ -1144,4 +1166,39 @@ func (m *soakModel) planDeniedAttempt(rng *rand.Rand) (soakStep, bool) {
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
 	}}}
 	return soakStep{issuer: player, cmd: cmd, kind: actionDeniedAttempt, wantDenied: true, apply: func(int64) {}}, true
+}
+
+// settle waits until every name's history has stopped growing for a whole
+// quiet window, bounded by timeout.
+//
+// The sequence wait (waitAllCaughtUp) is the sharper instrument and is used
+// wherever it can be: it names the exact envelope it is waiting for. It cannot
+// be used on a PROJECTED seat, because there is no envelope to name — what
+// such a seat receives for a given log event is between zero and several, and
+// zero is a correct answer (visibility spec §4.2). Quiet is the only signal
+// left, and it is the same "a bounded silence proves the negative" reasoning
+// denialAbsenceWindow already rests on everywhere else in this file.
+//
+// Returns nothing: a seat that never goes quiet is a busy one, not a broken
+// one, and the assertions this precedes report their own failures.
+func (h *soakHistories) settle(names []string, quiet, timeout time.Duration) {
+	if len(names) == 0 {
+		return
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		before := h.lengths()
+		time.Sleep(quiet)
+		after := h.lengths()
+		stable := true
+		for _, n := range names {
+			if after[n] != before[n] {
+				stable = false
+				break
+			}
+		}
+		if stable || !time.Now().Before(deadline) {
+			return
+		}
+	}
 }

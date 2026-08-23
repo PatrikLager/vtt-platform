@@ -158,12 +158,115 @@ message SceneCreated {
   // which matches neither "wall" nor "door", so it blocks nothing. That is
   // the same answer a reader gets for a scene that opted out entirely.
   //
-  // Size: one TileRef per tile, roughly 45.5 bytes each as protojson, so a
-  // fully tiled scene past about 60x60 exceeds the read limit clients set
-  // and the frame never arrives. internal/mapdef.MaxWireTiles enforces that
-  // ceiling at compile; spec §7 files the compact encoding that lifts it.
+  // SIZE, AND WHY IT IS TWO NUMBERS EVERYWHERE. One TileRef per tile. But
+  // protojson appends a space after every comma in roughly half of all builds:
+  // internal/detrand seeds that choice from a hash of the binary, on purpose,
+  // so that "the output is unstable across different builds". Every byte
+  // figure about this message therefore has two honest values about 2 bytes a
+  // tile apart, and a reader who measures one and finds the doc quoting the
+  // other will "correct" it into the same trap. Quote BOTH or neither — the
+  // `visible` field below carries the full warning and the method for settling
+  // it.
+  //
+  // Measured across differently-sized builds of this repo, on the real 32x32
+  // ravine through mapdef.BuildSceneCreated and on synthetic grids:
+  //
+  //           per tile   32x32      60x60 (3600 tiles)   200x200
+  //   compact  43.5 B    43.5 KiB   153.6 KiB            1.71 MiB
+  //   spaced   45.5 B    45.5 KiB   160.6 KiB            1.79 MiB
+  //
+  // A fully tiled scene eventually exceeds the 200 KiB read limit Go clients
+  // set (internal/harness/client.go) and the frame never arrives. WHERE
+  // depends on art as much as on size: with no override the first grid over the
+  // limit is 69x69 compact / 67x67 spaced — compared in BYTES against
+  // readLimit's 204800, not against a rounded KiB figure, because 67x67 spaced
+  // is 205224 B and reads as "200.4 KiB", which looks under a 200 KiB limit and
+  // is not. Overriding every square with art puts even 60x60 over in BOTH
+  // regimes: the cost is exactly len(name) + 9 bytes a tile compact and +10
+  // spaced — the `,"art":""` scaffolding plus the name — so a 7-character name
+  // takes a 3600-tile scene to 209.8 / 220.4 KiB and an 11-character one to
+  // 223.9 / 234.4. SHIPPED TILE NAMES RUN 7 TO 11 CHARACTERS, and that range
+  // needs its definition attached or it drifts: it means the names in a pack
+  // that mapdef.LoadPack actually loads and Resolve consults. Exactly one
+  // shipped map declares one — maps/cellar/map.json names cellar-basics, whose
+  // four TILE names are earth-1, masonry-1, flagstone-1 and cellar-door.
+  // client/public/std-pack is NOT in that set: it is a client-side rendering
+  // manifest served as static files, never a mapdef.Pack. Nor are that pack's
+  // OBJECT names, which travel in SceneObject.art rather than TileRef.art.
+  // internal/mapdef.MaxWireTiles caps the tile COUNT at 3600, which refuses
+  // 69x69 but admits that overridden 60x60, so the cap and the limit do not
+  // line up. That mismatch is recorded, not fixed here. spec §7 files the
+  // compact encoding that lifts the whole ceiling.
   map<string, TileRef> tiles = 5;
   repeated SceneObject objects = 6;
+}
+
+// TokenHidden says a token left YOUR view. PROJECTION-ONLY: no command
+// produces it, so it can never reach the log — internal/gateway synthesizes
+// it per recipient (visibility spec §4.2). It is a fact about a viewer's
+// knowledge, not about the world, which is why the world's log does not
+// carry it.
+message TokenHidden {
+  string token_id = 1;
+}
+
+// SceneSeen carries what a viewer can see of a scene RIGHT NOW — the whole
+// current visible set, never a delta.
+//
+// Whole-set is deliberate: it is idempotent, so the projection needs no
+// per-connection memory of what it already sent, and visibility spec §4.1's
+// purity (a function of log-so-far and viewer, with nothing stored per
+// connection) survives. The client UNIONS these into its explored set, which
+// is what makes terrain remembered and creatures not.
+//
+// PROJECTION-ONLY, like TokenHidden.
+message SceneSeen {
+  string scene_id = 1;
+  map<string, TileRef> tiles = 2;
+  repeated SceneObject objects = 3;
+
+  // visible is the squares this viewer can see right now, keyed "x,y" (column
+  // then row, maps-as-geometry spec §4.1). The whole current set, never a
+  // delta, exactly as tiles is.
+  //
+  // IT IS NOT THE KEYS OF tiles, and that is the entire reason it exists. A
+  // token is a FREE OBJECT that needs no terrain to stand on (Patrik's ruling
+  // 2026-08-22): sight is computed over the GRID, so on a scene that declares
+  // no terrain every in-range square is visible and every token on it is
+  // legitimately sent. tiles could not carry those squares — there is no
+  // TileRef to put in them — so a client deriving visibility from tiles
+  // overruled a decision the server had already made correctly, and hid a
+  // player's own token on a bare canvas. Field 4 carries the decision itself
+  // rather than a proxy for it.
+  //
+  // REPEATED STRING RATHER THAN map<string, bool>, for two reasons. A set has
+  // no second axis, so a bool value is a slot with no meaning and one more
+  // state ("present but false") for readers to disagree about. And it is
+  // cheaper — but the size of the saving depends on which BUILD you measure,
+  // and that is a fact about protojson rather than a sloppy measurement.
+  //
+  // PROTOJSON DELIBERATELY RANDOMISES ITS OUTPUT. encoding/json/encode.go's
+  // prepareNext appends a space after every comma when detrand.Bool() is true,
+  // and internal/detrand seeds that from an FNV hash of the binary itself:
+  // "the output does not change within a program, while ensuring that the
+  // output is unstable across different builds". So one binary emits
+  // {"visible":["0,0","1,0"]} and the next emits {"visible":["0,0", "1,0"]},
+  // and every per-square figure below has two honest values exactly 1.00 B
+  // apart. Measured across fourteen binaries of this repo, varying only their
+  // size: seven of each regime.
+  //
+  //   compact  7.67 B/square (27.0 KiB per 3600) vs 12.67 — 39.5% cheaper
+  //   spaced   8.67 B/square (30.5 KiB per 3600) vs 13.67 — 36.6% cheaper
+  //
+  // Quote BOTH or neither. The repo's own long-standing figure is in the
+  // spaced regime — mapdef.MaxWireTiles records "a 32x32 scene at 45.5 KiB,
+  // about 45.5 bytes a tile", and BuildSceneCreated on the real ravine returns
+  // exactly that in a spaced build and 43.5 KiB / 43.5 B a tile in a compact
+  // one.
+  //
+  // Go and TS both hold this concept as map[string]bool /
+  // Record<string, boolean>, so both folds turn the list into a set on arrival.
+  repeated string visible = 4;
 }
 
 // A door is one nature, not two (spec §3.3): TileRef.kind is "door", and
@@ -278,5 +381,13 @@ message Envelope {
     ActorControlRevoked actor_control_revoked = 27;
     DoorOpened door_opened = 28;
     DoorClosed door_closed = 29;
+    // Field numbers 30/31, not the brief's 28/29 — 27 was not the highest
+    // in use: DoorOpened/DoorClosed already hold 28/29 (maps-as-geometry
+    // Task 1 fix, landed after the plan's signatures were captured). Reusing
+    // 28/29 here would silently collide two payload types onto the same
+    // wire tag, which ADR-007/check:breaking exists to catch — corrected to
+    // the actual next-free numbers instead (visibility Task 2 report).
+    TokenHidden token_hidden = 30;
+    SceneSeen scene_seen = 31;
   }
 }

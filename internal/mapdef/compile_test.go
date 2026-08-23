@@ -216,12 +216,20 @@ func fullyTiledMap(w, h int32) *mapdef.Map {
 // TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable pins the
 // transport ceiling spec §7 measured but nothing enforced.
 //
-// A SceneCreated carries one TileRef per DECLARED tile as protojson: 32x32 is
-// 45.5 KiB, so ~45.5 bytes a tile, against the 200 KiB read limit Go clients
-// set (internal/harness/client.go). Past roughly 60x60 the frame does not
-// arrive — and the failure lands as a torn-down connection mid-session, not as
-// a load error, which is how loading goblin-ambush used to kill every
-// connection before that limit was raised.
+// A SceneCreated carries one TileRef per DECLARED tile as protojson, at 43.5
+// bytes a tile or 45.5 depending on the BUILD — protojson adds a space after
+// every comma in roughly half of them, seeded from a hash of the binary by
+// internal/detrand, on purpose. So a 32x32 is 43.5 KiB or 45.5 KiB, and both
+// are correct. See MaxWireTiles's own doc comment; quote both or neither.
+//
+// The frame stops arriving somewhere past 60x60 — the first grid over is 69x69
+// compact and 67x67 spaced with no art overrides, and as early as 60x60 with
+// them — against the 200 KiB read limit Go clients set
+// (internal/harness/client.go). Compare in BYTES: 67x67 spaced is 205224
+// against readLimit's 204800, over by 424, and a KiB display rounds it to
+// "200.4", which is how it was first recorded as 68x68. The failure lands as a
+// torn-down connection mid-session, not as a load error, which is how loading
+// goblin-ambush used to kill every connection before that limit was raised.
 //
 // THE LIMIT IS ON TILES, NOT ON GRID AREA, and the difference is not academic:
 // tiles are optional (Patrik's ruling 2026-08-13), so a huge grid that
@@ -231,7 +239,7 @@ func fullyTiledMap(w, h int32) *mapdef.Map {
 // reason.
 func TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable(t *testing.T) {
 	t.Run("a fully tiled map at the ceiling still compiles", func(t *testing.T) {
-		m := fullyTiledMap(60, 60) // 3600 tiles, ~160 KiB
+		m := fullyTiledMap(60, 60) // 3600 tiles: 153.6 KiB compact, 160.6 KiB spaced
 		if _, _, err := mapdef.BuildSceneCreated(m, nil); err != nil {
 			t.Fatalf("a 60x60 map is inside the stated ceiling and must compile: %v", err)
 		}

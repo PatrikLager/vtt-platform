@@ -9,12 +9,34 @@ import (
 // MaxWireTiles is the largest number of tiles one SceneCreated may carry, and
 // it is a TRANSPORT limit rather than a rule about maps (spec §7).
 //
-// SceneCreated ships one TileRef per declared tile as protojson. Task 4
-// measured a 32x32 scene at 45.5 KiB — about 45.5 bytes a tile — against the
-// 200 KiB read limit Go clients set (internal/harness/client.go's readLimit).
-// 3600 tiles is the 60x60 the spec calls "the honest limit today": ~160 KiB,
-// leaving room for the objects, placements and names that ride in the same
-// frame. Past it the frame simply does not arrive, and the way that presents
+// SceneCreated ships one TileRef per declared tile as protojson, and every
+// byte figure below has TWO honest values because protojson randomises its own
+// output: it appends a space after every comma in roughly half of all builds,
+// seeded by internal/detrand from a hash of the binary, deliberately, so that
+// "the output is unstable across different builds". Task 4's long-standing
+// "45.5 KiB, about 45.5 bytes a tile" for a 32x32 is the SPACED regime,
+// confirmed by re-running BuildSceneCreated on the real ravine; the same scene
+// is 43.5 KiB / 43.5 bytes a tile in a compact build. 3600 tiles is the 60x60
+// the spec calls "the honest limit today": 153.6 KiB compact, 160.6 KiB
+// spaced, against the 200 KiB read limit Go clients set
+// (internal/harness/client.go's readLimit), leaving room for the objects,
+// placements and names that ride in the same frame.
+//
+// THE HEADROOM ABOVE ASSUMES NO ART OVERRIDES, which is where this constant
+// and the read limit stop agreeing. Overriding a square costs exactly
+// len(name) + 9 bytes compact and +10 spaced — the `,"art":""` scaffolding
+// plus the name. Shipped TILE names run 7 to 11 characters: the only shipped
+// map that declares a pack is maps/cellar/map.json, and cellar-basics names
+// earth-1, masonry-1, flagstone-1 and cellar-door. (client/public/std-pack is
+// a client-side rendering manifest, never loaded through LoadPack, and that
+// pack's object names ride in SceneObject.art, not TileRef.art — counting
+// either widens the range spuriously.) So overriding all 3600 tiles lands
+// between 209.8 and 223.9 KiB compact, 220.4 and 234.4 spaced: over the limit
+// while still inside this cap, because this counts TILES and the limit counts
+// BYTES. Recorded here rather than repaired, since changing the cap is a
+// decision about the wire format rather than a correction to a number.
+//
+// Past the cap the frame simply does not arrive, and the way that presents
 // is a connection torn down mid-session — which is exactly how loading
 // goblin-ambush killed every connection before that read limit was raised.
 // Refusing at compile turns a mystery at the table into a message at load.
@@ -107,7 +129,8 @@ func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
 	if len(m.Tiles) > MaxWireTiles {
 		return nil, nil, fmt.Errorf(
 			"mapdef: scene %q declares %d tiles, over the %d this wire format can deliver "+
-				"(one TileRef per tile at ~45.5 bytes against a 200 KiB client read limit; "+
+				"(one TileRef per tile at ~43.5-45.5 bytes, the spread being protojson's "+
+				"own build-to-build variation, against a 200 KiB client read limit; "+
 				"%d tiles is roughly 60x60). A larger scene compiles but its SceneCreated "+
 				"never arrives, tearing down the connection instead. Split the map, or drop "+
 				"the tiles it does not need — terrain is optional and a tile-less scene of "+

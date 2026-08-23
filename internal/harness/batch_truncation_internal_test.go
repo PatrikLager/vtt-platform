@@ -219,8 +219,12 @@ func TestObserveOnAllSeparatesADeadStreamFromAMissedEvent(t *testing.T) {
 	dead.finish()
 
 	history := map[string][]*vttv1.Envelope{}
+	// No projected seats: this pins the UNFILTERED contract, which is the one
+	// that answers "who did not see this event" at all. What a projected seat
+	// does here has its own test below.
 	missing, ended := observeOnAll(
-		map[string]Conn{"saw": saw, "missed": missed, "dead": dead}, history, 7, 50*time.Millisecond)
+		map[string]Conn{"saw": saw, "missed": missed, "dead": dead}, nil, history, 7,
+		50*time.Millisecond, 20*time.Millisecond)
 
 	if len(missing) != 1 || missing[0] != "missed" {
 		t.Fatalf("want only the live-but-silent participant reported missing, got %v", missing)
@@ -335,5 +339,71 @@ func TestSoakHistoriesStillCatchARealLeak(t *testing.T) {
 	}
 	if len(ended) != 0 {
 		t.Fatalf("nothing ended, got %v", ended)
+	}
+}
+
+// TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything is the visibility
+// arc's amendment to the contract above, and both halves matter.
+//
+// A projected seat receives what its participant may see, so silence is a
+// legitimate answer for an event about a room they are not in — requiring one
+// event each would fail every honest projection (visibility spec §4.2). But
+// what it DOES receive still has to reach history, because the denial checks
+// count what arrived since (leakedSince) and the reconnect step compares
+// catch-up against what was seen live; a seat drained by nobody makes one
+// assertion vacuous and the other wrong.
+func TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything(t *testing.T) {
+	silent := newStubConn() // a projected seat that may see nothing
+	watching := newStubConn()
+	watching.send(envSeq(7))
+	watching.send(envSeq(7)) // one event, two projected envelopes
+	dm := newStubConn()
+	dm.send(envSeq(7))
+
+	history := map[string][]*vttv1.Envelope{}
+	missing, ended := observeOnAll(
+		map[string]Conn{"silent": silent, "watching": watching, "dm": dm},
+		map[string]bool{"silent": true, "watching": true},
+		history, 7, 50*time.Millisecond, 30*time.Millisecond)
+
+	if len(missing) != 0 {
+		t.Fatalf("a projected seat must never be reported missing, got %v", missing)
+	}
+	if len(ended) != 0 {
+		t.Fatalf("nothing ended, got %v", ended)
+	}
+	if len(history["silent"]) != 0 {
+		t.Fatalf("the silent seat recorded %d envelopes, want 0", len(history["silent"]))
+	}
+	if len(history["watching"]) != 2 {
+		t.Fatalf("a projected seat given two envelopes for one event recorded %d, want 2 — "+
+			"the denial and reconnect assertions read this", len(history["watching"]))
+	}
+	if len(history["dm"]) != 1 {
+		t.Fatalf("the unprojected seat recorded %d envelopes, want 1", len(history["dm"]))
+	}
+}
+
+// TestObserveOnAllStillNamesAProjectedSeatWhoseStreamDied keeps the half that
+// silence must not swallow: a seat entitled to receive nothing is not the same
+// as a seat that can no longer receive at all.
+func TestObserveOnAllStillNamesAProjectedSeatWhoseStreamDied(t *testing.T) {
+	dead := newStubConn()
+	dead.err = ErrEventsOverflow
+	dead.finish()
+	dm := newStubConn()
+	dm.send(envSeq(7))
+
+	history := map[string][]*vttv1.Envelope{}
+	missing, ended := observeOnAll(
+		map[string]Conn{"dead": dead, "dm": dm},
+		map[string]bool{"dead": true},
+		history, 7, 50*time.Millisecond, 30*time.Millisecond)
+
+	if len(missing) != 0 {
+		t.Fatalf("a projected seat must never be reported missing, got %v", missing)
+	}
+	if len(ended) != 1 || ended[0] != "dead" {
+		t.Fatalf("want the dead projected stream named, got %v", ended)
 	}
 }

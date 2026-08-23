@@ -13,6 +13,9 @@ was produced from the other, agreement is evidence rather than a tautology: if
 the recording were wrong, folding it would not reproduce a state derived
 without looking at it.
 
+A scenario may also carry a `projections/` subdirectory — one seat per
+directory inside it. See **Projected seats** below.
+
 ## Why there is no `-update` flag
 
 The original plan generated this corpus behind one. That was rejected against
@@ -44,9 +47,115 @@ payload. `three-role-exit` and `story-table` both set it, and with only the
 envelope-level field normalized the stream differed on every capture, so the
 drift gate could never have gone green.
 
+## Projected seats
+
+`<scenario>/projections/<seat>/` is what ONE viewer receives of that scenario's
+log — the right-hand side of the wire rather than the log itself. Three files:
+
+| File | What it is | Who derives it | Gate |
+|---|---|---|---|
+| `viewer.json` | Which seat: participant, role, and a spectator's perch | Declared. **A perch never reaches the log** (it is connection state, `internal/gateway/seat.go`), so it cannot be derived from the stream beside it | — |
+| `stream.json` | What `gateway.Projector` emits for that seat | **Derived**, and pinned by `internal/gateway.TestTheProjectedGoldensAreWhatTheProjectionActuallySends`, which recomputes it and compares bytes | that test |
+| `state.json` | Folded state + `headSequence` | **A human, by hand**, same rule as every other `state.json` here | Go fold (same test) + `client/test/projection-parity.test.ts` |
+
+**`stream.json` here is NOT an independent recording, and that difference
+matters.** The log-level `stream.json` one directory up is testimony from a real
+server run; this one is a derivation of it. It is committed for one reason:
+**TypeScript has no projector and is never going to have one** — spec §6.2's
+"server decides what you may see; the client draws it" — so the only way
+`client/src/fold.ts` can be held to the same bytes the Go fold sees is for those
+bytes to be on disk. The independence that makes agreement evidence lives in
+`state.json`, which was hand-derived and which THREE things are held to: the Go
+fold, the TypeScript fold, and (for everything but `Explored`) the independent
+sight oracle in `internal/gateway/keystone_test.go`.
+
+### Why the corpus needed them
+
+Until `session-zero` landed, `grep -ric sceneseen scenarios/` returned zero.
+Every scene in the corpus was untiled or entirely floor, with no wall, no closed
+door and no `blocks_sight` object anywhere — so nothing was ever hidden from
+anyone, and the keystone (visibility spec §4.3) could not tell a correct
+projection from one that forwards the whole log to everybody.
+`internal/gateway.TestTheKeystoneCorpusCanTellAProjectionFromAPassthrough` is
+that guard, kept as a test so the corpus cannot quietly regress to it.
+
+MEASURED, by deleting `session-zero` and re-running **six** fault injections
+against the keystone: **three then pass unnoticed, and all three are OVER-SEND**
+— a projection that shows every creature in any scene the viewer can see part of
+(session zero itself), one that ignores sight blockers entirely, and one that
+ships a scene's whole tile map. All three under-send and roster faults survived
+the deletion. Every fault the old corpus missed was an over-send, and over-send
+is the direction this arc exists to close.
+
+### What `session-zero` deliberately does NOT do
+
+**It never retracts an event that CAUSED an introduction**, and that is an
+exclusion rather than an oversight — the two look identical in a diff a year
+from now, so it is written down here rather than only in a task report.
+
+Synthesized envelopes carry the sequence of the event that caused them
+(visibility spec §4.2), so retracting the event that first revealed a scene
+deletes the viewer's own `SceneCreated` for it. `transitions` then still emits an
+empty `SceneSeen` for that scene at the retraction's sequence — its union walk
+keeps a scene in play for one more step — and the recipient's fold rejects it
+with `scene seen for unknown scene`. Both folds are strict and
+`client/src/session.ts` re-folds its whole log on every event, so that is a
+permanent freeze rather than one bad frame.
+
+The defect is pre-existing, and `internal/gateway/project.go`'s `transitions` doc
+comment is where it is recorded — as the DANGLING-REFERENCE form, a later
+forwarded event about a retracted introduction failing with `moved unknown
+token`. The prediction "spec §4.3's keystone is where it is catchable" sits
+there, verbatim, and is correct.
+
+**Do not read the forgetting-loop comment further down that function as the same
+thing.** It contains the string `scene seen for unknown scene` too, which makes it
+look like the nearer match, and it is not: its case is an undo covering the
+`SceneCreated` ITSELF, its cause is `pr.scenes`/`pr.seen` outliving `st.Scenes`
+rather than an introduction stamped at a retracted sequence, and it says
+"Measured before this loop existed" — the loop directly beneath it **fixed** that
+case. Shared error string, different defect, already closed.
+
+Putting the shape above into this scenario would leave the gate red, and the fix
+is a design decision (a per-viewer pre-flight in `campaign.Undo`, or a different
+sequence for a synthesized introduction) that belongs to whoever makes it, not to
+a corpus entry. `three-role-exit` DOES retract, and the keystone folds it cleanly,
+because what it retracts is a MOVE.
+
+### Deriving a projected golden
+
+`Explored` is unioned from each `sceneSeen`'s **`tiles` keys**, never from its
+`visible` list. `session-zero` carries one scene of each kind side by side so
+that the difference is a fixture rather than a sentence:
+
+- `ambush` declares terrain on all 180 of its squares, so its `Explored` grows
+  to exactly the 36 squares the player can see.
+- `camp` declares none. It is a bare canvas, which is a legal scene and not a
+  degenerate one (spec §6.2: "a token is a FREE OBJECT and needs no terrain to
+  exist"), and its `Explored` therefore stays EMPTY however much of it is
+  visible — there is no terrain there to remember.
+
+`session-zero`'s sight is a rule rather than a table, which is what makes 36
+squares hand-derivable: a solid wall fills column `x=3` for the full height of
+the grid, so from anywhere west of it every square with `x <= 2` is reachable, a
+square OF the wall is reachable (`sight.Clear` exempts a blocker containing the
+target — "without this you cannot see the wall you are standing against"), and
+every square with `x >= 4` is behind the full-height slab. The Goblin Archer
+stands at **(19,8)** — session zero's own square — and at sequence 9 neither
+seat's stream carries one byte about it. It breaks cover at sequence 11 and
+returns at 12, which is what puts a `tokenHidden` and a never-forgotten roster
+entry in the fixture.
+
 ## Coverage
 
-Seven scenarios, covering **all fifteen** command types.
+Eight scenarios, covering **all fifteen** command types.
+
+`session-zero` was added 2026-08-22 with the visibility arc's keystone. It is
+the only scenario in the corpus with a sight blocker, the only one with two
+scenes, and the only one whose player controls two actors standing in different
+ones — which is what makes its spectator seat (perched on the actor in `camp`)
+see a strictly smaller world than its player seat rather than the same one
+twice.
 
 `shared-control` was added 2026-08-07 with `grant_actor_control` and
 `revoke_actor_control`, and it exists because the corpus was SILENT on both:

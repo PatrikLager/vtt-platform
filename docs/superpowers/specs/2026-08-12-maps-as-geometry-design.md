@@ -430,6 +430,13 @@ connection until the reading side raised it — a bug this arc found and fixed
 only because an implementer read "existing adventures must still compile" as
 "must still work end to end".
 
+*Re-measured 2026-08-22: both figures above are the SPACED protojson regime.
+That encoder adds a space after every comma in roughly half of all builds,
+seeded from a hash of the binary by `internal/detrand`, deliberately — the same
+scenes are **43.5 KiB** and **~1.71 MiB** in a compact build. Task 4's numbers
+are correct, not stale; they simply have a twin. The argument is untouched:
+both regimes are far past the 32768-byte default.*
+
 So **the honest limit today is roughly a 60x60 scene** against the 200 KiB read
 limit now set. A 200x200 map lays out identically and does not arrive.
 

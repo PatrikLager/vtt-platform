@@ -103,6 +103,25 @@ message LoadAdventure { string adventure_id = 1; }
 // campaign.AppendBatch.
 message LoadMap { string map_id = 1; }
 
+// SetViewpoint perches a spectator on a party member's shoulder (visibility
+// spec §3.1.1, Patrik 2026-08-18: "like a bird hopping from one shoulder to
+// another").
+//
+// APPENDS NOTHING — the same shape as SetJoinDoor, whose handler
+// (internal/gateway/server.go's handleJoinDoor) says so outright in its own
+// doc comment. Where a spectator points their camera is not a fact about the
+// campaign: it is a view preference like zoom, so logging it would replay
+// forever, add story-panel noise, and make it RETRACTABLE, letting a DM
+// "undo" somebody having looked at Asme. A perch therefore lives on the
+// connection and the client re-sends it on reconnect. This message and the
+// oneof field are added here; Task 6 wires the handler that gives the
+// comment above a body.
+//
+// An empty actor_id un-perches.
+message SetViewpoint {
+  string actor_id = 1;
+}
+
 message ClientCommand {
   string request_id = 1;
   oneof command {
@@ -127,6 +146,9 @@ message ClientCommand {
     OpenDoor open_door = 28;
     CloseDoor close_door = 29;
     LoadMap load_map = 30;
+    // Brief did not pin a number for this arm; 31 is the next-free slot
+    // after load_map = 30 (visibility Task 2 report).
+    SetViewpoint set_viewpoint = 31;
   }
 }
 

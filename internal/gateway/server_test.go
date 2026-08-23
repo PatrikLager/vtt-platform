@@ -73,6 +73,8 @@ func mustAppend(t *testing.T, c *campaign.Campaign, id string, payload any) int6
 		env.Payload = p
 	case *vttv1.Envelope_TokenPlaced:
 		env.Payload = p
+	case *vttv1.Envelope_NarrationAdded:
+		env.Payload = p
 	default:
 		t.Fatalf("mustAppend: unsupported payload type %T", payload)
 	}
@@ -448,7 +450,13 @@ func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, 4)
-	watcherConn := f.dial(f.spectatorToken, 4)
+	// The AGENT watches, not the spectator. Fan-out is what this test is
+	// about, and since the visibility projection landed a spectator with no
+	// perch has no eyes, so a SceneCreated for a room they are not standing in
+	// is correctly withheld from them (spec §4.2, exit criterion 6). The agent
+	// receives the log unchanged (exit criterion 8), which is what "a second
+	// client also receives the broadcast" needs to mean here.
+	watcherConn := f.dial(f.agentToken, 4)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-1",
@@ -738,15 +746,26 @@ func TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind(t *testing.T) {
 // reaches it the move is already history — this is the seam where the
 // command is still a request and a refusal can still mean "you may not"
 // rather than "this never happened".
+//
+// THE WALL AT (1,0), NOT THE ONE AT (0,0), and the square moved for a reason
+// worth keeping. (0,0) is a wall this player CANNOT SEE — the cellar's own
+// geometry: from (2,1) the corner is shadowed by the wall at (1,0) and the
+// closed door at (0,1). Naming it "a wall" was the terrain oracle the
+// visibility arc created and closed (see
+// TestAPlayerCannotProbeTheDarkWithMoveCommands), so this test was pinning a
+// leak. (1,0) is a wall in plain sight, which is terrain SceneSeen has already
+// sent this player, so the refusal may name it and this test's own property —
+// the map constrains a player and does not constrain the DM — is exactly as it
+// was.
 func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 	f := newGWFixture(t)
-	after := f.seedCellar(t) // tok-fighter at (2,1); wall at (0,0)
+	after := f.seedCellar(t) // tok-fighter at (2,1); walls across the top row
 
 	playerConn := f.dial(f.playerToken, after)
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "r-wall",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 0, Y: 0},
+			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 1, Y: 0},
 		}},
 	})
 	res := readResult(t, playerConn)
@@ -759,6 +778,8 @@ func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 
 	// The DM is authoring the world, not moving through it (spec §6):
 	// staging a creature inside stone is a legitimate DM act.
+	// The DM keeps (0,0), the square the player may not even ask about: "free
+	// for DM" is free of the sight rule as well as of the stone.
 	dmConn := f.dial(f.dmToken, after)
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-dm-wall",
@@ -1680,8 +1701,17 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 	// — on an unhealthy database would make a transient look like everyone
 	// being thrown out at once. Losing an event is worse than a moment's delay
 	// in removing somebody, and the very next event catches a revoked watcher.
-	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_SceneCreated{
-		SceneCreated: &vttv1.SceneCreated{SceneId: "attic", Name: "Attic", GridWidth: 4, GridHeight: 4},
+	//
+	// A NARRATION rather than the SceneCreated this used to append, and the
+	// change makes the assertion stronger rather than weaker. This connection
+	// is a PLAYER, so since the visibility projection landed its stream is a
+	// projected one — and a scene the player is not standing in is withheld
+	// from it by design (spec §4.2), which would have made this assertion fail
+	// for a reason that has nothing to do with an unhealthy identity DB.
+	// Narration is addressed to the table and is forwarded to every seat, so
+	// this now proves delivery survives THROUGH the projection.
+	mustAppend(t, f.campaign, "while-unwell", &vttv1.Envelope_NarrationAdded{
+		NarrationAdded: &vttv1.NarrationAdded{Text: "The attic stairs creak."},
 	})
 	// This connection dialed at 0, so the seeded history is queued ahead of it.
 	// readEvent fails the test outright if the connection ends instead.

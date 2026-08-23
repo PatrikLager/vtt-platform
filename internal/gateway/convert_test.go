@@ -423,6 +423,11 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"rotate_join_link": "mints a new shared secret in identity; the same reasoning as " +
 			"set_join_door, and putting a secret in the permanent log would be worse " +
 			"than useless (joining-a-table spec §2, §4)",
+		"set_viewpoint": "appends nothing, the same shape as set_join_door above: where a " +
+			"spectator points their camera is a view preference, not campaign history, so " +
+			"logging it would replay forever and make it retractable (visibility spec " +
+			"§3.1.1). serve answers it directly (handleSetViewpoint) and it never reaches " +
+			"ToEvent at all.",
 	}
 
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")

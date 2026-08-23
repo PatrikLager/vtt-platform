@@ -64,12 +64,43 @@ export function cellFromPoint(px: number, py: number, geom: Geometry): Cell {
  * "primary" resource to feature would need ruleset client-hints the format
  * does not have (§9), and guessing which one matters is precisely the genre
  * assumption this platform refuses to make.
+ *
+ * VISIBLE IS AN INPUT, AND SINCE 2026-08-22 IT IS THE SERVER'S OWN SET rather
+ * than anything derived here. That changes what this filter IS. It is no longer
+ * an independent visibility decision — the projection already decided, withheld
+ * every token this seat may not see, and now says in the same message which
+ * squares it judged visible (SceneSeen field 4). So this is a CONSISTENCY
+ * CHECK against that answer, and with the correct set the two cannot disagree:
+ * a token the server sent stands on a square the server listed.
+ *
+ * It is kept because the check costs one map lookup and the failure it guards
+ * is silent — a creature drawn on ground this seat only remembers. The earlier
+ * rationale here argued the filter was the last line against a leak, which was
+ * true while the set was derived from terrain and is not any more: deriving it
+ * was itself the bug (it hid a player's own token on a scene with no tiles).
+ * RPTool reached this same seam, published a visible-token set from it, and
+ * then handed its renderer the full list anyway (spec §6.1); this is that
+ * migration finished, now against the set the server actually publishes.
+ *
+ * UNDEFINED IS NOT AN EMPTY SET. Undefined means this stream carries no
+ * projection at all — the DM's and the agent's, which are the identity
+ * function (spec §3.1) — and every token is drawn. `{}` means a projection
+ * arrived and this seat can currently see nothing, and NOTHING is drawn. The
+ * parameter is required rather than optional so no call site can slide into
+ * the draw-everything answer by omission; state.ts's Scene.Visible is what to
+ * pass, and it carries exactly that distinction.
  */
-export function tokensOnScene(st: State, sceneId: string): TokenDisc[] {
+export function tokensOnScene(
+  st: State,
+  sceneId: string,
+  visible: Record<string, boolean> | undefined,
+): TokenDisc[] {
   const discs: TokenDisc[] = [];
 
   for (const tok of Object.values(st.Tokens)) {
     if (tok.SceneID !== sceneId) continue;
+    // Keyed like Tiles/Explored/Visible: column,row (maps-as-geometry §4.1).
+    if (visible !== undefined && !visible[`${tok.X},${tok.Y}`]) continue;
     const actor = st.Actors[tok.ActorID];
 
     // Resources are sorted by name: st.Actors[].resources is a plain object
