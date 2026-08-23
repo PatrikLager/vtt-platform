@@ -94,6 +94,7 @@ var manifest = []toolSpec{
 					"name":          "Optional display label for the actor.",
 					"controllerId":  "Omit or empty = DM/agent-controlled; set a participant id to hand control to a player. Use EITHER this or controllerIds, never both — if they disagree, controllerIds wins and this is overwritten with its first entry.",
 					"controllerIds": "Optional; omit. Authoritative if set — controllerId is derived from it, so do not set both. The full set of participants who may act as this actor — control is normally granted AFTER creation with grant_actor_control, not seeded here. Setting it seeds the set; leaving it empty means DM/agent only, exactly as an empty controllerId does.",
+					"kind":          "What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. SET IT: an actor added without a kind falls back to \"is anyone controlling it\", which is how a monster you later hand to someone becomes public. It is not about who controls the actor — a character whose player is away is still a party member, and a charmed monster is still a monster.",
 					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
@@ -281,7 +282,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.SetViewpoint",
 		name:        "set_viewpoint",
-		description: "Perch a spectator on a party member's shoulder, to see what that character sees (visibility spec §3.1.1). Send an empty actor_id to un-perch. The target must be a player-controlled actor — perching on an NPC or monster is refused server-side. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
+		description: "Perch a spectator on a party member's shoulder, to see what that character sees (visibility spec §3.1.1). Send an empty actor_id to un-perch. The target must be a PARTY MEMBER — perching on a monster or NPC is refused server-side, whoever happens to control it. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
 		descriptor:  (&vttv1.SetViewpoint{}).ProtoReflect().Descriptor(),
 		// requiredOverride check (the fabrication-trap lesson — see
 		// add_actor/add_narration above): SetViewpoint has exactly one

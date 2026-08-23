@@ -105,6 +105,52 @@ func TestAddActorWithNoControllerHasAnEmptySet(t *testing.T) {
 	}
 }
 
+func TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt(t *testing.T) {
+	// KIND IS STORED VERBATIM, and the fold applies NO migration to it — that
+	// is the half of spec §5.1 that is easy to get backwards, and getting it
+	// backwards is silent.
+	//
+	// The tempting shortcut is to normalise here: absent + a controller
+	// becomes PARTY_MEMBER at fold time, and every reader is spared the rule.
+	// It would be wrong twice over. First, it makes engine.State say something
+	// the LOG never said, and `vtt state dump` is a rendering of the log — the
+	// hand-derived scenarios/goldens corpus would have to gain a kind field
+	// nobody ever wrote. Second, it decides for every future reader what
+	// absence means, permanently, in an append-only contract. The reading
+	// belongs to the readers (gateway.isPartyMember), and the fold's job is to
+	// keep the log's own words.
+	//
+	// Also the plainest statement that Go's Apply and client/src/fold.ts stay
+	// strict mirrors on this field: copyActor in fold.ts enumerates fields by
+	// hand, so it can drop one silently where proto.Clone cannot. Its twin is
+	// client/test/fold-unit.test.ts.
+	for _, tc := range []struct {
+		name string
+		set  []string
+		kind vttv1.ActorKind
+		want vttv1.ActorKind
+	}{
+		{"declared party member", []string{"p-player"}, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		{"declared non-party", nil, vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		// A monster somebody holds: the leak §5.1 closes, and the case that
+		// proves the fold does not quietly re-derive kind from control.
+		{"declared non-party but controlled", []string{"dm-1"}, vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		// The two migration shapes. Both must come back UNSPECIFIED: the log
+		// said nothing, so the state says nothing.
+		{"undeclared and controlled", []string{"p-player"}, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
+		{"undeclared and uncontrolled", nil, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := foldAll(t, &vttv1.Envelope{Sequence: 1, EventId: "added",
+				Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+					Actor: &vttv1.Actor{ActorId: "a", ControllerIds: tc.set, Kind: tc.kind}}}})
+			if got := st.Actors["a"].GetKind(); got != tc.want {
+				t.Fatalf("want the fold to store %v verbatim, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
 func TestGrantingASecondControllerKeepsTheFirstInControllerId(t *testing.T) {
 	// THE case the rejected rule got wrong. p-player must still see Thorn as
 	// theirs after someone else is added.

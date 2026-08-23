@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"testing"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -25,6 +26,37 @@ func TestASpectatorMayPerchOnAPartyMemberButNotOnAnNPC(t *testing.T) {
 	// arc is undone in a single click.
 	if err := gateway.MayPerch(watcher(), "goblin", st); err == nil {
 		t.Fatal("perching on an NPC must be REFUSED by the server, not merely absent from a menu")
+	}
+}
+
+func TestASpectatorMayNotPerchOnAnNPCTheDMControls(t *testing.T) {
+	// The rule above, held to what an actor IS rather than to whether anyone
+	// holds it (spec §5.1). A DM taking control of the Goblin Archer is an
+	// ordinary act — grant_actor_control constrains the issuer, not the target
+	// — and under "has any controller" it made that monster a shoulder any
+	// watcher could sit on, which §3.1.1 calls the constraint the whole idea
+	// rests on. Demonstrated in review; this is the test for it.
+	st := twoRooms()
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"})
+
+	if err := gateway.MayPerch(watcher(), "goblin", st); err == nil {
+		t.Fatal("a monster the DM holds is still a monster: perching on it must be refused")
+	}
+}
+
+func TestAnActorFromBeforeTheKindFieldIsStillPerchableWhenControlled(t *testing.T) {
+	// MIGRATION at the perch (spec §5.1): absent + a controller means party
+	// member, here as everywhere. twoRooms' hero declares no kind and is
+	// controlled by p-1, which is exactly the shape of every character in
+	// every log recorded before the field existed — and a spectator who could
+	// ride them yesterday must still be able to today.
+	st := twoRooms()
+	if k := st.Actors["hero"].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		t.Fatalf("fixture check: the hero must declare NO kind for this to be the migration case, got %v", k)
+	}
+
+	if err := gateway.MayPerch(watcher(), "hero", st); err != nil {
+		t.Errorf("a party member from before the kind field is still a shoulder to sit on: %v", err)
 	}
 }
 

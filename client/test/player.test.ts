@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { newState, type State } from "../src/state";
+import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { controlledActors, affordable, withinRange, targetableTokens } from "../src/player";
 import type { Ability } from "../src/metadata";
 
@@ -15,7 +16,7 @@ function world(): State {
       // here it would quietly defeat T3, where "your actors" becomes a set
       // membership test and an unowned NPC would match a participant id of "".
       attributes: {}, resources, controllerId: controller,
-      controllerIds: controller === "" ? [] : [controller],
+      controllerIds: controller === "" ? [] : [controller], kind: ActorKind.UNSPECIFIED,
     };
   };
   actor("mine", "p-me", { vigor: { current: 2, max: 10 } });
@@ -197,7 +198,7 @@ function unsorted(): State {
       // Same empty-set rule as world() above. No caller passes "" today; the
       // guard is here so adding one cannot quietly build a [""] set.
       attributes: {}, resources: {}, controllerId: controller,
-      controllerIds: controller === "" ? [] : [controller],
+      controllerIds: controller === "" ? [] : [controller], kind: ActorKind.UNSPECIFIED,
     };
   };
   // Inserted z, m, a — sorted is a, m, z.
@@ -245,7 +246,7 @@ test("sorting is by id, and does not fall back to insertion for equal-looking id
   st.Scenes["s1"] = { ID: "s1", Name: "H", GridWidth: 4, GridHeight: 4 };
   for (const id of ["a10", "a9", "a1"]) {
     st.Actors[id] = {
-      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
+      actorId: id, name: id, moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
     };
   }
   // Lexicographic, not numeric: "a1" < "a10" < "a9".
@@ -271,7 +272,7 @@ test("a resource ability naming no resource is not affordable", () => {
   const st = newState();
   st.Actors["a1"] = {
     actorId: "a1", name: "A", moduleId: "", attributes: {},
-    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me", controllerIds: ["p-me"],
+    resources: { "": { current: 99, max: 99 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   const malformed: Ability = {
     id: "x", name: "X", range: 1, maxTargets: 1, usage: { kind: "resource" },
@@ -293,7 +294,7 @@ test("a shared actor is listed for every participant who controls it", () => {
     actorId: "shared", name: "SHARED", moduleId: "",
     attributes: {}, resources: {},
     controllerId: "p-first", // mirrors controllerIds[0]
-    controllerIds: ["p-first", "p-second"],
+    controllerIds: ["p-first", "p-second"], kind: ActorKind.UNSPECIFIED,
   };
 
   expect(controlledActors(st, "p-first").map((a) => a.actorId)).toEqual(["shared"]);
@@ -317,7 +318,7 @@ test("an empty participant matches nothing, even against an empty id in the set"
     actorId: "ghost", name: "GHOST", moduleId: "",
     attributes: {}, resources: {},
     controllerId: "",
-    controllerIds: [""],
+    controllerIds: [""], kind: ActorKind.UNSPECIFIED,
   };
 
   const got = controlledActors(st, "");

@@ -5,7 +5,7 @@
 // that quietly tolerates a malformed event would diverge from the server's
 // own view of history and show a player a state the log does not support.
 
-import type { Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+import type { ActorKind, Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import {
   FoldError,
   newState,
@@ -401,6 +401,7 @@ function copyActor(a: {
   resources: Record<string, { current: number; max: number }>;
   controllerId: string;
   controllerIds: string[];
+  kind: ActorKind;
 }): Actor {
   const resources: Record<string, Resource> = {};
   for (const [k, v] of Object.entries(a.resources ?? {})) {
@@ -412,6 +413,12 @@ function copyActor(a: {
     moduleId: a.moduleId,
     attributes: { ...(a.attributes ?? {}) },
     resources,
+    // VERBATIM, and no migration here — the strict mirror of internal/engine's
+    // Apply, which gets this for free from proto.Clone. "Absent + a controller
+    // means a party member" (visibility spec §5.1) is a READER's rule: applying
+    // it here would make state say something the log never said, and the dump
+    // this fold is byte-compared against is a rendering of the log.
+    kind: a.kind,
     // Empty ids are dropped here, matching internal/engine's fold: the
     // grant/revoke guard does not cover ActorAdded, so a payload carrying
     // controllerIds:[""] would otherwise create a non-empty set whose mirror
@@ -587,5 +594,13 @@ function actorJSON(a: Actor): Record<string, unknown> {
   }
   if (a.controllerId !== "") out["controller_id"] = a.controllerId;
   if (a.controllerIds.length > 0) out["controller_ids"] = a.controllerIds;
+  // LAST, because Go emits a struct in its DECLARED field order and kind is
+  // field 9, after controller_ids. A NUMBER rather than the enum name: Go's
+  // Actor is protobuf-generated but `vtt state dump` marshals it with
+  // encoding/json, not protojson, so an int32-based enum prints as its integer.
+  // Omitted at UNSPECIFIED, mirroring `json:"kind,omitempty"` — and that
+  // omission is what keeps all eight scenarios/goldens byte-identical, since
+  // every one of them predates this field.
+  if (a.kind !== 0) out["kind"] = a.kind;
   return out;
 }

@@ -45,6 +45,40 @@ message Resource {
   int32 max = 2;
 }
 
+// ActorKind is WHAT an actor is, and it is the ONLY thing the "always known"
+// visibility exception may key on (visibility spec §5.1).
+//
+// Control is transient; what a creature IS is not. Before this field the roster
+// exception read "has any controller", which got both ordinary cases backwards:
+// a player's character run by the DM while its player is offline was still a
+// party member and would have been dropped from every roster, and a charmed
+// monster handed to a player was still a monster and had its whole stat block
+// published to the party.
+//
+// AN ENUM RATHER THAN A BOOL, and not for symmetry with JoinDoor/PresenceState.
+// The third case is foreseeable — a neutral, a familiar, a summon — and a bool
+// would have to be RENAMED to admit it, which ADR-007 forbids. Growing this
+// enum is additive; every future value is "not a party member" to the rule
+// below until something deliberately says otherwise, so growth fails closed.
+//
+// UNSPECIFIED IS A REAL STATE HERE, not an error, and this is the one place
+// this contract does NOT treat absence as a defect. Every ActorAdded already
+// written lacks the field, and reading absence as "not a party member" would
+// retroactively drop existing party members from every roster the moment they
+// turned a corner. The migration rule is therefore:
+//
+//	absent + has a controller -> party member; absent + none -> not.
+//
+// That reproduces the old behaviour EXACTLY for logs already written, while
+// every new log states its intent. It is the same decision controller_id's
+// mirror made, on the same grounds: you cannot reinterpret history you have
+// written. Readers implement it; the fold stores what the log said, verbatim.
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  ACTOR_KIND_PARTY_MEMBER = 1;
+  ACTOR_KIND_NON_PARTY = 2;
+}
+
 // Engine-generic actor: named stats and pools are open maps; module_data is an
 // opaque module-owned blob the contract never inspects (see README: Struct rules).
 message Actor {
@@ -84,6 +118,10 @@ message Actor {
   // (internal/gateway/authz.go), so the DM acts on any actor without anyone
   // being granted or revoked anything.
   repeated string controller_ids = 8;
+  // What this actor IS. The visibility roster, MayPerch and the spectator's
+  // eyes all key on this and never on who holds it (visibility spec §5.1);
+  // see ActorKind above for the rule and for what an absent value means.
+  ActorKind kind = 9;
 }
 
 // ActorControlGranted adds a participant to an actor's controller set.

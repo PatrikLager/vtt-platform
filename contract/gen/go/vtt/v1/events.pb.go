@@ -23,6 +23,83 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ActorKind is WHAT an actor is, and it is the ONLY thing the "always known"
+// visibility exception may key on (visibility spec §5.1).
+//
+// Control is transient; what a creature IS is not. Before this field the roster
+// exception read "has any controller", which got both ordinary cases backwards:
+// a player's character run by the DM while its player is offline was still a
+// party member and would have been dropped from every roster, and a charmed
+// monster handed to a player was still a monster and had its whole stat block
+// published to the party.
+//
+// AN ENUM RATHER THAN A BOOL, and not for symmetry with JoinDoor/PresenceState.
+// The third case is foreseeable — a neutral, a familiar, a summon — and a bool
+// would have to be RENAMED to admit it, which ADR-007 forbids. Growing this
+// enum is additive; every future value is "not a party member" to the rule
+// below until something deliberately says otherwise, so growth fails closed.
+//
+// UNSPECIFIED IS A REAL STATE HERE, not an error, and this is the one place
+// this contract does NOT treat absence as a defect. Every ActorAdded already
+// written lacks the field, and reading absence as "not a party member" would
+// retroactively drop existing party members from every roster the moment they
+// turned a corner. The migration rule is therefore:
+//
+//	absent + has a controller -> party member; absent + none -> not.
+//
+// That reproduces the old behaviour EXACTLY for logs already written, while
+// every new log states its intent. It is the same decision controller_id's
+// mirror made, on the same grounds: you cannot reinterpret history you have
+// written. Readers implement it; the fold stores what the log said, verbatim.
+type ActorKind int32
+
+const (
+	ActorKind_ACTOR_KIND_UNSPECIFIED  ActorKind = 0
+	ActorKind_ACTOR_KIND_PARTY_MEMBER ActorKind = 1
+	ActorKind_ACTOR_KIND_NON_PARTY    ActorKind = 2
+)
+
+// Enum value maps for ActorKind.
+var (
+	ActorKind_name = map[int32]string{
+		0: "ACTOR_KIND_UNSPECIFIED",
+		1: "ACTOR_KIND_PARTY_MEMBER",
+		2: "ACTOR_KIND_NON_PARTY",
+	}
+	ActorKind_value = map[string]int32{
+		"ACTOR_KIND_UNSPECIFIED":  0,
+		"ACTOR_KIND_PARTY_MEMBER": 1,
+		"ACTOR_KIND_NON_PARTY":    2,
+	}
+)
+
+func (x ActorKind) Enum() *ActorKind {
+	p := new(ActorKind)
+	*p = x
+	return p
+}
+
+func (x ActorKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActorKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_vtt_v1_events_proto_enumTypes[0].Descriptor()
+}
+
+func (ActorKind) Type() protoreflect.EnumType {
+	return &file_vtt_v1_events_proto_enumTypes[0]
+}
+
+func (x ActorKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActorKind.Descriptor instead.
+func (ActorKind) EnumDescriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{0}
+}
+
 type GridPosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -439,6 +516,10 @@ type Actor struct {
 	// (internal/gateway/authz.go), so the DM acts on any actor without anyone
 	// being granted or revoked anything.
 	ControllerIds []string `protobuf:"bytes,8,rep,name=controller_ids,json=controllerIds,proto3" json:"controller_ids,omitempty"`
+	// What this actor IS. The visibility roster, MayPerch and the spectator's
+	// eyes all key on this and never on who holds it (visibility spec §5.1);
+	// see ActorKind above for the rule and for what an absent value means.
+	Kind          ActorKind `protobuf:"varint,9,opt,name=kind,proto3,enum=vtt.v1.ActorKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -527,6 +608,13 @@ func (x *Actor) GetControllerIds() []string {
 		return x.ControllerIds
 	}
 	return nil
+}
+
+func (x *Actor) GetKind() ActorKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ActorKind_ACTOR_KIND_UNSPECIFIED
 }
 
 // ActorControlGranted adds a participant to an actor's controller set.
@@ -2546,7 +2634,7 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\aoutcome\x18\b \x01(\tR\aoutcome\"6\n" +
 	"\bResource\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\x05R\acurrent\x12\x10\n" +
-	"\x03max\x18\x02 \x01(\x05R\x03max\"\xe3\x03\n" +
+	"\x03max\x18\x02 \x01(\x05R\x03max\"\x8a\x04\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -2558,7 +2646,8 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\vmodule_data\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
 	"moduleData\x12#\n" +
 	"\rcontroller_id\x18\a \x01(\tR\fcontrollerId\x12%\n" +
-	"\x0econtroller_ids\x18\b \x03(\tR\rcontrollerIds\x1a=\n" +
+	"\x0econtroller_ids\x18\b \x03(\tR\rcontrollerIds\x12%\n" +
+	"\x04kind\x18\t \x01(\x0e2\x11.vtt.v1.ActorKindR\x04kind\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1aN\n" +
@@ -2714,7 +2803,11 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\ftoken_hidden\x18\x1e \x01(\v2\x13.vtt.v1.TokenHiddenH\x00R\vtokenHidden\x122\n" +
 	"\n" +
 	"scene_seen\x18\x1f \x01(\v2\x11.vtt.v1.SceneSeenH\x00R\tsceneSeenB\t\n" +
-	"\apayloadBBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
+	"\apayload*^\n" +
+	"\tActorKind\x12\x1a\n" +
+	"\x16ACTOR_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ACTOR_KIND_PARTY_MEMBER\x10\x01\x12\x18\n" +
+	"\x14ACTOR_KIND_NON_PARTY\x10\x02BBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
 	file_vtt_v1_events_proto_rawDescOnce sync.Once
@@ -2728,95 +2821,98 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_events_proto_rawDescData
 }
 
+var file_vtt_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_vtt_v1_events_proto_goTypes = []any{
-	(*GridPosition)(nil),          // 0: vtt.v1.GridPosition
-	(*TokenMoved)(nil),            // 1: vtt.v1.TokenMoved
-	(*DieRoll)(nil),               // 2: vtt.v1.DieRoll
-	(*Modifier)(nil),              // 3: vtt.v1.Modifier
-	(*AttackRolled)(nil),          // 4: vtt.v1.AttackRolled
-	(*Resource)(nil),              // 5: vtt.v1.Resource
-	(*Actor)(nil),                 // 6: vtt.v1.Actor
-	(*ActorControlGranted)(nil),   // 7: vtt.v1.ActorControlGranted
-	(*ActorControlRevoked)(nil),   // 8: vtt.v1.ActorControlRevoked
-	(*TileRef)(nil),               // 9: vtt.v1.TileRef
-	(*SceneObject)(nil),           // 10: vtt.v1.SceneObject
-	(*SceneCreated)(nil),          // 11: vtt.v1.SceneCreated
-	(*TokenHidden)(nil),           // 12: vtt.v1.TokenHidden
-	(*SceneSeen)(nil),             // 13: vtt.v1.SceneSeen
-	(*DoorOpened)(nil),            // 14: vtt.v1.DoorOpened
-	(*DoorClosed)(nil),            // 15: vtt.v1.DoorClosed
-	(*ActorAdded)(nil),            // 16: vtt.v1.ActorAdded
-	(*TokenPlaced)(nil),           // 17: vtt.v1.TokenPlaced
-	(*SessionStarted)(nil),        // 18: vtt.v1.SessionStarted
-	(*SessionEnded)(nil),          // 19: vtt.v1.SessionEnded
-	(*EventsRetracted)(nil),       // 20: vtt.v1.EventsRetracted
-	(*AbilityUsed)(nil),           // 21: vtt.v1.AbilityUsed
-	(*ResourceChanged)(nil),       // 22: vtt.v1.ResourceChanged
-	(*ConditionApplied)(nil),      // 23: vtt.v1.ConditionApplied
-	(*ConditionRemoved)(nil),      // 24: vtt.v1.ConditionRemoved
-	(*NarrationAdded)(nil),        // 25: vtt.v1.NarrationAdded
-	(*NoteUpserted)(nil),          // 26: vtt.v1.NoteUpserted
-	(*NoteDeleted)(nil),           // 27: vtt.v1.NoteDeleted
-	(*AdventureLoaded)(nil),       // 28: vtt.v1.AdventureLoaded
-	(*Envelope)(nil),              // 29: vtt.v1.Envelope
-	nil,                           // 30: vtt.v1.Actor.AttributesEntry
-	nil,                           // 31: vtt.v1.Actor.ResourcesEntry
-	nil,                           // 32: vtt.v1.SceneCreated.TilesEntry
-	nil,                           // 33: vtt.v1.SceneSeen.TilesEntry
-	(*AbilityUsed_Roll)(nil),      // 34: vtt.v1.AbilityUsed.Roll
-	(*structpb.Struct)(nil),       // 35: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 36: google.protobuf.Timestamp
+	(ActorKind)(0),                // 0: vtt.v1.ActorKind
+	(*GridPosition)(nil),          // 1: vtt.v1.GridPosition
+	(*TokenMoved)(nil),            // 2: vtt.v1.TokenMoved
+	(*DieRoll)(nil),               // 3: vtt.v1.DieRoll
+	(*Modifier)(nil),              // 4: vtt.v1.Modifier
+	(*AttackRolled)(nil),          // 5: vtt.v1.AttackRolled
+	(*Resource)(nil),              // 6: vtt.v1.Resource
+	(*Actor)(nil),                 // 7: vtt.v1.Actor
+	(*ActorControlGranted)(nil),   // 8: vtt.v1.ActorControlGranted
+	(*ActorControlRevoked)(nil),   // 9: vtt.v1.ActorControlRevoked
+	(*TileRef)(nil),               // 10: vtt.v1.TileRef
+	(*SceneObject)(nil),           // 11: vtt.v1.SceneObject
+	(*SceneCreated)(nil),          // 12: vtt.v1.SceneCreated
+	(*TokenHidden)(nil),           // 13: vtt.v1.TokenHidden
+	(*SceneSeen)(nil),             // 14: vtt.v1.SceneSeen
+	(*DoorOpened)(nil),            // 15: vtt.v1.DoorOpened
+	(*DoorClosed)(nil),            // 16: vtt.v1.DoorClosed
+	(*ActorAdded)(nil),            // 17: vtt.v1.ActorAdded
+	(*TokenPlaced)(nil),           // 18: vtt.v1.TokenPlaced
+	(*SessionStarted)(nil),        // 19: vtt.v1.SessionStarted
+	(*SessionEnded)(nil),          // 20: vtt.v1.SessionEnded
+	(*EventsRetracted)(nil),       // 21: vtt.v1.EventsRetracted
+	(*AbilityUsed)(nil),           // 22: vtt.v1.AbilityUsed
+	(*ResourceChanged)(nil),       // 23: vtt.v1.ResourceChanged
+	(*ConditionApplied)(nil),      // 24: vtt.v1.ConditionApplied
+	(*ConditionRemoved)(nil),      // 25: vtt.v1.ConditionRemoved
+	(*NarrationAdded)(nil),        // 26: vtt.v1.NarrationAdded
+	(*NoteUpserted)(nil),          // 27: vtt.v1.NoteUpserted
+	(*NoteDeleted)(nil),           // 28: vtt.v1.NoteDeleted
+	(*AdventureLoaded)(nil),       // 29: vtt.v1.AdventureLoaded
+	(*Envelope)(nil),              // 30: vtt.v1.Envelope
+	nil,                           // 31: vtt.v1.Actor.AttributesEntry
+	nil,                           // 32: vtt.v1.Actor.ResourcesEntry
+	nil,                           // 33: vtt.v1.SceneCreated.TilesEntry
+	nil,                           // 34: vtt.v1.SceneSeen.TilesEntry
+	(*AbilityUsed_Roll)(nil),      // 35: vtt.v1.AbilityUsed.Roll
+	(*structpb.Struct)(nil),       // 36: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 37: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
-	0,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
-	0,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
-	2,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
-	3,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	30, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	31, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	35, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
-	0,  // 7: vtt.v1.SceneObject.at:type_name -> vtt.v1.GridPosition
-	32, // 8: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
-	10, // 9: vtt.v1.SceneCreated.objects:type_name -> vtt.v1.SceneObject
-	33, // 10: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
-	10, // 11: vtt.v1.SceneSeen.objects:type_name -> vtt.v1.SceneObject
-	0,  // 12: vtt.v1.DoorOpened.at:type_name -> vtt.v1.GridPosition
-	0,  // 13: vtt.v1.DoorClosed.at:type_name -> vtt.v1.GridPosition
-	6,  // 14: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
-	0,  // 15: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
-	34, // 16: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
-	36, // 17: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
-	1,  // 18: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
-	4,  // 19: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
-	11, // 20: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
-	16, // 21: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
-	17, // 22: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
-	18, // 23: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
-	19, // 24: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
-	20, // 25: vtt.v1.Envelope.events_retracted:type_name -> vtt.v1.EventsRetracted
-	21, // 26: vtt.v1.Envelope.ability_used:type_name -> vtt.v1.AbilityUsed
-	22, // 27: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
-	23, // 28: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
-	24, // 29: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
-	25, // 30: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
-	26, // 31: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
-	27, // 32: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
-	28, // 33: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
-	7,  // 34: vtt.v1.Envelope.actor_control_granted:type_name -> vtt.v1.ActorControlGranted
-	8,  // 35: vtt.v1.Envelope.actor_control_revoked:type_name -> vtt.v1.ActorControlRevoked
-	14, // 36: vtt.v1.Envelope.door_opened:type_name -> vtt.v1.DoorOpened
-	15, // 37: vtt.v1.Envelope.door_closed:type_name -> vtt.v1.DoorClosed
-	12, // 38: vtt.v1.Envelope.token_hidden:type_name -> vtt.v1.TokenHidden
-	13, // 39: vtt.v1.Envelope.scene_seen:type_name -> vtt.v1.SceneSeen
-	5,  // 40: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	9,  // 41: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
-	9,  // 42: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
-	43, // [43:43] is the sub-list for method output_type
-	43, // [43:43] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	1,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
+	1,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
+	3,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
+	4,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
+	31, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	32, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	36, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	0,  // 7: vtt.v1.Actor.kind:type_name -> vtt.v1.ActorKind
+	1,  // 8: vtt.v1.SceneObject.at:type_name -> vtt.v1.GridPosition
+	33, // 9: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
+	11, // 10: vtt.v1.SceneCreated.objects:type_name -> vtt.v1.SceneObject
+	34, // 11: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
+	11, // 12: vtt.v1.SceneSeen.objects:type_name -> vtt.v1.SceneObject
+	1,  // 13: vtt.v1.DoorOpened.at:type_name -> vtt.v1.GridPosition
+	1,  // 14: vtt.v1.DoorClosed.at:type_name -> vtt.v1.GridPosition
+	7,  // 15: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
+	1,  // 16: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
+	35, // 17: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
+	37, // 18: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	2,  // 19: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
+	5,  // 20: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
+	12, // 21: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
+	17, // 22: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
+	18, // 23: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
+	19, // 24: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
+	20, // 25: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
+	21, // 26: vtt.v1.Envelope.events_retracted:type_name -> vtt.v1.EventsRetracted
+	22, // 27: vtt.v1.Envelope.ability_used:type_name -> vtt.v1.AbilityUsed
+	23, // 28: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
+	24, // 29: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
+	25, // 30: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
+	26, // 31: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
+	27, // 32: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
+	28, // 33: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
+	29, // 34: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
+	8,  // 35: vtt.v1.Envelope.actor_control_granted:type_name -> vtt.v1.ActorControlGranted
+	9,  // 36: vtt.v1.Envelope.actor_control_revoked:type_name -> vtt.v1.ActorControlRevoked
+	15, // 37: vtt.v1.Envelope.door_opened:type_name -> vtt.v1.DoorOpened
+	16, // 38: vtt.v1.Envelope.door_closed:type_name -> vtt.v1.DoorClosed
+	13, // 39: vtt.v1.Envelope.token_hidden:type_name -> vtt.v1.TokenHidden
+	14, // 40: vtt.v1.Envelope.scene_seen:type_name -> vtt.v1.SceneSeen
+	6,  // 41: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	10, // 42: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
+	10, // 43: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -2853,13 +2949,14 @@ func file_vtt_v1_events_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_vtt_v1_events_proto_goTypes,
 		DependencyIndexes: file_vtt_v1_events_proto_depIdxs,
+		EnumInfos:         file_vtt_v1_events_proto_enumTypes,
 		MessageInfos:      file_vtt_v1_events_proto_msgTypes,
 	}.Build()
 	File_vtt_v1_events_proto = out.File

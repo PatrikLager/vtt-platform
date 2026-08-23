@@ -94,9 +94,10 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return closeDoorCmd("scn", 0, 1)
 	case "set_viewpoint":
 		// "a1", not a name of its own: MayPerch (Task 6) now runs inside
-		// Authorize and only a PLAYER-CONTROLLED actor is a shoulder, so the
-		// spectator cell in the matrix needs the one actor ownershipFixture
-		// gives a controller. Same dependency the open_door/close_door cases
+		// Authorize and only a PARTY MEMBER is a shoulder (spec §5.1), so the
+		// spectator cell in the matrix needs an actor that qualifies —
+		// ownershipFixture's "a1" declares no kind and has a controller, which
+		// is §5.1's migration shape and reads as a party member. Same dependency the open_door/close_door cases
 		// above have on that fixture's token position.
 		return setViewpointCmd("a1")
 	default:
@@ -647,9 +648,9 @@ func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 // --- set_viewpoint: which shoulders exist (visibility Task 6) -------------
 
 // TestAuthorizeSpectatorMayNotPerchOnAnNpc is the direction the matrix cell
-// cannot prove. Its spectator cell is true because commandFor names a
-// player-controlled actor; this asks the same question about the Goblin Archer
-// and requires Authorize itself — not a menu, not a client — to say no.
+// cannot prove. Its spectator cell is true because commandFor names an actor
+// that reads as a party member; this asks the same question about the Goblin
+// Archer and requires Authorize itself — not a menu, not a client — to say no.
 func TestAuthorizeSpectatorMayNotPerchOnAnNpc(t *testing.T) {
 	st := ownershipFixture()
 	// An actor with an EMPTY control set: DM/agent only, which is what "NPC"

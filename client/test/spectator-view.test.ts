@@ -12,6 +12,7 @@ import {
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
+import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -34,7 +35,7 @@ function world(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "The Hall", GridWidth: 6, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {},
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"],
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
@@ -384,7 +385,7 @@ test("a token's screen position and size scale with the camera, not just its gri
   const st = bigSceneState(32, 32);
   st.Actors["a1"] = {
     actorId: "a1", name: "Scout", moduleId: "", attributes: {},
-    resources: {}, controllerId: "", controllerIds: [],
+    resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
 
@@ -424,7 +425,7 @@ test("a token's INNER content shrinks with the camera too, not just its outer bo
   const st = bigSceneState(32, 32);
   st.Actors["a1"] = {
     actorId: "a1", name: "Scout", moduleId: "", attributes: { vigor: 1 },
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [],
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
@@ -885,7 +886,7 @@ test("omitted extras leave no trace, not the word 'undefined'", () => {
 test("the selected actor's chip is marked, and the others are not", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   const p = panel(st, [atWill], { selectedActorId: "a2", selectedAbilityId: "" });
   expect(p.button("Bran").className).toBe("chip sel");
@@ -895,7 +896,7 @@ test("the selected actor's chip is marked, and the others are not", () => {
 test("clicking an actor selects it, drops any armed ability, and repaints", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
   p.button("Bran").click();
@@ -974,7 +975,7 @@ test("with no token there is no move hint either", () => {
 test("a target button sends the ability at that token, then disarms", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1 };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });

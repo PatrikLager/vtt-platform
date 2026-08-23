@@ -995,7 +995,8 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // a hop that is superseded before the pump reaches it is simply skipped.
 //
 // The refusal path is Authorize's, which is where MayPerch enforces the one
-// rule this command has: a perch may only target a player-controlled actor.
+// rule this command has: a perch may only target a PARTY MEMBER — what the
+// actor IS, never who currently controls it (visibility spec §5.1).
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
 	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
 	if _, refusal := s.authorize(p, cmd); refusal != nil {

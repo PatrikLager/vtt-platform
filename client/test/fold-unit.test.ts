@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { fromJson } from "@bufbuild/protobuf";
-import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fold, foldToDumpJSON } from "../src/fold";
 import { FoldError } from "../src/state";
 
@@ -360,6 +360,60 @@ test("the dump carries controller_ids alongside controller_id", () => {
   ) as { Actors: Record<string, Record<string, unknown>> };
   expect(dumped.Actors["a1"]!["controller_id"]).toBe("p-1");
   expect(dumped.Actors["a1"]!["controller_ids"]).toEqual(["p-1", "p-2"]);
+});
+
+// --- an actor's KIND, carried verbatim ---------------------------------------
+//
+// The TS twin of TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt. Go's
+// Apply gets this for free from proto.Clone; copyActor here enumerates fields
+// BY HAND, so it is the one of the two folds that can silently drop a field —
+// and a dropped kind is not a display bug. It is the server's visibility rule
+// and the client's state disagreeing about which creatures the party knows,
+// which is exactly the divergence scenarios/goldens exists to catch and cannot
+// catch yet: no golden stream carries a kind, because all eight predate the
+// field. Until one does, these two tests ARE the parity surface for it.
+//
+// NO MIGRATION HAPPENS HERE, mirroring Go. Absence stays absence in state; the
+// "absent + a controller means party member" reading belongs to whoever asks
+// the visibility question (gateway.isPartyMember), never to the fold — see the
+// Go twin for why putting it here would make state say what the log did not.
+
+test("an actor's kind is folded exactly as the log wrote it", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    // A monster the DM holds: the leak spec §5.1 closes, and the shape that
+    // proves kind is not re-derived from control on either side of the wire.
+    env(2, {
+      actorAdded: {
+        actor: { actorId: "a1", kind: "ACTOR_KIND_NON_PARTY", controllerId: "dm-1" },
+      },
+    }),
+    env(3, { actorAdded: { actor: { actorId: "a2", kind: "ACTOR_KIND_PARTY_MEMBER" } } }),
+    // Undeclared and controlled: the migration shape, which must come back
+    // UNSPECIFIED rather than being promoted at fold time.
+    env(4, { actorAdded: { actor: { actorId: "a3", controllerId: "p-1" } } }),
+  ]);
+  expect(st.Actors["a1"]!.kind).toBe(ActorKind.NON_PARTY);
+  expect(st.Actors["a2"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+  expect(st.Actors["a3"]!.kind).toBe(ActorKind.UNSPECIFIED);
+});
+
+test("the dump carries kind, and omits it when the log declared none", () => {
+  // Go's Actor is protobuf-generated and its kind field carries
+  // `json:",omitempty"` over an int32 enum, so `vtt state dump` prints a
+  // NUMBER and prints nothing at all for UNSPECIFIED. The dump is the byte
+  // comparison scenarios/goldens runs, so an unconditional key here would fail
+  // every existing golden the moment one gained an actor — and the number, not
+  // the name, is what Go emits.
+  const dumped = JSON.parse(
+    foldToDumpJSON([
+      env(1, { sessionStarted: { name: "S" } }),
+      env(2, { actorAdded: { actor: { actorId: "a1", kind: "ACTOR_KIND_NON_PARTY" } } }),
+      env(3, { actorAdded: { actor: { actorId: "a2", controllerId: "p-1" } } }),
+    ]),
+  ) as { Actors: Record<string, Record<string, unknown>> };
+  expect(dumped.Actors["a1"]!["kind"]).toBe(2);
+  expect(dumped.Actors["a2"]).not.toHaveProperty("kind");
 });
 
 test("adding an actor drops empty ids from the control set", () => {

@@ -659,8 +659,8 @@ func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	watcher := f.dial(f.spectatorToken, 0)
 
 	// WHAT A WATCHER GETS FOR FREE: the roster, and nothing drawn. You cannot
-	// choose a shoulder you have not been told about (spec §5 — actors
-	// controlled by any player are always known).
+	// choose a shoulder you have not been told about (spec §5 — party members
+	// are always known, §5.1).
 	roster := drainEvents(t, watcher, 500*time.Millisecond)
 	if !mentions(t, roster, "act-fighter") || !mentions(t, roster, "act-scout") {
 		t.Fatal("a watcher must be told which characters the party has, or there is no shoulder to choose")

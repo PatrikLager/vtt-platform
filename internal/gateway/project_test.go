@@ -105,10 +105,16 @@ func twoRooms() *engine.State {
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(st, 2, &vttv1.SceneCreated{
 		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+	// The hero DECLARES NO KIND on purpose, so the whole suite below keeps
+	// running the migration rule spec §5.1 wrote for logs recorded before the
+	// field existed (absent + a controller means party member). The goblin
+	// declares one, because a monster's kind is the fact this fixture needs to
+	// survive somebody handing it to a participant.
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
 		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "goblin", Name: "Goblin"}}) // no controller: an NPC
+		ActorId: "goblin", Name: "Goblin",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}) // no controller: an NPC
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
@@ -231,7 +237,9 @@ func TestClosingTheDoorHidesTheGoblinAgain(t *testing.T) {
 }
 
 func TestAPartyMemberStaysKnownEvenWhenOutOfSight(t *testing.T) {
-	// Spec §5: player-controlled actors are ALWAYS known. You know your party
+	// Spec §5: party members are ALWAYS known — and §5.1 decides what counts
+	// as one. "Rogue" here declares no kind and has a controller, so it is a
+	// party member by the migration rule. You know your party
 	// exists when the rogue is two rooms away; you merely cannot see their
 	// token. Dropping them from your own roster because they turned a corner
 	// reads as a bug, not as fog.
@@ -262,6 +270,153 @@ func TestAPartyMemberStaysKnownEvenWhenOutOfSight(t *testing.T) {
 	for _, e := range out {
 		if tp := e.GetTokenPlaced(); tp != nil && tp.GetTokenId() == "t-rogue" {
 			t.Error("the rogue is behind a closed door — knowing they exist is not seeing them")
+		}
+	}
+}
+
+// actorIDsIn is the viewer's ROSTER as it reaches their wire: every actor id a
+// batch of projected envelopes introduces. Reading the envelopes rather than
+// the Projector's internals is the point — spec §5's exception is about what a
+// player receives, and a test that asked pr.actors would pin an internal.
+func actorIDsIn(out []*vttv1.Envelope) map[string]bool {
+	ids := map[string]bool{}
+	for _, e := range out {
+		if a := e.GetActorAdded(); a != nil {
+			ids[a.GetActor().GetActorId()] = true
+		}
+	}
+	return ids
+}
+
+func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
+	// THE LEAK, stated as a test — the whole-branch review's finding I1, in a
+	// shape the keystone structurally cannot provide: §4.3's oracle
+	// TRANSCRIBES the same predicate, so both sides of that equation agree
+	// while both are wrong.
+	//
+	// The goblin archer stands at (5,1) behind a SHUT door, so nothing this
+	// player can see introduces it. Then the DM takes control of it, which is
+	// an ordinary act: grant_actor_control constrains the ISSUER (DM/agent
+	// only, authz.go) and says nothing about the TARGET. Under a "has any
+	// controller" roster that one grant publishes the whole cloned Actor —
+	// name, attributes, resources, module_data — to every player at the table.
+	st := twoRooms()
+	grant := &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"}
+	mustApply(st, 7, grant)
+
+	pr := gateway.NewProjector(player())
+	roster := actorIDsIn(pr.Project(envelope(7, grant), st))
+
+	if !roster["hero"] {
+		t.Fatal("fixture check: the player's own character must be on this roster, " +
+			"or the absence asserted below proves nothing")
+	}
+	if roster["goblin"] {
+		t.Error("a monster the DM happens to hold is still a monster (spec §5.1): " +
+			"it must not reach a player's roster")
+	}
+}
+
+func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
+	// THE OTHER DIRECTION, and the reason kind belongs to the ACTOR rather
+	// than to whoever holds it. A player's character run by the DM while its
+	// player is offline is STILL a party member (spec §5.1), and the party must
+	// still know they exist. A rule keyed on the CONTROLLER'S ROLE — the
+	// obvious repair, and the wrong one — drops them from every roster.
+	st := twoRooms()
+	cleric := &vttv1.Actor{ActorId: "cleric", Name: "Cleric",
+		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		ControllerIds: []string{"dm-1"}}
+	mustApply(st, 7, &vttv1.ActorAdded{Actor: cleric})
+	place := &vttv1.TokenPlaced{TokenId: "t-cleric", SceneId: "s",
+		ActorId: "cleric", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
+	mustApply(st, 8, place)
+
+	pr := gateway.NewProjector(player())
+	roster := actorIDsIn(pr.Project(envelope(8, place), st))
+
+	if !roster["cleric"] {
+		t.Error("a party member whose player is away is still a party member: " +
+			"the DM holding their character must not erase them from the roster")
+	}
+}
+
+func TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt(t *testing.T) {
+	// MIGRATION, first half (spec §5.1): absent + has a controller means party
+	// member. Every ActorAdded already written lacks the field, so a plain
+	// fail-closed default would retroactively drop existing party members from
+	// every roster the moment they turned a corner — breaking §5 for every
+	// campaign already recorded, which is precisely what a "safe" default
+	// looks like from the inside.
+	st := twoRooms()
+	ghost := &vttv1.Actor{ActorId: "ghost", Name: "Ghost", ControllerIds: []string{"p-2"}}
+	if ghost.GetKind() != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		t.Fatalf("fixture check: this actor must declare NO kind, got %v", ghost.GetKind())
+	}
+	mustApply(st, 7, &vttv1.ActorAdded{Actor: ghost})
+	place := &vttv1.TokenPlaced{TokenId: "t-ghost", SceneId: "s",
+		ActorId: "ghost", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
+	mustApply(st, 8, place)
+
+	pr := gateway.NewProjector(player())
+	if roster := actorIDsIn(pr.Project(envelope(8, place), st)); !roster["ghost"] {
+		t.Error("a log written before the kind field said party membership with a " +
+			"controller, and that is what it still says (spec §5.1)")
+	}
+}
+
+func TestAnActorFromBeforeTheKindFieldIsNotAPartyMemberWithNoController(t *testing.T) {
+	// MIGRATION, second half. Absent + nobody controls it means NOT a party
+	// member — the same reading "empty controller_ids" already had, kept
+	// rather than reinterpreted. Without this half the migration rule would
+	// read "absent means party member", and every monster in every recorded
+	// campaign would be on every roster.
+	st := twoRooms()
+	rat := &vttv1.Actor{ActorId: "rat", Name: "Rat"}
+	if ratKind := rat.GetKind(); ratKind != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		t.Fatalf("fixture check: this actor must declare NO kind, got %v", ratKind)
+	}
+	mustApply(st, 7, &vttv1.ActorAdded{Actor: rat})
+	place := &vttv1.TokenPlaced{TokenId: "t-rat", SceneId: "s",
+		ActorId: "rat", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
+	mustApply(st, 8, place)
+
+	pr := gateway.NewProjector(player())
+	roster := actorIDsIn(pr.Project(envelope(8, place), st))
+	if !roster["hero"] {
+		t.Fatal("fixture check: the player's own character must be on this roster, " +
+			"or the absence asserted below proves nothing")
+	}
+	if roster["rat"] {
+		t.Error("an uncontrolled actor with no declared kind is not a party member")
+	}
+}
+
+func TestASpectatorGetsNoSightFromAnNPCTheDMControls(t *testing.T) {
+	// The SAME defect at the perch, which is why one rule has to govern both
+	// (spec §5.1, "one rule, both call sites"). §3.1.1 calls this the
+	// constraint the whole idea rests on: a watcher perched on the Goblin
+	// Archer sees the ambush from INSIDE it. Fixing only the roster would
+	// leave that open to any DM who takes control of a monster.
+	st := twoRooms()
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"})
+
+	pr := gateway.NewProjector(gateway.Viewer{
+		ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "goblin"})
+
+	out := firstPlace(pr, st)
+	// The roster still reaches a watcher — you cannot choose a shoulder you
+	// have never been told about (spec §5). It is also what stops the loop
+	// below passing vacuously on an empty slice, which is the shape this
+	// file's own TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster guards.
+	if !actorIDsIn(out)["hero"] {
+		t.Fatal("fixture check: a spectator must still be told of the party, " +
+			"or the absence asserted below proves nothing")
+	}
+	for _, e := range out {
+		switch {
+		case e.GetSceneCreated() != nil, e.GetSceneSeen() != nil, e.GetTokenPlaced() != nil:
+			t.Fatalf("a perch on a monster the DM holds must yield no sight at all, got %v", e)
 		}
 	}
 }
@@ -833,8 +988,8 @@ func TestAPerchOnAnNpcYieldsNoSightAtAll(t *testing.T) {
 	// security-critical code (spec §8).
 	//
 	// "No sight" is scene, terrain and tokens — NOT the party roster, which a
-	// spectator needs in order to have a shoulder to choose (spec §5: actors
-	// controlled by any player are always known).
+	// spectator needs in order to have a shoulder to choose (spec §5: party
+	// members are always known, whoever holds them — §5.1).
 	st := twoRooms()
 	pr := gateway.NewProjector(gateway.Viewer{
 		ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "goblin"})

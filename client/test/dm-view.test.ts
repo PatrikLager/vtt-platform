@@ -2,6 +2,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 
 import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
+import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
@@ -184,7 +185,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
 test("a condition on an actor gets a removal button that sends removeCondition", () => {
   const st = newState();
   st.Actors["a1"] = {
-    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
@@ -819,7 +820,7 @@ function tableWithActor(): State {
   st.Actors["act-warden"] = {
     actorId: "act-warden", name: "Warden", moduleId: "",
     attributes: {}, resources: {},
-    controllerId: "p-ana", controllerIds: ["p-ana"],
+    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED,
   };
   return st;
 }
@@ -954,7 +955,7 @@ test("each actor remembers its OWN grant choice", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, [], { participants: parts });
@@ -976,7 +977,7 @@ test("the control panel's order does not depend on insertion order", () => {
   const st = newState();
   const mk = (id: string) => ({
     actorId: id, name: id, moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[], kind: ActorKind.UNSPECIFIED,
   });
   st.Actors["act-adder"] = mk("act-adder");
   st.Actors["act-warden"] = mk("act-warden");
@@ -991,7 +992,7 @@ test("the control panel lists actors in a stable order", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const h = harness(st, [], { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))

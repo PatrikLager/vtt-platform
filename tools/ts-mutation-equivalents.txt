@@ -173,14 +173,14 @@ client/src/fold.ts 343:10 StringLiteral ""
 client/src/fold.ts 345:5 ConditionalExpression default:
     Rewrites the `default:` clause. Its body is a bare `return`, shared with the three no-effect event kinds above it; nothing distinguishes reaching it from reaching them.
 
-client/src/fold.ts 466:34 EqualityOperator Number(e.sequence) >= head
-    `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".)
+client/src/fold.ts 473:34 EqualityOperator Number(e.sequence) >= head
+    `Number(e.sequence) > head` -> `>=` when computing headSequence. Differ only at equality, where the mutant assigns head its current value. (The `-> true` mutant at this location IS killable and is killed by "headSequence is the MAXIMUM sequence, not the last envelope's".) Re-pointed 2026-08-23 (actor-kind), +7: copyActor gained a kind field and its comment, both above this line. Line 473 was byte-compared against HEAD's 466 and is identical; col 34 read at the new location is `Number(e.sequence) >`.
 
-client/src/fold.ts 558:7 ConditionalExpression true
-    `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 137 is the only writer, and line 135 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true.
+client/src/fold.ts 583:7 ConditionalExpression true
+    `if (a.actorId !== "")` -> `true` in actorJSON's omitempty emission. An Actor in state can never have an empty actorId: line 137 is the only writer, and line 135 rejects the event before it with "actor added with no actor or empty id". The condition is therefore already always true. Re-pointed 2026-08-23 (actor-kind) from 558:7 to 583:7, and THE OLD KEY WAS ALREADY WRONG ON MAIN — this is a correction, not just a shift. HEAD's line 558 is `ActorID: t.ActorID,` inside foldToDumpJSON's Tokens mapper: no conditional and no string literal, so it could not host either of these mutants and this pair has been excusing a location it does not describe. actorJSON's `if (a.actorId !== "")` was at 576 on main and is at 583 now (+7, copyActor's kind field and comment above it). Both columns were READ at the new location rather than offset: col 7 is `a.actorId !== ""`, col 21 is the `""`. That makes this the seventh stale TS key found by reading rather than by the gate, and the re-key note above is the reason to expect more: the 2026-08-21 sweep re-derived fold.ts's eleven lines and this pair still came out wrong.
 
-client/src/fold.ts 558:21 StringLiteral "Stryker was here!"
-    Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string.
+client/src/fold.ts 583:21 StringLiteral "Stryker was here!"
+    Same line, comparing against "Stryker was here!" instead of "". Also always true, for the same reason: no stored actorId equals either string. Re-pointed 2026-08-23 (actor-kind) from 558:21 to 583:21, and THE OLD KEY WAS ALREADY WRONG ON MAIN — this is a correction, not just a shift. HEAD's line 558 is `ActorID: t.ActorID,` inside foldToDumpJSON's Tokens mapper: no conditional and no string literal, so it could not host either of these mutants and this pair has been excusing a location it does not describe. actorJSON's `if (a.actorId !== "")` was at 576 on main and is at 583 now (+7, copyActor's kind field and comment above it). Both columns were READ at the new location rather than offset: col 7 is `a.actorId !== ""`, col 21 is the `""`. That makes this the seventh stale TS key found by reading rather than by the gate, and the re-key note above is the reason to expect more: the 2026-08-21 sweep re-derived fold.ts's eleven lines and this pair still came out wrong.
 
 # --- client/src/view/dm.ts --------------------------------------------------
 #
