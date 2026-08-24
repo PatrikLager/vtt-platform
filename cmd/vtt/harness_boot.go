@@ -115,8 +115,10 @@ type bootResult struct {
 }
 
 // bootSelfContained starts an in-process gateway server on a fresh temp
-// campaign file, mints one invite token per sc.Participants (role/controls
-// taken straight from the scenario), and returns a bootResult ready for
+// campaign file, mints one invite token per sc.Participants (name and role
+// taken straight from the scenario — an invite carries nothing else since
+// 2026-08-24, when the `controls` key that used to ride along with them was
+// deleted for granting nothing), and returns a bootResult ready for
 // dialerFor(boot.WSURL, boot.Tokens).
 func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	dir, err := os.MkdirTemp("", "vtt-harness-run-*")
@@ -197,7 +199,7 @@ func mintInvites(campaignPath string, sc *harness.Scenario) (tokens, ids map[str
 	tokens = make(map[string]string, len(sc.Participants))
 	ids = make(map[string]string, len(sc.Participants))
 	for _, p := range sc.Participants {
-		token, id, err := idb.CreateInvite(p.Name, identity.Role(p.Role), p.Controls)
+		token, id, err := idb.CreateInvite(p.Name, identity.Role(p.Role))
 		if err != nil {
 			return nil, nil, fmt.Errorf("vtt client run: mint invite for %q: %w", p.Name, err)
 		}

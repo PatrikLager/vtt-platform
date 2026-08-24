@@ -73,11 +73,12 @@ async function startTable(): Promise<Fixture> {
     return { token: m[1]!, id: idm[1]! };
   };
 
-  // NOTE on control: `--controls` on the invite is identity-side bookkeeping.
-  // The gateway authorizes a move by the ACTOR's controller_id (authz.go), and
-  // the committed adventure's actors deliberately carry none — they are
-  // DM-run until somebody assigns them. So the e2e has the DM create a
-  // player-controlled actor through the console, which is both how a real
+  // NOTE on control: an invite confers none, and since 2026-08-24 it cannot
+  // even pretend to — `vtt invite` had a `--controls` flag that wrote a column
+  // nothing read. The gateway authorizes a move by the ACTOR's controllerIds
+  // (authz.go), and the committed adventure's actors deliberately carry none —
+  // they are DM-run until somebody assigns them. So the e2e has the DM create
+  // a player-controlled actor through the console, which is both how a real
   // table works and better coverage than pre-seeding it would be.
   const dm = mint("DM", "dm");
   const player = mint("Lera", "player");

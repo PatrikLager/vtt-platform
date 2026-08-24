@@ -273,11 +273,11 @@ func startLiveFixture(t *testing.T) liveFixture {
 		t.Fatalf("identity.Open: %v", err)
 	}
 	defer ids.Close()
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite spectator: %v", err)
 	}

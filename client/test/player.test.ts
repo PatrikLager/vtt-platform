@@ -116,7 +116,7 @@ test("targeting from a token that does not exist yields nothing rather than thro
 import { moveCommandFor, tokenForActor } from "../src/view/player";
 import type { Me } from "../src/metadata";
 
-const me: Me = { participantId: "p-me", name: "Me", role: "player", controls: ["mine"] };
+const me: Me = { participantId: "p-me", name: "Me", role: "player" };
 
 test("tokenForActor finds the actor's token", () => {
   expect(tokenForActor(world(), "mine")).toBe("t-mine");
@@ -139,7 +139,7 @@ test("a board click does NOT move while an ability is armed", () => {
 });
 
 test("a participant controlling nothing cannot move anything by clicking", () => {
-  const spectator: Me = { participantId: "p-nobody", name: "W", role: "spectator", controls: [] };
+  const spectator: Me = { participantId: "p-nobody", name: "W", role: "spectator" };
   expect(moveCommandFor(world(), spectator, { selectedActorId: "", selectedAbilityId: "" }, { x: 1, y: 1 })).toBeNull();
 });
 
@@ -226,7 +226,7 @@ test("targetable tokens come back sorted by id, not in insertion order", () => {
 });
 
 test("actable actors come back sorted by id for a DM", () => {
-  const me: Me = { participantId: "p-dm", name: "DM", role: "dm", controls: [] };
+  const me: Me = { participantId: "p-dm", name: "DM", role: "dm" };
   expect(actableActors(unsorted(), me).map((a) => a.actorId))
     .toEqual(["aldo", "mira", "zara"]);
 });
@@ -234,7 +234,7 @@ test("actable actors come back sorted by id for a DM", () => {
 test("actable actors come back sorted by id for a player too", () => {
   // The player branch delegates to controlledActors, so its ordering is that
   // function's — pinned separately so a change to either is visible.
-  const me: Me = { participantId: "p-me", name: "P", role: "player", controls: [] };
+  const me: Me = { participantId: "p-me", name: "P", role: "player" };
   expect(actableActors(unsorted(), me).map((a) => a.actorId))
     .toEqual(["aldo", "mira", "zara"]);
 });
@@ -256,7 +256,7 @@ test("sorting is by id, and does not fall back to insertion for equal-looking id
 test("an empty result is empty, not a one-element array of nothing", () => {
   // Guards the `return []` early exits against a seeded array, which the
   // bun toEqual quirk above would otherwise hide.
-  const me: Me = { participantId: "p-x", name: "S", role: "spectator", controls: [] };
+  const me: Me = { participantId: "p-x", name: "S", role: "spectator" };
   expect(actableActors(unsorted(), me)).toHaveLength(0);
   expect(controlledActors(unsorted(), "")).toHaveLength(0);
   expect(targetableTokens(unsorted(), "t-ghost", reach)).toHaveLength(0);

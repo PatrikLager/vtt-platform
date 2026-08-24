@@ -3,7 +3,7 @@
   "ruleset": "dnd45e-minimal",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "fighter", "role": "player", "controls": ["act-fighter"]},
+    {"name": "fighter", "role": "player"},
     {"name": "spectator", "role": "spectator"}
   ],
   "steps": [

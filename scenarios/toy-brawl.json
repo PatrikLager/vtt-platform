@@ -3,8 +3,8 @@
   "ruleset": "tavern-brawl",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "brawler", "role": "player", "controls": ["act-brawler"]},
-    {"name": "patron", "role": "player", "controls": ["act-patron"]},
+    {"name": "brawler", "role": "player"},
+    {"name": "patron", "role": "player"},
     {"name": "spectator", "role": "spectator"}
   ],
   "steps": [

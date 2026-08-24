@@ -101,23 +101,23 @@ func newGWFixture(t *testing.T) *gwFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer, []string{"a1"})
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RolePlayer, nil)
+	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 	}
 	defer ids.Close()
 
-	token, id, err := ids.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, id, err := ids.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}

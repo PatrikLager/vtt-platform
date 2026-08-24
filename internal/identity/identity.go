@@ -13,19 +13,33 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	_ "modernc.org/sqlite"
 )
 
+// THERE IS NO `controls` COLUMN, and its absence is a decision (2026-08-24).
+// It used to sit between role and token_hash, holding a JSON array of actor
+// ids, and it GRANTED NOTHING: no updater ever existed, no code path turned it
+// into an ActorControlGranted, and its only consumer echoed it back at
+// /api/me. Control is a fact about the log — Actor.controller_ids, which
+// gateway's authz.go controls() and eyes()'s player arm read to decide what a
+// participant may do and see — so a second record of it here could only ever
+// agree by luck, and did not: a DM who invited somebody "controlling Hollis"
+// was told by /api/me that they did, while every rule that decides anything
+// said they did not.
+//
+// Identity is deliberately not event-sourced (see the package comment), which
+// is exactly why this belongs in the log rather than here: what a token makes
+// you is infrastructure, what you hold at the table is history.
+//
+// migrate() drops the column from campaigns that still carry it.
 const schema = `
 CREATE TABLE IF NOT EXISTS participants (
   id           TEXT PRIMARY KEY,
   display_name TEXT,
   role         TEXT,
-  controls     TEXT, -- JSON array
   token_hash   BLOB UNIQUE,
   revoked      INTEGER DEFAULT 0
 );
@@ -64,7 +78,8 @@ CREATE TABLE IF NOT EXISTS join_access (
   admit_limit INTEGER NOT NULL DEFAULT 0
 );`
 
-// migrate adds columns the schema above cannot deliver on its own.
+// migrate reconciles an existing campaign's shape with the schema above:
+// columns that schema cannot deliver on its own, and one it must now REMOVE.
 //
 // CREATE TABLE IF NOT EXISTS is a NO-OP on a table that already exists, so a
 // new COLUMN never appears on a campaign that has one — which the join_access
@@ -74,10 +89,36 @@ CREATE TABLE IF NOT EXISTS join_access (
 // UPDATE against ONE row to be race-proof, and splitting it across two tables
 // would make that a transaction spanning both.
 //
-// So this is the package's first migration, and it is deliberately the smallest
-// thing that works: add what is missing, touch nothing else. It runs on every
-// Open and must stay idempotent — ALTER TABLE ADD COLUMN is an error, not a
-// no-op, if the column is already there.
+// The same no-op cuts the other way for a column being deleted:
+// participants.controls (2026-08-24) stays on every existing campaign until
+// something drops it, so editing the schema string alone would leave the second
+// record of control sitting in the file for the next reader to find and trust.
+//
+// It is deliberately the smallest thing that works: reconcile what differs,
+// touch nothing else. It runs on every Open and must stay idempotent — ALTER
+// TABLE ADD COLUMN is an error, not a no-op, if the column is already there,
+// and so is DROP COLUMN if it is already gone.
+//
+// FORWARD-ONLY, and worth stating precisely because the failure is delayed. A
+// binary that predates the deletion still OPENS a migrated campaign without
+// complaint — its CREATE TABLE IF NOT EXISTS is a no-op and its own migration
+// only touches join_access. It then fails on any statement that NAMES the
+// column, which is four of the six that touch participants: `table participants
+// has no column named controls` on CreateInvite, `no such column: controls` on
+// Verify, Lookup and List. SetRole and Revoke name nothing that went and keep
+// working, so the symptom is not "everything breaks" — it is a server that
+// starts, still revokes and promotes, and rejects every credential, because
+// Verify gates every connection. Measured against a migrated file, not reasoned
+// from the source. Downgrading a deployment therefore means restoring a
+// campaign file, not just rolling a binary back.
+//
+// AND IT COSTS EVERY EXISTING CAMPAIGN ONE WRITABLE OPEN. Until this runs,
+// migrationPending answers yes for every database ever created by this package,
+// so migrate reaches BEGIN IMMEDIATE — which read-only media cannot give it.
+// An archived campaign that opened fine yesterday will not open again until it
+// is opened once somewhere writable. That is the deliberate price of not
+// leaving the column behind, and TestAReadOnlyCampaignStillCarryingTheControl
+// ColumnWillNotOpen pins it so it stays a decision rather than a surprise.
 func migrate(db *sql.DB) error {
 	// READ FIRST, and take no write lock at all when there is nothing to do —
 	// the same discipline ensureJoinRow documents, for the same measured
@@ -88,7 +129,8 @@ func migrate(db *sql.DB) error {
 	// which is a lock a read-only user (`vtt state dump`, the DM console's
 	// polling) has no business taking — and made an already-migrated campaign
 	// on read-only media impossible to open at all.
-	pending, err := migrationPending(db)
+	ctx := context.Background()
+	pending, err := migrationPending(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -111,7 +153,6 @@ func migrate(db *sql.DB) error {
 	// the same reason. IMMEDIATE takes the write lock up front and the losers
 	// wait on it properly: 0 failures in 40 trials. Each then re-reads the
 	// shape inside the transaction and finds nothing left to do.
-	ctx := context.Background()
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("identity: migrate: %w", err)
@@ -131,18 +172,22 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-// migrationPending reports whether anything needs writing: a missing column, or
-// an open door still carrying no budget. Reads only.
-func migrationPending(db *sql.DB) (bool, error) {
-	rows, err := db.Query(`PRAGMA table_info(join_access)`)
-	if err != nil {
-		return false, fmt.Errorf("identity: read join_access shape: %w", err)
-	}
-	have, err := scanColumnNames(rows)
+// migrationPending reports whether anything needs writing: a missing column, a
+// column that must go, or an open door still carrying no budget. Reads only.
+func migrationPending(ctx context.Context, db *sql.DB) (bool, error) {
+	have, err := columnNames(ctx, db, joinAccessShape)
 	if err != nil {
 		return false, err
 	}
 	if !have["admitted"] || !have["admit_limit"] {
+		return true, nil
+	}
+
+	phave, err := columnNames(ctx, db, participantsShape)
+	if err != nil {
+		return false, err
+	}
+	if phave["controls"] {
 		return true, nil
 	}
 
@@ -154,14 +199,51 @@ func migrationPending(db *sql.DB) (bool, error) {
 	return stranded > 0, nil
 }
 
-// scanColumnNames drains a PRAGMA table_info result into a name set, closing it.
+// tableShape is a table the migration reads the column set of: the PRAGMA that
+// reads it, and the name that goes in the error when it cannot be read.
 //
-// Shared by both callers so the rows handle is closed by DEFER in exactly one
-// place: the migration must close it INLINE before ALTER TABLE, since SQLite
-// will not alter a table with an open cursor on it, and three inline
-// rows.Close() calls left three unhandled errors that gosec flags — which
-// `_ = rows.Close()` would silence rather than answer.
-func scanColumnNames(rows *sql.Rows) (map[string]bool, error) {
+// ONE value carrying both, so a call site cannot pass a pragma and a label that
+// disagree and mislabel the one message an operator gets. Small, and the same
+// objection this task exists to answer at a much larger scale.
+//
+// The pragma is a LITERAL rather than built from the name: SQLite will not
+// accept a bind parameter in a PRAGMA, so building it would mean interpolating
+// into SQL — a shape a reader has to re-check for injection every time, even
+// when the input is a literal three lines up.
+type tableShape struct {
+	pragma string
+	name   string
+}
+
+var (
+	joinAccessShape   = tableShape{`PRAGMA table_info(join_access)`, "join_access"}
+	participantsShape = tableShape{`PRAGMA table_info(participants)`, "participants"}
+)
+
+// columnNames reads a table's column set: query it, drain it, close it.
+//
+// ONE implementation for FOUR call sites — migrationPending and migrateLocked
+// each ask about both tables, the first to decide whether to take the write
+// lock and the second to re-decide under it. The draining was already shared;
+// what was not, and what the participants read would have made a third and
+// fourth copy of, is the query and its wrapped error. Four of those is four
+// chances for a wrap to name the wrong table in the one message an operator
+// gets.
+//
+// The rows handle is closed by DEFER in exactly one place. That matters beyond
+// tidiness: migrateLocked must close it BEFORE its ALTER TABLE, since SQLite
+// will not alter a table with an open cursor on it, and inline rows.Close()
+// calls left unhandled errors that gosec flags — which `_ = rows.Close()` would
+// silence rather than answer.
+//
+// r is *sql.DB when nothing is locked and *sql.Conn when the migration holds
+// the write lock; the interface is what lets one function serve both, and it is
+// deliberately the narrowest thing that does.
+func columnNames(ctx context.Context, r shapeReader, t tableShape) (map[string]bool, error) {
+	rows, err := r.QueryContext(ctx, t.pragma)
+	if err != nil {
+		return nil, fmt.Errorf("identity: read %s shape: %w", t.name, err)
+	}
 	defer rows.Close()
 
 	have := map[string]bool{}
@@ -171,16 +253,22 @@ func scanColumnNames(rows *sql.Rows) (map[string]bool, error) {
 		// these are scanned as `any` rather than into typed variables.
 		var cid, name, typ, notnull, dfltValue, pk any
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
-			return nil, fmt.Errorf("identity: read join_access shape: %w", err)
+			return nil, fmt.Errorf("identity: read %s shape: %w", t.name, err)
 		}
 		if s, ok := name.(string); ok {
 			have[s] = true
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("identity: read join_access shape: %w", err)
+		return nil, fmt.Errorf("identity: read %s shape: %w", t.name, err)
 	}
 	return have, nil
+}
+
+// shapeReader is whatever can run the PRAGMA: the pool before the migration
+// takes its lock, the pinned connection after.
+type shapeReader interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // migrateLocked does the work, with the write lock already held.
@@ -188,13 +276,16 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 	// RE-READ inside the transaction. A concurrent opener may have completed
 	// the whole migration while this one waited for the write lock, and ALTER
 	// TABLE ADD COLUMN is an error, not a no-op, on a column already there.
-	rows, err := conn.QueryContext(ctx, `PRAGMA table_info(join_access)`)
+	// WRAPPED "migrate:", which the read in migrationPending is not. Both read
+	// the same two shapes with the same helper and the same message, so without
+	// this the two failures are indistinguishable — and a test meaning to pin
+	// the arm under the lock passes just as green when it trips the pre-check
+	// instead, which is what would happen the day these two calls are reordered
+	// above. It also matches how every other failure inside this transaction
+	// already reads (migrate's begin and commit arms).
+	have, err := columnNames(ctx, conn, joinAccessShape)
 	if err != nil {
-		return fmt.Errorf("identity: read join_access shape: %w", err)
-	}
-	have, err := scanColumnNames(rows)
-	if err != nil {
-		return err
+		return fmt.Errorf("identity: migrate: %w", err)
 	}
 
 	if !have["admitted"] {
@@ -226,6 +317,28 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 		 WHERE open = 1 AND admit_limit = 0`, DefaultAdmitLimit); err != nil {
 		return fmt.Errorf("identity: budget an already-open door: %w", err)
 	}
+
+	// The second record of control goes (2026-08-24; see schema's note on why
+	// it was never an authority). Its own shape read, for the same reason the
+	// join_access one is re-read here: DROP COLUMN is an error, not a no-op, on
+	// a column that a concurrent opener already removed while this one waited
+	// for the write lock.
+	//
+	// DROPPING rather than leaving it inert. An unread column is a column the
+	// next reader can start reading, and the data in it is wrong — it names
+	// actors whose controller_ids never mentioned these participants — so
+	// leaving it would preserve the exact material a future "we already store
+	// this" would be built on.
+	phave, err := columnNames(ctx, conn, participantsShape)
+	if err != nil {
+		return fmt.Errorf("identity: migrate: %w", err)
+	}
+	if phave["controls"] {
+		if _, err := conn.ExecContext(ctx,
+			`ALTER TABLE participants DROP COLUMN controls`); err != nil {
+			return fmt.Errorf("identity: drop participants.controls: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -250,13 +363,13 @@ func ParseRole(s string) (Role, error) {
 	}
 }
 
-// Participant is a resolved identity: who this token belongs to, at what
-// role, and which actors (if any) they control.
+// Participant is a resolved identity: who this token belongs to, and at what
+// role. NOT what they control — that is Actor.controller_ids in the log, and
+// this type deliberately cannot answer it (see schema's note).
 type Participant struct {
-	ID       string
-	Name     string
-	Role     Role
-	Controls []string
+	ID   string
+	Name string
+	Role Role
 }
 
 // ErrInvalidToken is returned by Verify for a token that is unknown,
@@ -596,10 +709,10 @@ func newSecret() string {
 // mirroring controller_ids needed an invariant, fault-injection proof on both
 // folds and a golden scenario before it could be trusted.
 //
-// It changes ONLY the role. The token, the id, the display name and the
-// controls belong to the person and survive: a promotion that rewrote the
-// credential would log them out, and one that cleared controls would strip the
-// characters they hold.
+// It changes ONLY the role. The token, the id and the display name belong to
+// the person and survive: a promotion that rewrote the credential would log
+// them out. The characters they hold survive too, and no longer because this
+// statement is careful — they live in the log, which SetRole cannot reach.
 //
 // A revoked participant stays revoked. Promotion is not a way back in.
 func (d *DB) SetRole(id string, role Role) error {
@@ -632,7 +745,12 @@ func (d *DB) Close() error {
 // random bytes (crypto/rand), base64url-encoded. The token is returned to
 // the caller exactly ONCE — only its SHA-256 hash is persisted, so it can
 // never be recovered from the database again.
-func (d *DB) CreateInvite(name string, role Role, controls []string) (token string, id string, err error) {
+//
+// It takes NO list of actors (2026-08-24). An invite says who you are and at
+// what role; it does not hand you a character, because the only thing that
+// does is an ActorControlGranted in the log. The parameter it used to take was
+// recorded and never read by anything that decides.
+func (d *DB) CreateInvite(name string, role Role) (token string, id string, err error) {
 	if _, err := ParseRole(string(role)); err != nil {
 		return "", "", err
 	}
@@ -650,17 +768,9 @@ func (d *DB) CreateInvite(name string, role Role, controls []string) (token stri
 	}
 	id = hex.EncodeToString(idBytes)
 
-	if controls == nil {
-		controls = []string{}
-	}
-	controlsJSON, err := json.Marshal(controls)
-	if err != nil {
-		return "", "", fmt.Errorf("identity: marshal controls: %w", err)
-	}
-
 	if _, err := d.db.Exec(
-		`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked) VALUES (?, ?, ?, ?, ?, 0)`,
-		id, name, string(role), string(controlsJSON), hash[:],
+		`INSERT INTO participants (id, display_name, role, token_hash, revoked) VALUES (?, ?, ?, ?, 0)`,
+		id, name, string(role), hash[:],
 	); err != nil {
 		return "", "", fmt.Errorf("identity: insert participant: %w", err)
 	}
@@ -681,15 +791,15 @@ func (d *DB) Verify(token string) (*Participant, error) {
 	sum := sha256.Sum256([]byte(token))
 
 	row := d.db.QueryRow(
-		`SELECT id, display_name, role, controls, token_hash, revoked FROM participants WHERE token_hash = ?`,
+		`SELECT id, display_name, role, token_hash, revoked FROM participants WHERE token_hash = ?`,
 		sum[:],
 	)
 	var (
-		id, name, roleStr, controlsJSON string
-		storedHash                      []byte
-		revoked                         int
+		id, name, roleStr string
+		storedHash        []byte
+		revoked           int
 	)
-	if err := row.Scan(&id, &name, &roleStr, &controlsJSON, &storedHash, &revoked); err != nil {
+	if err := row.Scan(&id, &name, &roleStr, &storedHash, &revoked); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrInvalidToken
 		}
@@ -703,16 +813,12 @@ func (d *DB) Verify(token string) (*Participant, error) {
 		return nil, ErrInvalidToken
 	}
 
-	var controls []string
-	if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {
-		return nil, fmt.Errorf("identity: unmarshal controls: %w", err)
-	}
 	role, err := ParseRole(roleStr)
 	if err != nil {
 		return nil, fmt.Errorf("identity: stored role invalid: %w", err)
 	}
 
-	return &Participant{ID: id, Name: name, Role: role, Controls: controls}, nil
+	return &Participant{ID: id, Name: name, Role: role}, nil
 }
 
 // Lookup resolves a participant by id, as they are NOW.
@@ -738,12 +844,12 @@ func (d *DB) Verify(token string) (*Participant, error) {
 // against milliseconds.
 func (d *DB) Lookup(id string) (*Participant, error) {
 	var (
-		name, roleStr, controlsJSON string
-		revoked                     int
+		name, roleStr string
+		revoked       int
 	)
 	err := d.db.QueryRow(
-		`SELECT display_name, role, controls, revoked FROM participants WHERE id = ?`, id,
-	).Scan(&name, &roleStr, &controlsJSON, &revoked)
+		`SELECT display_name, role, revoked FROM participants WHERE id = ?`, id,
+	).Scan(&name, &roleStr, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidToken
 	}
@@ -761,11 +867,7 @@ func (d *DB) Lookup(id string) (*Participant, error) {
 		// went wrong nor whose row it was.
 		return nil, fmt.Errorf("identity: lookup %s: stored role invalid: %w", id, err)
 	}
-	var controls []string
-	if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {
-		return nil, fmt.Errorf("identity: lookup %s: controls: %w", id, err)
-	}
-	return &Participant{ID: id, Name: name, Role: role, Controls: controls}, nil
+	return &Participant{ID: id, Name: name, Role: role}, nil
 }
 
 // List returns everyone who can still act at this table, ordered by display
@@ -788,7 +890,7 @@ func (d *DB) Lookup(id string) (*Participant, error) {
 // between renders. Ties break on id, which is unique, so the order is total.
 func (d *DB) List() ([]*Participant, error) {
 	rows, err := d.db.Query(
-		`SELECT id, display_name, role, controls FROM participants
+		`SELECT id, display_name, role FROM participants
 		 WHERE revoked = 0 ORDER BY display_name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("identity: list participants: %w", err)
@@ -797,8 +899,8 @@ func (d *DB) List() ([]*Participant, error) {
 
 	var out []*Participant
 	for rows.Next() {
-		var id, name, roleStr, controlsJSON string
-		if err := rows.Scan(&id, &name, &roleStr, &controlsJSON); err != nil {
+		var id, name, roleStr string
+		if err := rows.Scan(&id, &name, &roleStr); err != nil {
 			return nil, fmt.Errorf("identity: list participants: %w", err)
 		}
 		role, err := ParseRole(roleStr)
@@ -809,11 +911,7 @@ func (d *DB) List() ([]*Participant, error) {
 			// quietly showed the wrong people.
 			return nil, fmt.Errorf("identity: list %s: stored role invalid: %w", id, err)
 		}
-		var controls []string
-		if err := json.Unmarshal([]byte(controlsJSON), &controls); err != nil {
-			return nil, fmt.Errorf("identity: list %s: controls: %w", id, err)
-		}
-		out = append(out, &Participant{ID: id, Name: name, Role: role, Controls: controls})
+		out = append(out, &Participant{ID: id, Name: name, Role: role})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("identity: list participants: %w", err)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,7 +33,7 @@ func openTemp(t *testing.T) (*identity.DB, string) {
 
 func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer, []string{"act-lera"})
+	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,9 +57,6 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	if p.Role != identity.RolePlayer {
 		t.Errorf("Role: got %q, want %q", p.Role, identity.RolePlayer)
 	}
-	if len(p.Controls) != 1 || p.Controls[0] != "act-lera" {
-		t.Errorf("Controls: got %v, want [act-lera]", p.Controls)
-	}
 }
 
 // TestTokenNotRecoverableFromDB proves the raw token is not stored anywhere
@@ -67,7 +65,7 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 // equals the raw token bytes nor anything other than sha256(token).
 func TestTokenNotRecoverableFromDB(t *testing.T) {
 	d, path := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +91,7 @@ func TestTokenNotRecoverableFromDB(t *testing.T) {
 
 func TestVerifyRejectsWrongToken(t *testing.T) {
 	d, _ := openTemp(t)
-	if _, _, err := d.CreateInvite("Lera", identity.RolePlayer, nil); err != nil {
+	if _, _, err := d.CreateInvite("Lera", identity.RolePlayer); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Verify("this-is-not-a-real-token"); err == nil {
@@ -103,7 +101,7 @@ func TestVerifyRejectsWrongToken(t *testing.T) {
 
 func TestRevokedTokenRejectedAfterRevoke(t *testing.T) {
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +145,11 @@ func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 
 func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	d, _ := openTemp(t)
-	token1, id1, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token1, id1, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	token2, id2, err := d.CreateInvite("Ursus", identity.RoleAgent, nil)
+	token2, id2, err := d.CreateInvite("Ursus", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +199,7 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 	defer s.Close()
 
 	// Exercise the identity handle.
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, []string{"act-lera"})
+	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +381,7 @@ func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
 	// The other half of the same property: rotating closes the door to
 	// NEWCOMERS and touches nobody already through it.
 	d, _ := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +534,7 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 
 func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,11 +555,11 @@ func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
 	// A missing WHERE promotes the whole table, and the mutation gate cannot
 	// see SQL (#40), so this is guarded by hand or not at all.
 	d, _ := openTemp(t)
-	_, kim, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	_, kim, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	adaToken, _, err := d.CreateInvite("Ada", identity.RoleSpectator, nil)
+	adaToken, _, err := d.CreateInvite("Ada", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +577,7 @@ func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
 
 func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +599,7 @@ func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
 func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
 	// A DM clicking twice is not an error.
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RolePlayer, nil)
+	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,11 +609,15 @@ func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
 }
 
 func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
-	// The token and the controls belong to the person, not the role. A
-	// promotion that rewrote either would silently log them out or strip what
-	// they hold.
+	// The token and the name belong to the person, not the role. A promotion
+	// that rewrote the credential would silently log them out.
+	//
+	// It used to assert that the promotion left `controls` alone too. That
+	// column is gone (2026-08-24) and the property it stood for is now
+	// structural rather than tested: what a promoted player holds lives in the
+	// log, which SetRole's single UPDATE against participants cannot reach.
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator, []string{"act-warden"})
+	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,15 +631,15 @@ func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
 	if p.ID != id || p.Name != "Kim" {
 		t.Fatalf("promotion changed identity: %+v", p)
 	}
-	if len(p.Controls) != 1 || p.Controls[0] != "act-warden" {
-		t.Fatalf("promotion changed controls: %v", p.Controls)
+	if p.Role != identity.RolePlayer {
+		t.Fatalf("the promotion itself did not take: %+v", p)
 	}
 }
 
 func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
 	// Promotion must not be a way back in for somebody who was thrown out.
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Mallory", identity.RoleSpectator, nil)
+	token, id, err := d.CreateInvite("Mallory", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +659,7 @@ func TestLookupReflectsAPromotionImmediately(t *testing.T) {
 	// connection-time fact, authorization is a LIVE one. A promotion must be
 	// visible to the very next thing the participant does.
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -680,7 +682,7 @@ func TestLookupRefusesARevokedParticipant(t *testing.T) {
 	// they chose to disconnect. Throwing someone out did nothing without their
 	// cooperation.
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer, nil)
+	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,11 +703,10 @@ func TestLookupRefusesAnUnknownParticipant(t *testing.T) {
 }
 
 func TestLookupCarriesTheWholeParticipant(t *testing.T) {
-	// Not just the role: Authorize reads ID for ownership checks and Controls
-	// is part of the identity story, so a partial lookup would silently change
-	// what authorization sees.
+	// Not just the role: Authorize reads ID for ownership checks, so a partial
+	// lookup would silently change what authorization sees.
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RolePlayer, []string{"act-warden"})
+	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,50 +717,43 @@ func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 	if p.ID != id || p.Name != "Kim" || p.Role != identity.RolePlayer {
 		t.Fatalf("lookup lost identity: %+v", p)
 	}
-	if len(p.Controls) != 1 || p.Controls[0] != "act-warden" {
-		t.Fatalf("lookup lost controls: %v", p.Controls)
-	}
 }
 
 func TestLookupRefusesACorruptRow(t *testing.T) {
-	// A row whose role or controls cannot be parsed must NOT resolve. These
-	// are unreachable through this package's own writers, which is exactly why
-	// they are worth asserting: if a row ever became malformed — a hand-edited
-	// database, a botched migration, a future writer with a bug — the failure
-	// must be a refusal, not a participant with a silently wrong authorization
-	// level.
-	for _, tc := range []struct{ name, role, controls string }{
-		{"unparseable role", "superuser", "[]"},
-		{"unparseable controls", "player", "not json"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			d, path := openTemp(t)
-			if err := d.Close(); err != nil {
-				t.Fatal(err)
-			}
-			raw, err := sql.Open("sqlite", path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := raw.Exec(
-				`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked)
-				 VALUES ('p-bad', 'Bad', ?, ?, X'01', 0)`, tc.role, tc.controls); err != nil {
-				t.Fatal(err)
-			}
-			if err := raw.Close(); err != nil {
-				t.Fatal(err)
-			}
+	// A row whose role cannot be parsed must NOT resolve. It is unreachable
+	// through this package's own writers, which is exactly why it is worth
+	// asserting: if a row ever became malformed — a hand-edited database, a
+	// botched migration, a future writer with a bug — the failure must be a
+	// refusal, not a participant with a silently wrong authorization level.
+	//
+	// This used to be a two-case table; the second case fed unparseable JSON to
+	// participants.controls, a column deleted on 2026-08-24. Role is now the
+	// only stored field this decodes rather than reads.
+	d, path := openTemp(t)
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO participants (id, display_name, role, token_hash, revoked)
+		 VALUES ('p-bad', 'Bad', 'superuser', X'01', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-			again, err := identity.Open(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer again.Close()
-			if _, err := again.Lookup("p-bad"); err == nil {
-				t.Fatal("a corrupt row must be refused, not resolved into a participant whose " +
-					"authorization nobody can account for")
-			}
-		})
+	again, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if _, err := again.Lookup("p-bad"); err == nil {
+		t.Fatal("a corrupt row must be refused, not resolved into a participant whose " +
+			"authorization nobody can account for")
 	}
 }
 
@@ -914,14 +908,14 @@ func TestAnEmptyStoredSecretAdmitsNobody(t *testing.T) {
 // So the console reads the source of truth (spec §3.1) instead.
 func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	d, _ := openTemp(t)
-	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
-	_, dmID, err := d.CreateInvite("Ari", identity.RoleDM, nil)
+	_, dmID, err := d.CreateInvite("Ari", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, goneID, err := d.CreateInvite("Mal", identity.RolePlayer, nil)
+	_, goneID, err := d.CreateInvite("Mal", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,7 +961,7 @@ func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
 	d, _ := openTemp(t)
 	var ids []string
 	for range 4 {
-		_, id, err := d.CreateInvite("Kim", identity.RoleSpectator, nil)
+		_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1001,7 +995,7 @@ func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 	// hand-edited database must fail loudly, not quietly show somebody as
 	// whatever Role("") happens to mean downstream.
 	d, path := openTemp(t)
-	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := sql.Open("sqlite", path)
@@ -1019,22 +1013,24 @@ func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 		t.Fatal("a stored role that is not a role must be an error, not a listed participant")
 	}
 
-	// The same posture for the OTHER column this decodes. Controls is JSON in
-	// a text column, so it can be malformed independently of the role, and a
-	// participant listed with silently-empty controls would read to a DM as
-	// somebody holding nothing.
+	// A second case used to follow, feeding unparseable JSON to
+	// participants.controls — the OTHER column List decoded. That column was
+	// deleted on 2026-08-24 (it recorded control a second time and granted
+	// nothing), so role is the only stored field List can now fail to parse.
+	// The repaired row proves the refusal above was about the role and not
+	// about the row merely existing.
 	raw, err = sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.Exec(`UPDATE participants SET role = 'spectator', controls = '{not json'`); err != nil {
+	if _, err := raw.Exec(`UPDATE participants SET role = 'spectator'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := raw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.List(); err == nil {
-		t.Fatal("controls that are not JSON must be an error, not a participant holding nothing")
+	if list, err := d.List(); err != nil || len(list) != 1 {
+		t.Fatalf("List after repairing the role = %d participants, %v; want 1, nil", len(list), err)
 	}
 }
 
@@ -1044,7 +1040,7 @@ func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
 	// because "nobody is here" is a perfectly ordinary answer and a DM reading
 	// it would have no reason to doubt it.
 	d, path := openTemp(t)
-	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator, nil); err != nil {
+	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := sql.Open("sqlite", path)
@@ -1421,6 +1417,175 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
+// TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople is the
+// deletion of participants.controls, on the databases that already carry it.
+//
+// The column recorded control a SECOND time and granted nothing: no updater
+// ever existed, no grant was ever emitted from it, and the one consumer echoed
+// it at /api/me. Leaving it behind would leave the second writer's slot open
+// for somebody to start reading again, which is how the concept ends up with
+// two authorities a third time.
+//
+// THE PEOPLE ARE THE OTHER HALF OF THE ASSERTION, and it is not decoration: a
+// migration that dropped the whole participants table would satisfy "the
+// column is gone" perfectly, and would log out every campaign in existence.
+// The row below is written in the pre-deletion shape, by hand, and must still
+// resolve by token and by id afterwards.
+func TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "with-controls.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The participants shape EXACTLY as it shipped while control was recorded
+	// twice, carrying a row whose controls list names an actor no grant in any
+	// log ever gave them — the lie this deletion is about.
+	const token = "an-existing-token"
+	hash := sha256.Sum256([]byte(token))
+	if _, err := raw.Exec(`
+CREATE TABLE participants (
+  id           TEXT PRIMARY KEY,
+  display_name TEXT,
+  role         TEXT,
+  controls     TEXT,
+  token_hash   BLOB UNIQUE,
+  revoked      INTEGER DEFAULT 0
+);`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked)
+		 VALUES ('p-hollis', 'Hollis', 'player', '["act-hollis"]', ?, 0)`, hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatalf("opening a campaign that predates the deletion: %v", err)
+	}
+	defer d.Close()
+
+	p, err := d.Verify(token)
+	if err != nil {
+		t.Fatalf("an existing participant stopped resolving after the upgrade: %v", err)
+	}
+	if p.ID != "p-hollis" || p.Name != "Hollis" || p.Role != identity.RolePlayer {
+		t.Errorf("the upgrade changed who this is: %+v", p)
+	}
+	if _, err := d.Lookup("p-hollis"); err != nil {
+		t.Errorf("the upgrade lost the participant by id: %v", err)
+	}
+	list, err := d.List()
+	if err != nil || len(list) != 1 {
+		t.Errorf("List after the upgrade = %d participants, %v; want 1, nil", len(list), err)
+	}
+
+	// And the column itself is gone. Read through a SEPARATE handle so this
+	// asks the FILE what shape it has, rather than asking the code that just
+	// claimed to change it.
+	after, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer after.Close()
+	rows, err := after.Query(`PRAGMA table_info(participants)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var cid, name, typ, notnull, dflt, pk any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			t.Fatal(err)
+		}
+		cols = append(cols, fmt.Sprint(name))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(cols, "controls") {
+		t.Errorf("participants still carries a controls column after the upgrade (%v) — "+
+			"the second record of control outlived the code that read it", cols)
+	}
+	// The columns that DO carry something are still there, so "gone" cannot be
+	// satisfied by a table rebuilt into a different shape.
+	for _, want := range []string{"id", "display_name", "role", "token_hash", "revoked"} {
+		if !slices.Contains(cols, want) {
+			t.Errorf("the upgrade dropped %q as well: %v", want, cols)
+		}
+	}
+}
+
+// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen pins the price
+// of the deletion, deliberately, as a test rather than a footnote.
+//
+// TestAnAlreadyMigratedReadOnlyCampaignStillOpens says an archived campaign
+// stays readable, and it still passes — its fixture is created by THIS code and
+// so has no control column. Every campaign created before today does, which
+// makes migrationPending answer yes, which takes migrate to BEGIN IMMEDIATE,
+// which read-only media cannot give. So the archive opens once it has been
+// opened once somewhere writable, and not before.
+//
+// Written down here because the alternative — leaving a dead column on old
+// databases so nothing has to be written — is the option this task explicitly
+// rejected, and a cost nobody recorded is a cost the next person reads as a bug.
+func TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "archived-with-controls.db")
+
+	// CURRENT in every other respect — created by this code, then given back
+	// the one column the deletion removes. So the refusal below can only be
+	// about `controls`, not about some other missing piece of schema.
+	d, err := identity.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.CreateInvite("Archivist", identity.RoleDM); err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`ALTER TABLE participants ADD COLUMN controls TEXT`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The DIRECTORY too: SQLite needs to create -wal/-shm beside the file, so a
+	// writable directory leaves a path where the write still succeeds.
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+		_ = os.Chmod(path, 0o644)
+	})
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		t.Skip("running with rights that make a read-only file writable")
+	}
+
+	again, err := identity.Open(path)
+	if err == nil {
+		again.Close()
+		t.Fatal("a read-only campaign that still carries participants.controls opened — " +
+			"either the migration silently skipped it, leaving the second record of " +
+			"control in place, or it wrote to media that cannot be written")
+	}
+}
+
 // TestMigratingTwiceIsNotAnError pins idempotency. ALTER TABLE ADD COLUMN is an
 // error, not a no-op, on a column that is already there — so a regression in
 // the shape scan surfaces as `duplicate column name` on the SECOND open of
@@ -1734,7 +1899,7 @@ func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.
 // looks like a permissions bug rather than a bad invite.
 func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	d, _ := openTemp(t)
-	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord"), nil); err == nil {
+	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord")); err == nil {
 		t.Fatal("CreateInvite accepted a role that is not one of the four")
 	}
 }
@@ -1749,7 +1914,7 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, id, err := d.CreateInvite("Ada", identity.RolePlayer, nil)
+	_, id, err := d.CreateInvite("Ada", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1767,7 +1932,7 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	if _, err := d.List(); err == nil {
 		t.Fatal("List on a closed database reported success")
 	}
-	if _, _, err := d.CreateInvite("Bo", identity.RoleSpectator, nil); err == nil {
+	if _, _, err := d.CreateInvite("Bo", identity.RoleSpectator); err == nil {
 		t.Fatal("CreateInvite on a closed database reported success")
 	}
 	if _, err := d.Lookup(id); err == nil {

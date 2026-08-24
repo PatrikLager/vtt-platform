@@ -2,7 +2,7 @@
   "name": "story-table",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "player", "role": "player", "controls": ["act-hero"]},
+    {"name": "player", "role": "player"},
     {"name": "spectator", "role": "spectator"}
   ],
   "steps": [

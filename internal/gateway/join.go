@@ -144,7 +144,7 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, id, err := s.ids.CreateInvite(name, identity.RoleSpectator, nil)
+	token, id, err := s.ids.CreateInvite(name, identity.RoleSpectator)
 	if err != nil {
 		http.Error(w, "gateway: could not join", http.StatusInternalServerError)
 		return

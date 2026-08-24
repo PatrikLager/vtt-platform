@@ -59,26 +59,26 @@ func newExitFixture(t *testing.T) *exitFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, dmID, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, dmID, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The player's invite controls act-lera ONLY: no other actor is ever
 	// listed here, and no actor added below grants this participant control
 	// besides act-lera (act-ursus is added controllerless).
-	playerToken, playerID, err := ids.CreateInvite("Player", identity.RolePlayer, []string{"act-lera"})
+	playerToken, playerID, err := ids.CreateInvite("Player", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, agentID, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, agentID, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, spectatorID, err := ids.CreateInvite("Spectator", identity.RoleSpectator, nil)
+	spectatorToken, spectatorID, err := ids.CreateInvite("Spectator", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	observerToken, _, err := ids.CreateInvite("Observer", identity.RoleAgent, nil)
+	observerToken, _, err := ids.CreateInvite("Observer", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}

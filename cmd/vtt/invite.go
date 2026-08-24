@@ -13,7 +13,6 @@ import (
 // command only wires flags to it and prints the result.
 func newInviteCmd() *cobra.Command {
 	var campaignPath, name, role string
-	var controls []string
 
 	cmd := &cobra.Command{
 		Use:   "invite",
@@ -25,7 +24,7 @@ func newInviteCmd() *cobra.Command {
 			}
 			defer ids.Close()
 
-			token, id, err := ids.CreateInvite(name, identity.Role(role), controls)
+			token, id, err := ids.CreateInvite(name, identity.Role(role))
 			if err != nil {
 				return fmt.Errorf("vtt invite: %w", err)
 			}
@@ -44,7 +43,10 @@ func newInviteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&campaignPath, "campaign", "", "path to the campaign SQLite file (required)")
 	cmd.Flags().StringVar(&name, "name", "", "participant display name (required)")
 	cmd.Flags().StringVar(&role, "role", "", "participant role: dm, agent, player, spectator (required)")
-	cmd.Flags().StringSliceVar(&controls, "controls", nil, "comma-separated actor ids this participant controls")
+	// THERE IS NO --controls FLAG (2026-08-24). It wrote a column nothing read,
+	// so a DM who used it was told by /api/me that the invitee controlled an
+	// actor while authz, the roster and every sight rule said otherwise.
+	// Control is conferred by grant_actor_control, and only by that.
 	_ = cmd.MarkFlagRequired("campaign")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("role")

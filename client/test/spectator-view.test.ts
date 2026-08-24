@@ -186,7 +186,7 @@ test("an event kind describe() does not handle degrades to its case name", () =>
 
 // --- player panel -----------------------------------------------------------
 
-const me: Me = { participantId: "p-me", name: "Me", role: "player", controls: ["a1"] };
+const me: Me = { participantId: "p-me", name: "Me", role: "player" };
 const atWill: Ability = { id: "swing", name: "Swing", range: 2, maxTargets: 1, usage: { kind: "atWill" } };
 const costly: Ability = {
   id: "surge", name: "Surge", range: 1, maxTargets: 1,

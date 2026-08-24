@@ -2,10 +2,10 @@
   "name": "shared-control",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "ana", "role": "player", "controls": ["act-warden"]},
+    {"name": "ana", "role": "player"},
     {"name": "bo", "role": "player"},
     {"name": "cy", "role": "player"},
-    {"name": "dee", "role": "player", "controls": ["act-scout"]},
+    {"name": "dee", "role": "player"},
     {"name": "eli", "role": "player"}
   ],
   "steps": [

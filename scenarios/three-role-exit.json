@@ -2,7 +2,7 @@
   "name": "three-role-exit",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "player", "role": "player", "controls": ["act-lera"]},
+    {"name": "player", "role": "player"},
     {"name": "agent", "role": "agent"},
     {"name": "spectator", "role": "spectator"}
   ],

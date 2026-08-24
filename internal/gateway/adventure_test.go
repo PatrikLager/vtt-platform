@@ -127,19 +127,19 @@ func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer, nil)
+	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,19 +185,19 @@ func newMultiAdventureFixture(t *testing.T) *adventureFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer, nil)
+	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}

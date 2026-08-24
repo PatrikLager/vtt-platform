@@ -85,19 +85,19 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	brawlerToken, brawlerID, err := ids.CreateInvite("Brawler", identity.RolePlayer, []string{"brawler"})
+	brawlerToken, brawlerID, err := ids.CreateInvite("Brawler", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	patronToken, patronID, err := ids.CreateInvite("Patron", identity.RolePlayer, []string{"patron"})
+	patronToken, patronID, err := ids.CreateInvite("Patron", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

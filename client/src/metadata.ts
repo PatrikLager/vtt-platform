@@ -27,13 +27,18 @@ export interface RulesetMeta {
   resources: string[];
 }
 
-/** Who this token makes you. Without it the client cannot tell which actors
- *  it controls, and cannot choose which panels to render. */
+/** Who this token makes you: the participant id every control check is a
+ *  membership test against, and the role that decides which panels render.
+ *
+ *  NOT what you control. This interface carried a `controls: string[]` until
+ *  2026-08-24, mirroring a server field fed by a SQLite column no grant ever
+ *  wrote — so it could report a character the log had never given you. The
+ *  client never read it: controlledActors (player.ts) filters the folded
+ *  st.Actors on controllerIds, which is the log talking. */
 export interface Me {
   participantId: string;
   name: string;
   role: "dm" | "player" | "agent" | "spectator";
-  controls: string[];
 }
 
 export interface AdventureMeta {

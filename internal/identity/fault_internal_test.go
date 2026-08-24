@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/PatrikLager/vtt-platform/internal/testdb"
@@ -58,6 +59,144 @@ func preBudgetCampaign(t *testing.T) string {
 	}
 	d.Close()
 	return path
+}
+
+// withControlColumnCampaign writes a campaign in the shape that shipped BEFORE
+// participants.controls was deleted, so opening it genuinely requires the drop.
+//
+// Same construction as preBudgetCampaign and for the same reason: the rest of
+// the database is exactly what this code produces, so the fixture cannot drift
+// away from the real thing in some other column.
+func withControlColumnCampaign(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "controls.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.db.Exec(`ALTER TABLE participants ADD COLUMN controls TEXT`); err != nil {
+		t.Fatalf("re-adding the control column: %v", err)
+	}
+	// CONFIRMED HERE, not in the tests over it. "The column is not selectable"
+	// is the shape every assertion downstream takes, and it reads identically
+	// for a column that was dropped and for one that was never added — so a
+	// fixture that quietly stopped working would make those tests pass rather
+	// than fail. This is the one place the difference is observable.
+	rows, err := d.db.Query(`SELECT controls FROM participants`)
+	if err != nil {
+		t.Fatalf("the fixture did not add a control column: %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+	return path
+}
+
+func TestAMigrationThatCannotDropTheControlColumnRefusesTheCampaign(t *testing.T) {
+	// Refusing rather than opening anyway, and the reason differs from the
+	// budget's. A missing column breaks the next statement loudly; a column
+	// that FAILED to go on stays readable, so a handle returned here would be a
+	// campaign that still carries the second record of control while the code
+	// believes it removed it — the exact state this deletion exists to end.
+	withFaultDriver(t)
+	path := withControlColumnCampaign(t)
+
+	tripped := testdb.Arm("DROP COLUMN controls", errDBDown)
+	d, err := Open(path)
+	if !tripped() {
+		t.Fatal("the fault was never reached — this test proved nothing")
+	}
+	if err == nil {
+		d.Close()
+		t.Fatal("a migration that could not drop participants.controls opened anyway, " +
+			"leaving a campaign whose schema still records control twice")
+	}
+}
+
+func TestAMigrationThatCannotReadTheParticipantShapeRefusesTheCampaign(t *testing.T) {
+	// The participants PRAGMA specifically. `PRAGMA table_info` alone matches
+	// the join_access read first and would prove only what its own test
+	// already does, so this arms the participants query by name.
+	//
+	// This is migrationPending's read, BEFORE any lock — asserted by the
+	// absence of the "migrate:" wrap, which only migrateLocked adds. Without
+	// that check this test and its sibling below say the same thing and neither
+	// notices when one of them stops reaching the arm it names.
+	withFaultDriver(t)
+	path := withControlColumnCampaign(t)
+
+	tripped := testdb.Arm("PRAGMA table_info(participants)", errDBDown)
+	d, err := Open(path)
+	if !tripped() {
+		t.Fatal("the fault was never reached — this test proved nothing")
+	}
+	if err == nil {
+		d.Close()
+		t.Fatal("a campaign whose participants shape could not be read opened anyway — " +
+			"the migration decided the column was gone from an answer it never got")
+	}
+	if strings.Contains(err.Error(), "identity: migrate:") {
+		t.Fatalf("this failed UNDER THE LOCK (%v) — the pre-check read is what this test "+
+			"names, and it is no longer the one that trips", err)
+	}
+}
+
+func TestTheParticipantShapeFailingUnderTheLockRefusesTheCampaign(t *testing.T) {
+	// The SAME read, in the other place it happens. migrateLocked re-reads the
+	// shape inside the transaction because a concurrent opener may have
+	// finished the whole migration while this one waited for the write lock,
+	// and that re-read has its own failure arm — one the test above cannot
+	// reach, because migrationPending's read comes first and swallows the
+	// single armed fault.
+	//
+	// A PRE-BUDGET campaign is what separates them: its missing admitted column
+	// makes migrationPending answer "yes" before it ever asks about
+	// participants, so the fault survives to the read under the lock. That
+	// separation is an ORDERING assumption about another function, so the
+	// "migrate:" wrap is checked rather than trusted — reorder migrationPending's
+	// two reads and this test says so instead of passing on the wrong arm.
+	withFaultDriver(t)
+	path := preBudgetCampaign(t)
+
+	tripped := testdb.Arm("PRAGMA table_info(participants)", errDBDown)
+	d, err := Open(path)
+	if !tripped() {
+		t.Fatal("the fault was never reached — this test proved nothing")
+	}
+	if err == nil {
+		d.Close()
+		t.Fatal("a migration whose second shape read failed opened anyway, so whether the " +
+			"control column is gone was decided from an answer nobody got")
+	}
+	if !strings.Contains(err.Error(), "identity: migrate:") {
+		t.Fatalf("the fault tripped BEFORE the lock (%v) — this test names migrateLocked's "+
+			"re-read, and migrationPending's read is swallowing it instead", err)
+	}
+}
+
+func TestTheControlColumnFixtureMigratesCleanlyWhenNothingFails(t *testing.T) {
+	// The same guard TestPreBudgetFixtureReallyDropsTheColumns puts on its
+	// fixture, and the POSITIVE path over it: with no fault armed, opening this
+	// campaign must leave the column gone. Without this the fixture could stop
+	// adding the column and the two fault tests would still fail loudly on
+	// !tripped(), but nothing would say the drop itself works against a
+	// database this code produced — identity_test.go's hand-written old-shape
+	// table is the only other witness, and one construction agreeing with
+	// itself is not two.
+	withFaultDriver(t)
+	path := withControlColumnCampaign(t)
+
+	d, err := Open(path)
+	if err != nil {
+		t.Fatalf("the fixture produced a campaign that will not migrate: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.db.Query(`SELECT controls FROM participants`); err == nil {
+		t.Fatal("participants.controls is still selectable after the migration — the " +
+			"fixture added no column, or the drop did not run")
+	}
 }
 
 func TestAMigrationThatCannotStartRefusesTheCampaign(t *testing.T) {

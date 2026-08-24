@@ -2,7 +2,7 @@
   "name": "session-zero",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "player", "role": "player", "controls": ["act-fighter", "act-healer"]},
+    {"name": "player", "role": "player"},
     {"name": "spectator", "role": "spectator"}
   ],
   "steps": [

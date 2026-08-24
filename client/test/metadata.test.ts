@@ -133,15 +133,21 @@ test("an unauthorized response is surfaced, not silently empty", async () => {
   }
 });
 
-test("fetchMe reports the caller's role and controls", async () => {
+// The participant id is the load-bearing half and the reason this asserts it
+// separately from the role: control is a membership test of THIS id inside
+// each actor's controllerIds (player.ts), so an id that arrives wrong hides a
+// player's own characters from them. /api/me answers no control question
+// itself — it stopped carrying a `controls` list on 2026-08-24, because the
+// column behind it was never what granted anything.
+test("fetchMe reports who the caller is", async () => {
   const api = fakeAPI({
-    "/api/me": { body: { participantId: "p-1", name: "Lera", role: "player", controls: ["a1"] } },
+    "/api/me": { body: { participantId: "p-1", name: "Lera", role: "player" } },
   });
   try {
     const me = await fetchMe(api.base, "t");
     expect(me.role).toBe("player");
     expect(me.participantId).toBe("p-1");
-    expect(me.controls).toEqual(["a1"]);
+    expect(me.name).toBe("Lera");
   } finally {
     api.stop();
   }

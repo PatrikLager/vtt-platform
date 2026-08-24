@@ -72,7 +72,7 @@ func TestHandlePackFileRefusesTraversalEvenWithAPathValueSetDirectly(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ids.Close() })
-	tok, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestHandlePackFileRefusesSymlinkEscape(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ids.Close() })
-	tok, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
