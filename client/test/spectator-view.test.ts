@@ -569,7 +569,15 @@ test("paint draws a visible missing-tile marker for an op whose image is not in 
   expect(calls.every((c) => c.startsWith("fillRect:"))).toBe(true);
   // In the spec's own "obvious, not a shade that could pass for real art"
   // convention: the marker's own magenta appears among what was drawn.
-  expect(calls.some((c) => c.includes(missingTileColors[0]))).toBe(true);
+  // THE LITERAL, NOT THE CONSTANT. This read
+  // `c.includes(missingTileColors[0])`, which cannot fail on the thing it
+  // names: blank the constant and `String.includes("")` is true of every
+  // string, so the assertion passes hardest exactly when the marker has become
+  // invisible. Both halves came from the same import, so both moved together.
+  // Found 2026-08-25 by the mutation gate, which listed that constant's
+  // StringLiteral mutant as a survivor in a file at 100% line coverage.
+  expect(calls.some((c) => c.includes("#ff00ff"))).toBe(true);
+  expect(missingTileColors[0]).toBe("#ff00ff");
 });
 
 test("a resolved image still draws via drawImage, never the missing-tile marker", () => {
