@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   moveToken, useAbility, addNarration, upsertNote,
-  setJoinDoor, rotateJoinLink, promoteParticipant,
+  setJoinDoor, rotateJoinLink, promoteParticipant, setViewpoint,
 } from "../src/commands";
 
 // Commands are asserted against the COMMITTED protojson fixtures in
@@ -343,6 +343,36 @@ test("rotating the link is its own command, carrying nothing", () => {
   const cmd = rotateJoinLink();
   expect(cmd.command.case).toBe("rotateJoinLink");
   expect(cmd.requestId).not.toBe("");
+});
+
+test("a perch names the shoulder the spectator chose", () => {
+  // The client half of set_viewpoint, which shipped without one: the command
+  // reached the contract, MayPerch and the projection in this arc's Tasks 2-6,
+  // and no control could issue it — `viewpoint` appeared exactly once in
+  // client/src, in a comment.
+  const cmd = setViewpoint("act-fighter");
+  expect(cmd.command.case).toBe("setViewpoint");
+  expect(cmd.command.value).toMatchObject({ actorId: "act-fighter" });
+  expect(cmd.requestId).not.toBe("");
+});
+
+test("the empty actor id is a COMMAND, not a silence", () => {
+  // "Naming no actor is how a bird LEAVES a shoulder without immediately
+  // sitting on another" (internal/gateway/viewpoint.go). It is a real state
+  // the server accepts and acts on, so the builder must produce a real
+  // command for it — a builder that answered null, or that skipped the send,
+  // would leave a spectator with no way to stop seeing.
+  //
+  // On the wire the empty string VANISHES, because protojson omits empty
+  // scalars. That is the shape the server reads as "un-perch": what carries
+  // the meaning is the PRESENCE of the set_viewpoint arm, not a field inside
+  // it. Both halves are asserted, because an implementation that dropped the
+  // arm as well would look identical from inside the built object.
+  const cmd = setViewpoint("");
+  expect(cmd.command.case).toBe("setViewpoint");
+  const json = toJson(ClientCommandSchema, cmd) as Record<string, any>;
+  expect(json).toHaveProperty("setViewpoint");
+  expect(json["setViewpoint"]).not.toHaveProperty("actorId");
 });
 
 test("promotion names the participant and the role", () => {

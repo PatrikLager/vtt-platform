@@ -94,6 +94,7 @@ export class Wire {
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private rollbackHandlers: ((throughSeq: bigint) => void)[] = [];
+  private restartHandlers: (() => void)[] = [];
   // TWO CURSORS, because they answer different questions and sharing one made
   // a reconnect rewind the board — see the replay-cursor note at the top of
   // this file, which names seenSeq as the one a resume point is derived from.
@@ -137,6 +138,20 @@ export class Wire {
   }
 
   /**
+   * Called before a restart: this client is about to be sent the whole log
+   * again, so whatever it holds must go.
+   *
+   * A SEPARATE CHANNEL FROM onRollback, and it cannot be expressed as one.
+   * Rollback keeps everything at or below its cursor, and a perch frame
+   * carries sequence 0 — below every cursor there is — so no rollback can ever
+   * drop one. Emptying is a different instruction, not a rollback with a
+   * smaller number.
+   */
+  onRestart(fn: () => void): void {
+    this.restartHandlers.push(fn);
+  }
+
+  /**
    * Subscribe to presence.
    *
    * `replace` distinguishes a SNAPSHOT from a delta, and that distinction is
@@ -170,7 +185,22 @@ export class Wire {
     for (const fn of this.statusHandlers) fn(s);
   }
 
-  connect(after: bigint): Promise<void> {
+  /**
+   * Dial, replaying after `after`.
+   *
+   * `onOpen` runs INSIDE the socket's open event, before this promise resolves
+   * and before any frame can be delivered. That window is not available to a
+   * caller awaiting the promise — measured, and the measurement is the reason
+   * this parameter exists: emptying the log in `await connect(...)`'s
+   * continuation instead let the server's replay arrive FIRST, so the log was
+   * folded and then thrown away, leaving a client holding nothing with no
+   * frames left to come (client/test/session.test.ts's restart test, which
+   * timed out waiting for a replay it had already discarded). `open` is
+   * dispatched ahead of the first `message` for the same socket, so a hook
+   * here has no such window — and a dial that never opens never runs it, which
+   * is what lets Wire.restart leave a failed redial costing nothing.
+   */
+  connect(after: bigint, onOpen?: () => void): Promise<void> {
     this.status("connecting");
     // The token is a query parameter here and a Bearer header on the metadata
     // routes. Not an inconsistency: browsers cannot set headers on a
@@ -182,6 +212,10 @@ export class Wire {
 
     return new Promise((resolve, reject) => {
       ws.onopen = () => {
+        // FIRST, ahead of the status handler as well as of the resolve: status
+        // "open" repaints, and a repaint between a restart's dial and its
+        // discard would draw the board this connection is about to replace.
+        onOpen?.();
         this.status("open");
         resolve();
       };
@@ -266,6 +300,79 @@ export class Wire {
     this.lastSeq = resume;
     for (const fn of this.rollbackHandlers) fn(resume);
     await this.connect(resume);
+  }
+
+  /**
+   * Dial from the very beginning, throwing away everything this client holds.
+   *
+   * THIS IS THE SPECTATOR'S REDIAL, and it exists because reconnect() cannot
+   * be one. A perch is CONNECTION state (visibility spec §3.1.1): the server's
+   * projector is reborn perched on nobody, and it replays the log through
+   * those empty eyes — so it holds no memory of the scene, the actors or the
+   * tokens the previous connection's perch put on this client's board. Nothing
+   * on the wire un-introduces any of them, and both folds refuse a second
+   * introduction, so a resumed connection and this client disagree about what
+   * has been said and the next perch is a duplicate.
+   *
+   * MEASURED AGAINST THE REAL GATEWAY (2026-08-24), on a watcher who had
+   * perched and then seen a goblin walk into view. All four of the available
+   * answers, so that the two the reconnect() note above offers are not
+   * re-tried:
+   *
+   *   - resume, then re-perch: `engine: scene "ambush" already exists`. The
+   *     duplicate-introduction freeze — session.ts re-folds its whole log on
+   *     every event, so it is permanent.
+   *   - resume, drop the sequence-0 frames, then re-perch: fails EARLIER, with
+   *     `engine: token placed in unknown scene "ambush"`, and before the
+   *     re-perch is even sent. The frames an ordinary event delivered to a
+   *     perched seat — the goblin's arrival — are stamped with the CAUSING
+   *     sequence, not with 0, so they survive the rollback while depending on
+   *     a scene only the perch ever introduced. Dropping the perch frames
+   *     breaks the log that is left behind.
+   *   - resume and do not re-perch: folds, and the board is dead. The reborn
+   *     projector sends this seat nothing at all, and the sequence the
+   *     rollback dropped is never re-sent either, so the watcher is left
+   *     looking at a stale room forever.
+   *   - THIS: dial after=0 holding nothing, then re-perch. Folds cleanly, and
+   *     is the only one of the four that also shows a live board.
+   *
+   * The cost is one full replay for a watcher who may not have needed it. That
+   * is the honest price of a view preference the log deliberately does not
+   * record, and it is paid by the one role whose board is otherwise a lie.
+   *
+   * BOTH CURSORS GO BACK TO ZERO, which is not tidiness: seenSeq is what the
+   * next redial derives its resume point from, and a stale mark over an
+   * emptied log would ask for events after a sequence this client never
+   * folded — silently skipping everything between, which is the direction that
+   * leaves an enemy token on a board.
+   */
+  async restart(): Promise<void> {
+    // Same order as reconnect(): forget the socket before closing it, because
+    // forgetting is what the message handler's identity check reads and
+    // closing does not cancel an event already queued on it. A frame from the
+    // abandoned socket would otherwise be folded into a log that is about to
+    // be emptied and re-sent whole.
+    const old = this.ws;
+    this.ws = null;
+    old?.close();
+
+    // NOTHING IS DISCARDED UNTIL THE NEW SOCKET IS OPEN, which is the one
+    // place this deliberately does NOT follow reconnect(). Reconnect throws
+    // away one sequence up front, and a failed redial costs that sequence;
+    // this throws away EVERYTHING, and doing it before a dial that then fails
+    // would leave a watcher staring at a blank page with no board to go back
+    // to. A refused dial is a no-op here — log and cursors intact — because
+    // the hook below never runs.
+    //
+    // IN THE OPEN EVENT rather than after awaiting it, and connect's own
+    // comment records what awaiting cost: the replay arrived before the
+    // continuation, so the log was folded and then discarded, and nothing was
+    // left to fold again.
+    await this.connect(0n, () => {
+      this.seenSeq = 0n;
+      this.lastSeq = 0n;
+      for (const fn of this.restartHandlers) fn();
+    });
   }
 
   close(): void {

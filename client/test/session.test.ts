@@ -473,3 +473,143 @@ test("a reconnect after a torn batch takes that sequence again, and folds it exa
     server.stop(true);
   }
 });
+
+// --- restart: the redial a spectator's perch needs ---------------------------
+
+test("restart dials from zero and drops the whole log, perch frames and all", async () => {
+  // A PERCH IS CONNECTION STATE (visibility spec §3.1.1). The server's
+  // projector is reborn perched on nobody, so a redial that RESUMES leaves
+  // this client holding a board the new connection knows nothing about, and
+  // the next perch re-introduces every scene, actor and token in it — the
+  // duplicate-introduction freeze, measured against the real gateway.
+  //
+  // reconnect() cannot serve here for two separate reasons, and this test
+  // discriminates on both. Its cursor is seenSeq-1, not 0; and its rollback
+  // keeps everything AT OR BELOW that cursor, so the sequence-0 frames a perch
+  // produces — stamped 0 deliberately, so that no undo can name one — survive
+  // a rollback that drops ordinary ones.
+  const seen: string[] = [];
+  let opened = 0;
+  let pendingAfter = 0n;
+  // What a perch delivers: a scene the LOG does not contain, at sequence 0 —
+  // sent on the connection that asked for it and never replayed to another,
+  // exactly as the gateway's perch frames are (internal/gateway/project.go's
+  // perchSequence, and seat.perch, whose output skips the replay filter).
+  const perchFrame = {
+    event: env(0, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "perched", name: "P", gridWidth: 2, gridHeight: 2 }) }),
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      const after = new URL(req.url).searchParams.get("after") ?? "";
+      seen.push(after);
+      pendingAfter = BigInt(after || "0");
+      if (srv.upgrade(req)) return undefined;
+      return new Response("expected websocket", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        opened += 1;
+        const after = pendingAfter;
+        for (const f of world) {
+          if (BigInt((f as any).event.sequence) > after) ws.send(JSON.stringify(f));
+        }
+        if (opened === 1) ws.send(JSON.stringify(perchFrame));
+      },
+      message() {},
+    },
+  });
+  try {
+    const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
+    await s.start();
+    await until(() => s.state.Scenes["perched"] !== undefined, "the first connection's replay and its perch");
+
+    const errors: string[] = [];
+    s.onError((e) => errors.push(e.message));
+    // Every log length a view was told about. The emptying must NOTIFY, not
+    // just mutate: a spectator who redials with no shoulder sends nothing
+    // afterwards, so nothing else repaints until the replay lands and the old
+    // board would sit there in the meantime, behind a connection that no
+    // longer holds it.
+    const painted: number[] = [];
+    s.onChange(() => painted.push(s.events.length));
+    await s.restart();
+    await until(() => s.events.length === 4, "the whole log again");
+    expect(painted).toContain(0);
+
+    expect(seen).toEqual(["0", "0"]);
+    // The perch frame is GONE, not re-folded: it came from a connection that
+    // no longer exists, and the server will re-send its own if asked again.
+    expect(s.state.Scenes["perched"]).toBeUndefined();
+    expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
+    // A kept log would have made the whole replay a duplicate introduction.
+    expect(errors).toEqual([]);
+    expect(s.events).toHaveLength(4);
+    s.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a restart forgets the cursors, so the next redial cannot resume from a log this client no longer holds", async () => {
+  // seenSeq is the high-water mark a redial derives its resume point from. A
+  // restart empties the log, so leaving that mark standing would have the NEXT
+  // reconnect ask for events after a sequence this client has never folded —
+  // and the events between are silently never sent, which is the leak
+  // direction (a lost TokenHidden leaves an enemy token on the board).
+  //
+  // The discriminator is a second connection that replays NOTHING: with the
+  // cursors reset the third dial asks for 0, and without them it asks for 3.
+  const seen: string[] = [];
+  let opened = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      seen.push(new URL(req.url).searchParams.get("after") ?? "");
+      if (srv.upgrade(req)) return undefined;
+      return new Response("expected websocket", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        opened += 1;
+        if (opened > 1) return; // the campaign is gone; nothing to replay
+        for (const f of world) ws.send(JSON.stringify(f));
+      },
+      message() {},
+    },
+  });
+  try {
+    const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
+    await s.start();
+    await until(() => s.head === 4n, "the first connection's replay");
+
+    await s.restart();
+    await s.reconnect();
+
+    expect(seen).toEqual(["0", "0", "0"]);
+    s.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a restart that cannot dial leaves the board standing", async () => {
+  // The cost of restart() over reconnect() is what it throws away, so what it
+  // does on FAILURE is not a detail. A watcher clicking Reconnect while the
+  // network is still down would otherwise trade a stale board for a blank
+  // page, and get no replay to fill it.
+  const gw = gatewayServing(world);
+  const s = new Session(gw.url, "tok");
+  try {
+    await s.start();
+    await until(() => s.events.length === 4, "the replay");
+    gw.stop(); // the table is unreachable now
+
+    await expect(s.restart()).rejects.toThrow();
+
+    expect(s.events).toHaveLength(4);
+    expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
+  } finally {
+    s.close();
+  }
+});

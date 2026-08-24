@@ -43,6 +43,7 @@ export class Session {
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
     this.wire.onRollback((throughSeq) => this.rollback(throughSeq));
+    this.wire.onRestart(() => this.empty());
   }
 
   get state(): State {
@@ -118,6 +119,19 @@ export class Session {
     return this.wire.reconnect();
   }
 
+  /**
+   * Redial from the beginning, holding nothing — the spectator's redial.
+   *
+   * See Wire.restart for WHY a perched spectator cannot simply resume, and for
+   * the measurements that ruled out the alternatives. What matters here is
+   * that the emptying is not a rollback: rollback keeps everything at or below
+   * its cursor and a perch frame carries sequence 0, so no cursor can reach
+   * one. The log is dropped whole, by the handler this class registered.
+   */
+  restart(): Promise<void> {
+    return this.wire.restart();
+  }
+
   send(cmd: ClientCommand): Promise<CommandResult> {
     return this.wire.send(cmd);
   }
@@ -177,6 +191,23 @@ export class Session {
     if (kept.length === this.log.length) return;
     this.log = kept;
     this.derived = fold(this.log);
+    for (const fn of this.changeHandlers) fn();
+  }
+
+  /**
+   * Drop the log entirely, because the whole of it is about to arrive again.
+   *
+   * NOT rollback(0n), which would keep the sequence-0 frames a perch produces
+   * — 0 is at or below every cursor — and those are exactly the frames a
+   * restart exists to be rid of: they came from a connection that no longer
+   * exists, and the one being dialled will introduce their contents again.
+   *
+   * Notifies unconditionally, like presence: a view still painting the old
+   * board while the replay is in flight is a board nobody is behind.
+   */
+  private empty(): void {
+    this.log = [];
+    this.derived = newState();
     for (const fn of this.changeHandlers) fn();
   }
 

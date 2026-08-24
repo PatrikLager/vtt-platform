@@ -715,3 +715,78 @@ test("reconnecting repeatedly does not walk the cursor backwards", async () => {
     gw.stop();
   }
 });
+
+test("a frame from the socket a restart abandoned is never folded", async () => {
+  // The same race as the reconnect case above, one redial apart, and it is
+  // worse here rather than merely equal: a restart empties the log entirely,
+  // so a stale frame landing after it does not re-add a sequence — it seeds a
+  // log with an envelope the replay is about to send AGAIN, which is the
+  // duplicate introduction that freezes a client for good.
+  //
+  // Scripted rather than served, for the reason the class above gives: whether
+  // a queued frame still lands after a close is the runtime's decision, and a
+  // test whose subject is a race must not be one.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const seen: bigint[] = [];
+    let emptied = 0;
+    wire.onEvent((e) => seen.push(e.sequence));
+    wire.onRestart(() => emptied++);
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(seen).toEqual([2n]);
+    expect(wire.head).toBe(2n);
+
+    const again = wire.restart();
+    // Dialled from the beginning, and the emptying has NOT happened yet: it
+    // rides the open event, so a dial that never opens costs nothing.
+    expect(ScriptedSocket.instances[1]!.url).toContain("after=0");
+    expect(emptied).toBe(0);
+    ScriptedSocket.instances[1]!.open();
+    await again;
+    expect(emptied).toBe(1);
+    expect(wire.head).toBe(0n);
+
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(seen).toEqual([2n]);
+    expect(wire.head).toBe(0n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a restart whose dial fails leaves the wire exactly as it was", async () => {
+  // A watcher clicking Reconnect on a network that is still down must not be
+  // punished with a blank page: reconnect() forfeits one sequence when its
+  // dial fails, and restart() would forfeit the WHOLE log. So the discard
+  // rides the open event, and a socket that errors instead never runs it.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    let emptied = 0;
+    wire.onRestart(() => emptied++);
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(3) });
+    expect(wire.head).toBe(3n);
+
+    const doomed = wire.restart();
+    ScriptedSocket.instances[1]!.onerror?.();
+    await expect(doomed).rejects.toThrow("wire: connection failed");
+
+    expect(emptied).toBe(0);
+    expect(wire.head).toBe(3n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});

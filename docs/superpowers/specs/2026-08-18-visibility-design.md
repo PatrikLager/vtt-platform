@@ -98,10 +98,17 @@ shoulder they are currently sitting on. §4.1's purity is untouched — the
 projection is still a pure function of `(log-so-far, viewer)`; `viewer` simply
 carries one more field.
 
-**A perch may only target a player-controlled actor.** This is the constraint
-the whole idea rests on: a spectator perched on the Goblin Archer would watch
-the ambush from inside it, and the arc would be undone in a single click.
-Enforced server-side, never by which names the UI happens to offer.
+**A perch may only target a PARTY MEMBER.** This is the constraint the whole
+idea rests on: a spectator perched on the Goblin Archer would watch the ambush
+from inside it, and the arc would be undone in a single click. Enforced
+server-side, never by which names the UI happens to offer.
+
+*CORRECTED 2026-08-24.* This read "a player-controlled actor" until §5.1
+overturned that rule on 2026-08-23. The distinction is not pedantry: keyed on
+control, one `grant_actor_control` on a hidden monster made it perchable, which
+is precisely the leak §5.1 closed. `MayPerch`, `eyes`, the roster exception and
+the spectator's own control are all keyed on **kind** — and "player-controlled"
+is the exact rule the UI had to be told *not* to implement.
 
 **The bird remembers every shoulder it has sat on.** Explored terrain (§3.2)
 accumulates for the spectator across perches, so hopping Armak → Asme leaves
