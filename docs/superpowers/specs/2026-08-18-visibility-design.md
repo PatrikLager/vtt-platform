@@ -471,15 +471,23 @@ it. No rule could tell them apart, because the information was not present.
 It was not present because nobody was asked. Ask at the grant and each case
 states its own answer.
 
-It also means **adventure content does not change at all.** Actors ship with no
-kind, which is correct — an unassigned pregenerated character is not yet in
-play, and both shipped adventures mix player characters and monsters in one
-directory with nothing distinguishing them (`cellar-rats` ships Hollis Ketch and
-Mara Voss; `goblin-ambush` ships a Human Fighter alongside two goblins). An
-earlier draft proposed having the compiler stamp every adventure actor as
-non-party. That would have dropped all three of those characters out of the
-party's roster the moment they turned a corner — the exact regression §5 exists
-to prevent, on the only two adventures that exist.
+**SUPERSEDED 2026-08-24, in every clause.** This paragraph said adventure
+content does not change at all, and that actors shipping with no kind was
+correct because an unassigned pregenerated character is not yet in play. Both
+shipped adventures do mix player characters and monsters in one directory —
+`cellar-rats` ships Hollis Ketch and Mara Voss, `goblin-ambush` a Human Fighter
+alongside two goblins — and the conclusion drawn from that was wrong. The
+adventure format now REQUIRES `kind` on every actor, because the path written
+deliberately in advance by someone who knew exactly what they were making was
+the only one that could not say so.
+
+**What survives, and is worth keeping.** An earlier draft proposed having the
+compiler STAMP every adventure actor as non-party. That would have dropped all
+three of those characters out of the party's roster the moment they turned a
+corner — the exact regression §5 exists to prevent, on the only two adventures
+that exist. Stamping remains wrong; the fix was to let content speak, not to
+answer for it. Three options, and only the third works: infer (wrong), stamp
+(wrong), or ask (right).
 
 **And it separates two things that were tangled.** Kind describes the
 character's standing in the fiction; control describes who is driving. They are
@@ -488,9 +496,19 @@ monster without either becoming a special case.
 
 Three rules follow, and the third is load-bearing:
 
-- **An ungranted actor is NOT a party member.** A monster nobody has been
-  granted has no grant to carry a kind, so it defaults closed. Correct for every
-  actor both shipped adventures contain.
+- **Every actor states its kind at birth, and a grant may change it.**
+  SUPERSEDED 2026-08-24 — this rule used to read *"an ungranted actor is NOT a
+  party member,"* on the reasoning that a monster nobody has granted carries no
+  kind and so defaults closed. Both halves went stale within the day: creation
+  now REQUIRES a kind (`add_actor` refuses `UNSPECIFIED`, and the adventure
+  format demands `"party_member"` or `"non_party"`), so an ungranted actor
+  certainly can be a party member — a pregenerated character sitting in a
+  campaign before anyone is assigned to it IS one, and the party seeing the
+  available characters is correct rather than a leak. The rule's second clause,
+  *"correct for every actor both shipped adventures contain,"* was separately
+  false: three of those five are player characters. An absent kind remains
+  not-a-party-member, but as belt-and-braces on a case nothing can now produce,
+  not as something anything relies on.
 - **Kind survives revocation.** A player leaving the table does not turn their
   character into a monster. Revocation reassigns control; it does not restate
   what the character is.
