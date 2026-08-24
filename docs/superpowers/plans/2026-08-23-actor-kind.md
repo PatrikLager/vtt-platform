@@ -300,7 +300,11 @@ not exist, and buying a permanent widening of behaviour for it.
 
 The fixtures are the only place the old model can survive, because they are the only "existing history" there is. Task 4 converts them. This task makes conversion **stick**, so a fixture written next month cannot quietly reintroduce what four tasks just removed.
 
-Measured 2026-08-24, before Task 4: **8 `actorAdded` events carrying a `controllerId` across 5 golden streams** (session-zero, shared-control, story-table, three-role-exit, toy-brawl), plus `scenarios/denials.json` seeding one directly.
+Measured 2026-08-24, before Task 4: **12 `actorAdded` events carrying a `controllerId` across 7 golden streams**, plus `scenarios/denials.json` seeding one directly.
+
+**CORRECTED — this line said 8 across 5, and how it was wrong is the argument for the guard.** The first count used a SHELL glob, `scenarios/goldens/*/stream.json`, where `*` does not cross a directory separator. It therefore never saw `session-zero/projections/player/stream.json` or its spectator twin — the two nested streams the visibility arc had just added, and exactly the files most worth checking. Git's pathspec `*` DOES cross `/`, so the same-looking pattern returns 12 across 7. Same syntax, different semantics, and the gap was precisely the new thing.
+
+Which is why this guard **matches by key at any depth** rather than by an enumerated path. A hand-written glob encodes a directory shape at the moment someone wrote it; the corpus then grows a directory and the glob goes quietly blind. The measurement that produced "8 across 5" was itself an instance of the failure the guard exists to prevent.
 
 - [ ] **Step 1: a guard over the corpus, derived rather than listed.** Walk `scenarios/` and `scenarios/goldens/` and assert:
   - no `actorAdded` carries a controller — control is never conferred at creation;
