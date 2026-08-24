@@ -5,7 +5,10 @@
 // that quietly tolerates a malformed event would diverge from the server's
 // own view of history and show a player a state the log does not support.
 
-import type { Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+// ActorKind is imported as a VALUE, not just a type: the grant arm below
+// compares against ACTOR_KIND_UNSPECIFIED, and `v.kind !== 0` would state the
+// same rule in a form no reader can check against the contract.
+import { ActorKind, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import {
   FoldError,
   newState,
@@ -134,12 +137,36 @@ function apply(st: State, env: Envelope): void {
       const a = p.value.actor;
       if (!a || a.actorId === "") throw new FoldError("actor added with no actor or empty id");
       if (st.Actors[a.actorId]) throw new FoldError(`duplicate actor "${a.actorId}"`);
+      // CREATION DOES NOT CONFER CONTROL (visibility spec §5.1, Patrik's
+      // ruling 2026-08-24), and this is the strict mirror of internal/engine's
+      // ActorAdded arm — same rule, same two spellings, same refusal rather
+      // than a silent drop. Read that arm for why: an actor created with a
+      // controller and no kind was a party member with nobody having said so,
+      // which is the archer leak through a second door.
+      if (a.controllerId !== "" || a.controllerIds.length > 0) {
+        throw new FoldError(
+          `actor "${a.actorId}" added with a controller — creating an actor does not hand it ` +
+            `to anyone; control is conferred by actor control granted, which also declares ` +
+            `what the actor is`,
+        );
+      }
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
     case "actorControlGranted": {
       const v = p.value;
       const a = requireControlTarget(st, v.actorId, v.participantId, "actor control granted");
+      // The strict mirror of internal/engine's ActorControlGranted arm, down
+      // to the ORDER: the grant declares what the actor is (visibility spec
+      // §5.1) and it does so BEFORE the idempotent early return, because
+      // idempotency is a rule about the control set and returning first would
+      // swallow a standing change stated in the same event.
+      //
+      // CONDITIONAL, matching Go: a grant that says nothing says nothing, not
+      // UNSPECIFIED. Clearing a declared kind on replay is a SILENT DEMOTION —
+      // since §5.1's migration rule was deleted (2026-08-24) an absent kind is
+      // not a party member, so the character drops off its own party's roster.
+      if (v.kind !== ActorKind.UNSPECIFIED) a.kind = v.kind;
       if (a.controllerIds.includes(v.participantId)) return; // idempotent
       Object.assign(a, mirrorControl([...a.controllerIds, v.participantId]));
       return;
@@ -147,6 +174,8 @@ function apply(st: State, env: Envelope): void {
     case "actorControlRevoked": {
       const v = p.value;
       const a = requireControlTarget(st, v.actorId, v.participantId, "actor control revoked");
+      // Kind is untouched here, mirroring Go: a player leaving the table does
+      // not turn their character into a monster (spec §5.1's second rule).
       Object.assign(a, mirrorControl(a.controllerIds.filter((id) => id !== v.participantId)));
       return;
     }
@@ -401,6 +430,7 @@ function copyActor(a: {
   resources: Record<string, { current: number; max: number }>;
   controllerId: string;
   controllerIds: string[];
+  kind: ActorKind;
 }): Actor {
   const resources: Record<string, Resource> = {};
   for (const [k, v] of Object.entries(a.resources ?? {})) {
@@ -412,27 +442,22 @@ function copyActor(a: {
     moduleId: a.moduleId,
     attributes: { ...(a.attributes ?? {}) },
     resources,
-    // Empty ids are dropped here, matching internal/engine's fold: the
-    // grant/revoke guard does not cover ActorAdded, so a payload carrying
-    // controllerIds:[""] would otherwise create a non-empty set whose mirror
-    // is the empty string — indistinguishable from an unowned actor, and
-    // unremovable, since revoke rejects an empty participant.
+    // VERBATIM, and no migration here — the strict mirror of internal/engine's
+    // Apply, which gets this for free from proto.Clone. "Absent + a controller
+    // means a party member" (visibility spec §5.1) is a READER's rule: applying
+    // it here would make state say something the log never said, and the dump
+    // this fold is byte-compared against is a rendering of the log.
+    kind: a.kind,
+    // ALWAYS EMPTY, and mirrorControl is still called rather than the pair
+    // being written out as literals: it is the one place the "controllerId is
+    // controllerIds[0]" rule lives, and a fold that spelled the empty case out
+    // by hand would be a second statement of it that could drift.
     //
-    // NOT `?? []`, unlike the two neighbours above. Review flagged the
-    // asymmetry and I added the guard; CI's mutation gate then showed it
-    // SURVIVING, and the reason is that it is unreachable: every fold path
-    // decodes through protobuf-es, which always materialises a repeated field
-    // as [], and copyActor is not exported. Nothing can pass undefined, so
-    // nothing can test it — and an adjudication for dead code is worse than
-    // not writing the dead code. The asymmetry is the honest state: those
-    // guards predate this change and carry their own adjudications.
-    ...mirrorControl(
-      a.controllerIds.length > 0
-        ? a.controllerIds.filter((id) => id !== "")
-        : a.controllerId !== ""
-          ? [a.controllerId]
-          : [],
-    ),
+    // The branch that used to sit here — seed the set from controllerId, strip
+    // empty ids — is gone with the seeding it existed for: the actorAdded arm
+    // above now REFUSES an actor that declares either field, so by the time
+    // copyActor runs there is nothing to seed and nothing to strip.
+    ...mirrorControl([]),
   };
 }
 
@@ -587,5 +612,13 @@ function actorJSON(a: Actor): Record<string, unknown> {
   }
   if (a.controllerId !== "") out["controller_id"] = a.controllerId;
   if (a.controllerIds.length > 0) out["controller_ids"] = a.controllerIds;
+  // LAST, because Go emits a struct in its DECLARED field order and kind is
+  // field 9, after controller_ids. A NUMBER rather than the enum name: Go's
+  // Actor is protobuf-generated but `vtt state dump` marshals it with
+  // encoding/json, not protojson, so an int32-based enum prints as its integer.
+  // Omitted at UNSPECIFIED, mirroring `json:"kind,omitempty"` — and that
+  // omission is what keeps all eight scenarios/goldens byte-identical, since
+  // every one of them predates this field.
+  if (a.kind !== 0) out["kind"] = a.kind;
   return out;
 }

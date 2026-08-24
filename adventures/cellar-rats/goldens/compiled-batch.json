@@ -166,6 +166,7 @@
     "actor_added": {
       "actor_id": "hollis",
       "name": "Hollis Ketch",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {
         "brawn": 3,
         "grit": 2,
@@ -188,6 +189,7 @@
     "actor_added": {
       "actor_id": "mara",
       "name": "Mara Voss",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {
         "brawn": 4,
         "grit": 1,

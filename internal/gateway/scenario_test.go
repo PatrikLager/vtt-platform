@@ -59,26 +59,26 @@ func newExitFixture(t *testing.T) *exitFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, dmID, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, dmID, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The player's invite controls act-lera ONLY: no other actor is ever
 	// listed here, and no actor added below grants this participant control
 	// besides act-lera (act-ursus is added controllerless).
-	playerToken, playerID, err := ids.CreateInvite("Player", identity.RolePlayer, []string{"act-lera"})
+	playerToken, playerID, err := ids.CreateInvite("Player", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, agentID, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, agentID, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, spectatorID, err := ids.CreateInvite("Spectator", identity.RoleSpectator, nil)
+	spectatorToken, spectatorID, err := ids.CreateInvite("Spectator", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	observerToken, _, err := ids.CreateInvite("Observer", identity.RoleAgent, nil)
+	observerToken, _, err := ids.CreateInvite("Observer", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,12 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-add-ursus",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus"}, // ControllerId left empty: DM/agent-only.
+			// ControllerId left empty AND non-party: this actor is DM/agent-run,
+			// which is what the surrounding test is about. scenarios/
+			// three-role-exit.json says the same of act-ursus, and the two must
+			// agree — this file is the gateway-level mirror of that scenario.
+			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	}, dm.id, true, unfiltered)
 	aa, ok := env.Payload.(*vttv1.Envelope_ActorAdded)
@@ -441,18 +446,39 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	}
 	dmLive = append(dmLive, env)
 
+	// TWO COMMANDS FOR ONE CHARACTER, and the assertion moved with them: an
+	// add_actor that named a controller is refused now, and the GRANT is what
+	// carries the participant id (visibility spec §5.1, 2026-08-24).
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-add-lera",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera", ControllerId: player.id},
+			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	}, dm.id, true, unfiltered)
 	aa, ok = env.Payload.(*vttv1.Envelope_ActorAdded)
 	if !ok {
 		t.Fatalf("dm-add-lera: payload = %T, want ActorAdded", env.Payload)
 	}
-	if aa.ActorAdded.Actor.GetControllerId() != player.id {
-		t.Fatalf("dm-add-lera: ControllerId = %q, want player id %q", aa.ActorAdded.Actor.GetControllerId(), player.id)
+	if got := aa.ActorAdded.Actor.GetControllerId(); got != "" {
+		t.Fatalf("dm-add-lera: ControllerId = %q, want empty — creation confers no control", got)
+	}
+	dmLive = append(dmLive, env)
+
+	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
+		RequestId: "dm-grant-lera",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-lera", ParticipantId: player.id,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	}, dm.id, true, unfiltered)
+	g, ok := env.Payload.(*vttv1.Envelope_ActorControlGranted)
+	if !ok {
+		t.Fatalf("dm-grant-lera: payload = %T, want ActorControlGranted", env.Payload)
+	}
+	if g.ActorControlGranted.GetParticipantId() != player.id {
+		t.Fatalf("dm-grant-lera: ParticipantId = %q, want player id %q",
+			g.ActorControlGranted.GetParticipantId(), player.id)
 	}
 	dmLive = append(dmLive, env)
 

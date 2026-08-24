@@ -18,7 +18,8 @@
           "current": 6,
           "max": 6
         }
-      }
+      },
+      "kind": 2
     },
     "act-cutter": {
       "actor_id": "act-cutter",
@@ -38,7 +39,8 @@
           "current": 8,
           "max": 8
         }
-      }
+      },
+      "kind": 2
     },
     "act-fighter": {
       "actor_id": "act-fighter",
@@ -62,7 +64,8 @@
           "current": 28,
           "max": 28
         }
-      }
+      },
+      "kind": 1
     }
   },
   "Conditions": {},

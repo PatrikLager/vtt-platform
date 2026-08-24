@@ -1,6 +1,7 @@
 {
   "actor_id": "hero",
   "name": "Hero",
+  "kind": "party_member",
   "attributes": {
     "vim": 10,
     "vigor": 8,

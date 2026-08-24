@@ -49,8 +49,8 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	mint := func(name string, role identity.Role, controls ...string) string {
-		tok, _, err := ids.CreateInvite(name, role, controls)
+	mint := func(name string, role identity.Role) string {
+		tok, _, err := ids.CreateInvite(name, role)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 		ids:            ids,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer, "act-lera"),
+		playerToken:    mint("Lera", identity.RolePlayer),
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
@@ -187,7 +187,7 @@ func TestMetadataRejectsBadMissingAndRevokedTokens(t *testing.T) {
 	})
 
 	t.Run("revoked token", func(t *testing.T) {
-		tok, id, err := f.ids.CreateInvite("Doomed", identity.RoleDM, nil)
+		tok, id, err := f.ids.CreateInvite("Doomed", identity.RoleDM)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -465,9 +465,9 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 			t.Fatalf("%s: status = %d, want 200", tc.role, code)
 		}
 		var got struct {
-			ParticipantID string   `json:"participantId"`
-			Role          string   `json:"role"`
-			Controls      []string `json:"controls"`
+			ParticipantID string `json:"participantId"`
+			Name          string `json:"name"`
+			Role          string `json:"role"`
 		}
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("%s: decode: %v (body %s)", tc.role, err, body)
@@ -476,27 +476,74 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 			t.Errorf("role = %q, want %q", got.Role, tc.role)
 		}
 		if got.ParticipantID == "" {
-			t.Errorf("%s: participantId is empty; the client cannot match controller_id without it", tc.role)
+			t.Errorf("%s: participantId is empty; the client cannot match controllerIds without it", tc.role)
 		}
-		if got.Controls == nil {
-			t.Errorf("%s: controls must be [] and never null — the client iterates it", tc.role)
-		}
-		// The player controls an actor, and that list must arrive INTACT.
-		// Nothing exercised a non-empty Controls until a surviving mutant
-		// showed that replacing it with an empty slice changed no test's
-		// outcome — which would have shown a player as controlling nothing
-		// and hidden their own actor from them.
-		if tc.role == "player" {
-			if len(got.Controls) != 1 || got.Controls[0] != "act-lera" {
-				t.Errorf("player controls = %v, want [act-lera]", got.Controls)
-			}
-		} else if len(got.Controls) != 0 {
-			t.Errorf("%s: controls = %v, want empty", tc.role, got.Controls)
+		// The display name, asserted since the controls block that used to sit
+		// here went: it is the OTHER field this route carries, and without an
+		// assertion on it the handler could drop it and stay green.
+		if got.Name == "" {
+			t.Errorf("%s: name is empty; presence labels and the DM roster both render it", tc.role)
 		}
 	}
 
 	if code, _ := f.get("/api/me", "garbage"); code != http.StatusUnauthorized {
 		t.Errorf("/api/me with a bad token: status = %d, want 401", code)
+	}
+}
+
+// TestMeSaysWhoYouAreAndNeverWhatYouControl is the deletion, pinned.
+//
+// Control is a fact about the LOG: Actor.controller_ids, written by
+// ActorControlGranted and read by authz.go's controls() and by eyes()'s player
+// arm. (The party roster and MayPerch used to read it too and no longer do —
+// 80dfa0e on this branch moved them onto Actor.kind, and since the migration
+// arm was deleted on 2026-08-24 isPartyMember does not touch controller_ids at
+// all.) /api/me used to answer
+// control a second time from a SQLite column nothing ever updated, so the
+// answer was a plausible-looking lie: a DM who invited somebody "controlling
+// Hollis" was told by this route that they controlled Hollis, while every rule
+// that decides anything said they did not.
+//
+// The assertion is on the KEY, not on its value, and that is deliberate. An
+// empty list is the shape a wrong answer takes when nobody has been granted
+// anything yet, so a test that accepted `"controls": []` would pass against
+// exactly the code this deletes. Decoding into a map is what makes absence
+// observable at all — a struct field would read the same for "absent" and
+// "present and empty".
+func TestMeSaysWhoYouAreAndNeverWhatYouControl(t *testing.T) {
+	f := newMetaFixture(t, true)
+
+	for _, tc := range []struct {
+		role  string
+		token string
+	}{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		code, body := f.get("/api/me", tc.token)
+		if code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", tc.role, code)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("%s: decode: %v (body %s)", tc.role, err, body)
+		}
+		if v, ok := got["controls"]; ok {
+			t.Errorf("%s: /api/me still answers what you control (%v) — the only "+
+				"authority on that is Actor.controller_ids in the log, and a second "+
+				"answer here is a claim no grant backs", tc.role, v)
+		}
+		// The route still has to do its own job, or "no controls key" would be
+		// satisfied by a route that answered nothing at all.
+		if got["role"] != tc.role {
+			t.Errorf("%s: role = %v, want %q", tc.role, got["role"], tc.role)
+		}
+		if got["participantId"] == "" || got["participantId"] == nil {
+			t.Errorf("%s: participantId is missing; the client cannot match "+
+				"controllerIds without it", tc.role)
+		}
 	}
 }
 
@@ -693,7 +740,7 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 	t.Cleanup(func() { ids.Close() })
 
 	mint := func(name string, role identity.Role) string {
-		tok, _, err := ids.CreateInvite(name, role, nil)
+		tok, _, err := ids.CreateInvite(name, role)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1019,7 +1066,7 @@ func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ids.Close() })
-	tok, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}

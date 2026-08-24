@@ -4118,6 +4118,7 @@
     "actor_added": {
       "actor_id": "act-archer",
       "name": "Goblin Archer",
+      "kind": "ACTOR_KIND_NON_PARTY",
       "attributes": {
         "str": 0,
         "dex": 4,
@@ -4141,6 +4142,7 @@
     "actor_added": {
       "actor_id": "act-cutter",
       "name": "Goblin Cutter",
+      "kind": "ACTOR_KIND_NON_PARTY",
       "attributes": {
         "str": 1,
         "dex": 3,
@@ -4164,6 +4166,7 @@
     "actor_added": {
       "actor_id": "act-fighter",
       "name": "Human Fighter",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {
         "str": 4,
         "dex": 2,

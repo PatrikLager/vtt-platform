@@ -106,29 +106,37 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if _, dup := st.Actors[a.ActorId]; dup {
 			return fmt.Errorf("engine: actor %q already exists", a.ActorId)
 		}
+		// CREATION DOES NOT CONFER CONTROL, and an event that says otherwise is
+		// an error rather than something to interpret (visibility spec §5.1,
+		// Patrik's ruling 2026-08-24). Control is conferred exactly once, by
+		// ActorControlGranted, which declares what the actor IS in the same
+		// breath.
+		//
+		// This arm used to SEED the control set from a declared controller_id.
+		// That is what made the archer leak reachable through a second door:
+		// an actor created with a controller and no kind was a party member
+		// with nobody having said so — the whole cloned Actor on every
+		// player's roster, MayPerch and eyes() open on it. The gateway refuses
+		// the COMMAND (validateAddActor) so the caller gets a message naming
+		// the command that does confer control; this refuses the EVENT, which
+		// is the invariant rather than the manners. No log can contain the
+		// shape at all.
+		//
+		// REFUSED, NOT IGNORED. Folding the actor with the field dropped is
+		// quieter and worse: the writer believes they handed a character over
+		// and the log disagrees, silently, forever. Fail closed AND loudly.
+		//
+		// BOTH SPELLINGS, including a declared-but-empty set. `controller_ids:
+		// [""]` would confer no control — this arm used to strip such ids for
+		// exactly that reason — but the answer to "creation does not hand the
+		// actor to anyone" must not depend on whether the id the writer chose
+		// happened to be usable.
+		if a.GetControllerId() != "" || len(a.GetControllerIds()) > 0 {
+			return fmt.Errorf("engine: actor_added: actor %q declares a controller — creating an "+
+				"actor does not hand it to anyone; control is conferred by actor_control_granted, "+
+				"which also declares what the actor is", a.ActorId)
+		}
 		stored := proto.Clone(a).(*vttv1.Actor)
-		// Seed the set from the declared controller, then mirror. Without the
-		// seed, mirrorControl below sees an empty set and blanks ControllerId
-		// AT CREATION — the declared controller is erased on the spot, not on
-		// some later grant.
-		if stored.GetControllerId() != "" && len(stored.GetControllerIds()) == 0 {
-			stored.ControllerIds = []string{stored.GetControllerId()}
-		}
-		// Drop empty ids the payload may carry. The guard in controlTarget
-		// only covers grant/revoke, so without this an ActorAdded carrying
-		// controller_ids:[""] creates a NON-EMPTY set whose mirror is the
-		// empty string — the "is this shared or unowned?" ambiguity the whole
-		// rule exists to remove — and revoke then refuses to remove it,
-		// permanently, in an append-only log. Reachable: gateway/convert.go
-		// passes the client's Actor through verbatim.
-		kept := make([]string, 0, len(stored.GetControllerIds()))
-		for _, id := range stored.GetControllerIds() {
-			if id != "" {
-				kept = append(kept, id)
-			}
-		}
-		stored.ControllerIds = kept
-		mirrorControl(stored)
 		st.Actors[a.ActorId] = stored
 		return nil
 
@@ -137,6 +145,27 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		actor, err := controlTarget(st, g.GetActorId(), g.GetParticipantId(), "actor_control_granted")
 		if err != nil {
 			return err
+		}
+		// THE GRANT DECLARES WHAT THE ACTOR IS (visibility spec §5.1, revised
+		// 2026-08-23), and it does so BEFORE the idempotency check below.
+		// Idempotency is a rule about the CONTROL SET — do not duplicate a
+		// controller — and returning early would silently swallow a standing
+		// change stated in the same breath: charm the goblin the agent is
+		// already running and its kind must move even though its controller
+		// does not.
+		//
+		// The write is CONDITIONAL, and that is the load-bearing half. A grant
+		// that says nothing says nothing; it does not say UNSPECIFIED. An
+		// unconditional write would reset a declared kind to UNSPECIFIED on
+		// replay, which since §5.1's migration rule was deleted (2026-08-24)
+		// means NOT A PARTY MEMBER — so a re-grant that said nothing would
+		// silently drop a character off its own party's roster, and a declared
+		// monster would stop being one anybody had declared. The command
+		// boundary refuses a kindless grant outright (internal/gateway's
+		// validateGrantActorControl); the fold's job is to keep the log's own
+		// words, and "said nothing" is not "said UNSPECIFIED".
+		if g.GetKind() != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+			actor.Kind = g.GetKind()
 		}
 		for _, id := range actor.GetControllerIds() {
 			if id == g.GetParticipantId() {
@@ -153,6 +182,16 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if err != nil {
 			return err
 		}
+		// KIND IS DELIBERATELY UNTOUCHED HERE (visibility spec §5.1's second
+		// rule). A player leaving the table does not turn their character into
+		// a monster: revocation reassigns CONTROL, and control and standing
+		// are independent — which is what lets an agent play a party member
+		// and a person play a monster without either being a special case.
+		// "Revoke tidies up after itself" is the plausible-looking wrong thing
+		// to write here, and its consequence is silent: the character simply
+		// stops being on the party's roster the next time they turn a corner.
+		// Pinned by TestRevokingControlLeavesAPartyMemberAPartyMember.
+		//
 		// A fresh slice rather than the in-place [:0] trick: sets here are one
 		// to three elements, so the allocation is free, and aliasing the
 		// backing array would corrupt any caller holding the old slice across

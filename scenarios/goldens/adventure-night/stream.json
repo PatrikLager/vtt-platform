@@ -4143,7 +4143,8 @@
             "current": 6,
             "max": 6
           }
-        }
+        },
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },
@@ -4171,7 +4172,8 @@
             "current": 8,
             "max": 8
           }
-        }
+        },
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },
@@ -4203,7 +4205,8 @@
             "current": 28,
             "max": 28
           }
-        }
+        },
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },

@@ -273,11 +273,11 @@ func startLiveFixture(t *testing.T) liveFixture {
 		t.Fatalf("identity.Open: %v", err)
 	}
 	defer ids.Close()
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite spectator: %v", err)
 	}
@@ -301,7 +301,7 @@ const liveModeScenario = `{
 	"steps": [
 		{"by": "dm", "command": {"startSession": {"name": "s1"}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"createScene": {"sceneId": "scene-1", "name": "Scene One", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
-		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One"}}}, "expect": {"ok": true}},
+		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"placeToken": {"tokenId": "tok-1", "sceneId": "scene-1", "actorId": "act-1", "position": {"x": 3, "y": 4}}}, "expect": {"ok": true}}
 	],
 	"probes": [

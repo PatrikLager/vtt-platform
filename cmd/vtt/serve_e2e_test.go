@@ -60,7 +60,7 @@ func TestServeComposeEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identity.Open: %v", err)
 	}
-	token, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	token, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}

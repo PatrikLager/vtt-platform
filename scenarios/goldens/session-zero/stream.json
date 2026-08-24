@@ -587,7 +587,7 @@
       "actor": {
         "actorId": "act-fighter",
         "name": "Asme",
-        "controllerId": "p-player"
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
@@ -597,12 +597,10 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
-    "actorAdded": {
-      "actor": {
-        "actorId": "act-healer",
-        "name": "Ilva",
-        "controllerId": "p-player"
-      }
+    "actorControlGranted": {
+      "actorId": "act-fighter",
+      "participantId": "p-player",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
   {
@@ -613,14 +611,41 @@
     "participantId": "p-dm",
     "actorAdded": {
       "actor": {
-        "actorId": "act-goblin-archer",
-        "name": "Goblin Archer"
+        "actorId": "act-healer",
+        "name": "Ilva",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
   {
     "eventId": "evt-7",
     "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-healer",
+      "participantId": "p-player",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-goblin-archer",
+        "name": "Goblin Archer",
+        "kind": "ACTOR_KIND_NON_PARTY"
+      }
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -635,8 +660,8 @@
     }
   },
   {
-    "eventId": "evt-8",
-    "sequence": "8",
+    "eventId": "evt-10",
+    "sequence": "10",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -651,8 +676,8 @@
     }
   },
   {
-    "eventId": "evt-9",
-    "sequence": "9",
+    "eventId": "evt-11",
+    "sequence": "11",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -667,8 +692,8 @@
     }
   },
   {
-    "eventId": "evt-10",
-    "sequence": "10",
+    "eventId": "evt-12",
+    "sequence": "12",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-player",
@@ -686,46 +711,46 @@
     }
   },
   {
-    "eventId": "evt-11",
-    "sequence": "11",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "tokenMoved": {
-      "tokenId": "tok-goblin-archer",
-      "sceneId": "ambush",
-      "from": {
-        "x": 19,
-        "y": 8
-      },
-      "to": {
-        "x": 2,
-        "y": 8
-      }
-    }
-  },
-  {
-    "eventId": "evt-12",
-    "sequence": "12",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "tokenMoved": {
-      "tokenId": "tok-goblin-archer",
-      "sceneId": "ambush",
-      "from": {
-        "x": 2,
-        "y": 8
-      },
-      "to": {
-        "x": 19,
-        "y": 8
-      }
-    }
-  },
-  {
     "eventId": "evt-13",
     "sequence": "13",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenMoved": {
+      "tokenId": "tok-goblin-archer",
+      "sceneId": "ambush",
+      "from": {
+        "x": 19,
+        "y": 8
+      },
+      "to": {
+        "x": 2,
+        "y": 8
+      }
+    }
+  },
+  {
+    "eventId": "evt-14",
+    "sequence": "14",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenMoved": {
+      "tokenId": "tok-goblin-archer",
+      "sceneId": "ambush",
+      "from": {
+        "x": 2,
+        "y": 8
+      },
+      "to": {
+        "x": 19,
+        "y": 8
+      }
+    }
+  },
+  {
+    "eventId": "evt-15",
+    "sequence": "15",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

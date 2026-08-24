@@ -1,6 +1,7 @@
 {
   "actor_id": "act-cutter",
   "name": "Goblin Cutter",
+  "kind": "non_party",
   "attributes": {
     "str": 1,
     "dex": 3,

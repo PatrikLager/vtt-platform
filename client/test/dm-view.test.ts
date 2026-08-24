@@ -2,6 +2,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 
 import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
+import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
@@ -184,7 +185,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
 test("a condition on an actor gets a removal button that sends removeCondition", () => {
   const st = newState();
   st.Actors["a1"] = {
-    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
@@ -288,7 +289,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
   const h = harness();
   for (const f of [
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
-    "actor-id", "actor-name", "actor-controller", "actor-json",
+    "actor-id", "actor-name", "actor-json",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text", "undo-from", "undo-to",
   ]) {
@@ -353,26 +354,86 @@ test("a scene's id and name are TRIMMED, and its dimensions become numbers", () 
   ]);
 });
 
-test("an actor's fields are trimmed, and a blank controller is sent as unset", () => {
+test("an actor's fields are trimmed", () => {
   const h = harness();
-  fill(h, { "actor-id": "  a1  ", "actor-name": "  Lera  ", "actor-controller": "   " });
+  fill(h, { "actor-id": "  a1  ", "actor-name": "  Lera  " });
+  (h.node.querySelector(".actor-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   h.action("add-actor").click();
   const [p] = payloads(h);
   expect(p!.case).toBe("addActor");
-  // addActor nests the payload under `actor` (commands.ts:205).
+  // addActor nests the payload under `actor` (commands.ts).
   const a = p!.value["actor"] as Record<string, unknown>;
   expect(a["actorId"]).toBe("a1");
   expect(a["name"]).toBe("Lera");
-  // `controller.value.trim() || undefined` — whitespace must not become a
-  // participant id of "", and commands.ts omits the key entirely when unset.
-  expect(a["controllerId"] ?? "").toBe("");
 });
 
-test("a named controller is carried through", () => {
+// --- creating an actor says what it is (actor-kind Task 7) ------------------
+
+test("the Add actor form asks what the creature is, and sends the answer", () => {
+  // The server refuses an add_actor that states no kind (gateway
+  // validateAddActor), so the console has to ASK — the same shape as the grant
+  // row's own selector one panel down, and for the same reason.
+  //
+  // BLANK by default: a pre-selected value is indistinguishable from a DM who
+  // never looked, which is the whole argument for refusing an unstated kind
+  // rather than defaulting one.
   const h = harness();
-  fill(h, { "actor-id": "a1", "actor-name": "Lera", "actor-controller": "  p-7  " });
+  const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
+  expect(kind).not.toBeNull();
+  expect(kind.value).toBe("");
+  expect(Array.from(kind.options).map((o) => o.value)).toEqual([
+    "",
+    "ACTOR_KIND_PARTY_MEMBER",
+    "ACTOR_KIND_NON_PARTY",
+  ]);
+
+  fill(h, { "actor-id": "a1", "actor-name": "Goblin" });
+  kind.value = "ACTOR_KIND_NON_PARTY";
   h.action("add-actor").click();
-  expect((payloads(h)[0]!.value["actor"] as Record<string, unknown>)["controllerId"]).toBe("p-7");
+  const [p] = payloads(h);
+  const a = p!.value["actor"] as Record<string, unknown>;
+  expect(a["kind"]).toBe(ActorKind.NON_PARTY);
+});
+
+test("an actor with no kind chosen is refused here, not sent and bounced", () => {
+  // A DM who fills in an id and a name and forgets the one question the form
+  // exists to ask would otherwise read a wire-level refusal for something the
+  // console simply failed to ask them.
+  const h = harness();
+  fill(h, { "actor-id": "a1", "actor-name": "Goblin" });
+  h.action("add-actor").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices[0]).toMatch(/what it is/i);
+});
+
+test("the Add actor form cannot hand a character to anyone", () => {
+  // Visibility spec §5.1's first rule, at the seat where a human could break
+  // it. The console used to carry a "controller participant id (optional)"
+  // box next to the id and the name, and typing into it created a PARTY
+  // MEMBER — the whole cloned Actor on every player's roster, plus MayPerch
+  // and eyes() open on it — with no refusal anywhere on the path, because
+  // commands.ts's addActor could not express a kind at all.
+  //
+  // The box is gone rather than validated: assignment is a separate, manual
+  // act (Patrik's ruling, 2026-08-24), and the console already has the
+  // control that performs it — the per-actor grant row further down this
+  // panel, which ASKS for a kind. Two boxes that both confer control is the
+  // two-writers shape this arc exists to remove.
+  const h = harness();
+  expect(h.node.querySelector('[data-field="actor-controller"]')).toBeNull();
+
+  fill(h, { "actor-id": "a1", "actor-name": "Lera" });
+  (h.node.querySelector(".actor-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
+  h.action("add-actor").click();
+  // The protobuf MESSAGE, not its JSON, so these read as the field defaults
+  // rather than as absent keys — "nobody controls this actor" is what an empty
+  // controller_id has always meant (Actor.controller_id's own doc comment).
+  // The absent-key half is pinned on the wire shape itself, in
+  // commands.test.ts's "addActor cannot confer control, whatever a caller
+  // passes it".
+  const a = payloads(h)[0]!.value["actor"] as Record<string, unknown>;
+  expect(a["controllerId"]).toBe("");
+  expect(a["controllerIds"]).toEqual([]);
 });
 
 test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", () => {
@@ -571,7 +632,7 @@ test("pasted JSON that does not parse is reported, not thrown", () => {
 test("pasted JSON that parses is sent as an addActor command", () => {
   const h = harness();
   const box = h.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement;
-  box.value = '{"actorId":"a9","name":"Nine"}';
+  box.value = '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}';
   box.dispatchEvent(new Event("input"));
   h.button("Add from JSON").click();
   expect(payloads(h)[0]!.case).toBe("addActor");
@@ -585,16 +646,22 @@ test("pasted JSON that parses is sent as an addActor command", () => {
 
 test("adding an actor clears exactly the actor fields", () => {
   const h = harness();
-  fill(h, { "actor-id": "a1", "actor-name": "Lera", "actor-controller": "p-7", "scene-id": "keep-me" });
-  for (const f of ["actor-id", "actor-name", "actor-controller", "scene-id"]) {
+  fill(h, { "actor-id": "a1", "actor-name": "Lera", "scene-id": "keep-me" });
+  for (const f of ["actor-id", "actor-name", "scene-id"]) {
     h.field(f).dispatchEvent(new Event("input"));
   }
+  const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
+  kind.value = "ACTOR_KIND_NON_PARTY";
+  kind.dispatchEvent(new Event("change"));
   h.action("add-actor").click();
 
   const next = harness();
   expect(next.field("actor-id").value).toBe("");
   expect(next.field("actor-name").value).toBe("");
-  expect(next.field("actor-controller").value).toBe("");
+  // The kind goes back to "unanswered" with the rest. A remembered kind is the
+  // one stale draft that would be actively dangerous: the next actor typed in
+  // would silently inherit the last one's standing.
+  expect((next.node.querySelector(".actor-kind") as HTMLSelectElement).value).toBe("");
   // A field belonging to another form must survive.
   expect(next.field("scene-id").value).toBe("keep-me");
 });
@@ -617,7 +684,7 @@ test("placing a token clears exactly the token fields", () => {
 test("adding an actor from JSON clears the paste box", () => {
   const h = harness();
   const box = h.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement;
-  box.value = '{"actorId":"a9","name":"Nine"}';
+  box.value = '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}';
   box.dispatchEvent(new Event("input"));
   h.button("Add from JSON").click();
 
@@ -781,7 +848,7 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   for (const f of ["scene-w", "scene-h", "token-x", "token-y", "undo-from", "undo-to"]) {
     expect(h.field(f).className).toBe("tiny");
   }
-  for (const f of ["session-name", "actor-controller", "note-text"]) {
+  for (const f of ["session-name", "note-text"]) {
     expect(h.field(f).className).toBe("wide");
   }
   expect((h.node.querySelector('[data-field="actor-json"]') as HTMLElement).className).toBe("paste");
@@ -796,7 +863,7 @@ test("every box carries a placeholder saying what belongs in it", () => {
   const h = harness();
   for (const f of [
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
-    "actor-id", "actor-name", "actor-controller",
+    "actor-id", "actor-name",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text", "undo-from", "undo-to",
   ]) {
@@ -819,7 +886,7 @@ function tableWithActor(): State {
   st.Actors["act-warden"] = {
     actorId: "act-warden", name: "Warden", moduleId: "",
     attributes: {}, resources: {},
-    controllerId: "p-ana", controllerIds: ["p-ana"],
+    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED,
   };
   return st;
 }
@@ -836,11 +903,83 @@ test("the DM can hand a character to another participant", () => {
 
   const target = row.querySelector(".grant-target") as HTMLSelectElement;
   target.value = "p-bo";
+  (row.querySelector(".grant-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   (row.querySelector(".grant") as HTMLButtonElement).click();
 
   expect(h.sent).toHaveLength(1);
   expect(h.sent[0]!.command.case).toBe("grantActorControl");
-  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "act-warden", participantId: "p-bo" });
+  expect(h.sent[0]!.command.value).toMatchObject({
+    actorId: "act-warden",
+    participantId: "p-bo",
+    kind: ActorKind.PARTY_MEMBER,
+  });
+});
+
+// --- the grant says what it is granting (visibility spec §5.1) ---------------
+//
+// The DM console is one of the three seams that issue a grant, and the server
+// now REFUSES one that states no kind. Without these the console would send a
+// grant the server bounces, and the DM would read a protocol error where a
+// question belonged.
+
+test("the DM console makes the DM say what the actor is", () => {
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  const kind = row.querySelector(".grant-kind") as HTMLSelectElement;
+  expect(kind).not.toBeNull();
+
+  // BLANK by default, and deliberately so: a pre-selected value is
+  // indistinguishable from a DM who never looked, which is the exact reason
+  // the server refuses an unstated kind rather than defaulting one.
+  expect(kind.value).toBe("");
+  expect(Array.from(kind.options).map((o) => o.value)).toEqual([
+    "",
+    "ACTOR_KIND_PARTY_MEMBER",
+    "ACTOR_KIND_NON_PARTY",
+  ]);
+  // Every option must be readable as a sentence about the table, not as a
+  // wire constant — the DM is choosing between a character and a monster.
+  for (const o of Array.from(kind.options)) {
+    expect(o.textContent!.length).toBeGreaterThan(0);
+  }
+});
+
+test("a grant with no kind chosen is refused here, not sent and bounced", () => {
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  (row.querySelector(".grant-target") as HTMLSelectElement).value = "p-bo";
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(0);
+  // The TEXT, not just that something was said. Grant has TWO refusal paths —
+  // no participant and no kind — so `notices.length > 0` would stay green
+  // against a console that never renders the kind select at all, as long as
+  // the participant list also went missing. Its Go counterpart pins the same
+  // thing (grant_validate_test.go requires the refusal to name the field),
+  // and for the same reason: a refusal that does not teach the rule is not
+  // the refusal this feature needs.
+  expect(h.notices).toHaveLength(1);
+  expect(h.notices[0]).toMatch(/party member/i);
+});
+
+test("the DM can hand a monster to a participant without promoting it", () => {
+  // The agent's case, at the human console: somebody runs the goblin, and the
+  // goblin stays a goblin. The two grants are byte-identical apart from this
+  // field, which is why the field exists.
+  const h = harness(tableWithActor(), [], {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+  });
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
+  (row.querySelector(".grant-target") as HTMLSelectElement).value = "p-bo";
+  (row.querySelector(".grant-kind") as HTMLSelectElement).value = "ACTOR_KIND_NON_PARTY";
+  (row.querySelector(".grant") as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.value).toMatchObject({ kind: ActorKind.NON_PARTY });
 });
 
 test("each current controller can be revoked individually", () => {
@@ -954,7 +1093,7 @@ test("each actor remembers its OWN grant choice", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, [], { participants: parts });
@@ -976,7 +1115,7 @@ test("the control panel's order does not depend on insertion order", () => {
   const st = newState();
   const mk = (id: string) => ({
     actorId: id, name: id, moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[], kind: ActorKind.UNSPECIFIED,
   });
   st.Actors["act-adder"] = mk("act-adder");
   st.Actors["act-warden"] = mk("act-warden");
@@ -991,7 +1130,7 @@ test("the control panel lists actors in a stable order", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const h = harness(st, [], { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
@@ -1023,6 +1162,25 @@ test("the DM's choice of participant survives a re-render", () => {
 
   const second = harness(st, [], { participants: parts });
   expect((second.node.querySelector(".grant-target") as HTMLSelectElement).value).toBe("p-bo");
+});
+
+test("the DM's answer to what the actor is survives a re-render too", () => {
+  // The same mechanism one field over, and it needs its own test rather than
+  // its neighbour's: the kind select is the field a DM is most likely to be
+  // part-way through when an event lands, because it is the question they have
+  // to stop and think about. Losing it silently resets to "what is it?", and
+  // the next Grant click is refused for a choice they already made.
+  const st = tableWithActor();
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const sel = first.node.querySelector(".grant-kind") as HTMLSelectElement;
+  sel.value = "ACTOR_KIND_NON_PARTY";
+  sel.dispatchEvent(new Event("change"));
+
+  const second = harness(st, [], { participants: parts });
+  expect((second.node.querySelector(".grant-kind") as HTMLSelectElement).value).toBe(
+    "ACTOR_KIND_NON_PARTY",
+  );
 });
 
 // --- sharing the table, and who may do what (plan J6) --------------------

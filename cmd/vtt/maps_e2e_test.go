@@ -83,7 +83,7 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ids.Close()
-	tok, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}

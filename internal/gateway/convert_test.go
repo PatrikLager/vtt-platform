@@ -380,6 +380,49 @@ func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 	}
 }
 
+// TestToEventGrantActorControlCarriesTheKind guards the SILENT half of
+// visibility spec §5.1's third rule. The refusal for a grant that states no
+// kind lives at the command boundary (validateGrantActorControl, called from
+// handleCommand), but nothing there helps if the conversion then drops the
+// field a caller did supply: the grant would be accepted, written kindless,
+// and read back as something nobody declared — the original leak's shape,
+// reached through the very check meant to close it, with ok=true.
+//
+// This is the same failure mode the CreateScene arm's own comment records
+// (Tiles/Objects dropped in conversion, silent, ok=true), which is why it is
+// asserted rather than assumed.
+func TestToEventGrantActorControlCarriesTheKind(t *testing.T) {
+	p := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
+	for _, kind := range []vttv1.ActorKind{
+		vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+	} {
+		t.Run(kind.String(), func(t *testing.T) {
+			cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_GrantActorControl{
+				GrantActorControl: &vttv1.GrantActorControl{
+					ActorId: "act-archer", ParticipantId: "p-2", Kind: kind},
+			}}
+
+			env, err := gateway.ToEvent(cmd, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, ok := env.Payload.(*vttv1.Envelope_ActorControlGranted)
+			if !ok {
+				t.Fatalf("payload = %T, want *Envelope_ActorControlGranted", env.Payload)
+			}
+			if got := g.ActorControlGranted.GetKind(); got != kind {
+				t.Fatalf("ActorControlGranted.Kind = %v, want %v — a kind dropped in "+
+					"conversion is an accepted grant that reads as a party member", got, kind)
+			}
+			if g.ActorControlGranted.GetActorId() != "act-archer" ||
+				g.ActorControlGranted.GetParticipantId() != "p-2" {
+				t.Fatalf("ActorControlGranted = %+v, want act-archer/p-2", g.ActorControlGranted)
+			}
+		})
+	}
+}
+
 func TestToEventUnknownCommandErrors(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	if env, err := gateway.ToEvent(&vttv1.ClientCommand{}, p); err == nil {

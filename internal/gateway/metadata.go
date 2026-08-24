@@ -184,20 +184,26 @@ func writeJSON(w http.ResponseWriter, v any) {
 // --- /api/me ---------------------------------------------------------------
 
 type meJSON struct {
-	ParticipantID string   `json:"participantId"`
-	Name          string   `json:"name"`
-	Role          string   `json:"role"`
-	Controls      []string `json:"controls"`
+	ParticipantID string `json:"participantId"`
+	Name          string `json:"name"`
+	Role          string `json:"role"`
 }
 
 // handleMe tells a client who its token makes it.
 //
 // Without this the client cannot know its own role or participant id, and
-// both are load-bearing: "which actors do I control" is an equality check
-// against participantId (Actor.controller_id), and the role decides which
-// panels render at all. Inferring either from the event stream would be
-// guesswork — a spectator who has caused no events is indistinguishable from
-// a player who has not acted yet.
+// both are load-bearing: "which actors do I control" is a membership test of
+// participantId in Actor.controller_ids, and the role decides which panels
+// render at all. Inferring either from the event stream would be guesswork —
+// a spectator who has caused no events is indistinguishable from a player who
+// has not acted yet.
+//
+// IT DOES NOT ANSWER WHAT YOU CONTROL, and that is the point (2026-08-24).
+// This route used to echo participants.controls, a column no grant ever wrote,
+// so it reported control that no rule in the system agreed with. The client
+// already asks the right source — client/src/player.ts's controlledActors
+// filters the folded st.Actors on controllerIds — so the identity it needs
+// from here is the participant id, and control follows from the log.
 //
 // It reveals nothing the caller did not already prove by holding the token.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -205,17 +211,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if p == nil {
 		return
 	}
-	// Non-nil so the client can iterate without a null check; a participant
-	// controlling nothing is the common case for a DM or spectator.
-	controls := p.Controls
-	if controls == nil {
-		controls = []string{}
-	}
 	writeJSON(w, meJSON{
 		ParticipantID: p.ID,
 		Name:          p.Name,
 		Role:          string(p.Role),
-		Controls:      controls,
 	})
 }
 

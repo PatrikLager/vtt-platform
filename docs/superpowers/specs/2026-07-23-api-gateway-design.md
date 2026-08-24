@@ -93,12 +93,26 @@ this is what makes the agent auditable.
 ## 5. Identity & invites
 
 - Campaign DB gains a `participants` table (managed by `internal/identity`):
-  id, display_name, role, controls (JSON array of controlled actor ids),
-  token_hash, revoked.
+  id, display_name, role, token_hash, revoked.
 - **Deliberately NOT event-sourced:** identity is infrastructure, not game
   history — revocation must not be undoable via game-log mechanics.
-- `vtt invite --campaign f.db --name Lera --role player --controls act-lera`
-  prints the one-time-shown token; `vtt revoke` flips the flag.
+- `vtt invite --campaign f.db --name Lera --role player` prints the
+  one-time-shown token; `vtt revoke` flips the flag.
+
+**CORRECTED 2026-08-24.** The table used to carry a `controls` column and the
+invite a `--controls` flag, both listed here as though they conferred control.
+They never did: nothing updated the column after invite time, no
+`ActorControlGranted` was ever emitted from it, and nothing that decided
+anything read it — authorization and the roster read `controller_ids` from the
+event log. A DM who invited someone "controlling act-lera" was told by
+`/api/me` that they did, and they did not.
+
+Both are removed. **An invite confers a seat and a role, and nothing else.**
+Control is conferred separately, by a grant, which also declares whether the
+character is a party member — see the visibility spec §5.1. That separation is
+deliberate: an invite can only ever express the FIRST assignment, while a player
+leaving, a DM covering for an absent one, or a creature changing hands are all
+grants regardless.
 - Token: 32 random bytes, stored as SHA-256 hash; compared constant-time at
   WebSocket connect; connection carries the participant identity thereafter.
 

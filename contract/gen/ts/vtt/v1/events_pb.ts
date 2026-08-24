@@ -2,8 +2,8 @@
 // @generated from file vtt/v1/events.proto (package vtt.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/events.proto.
  */
 export const file_vtt_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUi8gIKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBIj8KE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIh8KC1Rva2VuSGlkZGVuEhAKCHRva2VuX2lkGAEgASgJIsABCglTY2VuZVNlZW4SEAoIc2NlbmVfaWQYASABKAkSKwoFdGlsZXMYAiADKAsyHC52dHQudjEuU2NlbmVTZWVuLlRpbGVzRW50cnkSJAoHb2JqZWN0cxgDIAMoCzITLnZ0dC52MS5TY2VuZU9iamVjdBIPCgd2aXNpYmxlGAQgAygJGj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSLeCQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIABIrCgx0b2tlbl9oaWRkZW4YHiABKAsyEy52dHQudjEuVG9rZW5IaWRkZW5IABInCgpzY2VuZV9zZWVuGB8gASgLMhEudnR0LnYxLlNjZW5lU2VlbkgAQgkKB3BheWxvYWRCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("ChN2dHQvdjEvZXZlbnRzLnByb3RvEgZ2dHQudjEiJAoMR3JpZFBvc2l0aW9uEgkKAXgYASABKAUSCQoBeRgCIAEoBSJ2CgpUb2tlbk1vdmVkEhAKCHRva2VuX2lkGAEgASgJEhAKCHNjZW5lX2lkGAIgASgJEiIKBGZyb20YAyABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uEiAKAnRvGAQgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbiImCgdEaWVSb2xsEgsKA2RpZRgBIAEoBRIOCgZyZXN1bHQYAiABKAUiKQoITW9kaWZpZXISDgoGc291cmNlGAEgASgJEg0KBXZhbHVlGAIgASgFIr8BCgxBdHRhY2tSb2xsZWQSEwoLYXR0YWNrZXJfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmV4cHJlc3Npb24YAyABKAkSHgoFcm9sbHMYBCADKAsyDy52dHQudjEuRGllUm9sbBIjCgltb2RpZmllcnMYBSADKAsyEC52dHQudjEuTW9kaWZpZXISDQoFdG90YWwYBiABKAUSDgoGdmVyc3VzGAcgASgJEg8KB291dGNvbWUYCCABKAkiKAoIUmVzb3VyY2USDwoHY3VycmVudBgBIAEoBRILCgNtYXgYAiABKAUikwMKBUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJbW9kdWxlX2lkGAMgASgJEjEKCmF0dHJpYnV0ZXMYBCADKAsyHS52dHQudjEuQWN0b3IuQXR0cmlidXRlc0VudHJ5Ei8KCXJlc291cmNlcxgFIAMoCzIcLnZ0dC52MS5BY3Rvci5SZXNvdXJjZXNFbnRyeRIsCgttb2R1bGVfZGF0YRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNY29udHJvbGxlcl9pZBgHIAEoCRIWCg5jb250cm9sbGVyX2lkcxgIIAMoCRIfCgRraW5kGAkgASgOMhEudnR0LnYxLkFjdG9yS2luZBoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgFOgI4ARpCCg5SZXNvdXJjZXNFbnRyeRILCgNrZXkYASABKAkSHwoFdmFsdWUYAiABKAsyEC52dHQudjEuUmVzb3VyY2U6AjgBImAKE0FjdG9yQ29udHJvbEdyYW50ZWQSEAoIYWN0b3JfaWQYASABKAkSFgoOcGFydGljaXBhbnRfaWQYAiABKAkSHwoEa2luZBgDIAEoDjIRLnZ0dC52MS5BY3RvcktpbmQiPwoTQWN0b3JDb250cm9sUmV2b2tlZBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI2CgdUaWxlUmVmEgwKBGtpbmQYASABKAkSEAoIbWF0ZXJpYWwYAiABKAkSCwoDYXJ0GAMgASgJIsEBCgtTY2VuZU9iamVjdBIRCglvYmplY3RfaWQYASABKAkSDAoEa2luZBgCIAEoCRIgCgJhdBgDIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24SDQoFd2lkdGgYBCABKAUSDgoGaGVpZ2h0GAUgASgFEhgKEHJvdGF0aW9uX2RlZ3JlZXMYBiABKAUSFAoMYmxvY2tzX3NpZ2h0GAcgASgIEhMKC2Jsb2Nrc19tb3ZlGAggASgIEgsKA2FydBgJIAEoCSLsAQoMU2NlbmVDcmVhdGVkEhAKCHNjZW5lX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEgoKZ3JpZF93aWR0aBgDIAEoBRITCgtncmlkX2hlaWdodBgEIAEoBRIuCgV0aWxlcxgFIAMoCzIfLnZ0dC52MS5TY2VuZUNyZWF0ZWQuVGlsZXNFbnRyeRIkCgdvYmplY3RzGAYgAygLMhMudnR0LnYxLlNjZW5lT2JqZWN0Gj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIh8KC1Rva2VuSGlkZGVuEhAKCHRva2VuX2lkGAEgASgJIsABCglTY2VuZVNlZW4SEAoIc2NlbmVfaWQYASABKAkSKwoFdGlsZXMYAiADKAsyHC52dHQudjEuU2NlbmVTZWVuLlRpbGVzRW50cnkSJAoHb2JqZWN0cxgDIAMoCzITLnZ0dC52MS5TY2VuZU9iamVjdBIPCgd2aXNpYmxlGAQgAygJGj0KClRpbGVzRW50cnkSCwoDa2V5GAEgASgJEh4KBXZhbHVlGAIgASgLMg8udnR0LnYxLlRpbGVSZWY6AjgBIkAKCkRvb3JPcGVuZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIkAKCkRvb3JDbG9zZWQSEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIioKCkFjdG9yQWRkZWQSHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiawoLVG9rZW5QbGFjZWQSEAoIdG9rZW5faWQYASABKAkSEAoIc2NlbmVfaWQYAiABKAkSEAoIYWN0b3JfaWQYAyABKAkSJgoIcG9zaXRpb24YBCABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIh4KDlNlc3Npb25TdGFydGVkEgwKBG5hbWUYASABKAkiDgoMU2Vzc2lvbkVuZGVkIk0KD0V2ZW50c1JldHJhY3RlZBIVCg1mcm9tX3NlcXVlbmNlGAEgASgDEhMKC3RvX3NlcXVlbmNlGAIgASgDEg4KBnJlYXNvbhgDIAEoCSLFAQoLQWJpbGl0eVVzZWQSEAoIYWN0b3JfaWQYASABKAkSEgoKYWJpbGl0eV9pZBgCIAEoCRISCgp0YXJnZXRfaWRzGAMgAygJEicKBXJvbGxzGAQgAygLMhgudnR0LnYxLkFiaWxpdHlVc2VkLlJvbGwSFwoPb3V0Y29tZV9zdW1tYXJ5GAUgASgJGjoKBFJvbGwSEgoKZXhwcmVzc2lvbhgBIAEoCRIPCgdyZXN1bHRzGAIgAygFEg0KBXRvdGFsGAMgASgFImcKD1Jlc291cmNlQ2hhbmdlZBIQCghhY3Rvcl9pZBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRINCgVkZWx0YRgDIAEoBRIRCgluZXdfdmFsdWUYBCABKAUSDgoGcmVhc29uGAUgASgJIkoKEENvbmRpdGlvbkFwcGxpZWQSEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJEg4KBnNvdXJjZRgDIAEoCSJKChBDb25kaXRpb25SZW1vdmVkEhAKCGFjdG9yX2lkGAEgASgJEhQKDGNvbmRpdGlvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiWgoOTmFycmF0aW9uQWRkZWQSDAoEdGV4dBgBIAEoCRIKCgJhcxgCIAEoCRIXCg9hbmNob3JfZnJvbV9zZXEYAyABKAMSFQoNYW5jaG9yX3RvX3NlcRgEIAEoAyI4CgxOb3RlVXBzZXJ0ZWQSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkiGgoLTm90ZURlbGV0ZWQSCwoDa2V5GAEgASgJIjUKD0FkdmVudHVyZUxvYWRlZBIUCgxhZHZlbnR1cmVfaWQYASABKAkSDAoEbmFtZRgCIAEoCSLeCQoIRW52ZWxvcGUSEAoIZXZlbnRfaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAMSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnNlc3Npb25faWQYBCABKAkSEgoKYWN0b3Jfcm9sZRgFIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgGIAEoCRIpCgt0b2tlbl9tb3ZlZBgKIAEoCzISLnZ0dC52MS5Ub2tlbk1vdmVkSAASLQoNYXR0YWNrX3JvbGxlZBgLIAEoCzIULnZ0dC52MS5BdHRhY2tSb2xsZWRIABItCg1zY2VuZV9jcmVhdGVkGAwgASgLMhQudnR0LnYxLlNjZW5lQ3JlYXRlZEgAEikKC2FjdG9yX2FkZGVkGA0gASgLMhIudnR0LnYxLkFjdG9yQWRkZWRIABIrCgx0b2tlbl9wbGFjZWQYDiABKAsyEy52dHQudjEuVG9rZW5QbGFjZWRIABIxCg9zZXNzaW9uX3N0YXJ0ZWQYDyABKAsyFi52dHQudjEuU2Vzc2lvblN0YXJ0ZWRIABItCg1zZXNzaW9uX2VuZGVkGBAgASgLMhQudnR0LnYxLlNlc3Npb25FbmRlZEgAEjMKEGV2ZW50c19yZXRyYWN0ZWQYESABKAsyFy52dHQudjEuRXZlbnRzUmV0cmFjdGVkSAASKwoMYWJpbGl0eV91c2VkGBIgASgLMhMudnR0LnYxLkFiaWxpdHlVc2VkSAASMwoQcmVzb3VyY2VfY2hhbmdlZBgTIAEoCzIXLnZ0dC52MS5SZXNvdXJjZUNoYW5nZWRIABI1ChFjb25kaXRpb25fYXBwbGllZBgUIAEoCzIYLnZ0dC52MS5Db25kaXRpb25BcHBsaWVkSAASNQoRY29uZGl0aW9uX3JlbW92ZWQYFSABKAsyGC52dHQudjEuQ29uZGl0aW9uUmVtb3ZlZEgAEjEKD25hcnJhdGlvbl9hZGRlZBgWIAEoCzIWLnZ0dC52MS5OYXJyYXRpb25BZGRlZEgAEi0KDW5vdGVfdXBzZXJ0ZWQYFyABKAsyFC52dHQudjEuTm90ZVVwc2VydGVkSAASKwoMbm90ZV9kZWxldGVkGBggASgLMhMudnR0LnYxLk5vdGVEZWxldGVkSAASMwoQYWR2ZW50dXJlX2xvYWRlZBgZIAEoCzIXLnZ0dC52MS5BZHZlbnR1cmVMb2FkZWRIABI8ChVhY3Rvcl9jb250cm9sX2dyYW50ZWQYGiABKAsyGy52dHQudjEuQWN0b3JDb250cm9sR3JhbnRlZEgAEjwKFWFjdG9yX2NvbnRyb2xfcmV2b2tlZBgbIAEoCzIbLnZ0dC52MS5BY3RvckNvbnRyb2xSZXZva2VkSAASKQoLZG9vcl9vcGVuZWQYHCABKAsyEi52dHQudjEuRG9vck9wZW5lZEgAEikKC2Rvb3JfY2xvc2VkGB0gASgLMhIudnR0LnYxLkRvb3JDbG9zZWRIABIrCgx0b2tlbl9oaWRkZW4YHiABKAsyEy52dHQudjEuVG9rZW5IaWRkZW5IABInCgpzY2VuZV9zZWVuGB8gASgLMhEudnR0LnYxLlNjZW5lU2VlbkgAQgkKB3BheWxvYWQqXgoJQWN0b3JLaW5kEhoKFkFDVE9SX0tJTkRfVU5TUEVDSUZJRUQQABIbChdBQ1RPUl9LSU5EX1BBUlRZX01FTUJFUhABEhgKFEFDVE9SX0tJTkRfTk9OX1BBUlRZEAJCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message vtt.v1.GridPosition
@@ -262,6 +262,20 @@ export type Actor = Message<"vtt.v1.Actor"> & {
    * @generated from field: repeated string controller_ids = 8;
    */
   controllerIds: string[];
+
+  /**
+   * What this actor IS. The visibility roster, MayPerch and the spectator's
+   * eyes all key on this and never on who holds it (visibility spec §5.1);
+   * see ActorKind above for the rule and for what an absent value means.
+   *
+   * STATED AT CREATION, always: add_actor is refused without it, and so is an
+   * adventure's actors/*.json. An ungranted actor declaring PARTY_MEMBER is a
+   * pregenerated character waiting to be assigned, which the party is right to
+   * know about — a grant later restates the standing if it changes.
+   *
+   * @generated from field: vtt.v1.ActorKind kind = 9;
+   */
+  kind: ActorKind;
 };
 
 /**
@@ -272,9 +286,11 @@ export const ActorSchema: GenMessage<Actor> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 6);
 
 /**
- * ActorControlGranted adds a participant to an actor's controller set.
+ * ActorControlGranted adds a participant to an actor's controller set, and
+ * DECLARES WHAT THAT ACTOR IS while doing it.
  * Idempotent: granting to a participant who already holds control is not an
- * error and does not duplicate them.
+ * error and does not duplicate them — but it still records the kind, so a
+ * re-grant is how a charmed monster's standing is restated.
  *
  * @generated from message vtt.v1.ActorControlGranted
  */
@@ -288,6 +304,49 @@ export type ActorControlGranted = Message<"vtt.v1.ActorControlGranted"> & {
    * @generated from field: string participant_id = 2;
    */
   participantId: string;
+
+  /**
+   * What the actor IS, as of this grant (visibility spec §5.1, revised
+   * 2026-08-23).
+   *
+   * KIND LIVES HERE RATHER THAN ONLY ON Actor because kind is not a fact
+   * about a character — it is a fact about that character's STANDING RIGHT
+   * NOW. A charmed monster becomes a player's to run and then becomes a
+   * monster again. That is a TRANSITION, and a transition belongs on the
+   * event that makes it, not on a property stamped once at creation.
+   *
+   * It also dissolves an ambiguity no rule could have resolved. Two grants
+   * are byte-identical in every other respect: the DM assigning a pregen
+   * character to a player, and an agent taking a goblin to run it. The
+   * information that separates them was absent because nobody was asked.
+   * Ask at the grant and each case states its own answer.
+   *
+   * PRECEDENCE over Actor.kind, which ActorAdded also carries: THE LATER
+   * EVENT WINS, which is not a special rule but the fold's ordinary
+   * semantics — events in order, each stating the newer fact. ActorAdded's
+   * kind is what an actor is BORN as; a grant restates it. Any other
+   * precedence would freeze standing at creation, which is exactly the
+   * design this revision replaced.
+   *
+   * UNSPECIFIED here changes nothing: a grant that says nothing leaves the
+   * actor's kind alone. Clearing it would be a SILENT DEMOTION, since an
+   * absent kind is not a party member (see ActorKind) — the character would
+   * drop off its own party's roster on the next corner. Revocation likewise
+   * never clears kind: a player leaving the table does not turn their
+   * character into a monster.
+   *
+   * A GRANT THAT SAYS NOTHING IS REFUSED, at the command boundary
+   * (internal/gateway's validateGrantActorControl, called from handleCommand)
+   * and never in the fold: proto3 has no `required`, and the two seams answer
+   * different questions — the boundary decides what may be WRITTEN, the fold
+   * keeps the log's own words. The refusal is belt and braces rather than the
+   * only defence (silence fails closed either way), and it stays because a
+   * command that quietly demotes the character it is handing over is a wrong
+   * answer given confidently.
+   *
+   * @generated from field: vtt.v1.ActorKind kind = 3;
+   */
+  kind: ActorKind;
 };
 
 /**
@@ -1244,4 +1303,82 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
  */
 export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
   messageDesc(file_vtt_v1_events, 29);
+
+/**
+ * ActorKind is WHAT an actor is, and it is the ONLY thing the "always known"
+ * visibility exception may key on (visibility spec §5.1).
+ *
+ * Control is transient; what a creature IS is not. Before this field the roster
+ * exception read "has any controller", which got both ordinary cases backwards:
+ * a player's character run by the DM while its player is offline was still a
+ * party member and would have been dropped from every roster, and a charmed
+ * monster handed to a player was still a monster and had its whole stat block
+ * published to the party.
+ *
+ * AN ENUM RATHER THAN A BOOL, and not for symmetry with JoinDoor/PresenceState.
+ * The third case is foreseeable — a neutral, a familiar, a summon — and a bool
+ * would have to be RENAMED to admit it, which ADR-007 forbids. Growing this
+ * enum is additive; every future value is "not a party member" to the rule
+ * below until something deliberately says otherwise, so growth fails closed.
+ *
+ * UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and it means
+ * exactly one thing:
+ *
+ * 	an absent kind is NOT a party member. Always.
+ *
+ * No inference from control, no second branch, no special case. A reader that
+ * asks "but does somebody hold it?" is implementing a rule this contract
+ * deleted on 2026-08-24. The fold stores what the log said, verbatim; readers
+ * apply the sentence above and nothing else.
+ *
+ * THE RULE IT REPLACED, recorded because deleting it is the load-bearing part
+ * of this design rather than a tidy-up. There was a migration rule — "absent +
+ * has a controller -> party member; absent + none -> not" — whose only job was
+ * to keep logs written before this field existed behaving as they had. It is
+ * gone because there are no such logs, and because that arm is precisely what
+ * could not tell "a log written before kind existed" from "a grant issued today
+ * that forgot": every leak this design chased lived in that gap. With one rule
+ * the ambiguity has nowhere to live.
+ *
+ * ABSENCE IS NOT TOLERATED ON ANY COMMAND, and there are two: AddActor.actor's
+ * kind and GrantActorControl.kind are each refused when absent, so a caller who
+ * says nothing is asked rather than guessed at. Every path that gives an actor
+ * a standing therefore states it — including the authored one, where an
+ * adventure's actors/*.json must declare "party_member" or "non_party" or fail
+ * to load (internal/adventure).
+ *
+ * THE HAZARD WAS NEVER TWO WRITERS. IT WAS A WRITER THAT COULD STAY SILENT.
+ * The leak this field exists to close came from inference from absence — an
+ * actor holding a controller with no kind had to be guessed at, and the guess
+ * was wrong. Two writers are safe once neither can be mute, which is why
+ * creation and the grant may both speak.
+ *
+ * The grant's refusal in particular is belt and braces — silence fails closed
+ * either way — and it stays because a command that quietly demotes the
+ * character it was handing over is a wrong answer given confidently.
+ *
+ * @generated from enum vtt.v1.ActorKind
+ */
+export enum ActorKind {
+  /**
+   * @generated from enum value: ACTOR_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ACTOR_KIND_PARTY_MEMBER = 1;
+   */
+  PARTY_MEMBER = 1,
+
+  /**
+   * @generated from enum value: ACTOR_KIND_NON_PARTY = 2;
+   */
+  NON_PARTY = 2,
+}
+
+/**
+ * Describes the enum vtt.v1.ActorKind.
+ */
+export const ActorKindSchema: GenEnum<ActorKind> = /*@__PURE__*/
+  enumDesc(file_vtt_v1_events, 0);
 

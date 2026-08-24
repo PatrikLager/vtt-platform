@@ -27,7 +27,6 @@ import (
 // behavior — see the enforcement plan's note on coverage theater):
 //   - crypto/rand.Read failure in CreateInvite: crypto/rand does not fail on
 //     any supported platform; Go 1.24 made it panic rather than return.
-//   - json.Marshal([]string) failure: []string is always marshalable.
 //   - the subtle.ConstantTimeCompare mismatch branch in Verify: the row was
 //     selected BY that same hash (WHERE token_hash = ?), so a mismatch is
 //     unreachable by construction. It is documented defense-in-depth
@@ -50,26 +49,16 @@ func tamperRow(t *testing.T, path, column, value string) {
 	}
 }
 
-func TestVerifyFailsClosedOnCorruptControls(t *testing.T) {
-	d, path := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, []string{"act-lera"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tamperRow(t, path, "controls", "{not valid json")
-
-	p, err := d.Verify(token)
-	if err == nil {
-		t.Fatalf("want error for corrupt controls, got participant %+v", p)
-	}
-	if p != nil {
-		t.Errorf("want nil participant on error, got %+v", p)
-	}
-}
+// A TestVerifyFailsClosedOnCorruptControls used to sit here, tampering with
+// participants.controls and requiring Verify to refuse the row. The column was
+// deleted on 2026-08-24 — it recorded control a second time and granted
+// nothing — and with it went the only field Verify decoded rather than read.
+// Its sibling below, on the stored role, carries the fail-closed property that
+// remains reachable.
 
 func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 	d, path := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, []string{"act-lera"})
+	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +78,7 @@ func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 
 func TestVerifyRejectsEmptyStoredRole(t *testing.T) {
 	d, path := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +122,7 @@ func TestOperationsFailAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +131,7 @@ func TestOperationsFailAfterClose(t *testing.T) {
 	}
 
 	t.Run("CreateInvite", func(t *testing.T) {
-		if _, _, err := d.CreateInvite("Arel", identity.RoleDM, nil); err == nil {
+		if _, _, err := d.CreateInvite("Arel", identity.RoleDM); err == nil {
 			t.Error("want error after Close")
 		}
 	})

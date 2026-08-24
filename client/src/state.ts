@@ -14,6 +14,8 @@
 //
 //   Sessions is a Go slice: nil marshals as `null`, not `[]`.
 
+import type { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+
 /**
  * Tile mirrors internal/engine's Tile: one square's terrain, translated out
  * of the wire vtt.v1.TileRef at sceneCreated fold time. Kind is the closed
@@ -173,6 +175,26 @@ export interface Actor {
   controllerId: string;
   /** Every participant who may act as this actor. Authoritative. */
   controllerIds: string[];
+  /**
+   * What this actor IS — the only thing the server's "always known" visibility
+   * exception keys on (visibility spec §5.1).
+   *
+   * REQUIRED, not optional, like every other field here. Go's Actor is
+   * protobuf-generated and always has the field, so an optional one would put
+   * `undefined` in a mirror position where Go has 0 — a third state the dump
+   * comparison cannot express and the fold would have to guess at. UNSPECIFIED
+   * (0) is the "the log said nothing" value, and it is a real state rather than
+   * an error. What it MEANS belongs to the reader and never to the fold: an
+   * absent kind is not a party member, always, with nothing inferred from who
+   * controls the actor (§5.1, whose migration rule saying otherwise was deleted
+   * 2026-08-24).
+   *
+   * The client does not enforce visibility — the server projects it, and this
+   * client only ever sees what it was sent. Kind is carried so the fold stays a
+   * byte-exact mirror of `vtt state dump`, and so a future view can say "your
+   * party" without asking who holds whom.
+   */
+  kind: ActorKind;
 }
 
 export interface State {

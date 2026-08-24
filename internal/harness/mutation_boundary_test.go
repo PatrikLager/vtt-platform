@@ -305,7 +305,7 @@ func TestUnresolvedPlaceholderIsNamedExactly(t *testing.T) {
 			Name:         "unresolved",
 			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
 			Steps: []harness.Step{
-				{By: "dm", Command: []byte(`{"addActor":{"actor":{"actorId":"a","controllerId":"{{id:alice}}"}}}`),
+				{By: "dm", Command: []byte(`{"grantActorControl":{"actorId":"a","participantId":"{{id:alice}}","kind":"ACTOR_KIND_PARTY_MEMBER"}}`),
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
@@ -363,7 +363,7 @@ func TestEmptyPlaceholderNameIsReportedAsEmpty(t *testing.T) {
 			Name:         "empty-name",
 			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
 			Steps: []harness.Step{
-				{By: "dm", Command: []byte(`{"addActor":{"actor":{"controllerId":"{{id:}}"}}}`),
+				{By: "dm", Command: []byte(`{"grantActorControl":{"actorId":"a","participantId":"{{id:}}","kind":"ACTOR_KIND_PARTY_MEMBER"}}`),
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
@@ -674,6 +674,15 @@ func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
 // So this is a golden: the issuer sequence for the first lifecycle commands
 // of a fixed seed. It is deliberately narrow — the first four — so a genuine
 // generator change produces a small, readable diff rather than a wall.
+//
+// RE-DERIVED 2026-08-24, from "dm,agent,dm,dm,dm,agent", by the actor-kind
+// branch: add_actor stopped accepting a controller (visibility spec §5.1), so
+// assigning an actor to a player is now TWO commands, and planPendingGrant
+// issues the second one with the SAME issuer as the first rather than drawing
+// a fresh one. Hence the doubled entries — each pair is one add-then-grant,
+// not a changed coin flip. Measured over three runs before the golden was
+// moved; pickDMOrAgent itself is untouched, and the mutant this pins still
+// swaps every dm for an agent.
 func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ids := soakTestIDs()
@@ -689,7 +698,7 @@ func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
 		}
 		issuers := w.dispatchIssuers
 		got := strings.Join(issuers[:6], ",")
-		const want = "dm,agent,dm,dm,dm,agent"
+		const want = "dm,dm,agent,agent,dm,dm"
 		if got != want {
 			t.Errorf("issuer sequence for seed 7 = %q, want %q — a seed must reproduce a run "+
 				"exactly, issuers included", got, want)

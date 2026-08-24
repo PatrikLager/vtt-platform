@@ -6,11 +6,13 @@
       "controller_id": "p-player",
       "controller_ids": [
         "p-player"
-      ]
+      ],
+      "kind": 1
     },
     "act-ursus": {
       "actor_id": "act-ursus",
-      "name": "Ursus"
+      "name": "Ursus",
+      "kind": 2
     }
   },
   "Conditions": {},
@@ -31,7 +33,7 @@
       "ID": "sess-1",
       "Name": "Exit Scenario",
       "StartSeq": 1,
-      "EndSeq": 10
+      "EndSeq": 11
     }
   ],
   "Tokens": {
@@ -50,5 +52,5 @@
       "Y": 0
     }
   },
-  "headSequence": 10
+  "headSequence": 11
 }

@@ -45,6 +45,63 @@ message Resource {
   int32 max = 2;
 }
 
+// ActorKind is WHAT an actor is, and it is the ONLY thing the "always known"
+// visibility exception may key on (visibility spec §5.1).
+//
+// Control is transient; what a creature IS is not. Before this field the roster
+// exception read "has any controller", which got both ordinary cases backwards:
+// a player's character run by the DM while its player is offline was still a
+// party member and would have been dropped from every roster, and a charmed
+// monster handed to a player was still a monster and had its whole stat block
+// published to the party.
+//
+// AN ENUM RATHER THAN A BOOL, and not for symmetry with JoinDoor/PresenceState.
+// The third case is foreseeable — a neutral, a familiar, a summon — and a bool
+// would have to be RENAMED to admit it, which ADR-007 forbids. Growing this
+// enum is additive; every future value is "not a party member" to the rule
+// below until something deliberately says otherwise, so growth fails closed.
+//
+// UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and it means
+// exactly one thing:
+//
+//	an absent kind is NOT a party member. Always.
+//
+// No inference from control, no second branch, no special case. A reader that
+// asks "but does somebody hold it?" is implementing a rule this contract
+// deleted on 2026-08-24. The fold stores what the log said, verbatim; readers
+// apply the sentence above and nothing else.
+//
+// THE RULE IT REPLACED, recorded because deleting it is the load-bearing part
+// of this design rather than a tidy-up. There was a migration rule — "absent +
+// has a controller -> party member; absent + none -> not" — whose only job was
+// to keep logs written before this field existed behaving as they had. It is
+// gone because there are no such logs, and because that arm is precisely what
+// could not tell "a log written before kind existed" from "a grant issued today
+// that forgot": every leak this design chased lived in that gap. With one rule
+// the ambiguity has nowhere to live.
+//
+// ABSENCE IS NOT TOLERATED ON ANY COMMAND, and there are two: AddActor.actor's
+// kind and GrantActorControl.kind are each refused when absent, so a caller who
+// says nothing is asked rather than guessed at. Every path that gives an actor
+// a standing therefore states it — including the authored one, where an
+// adventure's actors/*.json must declare "party_member" or "non_party" or fail
+// to load (internal/adventure).
+//
+// THE HAZARD WAS NEVER TWO WRITERS. IT WAS A WRITER THAT COULD STAY SILENT.
+// The leak this field exists to close came from inference from absence — an
+// actor holding a controller with no kind had to be guessed at, and the guess
+// was wrong. Two writers are safe once neither can be mute, which is why
+// creation and the grant may both speak.
+//
+// The grant's refusal in particular is belt and braces — silence fails closed
+// either way — and it stays because a command that quietly demotes the
+// character it was handing over is a wrong answer given confidently.
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  ACTOR_KIND_PARTY_MEMBER = 1;
+  ACTOR_KIND_NON_PARTY = 2;
+}
+
 // Engine-generic actor: named stats and pools are open maps; module_data is an
 // opaque module-owned blob the contract never inspects (see README: Struct rules).
 message Actor {
@@ -84,14 +141,63 @@ message Actor {
   // (internal/gateway/authz.go), so the DM acts on any actor without anyone
   // being granted or revoked anything.
   repeated string controller_ids = 8;
+  // What this actor IS. The visibility roster, MayPerch and the spectator's
+  // eyes all key on this and never on who holds it (visibility spec §5.1);
+  // see ActorKind above for the rule and for what an absent value means.
+  //
+  // STATED AT CREATION, always: add_actor is refused without it, and so is an
+  // adventure's actors/*.json. An ungranted actor declaring PARTY_MEMBER is a
+  // pregenerated character waiting to be assigned, which the party is right to
+  // know about — a grant later restates the standing if it changes.
+  ActorKind kind = 9;
 }
 
-// ActorControlGranted adds a participant to an actor's controller set.
+// ActorControlGranted adds a participant to an actor's controller set, and
+// DECLARES WHAT THAT ACTOR IS while doing it.
 // Idempotent: granting to a participant who already holds control is not an
-// error and does not duplicate them.
+// error and does not duplicate them — but it still records the kind, so a
+// re-grant is how a charmed monster's standing is restated.
 message ActorControlGranted {
   string actor_id = 1;
   string participant_id = 2;
+  // What the actor IS, as of this grant (visibility spec §5.1, revised
+  // 2026-08-23).
+  //
+  // KIND LIVES HERE RATHER THAN ONLY ON Actor because kind is not a fact
+  // about a character — it is a fact about that character's STANDING RIGHT
+  // NOW. A charmed monster becomes a player's to run and then becomes a
+  // monster again. That is a TRANSITION, and a transition belongs on the
+  // event that makes it, not on a property stamped once at creation.
+  //
+  // It also dissolves an ambiguity no rule could have resolved. Two grants
+  // are byte-identical in every other respect: the DM assigning a pregen
+  // character to a player, and an agent taking a goblin to run it. The
+  // information that separates them was absent because nobody was asked.
+  // Ask at the grant and each case states its own answer.
+  //
+  // PRECEDENCE over Actor.kind, which ActorAdded also carries: THE LATER
+  // EVENT WINS, which is not a special rule but the fold's ordinary
+  // semantics — events in order, each stating the newer fact. ActorAdded's
+  // kind is what an actor is BORN as; a grant restates it. Any other
+  // precedence would freeze standing at creation, which is exactly the
+  // design this revision replaced.
+  //
+  // UNSPECIFIED here changes nothing: a grant that says nothing leaves the
+  // actor's kind alone. Clearing it would be a SILENT DEMOTION, since an
+  // absent kind is not a party member (see ActorKind) — the character would
+  // drop off its own party's roster on the next corner. Revocation likewise
+  // never clears kind: a player leaving the table does not turn their
+  // character into a monster.
+  //
+  // A GRANT THAT SAYS NOTHING IS REFUSED, at the command boundary
+  // (internal/gateway's validateGrantActorControl, called from handleCommand)
+  // and never in the fold: proto3 has no `required`, and the two seams answer
+  // different questions — the boundary decides what may be WRITTEN, the fold
+  // keeps the log's own words. The refusal is belt and braces rather than the
+  // only defence (silence fails closed either way), and it stays because a
+  // command that quietly demotes the character it is handing over is a wrong
+  // answer given confidently.
+  ActorKind kind = 3;
 }
 
 // ActorControlRevoked removes a participant from an actor's controller set.

@@ -44,7 +44,6 @@ func TestInviteThenRevoke(t *testing.T) {
 		"--campaign", campaignPath,
 		"--name", "Lera",
 		"--role", "player",
-		"--controls", "act-lera",
 	)
 	if err != nil {
 		t.Fatalf("invite: unexpected error: %v", err)

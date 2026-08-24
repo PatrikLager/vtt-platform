@@ -41,12 +41,22 @@ practice loop both follow.
 
 ## 4. Scenario format (v1 vocabulary — deliberately small)
 
+**CORRECTED 2026-08-24.** The participant below used to carry
+`"controls": ["act-lera"]`. That key no longer exists, and `LoadScenario` sets
+`DisallowUnknownFields` — so a scenario copied off this page would have failed
+to load. A spec that hands you a broken file is worse than one merely out of
+date, which is why this is the first of the three corrections and not the last.
+
+The key was deleted rather than wired up because it never conferred anything:
+no `ActorControlGranted` was ever emitted from it. Control comes from a grant
+step, and only from there.
+
 ```json
 {
   "name": "three-role-exit",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "lera", "role": "player", "controls": ["act-lera"]},
+    {"name": "lera", "role": "player"},
     {"name": "gm-bot", "role": "agent"},
     {"name": "watcher", "role": "spectator"}
   ],

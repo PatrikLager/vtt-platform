@@ -60,6 +60,63 @@ func preBudgetCampaign(t *testing.T) string {
 	return path
 }
 
+// A withControlColumnCampaign fixture and FOUR tests over it used to sit here,
+// arming faults on the migration that dropped participants.controls: the DROP
+// itself, the participants PRAGMA before the lock, the same PRAGMA under it,
+// and a no-fault control proving the fixture's column really went. That
+// migration was removed on 2026-08-24 — no campaign is in use, so it guarded no
+// data while charging every existing campaign one writable open — and none of
+// those statements exists any more. Run unchanged against the removal, all four
+// failed: three on "the fault was never reached", the fourth because the column
+// is still selectable afterwards. There is nothing left for them to arm.
+//
+// The under-lock coverage they carried between them was the PARTICIPANTS shape
+// read's error arm, and it went with the code it guarded — so it cost nothing
+// that survives. Not to be confused with migrateLocked's join_access re-read,
+// which has an error arm of its own that was ALREADY uncovered at HEAD (profile
+// `287.16,289.3 1 0`) and has never been reachable through testdb at all, for
+// the reason stated at that arm.
+//
+// What this change DID cost on a surviving line came from identity_test.go
+// rather than from here, and it belonged to the joining-a-table arc:
+// TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign below re-pins it.
+
+func TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign(t *testing.T) {
+	// The door repair is the migration's one DATA write, and it is the arm that
+	// lost its witness on 2026-08-24: the only test that reached it was
+	// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen, deleted
+	// with the controls migration, which hit it by accident rather than on
+	// purpose. On read-only media BEGIN IMMEDIATE does not fail (SQLite defers
+	// the write lock) and that fixture already had both budget columns, so this
+	// UPDATE was the first statement that actually tried to write. Measured:
+	// identity.go's arm read `1 1` at HEAD and `1 0` after the deletion.
+	//
+	// It belongs to the joining-a-table arc, not to this one, which is why it is
+	// re-pinned deliberately instead of being left to the coverage floor's
+	// slack. Swallowing this error leaves an open door budgeted at 0, and 0
+	// admits nobody — the DM shares a link that reads open and turns everyone
+	// away, with no error anywhere to say why.
+	withFaultDriver(t)
+	// A PRE-BUDGET campaign, so migrationPending answers yes on the missing
+	// column BEFORE its own budget SELECT, leaving the single armed fault
+	// unspent for the UPDATE under the lock.
+	path := preBudgetCampaign(t)
+
+	// The UPDATE's own prefix. `WHERE open = 1 AND admit_limit = 0` would match
+	// migrationPending's SELECT first and spend the fault before the lock.
+	tripped := testdb.Arm("UPDATE join_access SET admit_limit", errDBDown)
+	d, err := Open(path)
+	if !tripped() {
+		t.Fatal("the fault was never reached — this test proved nothing")
+	}
+	if err == nil {
+		d.Close()
+		t.Fatal("a migration that could not budget an already-open door opened anyway — " +
+			"the door still reads open with a budget of 0, so it refuses every joiner " +
+			"the DM sent the link to, and nothing reported the failed write")
+	}
+}
+
 func TestAMigrationThatCannotStartRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
@@ -220,9 +277,12 @@ func TestOpeningWithAnUnusableDriverIsReported(t *testing.T) {
 }
 
 func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
-	// The fixture above is load-bearing for four tests: if DROP COLUMN quietly
+	// The fixture above is load-bearing for FIVE tests: if DROP COLUMN quietly
 	// stopped working, they would all arm faults against a migration that had
-	// nothing to do, and all pass while proving nothing.
+	// nothing to do, and all pass while proving nothing. (Four until
+	// 2026-08-24; the budget-repair test added that day made it five. The count
+	// is written out because it is the kind of number that rots silently — it
+	// already read four while five tests used the fixture.)
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
 

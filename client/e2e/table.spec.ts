@@ -78,17 +78,35 @@ test("a DM starts a session, creates a scene and loads an adventure", async ({ p
   // Hand an actor to the player. The adventure's own actors carry no
   // controller_id — they are DM-run until assigned — and the gateway
   // authorizes moves by that field, so this step is what makes the player
-  // able to act at all. It also exercises the console's add-actor and
-  // place-token forms, which is why it is done through the UI.
+  // able to act at all. It also exercises the console's add-actor, grant and
+  // place-token controls, which is why it is done through the UI.
+  //
+  // TWO STEPS, and that is the point rather than an inconvenience (visibility
+  // spec §5.1, Patrik's ruling 2026-08-24). Creating the actor makes a
+  // character; the grant gives it a controller AND says what it is. The
+  // add-actor form used to carry a controller box that did both at once and
+  // could not state a kind, which made Lera a party member by accident of the
+  // migration rule rather than by anybody's decision.
   const sceneId = await page.locator(".grid").getAttribute("data-scene-id");
   await page.locator('[data-field="actor-id"]').fill("act-lera");
   await page.locator('[data-field="actor-name"]').fill("Lera");
-  await page.locator('[data-field="actor-controller"]').fill(ids.player);
+  // The form asks what the creature IS, and the server refuses the command
+  // without an answer (actor-kind Task 7). Lera is a player character before
+  // anybody is assigned to her — that is what a pregenerated sheet is.
+  await page.locator(".actor-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
   await page.locator('[data-action="add-actor"]').click();
   await page.waitForTimeout(400);
   // Checked here so a refusal is reported at the action that caused it,
   // rather than surfacing two steps later as a missing token.
   await expectNoRefusal(page, "add actor");
+
+  const grantRow = page.locator('.control-actor[data-actor="act-lera"]');
+  await expect(grantRow).toBeVisible({ timeout: 10_000 });
+  await grantRow.locator(".grant-target").selectOption(ids.player);
+  await grantRow.locator(".grant-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
+  await grantRow.locator("button.grant").click();
+  await page.waitForTimeout(400);
+  await expectNoRefusal(page, "grant control");
 
   await page.locator('[data-field="token-id"]').fill("tok-lera");
   await page.locator('[data-field="token-scene"]').fill(sceneId ?? "");

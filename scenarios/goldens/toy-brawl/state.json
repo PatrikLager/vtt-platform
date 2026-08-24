@@ -19,7 +19,8 @@
       "controller_id": "p-brawler",
       "controller_ids": [
         "p-brawler"
-      ]
+      ],
+      "kind": 1
     },
     "act-patron": {
       "actor_id": "act-patron",
@@ -42,7 +43,8 @@
       "controller_id": "p-patron",
       "controller_ids": [
         "p-patron"
-      ]
+      ],
+      "kind": 1
     }
   },
   "Conditions": {
@@ -65,7 +67,7 @@
       "ID": "sess-1",
       "Name": "Toy Brawl",
       "StartSeq": 1,
-      "EndSeq": 11
+      "EndSeq": 13
     }
   ],
   "Tokens": {
@@ -84,5 +86,5 @@
       "Y": 0
     }
   },
-  "headSequence": 11
+  "headSequence": 13
 }

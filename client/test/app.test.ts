@@ -182,7 +182,7 @@ test("an unfoldable log replaces the board with the reason, not a plausible wron
   // player to act on a position that never existed. session.ts documents
   // that choice; this pins that app.ts actually surfaces it.
   localStorage.setItem("vtt.token", "tok-dm");
-  stubMetadata({ "/api/me": { participantId: "p", name: "P", role: "spectator", controls: [] } });
+  stubMetadata({ "/api/me": { participantId: "p", name: "P", role: "spectator" } });
   useFakeSocket();
 
   const r = root();
@@ -201,7 +201,7 @@ test("an unfoldable log replaces the board with the reason, not a plausible wron
 test("a DM identity gets the console, and its actions reach the socket", async () => {
   localStorage.setItem("vtt.token", "tok-dm");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [{ id: "a-1", name: "Cave" }] },
   });
@@ -234,7 +234,7 @@ test("a DM identity gets the console, and its actions reach the socket", async (
 test("a refused command is reported verbatim rather than silently doing nothing", async () => {
   localStorage.setItem("vtt.token", "tok-dm");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -352,7 +352,7 @@ test("before anything connects the page says connecting, with no toast", async (
 test("a spectator gets neither the player panel nor the DM console", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "S", role: "spectator", controls: [] },
+    "/api/me": { participantId: "p", name: "S", role: "spectator" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -369,7 +369,7 @@ test("a spectator gets neither the player panel nor the DM console", async () =>
 test("a player gets the panel but not the console", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Lera", role: "player", controls: ["a1"] },
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -389,7 +389,7 @@ test("an agent is treated as a DM: panel AND console", async () => {
   // test would quietly strip the agent of half its interface.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Agent", role: "agent", controls: [] },
+    "/api/me": { participantId: "p", name: "Agent", role: "agent" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -409,7 +409,7 @@ test("the adventures list reaches the DM console", async () => {
   // unless the list itself is asserted.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [{ id: "keep", name: "The Cold Keep" }] },
   });
@@ -428,7 +428,7 @@ test("delivered events reach both the feed and the DM console's log", async () =
   // with no story beside it.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -457,7 +457,7 @@ test("a DM gets the player panel as well as the console", async () => {
   // fully wired.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -492,7 +492,7 @@ test("an adventures fetch that never happens leaves the console's list empty", a
   // with the same empty list and prove nothing.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
   });
   useFakeSocket();
   const r = root();
@@ -525,7 +525,7 @@ test("a configured map's pack is fetched and its images requested with the Beare
     const path = new URL(String(input)).pathname;
     asked.push({ path, auth: (init?.headers as Record<string, string> | undefined)?.["Authorization"] ?? null });
     if (path === "/api/me") {
-      return Response.json({ participantId: "p", name: "DM", role: "dm", controls: [] });
+      return Response.json({ participantId: "p", name: "DM", role: "dm" });
     }
     if (path === "/api/ruleset") {
       return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
@@ -599,7 +599,7 @@ test("the standard baseline pack is fetched unconditionally, with NO Authorizati
     const path = new URL(String(input)).pathname;
     asked.push({ path, auth: (init?.headers as Record<string, string> | undefined)?.["Authorization"] ?? null });
     if (path === "/api/me") {
-      return Response.json({ participantId: "p", name: "DM", role: "dm", controls: [] });
+      return Response.json({ participantId: "p", name: "DM", role: "dm" });
     }
     if (path === "/api/ruleset") {
       return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
@@ -642,11 +642,20 @@ test("the standard baseline pack is fetched unconditionally, with NO Authorizati
 });
 
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
+// TWO EVENTS PER CHARACTER, because the fold refuses an actorAdded that names
+// a controller: creation makes a character, a grant hands it over (visibility
+// spec §5.1, 2026-08-24). This is also the shape the server's own projection
+// now sends a seat — an introduction with the grants behind it.
 function seedTable(sock: FakeSocket, actorId = "a1", participantId = "p") {
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera", controllerId: participantId } } }));
-  sock.deliver(envelope(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId, position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera" } } }));
+  sock.deliver(
+    envelope(4, {
+      actorControlGranted: { actorId, participantId, kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId, position: { x: 1, y: 1 } } }));
 }
 
 test("the ruleset's abilities reach the player panel, and nothing else does", async () => {
@@ -656,7 +665,7 @@ test("the ruleset's abilities reach the player panel, and nothing else does", as
   // which is why an earlier version of this test proved nothing.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Lera", role: "player", controls: ["a1"] },
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
     "/api/ruleset": {
       id: "r", name: "R", conditions: [], resources: [],
       abilities: [{ id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } }],
@@ -682,7 +691,7 @@ test("a ruleset that never loads leaves the panel with no ability list at all", 
   // silent by design, so whatever `abilities` started as is what the panel
   // shows forever. It must start EMPTY.
   localStorage.setItem("vtt.token", "tok");
-  stubMetadata({ "/api/me": { participantId: "p", name: "Lera", role: "player", controls: ["a1"] } });
+  stubMetadata({ "/api/me": { participantId: "p", name: "Lera", role: "player" } });
   useFakeSocket();
   const r = root();
   const s = boot(r);
@@ -701,7 +710,7 @@ test("clicking the board moves the player's token", async () => {
   // its `if (cmd)` guard were free to disappear.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Lera", role: "player", controls: ["a1"] },
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -728,7 +737,7 @@ test("a spectator's clicks on the board send nothing", async () => {
   // board must not even offer the affordance.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Watcher", role: "spectator", controls: [] },
+    "/api/me": { participantId: "p", name: "Watcher", role: "spectator" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -751,7 +760,7 @@ test("a spectator's clicks on the board send nothing", async () => {
 async function dmTable(routes: Record<string, unknown>) {
   localStorage.setItem("vtt.token", "tok-dm");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
     ...routes,
@@ -877,7 +886,7 @@ test("a null move command is never handed to send, even before the socket opens"
   // guard announces itself.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Lera", role: "player", controls: ["a1"] },
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -888,7 +897,12 @@ test("a null move command is never handed to send, even before the socket opens"
   // Deliberately NOT opened. Frames still arrive; the socket is not writable.
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", controllerId: "p" } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(
+    envelope(4, {
+      actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
 
   const board = r.querySelector(".grid") as HTMLElement;
@@ -977,7 +991,7 @@ test("presence reaches the DM console's grant dropdown", async () => {
   // seam. The gateway's ToEvent arm was the same bug one layer down.
   localStorage.setItem("vtt.token", "tok-dm");
   stubMetadata({
-    "/api/me": { participantId: "p-dm", name: "DM", role: "dm", controls: [] },
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
     "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
     "/api/adventures": { adventures: [] },
   });
@@ -1189,7 +1203,7 @@ test("a DM's roster learns about somebody who joins after the console loaded", a
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/join-link") return Response.json({ open: true, secret: "s3cret" });
     if (path === "/api/participants") {
@@ -1252,7 +1266,7 @@ test("a promoted spectator's own screen catches up without reconnecting", async 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+      return Response.json({ participantId: "p-me", name: "Robin", role });
     }
     return new Response("", { status: 404 });
   }) as typeof fetch;
@@ -1262,7 +1276,12 @@ test("a promoted spectator's own screen catches up without reconnecting", async 
   await settle();
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash" } } }));
+  sock.deliver(
+    envelope(2, {
+      actorControlGranted: { actorId: "a1", participantId: "p-me", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
   expect(r.querySelector(".player")).toBeNull(); // a spectator watches
 
@@ -1291,7 +1310,7 @@ test("only a DM or agent reads the join link, and a refusal does not become an u
     const path = new URL(String(input)).pathname;
     asked.push(path);
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-1", name: "Lera", role: "player", controls: [] });
+      return Response.json({ participantId: "p-1", name: "Lera", role: "player" });
     }
     if (path === "/api/join-link" || path === "/api/participants") {
       return new Response("gateway: not authorized", { status: 403 });
@@ -1331,7 +1350,7 @@ test("a DM whose credential is pulled mid-session loses the panels, not the page
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/join-link") {
       return allowed
@@ -1379,7 +1398,7 @@ test("an AGENT gets the sharing panel too, and a presence frame keeps the roster
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
       meCalls++;
-      return Response.json({ participantId: "p-a", name: "Aide", role: "agent", controls: [] });
+      return Response.json({ participantId: "p-a", name: "Aide", role: "agent" });
     }
     if (path === "/api/join-link") return Response.json({ open: false, secret: "s3cret" });
     if (path === "/api/participants") {
@@ -1432,7 +1451,7 @@ test("a batch naming me AND somebody else still re-reads my own role", async () 
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
       meCalls++;
-      return Response.json({ participantId: "p-me", name: "Robin", role, controls: ["a1"] });
+      return Response.json({ participantId: "p-me", name: "Robin", role });
     }
     return new Response("", { status: 404 });
   }) as typeof fetch;
@@ -1442,7 +1461,12 @@ test("a batch naming me AND somebody else still re-reads my own role", async () 
   await settle();
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash" } } }));
+  sock.deliver(
+    envelope(2, {
+      actorControlGranted: { actorId: "a1", participantId: "p-me", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
   const before = meCalls;
 
@@ -1478,7 +1502,7 @@ test("a network blip keeps the DM's panels; only a refusal takes them away", asy
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/join-link" || path === "/api/participants") {
       if (mode === "blip") throw new TypeError("Failed to fetch");
@@ -1532,7 +1556,7 @@ test("a slow roster answer cannot overwrite a fresher one", async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/join-link") return Response.json({ open: true, secret: "s" });
     if (path === "/api/participants") {
@@ -1587,7 +1611,7 @@ test("a stale refusal cannot clear a panel that has been refreshed since", async
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/participants") {
       return Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]);
@@ -1641,7 +1665,7 @@ test("a stale join-link answer cannot overwrite a fresher one", async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/participants") {
       return Response.json([{ participantId: "p-dm", name: "Ari", role: "dm" }]);
@@ -1690,7 +1714,7 @@ test("a refusal DOES clear the roster, and a stale one does not", async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/me") {
-      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm", controls: [] });
+      return Response.json({ participantId: "p-dm", name: "Ari", role: "dm" });
     }
     if (path === "/api/join-link") return Response.json({ open: true, secret: "s" });
     if (path === "/api/participants") {

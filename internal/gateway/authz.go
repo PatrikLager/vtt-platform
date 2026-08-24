@@ -85,10 +85,11 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// character — and the DM and the agent see everything already, so there is
 	// no shoulder for them to gain.
 	//
-	// The row alone is not the whole rule. A perch may only target a
-	// player-controlled actor, which Authorize asks MayPerch below, in the
-	// section that runs for every role; the handler is serve's
-	// handleSetViewpoint, and it appends nothing.
+	// The row alone is not the whole rule. A perch may only target a PARTY
+	// MEMBER (visibility spec §5.1 — the actor's own kind, not whoever holds
+	// it), which Authorize asks MayPerch below, in the section that runs for
+	// every role; the handler is serve's handleSetViewpoint, and it appends
+	// nothing.
 	"set_viewpoint": {identity.RoleSpectator: true},
 }
 
@@ -116,9 +117,9 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	}
 	// set_viewpoint's own additional check, the same shape as the promotion
 	// target above and for the same reason: it bounds what the command may
-	// NAME, not who may issue it. A perch may only target a player-controlled
-	// actor (visibility spec §3.1.1) — see MayPerch, which is where that rule
-	// and its argument live.
+	// NAME, not who may issue it. A perch may only target a PARTY MEMBER
+	// (visibility spec §3.1.1, as §5.1 amended it) — see MayPerch, which is
+	// where that rule and its argument live.
 	//
 	// Above the player-only section deliberately. Every other additional check
 	// in this function is a rule about players; this one is a rule about

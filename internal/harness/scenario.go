@@ -55,13 +55,29 @@ type Scenario struct {
 }
 
 // Participant declares one connection the engine dials at scenario start
-// (after=0): a display Name (Step.By and reconnect steps reference it),
-// authz Role, and — for player-role participants — the actor ids Controls
-// lists (informational at this layer; authz enforcement lives server-side).
+// (after=0): a display Name (Step.By and reconnect steps reference it) and an
+// authz Role. Nothing else — a participant IS a connection at a role here.
+//
+// There is no "controls" key (2026-08-24). One existed, was described in this
+// comment as "informational at this layer", and was informational everywhere
+// else too: it reached identity.CreateInvite and stopped. Control in a
+// scenario has always come from its STEPS — which is why removing the key from
+// all six scenarios that declared it left every golden stream byte-identical.
+//
+// Those steps are now exactly ONE command: grant_actor_control. An add_actor
+// carrying a controllerId was the other route until later the same day, and it
+// is refused at the command boundary and in the fold alike (visibility spec
+// §5.1) — so a scenario that wants a player to hold a character writes two
+// steps, and the second one says what the character is.
+//
+// THE FIRST ONE SAYS SO TOO, as of the same day: an add_actor step must carry
+// a "kind" ("ACTOR_KIND_PARTY_MEMBER" or "ACTOR_KIND_NON_PARTY") or the server
+// refuses it (gateway validateAddActor). Both writers of an actor's standing
+// now speak, which is what makes two writers safe — the hazard was never
+// multiplicity, it was a writer that could stay silent.
 type Participant struct {
-	Name     string   `json:"name"`
-	Role     string   `json:"role"`
-	Controls []string `json:"controls,omitempty"`
+	Name string `json:"name"`
+	Role string `json:"role"`
 }
 
 // Step is exactly one of a command (with its expectation) or a reconnect —

@@ -108,6 +108,14 @@ func countPlacements(adv *Adventure) int {
 // engine/state.go). ControllerId is deliberately left unset: the DM drives
 // every adventure-placed actor at load time (spec §4); a player can be
 // given control later via the existing actor-control mechanism.
+//
+// KIND IS CARRIED, NOT DECIDED HERE. Load refuses an actor that does not
+// declare one (loadActors), so by the time this runs the value is the
+// author's own word and this function's only job is not to lose it. An
+// earlier draft of this arc proposed having the compiler STAMP every
+// adventure actor non-party instead; that would have dropped the Human
+// Fighter, Hollis Ketch and Mara Voss out of their own party's roster on the
+// only two adventures that exist.
 func buildActor(a AdventureActor) *vttv1.Actor {
 	attrs := make(map[string]int32, len(a.Attributes))
 	for k, v := range a.Attributes {
@@ -120,6 +128,7 @@ func buildActor(a AdventureActor) *vttv1.Actor {
 	return &vttv1.Actor{
 		ActorId:    a.ID,
 		Name:       a.Name,
+		Kind:       a.Kind,
 		Attributes: attrs,
 		Resources:  res,
 	}

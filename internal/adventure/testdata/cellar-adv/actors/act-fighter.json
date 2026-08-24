@@ -1,6 +1,7 @@
 {
   "actor_id": "act-fighter",
   "name": "Fighter",
+  "kind": "party_member",
   "attributes": {
     "vim": 12,
     "vigor": 10,

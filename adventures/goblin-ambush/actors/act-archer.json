@@ -1,6 +1,7 @@
 {
   "actor_id": "act-archer",
   "name": "Goblin Archer",
+  "kind": "non_party",
   "attributes": {
     "str": 0,
     "dex": 4,

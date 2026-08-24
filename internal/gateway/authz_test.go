@@ -52,7 +52,8 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		}}
 	case "add_actor":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{
-			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin"}},
+			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
 		}}
 	case "place_token":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{
@@ -94,9 +95,10 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return closeDoorCmd("scn", 0, 1)
 	case "set_viewpoint":
 		// "a1", not a name of its own: MayPerch (Task 6) now runs inside
-		// Authorize and only a PLAYER-CONTROLLED actor is a shoulder, so the
-		// spectator cell in the matrix needs the one actor ownershipFixture
-		// gives a controller. Same dependency the open_door/close_door cases
+		// Authorize and only a PARTY MEMBER is a shoulder (spec §5.1), so the
+		// spectator cell in the matrix needs an actor that qualifies —
+		// ownershipFixture's "a1" declares no kind and has a controller, which
+		// is §5.1's migration shape and reads as a party member. Same dependency the open_door/close_door cases
 		// above have on that fixture's token position.
 		return setViewpointCmd("a1")
 	default:
@@ -427,8 +429,14 @@ func ownershipFixture() *engine.State {
 	// authoritative and controller_id mirrors controller_ids[0]. Setting only
 	// the scalar would build a state the fold cannot produce, and would make
 	// this fixture disagree with production the moment authz reads the set.
+	// KIND IS DECLARED, and it has to be: an absent kind is not a party member,
+	// always (spec §5.1, 2026-08-24), and set_viewpoint's spectator cell asks
+	// exactly that question. Leaving it silent would make this fixture disagree
+	// with production in the one direction the matrix cannot see — a cell that
+	// fails for a reason unrelated to authorization.
 	st.Actors["a1"] = &vttv1.Actor{
 		ActorId: "a1", Name: "Hero",
+		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		ControllerId:  "p-1",
 		ControllerIds: []string{"p-1"},
 	}
@@ -518,6 +526,7 @@ func doorFixture(x, y int32) *engine.State {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
 		ActorId: "a1", Name: "Hero",
+		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		ControllerId:  "p-1",
 		ControllerIds: []string{"p-1"},
 	}
@@ -647,9 +656,9 @@ func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 // --- set_viewpoint: which shoulders exist (visibility Task 6) -------------
 
 // TestAuthorizeSpectatorMayNotPerchOnAnNpc is the direction the matrix cell
-// cannot prove. Its spectator cell is true because commandFor names a
-// player-controlled actor; this asks the same question about the Goblin Archer
-// and requires Authorize itself — not a menu, not a client — to say no.
+// cannot prove. Its spectator cell is true because commandFor names an actor
+// that reads as a party member; this asks the same question about the Goblin
+// Archer and requires Authorize itself — not a menu, not a client — to say no.
 func TestAuthorizeSpectatorMayNotPerchOnAnNpc(t *testing.T) {
 	st := ownershipFixture()
 	// An actor with an EMPTY control set: DM/agent only, which is what "NPC"

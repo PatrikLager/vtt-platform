@@ -338,7 +338,7 @@ func mintInviteToken(t *testing.T, campaignPath string, role identity.Role, name
 		t.Fatalf("identity.Open: %v", err)
 	}
 	defer ids.Close()
-	token, _, err := ids.CreateInvite(name, role, nil)
+	token, _, err := ids.CreateInvite(name, role)
 	if err != nil {
 		t.Fatalf("CreateInvite(%s): %v", role, err)
 	}

@@ -23,11 +23,13 @@ import (
 // NPC and look out of its eyes, which is session zero with an extra step.
 //
 // For a spectator it is the shoulder they are currently riding, and the perch
-// must be a PLAYER-CONTROLLED actor: "a spectator perched on the Goblin Archer
-// would watch the ambush from inside it, and the arc would be undone in a
-// single click." MayPerch refuses such a perch at the command (viewpoint.go,
-// wired into Authorize); eyes below refuses to honour one that arrived any
-// other way.
+// must be a PARTY MEMBER: "a spectator perched on the Goblin Archer would watch
+// the ambush from inside it, and the arc would be undone in a single click."
+// MayPerch refuses such a perch at the command (viewpoint.go, wired into
+// Authorize); eyes below refuses to honour one that arrived any other way. Both
+// ask isPartyMember, which reads the ACTOR'S KIND and not who holds it — the
+// sentence here used to say "player-controlled", and that gap is what spec §5.1
+// closed.
 type Viewer struct {
 	ParticipantID string
 	Role          identity.Role
@@ -349,12 +351,20 @@ func (pr *Projector) look(st *engine.State) sightView {
 		}
 	}
 	for id, a := range st.Actors {
-		// Spec §5's one explicit exception: actors controlled by any player
-		// are always known. "You know your party exists when the rogue is two
-		// rooms away; you merely cannot see their token." Without this a
-		// player's character list names every goblin in the dungeon with none
-		// on screen — finding 14 one layer up.
-		if len(a.GetControllerIds()) > 0 {
+		// Spec §5's one explicit exception: PARTY MEMBERS are always known.
+		// "You know your party exists when the rogue is two rooms away; you
+		// merely cannot see their token." Without this a player's character
+		// list names every goblin in the dungeon with none on screen — finding
+		// 14 one layer up.
+		//
+		// isPartyMember (viewpoint.go) rather than a predicate spelled out
+		// here, and rather than the "has any controller" this used to read. §5
+		// says controlled by any PLAYER; the code said has any CONTROLLER, and
+		// one grant_actor_control on a hidden monster published its whole
+		// cloned Actor to every player at the table. Spec §5.1 has the ruling;
+		// its migration rule was deleted 2026-08-24 and an absent kind is now
+		// simply not a party member.
+		if isPartyMember(a) {
 			v.actors[id] = true
 		}
 	}
@@ -379,11 +389,14 @@ func (pr *Projector) eyes(st *engine.State) []string {
 		sort.Strings(ids)
 		return ids
 	case identity.RoleSpectator:
-		// One shoulder, and it must be a party member's. An unknown actor id
-		// (including the empty one, meaning "not perched yet") and an NPC
-		// both land here as no eyes at all.
+		// One shoulder, and it must be a party member's — isPartyMember
+		// (viewpoint.go), the same predicate MayPerch refuses on, so this
+		// second refusal cannot drift from the first (spec §8, defence in
+		// depth). An unknown actor id (including the empty one, meaning "not
+		// perched yet") and anything that is not a party member both land here
+		// as no eyes at all.
 		a, ok := st.Actors[pr.viewer.Viewpoint]
-		if !ok || len(a.GetControllerIds()) == 0 {
+		if !ok || !isPartyMember(a) {
 			return nil
 		}
 		return []string{pr.viewer.Viewpoint}
@@ -539,9 +552,41 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		// ActorControlGranted mutates an Actor in place. Handing the same
 		// pointer out would put live state on a connection's wire, where a
 		// later grant would retroactively change an envelope already sent.
+		clone := proto.Clone(a).(*vttv1.Actor)
+
+		// AN INTRODUCTION CANNOT CARRY A CONTROLLER, so who holds this actor
+		// travels as GRANTS behind it — one per controller, in the set's own
+		// order (visibility spec §5.1, 2026-08-24).
+		//
+		// This is not cosmetic and it is not a redaction: both folds now REFUSE
+		// an ActorAdded that names a controller ("creating an actor does not
+		// hand it to anyone"), so an introduction built from a clone of live
+		// state was unfoldable the moment anyone had been granted anything.
+		// Measured, not reasoned: TestAProjectedStreamFoldsCleanly and
+		// TestAConditionAppliedOutOfSightArrivesWithTheActor both failed on
+		// exactly that error before this loop existed.
+		//
+		// It also makes the projection say the same thing the log says. A
+		// viewer who joins late gets creation-then-grant just as the log has
+		// it, rather than a shape no log could hold; and a viewer already
+		// present gets the grant twice — once here, once forwarded — which both
+		// folds treat as idempotent by an explicit membership check.
+		//
+		// The KIND rides on each grant as well as on the clone. The fold's
+		// grant arm writes kind only when the grant states one, so an
+		// UNSPECIFIED here would leave the clone's kind standing — correct, but
+		// only by accident of ordering. Stating it makes each envelope true on
+		// its own.
+		controllers := clone.GetControllerIds()
+		clone.ControllerId = ""
+		clone.ControllerIds = nil
 		out = append(out, &vttv1.Envelope{Sequence: seq,
-			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
-				Actor: proto.Clone(a).(*vttv1.Actor)}}})
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: clone}}})
+		for _, cid := range controllers {
+			out = append(out, &vttv1.Envelope{Sequence: seq,
+				Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+					ActorId: id, ParticipantId: cid, Kind: a.GetKind()}}})
+		}
 		pr.actors[id] = true
 
 		// AND THE CONDITIONS ON IT, which do NOT ride along in the Actor.
@@ -841,8 +886,12 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_ActorAdded:
 		// Introduced by transitions when the actor becomes knowable — first
-		// sight for an NPC, immediately for anything a player controls
-		// (spec §5). Withheld here rather than conditionally forwarded so
+		// sight for anything that is not a party member, immediately for one
+		// that is (spec §5, keyed by isPartyMember since §5.1; this sentence
+		// said "anything a player controls" while the rule still did, and both
+		// halves of that were wrong in the same direction — a monster a player
+		// holds is NOT introduced immediately, and a party member the DM holds
+		// IS). Withheld here rather than conditionally forwarded so
 		// that there is exactly ONE code path that introduces an actor:
 		// two would eventually both fire on the same event, and a duplicate
 		// ActorAdded is a fold error, which on the client is a permanent

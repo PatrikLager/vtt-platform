@@ -16,6 +16,46 @@ without looking at it.
 A scenario may also carry a `projections/` subdirectory — one seat per
 directory inside it. See **Projected seats** below.
 
+## What no fixture here may contain
+
+`internal/harness.TestTheCorpusNeverConfersControlAtCreationNorGrantsInSilence`
+walks every `.json` under `scenarios/` — definitions, streams, projections, all
+of it — and holds each actor creation and each grant to visibility spec §5.1:
+
+- **an actor is never created holding a controller.** Creation makes a
+  character; control is conferred once, by a grant.
+- **every created actor states a kind**, because an unstated one cannot be told
+  from a deliberate one.
+- **every grant states a kind.** The COMMAND is refused on the wire, so a
+  fixture must not encode what the wire rejects. A kindless `actorControlGranted`
+  EVENT is a different argument — `engine.Apply` still accepts those on purpose
+  — but nothing can produce one any more, so one in a committed stream is a
+  hand-edit or a regression.
+
+It matches by KEY wherever the key appears, in both wire spellings, so a new
+file kind or a nesting level nobody has invented yet is covered without anyone
+adding it to a list. **There is no exemption list**, on the same reasoning as
+the projected-fixture gate below: a list of fixtures the rule does not apply to
+is the artifact that goes stale silently. The one apparent exception is derived
+instead — `scenarios/denials.json` sends both forbidden shapes on purpose and
+asserts the server refuses them, and a step that pins a REFUSAL is defending the
+rule rather than breaking it, because a refused command never becomes history.
+
+**A step must pin THAT shape's refusal, not merely some refusal.** `Authorize`
+runs before the shape validators, so a player's `add_actor` is turned away as
+unauthorized whatever else is wrong with it — and a gate that asked only "is
+this step denied?" would let those steps carry a seeded controller into the
+committed corpus, green, as the template the next author copies. The step's
+`deniedContaining` therefore has to be part of the refusal that shape actually
+earns — and has to name **exactly one** refusal, because every one of them
+contains the word `actor` and so does the authz denial. A claim vague enough to
+be any of them has identified none, and pins nothing. Nobody has to lie to slip
+through a match-any rule; they only have to be lazy.
+
+The corpus was the last place the old model could survive: no campaign is in
+use by anyone, so these fixtures are the entire "existing history" this arc
+deleted its migration rule for.
+
 ## Why there is no `-update` flag
 
 The original plan generated this corpus behind one. That was rejected against
@@ -41,11 +81,18 @@ Four things vary per run and are normalized before anything is committed:
 | `sessionId` | `sess-N`, N in order of first appearance |
 | participant ids | `p-<name>` — **everywhere they appear**, not just `participantId` |
 
-That last row is wider than the plan's contract, and it has to be:
-`Actor.controller_id` carries a server-assigned participant id INSIDE the
-payload. `three-role-exit` and `story-table` both set it, and with only the
-envelope-level field normalized the stream differed on every capture, so the
-drift gate could never have gone green.
+That last row is wider than the plan's contract, and it has to be: a
+server-assigned participant id appears INSIDE payloads, not only on the
+envelope. Every `ActorControlGranted` and `ActorControlRevoked` carries one,
+and with only the envelope-level field normalized the stream differed on every
+capture, so the drift gate could never have gone green.
+
+(It used to say `Actor.controller_id`, naming `three-role-exit` and
+`story-table` as the two scenarios that set it. That is no longer possible:
+since 2026-08-24 an `ActorAdded` may not name a controller at all — creation
+makes a character and a grant hands it over — so the id now travels on the
+grant instead. The rule is unchanged and the reason for it is unchanged; only
+the payload it lives in has moved.)
 
 ## Projected seats
 
@@ -141,9 +188,10 @@ the grid, so from anywhere west of it every square with `x <= 2` is reachable, a
 square OF the wall is reachable (`sight.Clear` exempts a blocker containing the
 target — "without this you cannot see the wall you are standing against"), and
 every square with `x >= 4` is behind the full-height slab. The Goblin Archer
-stands at **(19,8)** — session zero's own square — and at sequence 9 neither
-seat's stream carries one byte about it. It breaks cover at sequence 11 and
-returns at 12, which is what puts a `tokenHidden` and a never-forgotten roster
+stands at **(19,8)** — session zero's own square — and at sequence 11, where
+it is placed, neither seat's stream carries one byte about it. It breaks cover
+at sequence 13 and returns at 14, which is what puts a `tokenHidden` and a
+never-forgotten roster
 entry in the fixture.
 
 ## Coverage
@@ -168,8 +216,9 @@ Getting it to bite took a second pass worth recording. A grant only moves
 `controller_id` when the set was EMPTY — the mirror is `controller_ids[0]` and
 a grant APPENDS, so on an already-owned actor the mirror does not move and
 dropping it is invisible. The scenario therefore grants onto an unowned actor
-(`act-herald`) as well as onto a shared one, and revokes the set's HEAD so the
-mirror has to slide. Idempotent re-grant, revoking a non-controller, and
+(`act-herald`, and since 2026-08-24 `act-warden`'s and `act-scout`'s FIRST
+grants too, because an actor is now born unowned without exception) as well as
+onto a shared one, and revokes the set's HEAD so the mirror has to slide. Idempotent re-grant, revoking a non-controller, and
 revoking the last controller back to unowned are all in the same stream.
 
 `adventure-night` and `toy-brawl` roll dice, and are here because their event

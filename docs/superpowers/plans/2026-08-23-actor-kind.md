@@ -1,5 +1,17 @@
 # Actor Kind Implementation Plan
 
+> **STATUS 2026-08-23: Task 1 LANDED as `80dfa0e` on `fix/actor-kind`, then the
+> design was revised. Task 2 below is the delta and is the live work.** Task 1
+> stands — its enum, its state field, its three call sites and its migration
+> rule are all still correct. What changed is WHO WRITES the field: spec §5.1
+> now puts it on the grant, not on actor creation. Read §5.1's revision before
+> Task 2; it explains why, and the reason is more useful than the change.
+>
+> Task 1 also left a hole it named honestly, which Task 2 is what closes:
+> adventure content cannot express kind, so every shipped actor — including the
+> Goblin Archer this arc is named after — is unspecified with no controller, and
+> one `grant_actor_control` on it makes it a party member again.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** An actor carries its own kind, and the visibility exception "always known" keys on that kind rather than on whether anyone happens to control it.
@@ -126,6 +138,185 @@ Expected: PASS. Do NOT run `check:mutation` or `check:ts-mutation` without confi
 git add contract internal/engine internal/gateway client/src client/test docs
 git commit -m "An actor knows what it is, so control cannot promote a monster"
 ```
+
+---
+
+## Task 2: The grant declares the kind, and silence is refused
+
+**Files:**
+- Modify: `contract/vtt/v1/events.proto` (`ActorControlGranted`), `contract/vtt/v1/commands.proto` (`GrantActorControl`), `internal/engine/apply.go`, `internal/gateway/authz.go` or the command handler in `internal/gateway/server.go`, `cmd/vtt/tools.json`, `client/src/commands.ts`
+- Test: `internal/engine/actor_control_test.go`, `internal/gateway/project_test.go`, `internal/gateway/server_visibility_test.go`
+
+**Interfaces:**
+- Consumes: `ActorKind` and `Actor.kind` — both already exist from Task 1.
+- Produces: `ActorControlGranted.kind`, `GrantActorControl.kind`, and a refusal for a grant that omits it.
+
+**Governing design: spec §5.1 as revised 2026-08-23.** Its three rules are this task.
+
+- [ ] **Step 1: Write the failing tests**
+
+Four behaviours. The first is the one the arc is named after:
+
+```go
+// The archer, against SHIPPED content rather than a hand-built fixture. This is
+// what Task 1 could not reach: adventures/goblin-ambush/actors/act-archer.json
+// declares no kind and cannot, so before this task one grant promoted it.
+func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *testing.T)
+
+// Silence is refused. Without this, an agent that omits the field reproduces
+// the original leak and the migration rule cannot tell it from an old log.
+func TestAGrantWithNoKindIsRefused(t *testing.T)
+
+// Kind survives revocation: a player leaving does not turn their character
+// into a monster.
+func TestRevokingControlLeavesAPartyMemberAPartyMember(t *testing.T)
+
+// The migration rule still holds for history — an old log's grants set no
+// kind, and its party members must stay known.
+func TestAnOldLogsGrantsStillReadAsPartyMembers(t *testing.T)
+```
+
+Use the SHIPPED adventure for the first, not a fixture. Task 1's suite was green while the exposure was live precisely because every fixture it wrote declared its kind by hand.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Verify the RED **by seeing each test NAME in the output**. A `-run` filter matching nothing prints `ok`; that trap is in this repo's ledger and it would turn this step into a false pass.
+
+- [ ] **Step 3: The contract**
+
+`ActorControlGranted` and `GrantActorControl` each gain `ActorKind kind`. Read each message for its next free number rather than assuming. Additive; `check:breaking` has a real baseline for both (they predate the visibility branch). Regenerate with `task generate:contract`.
+
+- [ ] **Step 4: The fold sets kind from the grant**
+
+`engine.Apply`'s `ActorControlGranted` arm writes `Actor.Kind`. The `ActorControlRevoked` arm must NOT clear it — §5.1's second rule, and worth its own assertion because "revoke tidies up after itself" is the plausible-looking wrong thing to write.
+
+Mirror in `client/src/fold.ts`.
+
+- [ ] **Step 5: Refuse a grant with no kind**
+
+At the command boundary, alongside the other `grant_actor_control` checks. A refusal, not a default: a default is indistinguishable from an omission and that is the whole point of the rule.
+
+- [ ] **Step 6: The seams that issue grants**
+
+Three verified locations, and once Step 5 lands, a grant that does not carry the field is refused — so missing one of these breaks the DM console or the agent outright:
+
+- `cmd/vtt/tools.json` — the MCP tool definition, where the agent's grant comes from.
+- `client/src/commands.ts:224` — `grantActorControl(actorId, participantId)`, the builder.
+- `client/src/view/dm.ts:403` — its only caller, which must obtain a kind from the DM and pass it.
+
+**Search for callers in BOTH spellings.** The wire name is `grant_actor_control` and the generated TS is `grantActorControl`; a grep for the snake_case form alone finds `tools.json` and misses the entire client, which is exactly what happened while this plan was being written. `addActor` (`commands.ts:206`) already takes an optional `controllerId`, so consider whether creating an actor with a controller in one step needs a kind too, or whether it should stop taking a controller at all now that the grant is what confers standing.
+
+- [ ] **Step 7: Gates**
+
+`go test ./... && bun test client/test && task client:typecheck && task check:drift && task check:breaking`. Do NOT run `check:mutation`/`check:ts-mutation` without checking disk headroom first. If lines shift in a file with entries in `tools/mutation-equivalents.txt`, re-key after your LAST edit and byte-compare — Task 1 got this wrong by measuring before two later edits landed.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add contract internal client cmd docs
+git commit -m "A grant says what it is granting, and silence is not an answer"
+```
+
+---
+
+## Task 3: Delete the control record that grants nothing
+
+**Files:** `internal/identity/identity.go` (+ its schema/migration), `internal/gateway/metadata.go`, `client/src/metadata.ts`, `client/test/metadata.test.ts`, `cmd/vtt/harness_boot.go`, `internal/harness` scenario types, `scenarios/*.json`
+
+Control is recorded twice. `Actor.controller_ids` in the log is authoritative — authz, the roster rule, `eyes()` and `MayPerch` all read it. `participants.controls` is a SQLite column set at `CreateInvite`, and **verified 2026-08-24**:
+
+- **no updater exists** — no `SetControls`, no UPDATE statement, nothing in the grant or revoke path touches it;
+- **it never becomes a grant** — `mintInvites` (`cmd/vtt/harness_boot.go:200`) passes it to `CreateInvite` and no `ActorControlGranted` is emitted anywhere in the boot path;
+- **nothing reads it to decide anything** — its only consumer is `metadata.go:210`, which echoes it at `/api/me`; the client's `controlledActors` (`client/src/player.ts:13`) reads `st.Actors[].controllerIds` from the folded log instead. The single client-side reference is an assertion in `client/test/metadata.test.ts:144` that the field exists.
+
+So a DM who invites someone "controlling Hollis" is told by the API that they control Hollis, and they do not. **That is worse than a duplicate — it is a plausible-looking lie**, and it is the same one-concept-two-writers shape as RPTool's `ownerType`/`ownerList` bug.
+
+- [ ] **Step 1: RED** — a test asserting `/api/me` reports control that matches state, or simply that the field is gone. Verify the RED by test NAME.
+- [ ] **Step 2: Remove it** — the `Controls` field, the column (with a migration), `CreateInvite`'s parameter, `meJSON.Controls`, the TS type, and the scenario JSON key. If any scenario currently declares controls, that declaration was doing nothing; removing it changes no behaviour and that claim is testable — say so with a measurement, not an assurance.
+- [ ] **Step 3: Gates**, then commit.
+
+**This should not touch `scenarios/goldens/`.** Goldens are event streams and folded state; the identity DB is neither. If a golden moves, stop — something reads this field that this analysis missed, and I want to know before you work around it.
+
+---
+
+## Task 4: Control is conferred once, by a grant that says what it is
+
+**(b) from Task 2's ranked exits, chosen by Patrik 2026-08-24.**
+
+`add_actor` stops accepting a controller. Creation makes a character; a grant gives it a controller **and** a standing, together, always. After this there is exactly one way to confer control, and it is the event that declares kind — which makes spec §5.1's first rule true instead of aspirational.
+
+**Files:** `contract/vtt/v1/commands.proto` (or the `Actor` seeded by `AddActor`), `internal/gateway/convert.go`, `cmd/vtt/tools.json`, `client/src/commands.ts:206`, `client/src/view/dm.ts`, the four scenarios and their goldens.
+
+- [ ] **Step 1: RED** — an `add_actor` carrying a controller is refused; and the shipped `act-archer.json` cannot become a party member by any route.
+- [ ] **Step 2:** remove the seeding path; `addActor`'s optional `controllerId` goes, and the DM form's input with it. Control becomes a two-step act everywhere.
+- [ ] **Step 3: the fixture work, which is the bulk of this task.** Four scenarios seed controllers today — `session-zero`, `shared-control`, `three-role-exit`, `story-table` — and each must issue an explicit grant instead, stating a kind. Their goldens regenerate, **including `session-zero`'s projection goldens, which §7 calls the founding test.** Re-derive rather than accept: a regenerated golden that nobody read is a test that asserts whatever the code did.
+- [ ] **Step 4:** the ergonomic cost is real and belongs in the commit message, not hidden — an agent creating an NPC it will run now sends two commands. The trade is two round trips against two rules that must stay in sync, and RPTool shipped the second and has the resulting invariant bug in its tree today (`clearAllOwners` leaves `ownerType == OWNER_TYPE_ALL`, worked around at `EditTokenDialog.java:885`).
+- [ ] **Step 5:** §5.1's first rule becomes true — say so where it is written, and remove any hedge that anticipated this hole.
+
+---
+
+## Task 5: Delete the migration that protects nothing
+
+**Patrik, 2026-08-24: no campaign or ruleset is in use by anyone.** Every piece
+of backward-compatibility machinery this arc added is guarding data that does
+not exist, and buying a permanent widening of behaviour for it.
+
+**Files:** `internal/identity/identity.go` (schema + `migrate`/`migrateLocked`), and the tests that pin the migration — including `TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople` and `TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen`.
+
+- [ ] **Step 1:** the schema simply has no `controls` column. Not "has it dropped" — never had it.
+- [ ] **Step 2: remove ONLY the controls-dropping migration.** `migrate()` runs on every `Open` and has **other jobs from earlier arcs** (`ensureJoinRow` and friends). Read it before cutting: this task deletes one branch, not the function. If you conclude the whole apparatus is now unnecessary, SAY SO AND STOP — that is a wider decision than this task, and it belongs to whoever owns those earlier arcs.
+- [ ] **Step 3:** the read-only-campaign cost disappears with the migration, so the test pinning it goes too. Deleting a test is a claim that the behaviour it pinned no longer exists — state which, and why, in the commit.
+- [ ] **Step 4:** gates, then commit.
+
+**Not in this task:** `isPartyMember` (`internal/gateway/viewpoint.go:46`) collapses to `return a.GetKind() == ACTOR_KIND_PARTY_MEMBER`. Its comment claims the two-branch rule *"expires only when no unmigrated log exists, which for an append-only contract is never"* — that "never" arrived. **Task 4 owns it**, instructed mid-flight; do not race it.
+
+**Still open, deliberately not decided here:** `Actor.controller_id` is kept as a mirror of `controller_ids` on the stated grounds that "you cannot reinterpret history you have written." With no history, that reason is gone too — but removing a contract field is a breaking change and ADR-007 says additive-only, so it is an ADR question rather than a cleanup. Flagged, not actioned.
+
+---
+
+## Task 7: Every actor states what it is, at birth
+
+**RUN THIS BEFORE TASK 6** — Task 6's guard should assert the final rule, not an intermediate one.
+
+**Patrik, 2026-08-24: "when you create an actor you should know what for — is it an NPC or a PC. So add_actor should have kind defined."** And: yes, the adventure format gains it too.
+
+**The insight this rests on, which corrects an argument made earlier in this plan.** Three tasks were justified by "one writer beats two". That was a proxy for the real rule and slightly wrong. **The danger was never multiplicity — it was a writer that could stay SILENT.** The archer leak came from inference from absence: an actor holding a controller with no kind had to be guessed at, and the guess was wrong. If every path that creates an actor must state its kind, two writers are fine, because neither can be mute.
+
+- [ ] **Step 1: `add_actor` REQUIRES a kind.** It is currently allowed but optional. Refuse `ACTOR_KIND_UNSPECIFIED`, the same shape as `validateGrantActorControl`'s refusal — a default is indistinguishable from an omission, which is the whole point.
+
+- [ ] **Step 2: correct `add_actor_validate.go`'s reasoning, do not just add code beside it.** It currently argues *against* "add_actor must also state a kind" on the grounds that it "leaves TWO commands able to confer control". That argument is about CONTROL and does not apply: `add_actor` still confers no control, and stating what a creature IS is not the same act as saying who holds it. Left unedited, that paragraph reads as a principled rejection of what this task does. Rewrite it to the rule above — silence, not multiplicity, is what was dangerous.
+
+- [ ] **Step 3: the adventure format gains `kind`.** `actorJSON` (`internal/adventure/load.go:196`) has four fields and none of them says what a creature is, while `goblin-ambush` ships a Human Fighter beside two goblins and `cellar-rats` ships Hollis Ketch and Mara Voss. The authored path — written deliberately, in advance, by someone who knew — is currently the one that cannot speak, while the improvised path is compelled to. That is backwards. Add it to `actorJSON`, pass it through the compiler, and declare it in all five shipped actor files. Note `decodeStrict` uses `DisallowUnknownFields`, so this is a real format change: update the format doc wherever `actorJSON` is documented, and search for examples that would now fail to load — a spec handing out a broken file has already happened once on this branch.
+
+- [ ] **Step 4: amend spec §5.1's first rule, which this makes false.** It says *"an ungranted actor is NOT a party member"*. Under this model a pregenerated PC sitting in a campaign before anyone is assigned to it IS a party member, and the party seeing the four available characters is correct rather than a leak. Replace with: **every actor states its kind at creation; a grant may change it; an absent kind is unreachable and fails closed as belt-and-braces rather than as a rule anything relies on.**
+
+- [ ] **Step 5:** gates, then commit.
+
+---
+
+## Task 6: The corpus cannot quietly go back
+
+**Patrik, 2026-08-24: "the only thing we might need to change is our own test data, since it was built for the old approach — but we should capture that in our own tests."**
+
+The fixtures are the only place the old model can survive, because they are the only "existing history" there is. Task 4 converts them. This task makes conversion **stick**, so a fixture written next month cannot quietly reintroduce what four tasks just removed.
+
+Measured 2026-08-24, before Task 4: **12 `actorAdded` events carrying a `controllerId` across 7 golden streams**, plus `scenarios/denials.json` seeding one directly.
+
+**CORRECTED — this line said 8 across 5, and how it was wrong is the argument for the guard.** The first count used a SHELL glob, `scenarios/goldens/*/stream.json`, where `*` does not cross a directory separator. It therefore never saw `session-zero/projections/player/stream.json` or its spectator twin — the two nested streams the visibility arc had just added, and exactly the files most worth checking. Git's pathspec `*` DOES cross `/`, so the same-looking pattern returns 12 across 7. Same syntax, different semantics, and the gap was precisely the new thing.
+
+Which is why this guard **matches by key at any depth** rather than by an enumerated path. A hand-written glob encodes a directory shape at the moment someone wrote it; the corpus then grows a directory and the glob goes quietly blind. The measurement that produced "8 across 5" was itself an instance of the failure the guard exists to prevent.
+
+- [ ] **Step 1: a guard over the corpus, derived rather than listed.** Walk `scenarios/` and `scenarios/goldens/` and assert:
+  - no `actorAdded` carries a controller — control is never conferred at creation;
+  - every grant states a kind — silence is refused on the wire, and a fixture must not encode what the wire rejects.
+
+  **Derive the obligation from the data, do not maintain an exemption list.** Task 8's projected-fixture gate is the precedent worth copying: it asks "does this golden hide a creature?" and requires projections only where the answer is yes, so it needs no list and cannot rot. An allow-list of "scenarios exempt from this rule" is the thing that goes stale silently.
+
+- [ ] **Step 2: prove it bites.** Add a fixture carrying the old shape, watch the guard fail, remove it. A guard that has never failed is a guard nobody has tested.
+
+- [ ] **Step 3:** state at the guard what it is defending, not just what it checks. "No `actorAdded` carries a controller" is a rule; *"control is conferred once, by a grant that declares kind — spec §5.1"* is the reason, and the reason is what stops someone deleting the guard to make a new fixture pass.
+
+**Why this is worth its own task rather than a line in Task 4:** the conversion and the guard fail differently. Conversion failing is a red suite. The guard failing to exist is silent, and stays silent until someone reintroduces the old shape and nothing objects.
 
 ---
 

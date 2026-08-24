@@ -361,9 +361,13 @@ func threeRoomLog() []*vttv1.Envelope {
 		add(&vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 			SceneId: id, Name: id, GridWidth: 3, GridHeight: 3, Tiles: tiles()}})
 	}
+	// Party members, declared. A perch is refused on anything else (MayPerch,
+	// and eyes() a second time), and an absent kind is not a party member —
+	// there is no longer a branch that reads control instead, so these three
+	// have to SAY what they are or the whole fixture becomes unperchable.
 	for _, id := range actors {
 		add(&vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
-			ActorId: id, Name: id, ControllerIds: []string{"p-1"}}}})
+			ActorId: id, Name: id, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}})
 	}
 	for i, id := range actors {
 		add(&vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
@@ -397,13 +401,21 @@ func perchFixtureLog() []*vttv1.Envelope {
 		{2, &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 			SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: tiles}}},
 		{3, &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
-			ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}}}},
+			ActorId: "hero", Name: "Hero",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}}},
 		{4, &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
 			ActorId: "goblin", Name: "Goblin"}}}},
 		{5, &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{TokenId: "t-hero",
 			SceneId: "s", ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}}}},
 		{6, &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{TokenId: "t-gob",
 			SceneId: "s", ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}}}},
+		// Control is a SEPARATE EVENT now, and the last one here: creation
+		// makes a character, a grant hands it over (spec §5.1, 2026-08-24).
+		// It is last so the head sequence this file's resume-cursor test takes
+		// is still the head of the whole fixture.
+		{7, &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}},
 	}
 
 	out := make([]*vttv1.Envelope, 0, len(payloads))

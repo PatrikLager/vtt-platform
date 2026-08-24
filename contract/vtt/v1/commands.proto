@@ -207,6 +207,24 @@ message RotateJoinLink {}
 message GrantActorControl {
   string actor_id = 1;
   string participant_id = 2;
+  // REQUIRED, and a grant that omits it is REFUSED rather than defaulted
+  // (visibility spec §5.1, revised 2026-08-23). See ActorControlGranted.kind
+  // in events.proto for why standing is declared at the grant at all.
+  //
+  // A DEFAULT WOULD BE THE WHOLE FAILURE MODE. proto3 cannot mark a field
+  // required, so an omitted enum arrives as UNSPECIFIED — indistinguishable
+  // from a caller that deliberately said nothing. Defaulting either way is
+  // wrong: default to party member and one forgotten field publishes a
+  // monster's stat block to the table; default to non-party and one
+  // forgotten field drops a character out of its own party's roster.
+  //
+  // The refusal is internal/gateway's validateGrantActorControl, called from
+  // handleCommand beside create_scene's terrain check and BEFORE ToEvent —
+  // not inside ToEvent itself, which structurally cannot host it: that
+  // function's own completeness gate requires every command to convert from
+  // an EMPTY payload, because grant_actor_control once shipped advertised
+  // and dead. See validateGrantActorControl for the full argument.
+  ActorKind kind = 3;
 }
 
 // RevokeActorControl removes participant_id from actor_id's controller set.

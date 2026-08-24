@@ -39,7 +39,7 @@ import (
 // suite uses, and one DB handle.
 func (f *gwFixture) seedAmbush(t *testing.T) {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	tiles := map[string]*vttv1.TileRef{}
 	for y := int32(0); y < 32; y++ {
@@ -72,14 +72,29 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 		t.Fatalf("seed CreateScene ambush: %s", r.Error)
 	}
 
+	// TWO COMMANDS, which is the whole of what this arc's last task changed:
+	// add_actor makes a character and grant_actor_control hands it over, SAYING
+	// what it is. Sent over the wire like every other seed here, so the seed
+	// itself exercises the refusal it would hit if it tried the one-step.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme", ControllerId: f.playerID},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("seed AddActor act-fighter: %s", r.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-ambush-grant-fighter",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-fighter", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed GrantActorControl act-fighter: %s", r.Error)
 	}
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-tok-fighter",
@@ -95,7 +110,8 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-goblin",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-goblin-archer", Name: "Goblin Archer"},
+			Actor: &vttv1.Actor{ActorId: "act-goblin-archer", Name: "Goblin Archer",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
@@ -585,16 +601,27 @@ func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 // and Asme herself disappears when the watcher leaves her.
 func (f *gwFixture) seedArmak(t *testing.T) {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-scout",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak", ControllerId: f.playerID},
+			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("seed AddActor act-scout: %s", r.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-grant-scout",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-scout", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed GrantActorControl act-scout: %s", r.Error)
 	}
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-tok-scout",
@@ -659,8 +686,8 @@ func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	watcher := f.dial(f.spectatorToken, 0)
 
 	// WHAT A WATCHER GETS FOR FREE: the roster, and nothing drawn. You cannot
-	// choose a shoulder you have not been told about (spec §5 — actors
-	// controlled by any player are always known).
+	// choose a shoulder you have not been told about (spec §5 — party members
+	// are always known, §5.1).
 	roster := drainEvents(t, watcher, 500*time.Millisecond)
 	if !mentions(t, roster, "act-fighter") || !mentions(t, roster, "act-scout") {
 		t.Fatal("a watcher must be told which characters the party has, or there is no shoulder to choose")

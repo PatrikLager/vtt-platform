@@ -6,7 +6,8 @@
       "controller_id": "p-player",
       "controller_ids": [
         "p-player"
-      ]
+      ],
+      "kind": 1
     },
     "act-healer": {
       "actor_id": "act-healer",
@@ -14,7 +15,8 @@
       "controller_id": "p-player",
       "controller_ids": [
         "p-player"
-      ]
+      ],
+      "kind": 1
     }
   },
   "Conditions": {},
@@ -46,7 +48,7 @@
       "ID": "sess-1",
       "Name": "Session Zero",
       "StartSeq": 1,
-      "EndSeq": 13
+      "EndSeq": 15
     }
   ],
   "Tokens": {
@@ -58,5 +60,5 @@
       "Y": 1
     }
   },
-  "headSequence": 13
+  "headSequence": 15
 }

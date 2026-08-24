@@ -2,7 +2,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 
 import { test, expect } from "bun:test";
 import { fromJson } from "@bufbuild/protobuf";
-import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fold, foldToDumpJSON } from "../src/fold";
 import { newState, type State, type Tile } from "../src/state";
 import { fitCamera } from "../src/view/camera";
@@ -238,11 +238,11 @@ function playerBoard(): State {
   const st = fold(walkedThrough());
   st.Actors["hero"] = {
     actorId: "hero", name: "Lera", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-me", controllerIds: ["p-me"],
+    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   st.Actors["goblin"] = {
     actorId: "goblin", name: "Goblin", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [],
+    controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t-hero"] = { ID: "t-hero", SceneID: "s1", ActorID: "hero", X: 1, Y: 1 };
   st.Tokens["t-gob"] = { ID: "t-gob", SceneID: "s1", ActorID: "goblin", X: 2, Y: 1 };

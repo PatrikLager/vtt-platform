@@ -1,6 +1,7 @@
 {
   "actor_id": "edge-actor",
   "name": "Edge Actor",
+  "kind": "non_party",
   "attributes": {
     "vim": 10,
     "vigor": 10,

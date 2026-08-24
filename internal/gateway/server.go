@@ -995,7 +995,8 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // a hop that is superseded before the pump reaches it is simply skipped.
 //
 // The refusal path is Authorize's, which is where MayPerch enforces the one
-// rule this command has: a perch may only target a player-controlled actor.
+// rule this command has: a perch may only target a PARTY MEMBER — what the
+// actor IS, never who currently controls it (visibility spec §5.1).
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
 	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
 	if _, refusal := s.authorize(p, cmd); refusal != nil {
@@ -1111,6 +1112,44 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	// at all.
 	if cs, ok := cmd.GetCommand().(*vttv1.ClientCommand_CreateScene); ok {
 		if err := validateCreateSceneTerrain(cs.CreateScene); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
+	// grant_actor_control's kind gets the SAME seam and the SAME reasoning as
+	// create_scene's terrain directly above, and for the third time the same
+	// argument: engine.Apply is the fold, and by the time an event reaches it
+	// the grant is already history — history is not the place to say no.
+	//
+	// It is HERE rather than in Authorize because it is not a rule about who:
+	// the DM and the agent are both entitled to hand a character over, and
+	// neither may do it without saying what they are handing over. And it is
+	// here rather than in ToEvent because ToEvent's own completeness gate
+	// (TestEveryClientCommandConverts) requires every command to convert from
+	// an EMPTY payload — that gate exists because grant_actor_control once
+	// shipped advertised and dead, so narrowing it for this command in
+	// particular would be trading one silent hole for another.
+	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
+		if err := validateGrantActorControl(g.GrantActorControl); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
+	// add_actor gets the SAME seam and, for the fourth time, the same argument:
+	// engine.Apply is the fold, and by the time an ActorAdded reaches it the
+	// actor is already history.
+	//
+	// TWO RULES BEHIND ONE CALL, and they answer the fold question OPPOSITELY.
+	// The CONTROLLER rule also lives in the fold, which refuses the same shape
+	// outright — there is no history to protect, so it can — and this seam only
+	// adds the answer: a refusal naming grant_actor_control, before anything is
+	// written, instead of a poisoned append. The KIND rule (actor-kind Task 7)
+	// lives HERE AND NOWHERE ELSE, because an absent kind is a legal state on a
+	// recorded event ("not a party member") and a fold that refused it would be
+	// refusing something the contract defines. See validateAddActor, which
+	// argues both at length.
+	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
+		if err := validateAddActor(aa.AddActor); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 		}
 	}

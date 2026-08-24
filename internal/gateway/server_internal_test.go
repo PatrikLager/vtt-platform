@@ -122,7 +122,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	}
 	defer ids.Close()
 
-	driverToken, _, err := ids.CreateInvite("Driver", identity.RoleDM, nil)
+	driverToken, _, err := ids.CreateInvite("Driver", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,11 +133,11 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// flooded and this test would pass for having nothing to deliver. The
 	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
 	// which is what this test needs and what it always assumed it had.
-	victimToken, _, err := ids.CreateInvite("Victim", identity.RoleAgent, nil)
+	victimToken, _, err := ids.CreateInvite("Victim", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthyToken, _, err := ids.CreateInvite("Healthy", identity.RoleAgent, nil)
+	healthyToken, _, err := ids.CreateInvite("Healthy", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 	}
 	defer ids.Close()
 
-	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM, nil)
+	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	}
 	defer ids.Close()
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	// flooded and this test would pass for having nothing to deliver. The
 	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
 	// which is what this test needs and what it always assumed it had.
-	deafToken, _, err := ids.CreateInvite("Deaf", identity.RoleAgent, nil)
+	deafToken, _, err := ids.CreateInvite("Deaf", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	}
 	defer ids.Close()
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +623,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	// flooded and this test would pass for having nothing to deliver. The
 	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
 	// which is what this test needs and what it always assumed it had.
-	deafToken, deafID, err := ids.CreateInvite("Deaf", identity.RoleAgent, nil)
+	deafToken, deafID, err := ids.CreateInvite("Deaf", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,11 +760,11 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 	}
 	defer ids.Close()
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer, nil)
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -930,11 +930,11 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	// flooded and this test would pass for having nothing to deliver. The
 	// agent seat receives the log unfiltered (spec §3.1, exit criterion 8),
 	// which is what this test needs and what it always assumed it had.
-	wedgedToken, _, err := ids.CreateInvite("Wedged", identity.RoleAgent, nil)
+	wedgedToken, _, err := ids.CreateInvite("Wedged", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	joinerToken, _, err := ids.CreateInvite("Joiner", identity.RoleAgent, nil)
+	joinerToken, _, err := ids.CreateInvite("Joiner", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1262,7 +1262,7 @@ func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
 	}
 	defer ids.Close()
 
-	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM, nil)
+	token, _, err := ids.CreateInvite("Watcher", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -325,9 +325,36 @@ meaning: DM/agent only.
 
 ### 5.4 What this does NOT change
 
-The invite credential. `identity.CreateInvite(name, role, controls)` already
-carries a `controls` list, and none of it moves — control granted at invite time
-and control granted by event must simply agree on the same set.
+**SUPERSEDED 2026-08-24, and the way it was wrong is the point.** This section
+used to say the invite credential does not move: that
+`identity.CreateInvite(name, role, controls)` carries a `controls` list, and
+that "control granted at invite time and control granted by event must simply
+agree on the same set."
+
+They could not agree, because only one of them existed. The invite list
+conferred nothing — nothing updated it after invite time, no
+`ActorControlGranted` was ever emitted from it, and nothing that decided
+anything read it. Two records were assumed to be kept in step by a rule nobody
+had written, and the one that looked authoritative was inert.
+
+`CreateInvite` now takes `(name, role)`. **An invite confers a seat and a role;
+control is conferred only by a grant**, which also declares whether the
+character is a party member — visibility spec §5.1.
+
+The column is gone. **CORRECTED 2026-08-24, hours after this paragraph was
+written:** it first said "gone, with a migration", which was true for about a
+day. There is no migration. One was built to drop the column from existing
+campaigns, then deleted once Patrik confirmed no campaign or ruleset is in use
+by anyone — it protected data that does not exist while costing something real,
+since it reached `BEGIN IMMEDIATE` and an archived read-only campaign could not
+open until it had been migrated. A campaign that still carries the column simply
+opens and ignores it; the column is nullable, so even the write path is
+unaffected. See `internal/identity/identity.go`'s schema comment.
+
+The general lesson, since this section is where the assumption was recorded: a
+sentence saying two copies of a fact "must agree" is a sentence admitting there
+is no mechanism making them agree. Either one writer owns it, or the drift is
+already there and only unobserved.
 
 ## 6. Two folds, one rule
 

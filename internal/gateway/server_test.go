@@ -71,6 +71,8 @@ func mustAppend(t *testing.T, c *campaign.Campaign, id string, payload any) int6
 		env.Payload = p
 	case *vttv1.Envelope_ActorAdded:
 		env.Payload = p
+	case *vttv1.Envelope_ActorControlGranted:
+		env.Payload = p
 	case *vttv1.Envelope_TokenPlaced:
 		env.Payload = p
 	case *vttv1.Envelope_NarrationAdded:
@@ -84,6 +86,14 @@ func mustAppend(t *testing.T, c *campaign.Campaign, id string, payload any) int6
 	}
 	return seq
 }
+
+// gwSeedHead is the sequence of the LAST event newGWFixture seeds, and the
+// cursor every test that means "resume after the fixture" dials with. It was
+// the literal 4 in nineteen places until 2026-08-24, when a1 needed a second
+// event to be controlled at all — creation no longer confers control — and
+// nineteen literals all had to move together or the suite read the wrong frame
+// positionally. A name so the next such change is one edit.
+const gwSeedHead int64 = 5
 
 func newGWFixture(t *testing.T) *gwFixture {
 	t.Helper()
@@ -101,23 +111,23 @@ func newGWFixture(t *testing.T) *gwFixture {
 	}
 	t.Cleanup(func() { ids.Close() })
 
-	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM, nil)
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent, nil)
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator, nil)
+	spectatorToken, _, err := ids.CreateInvite("Watcher", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer, []string{"a1"})
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RolePlayer, nil)
+	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,9 +136,19 @@ func newGWFixture(t *testing.T) *gwFixture {
 	mustAppend(t, c, "seed-2", &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 		SceneId: "scn1", Name: "Cave", GridWidth: 10, GridHeight: 10,
 	}})
+	// TWO EVENTS for one character, because creation no longer confers control
+	// (visibility spec §5.1, 2026-08-24): a1 is created, then GRANTED to the
+	// player, and the grant is what says it is a party member. Seeding the
+	// controller on the ActorAdded is refused by the fold itself now, so this
+	// is not a style choice — it is the only shape a log can hold.
 	mustAppend(t, c, "seed-3", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
-		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ControllerId: playerID},
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero"},
 	}})
+	mustAppend(t, c, "seed-3b", &vttv1.Envelope_ActorControlGranted{
+		ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "a1", ParticipantId: playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}})
 	mustAppend(t, c, "seed-4", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 		TokenId: "t1", SceneId: "scn1", ActorId: "a1", Position: &vttv1.GridPosition{X: 3, Y: 7},
 	}})
@@ -385,7 +405,7 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 	}
 	defer ids.Close()
 
-	token, id, err := ids.CreateInvite("Lera", identity.RolePlayer, nil)
+	token, id, err := ids.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,13 +436,13 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 }
 
 // TestConnectAfterZeroReceivesFullHistoryThenLive covers catch-up: a fresh
-// connection with after=0 sees all 4 seeded events, in sequence order,
+// connection with after=0 sees every seeded event, in sequence order,
 // before any new live event.
 func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.dmToken, 0)
 
-	wantIDs := []string{"seed-1", "seed-2", "seed-3", "seed-4"}
+	wantIDs := []string{"seed-1", "seed-2", "seed-3", "seed-3b", "seed-4"}
 	for i, want := range wantIDs {
 		env := readEvent(t, conn)
 		if env.EventId != want || env.Sequence != int64(i+1) {
@@ -436,8 +456,8 @@ func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 		Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
 	})
 	live := readEvent(t, conn)
-	if live.Sequence != 5 {
-		t.Fatalf("live event sequence = %d, want 5", live.Sequence)
+	if want := gwSeedHead + 1; live.Sequence != want {
+		t.Fatalf("live event sequence = %d, want %d", live.Sequence, want)
 	}
 	if _, ok := live.Payload.(*vttv1.Envelope_SessionEnded); !ok {
 		t.Fatalf("live payload = %T, want SessionEnded", live.Payload)
@@ -449,14 +469,14 @@ func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 // Envelope frame, not just returned as a CommandResult to the issuer.
 func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 	// The AGENT watches, not the spectator. Fan-out is what this test is
 	// about, and since the visibility projection landed a spectator with no
 	// perch has no eyes, so a SceneCreated for a room they are not standing in
 	// is correctly withheld from them (spec §4.2, exit criterion 6). The agent
 	// receives the log unchanged (exit criterion 8), which is what "a second
 	// client also receives the broadcast" needs to mean here.
-	watcherConn := f.dial(f.agentToken, 4)
+	watcherConn := f.dial(f.agentToken, gwSeedHead)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-1",
@@ -542,16 +562,31 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 	// Issue the seed as a DM command over the wire (rather than reopening
 	// the campaign file directly) so it goes through the same Append path
 	// as everything else and keeps the fixture to one DB handle.
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 	sendCommand(f.t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-a2",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "a2", Name: "Villain", ControllerId: "someone-else"},
+			Actor: &vttv1.Actor{ActorId: "a2", Name: "Villain",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	r1 := readResult(f.t, dmConn)
 	if !r1.Ok {
 		f.t.Fatalf("seed AddActor a2: %s", r1.Error)
+	}
+	// Handed to someone who is NOT this fixture's player, which is the whole
+	// point of the actor: a token the player must be refused. Two commands,
+	// because add_actor no longer confers control, and the grant says what a2
+	// is — a villain, so NON_PARTY.
+	sendCommand(f.t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-a2-grant",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "a2", ParticipantId: "someone-else",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+		}},
+	})
+	if r := readResult(f.t, dmConn); !r.Ok {
+		f.t.Fatalf("seed GrantActorControl a2: %s", r.Error)
 	}
 	sendCommand(f.t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-t2",
@@ -578,7 +613,7 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 // the sequence fresh connections should dial after.
 func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-cellar",
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
@@ -603,12 +638,23 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter", ControllerId: f.playerID},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	r2 := readResult(t, dmConn)
 	if !r2.Ok {
 		t.Fatalf("seed AddActor act-fighter: %s", r2.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-grant-fighter",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-fighter", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed GrantActorControl act-fighter: %s", r.Error)
 	}
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-tok-fighter",
@@ -648,7 +694,7 @@ func TestCreateSceneRefusesUnknownTileKind(t *testing.T) {
 	for _, kind := range cases {
 		t.Run(kind, func(t *testing.T) {
 			f := newGWFixture(t)
-			dmConn := f.dial(f.dmToken, 4)
+			dmConn := f.dial(f.dmToken, gwSeedHead)
 
 			sendCommand(t, dmConn, &vttv1.ClientCommand{
 				RequestId: "r-bad-kind",
@@ -688,7 +734,7 @@ func TestCreateSceneRefusesUnknownTileKind(t *testing.T) {
 // grid, isolating the bounds check.
 func TestCreateSceneRefusesOutOfGridTileKey(t *testing.T) {
 	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	tiles := map[string]*vttv1.TileRef{}
 	for y := int32(0); y < 3; y++ {
@@ -726,7 +772,7 @@ func TestCreateSceneRefusesOutOfGridTileKey(t *testing.T) {
 // deciding which ruleset-flavour words are legitimate.
 func TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind(t *testing.T) {
 	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-custom-material",
@@ -900,7 +946,7 @@ func TestASpectatorMayNotWorkDoors(t *testing.T) {
 // ok=false, and the connection stays open.
 func TestSpectatorCommandDenied(t *testing.T) {
 	f := newGWFixture(t)
-	conn := f.dial(f.spectatorToken, 4)
+	conn := f.dial(f.spectatorToken, gwSeedHead)
 
 	sendCommand(t, conn, &vttv1.ClientCommand{
 		RequestId: "r-spec",
@@ -929,13 +975,13 @@ func TestSpectatorCommandDenied(t *testing.T) {
 // against the pre-fix code — not a hypothetical.
 func TestAgentRetractEventsBroadcastToAll(t *testing.T) {
 	f := newGWFixture(t)
-	agentConn := f.dial(f.agentToken, 4)
-	watcherConn := f.dial(f.spectatorToken, 4)
+	agentConn := f.dial(f.agentToken, gwSeedHead)
+	watcherConn := f.dial(f.spectatorToken, gwSeedHead)
 
 	sendCommand(t, agentConn, &vttv1.ClientCommand{
 		RequestId: "r-undo",
 		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-			FromSequence: 4, ToSequence: 4, Reason: "test retraction",
+			FromSequence: gwSeedHead, ToSequence: gwSeedHead, Reason: "test retraction",
 		}},
 	})
 	result := readResult(t, agentConn)
@@ -966,8 +1012,8 @@ func TestAgentRetractEventsBroadcastToAll(t *testing.T) {
 // second, unrelated connection stays fully live.
 func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 	f := newGWFixture(t)
-	badConn := f.dial(f.dmToken, 4)
-	otherConn := f.dial(f.dmToken, 4)
+	badConn := f.dial(f.dmToken, gwSeedHead)
+	otherConn := f.dial(f.dmToken, gwSeedHead)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -1005,7 +1051,7 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 // destination the client sent.
 func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	f := newGWFixture(t)
-	playerConn := f.dial(f.playerToken, 4)
+	playerConn := f.dial(f.playerToken, gwSeedHead)
 
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "r-move",
@@ -1046,7 +1092,7 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 // snapshot BEFORE persisting — see that method's doc comment).
 func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
 	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	// A valid upsert first, so there is a real key to delete-after-recovery.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
@@ -1116,7 +1162,7 @@ func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
 // stayed green.
 func TestNarrationForwardAnchorRejectedCleanConnectionIntact(t *testing.T) {
 	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	// Forward anchor: anchorToSeq (999) is nowhere near before this
 	// narration's own (about-to-be-assigned) sequence — engine.Apply
@@ -1167,7 +1213,7 @@ func TestNarrationForwardAnchorRejectedCleanConnectionIntact(t *testing.T) {
 func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 	t.Run("frame one byte over the limit closes the connection", func(t *testing.T) {
 		f := newGWFixture(t)
-		conn := f.dial(f.dmToken, 4)
+		conn := f.dial(f.dmToken, gwSeedHead)
 
 		// Consume the catch-up head BEFORE provoking the close, and not
 		// after. Of the closes the READ LOOP can reach, this one is the
@@ -1210,7 +1256,7 @@ func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 
 	t.Run("a command frame at exactly the limit still works", func(t *testing.T) {
 		f := newGWFixture(t)
-		conn := f.dial(f.dmToken, 4)
+		conn := f.dial(f.dmToken, gwSeedHead)
 
 		// Compute the request_id padding needed to land the encoded
 		// ClientCommand frame at EXACTLY maxWSFrameBytes, rather than
@@ -1393,10 +1439,15 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	expectPresenceSnapshot(t, dm)
 
 	// a1 is seeded controlled by the player; grant it to a SECOND participant.
+	// The grant SAYS what it is granting (visibility spec §5.1, revised
+	// 2026-08-23): a1 is a shared character, so this is a party member. A
+	// grant that stated nothing would be refused before conversion —
+	// scenarios/denials.json pins that half of the flow end to end.
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "grant-1",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
 			ActorId: "a1", ParticipantId: "p-second",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		}},
 	})
 	res := readResult(t, dm)
@@ -1409,6 +1460,11 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	actor, ok := st.Actors["a1"]
 	if !ok {
 		t.Fatal("actor a1 vanished")
+	}
+	// The grant's word reached state, over the wire and through the fold —
+	// the whole path the field exists for, asserted where it is observable.
+	if got := actor.GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+		t.Fatalf("kind = %v, want the grant's declaration to have landed in state", got)
 	}
 	ids := actor.GetControllerIds()
 	if len(ids) != 2 || ids[1] != "p-second" {

@@ -13,27 +13,45 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-fighter",
-        "controllerId": "p-player",
-        "controllerIds": [
-          "p-player"
-        ],
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
         "name": "Asme"
       }
     },
     "sequence": "4"
   },
   {
+    "actorControlGranted": {
+      "actorId": "act-fighter",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-player"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-5",
+    "participantId": "p-dm",
+    "sequence": "5",
+    "sessionId": "sess-1"
+  },
+  {
     "actorAdded": {
       "actor": {
         "actorId": "act-healer",
-        "controllerId": "p-player",
-        "controllerIds": [
-          "p-player"
-        ],
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
         "name": "Ilva"
       }
     },
-    "sequence": "5"
+    "sequence": "6"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-healer",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-player"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-7",
+    "participantId": "p-dm",
+    "sequence": "7",
+    "sessionId": "sess-1"
   },
   {
     "sceneCreated": {
@@ -42,10 +60,10 @@
       "name": "Ambush Corridor",
       "sceneId": "ambush"
     },
-    "sequence": "7"
+    "sequence": "9"
   },
   {
-    "sequence": "7",
+    "sequence": "9",
     "tokenPlaced": {
       "actorId": "act-fighter",
       "position": {
@@ -208,7 +226,7 @@
         "3,8"
       ]
     },
-    "sequence": "7"
+    "sequence": "9"
   },
   {
     "sceneCreated": {
@@ -217,10 +235,10 @@
       "name": "Night Camp",
       "sceneId": "camp"
     },
-    "sequence": "8"
+    "sequence": "10"
   },
   {
-    "sequence": "8",
+    "sequence": "10",
     "tokenPlaced": {
       "actorId": "act-healer",
       "position": {
@@ -246,13 +264,13 @@
         "2,2"
       ]
     },
-    "sequence": "8"
+    "sequence": "10"
   },
   {
     "actorRole": "player",
-    "eventId": "evt-10",
+    "eventId": "evt-12",
     "participantId": "p-player",
-    "sequence": "10",
+    "sequence": "12",
     "sessionId": "sess-1",
     "tokenMoved": {
       "from": {
@@ -271,13 +289,14 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-goblin-archer",
+        "kind": "ACTOR_KIND_NON_PARTY",
         "name": "Goblin Archer"
       }
     },
-    "sequence": "11"
+    "sequence": "13"
   },
   {
-    "sequence": "11",
+    "sequence": "13",
     "tokenPlaced": {
       "actorId": "act-goblin-archer",
       "position": {
@@ -289,16 +308,16 @@
     }
   },
   {
-    "sequence": "12",
+    "sequence": "14",
     "tokenHidden": {
       "tokenId": "tok-goblin-archer"
     }
   },
   {
     "actorRole": "dm",
-    "eventId": "evt-13",
+    "eventId": "evt-15",
     "participantId": "p-dm",
-    "sequence": "13",
+    "sequence": "15",
     "sessionEnded": {},
     "sessionId": "sess-1"
   }
