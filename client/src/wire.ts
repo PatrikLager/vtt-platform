@@ -89,7 +89,23 @@ export interface PresenceEvent {
 
 export class Wire {
   private ws: WebSocket | null = null;
-  private readonly pending = new Map<string, (r: CommandResult) => void>();
+  // ONE MAP, MANY SOCKETS — so every entry records the socket it was written
+  // to. A wire outlives its connections and this map outlives them with it, so
+  // "who is waiting for a result" and "which connection is that result coming
+  // back on" are two questions, and only the resolver answered the first. The
+  // close handler in connect() is where the second one is read, and why.
+  //
+  // WHAT THE NARROWING COSTS, stated rather than glossed. reconnect() and
+  // restart() both CLOSE the socket they forget, so anything sent on it still
+  // has a close of its own coming and is still answered. A bare second
+  // connect() does not — it leaves the previous socket live (see the message
+  // handler's own note) — so an entry made on THAT socket now waits for a close
+  // that may never be dispatched, where before it was ended early by the next
+  // close of any socket at all. Neither is a result; the trade is one caller
+  // waiting on a socket nobody closed against every caller being told their
+  // command failed when it did not. No path in this client reaches it: the app
+  // dials once and redials only through reconnect() or restart().
+  private readonly pending = new Map<string, { ws: WebSocket; resolve: (r: CommandResult) => void }>();
   private eventHandlers: ((e: Envelope) => void)[] = [];
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
@@ -225,16 +241,51 @@ export class Wire {
       };
       ws.onclose = () => {
         this.status("closed");
-        // Anything still waiting will never be answered on this socket.
-        // Rejecting is kinder than a promise that hangs for the session.
-        for (const [id, resolveFn] of this.pending) {
-          resolveFn(create(CommandResultSchema, {
+        // THIS SOCKET'S COMMANDS ONLY, and the identity check is the whole of
+        // the difference. Anything written to THIS socket will never be
+        // answered on it now, so failing it explicitly is kinder than a promise
+        // that hangs for the rest of the session — that half has always been
+        // right. What was wrong is that the map belongs to the WIRE, not to the
+        // socket, so walking all of it let a close end commands a LATER socket
+        // was still waiting on.
+        //
+        // Its sibling below was given the same guard for the same reason
+        // (45ae70d), and until this one had it too the asymmetry was the
+        // defect: a stale frame could not reach the fold, but a stale close
+        // could end a live command — with a failure the server never sent.
+        //
+        // NARROW THROUGH THE UI TODAY, and stated that way because the honest
+        // version is the useful one — the same shape as the message handler's
+        // note below. The Reconnect button appears only on status "closed"
+        // (view/spectator.ts), and that status is set at the top of this very
+        // handler, in the same task that walks this map — so in the shipped
+        // client the sockets are strictly serial and no close has ever run with
+        // another socket's commands in front of it. What makes it worth
+        // guarding anyway is that connect(), reconnect() and restart() are
+        // public API and restart() is close-then-send by construction: it
+        // closes the old socket, dials, and its caller re-sends on the new one.
+        // Any automatic redial, or any embedder holding two connections, puts a
+        // live command in this loop's path — and what it would lose is a
+        // setViewpoint the server is about to ACCEPT, leaving app.ts reading a
+        // refusal nobody sent while the perch frames arrive and are folded
+        // anyway. client/test/app.test.ts's "a redial whose abandoned socket
+        // closes late still ends up perch-shaped" walks the whole of that.
+        //
+        // Deleted entry by entry rather than cleared, which is the same rule
+        // stated for the map instead of for the promises. Clearing takes the
+        // newer socket's entries with it, so the result the server sends for
+        // one of them arrives as an unknown request id and is dropped — and a
+        // command with no result and no failure is the hang the loop below
+        // exists to prevent.
+        for (const [id, waiting] of this.pending) {
+          if (waiting.ws !== ws) continue;
+          this.pending.delete(id);
+          waiting.resolve(create(CommandResultSchema, {
             requestId: id,
             ok: false,
             error: "wire: connection closed before a result arrived",
           }));
         }
-        this.pending.clear();
       };
       // GUARDED ON IDENTITY, and this one line is the whole fix. The handler
       // is bound per socket but knows nothing about which socket it belongs
@@ -387,8 +438,18 @@ export class Wire {
         const waiting = this.pending.get(res.requestId);
         if (waiting) {
           this.pending.delete(res.requestId);
-          waiting(res);
+          waiting.resolve(res);
         }
+        // MATCHED ON THE REQUEST ID ALONE, though the entry now also carries a
+        // socket. Two things make that safe where the close handler's walk was
+        // not: the message handler has already established that this frame came
+        // from the CURRENT socket, and an id is minted per COMMAND — by
+        // commands.ts's requestId(), a UUID with a monotonic fallback where
+        // crypto is absent — so two entries do not collide.
+        // And a result is an answer to a command: an answer is welcome
+        // whichever connection carries it, where a close is only ever news
+        // about one.
+        //
         // An unmatched result is dropped, not an error: it can legitimately
         // belong to a command abandoned by a previous connection.
         return;
@@ -442,7 +503,12 @@ export class Wire {
     const withID = create(ClientCommandSchema, { ...cmd, requestId });
 
     return new Promise((resolve) => {
-      this.pending.set(requestId, resolve);
+      // THE SOCKET IT IS ACTUALLY WRITTEN TO, recorded beside the resolver
+      // rather than read back off `this.ws` later: by the time a close comes to
+      // answer this entry, `this.ws` may be a socket that has never heard of
+      // this command. Only the close of THIS socket may end it — see the close
+      // handler in connect() for what a close of any other one cost.
+      this.pending.set(requestId, { ws, resolve });
       ws.send(JSON.stringify(toJson(ClientCommandSchema, withID)));
     });
   }

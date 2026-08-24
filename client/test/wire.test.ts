@@ -584,6 +584,11 @@ test("a snapshot entry with no state is skipped, and the rest still arrive", asy
 // test whose subject is a race must not be one.
 class ScriptedSocket {
   static instances: ScriptedSocket[] = [];
+  // send()'s guard reads WebSocket.OPEN off the GLOBAL, which is this class
+  // while a test has installed it. Without the constant the comparison is
+  // against undefined, every send is refused as "wire: not connected", and a
+  // test about what happens to an in-flight command would quietly have none.
+  static readonly OPEN = 1;
   readyState = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -682,6 +687,83 @@ test("a second connect silences the socket the first one left behind", async () 
 
     ScriptedSocket.instances[1]!.deliver({ event: envelopeJSON(4) });
     expect(seen).toEqual([4n]);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a close answers the commands sent on ITS socket, and no others", async () => {
+  // THE PENDING MAP OUTLIVES EVERY SOCKET, and the close handler used to walk
+  // the whole of it: one socket's close resolved every command in flight —
+  // including the ones a LATER socket was still waiting on — with
+  // `ok:false, "wire: connection closed before a result arrived"`, and then
+  // cleared the map. So the caller got a fast, confident, WRONG answer, and the
+  // server's real result landed a moment later on a promise that had already
+  // settled and an id the map no longer held.
+  //
+  // The message handler beside it was given an identity guard in 45ae70d
+  // (`if (this.ws !== ws) return`), and the asymmetry between the two was the
+  // defect: a stale frame could not reach the fold, but a stale close could end
+  // a live command.
+  //
+  // Narrow through the UI today — the Reconnect button shows only on status
+  // "closed", which this same handler sets one line before it walks the map, so
+  // the app's sockets are strictly serial. But connect() and restart() are
+  // public API, restart() is close-then-send by construction, and a second
+  // connect() (below) holds two live sockets with one map between them.
+  // app.test.ts's "a redial whose abandoned socket closes late still ends up
+  // perch-shaped" walks what the wrong answer costs a watcher.
+  //
+  // BOTH DIRECTIONS IN ONE TEST, deliberately, because the cheap way to pass
+  // the first half is to answer nothing at all. A command written to the socket
+  // that is closing can never be answered on the wire, so leaving its promise
+  // unresolved hangs whatever the UI was awaiting for the rest of the session —
+  // that guarantee is what "a socket closing answers every in-flight command
+  // instead of hanging" pins for a lone socket, and this pins it for a map
+  // holding two sockets' worth.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    const onOld = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-old-socket" }));
+
+    // A second connect abandons the first socket WITHOUT closing it, which is
+    // what holds two live sockets long enough to tell whose command is whose —
+    // the same shape as the test above, which covers the frame half of it.
+    const second = wire.connect(0n);
+    ScriptedSocket.instances[1]!.open();
+    await second;
+    const onNew = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-new-socket" }));
+    // Recorded rather than awaited: a wrongly-answered command resolves on a
+    // microtask, and awaiting it would hang the test on the correct behaviour
+    // instead of failing on the wrong one.
+    const answeredByTheClose: string[] = [];
+    void onNew.then((r) => answeredByTheClose.push(r.error || "ok"));
+
+    ScriptedSocket.instances[0]!.close();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(answeredByTheClose).toEqual([]);
+
+    // Its own command IS answered, and with its own request id, so a caller
+    // can tell which command it lost.
+    const old = await onOld;
+    expect(old.ok).toBe(false);
+    expect(old.error).toBe("wire: connection closed before a result arrived");
+    expect(old.requestId).toBe("sent-on-the-old-socket");
+
+    // And the surviving entry is still correlatable: a cleared map drops this
+    // result as belonging to nobody.
+    ScriptedSocket.instances[1]!.deliver({
+      result: { requestId: "sent-on-the-new-socket", ok: true },
+    });
+    const fresh = await onNew;
+    expect(fresh.ok).toBe(true);
+    expect(fresh.error).toBe("");
   } finally {
     globalThis.WebSocket = nativeWS;
   }

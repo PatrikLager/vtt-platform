@@ -113,6 +113,23 @@ class FakeSocket {
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
+  /**
+   * Whether close() DISPATCHES the close event or merely arms it.
+   *
+   * No real WebSocket fires `close` from inside close(): the closing handshake
+   * is a server round trip and the event is delivered as a task afterwards,
+   * whenever afterwards turns out to be. Firing it inline is a simplification
+   * every test here is happy with except one — and that one is about precisely
+   * that gap, so it arms the close and lands it after the redial that abandoned
+   * the socket has already sent its next command.
+   *
+   * IT IS THE ORDERING THIS BUYS, not a faithful socket: a real one that has
+   * already dispatched a close reports no second one, and it sits in CLOSING
+   * rather than CLOSED while the event is in flight. The test that uses this
+   * says which half of it is the realistic half and which is staging.
+   */
+  lateClose = false;
+  private armedClose = false;
 
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
@@ -129,6 +146,22 @@ class FakeSocket {
   }
   close() {
     this.readyState = 3;
+    if (this.lateClose) {
+      this.armedClose = true;
+      return;
+    }
+    this.onclose?.();
+  }
+  /**
+   * Deliver a close that lateClose held back.
+   *
+   * THROWS when there is none, rather than doing nothing: a test whose whole
+   * subject is a late close would otherwise pass while never delivering one,
+   * which is a green proving the opposite of what it claims.
+   */
+  fireClose() {
+    if (!this.armedClose) throw new Error("fireClose: no close was held back");
+    this.armedClose = false;
     this.onclose?.();
   }
 }
@@ -1931,6 +1964,108 @@ test("a spectator's reconnect starts the log over, and re-sends the shoulder", a
   expect(resent).toHaveLength(1);
   expect(resent[0]).toHaveProperty("setViewpoint");
   expect(resent[0].setViewpoint).toMatchObject({ actorId: "a1" });
+  s?.close();
+});
+
+test("a redial whose abandoned socket closes late still ends up perch-shaped", async () => {
+  // THE OTHER END of wire.test.ts's "a close answers the commands sent on ITS
+  // socket, and no others", seen from the only place the defect can hurt
+  // anybody.
+  //
+  // restart() is close-then-send by construction: it closes the old socket,
+  // dials a new one, and this app re-sends the perch on the new one. So a close
+  // landing after the dial has a command in front of it that it knows nothing
+  // about, and a close handler that walked the whole pending map answered that
+  // command with "connection closed" — a refusal the server never sent.
+  // Everything downstream follows:
+  //
+  //   - perchOn saw ok=false, so it showed the refusal and, worse, left
+  //     `perchShaped` FALSE;
+  //   - the server, which heard none of this, accepted the perch and sent the
+  //     perch frames, which the new socket folded — so the log IS perch-shaped
+  //     while the flag says it is not;
+  //   - so the NEXT redial resumed instead of starting over, holding frames
+  //     only a perch ever produced, and the reborn projector re-introduced the
+  //     scene: `engine: scene "..." already exists`, the duplicate-introduction
+  //     freeze Wire.restart exists to prevent, arriving by a different road.
+  //     session.ts re-folds its whole log on every event, so it is permanent.
+  //
+  // The last of those is the assertion at the bottom, and it is the one that
+  // catches the whole chain — verified by removing the assertions above it and
+  // watching the redial ask for after=4. The refusal it also asserts is the
+  // same fault one step earlier, at the only point a watcher sees anything at
+  // all.
+  //
+  // WHAT THIS STAGES, AND WHAT IT DOES NOT. The ordering is the realistic part:
+  // no WebSocket dispatches `close` from inside close(), so a close of a live
+  // socket lands after whatever the caller did next — which is what lateClose
+  // models, and FakeSocket's inline dispatch is what hides. The scenario is
+  // NOT one today's UI produces: the Reconnect button appears only on status
+  // "closed", and the wire sets that status in the same handler that walks the
+  // pending map, so the app's sockets are strictly serial and the close the
+  // drop below delivers has already walked an empty map. Reaching the defect
+  // through this door therefore takes a second close on a socket that has
+  // already reported one. That makes this a test of the DESIGN restart() is
+  // one caller of — the first automatic redial, or any second live connection,
+  // makes it a test of the shipped path — and its narrative above is a fault
+  // chain traced through the code, not measured history.
+  const { r, s, sock } = await tableAs("spectator");
+  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
+    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
+  asme.click();
+  await settle();
+  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
+  await settle();
+
+  // The connection drops. THIS close dispatches immediately — it is what turns
+  // the status to "closed" and offers the Reconnect button — and there is
+  // nothing in flight for it to answer.
+  sock.close();
+  await settle();
+
+  // From here the socket holds its close back: restart() calls close() on it a
+  // moment from now, and a real one would report back some time after that.
+  sock.lateClose = true;
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+
+  const redial = FakeSocket.instances[1]!;
+  expect(redial.url).toContain("after=0");
+  redial.open();
+  await settle();
+  // The shoulder, re-taken on the NEW socket — this is the command the stale
+  // close must not touch.
+  expect(redial.sent).toHaveLength(1);
+  const perchReq = JSON.parse(redial.sent[0]!).requestId as string;
+  // The replay this connection promised, so the shoulder has a name again.
+  seedTable(redial);
+  await settle();
+
+  // NOW the socket abandoned two steps ago finally reports its close.
+  sock.fireClose();
+  await settle();
+
+  // The server accepted the perch and answers on the socket the command was
+  // actually written to. That command must still be waiting for it.
+  redial.deliver({ result: { requestId: perchReq, ok: true } });
+  await settle();
+  // THE TOAST IS THE VISIBLE SYMPTOM, and the indicator is not: `viewpoint`
+  // holds the shoulder the server last CONFIRMED, and the confirmation came
+  // before the drop, so a refusal here leaves the label reading "Perched on:
+  // Lera" either way — measured, not assumed. What a watcher actually sees is
+  // a refusal of a command the server accepted, sitting under a board that
+  // went on updating.
+  expect(r.textContent).not.toContain("refused:");
+
+  // AND THE FLAG THAT DECIDES THE NEXT REDIAL. after=0 is the restart path; a
+  // resume would ask after=4, and it would be asking for events sitting on top
+  // of frames only a perch ever produced.
+  redial.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+  expect(FakeSocket.instances).toHaveLength(3);
+  expect(FakeSocket.instances[2]!.url).toContain("after=0");
   s?.close();
 });
 
