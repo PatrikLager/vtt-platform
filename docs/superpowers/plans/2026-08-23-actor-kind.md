@@ -274,6 +274,26 @@ not exist, and buying a permanent widening of behaviour for it.
 
 ---
 
+## Task 7: Every actor states what it is, at birth
+
+**RUN THIS BEFORE TASK 6** — Task 6's guard should assert the final rule, not an intermediate one.
+
+**Patrik, 2026-08-24: "when you create an actor you should know what for — is it an NPC or a PC. So add_actor should have kind defined."** And: yes, the adventure format gains it too.
+
+**The insight this rests on, which corrects an argument made earlier in this plan.** Three tasks were justified by "one writer beats two". That was a proxy for the real rule and slightly wrong. **The danger was never multiplicity — it was a writer that could stay SILENT.** The archer leak came from inference from absence: an actor holding a controller with no kind had to be guessed at, and the guess was wrong. If every path that creates an actor must state its kind, two writers are fine, because neither can be mute.
+
+- [ ] **Step 1: `add_actor` REQUIRES a kind.** It is currently allowed but optional. Refuse `ACTOR_KIND_UNSPECIFIED`, the same shape as `validateGrantActorControl`'s refusal — a default is indistinguishable from an omission, which is the whole point.
+
+- [ ] **Step 2: correct `add_actor_validate.go`'s reasoning, do not just add code beside it.** It currently argues *against* "add_actor must also state a kind" on the grounds that it "leaves TWO commands able to confer control". That argument is about CONTROL and does not apply: `add_actor` still confers no control, and stating what a creature IS is not the same act as saying who holds it. Left unedited, that paragraph reads as a principled rejection of what this task does. Rewrite it to the rule above — silence, not multiplicity, is what was dangerous.
+
+- [ ] **Step 3: the adventure format gains `kind`.** `actorJSON` (`internal/adventure/load.go:196`) has four fields and none of them says what a creature is, while `goblin-ambush` ships a Human Fighter beside two goblins and `cellar-rats` ships Hollis Ketch and Mara Voss. The authored path — written deliberately, in advance, by someone who knew — is currently the one that cannot speak, while the improvised path is compelled to. That is backwards. Add it to `actorJSON`, pass it through the compiler, and declare it in all five shipped actor files. Note `decodeStrict` uses `DisallowUnknownFields`, so this is a real format change: update the format doc wherever `actorJSON` is documented, and search for examples that would now fail to load — a spec handing out a broken file has already happened once on this branch.
+
+- [ ] **Step 4: amend spec §5.1's first rule, which this makes false.** It says *"an ungranted actor is NOT a party member"*. Under this model a pregenerated PC sitting in a campaign before anyone is assigned to it IS a party member, and the party seeing the four available characters is correct rather than a leak. Replace with: **every actor states its kind at creation; a grant may change it; an absent kind is unreachable and fails closed as belt-and-braces rather than as a rule anything relies on.**
+
+- [ ] **Step 5:** gates, then commit.
+
+---
+
 ## Task 6: The corpus cannot quietly go back
 
 **Patrik, 2026-08-24: "the only thing we might need to change is our own test data, since it was built for the old approach — but we should capture that in our own tests."**
