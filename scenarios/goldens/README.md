@@ -16,6 +16,46 @@ without looking at it.
 A scenario may also carry a `projections/` subdirectory — one seat per
 directory inside it. See **Projected seats** below.
 
+## What no fixture here may contain
+
+`internal/harness.TestTheCorpusNeverConfersControlAtCreationNorGrantsInSilence`
+walks every `.json` under `scenarios/` — definitions, streams, projections, all
+of it — and holds each actor creation and each grant to visibility spec §5.1:
+
+- **an actor is never created holding a controller.** Creation makes a
+  character; control is conferred once, by a grant.
+- **every created actor states a kind**, because an unstated one cannot be told
+  from a deliberate one.
+- **every grant states a kind.** The COMMAND is refused on the wire, so a
+  fixture must not encode what the wire rejects. A kindless `actorControlGranted`
+  EVENT is a different argument — `engine.Apply` still accepts those on purpose
+  — but nothing can produce one any more, so one in a committed stream is a
+  hand-edit or a regression.
+
+It matches by KEY wherever the key appears, in both wire spellings, so a new
+file kind or a nesting level nobody has invented yet is covered without anyone
+adding it to a list. **There is no exemption list**, on the same reasoning as
+the projected-fixture gate below: a list of fixtures the rule does not apply to
+is the artifact that goes stale silently. The one apparent exception is derived
+instead — `scenarios/denials.json` sends both forbidden shapes on purpose and
+asserts the server refuses them, and a step that pins a REFUSAL is defending the
+rule rather than breaking it, because a refused command never becomes history.
+
+**A step must pin THAT shape's refusal, not merely some refusal.** `Authorize`
+runs before the shape validators, so a player's `add_actor` is turned away as
+unauthorized whatever else is wrong with it — and a gate that asked only "is
+this step denied?" would let those steps carry a seeded controller into the
+committed corpus, green, as the template the next author copies. The step's
+`deniedContaining` therefore has to be part of the refusal that shape actually
+earns — and has to name **exactly one** refusal, because every one of them
+contains the word `actor` and so does the authz denial. A claim vague enough to
+be any of them has identified none, and pins nothing. Nobody has to lie to slip
+through a match-any rule; they only have to be lazy.
+
+The corpus was the last place the old model could survive: no campaign is in
+use by anyone, so these fixtures are the entire "existing history" this arc
+deleted its migration rule for.
+
 ## Why there is no `-update` flag
 
 The original plan generated this corpus behind one. That was rejected against
