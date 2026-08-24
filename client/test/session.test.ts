@@ -474,6 +474,62 @@ test("a reconnect after a torn batch takes that sequence again, and folds it exa
   }
 });
 
+test("a redial that drops nothing does not repaint", async () => {
+  // The rollback is a no-op WHENEVER the resume cursor already sits at or above
+  // everything held, and that is not an exotic case: it is the state of a
+  // spectator who has perched and seen nothing else happen. Perch frames carry
+  // sequence 0 deliberately (the gateway's perchSequence), 0 never advances the
+  // high-water mark, so a redial resumes at 0, keeps the whole log, and has
+  // nothing to say about it.
+  //
+  // Saying it anyway is not free. onChange is what every view redraws on, and a
+  // redraw the state did not earn throws away whatever the DOM was holding —
+  // the same hazard the DM console's draft buffer exists for, one layer down.
+  // "Nothing changed" must therefore be silent, not merely correct.
+  //
+  // The DISCRIMINATOR is the count, not the state: the log and the board are
+  // identical either way, because re-folding an untruncated log reproduces
+  // exactly what was already there. Only the notification tells the two apart.
+  const perchFrame = {
+    event: env(0, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "perched", name: "P", gridWidth: 2, gridHeight: 2 }) }),
+  };
+  let opened = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      if (srv.upgrade(req)) return undefined;
+      return new Response("expected websocket", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        opened += 1;
+        // Only the first connection speaks. A second replay would fold a
+        // duplicate scene and notify for a reason this test is not about.
+        if (opened === 1) ws.send(JSON.stringify(perchFrame));
+      },
+      message() {},
+    },
+  });
+  try {
+    const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
+    await s.start();
+    await until(() => s.state.Scenes["perched"] !== undefined, "the perch frame");
+
+    let changes = 0;
+    s.onChange(() => changes++);
+    await s.reconnect();
+
+    expect(changes).toBe(0);
+    // And the frame the rollback had no reason to drop is still here: 0 is at
+    // or below every cursor, so a redial keeps it. Emptying is restart()'s job.
+    expect(s.events).toHaveLength(1);
+    expect(s.state.Scenes["perched"]).toBeDefined();
+    s.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
 // --- restart: the redial a spectator's perch needs ---------------------------
 
 test("restart dials from zero and drops the whole log, perch frames and all", async () => {

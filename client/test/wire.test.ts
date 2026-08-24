@@ -353,6 +353,15 @@ test("an out-of-order replay never walks the resume cursor backwards", async () 
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(3) }));
     await until(() => seen.length === 2, "the older event");
 
+    // BOTH CURSORS, asserted separately, because the query below reads only
+    // one of them. `head` is lastSeq — what a caller is told this client has
+    // folded up to (Session.head, and the catch-up progress the UI draws from
+    // it) — while the resume point is derived from seenSeq. An advance made
+    // unconditional moves lastSeq DOWN to 3 here and leaves after=4 intact, so
+    // a test that stops at the query cannot see it. An older event is not
+    // hypothetical either: a perch's frames carry sequence 0 deliberately.
+    expect(wire.head).toBe(5n);
+
     await wire.reconnect();
     // Two connections: the redial must resume from the HIGHEST sequence seen,
     // 5, not from the older 3 that arrived after it. One below either way (see
@@ -837,6 +846,40 @@ test("a frame from the socket a restart abandoned is never folded", async () => 
 
     ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
     expect(seen).toEqual([2n]);
+    expect(wire.head).toBe(0n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a restart before anything was ever connected dials from zero rather than throwing", async () => {
+  // restart() forgets its socket and then closes it, and on a wire that never
+  // dialled there is no socket to close. Its sibling is pinned two hundred
+  // lines up ("close and reconnect are safe before anything was ever
+  // connected") and this is the same reach one method over — the optional call
+  // is the whole of what stands between a spectator who clicks Reconnect on a
+  // dial that never opened and a TypeError thrown during teardown, where it is
+  // least visible.
+  //
+  // The DISCRIMINATOR is that a socket was created at all: the close comes
+  // BEFORE the dial in restart(), so throwing on the socket that never existed
+  // means the redial never happens either, and the watcher is left with no
+  // connection rather than with a fresh one.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    let emptied = 0;
+    wire.onRestart(() => emptied++);
+
+    const dial = wire.restart();
+    expect(ScriptedSocket.instances).toHaveLength(1);
+    expect(ScriptedSocket.instances[0]!.url).toContain("after=0");
+    ScriptedSocket.instances[0]!.open();
+    await dial;
+
+    expect(emptied).toBe(1);
     expect(wire.head).toBe(0n);
   } finally {
     globalThis.WebSocket = nativeWS;

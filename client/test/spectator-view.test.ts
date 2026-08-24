@@ -655,6 +655,46 @@ test("renderSpectator paints terrain, strokes the grid, and strokes it AFTER the
   expect(strokeIndex).toBeGreaterThan(lastDrawImage);
 });
 
+test("with no seam supplied the board asks the canvas itself for a 2d context", () => {
+  // The seam every other test in this section passes is an OVERRIDE, so those
+  // tests leave its DEFAULT — `(c) => c.getContext("2d")`, the expression every
+  // production call site actually runs, since app.ts never supplies one —
+  // exercised by nothing at all. Two ways to break it are invisible here
+  // otherwise, because happy-dom's canvas answers null to "2d" anyway and the
+  // `if (ctx)` body is skipped either way: replacing the default with one that
+  // returns nothing (a real browser then draws NO terrain, no fog and no
+  // lattice — a permanently blank board), and asking the canvas for a context
+  // type that is not "2d" (same blank board, since a browser answers null to a
+  // name it does not know).
+  //
+  // So stand in for the browser at the one place happy-dom is not one: swap
+  // HTMLCanvasElement.prototype.getContext for a recorder, render with NO
+  // getContext among the extras, and read back BOTH what the board asked the
+  // canvas for and whether what it got was drawn through. Restored in a
+  // finally, since bun runs every test file in one process and this is a
+  // global prototype (see support/dom.ts on that hazard).
+  const asked: string[] = [];
+  const drawn: string[] = [];
+  const ctx = recordingCtx(drawn);
+  const proto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>;
+  const real = proto["getContext"];
+  proto["getContext"] = function (kind: string) { asked.push(kind); return ctx; };
+  try {
+    renderSpectator(document.createElement("div"), tiledScene(), [], "connected", {
+      images: stubImages(),
+    });
+  } finally {
+    proto["getContext"] = real;
+  }
+  // The board creates exactly one canvas, and asks it for the one context type
+  // a 2D map is drawn through.
+  expect(asked).toEqual(["2d"]);
+  // And it drew through what it was handed, rather than obtaining a context and
+  // dropping it.
+  expect(drawn).toContain("drawImage");
+  expect(drawn).toContain("stroke");
+});
+
 test("a board with no click handler is not dressed as clickable", () => {
   const grid = render(world()).querySelector(".grid") as HTMLElement;
   expect(grid.style.cursor).toBe("");
@@ -1261,6 +1301,35 @@ function shoulders(root: HTMLElement): string[] {
   return Array.from(root.querySelectorAll(".perch .shoulder")).map((n) => n.textContent ?? "");
 }
 
+/** A party whose ARRIVAL order — st.Actors' key order, which is the order the
+ *  log added them in — is chosen by the caller, because the whole job of the
+ *  comparator below is to make that order stop mattering. */
+function arrivedAs(members: [string, string][]): State {
+  const st = newState();
+  for (const [actorId, name] of members) {
+    st.Actors[actorId] = {
+      actorId, name, moduleId: "", attributes: {}, resources: {},
+      controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER,
+    };
+  }
+  return st;
+}
+
+function perched(st: State, current: string): HTMLElement {
+  const root = document.createElement("div");
+  renderSpectator(root, st, [], "connected", { perch: { current, onPerch: () => {} } });
+  return root;
+}
+
+test("the perch control says what choosing a name from it does", () => {
+  // A bare column of character names next to a board is not self-explanatory —
+  // it reads as a party roster, which is what the DM console shows. The heading
+  // is the only thing on the control that says these names are POINTS OF VIEW,
+  // so a blank one leaves a watcher guessing what a click will do to their
+  // screen.
+  expect(perched(party(), "").querySelector(".perch h2")?.textContent).toBe("Whose eyes");
+});
+
 test("the perch lists the party, and nobody else", () => {
   // The Goblin Archer is the whole point: "a spectator perched on the Goblin
   // Archer would watch the ambush from inside it, and the arc would be undone
@@ -1270,6 +1339,28 @@ test("the perch lists the party, and nobody else", () => {
   const root = document.createElement("div");
   renderSpectator(root, party(), [], "connected", { perch: { current: "", onPerch: () => {} } });
   expect(shoulders(root)).toEqual(["Armak", "Asme"]);
+  // And with a party to offer, the empty-state is NOT also rendered. "No party
+  // members yet." standing above two clickable names says the control failed to
+  // notice the very people it is listing, which is worse than either message
+  // alone: a watcher who believes it stops clicking. Mapped to text rather than
+  // asserted as a null node so a failure prints the sentence that was wrongly
+  // rendered, not happy-dom's entire element dump.
+  expect(Array.from(root.querySelectorAll(".perch .empty")).map((n) => n.textContent)).toEqual([]);
+});
+
+test("the shoulders are listed by name, not in the order the party arrived", () => {
+  // THREE members, arriving in an order that is neither the answer nor its
+  // reverse. A two-name fixture cannot tell a real comparator from one that
+  // answers "before" for every pair or "after" for every pair: on two elements
+  // those two accidents produce the reversed and the unchanged order, and one
+  // of them is always right. Every other perch fixture in this file has exactly
+  // two party members, so this is the one that pins the sort at all.
+  //
+  // Arrival order is an accident of the log — who the DM added first — and a
+  // list that follows it reshuffles under the watcher's cursor every time an
+  // actor is added, on a control whose whole use is clicking between names.
+  const st = arrivedAs([["x1", "Cara"], ["x2", "Asme"], ["x3", "Bo"]]);
+  expect(shoulders(perched(st, ""))).toEqual(["Asme", "Bo", "Cara"]);
 });
 
 test("choosing a shoulder perches on that actor", () => {
@@ -1294,6 +1385,12 @@ test("'no shoulder' SENDS the empty id rather than doing nothing", () => {
   renderSpectator(root, party(), [], "connected", { perch: { current: "a1", onPerch: (id) => chosen.push(id) } });
   const off = root.querySelector(".perch .unperch") as HTMLButtonElement | null;
   expect(off).not.toBeNull();
+  // The LABEL too, on the same rule as the reconnect control above: a blank
+  // button is still clickable and still satisfies a presence-only assertion,
+  // while telling the watcher nothing about what it will do — and this is the
+  // one control on the panel that does not name a character, so it has no other
+  // way to read.
+  expect(off!.textContent).toBe("No shoulder");
   off!.click();
   expect(chosen).toEqual([""]);
 });
@@ -1328,22 +1425,35 @@ test("a party member with no name is still choosable, by id", () => {
   expect(root.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: a2");
 });
 
-test("two party members sharing a name are ordered by id, not by chance", () => {
-  // The tie-break arm. Without a pair that ties, collapsing it to a constant
-  // is invisible — and the order it decides is the order of two buttons a
-  // watcher clicks between, which must not reshuffle on a repaint.
-  const st = party();
-  st.Actors["a2"]!.name = "Asme"; // the same name as a1, a different character
-  const root = document.createElement("div");
-  renderSpectator(root, st, [], "connected", { perch: { current: "", onPerch: () => {} } });
-  const ids = Array.from(root.querySelectorAll(".perch .shoulder")).map((n) => n.textContent);
-  expect(ids).toEqual(["Asme", "Asme"]);
-  // Which is which is not visible in the labels, so the ORDER is asserted
-  // through the marked one instead.
-  const marked = document.createElement("div");
-  renderSpectator(marked, st, [], "connected", { perch: { current: "a1", onPerch: () => {} } });
-  const buttons = Array.from(marked.querySelectorAll(".perch .shoulder"));
-  expect(buttons[0]!.className).toContain("on"); // a1 sorts before a2
+test("two party members sharing a name are ordered by id, whichever of them arrived first", () => {
+  // The tie-break arm — and BOTH arrival orders of the tied pair, because one
+  // of the two is a false pass and the earlier version of this test used only
+  // that one.
+  //
+  // MEASURED: sorting two elements calls the comparator exactly once, as
+  // compare(the SECOND, the FIRST). So a comparator that has lost its tie-break
+  // and answers "after" for every tie (which is what collapsing either arm of
+  // `label(a) === label(b) ? (a.actorId < b.actorId ? -1 : 1) : ...` to a
+  // constant produces) leaves an already-ascending pair exactly where it sat
+  // and looks perfect. Feed it the DESCENDING arrival too and it must actually
+  // swap them, which a constant cannot. Both orders in one loop so neither can
+  // later be dropped as the redundant-looking half.
+  //
+  // Two tied names are indistinguishable in the list itself, so the ORDER is
+  // read off the marked button instead: "a-lea" is the perched one and sorts
+  // first on the id, so it must be the FIRST shoulder both times. The order two
+  // buttons a watcher clicks between appear in must not depend on which of the
+  // two characters the DM happened to create first.
+  const arrivals: [string, string][][] = [
+    [["a-lea", "Asme"], ["b-vex", "Asme"]],
+    [["b-vex", "Asme"], ["a-lea", "Asme"]],
+  ];
+  for (const arrival of arrivals) {
+    const root = perched(arrivedAs(arrival), "a-lea");
+    expect(shoulders(root)).toEqual(["Asme", "Asme"]);
+    expect(Array.from(root.querySelectorAll(".perch .shoulder")).map((n) => n.className))
+      .toEqual(["shoulder on", "shoulder"]);
+  }
 });
 
 test("a shoulder the roster no longer holds reads as its id, not as nobody", () => {

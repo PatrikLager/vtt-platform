@@ -78,6 +78,44 @@ test("a duplicate actor id is rejected", () => {
   rejects([started, actor(2, "a1"), actor(3, "a1")], 'duplicate actor "a1"');
 });
 
+// --- doors (maps-as-geometry spec §4.1) -------------------------------------
+//
+// fold-unit.test.ts folds these same four bad events in "a door event naming an
+// unknown scene or no position is refused" and asserts only that a FoldError
+// comes out — which is what four emptied MESSAGES hid behind: replace all four
+// templates with "" and every one of them still throws, still of the right
+// type, with that file still green. The two failures are different bugs on the
+// wire and want telling apart: an unknown scene means this seat was sent a door
+// event for a scene it never received, while a missing position means an event
+// the server would not have written at all. Both arms exist in duplicate, one
+// per direction, so all four are asserted rather than one of each.
+//
+// The unit-test case is left standing rather than folded into these: it is the
+// only thing that folds both arms in one pass, and this file's header explains
+// why message assertions live here instead of there.
+
+const doorScene = [started, scene(2, "s1")];
+
+test("a door opened in an unknown scene is rejected", () => {
+  rejects([...doorScene, env(3, { doorOpened: { sceneId: "nope", at: { x: 0, y: 1 } } })],
+    'door opened in unknown scene "nope"');
+});
+
+test("a door opened with no position is rejected", () => {
+  rejects([...doorScene, env(3, { doorOpened: { sceneId: "s1" } })],
+    "door opened without position");
+});
+
+test("a door closed in an unknown scene is rejected", () => {
+  rejects([...doorScene, env(3, { doorClosed: { sceneId: "nope", at: { x: 0, y: 1 } } })],
+    'door closed in unknown scene "nope"');
+});
+
+test("a door closed with no position is rejected", () => {
+  rejects([...doorScene, env(3, { doorClosed: { sceneId: "s1" } })],
+    "door closed without position");
+});
+
 // --- tokens -----------------------------------------------------------------
 
 const placeable = [started, scene(2, "s1"), actor(3, "a1")];

@@ -2,6 +2,11 @@ import "./support/dom";
 
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { boot } from "../src/app";
+// The missing-tile marker's own colours, imported rather than copied: canvas.ts
+// exports them "so a test can assert on the exact marker colour rather than
+// just 'something non-empty was drawn'", and a copy here would go on agreeing
+// with itself after the real one moved.
+import { missingTileColors } from "../src/view/canvas";
 
 // happy-dom starts at about:blank and does NOT move location on
 // history.replaceState — setURL is its control surface. Discovered the hard
@@ -41,8 +46,10 @@ test("a token in the URL is stored, and the address bar is rewritten", () => {
   // real browser, where it means something.
   setURL("http://localhost/?token=tok-abc");
   const calls: string[] = [];
+  const titles: unknown[] = [];
   const original = history.replaceState.bind(history);
   history.replaceState = ((...args: unknown[]) => {
+    titles.push(args[1]);
     calls.push(String(args[2]));
     return original(args[0] as never, args[1] as string, args[2] as string);
   }) as typeof history.replaceState;
@@ -51,6 +58,14 @@ test("a token in the URL is stored, and the address bar is rewritten", () => {
   expect(localStorage.getItem("vtt.token")).toBe("tok-abc");
   expect(calls).toHaveLength(1);
   expect(calls[0]).not.toContain("token");
+  // AND THE ENTRY IS REPLACED WITHOUT CLAIMING A TITLE. The middle argument is
+  // the legacy `title`, which no browser has ever done anything with and
+  // happy-dom ignores too (measured: document.title does not move), so the spy
+  // is the only place its value is visible at all — and the empty string is
+  // the only honest thing to pass a parameter nothing reads. Anything else
+  // would be this app announcing a document title it does not set, in a call
+  // whose entire purpose is to change the URL and nothing else.
+  expect(titles).toEqual([""]);
   session?.close();
   history.replaceState = original;
 });
@@ -674,6 +689,240 @@ test("the standard baseline pack is fetched unconditionally, with NO Authorizati
   }
 });
 
+/**
+ * A 2D context that records what was actually DRAWN: every drawImage by the
+ * tag its decoded stand-in carries, and every fill by its colour — which is
+ * how a missing-tile marker (canvas.ts's magenta checker, spec §7) tells
+ * itself apart from a picture.
+ *
+ * fillStyle goes through a getter/setter over a separate holder rather than
+ * being a plain field the recorder reads off `this`: an object literal whose
+ * own method reads the object it is initialising is an implicit-any under
+ * this repo's tsconfig, and `bun test` would run it happily while
+ * client:typecheck refused it.
+ */
+function recordingCtx(calls: string[]): CanvasRenderingContext2D {
+  const pen = { fillStyle: "" };
+  return {
+    get fillStyle() {
+      return pen.fillStyle;
+    },
+    set fillStyle(v: string) {
+      pen.fillStyle = v;
+    },
+    strokeStyle: "",
+    lineWidth: 0,
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
+    drawImage(image: unknown) {
+      calls.push(`drawImage:${(image as { tag: string }).tag}`);
+    },
+    fillRect() {
+      calls.push(`fillRect:${pen.fillStyle}`);
+    },
+  } as unknown as CanvasRenderingContext2D;
+}
+
+test("both packs' art reaches the canvas: an overridden square AND a plain one", async () => {
+  // WHAT THE TWO TESTS ABOVE DO NOT PROVE. They assert that the pack files are
+  // REQUESTED — the manifest, the image, with or without a Bearer header —
+  // and stop there. Nothing observed the decoded pictures arriving in the
+  // ImageMap app.ts hands to renderSpectator, so throwing either merge away
+  // (or replacing it with a fresh, empty object) left both of them green while
+  // every square of both shipped adventures drew the magenta missing-tile
+  // marker. That is review finding C2's exact failure mode, which is a bad one
+  // to be blind to twice.
+  //
+  // HOW IT IS OBSERVED. happy-dom's canvas.getContext("2d") always answers
+  // null, so renderGrid's `if (ctx)` never opens and paint() is unreachable
+  // (canvas.ts's own header comment). spectator.ts carries a getContext
+  // override for exactly this, but it is a TEST-ONLY SEAM ON ViewExtras and
+  // app.ts deliberately never sets it — so reaching app.ts's own default path
+  // means making the real canvas.getContext answer. Patched on
+  // HTMLCanvasElement.prototype and restored in a finally: bun runs every test
+  // file in one process, so a leaked patch would reach the view tests, which
+  // drive the same code through their own seam.
+  //
+  // BOTH LEVELS OF SPEC §4.2's resolution in one scene, because they arrive
+  // from different fetches on different schedules: the overridden square wants
+  // the map's own pack (Bearer, /api/packs/...), the plain one wants the
+  // standard vocabulary (no token, /std-pack/...), and either merge losing its
+  // half is a board that draws half a room.
+  localStorage.setItem("vtt.token", "tok");
+  const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+  // The decoded stand-in carries the FILE'S OWN BYTES as its tag, so a
+  // drawImage can be traced back to the exact file it came from — "something
+  // was drawn" would pass with the two packs' images swapped.
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (blob: Blob) => ({ tag: await blob.text() }) as unknown as ImageBitmap;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return Response.json({ participantId: "p", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") {
+      return Response.json({
+        maps: [{
+          id: "cellar", name: "The Sunken Cellar", gridWidth: 2, gridHeight: 1,
+          pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
+        }],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/pack.json") {
+      return Response.json({
+        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
+        tiles: [{ name: "masonry-1", kind: "floor", material: "stone", file: "masonry_1.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/masonry_1.png") return new Response("pack-art");
+    if (path === "/std-pack/pack.json") {
+      return Response.json({
+        id: "std", name: "Standard Vocabulary", cell_px: 64,
+        tiles: [{ name: "earth", kind: "floor", material: "earth", file: "std_earth_floor.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/std-pack/std_earth_floor.png") return new Response("std-art");
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  const drawn: string[] = [];
+  const canvasProto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+  const originalGetContext = canvasProto.getContext;
+  canvasProto.getContext = () => recordingCtx(drawn);
+  try {
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "s1", name: "Hall", gridWidth: 2, gridHeight: 1,
+          tiles: {
+            // Art empty: the standard vocabulary answers, by kind/material.
+            "0,0": { kind: "floor", material: "earth", art: "" },
+            // Art set: the map's own pack answers, by name (mapdef.Resolve
+            // wrote this in at compile time — spec §4.2's two levels).
+            "1,0": { kind: "floor", material: "stone", art: "masonry-1" },
+          },
+        },
+      }),
+    );
+    await settle();
+    await settle();
+
+    // A FRESH PAINT, with the earlier ones discarded. Both loads repaint as
+    // they land, so the accumulated record necessarily contains the honest
+    // markers drawn before any art existed — and a marker assertion over that
+    // could never pass. One more frame, and what this paints is the steady
+    // state a table actually looks at.
+    drawn.length = 0;
+    sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+    await settle();
+
+    expect(drawn).toContain("drawImage:std-art");
+    expect(drawn).toContain("drawImage:pack-art");
+    // AND NOTHING WAS MARKED MISSING. Without this, dropping one merge would
+    // still leave the other's assertion above passing on its own half.
+    expect(drawn.filter((c) => c.startsWith(`fillRect:${missingTileColors[0]}`))).toHaveLength(0);
+    s?.close();
+  } finally {
+    canvasProto.getContext = originalGetContext;
+    (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
+test("a map with no pack is skipped, and a pack two maps share is fetched once", async () => {
+  // THE TWO WAYS THE LOOP OVER /api/maps CAN GO WRONG, and they are one line
+  // apart. Configuring several maps is ordinary — a campaign is a handful of
+  // them, and both shipped adventures ship more than one — and pack-assets.ts
+  // loads EVERY configured map's pack because the wire gives no way to
+  // correlate a live scene back to the map it came from.
+  //
+  //   - A map with NO pack at all is legal (MapMeta.pack is optional, and a
+  //     map authored with no art overrides needs none). Reading its pack id
+  //     anyway throws, and the throw lands in the metadata chain's own
+  //     trailing .catch — so the symptom is not a stack trace, it is every
+  //     LATER map's art silently never loading.
+  //   - Two maps sharing a pack is the normal case for a multi-level dungeon.
+  //     Without the loaded-set guard each one re-fetches the manifest and
+  //     every image in it, which on a real pack is dozens of files per extra
+  //     map and paints nothing new.
+  //
+  // The pack-less map is listed FIRST on purpose: it is the position where
+  // reading its id takes down the maps behind it too.
+  localStorage.setItem("vtt.token", "tok");
+  const asked: string[] = [];
+  const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (_blob: Blob) => ({}) as unknown as ImageBitmap;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    asked.push(path);
+    if (path === "/api/me") return Response.json({ participantId: "p", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") {
+      return Response.json({
+        maps: [
+          { id: "attic", name: "The Attic", gridWidth: 4, gridHeight: 4 },
+          {
+            id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
+            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
+          },
+          {
+            id: "cellar-north", name: "The North Cellar", gridWidth: 10, gridHeight: 9,
+            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
+          },
+        ],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/pack.json") {
+      return Response.json({
+        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
+        tiles: [{ name: "earth-1", kind: "floor", material: "earth", file: "earth_1.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/api/packs/cellar-basics/earth_1.png") return new Response("fake-png-bytes");
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  try {
+    const r = root();
+    const s = boot(r);
+    FakeSocket.instances[0]!.open();
+    await settle();
+
+    // The shared pack loaded — once — and the pack-less map cost nothing.
+    expect(asked.filter((p) => p === "/api/packs/cellar-basics/pack.json")).toHaveLength(1);
+    expect(asked.filter((p) => p === "/api/packs/cellar-basics/earth_1.png")).toHaveLength(1);
+    // And nothing was asked for on behalf of the map that has no pack: an id
+    // read off `undefined` would 404 as the literal string, which is the shape
+    // this failure takes when the guard is present but reversed.
+    expect(asked.filter((p) => p.includes("undefined"))).toHaveLength(0);
+    expect(asked.filter((p) => p.startsWith("/api/packs/"))).toHaveLength(2);
+    s?.close();
+  } finally {
+    (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
 // TWO EVENTS PER CHARACTER, because the fold refuses an actorAdded that names
 // a controller: creation makes a character, a grant hands it over (visibility
@@ -1118,8 +1367,10 @@ test("joining stores the credential, strips the secret from the address bar, and
   setURL("http://localhost/?join=s3cret");
   useFakeSocket();
   const calls: string[] = [];
+  const titles: unknown[] = [];
   const original = history.replaceState.bind(history);
   history.replaceState = ((...args: unknown[]) => {
+    titles.push(args[1]);
     calls.push(String(args[2]));
     return original(args[0] as never, args[1] as string, args[2] as string);
   }) as typeof history.replaceState;
@@ -1143,6 +1394,10 @@ test("joining stores the credential, strips the secret from the address bar, and
   // one person's token.
   expect(calls).toHaveLength(1);
   expect(calls[0]).not.toContain("join");
+  // The same "no title claimed" assertion as the ?token= strip above carries,
+  // and for the same reason: two call sites strip two different credentials,
+  // and each is the only place its own arguments can be seen.
+  expect(titles).toEqual([""]);
   expect(FakeSocket.instances).toHaveLength(1);
   expect(FakeSocket.instances[0]!.url).toContain("token=tok-joined");
 
@@ -1901,6 +2156,40 @@ test("an accepted perch moves the indicator", async () => {
   s?.close();
 });
 
+test("an accepted perch CLEARS the refusal the last one left up", async () => {
+  // The success arm of perchOn's toast, which the refusal tests above cannot
+  // see: they only ever assert that a refusal APPEARS, and a success that
+  // wrote some other string — or left the old refusal standing — would satisfy
+  // every one of them. A watcher who is told "refused: not a party member"
+  // while sitting on the shoulder the server just granted them has been handed
+  // the same contradiction the indicator exists to prevent, and would have no
+  // reason to trust either line again.
+  //
+  // The refusal FIRST, deliberately: asserting only that an accepted perch
+  // shows no toast would also pass on a page that never had one, so the
+  // clearing is what is actually pinned.
+  const { r, s, sock } = await tableAs("spectator");
+  const shoulder = () =>
+    Array.from(r.querySelectorAll(".perch .shoulder"))
+      .find((b) => b.textContent === "Lera") as HTMLButtonElement;
+  shoulder().click();
+  await settle();
+  sock.deliver({
+    result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: false, error: "not a party member" },
+  });
+  await settle();
+  expect(r.querySelector(".toast")?.textContent).toContain("refused: not a party member");
+
+  shoulder().click();
+  await settle();
+  sock.deliver({ result: { requestId: JSON.parse(sock.sent[1]!).requestId as string, ok: true } });
+  await settle();
+
+  expect(r.querySelector(".toast")).toBeNull();
+  expect(r.textContent).not.toContain("refused");
+  s?.close();
+});
+
 test("a spectator's reconnect starts the log over, and re-sends the shoulder", async () => {
   // THE HAZARD, and the reason this is a task rather than an afternoon.
   //
@@ -2110,6 +2399,43 @@ test("a spectator who has never perched resumes like anybody else", async () => 
   s?.close();
 });
 
+test("a REFUSED perch does not shape the log, so that watcher still resumes", async () => {
+  // The flag follows the SERVER's answer, exactly as the indicator beside it
+  // does — and for a sharper reason. A refused perch put nothing in this log:
+  // the server sent no frames, so there is nothing a restart could repair, and
+  // a client that shaped its flag on the CLICK would replay the whole campaign
+  // on every reconnect for the rest of the session, paying the full re-fold
+  // cost for a perch it was never granted.
+  //
+  // The rest of this family says which QUESTION the flag asks ("has a perch
+  // shaped this log", not "am I perched" or "am I a spectator"); this one says
+  // what counts as an answer.
+  const { r, s, sock } = await tableAs("spectator");
+  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
+    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
+  asme.click();
+  await settle();
+  sock.deliver({
+    result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: false, error: "not a party member" },
+  });
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
+
+  sock.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+
+  const redial = FakeSocket.instances[1]!;
+  expect(redial.url).toContain("after=4");
+  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
+  redial.open();
+  await settle();
+  // And no shoulder is re-taken, because none was ever given.
+  expect(redial.sent).toHaveLength(0);
+  s?.close();
+});
+
 test("a spectator who hopped OFF a shoulder still starts over", async () => {
   // "Am I perched RIGHT NOW" is the wrong question, and this is the case that
   // proves it: nothing on the wire un-introduces a scene or an actor, so a
@@ -2147,6 +2473,40 @@ test("a spectator who hopped OFF a shoulder still starts over", async () => {
   (r.querySelector(".reconnect") as HTMLButtonElement).click();
   await settle();
   expect(FakeSocket.instances[2]!.url).toContain("after=4");
+  s?.close();
+});
+
+test("hopping off a shoulder nobody ever took leaves the log unshaped", async () => {
+  // The EMPTY id is the other half of what shapes a log, and it shapes
+  // nothing. setViewpoint("") is a real command with a real effect — it is
+  // never skipped, which the "'no shoulder' reaches the wire" test above pins
+  // — but the effect is to stop seeing, and stopping seeing introduces no
+  // scene, no actor and no token. A watcher who has only ever pressed this
+  // button holds precisely what the replay would hand them again.
+  //
+  // Distinct from "a spectator who hopped OFF a shoulder still starts over"
+  // just above, and the pair is the whole point: THAT one perched first, so
+  // its log carries frames nothing on the wire un-says. This one never did.
+  // A flag set by any accepted set_viewpoint, rather than by an accepted
+  // SHOULDER, cannot tell the two apart and makes every later reconnect replay
+  // the campaign.
+  const { r, s, sock } = await tableAs("spectator");
+  (r.querySelector(".perch .unperch") as HTMLButtonElement).click();
+  await settle();
+  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
+  await settle();
+
+  sock.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+
+  const redial = FakeSocket.instances[1]!;
+  expect(redial.url).toContain("after=4");
+  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
+  redial.open();
+  await settle();
+  expect(redial.sent).toHaveLength(0);
   s?.close();
 });
 

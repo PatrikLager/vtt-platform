@@ -108,8 +108,36 @@ function kindSelect(cls: string, field: string): HTMLSelectElement {
     o.value = value;
     o.textContent = label;
     sel.appendChild(o);
+    // WHICH ONE IS SELECTED, said on the option — NOT by assigning `sel.value`
+    // after the loop. Do not "simplify" it back; the assignment form is what
+    // this replaced, and it was a line no test could defend.
+    //
+    // The two are equivalent for every value this field can hold, measured
+    // across all three: no remembered answer, a remembered "", and each real
+    // kind. So this is not a fix. It is a choice about what a test can SEE.
+    //
+    // `sel.value = draft[field] ?? ""` needed a sentinel "" to mean "nothing
+    // remembered", and that sentinel was untestable BY CONSTRUCTION. Per the
+    // HTML spec, assigning a select a string no option carries deselects
+    // everything: selectedIndex goes to -1 while the getter still reports "",
+    // so the DM meets an EMPTY box where the question belongs and `.value`
+    // says the field is fine. happy-dom then re-runs "ask for a reset" the
+    // instant the select is appended to a parent and puts selectedIndex back
+    // to 0 (measured: -1 before the append, 0 after), erasing the difference
+    // one synchronous statement after it appears, inside a private function no
+    // test can enter. A mutation of that literal therefore survived every test
+    // that could ever be written — and calling it EQUIVALENT would have been
+    // false, because in a real browser it is a visible defect.
+    //
+    // This way there is no sentinel to mutate. An absent draft matches no
+    // option, nothing is selected, and the DOM's own "ask for a reset" picks
+    // the first option — which IS "what is it?". Same default, reached by the
+    // rule the browser already runs rather than by a value we name. And the
+    // comparison IS killable: flip it and every option but the right one is
+    // selected, the last of those wins, and the box shows a wrong answer where
+    // a test can read it off the option.
+    o.selected = value === draft[field];
   }
-  sel.value = draft[field] ?? "";
   sel.addEventListener("change", () => {
     draft[field] = sel.value;
   });

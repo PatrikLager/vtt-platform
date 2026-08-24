@@ -181,7 +181,12 @@ test("a pasted actor that does not say what it is names the field, not the wire"
   // rejection would arrive after the DM had moved on.
   const err = parseActorJSON('{"actorId":"a1","name":"Lera"}') as Error;
   expect(err).toBeInstanceOf(Error);
-  expect(err.message).toMatch(/kind/i);
+  // NAMING THE FIELD IS ASSERTED LITERALLY, because /kind/i cannot see it: the
+  // two enum names below both contain "KIND", so the regex passes just as
+  // happily on a message that opens with nothing at all and offers two values
+  // for a question it never asked. Measured — emptying this fragment survived
+  // the mutation gate against the loose assertion.
+  expect(err.message).toContain('actor is missing "kind", which the server requires');
   expect(err.message).toContain("ACTOR_KIND_PARTY_MEMBER");
   expect(err.message).toContain("ACTOR_KIND_NON_PARTY");
 });
@@ -206,6 +211,35 @@ test("a pasted actor answers about its controller before its kind, as the server
   expect(err.message).toMatch(/grant_actor_control/);
   // And it must not be the kind message, even though the kind is absent too.
   expect(err.message).not.toMatch(/"kind"/);
+});
+
+test("the controller refusal says what is wrong AND what confers control instead", () => {
+  // One message, three fragments, and the assertion above reads only the
+  // middle one — so emptying either end left a DM with a refusal that names no
+  // offence, or one that names it and then stops. Both halves are load-bearing
+  // for the same reason the check is: a DM who is told only "grant_actor_control"
+  // does not know which of the fields they pasted offended, and a DM who is
+  // told only what offended retypes the same actor with the controller moved.
+  const err = parseActorJSON('{"actorId":"a1","name":"Lera","controllerId":"p-2"}') as Error;
+  expect(err.message).toContain("actor declares a controller, which creating it may not do");
+  expect(err.message).toContain("no controller, then grant it");
+});
+
+test("a controller declared in the REPEATED field is refused too", () => {
+  // Actor carries BOTH controller fields — `controller_id` and the
+  // `controller_ids` a grant appends to — and a paste can set either. The
+  // repeated one is not the exotic case: it is what a DM gets by copying an
+  // actor OUT of a running campaign, where every controller a grant conferred
+  // lives in the list and the singular field is often empty.
+  //
+  // The kind is stated deliberately, so that nothing but the controller check
+  // can produce a refusal here. Without it the guard one branch down answers
+  // instead, and this test would pass with the controller_ids arm deleted.
+  const err = parseActorJSON(
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","controllerIds":["p-2"]}',
+  ) as Error;
+  expect(err).toBeInstanceOf(Error);
+  expect(err.message).toContain("actor declares a controller, which creating it may not do");
 });
 
 test("an unknown field in a pasted actor is rejected, not silently dropped", () => {
