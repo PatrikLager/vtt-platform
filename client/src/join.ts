@@ -46,6 +46,34 @@ function humanReadable(body: string): string {
   return stripped === "" ? NAME_FALLBACK : stripped;
 }
 
+/** The reader half of the ?join= link format, and the ONLY place the client
+ *  spells that parameter name.
+ *
+ *  A function rather than a bare constant, and it lives here rather than in
+ *  app.ts, because of what has to be able to check it. The name has three
+ *  writers on the Go side and one reader here, so what needs pinning is that
+ *  the reader asks for what the writers wrote — and the shared truth is
+ *  contract/testdata/join_url_format.json, which no constant in either
+ *  language can be derived from.
+ *
+ *  It used to be pinned by READING app.ts's source and asserting the text
+ *  `params.get("join")` appeared in it. That worked until the text stopped
+ *  being the text: Stryker instruments every mutated file and rewrites string
+ *  literals into ternaries, so the assertion failed in the DRY RUN and the
+ *  whole TypeScript mutation gate died before testing a single mutant. It had
+ *  been dead since 2026-08-11 and nothing said so, because the gate skips
+ *  itself on macOS and CI is where it actually runs.
+ *
+ *  So the lookup is a function taking the params it reads: the test calls it
+ *  with a URL built from the fixture and checks the secret comes back. That
+ *  survives instrumentation because it never looks at source, and it is the
+ *  stronger assertion anyway — the old one passed on text alone, and would
+ *  have passed on a `params.get` sitting in dead code.
+ */
+export function joinSecretFrom(params: URLSearchParams): string | null {
+  return params.get("join");
+}
+
 /** Exchange the shared secret and a display name for this person's own token. */
 export async function requestJoin(
   origin: string,

@@ -21,7 +21,7 @@ import {
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
 import { setViewpoint } from "./commands";
-import { requestJoin } from "./join";
+import { joinSecretFrom, requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
 import { loadPackImages, loadStandardPackImages } from "./view/pack-assets";
 import type { ImageMap } from "./view/canvas";
@@ -75,7 +75,7 @@ export function boot(root: HTMLElement): Session | null {
   // reopens; if it won, every visit would mint a NEW participant, and a
   // returning player would arrive as a stranger with none of their characters
   // while the roster filled with duplicates nobody can tell apart.
-  const secret = params.get("join");
+  const secret = joinSecretFrom(params);
   if (secret !== null) {
     runJoin(root, auth, secret);
     return null;
