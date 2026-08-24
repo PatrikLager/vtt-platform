@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"database/sql"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1417,174 +1416,33 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
-// TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople is the
-// deletion of participants.controls, on the databases that already carry it.
+// TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople and
+// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen used to sit
+// here. They pinned the two halves of the migration that dropped
+// participants.controls, and that migration was removed on 2026-08-24: no
+// campaign is in use by anyone, so it protected no data, and the second test
+// existed only to record what it charged for the privilege.
 //
-// The column recorded control a SECOND time and granted nothing: no updater
-// ever existed, no grant was ever emitted from it, and the one consumer echoed
-// it at /api/me. Leaving it behind would leave the second writer's slot open
-// for somebody to start reading again, which is how the concept ends up with
-// two authorities a third time.
+// The first claimed the column is gone from a campaign that carried it. It is
+// not — nothing drops it now — and it does not need to be: no statement in this
+// package names it, and its "keeps the people" half still passed against the
+// removal (Verify, Lookup and List all resolved an old-shape row before the
+// column assertion failed), so an existing campaign keeps working with the
+// column inert.
 //
-// THE PEOPLE ARE THE OTHER HALF OF THE ASSERTION, and it is not decoration: a
-// migration that dropped the whole participants table would satisfy "the
-// column is gone" perfectly, and would log out every campaign in existence.
-// The row below is written in the pre-deletion shape, by hand, and must still
-// resolve by token and by id afterwards.
-func TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "with-controls.db")
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The participants shape EXACTLY as it shipped while control was recorded
-	// twice, carrying a row whose controls list names an actor no grant in any
-	// log ever gave them — the lie this deletion is about.
-	const token = "an-existing-token"
-	hash := sha256.Sum256([]byte(token))
-	if _, err := raw.Exec(`
-CREATE TABLE participants (
-  id           TEXT PRIMARY KEY,
-  display_name TEXT,
-  role         TEXT,
-  controls     TEXT,
-  token_hash   BLOB UNIQUE,
-  revoked      INTEGER DEFAULT 0
-);`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.Exec(
-		`INSERT INTO participants (id, display_name, role, controls, token_hash, revoked)
-		 VALUES ('p-hollis', 'Hollis', 'player', '["act-hollis"]', ?, 0)`, hash[:]); err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	d, err := identity.Open(path)
-	if err != nil {
-		t.Fatalf("opening a campaign that predates the deletion: %v", err)
-	}
-	defer d.Close()
-
-	p, err := d.Verify(token)
-	if err != nil {
-		t.Fatalf("an existing participant stopped resolving after the upgrade: %v", err)
-	}
-	if p.ID != "p-hollis" || p.Name != "Hollis" || p.Role != identity.RolePlayer {
-		t.Errorf("the upgrade changed who this is: %+v", p)
-	}
-	if _, err := d.Lookup("p-hollis"); err != nil {
-		t.Errorf("the upgrade lost the participant by id: %v", err)
-	}
-	list, err := d.List()
-	if err != nil || len(list) != 1 {
-		t.Errorf("List after the upgrade = %d participants, %v; want 1, nil", len(list), err)
-	}
-
-	// And the column itself is gone. Read through a SEPARATE handle so this
-	// asks the FILE what shape it has, rather than asking the code that just
-	// claimed to change it.
-	after, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer after.Close()
-	rows, err := after.Query(`PRAGMA table_info(participants)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var cols []string
-	for rows.Next() {
-		var cid, name, typ, notnull, dflt, pk any
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			t.Fatal(err)
-		}
-		cols = append(cols, fmt.Sprint(name))
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if slices.Contains(cols, "controls") {
-		t.Errorf("participants still carries a controls column after the upgrade (%v) — "+
-			"the second record of control outlived the code that read it", cols)
-	}
-	// The columns that DO carry something are still there, so "gone" cannot be
-	// satisfied by a table rebuilt into a different shape.
-	for _, want := range []string{"id", "display_name", "role", "token_hash", "revoked"} {
-		if !slices.Contains(cols, want) {
-			t.Errorf("the upgrade dropped %q as well: %v", want, cols)
-		}
-	}
-}
-
-// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen pins the price
-// of the deletion, deliberately, as a test rather than a footnote.
+// The second claimed such a campaign will NOT open on read-only media. Run
+// unchanged against the removal it failed with "a read-only campaign that still
+// carries participants.controls opened" — which is the measurement that the
+// cost is gone, and the reason the test cannot stay.
 //
-// TestAnAlreadyMigratedReadOnlyCampaignStillOpens says an archived campaign
-// stays readable, and it still passes — its fixture is created by THIS code and
-// so has no control column. Every campaign created before today does, which
-// makes migrationPending answer yes, which takes migrate to BEGIN IMMEDIATE,
-// which read-only media cannot give. So the archive opens once it has been
-// opened once somewhere writable, and not before.
-//
-// Written down here because the alternative — leaving a dead column on old
-// databases so nothing has to be written — is the option this task explicitly
-// rejected, and a cost nobody recorded is a cost the next person reads as a bug.
-func TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "archived-with-controls.db")
-
-	// CURRENT in every other respect — created by this code, then given back
-	// the one column the deletion removes. So the refusal below can only be
-	// about `controls`, not about some other missing piece of schema.
-	d, err := identity.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := d.CreateInvite("Archivist", identity.RoleDM); err != nil {
-		t.Fatal(err)
-	}
-	d.Close()
-
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.Exec(`ALTER TABLE participants ADD COLUMN controls TEXT`); err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	// The DIRECTORY too: SQLite needs to create -wal/-shm beside the file, so a
-	// writable directory leaves a path where the write still succeeds.
-	if err := os.Chmod(path, 0o444); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(dir, 0o755)
-		_ = os.Chmod(path, 0o644)
-	})
-	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
-		f.Close()
-		t.Skip("running with rights that make a read-only file writable")
-	}
-
-	again, err := identity.Open(path)
-	if err == nil {
-		again.Close()
-		t.Fatal("a read-only campaign that still carries participants.controls opened — " +
-			"either the migration silently skipped it, leaving the second record of " +
-			"control in place, or it wrote to media that cannot be written")
-	}
-}
+// IT WAS ALSO CARRYING SOMETHING THAT HAD NOTHING TO DO WITH CONTROL, found in
+// review rather than by hand: it was the only test reaching migrateLocked's
+// "budget an already-open door" error arm, which belongs to the joining-a-table
+// arc. Its fixture had both budget columns and BEGIN IMMEDIATE does not fail on
+// read-only media, so that UPDATE was the first statement to actually attempt a
+// write. That arm is re-pinned on purpose now, by
+// TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign in
+// fault_internal_test.go.
 
 // TestMigratingTwiceIsNotAnError pins idempotency. ALTER TABLE ADD COLUMN is an
 // error, not a no-op, on a column that is already there — so a regression in

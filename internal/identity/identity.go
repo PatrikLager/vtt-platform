@@ -34,7 +34,15 @@ import (
 // is exactly why this belongs in the log rather than here: what a token makes
 // you is infrastructure, what you hold at the table is history.
 //
-// migrate() drops the column from campaigns that still carry it.
+// NOTHING MIGRATES IT AWAY, and that is the second decision (2026-08-24). A
+// migration that dropped the column from campaigns still carrying one shipped
+// on this branch and was removed the same day: no campaign is in use by anyone,
+// so it protected no data, and it charged every campaign still carrying the
+// column one WRITABLE open — its shape check made migrationPending answer yes
+// for every one of them, which takes migrate to BEGIN IMMEDIATE, which
+// read-only media cannot give. A campaign that still carries the column opens
+// (TestJoinIsClosedOnAnExistingCampaign's fixture carries it) and the column is
+// inert, because no statement in this package names it.
 const schema = `
 CREATE TABLE IF NOT EXISTS participants (
   id           TEXT PRIMARY KEY,
@@ -78,8 +86,8 @@ CREATE TABLE IF NOT EXISTS join_access (
   admit_limit INTEGER NOT NULL DEFAULT 0
 );`
 
-// migrate reconciles an existing campaign's shape with the schema above:
-// columns that schema cannot deliver on its own, and one it must now REMOVE.
+// migrate adds columns the schema above cannot deliver on its own, and repairs
+// an already-open door left without a budget.
 //
 // CREATE TABLE IF NOT EXISTS is a NO-OP on a table that already exists, so a
 // new COLUMN never appears on a campaign that has one — which the join_access
@@ -89,36 +97,15 @@ CREATE TABLE IF NOT EXISTS join_access (
 // UPDATE against ONE row to be race-proof, and splitting it across two tables
 // would make that a transaction spanning both.
 //
-// The same no-op cuts the other way for a column being deleted:
-// participants.controls (2026-08-24) stays on every existing campaign until
-// something drops it, so editing the schema string alone would leave the second
-// record of control sitting in the file for the next reader to find and trust.
+// It is deliberately the smallest thing that works: add what is missing, repair
+// what the addition would otherwise strand, touch nothing else. It runs on every
+// Open and must stay idempotent — ALTER TABLE ADD COLUMN is an error, not a
+// no-op, if the column is already there.
 //
-// It is deliberately the smallest thing that works: reconcile what differs,
-// touch nothing else. It runs on every Open and must stay idempotent — ALTER
-// TABLE ADD COLUMN is an error, not a no-op, if the column is already there,
-// and so is DROP COLUMN if it is already gone.
-//
-// FORWARD-ONLY, and worth stating precisely because the failure is delayed. A
-// binary that predates the deletion still OPENS a migrated campaign without
-// complaint — its CREATE TABLE IF NOT EXISTS is a no-op and its own migration
-// only touches join_access. It then fails on any statement that NAMES the
-// column, which is four of the six that touch participants: `table participants
-// has no column named controls` on CreateInvite, `no such column: controls` on
-// Verify, Lookup and List. SetRole and Revoke name nothing that went and keep
-// working, so the symptom is not "everything breaks" — it is a server that
-// starts, still revokes and promotes, and rejects every credential, because
-// Verify gates every connection. Measured against a migrated file, not reasoned
-// from the source. Downgrading a deployment therefore means restoring a
-// campaign file, not just rolling a binary back.
-//
-// AND IT COSTS EVERY EXISTING CAMPAIGN ONE WRITABLE OPEN. Until this runs,
-// migrationPending answers yes for every database ever created by this package,
-// so migrate reaches BEGIN IMMEDIATE — which read-only media cannot give it.
-// An archived campaign that opened fine yesterday will not open again until it
-// is opened once somewhere writable. That is the deliberate price of not
-// leaving the column behind, and TestAReadOnlyCampaignStillCarryingTheControl
-// ColumnWillNotOpen pins it so it stays a decision rather than a surprise.
+// IT TOUCHES ONLY join_access, and that is the whole of it again: the branch
+// that dropped participants.controls was removed on 2026-08-24. See the schema
+// comment for why that column is not worth a migration, and what the migration
+// was charging for the privilege.
 func migrate(db *sql.DB) error {
 	// READ FIRST, and take no write lock at all when there is nothing to do —
 	// the same discipline ensureJoinRow documents, for the same measured
@@ -172,22 +159,14 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-// migrationPending reports whether anything needs writing: a missing column, a
-// column that must go, or an open door still carrying no budget. Reads only.
+// migrationPending reports whether anything needs writing: a missing column, or
+// an open door still carrying no budget. Reads only.
 func migrationPending(ctx context.Context, db *sql.DB) (bool, error) {
 	have, err := columnNames(ctx, db, joinAccessShape)
 	if err != nil {
 		return false, err
 	}
 	if !have["admitted"] || !have["admit_limit"] {
-		return true, nil
-	}
-
-	phave, err := columnNames(ctx, db, participantsShape)
-	if err != nil {
-		return false, err
-	}
-	if phave["controls"] {
 		return true, nil
 	}
 
@@ -203,32 +182,29 @@ func migrationPending(ctx context.Context, db *sql.DB) (bool, error) {
 // reads it, and the name that goes in the error when it cannot be read.
 //
 // ONE value carrying both, so a call site cannot pass a pragma and a label that
-// disagree and mislabel the one message an operator gets. Small, and the same
-// objection this task exists to answer at a much larger scale.
+// disagree and mislabel the one message an operator gets.
 //
 // The pragma is a LITERAL rather than built from the name: SQLite will not
 // accept a bind parameter in a PRAGMA, so building it would mean interpolating
 // into SQL — a shape a reader has to re-check for injection every time, even
 // when the input is a literal three lines up.
+//
+// ONE SHAPE since 2026-08-24: participantsShape went with the controls
+// migration. Kept as a value rather than folded back into its callers because
+// both of them still read this table and must name it identically.
 type tableShape struct {
 	pragma string
 	name   string
 }
 
-var (
-	joinAccessShape   = tableShape{`PRAGMA table_info(join_access)`, "join_access"}
-	participantsShape = tableShape{`PRAGMA table_info(participants)`, "participants"}
-)
+var joinAccessShape = tableShape{`PRAGMA table_info(join_access)`, "join_access"}
 
 // columnNames reads a table's column set: query it, drain it, close it.
 //
-// ONE implementation for FOUR call sites — migrationPending and migrateLocked
-// each ask about both tables, the first to decide whether to take the write
-// lock and the second to re-decide under it. The draining was already shared;
-// what was not, and what the participants read would have made a third and
-// fourth copy of, is the query and its wrapped error. Four of those is four
-// chances for a wrap to name the wrong table in the one message an operator
-// gets.
+// ONE implementation for TWO call sites — migrationPending, deciding whether to
+// take the write lock, and migrateLocked, re-deciding under it. The query and
+// its wrapped error are shared as well as the draining, so the two cannot name
+// the table differently in the one message an operator gets.
 //
 // The rows handle is closed by DEFER in exactly one place. That matters beyond
 // tidiness: migrateLocked must close it BEFORE its ALTER TABLE, since SQLite
@@ -277,12 +253,18 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 	// the whole migration while this one waited for the write lock, and ALTER
 	// TABLE ADD COLUMN is an error, not a no-op, on a column already there.
 	// WRAPPED "migrate:", which the read in migrationPending is not. Both read
-	// the same two shapes with the same helper and the same message, so without
-	// this the two failures are indistinguishable — and a test meaning to pin
-	// the arm under the lock passes just as green when it trips the pre-check
-	// instead, which is what would happen the day these two calls are reordered
-	// above. It also matches how every other failure inside this transaction
-	// already reads (migrate's begin and commit arms).
+	// the SAME shape with the same helper and the same message, so without this
+	// an operator cannot tell which of the two failed.
+	//
+	// NOTHING HAS EVER TESTED THIS ARM, and nothing can through testdb: Arm is
+	// one-shot and matches by substring, and migrationPending runs the identical
+	// PRAGMA first, so the single armed fault is always spent before this call.
+	// Measured, not assumed — this arm read `1 0` in the coverage profile at
+	// HEAD on 2026-08-24 and before it. The only under-lock shape read a fault
+	// ever reached was the participants one, which went with the controls
+	// migration. Said here so it reads as a known hole rather than an
+	// unexplained gap in a report. It also matches how every other failure
+	// inside this transaction already reads (migrate's begin and commit arms).
 	have, err := columnNames(ctx, conn, joinAccessShape)
 	if err != nil {
 		return fmt.Errorf("identity: migrate: %w", err)
@@ -316,28 +298,6 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 		`UPDATE join_access SET admit_limit = ?, admitted = 0
 		 WHERE open = 1 AND admit_limit = 0`, DefaultAdmitLimit); err != nil {
 		return fmt.Errorf("identity: budget an already-open door: %w", err)
-	}
-
-	// The second record of control goes (2026-08-24; see schema's note on why
-	// it was never an authority). Its own shape read, for the same reason the
-	// join_access one is re-read here: DROP COLUMN is an error, not a no-op, on
-	// a column that a concurrent opener already removed while this one waited
-	// for the write lock.
-	//
-	// DROPPING rather than leaving it inert. An unread column is a column the
-	// next reader can start reading, and the data in it is wrong — it names
-	// actors whose controller_ids never mentioned these participants — so
-	// leaving it would preserve the exact material a future "we already store
-	// this" would be built on.
-	phave, err := columnNames(ctx, conn, participantsShape)
-	if err != nil {
-		return fmt.Errorf("identity: migrate: %w", err)
-	}
-	if phave["controls"] {
-		if _, err := conn.ExecContext(ctx,
-			`ALTER TABLE participants DROP COLUMN controls`); err != nil {
-			return fmt.Errorf("identity: drop participants.controls: %w", err)
-		}
 	}
 	return nil
 }

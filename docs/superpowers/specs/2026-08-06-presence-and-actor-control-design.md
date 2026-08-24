@@ -339,8 +339,17 @@ had written, and the one that looked authoritative was inert.
 
 `CreateInvite` now takes `(name, role)`. **An invite confers a seat and a role;
 control is conferred only by a grant**, which also declares whether the
-character is a party member — visibility spec §5.1. The column is gone, with a
-migration.
+character is a party member — visibility spec §5.1.
+
+The column is gone. **CORRECTED 2026-08-24, hours after this paragraph was
+written:** it first said "gone, with a migration", which was true for about a
+day. There is no migration. One was built to drop the column from existing
+campaigns, then deleted once Patrik confirmed no campaign or ruleset is in use
+by anyone — it protected data that does not exist while costing something real,
+since it reached `BEGIN IMMEDIATE` and an archived read-only campaign could not
+open until it had been migrated. A campaign that still carries the column simply
+opens and ignores it; the column is nullable, so even the write path is
+unaffected. See `internal/identity/identity.go`'s schema comment.
 
 The general lesson, since this section is where the assumption was recorded: a
 sentence saying two copies of a fact "must agree" is a sentence admitting there
