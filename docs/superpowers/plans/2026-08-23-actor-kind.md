@@ -255,6 +255,47 @@ So a DM who invites someone "controlling Hollis" is told by the API that they co
 
 ---
 
+## Task 5: Delete the migration that protects nothing
+
+**Patrik, 2026-08-24: no campaign or ruleset is in use by anyone.** Every piece
+of backward-compatibility machinery this arc added is guarding data that does
+not exist, and buying a permanent widening of behaviour for it.
+
+**Files:** `internal/identity/identity.go` (schema + `migrate`/`migrateLocked`), and the tests that pin the migration — including `TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople` and `TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen`.
+
+- [ ] **Step 1:** the schema simply has no `controls` column. Not "has it dropped" — never had it.
+- [ ] **Step 2: remove ONLY the controls-dropping migration.** `migrate()` runs on every `Open` and has **other jobs from earlier arcs** (`ensureJoinRow` and friends). Read it before cutting: this task deletes one branch, not the function. If you conclude the whole apparatus is now unnecessary, SAY SO AND STOP — that is a wider decision than this task, and it belongs to whoever owns those earlier arcs.
+- [ ] **Step 3:** the read-only-campaign cost disappears with the migration, so the test pinning it goes too. Deleting a test is a claim that the behaviour it pinned no longer exists — state which, and why, in the commit.
+- [ ] **Step 4:** gates, then commit.
+
+**Not in this task:** `isPartyMember` (`internal/gateway/viewpoint.go:46`) collapses to `return a.GetKind() == ACTOR_KIND_PARTY_MEMBER`. Its comment claims the two-branch rule *"expires only when no unmigrated log exists, which for an append-only contract is never"* — that "never" arrived. **Task 4 owns it**, instructed mid-flight; do not race it.
+
+**Still open, deliberately not decided here:** `Actor.controller_id` is kept as a mirror of `controller_ids` on the stated grounds that "you cannot reinterpret history you have written." With no history, that reason is gone too — but removing a contract field is a breaking change and ADR-007 says additive-only, so it is an ADR question rather than a cleanup. Flagged, not actioned.
+
+---
+
+## Task 6: The corpus cannot quietly go back
+
+**Patrik, 2026-08-24: "the only thing we might need to change is our own test data, since it was built for the old approach — but we should capture that in our own tests."**
+
+The fixtures are the only place the old model can survive, because they are the only "existing history" there is. Task 4 converts them. This task makes conversion **stick**, so a fixture written next month cannot quietly reintroduce what four tasks just removed.
+
+Measured 2026-08-24, before Task 4: **8 `actorAdded` events carrying a `controllerId` across 5 golden streams** (session-zero, shared-control, story-table, three-role-exit, toy-brawl), plus `scenarios/denials.json` seeding one directly.
+
+- [ ] **Step 1: a guard over the corpus, derived rather than listed.** Walk `scenarios/` and `scenarios/goldens/` and assert:
+  - no `actorAdded` carries a controller — control is never conferred at creation;
+  - every grant states a kind — silence is refused on the wire, and a fixture must not encode what the wire rejects.
+
+  **Derive the obligation from the data, do not maintain an exemption list.** Task 8's projected-fixture gate is the precedent worth copying: it asks "does this golden hide a creature?" and requires projections only where the answer is yes, so it needs no list and cannot rot. An allow-list of "scenarios exempt from this rule" is the thing that goes stale silently.
+
+- [ ] **Step 2: prove it bites.** Add a fixture carrying the old shape, watch the guard fail, remove it. A guard that has never failed is a guard nobody has tested.
+
+- [ ] **Step 3:** state at the guard what it is defending, not just what it checks. "No `actorAdded` carries a controller" is a rule; *"control is conferred once, by a grant that declares kind — spec §5.1"* is the reason, and the reason is what stops someone deleting the guard to make a new fixture pass.
+
+**Why this is worth its own task rather than a line in Task 4:** the conversion and the guard fail differently. Conversion failing is a red suite. The guard failing to exist is silent, and stays silent until someone reintroduces the old shape and nothing objects.
+
+---
+
 ## Out of scope, deliberately
 
 - **Testimony outliving sight** (review finding I2): a legitimately glimpsed NPC still streams its conditions and damage forever, because `pr.actors` never forgets. Separate rule, separate decision, recorded in spec §5.1's closing paragraph so this task is not mistaken for closing it.

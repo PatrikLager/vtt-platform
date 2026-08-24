@@ -507,25 +507,36 @@ own shows nothing at all. Same field, same purpose. (Theirs is a rendering
 convention over data every client already holds; ours is enforced on the wire.
 See §6.2.)
 
-**Migration, which is the part with a trap in it, and which survives the
-revision unchanged.** Every grant already written lacks the field, and a plain
-fail-closed default — absent means not-a-party-member — would retroactively drop
-existing party members from every roster the moment they turned a corner,
-breaking this very section for every campaign already recorded. The rule is
-instead:
+**There is no migration rule, and deleting the one we wrote is the most
+valuable change in this section.**
 
-> absent + has a controller → party member; absent + no controller → not.
+Two drafts of §5.1 carried one. It read *"absent kind + has a controller → party
+member; absent + none → not"*, and it existed to keep already-written logs
+behaving — a plain fail-closed default would otherwise have dropped existing
+party members from every roster the moment they turned a corner.
 
-That reproduces today's behaviour exactly for logs already written, while every
-new log states its intent. It is the same decision this contract already made
-for `controller_id`, kept as a mirror rather than reinterpreted, on the stated
-grounds that you cannot reinterpret history you have written.
+**Patrik, 2026-08-24: no campaign or ruleset is in use by anyone. There is no
+history to preserve.** So the rule was protecting something that does not exist,
+and it is deleted. What replaces it is one line:
 
-The rule reads the same under either draft, which is why moving kind onto the
-grant costs no migration work: an old log's grants set no kind, so their actors
-stay unspecified while holding controllers, and this rule catches them exactly
-as before. Going forward the case cannot arise, because a grant with no kind is
-refused.
+> **An absent kind is NOT a party member. Always.**
+
+Fail closed. No inference from control, no second branch, no case analysis.
+
+**This matters more than the tidying it looks like, because the migration rule
+is what made the archer leak reachable.** It was the thing that could not tell
+"a log written before kind existed" from "a grant issued today that forgot" —
+and since both present as an actor holding a controller with no kind, it had to
+treat the forgetful grant as a party member. With the rule gone that ambiguity
+has nowhere to live: the refusal of a kindless grant (above) becomes
+belt-and-braces rather than the only thing standing between the system and the
+bug this section exists to close.
+
+The general shape is worth keeping even after this specific rule is gone:
+**a compatibility rule is a permanent widening of behaviour bought to protect a
+finite set of existing data.** It is worth it when that data exists. When it does
+not, all you have bought is the widening — and here the widening was the
+vulnerability itself.
 
 **One rule, both call sites.** The roster and `MayPerch`/`eyes()` read the same
 predicate today. Fixing only the roster leaves an agent-held monster perchable,
