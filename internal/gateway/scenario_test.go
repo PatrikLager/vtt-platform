@@ -429,7 +429,12 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-add-ursus",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus"}, // ControllerId left empty: DM/agent-only.
+			// ControllerId left empty AND non-party: this actor is DM/agent-run,
+			// which is what the surrounding test is about. scenarios/
+			// three-role-exit.json says the same of act-ursus, and the two must
+			// agree — this file is the gateway-level mirror of that scenario.
+			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	}, dm.id, true, unfiltered)
 	aa, ok := env.Payload.(*vttv1.Envelope_ActorAdded)
@@ -447,7 +452,8 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-add-lera",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera"},
+			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	}, dm.id, true, unfiltered)
 	aa, ok = env.Payload.(*vttv1.Envelope_ActorAdded)

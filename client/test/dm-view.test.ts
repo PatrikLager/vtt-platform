@@ -357,6 +357,7 @@ test("a scene's id and name are TRIMMED, and its dimensions become numbers", () 
 test("an actor's fields are trimmed", () => {
   const h = harness();
   fill(h, { "actor-id": "  a1  ", "actor-name": "  Lera  " });
+  (h.node.querySelector(".actor-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   h.action("add-actor").click();
   const [p] = payloads(h);
   expect(p!.case).toBe("addActor");
@@ -364,6 +365,45 @@ test("an actor's fields are trimmed", () => {
   const a = p!.value["actor"] as Record<string, unknown>;
   expect(a["actorId"]).toBe("a1");
   expect(a["name"]).toBe("Lera");
+});
+
+// --- creating an actor says what it is (actor-kind Task 7) ------------------
+
+test("the Add actor form asks what the creature is, and sends the answer", () => {
+  // The server refuses an add_actor that states no kind (gateway
+  // validateAddActor), so the console has to ASK — the same shape as the grant
+  // row's own selector one panel down, and for the same reason.
+  //
+  // BLANK by default: a pre-selected value is indistinguishable from a DM who
+  // never looked, which is the whole argument for refusing an unstated kind
+  // rather than defaulting one.
+  const h = harness();
+  const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
+  expect(kind).not.toBeNull();
+  expect(kind.value).toBe("");
+  expect(Array.from(kind.options).map((o) => o.value)).toEqual([
+    "",
+    "ACTOR_KIND_PARTY_MEMBER",
+    "ACTOR_KIND_NON_PARTY",
+  ]);
+
+  fill(h, { "actor-id": "a1", "actor-name": "Goblin" });
+  kind.value = "ACTOR_KIND_NON_PARTY";
+  h.action("add-actor").click();
+  const [p] = payloads(h);
+  const a = p!.value["actor"] as Record<string, unknown>;
+  expect(a["kind"]).toBe(ActorKind.NON_PARTY);
+});
+
+test("an actor with no kind chosen is refused here, not sent and bounced", () => {
+  // A DM who fills in an id and a name and forgets the one question the form
+  // exists to ask would otherwise read a wire-level refusal for something the
+  // console simply failed to ask them.
+  const h = harness();
+  fill(h, { "actor-id": "a1", "actor-name": "Goblin" });
+  h.action("add-actor").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices[0]).toMatch(/what it is/i);
 });
 
 test("the Add actor form cannot hand a character to anyone", () => {
@@ -383,6 +423,7 @@ test("the Add actor form cannot hand a character to anyone", () => {
   expect(h.node.querySelector('[data-field="actor-controller"]')).toBeNull();
 
   fill(h, { "actor-id": "a1", "actor-name": "Lera" });
+  (h.node.querySelector(".actor-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   h.action("add-actor").click();
   // The protobuf MESSAGE, not its JSON, so these read as the field defaults
   // rather than as absent keys — "nobody controls this actor" is what an empty
@@ -591,7 +632,7 @@ test("pasted JSON that does not parse is reported, not thrown", () => {
 test("pasted JSON that parses is sent as an addActor command", () => {
   const h = harness();
   const box = h.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement;
-  box.value = '{"actorId":"a9","name":"Nine"}';
+  box.value = '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}';
   box.dispatchEvent(new Event("input"));
   h.button("Add from JSON").click();
   expect(payloads(h)[0]!.case).toBe("addActor");
@@ -609,11 +650,18 @@ test("adding an actor clears exactly the actor fields", () => {
   for (const f of ["actor-id", "actor-name", "scene-id"]) {
     h.field(f).dispatchEvent(new Event("input"));
   }
+  const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
+  kind.value = "ACTOR_KIND_NON_PARTY";
+  kind.dispatchEvent(new Event("change"));
   h.action("add-actor").click();
 
   const next = harness();
   expect(next.field("actor-id").value).toBe("");
   expect(next.field("actor-name").value).toBe("");
+  // The kind goes back to "unanswered" with the rest. A remembered kind is the
+  // one stale draft that would be actively dangerous: the next actor typed in
+  // would silently inherit the last one's standing.
+  expect((next.node.querySelector(".actor-kind") as HTMLSelectElement).value).toBe("");
   // A field belonging to another form must survive.
   expect(next.field("scene-id").value).toBe("keep-me");
 });
@@ -636,7 +684,7 @@ test("placing a token clears exactly the token fields", () => {
 test("adding an actor from JSON clears the paste box", () => {
   const h = harness();
   const box = h.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement;
-  box.value = '{"actorId":"a9","name":"Nine"}';
+  box.value = '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}';
   box.dispatchEvent(new Event("input"));
   h.button("Add from JSON").click();
 

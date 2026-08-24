@@ -586,7 +586,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-fighter",
-        "name": "Asme"
+        "name": "Asme",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
@@ -611,7 +612,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-healer",
-        "name": "Ilva"
+        "name": "Ilva",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
@@ -636,7 +638,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-goblin-archer",
-        "name": "Goblin Archer"
+        "name": "Goblin Archer",
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },

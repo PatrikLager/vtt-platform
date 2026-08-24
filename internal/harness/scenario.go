@@ -69,6 +69,12 @@ type Scenario struct {
 // is refused at the command boundary and in the fold alike (visibility spec
 // §5.1) — so a scenario that wants a player to hold a character writes two
 // steps, and the second one says what the character is.
+//
+// THE FIRST ONE SAYS SO TOO, as of the same day: an add_actor step must carry
+// a "kind" ("ACTOR_KIND_PARTY_MEMBER" or "ACTOR_KIND_NON_PARTY") or the server
+// refuses it (gateway validateAddActor). Both writers of an actor's standing
+// now speak, which is what makes two writers safe — the hazard was never
+// multiplicity, it was a writer that could stay silent.
 type Participant struct {
 	Name string `json:"name"`
 	Role string `json:"role"`

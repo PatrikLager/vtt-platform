@@ -72,10 +72,11 @@ test("a DM hands a second character over, and the player keeps both across a rec
     // --- beat 2: characters exist, and NOBODY holds them -----------------
     //
     // This is how a campaign actually starts (spec §3.1): you log in with no
-    // character and the DM assigns one or more afterwards. The creation form's
-    // controller field is left EMPTY on purpose — the committed adventure's
-    // own actors carry no controller either, they are DM-run until somebody
-    // hands them over.
+    // character and the DM assigns one or more afterwards. The creation form
+    // has no controller box at all — the committed adventure's own actors
+    // carry no controller either, they are DM-run until somebody hands them
+    // over. What it DOES ask is what each creature is, which is a different
+    // question and the one the author always knows the answer to.
     //
     // It also puts the sharpest case on camera. Granting onto an EMPTY set is
     // the one shape where controller_id actually MOVES: everywhere else the
@@ -84,6 +85,10 @@ test("a DM hands a second character over, and the player keeps both across a rec
     for (const [id, name] of [[FIRST, "Ash"], [SECOND, "Bram"]] as const) {
       await dm.locator('[data-field="actor-id"]').fill(id);
       await dm.locator('[data-field="actor-name"]').fill(name);
+      // Both are player characters waiting to be assigned, and the form makes
+      // the DM say so (actor-kind Task 7) — the server refuses an add_actor
+      // that states no kind.
+      await dm.locator(".actor-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
       await dm.locator('[data-action="add-actor"]').click();
       await dm.waitForTimeout(300);
       await expectNoRefusal(dm, `add actor ${id}`);

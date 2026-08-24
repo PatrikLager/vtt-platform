@@ -1,6 +1,7 @@
 {
   "actor_id": "mara",
   "name": "Mara Voss",
+  "kind": "party_member",
   "attributes": {
     "brawn": 4,
     "grit": 1,

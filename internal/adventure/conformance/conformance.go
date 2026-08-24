@@ -32,6 +32,7 @@
 //	  "objects": [{"object_id": "...", "kind": "...", "at": {"x": 0, "y": 0}, "width": 0, "height": 0,
 //	    "rotation_degrees": 0, "blocks_sight": false, "blocks_move": false, "art": "..."}]}}
 //	{"type": "actor_added", "actor_added": {"actor_id": "...", "name": "...",
+//	  "kind": "ACTOR_KIND_PARTY_MEMBER|ACTOR_KIND_NON_PARTY",
 //	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}}}}
 //	{"type": "token_placed", "token_placed": {"token_id": "...", "scene_id": "...", "actor_id": "...", "x": 0, "y": 0}}
 //	{"type": "note_upserted", "note_upserted": {"key": "...", "title": "...", "text": "..."}}
@@ -279,9 +280,25 @@ type gridPointDump struct {
 	Y int32 `json:"y"`
 }
 
+// actorAddedDump gained Kind at actor-kind Task 7, the same task that made an
+// adventure's actors/*.json declare what each creature IS — and for exactly
+// the reason sceneCreatedDump's own comment gives above: a dump that dropped
+// the field would leave every compiled-batch golden silently no longer pinning
+// it, so an adventure whose Human Fighter compiled to a monster would pass
+// conformance unchanged.
+//
+// NO omitempty, unlike Attributes/Resources. Those are genuinely optional —
+// an actor with no stats is a legitimate actor — but a compiled actor with no
+// kind is the shape this whole arc exists to make unreachable, and a golden
+// that rendered it as an ABSENT KEY would show it as nothing at all. It is
+// spelled with the WIRE name (ACTOR_KIND_PARTY_MEMBER) rather than the
+// authored one ("party_member") because this file dumps compiled EVENTS, not
+// authored files — which also means the golden pins the load-time mapping
+// between the two vocabularies instead of echoing one of them back.
 type actorAddedDump struct {
 	ActorID    string                  `json:"actor_id"`
 	Name       string                  `json:"name"`
+	Kind       string                  `json:"kind"`
 	Attributes map[string]int32        `json:"attributes,omitempty"`
 	Resources  map[string]resourceDump `json:"resources,omitempty"`
 }
@@ -386,7 +403,7 @@ func toObjectsDump(objects []*vttv1.SceneObject) []sceneObjectDump {
 }
 
 func toActorAddedDump(a *vttv1.Actor) *actorAddedDump {
-	d := &actorAddedDump{ActorID: a.ActorId, Name: a.Name}
+	d := &actorAddedDump{ActorID: a.ActorId, Name: a.Name, Kind: a.GetKind().String()}
 	if len(a.Attributes) > 0 {
 		d.Attributes = make(map[string]int32, len(a.Attributes))
 		for k, v := range a.Attributes {

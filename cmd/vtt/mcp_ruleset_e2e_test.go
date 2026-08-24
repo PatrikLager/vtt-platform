@@ -110,10 +110,12 @@ func setUpTavernBrawlActorsViaMCP(t *testing.T, cs *mcpsdk.ClientSession) {
 		{"create_scene", map[string]any{"sceneId": "tavern", "name": "Tavern", "gridWidth": 5, "gridHeight": 5}},
 		{"add_actor", map[string]any{"actor": map[string]any{
 			"actorId": "brawler", "name": "Brawler",
+			"kind":       "ACTOR_KIND_PARTY_MEMBER",
 			"attributes": map[string]any{"brawn": 3, "grit": 1},
 		}}},
 		{"add_actor", map[string]any{"actor": map[string]any{
 			"actorId": "patron", "name": "Patron",
+			"kind":       "ACTOR_KIND_PARTY_MEMBER",
 			"attributes": map[string]any{"footing": 0},
 			"resources":  map[string]any{"drink": map[string]any{"current": 0, "max": 5}},
 		}}},

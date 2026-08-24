@@ -1048,7 +1048,24 @@ func (m *soakModel) planAddActor(rng *rand.Rand, ids map[string]string) soakStep
 		controllerID = ids[controllerName]
 	}
 
-	actor := &vttv1.Actor{ActorId: id, Name: id}
+	// EVERY GENERATED ACTOR SAYS WHAT IT IS, because since 2026-08-24 add_actor
+	// refuses one that does not (gateway validateAddActor) — a soak issuing the
+	// refused shape would spend its whole run failing on its own setup, exactly
+	// as planPendingGrant's own comment says of the grant.
+	//
+	// The value follows the INTENTION recorded just above rather than a
+	// constant: an actor this run means to hand to a player is that player's
+	// character, and every other one is an NPC the DM or agent runs. Both
+	// values therefore appear in every run of any length, which a fixed choice
+	// would not give.
+	// Named actorKind, not kind: soakStep has its OWN `kind` field two lines
+	// below (the action bucket), and two unrelated meanings of the word in one
+	// expression is how a reader mis-attributes both.
+	actorKind := vttv1.ActorKind_ACTOR_KIND_NON_PARTY
+	if controllerName != "" {
+		actorKind = vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
+	}
+	actor := &vttv1.Actor{ActorId: id, Name: id, Kind: actorKind}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{Actor: actor}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionAddActor, apply: func(int64) {
 		m.actors = append(m.actors, id)

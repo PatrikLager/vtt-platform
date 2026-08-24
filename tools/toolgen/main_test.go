@@ -143,7 +143,14 @@ func findTool(t *testing.T, name string) map[string]any {
 // including controllerId/moduleId/attributes/resources/moduleData, fields
 // an LLM caller should almost always OMIT rather than invent a value for.
 // The manifest's requiredOverride on add_actor must replace that derived
-// list entirely, down to exactly actorId.
+// list entirely, down to exactly the two fields a caller genuinely must
+// supply: the id, and WHAT THE ACTOR IS.
+//
+// kind joined the list at actor-kind Task 7. It is not a fabrication risk —
+// it is the opposite one. There are exactly two values, the caller inventing
+// an actor always knows which applies, and the server REFUSES the command
+// without it (gateway validateAddActor), so a schema that left it optional
+// would teach an LLM to omit the one field that gets its command bounced.
 func TestAddActorRequiredOverrideReplacesDerivedList(t *testing.T) {
 	tool := findTool(t, "add_actor")
 	schema, ok := tool["inputSchema"].(map[string]any)
@@ -155,7 +162,7 @@ func TestAddActorRequiredOverrideReplacesDerivedList(t *testing.T) {
 		t.Fatalf("add_actor: properties.actor missing or not an object: %#v", schema["properties"])
 	}
 	got := actorSchema["required"]
-	want := []any{"actorId"}
+	want := []any{"actorId", "kind"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("add_actor actor.required = %v, want %v", got, want)
 	}
@@ -206,7 +213,29 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 		t.Fatalf("add_actor actor.properties[\"actorId\"] missing or not an object: %#v", props["actorId"])
 	}
 	if _, hasDoc := actorIDProp["description"]; hasDoc {
-		t.Fatalf("add_actor actor.properties[\"actorId\"] has a description, want none (it's the one field that stayed required)")
+		t.Fatalf("add_actor actor.properties[\"actorId\"] has a description, want none (nothing to steer it away from)")
+	}
+
+	// kind is required too, and it DOES carry guidance — the only required
+	// field that does. The steer it needs is not "do not fabricate a value"
+	// but "this is not a question about who controls the actor", which is the
+	// confusion this whole arc was made of: a character whose player is away
+	// is still a party member, and a charmed monster is still a monster.
+	kindProp, ok := props["kind"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor actor.properties[\"kind\"] missing or not an object: %#v", props["kind"])
+	}
+	kindDoc, _ := kindProp["description"].(string)
+	for _, want := range []string{"ACTOR_KIND_PARTY_MEMBER", "ACTOR_KIND_NON_PARTY", "not about who controls"} {
+		if !strings.Contains(kindDoc, want) {
+			t.Fatalf("add_actor actor.properties[\"kind\"].description = %q, want it to contain %q", kindDoc, want)
+		}
+	}
+	// And it must not still tell the caller that omitting it is safe: it is
+	// refused. That sentence was true for one day and is the exact shape of a
+	// doc outliving its decision.
+	if strings.Contains(kindDoc, "Omitting it is safe") {
+		t.Fatalf("add_actor kind guidance still says omitting is safe, and the server refuses it: %q", kindDoc)
 	}
 }
 

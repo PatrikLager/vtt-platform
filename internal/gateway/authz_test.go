@@ -52,7 +52,8 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		}}
 	case "add_actor":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{
-			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin"}},
+			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
 		}}
 	case "place_token":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{

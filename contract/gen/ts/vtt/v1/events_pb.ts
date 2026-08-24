@@ -268,6 +268,11 @@ export type Actor = Message<"vtt.v1.Actor"> & {
    * eyes all key on this and never on who holds it (visibility spec §5.1);
    * see ActorKind above for the rule and for what an absent value means.
    *
+   * STATED AT CREATION, always: add_actor is refused without it, and so is an
+   * adventure's actors/*.json. An ungranted actor declaring PARTY_MEMBER is a
+   * pregenerated character waiting to be assigned, which the party is right to
+   * know about — a grant later restates the standing if it changes.
+   *
    * @generated from field: vtt.v1.ActorKind kind = 9;
    */
   kind: ActorKind;
@@ -1335,9 +1340,20 @@ export const EnvelopeSchema: GenMessage<Envelope> = /*@__PURE__*/
  * that forgot": every leak this design chased lived in that gap. With one rule
  * the ambiguity has nowhere to live.
  *
- * ABSENCE IS STILL NOT TOLERATED ON A COMMAND: GrantActorControl.kind is
- * refused when absent, so a caller who says nothing is asked rather than
- * guessed at. That refusal is now belt and braces — silence fails closed
+ * ABSENCE IS NOT TOLERATED ON ANY COMMAND, and there are two: AddActor.actor's
+ * kind and GrantActorControl.kind are each refused when absent, so a caller who
+ * says nothing is asked rather than guessed at. Every path that gives an actor
+ * a standing therefore states it — including the authored one, where an
+ * adventure's actors/*.json must declare "party_member" or "non_party" or fail
+ * to load (internal/adventure).
+ *
+ * THE HAZARD WAS NEVER TWO WRITERS. IT WAS A WRITER THAT COULD STAY SILENT.
+ * The leak this field exists to close came from inference from absence — an
+ * actor holding a controller with no kind had to be guessed at, and the guess
+ * was wrong. Two writers are safe once neither can be mute, which is why
+ * creation and the grant may both speak.
+ *
+ * The grant's refusal in particular is belt and braces — silence fails closed
  * either way — and it stays because a command that quietly demotes the
  * character it was handing over is a wrong answer given confidently.
  *

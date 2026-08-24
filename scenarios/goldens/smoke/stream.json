@@ -31,7 +31,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-smoke",
-        "name": "Smoke Actor"
+        "name": "Smoke Actor",
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },

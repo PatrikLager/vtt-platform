@@ -64,8 +64,13 @@ function clearDraft(...fields: string[]): void {
  * kinds (visibility spec §5.1). Collapsing it into ACTOR_KIND_UNSPECIFIED and
  * sending it would reproduce on the client exactly the ambiguity the server
  * refuses — an omission indistinguishable from a decision. An unrecognised
- * string falls into the same bucket, which fails closed: a grant is not sent
- * at all rather than sent saying something nobody chose.
+ * string falls into the same bucket, which fails closed: nothing is sent at
+ * all rather than sent saying something nobody chose.
+ *
+ * BOTH CALLERS, since actor-kind Task 7 — the Add actor form and the per-actor
+ * grant row. This used to say "a grant is not sent", which was the whole truth
+ * for one day: creating an actor asks the same question now, and a null here
+ * stops that command too.
  */
 function actorKindFromWireName(name: string): ActorKind | null {
   switch (name) {
@@ -76,6 +81,39 @@ function actorKindFromWireName(name: string): ActorKind | null {
     default:
       return null;
   }
+}
+
+/**
+ * The <select> that asks it, shared by the two places that must ask.
+ *
+ * ONE builder for both the Add-actor form and the per-actor grant row, so the
+ * console cannot grow two vocabularies for the same question. The blank first
+ * option is the load-bearing part: it is what keeps "the DM did not answer" a
+ * state actorKindFromWireName above can SEE, rather than a value this function
+ * would have to guess at — the same reason the server refuses an unstated kind
+ * instead of defaulting one.
+ *
+ * `field` is the draft key, so a half-filled console survives a re-render; the
+ * grant row keys it per actor, the creation form has only one.
+ */
+function kindSelect(cls: string, field: string): HTMLSelectElement {
+  const sel = document.createElement("select");
+  sel.className = cls;
+  for (const [value, label] of [
+    ["", "what is it?"],
+    ["ACTOR_KIND_PARTY_MEMBER", "party member"],
+    ["ACTOR_KIND_NON_PARTY", "monster / NPC"],
+  ] as const) {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  }
+  sel.value = draft[field] ?? "";
+  sel.addEventListener("change", () => {
+    draft[field] = sel.value;
+  });
+  return sel;
 }
 
 // Every input carries a stable data-field. Placeholders are prose — they get
@@ -224,22 +262,36 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   // the control that performs it — the per-actor grant row further down this
   // panel, which asks for a kind because the server refuses a grant that does
   // not say one.
+  //
+  // A KIND BOX, and its presence is the same rule read the other way. Who
+  // holds a character is a fact about the table and is asked one panel down;
+  // WHAT a creature is is a fact about the creature, known by whoever is
+  // typing it in, and the server refuses an add_actor that does not say it
+  // (gateway validateAddActor). Blank by default for the reason the grant
+  // row's own selector is: a pre-filled answer is indistinguishable from a DM
+  // who never looked.
   const actorId = input("actor id", "actor-id");
   const actorName = input("name", "actor-name");
+  const actorKind = kindSelect("actor-kind", "actor-kind");
   wrap.appendChild(
     group(
       "Add actor",
-      actorId, actorName,
+      actorId, actorName, actorKind,
       button("Add", () => {
         if (actorId.value.trim() === "") return d.notify("an actor needs an id");
-        d.send(addActor(actorId.value.trim(), actorName.value.trim()));
-        clearDraft("actor-id", "actor-name");
+        const kind = actorKindFromWireName(actorKind.value);
+        if (kind === null) {
+          return d.notify("Say what it is: a party member, or a monster the party has to find.");
+        }
+        d.send(addActor(actorId.value.trim(), actorName.value.trim(), kind));
+        clearDraft("actor-id", "actor-name", "actor-kind");
       }, "add-actor"),
     ),
   );
 
   const paste = document.createElement("textarea");
-  paste.placeholder = '{"actorId":"a1","name":"Lera","attributes":{"brawn":3}}';
+  paste.placeholder =
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","attributes":{"brawn":3}}';
   paste.className = "paste";
   paste.dataset["field"] = "actor-json";
   paste.value = draft["actor-json"] ?? "";
@@ -433,23 +485,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     // CURRENT kind was considered and rejected for the same reason: it reads
     // as an answer while being an assumption, and the one actor it would be
     // wrong about is the monster somebody is being handed.
-    const kindPick = document.createElement("select");
-    kindPick.className = "grant-kind";
     const kindField = `grant-kind-${a.actorId}`;
-    for (const [value, label] of [
-      ["", "what is it?"],
-      ["ACTOR_KIND_PARTY_MEMBER", "party member"],
-      ["ACTOR_KIND_NON_PARTY", "monster / NPC"],
-    ] as const) {
-      const o = document.createElement("option");
-      o.value = value;
-      o.textContent = label;
-      kindPick.appendChild(o);
-    }
-    kindPick.value = draft[kindField] ?? "";
-    kindPick.addEventListener("change", () => {
-      draft[kindField] = kindPick.value;
-    });
+    const kindPick = kindSelect("grant-kind", kindField);
     row.appendChild(kindPick);
 
     const give = document.createElement("button");

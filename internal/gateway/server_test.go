@@ -566,7 +566,8 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 	sendCommand(f.t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-a2",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "a2", Name: "Villain"},
+			Actor: &vttv1.Actor{ActorId: "a2", Name: "Villain",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	r1 := readResult(f.t, dmConn)
@@ -637,7 +638,8 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter"},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	r2 := readResult(t, dmConn)

@@ -16,7 +16,10 @@
 // point of the whole task.
 package adventure
 
-import "github.com/PatrikLager/vtt-platform/internal/mapdef"
+import (
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
+)
 
 // Adventure is one fully-loaded, fully-validated adventure directory.
 // GuidePath names dir/guide.md — served verbatim to the DM via MCP
@@ -98,8 +101,23 @@ type Placement struct {
 // compiled Actor): the DM drives every adventure-placed actor at load time;
 // a player can be given control later via the existing actor-control
 // mechanism (spec §4).
+//
+// KIND IS NOT ABSENT, and the contrast with Controller is the point. Who
+// drives a character is a fact about the table, and the table does not exist
+// yet when the file is written. What a creature IS is a fact about the
+// content, decided by the author at the moment they wrote it — so the file is
+// exactly the right place to say it, and Load REFUSES an actor that does not
+// (load.go's actorKinds, and loadActors' own comment for why absence is not
+// given a default here the way an absent tiles map is).
+//
+// The JSON field is "kind" and its two values are "party_member" and
+// "non_party" (load.go's actorKinds). This field carries the resolved wire
+// enum rather than the authored string: the mapping is checked once, at load,
+// so nothing downstream has to re-parse a name or invent a fallback for one
+// it does not recognise.
 type AdventureActor struct {
 	ID, Name   string
+	Kind       vttv1.ActorKind
 	Attributes map[string]int32
 	Resources  map[string]ResourceVal
 }

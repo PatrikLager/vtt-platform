@@ -12,13 +12,13 @@
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-tavern", "name": "The Rusty Flagon", "gridWidth": 5, "gridHeight": 5}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {
-      "actorId": "act-brawler", "name": "Brawler",
+      "actorId": "act-brawler", "name": "Brawler", "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {"brawn": 3, "grit": 1},
       "resources": {"drink": {"current": 0, "max": 4}, "stamina": {"current": 2, "max": 2}}
     }}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {
-      "actorId": "act-patron", "name": "Patron",
+      "actorId": "act-patron", "name": "Patron", "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {"brawn": 1, "grit": 0, "footing": 0},
       "resources": {"drink": {"current": 0, "max": 3}, "stamina": {"current": 2, "max": 2}}
     }}}, "expect": {"ok": true}},

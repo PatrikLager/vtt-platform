@@ -1,4 +1,5 @@
 {
   "actor_id": "wraith",
-  "name": "Wraith"
+  "name": "Wraith",
+  "kind": "non_party"
 }

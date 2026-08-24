@@ -2,7 +2,8 @@
   "Actors": {
     "act-smoke": {
       "actor_id": "act-smoke",
-      "name": "Smoke Actor"
+      "name": "Smoke Actor",
+      "kind": 2
     }
   },
   "Conditions": {},

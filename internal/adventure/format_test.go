@@ -1,6 +1,10 @@
 package adventure
 
-import "testing"
+import (
+	"testing"
+
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+)
 
 // TestSizeCapsMirrorEngine pins this package's local size-cap constants
 // (load.go) against the literal values internal/engine/apply.go's
@@ -26,5 +30,38 @@ func TestSizeCapsMirrorEngine(t *testing.T) {
 	}
 	if maxTextBytes != 8192 {
 		t.Errorf("maxTextBytes = %d, want 8192 (engine's maxTextBytes)", maxTextBytes)
+	}
+}
+
+// TestActorKindNamesAreExactlyTheVocabulary closes the one hole this file's
+// own subject warns about: actorKindNames (load.go) restates actorKinds' key
+// set by hand, so it is a second place holding the same fact, and the whole
+// point of this task is that a fact stated twice can disagree.
+//
+// It is not derived from the map because the ORDER is load-bearing — a map
+// range would offer the two answers in a different order each run, which is a
+// diff in every failure output. So the order is written down and this is what
+// keeps the CONTENT honest: add a third kind to actorKinds and forget the
+// list, and the refusal messages would go on offering two.
+func TestActorKindNamesAreExactlyTheVocabulary(t *testing.T) {
+	if len(actorKindNames) != len(actorKinds) {
+		t.Fatalf("actorKindNames = %v, actorKinds has %d entries", actorKindNames, len(actorKinds))
+	}
+	seen := map[string]bool{}
+	for _, n := range actorKindNames {
+		if _, ok := actorKinds[n]; !ok {
+			t.Errorf("actorKindNames offers %q, which the loader would then refuse", n)
+		}
+		if seen[n] {
+			t.Errorf("actorKindNames lists %q twice", n)
+		}
+		seen[n] = true
+	}
+	// UNSPECIFIED must have no spelling: an author who could write the silence
+	// down would be writing exactly what this field exists to abolish.
+	for name, k := range actorKinds {
+		if k == vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+			t.Errorf("actorKinds maps %q to UNSPECIFIED, which gives absence a name", name)
+		}
 	}
 }

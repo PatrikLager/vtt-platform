@@ -90,6 +90,10 @@ test("a DM starts a session, creates a scene and loads an adventure", async ({ p
   const sceneId = await page.locator(".grid").getAttribute("data-scene-id");
   await page.locator('[data-field="actor-id"]').fill("act-lera");
   await page.locator('[data-field="actor-name"]').fill("Lera");
+  // The form asks what the creature IS, and the server refuses the command
+  // without an answer (actor-kind Task 7). Lera is a player character before
+  // anybody is assigned to her — that is what a pregenerated sheet is.
+  await page.locator(".actor-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
   await page.locator('[data-action="add-actor"]').click();
   await page.waitForTimeout(400);
   // Checked here so a refusal is reported at the action that caused it,

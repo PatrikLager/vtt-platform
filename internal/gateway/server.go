@@ -1135,14 +1135,19 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// add_actor's controller gets the SAME seam and, for the fourth time, the
-	// same argument: engine.Apply is the fold, and by the time an ActorAdded
-	// reaches it the actor is already history.
+	// add_actor gets the SAME seam and, for the fourth time, the same argument:
+	// engine.Apply is the fold, and by the time an ActorAdded reaches it the
+	// actor is already history.
 	//
-	// UNLIKE the other three, this rule ALSO lives in the fold, which refuses
-	// the same shape outright — there is no history to protect, so it can. What
-	// this seam adds is the answer: a refusal naming grant_actor_control, before
-	// anything is written, instead of a poisoned append. See validateAddActor.
+	// TWO RULES BEHIND ONE CALL, and they answer the fold question OPPOSITELY.
+	// The CONTROLLER rule also lives in the fold, which refuses the same shape
+	// outright — there is no history to protect, so it can — and this seam only
+	// adds the answer: a refusal naming grant_actor_control, before anything is
+	// written, instead of a poisoned append. The KIND rule (actor-kind Task 7)
+	// lives HERE AND NOWHERE ELSE, because an absent kind is a legal state on a
+	// recorded event ("not a party member") and a fold that refused it would be
+	// refusing something the contract defines. See validateAddActor, which
+	// argues both at length.
 	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
 		if err := validateAddActor(aa.AddActor); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}

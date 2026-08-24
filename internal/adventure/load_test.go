@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
@@ -108,6 +109,22 @@ func TestLoadValidFixture(t *testing.T) {
 			t.Errorf("Actors[%d].ID = %q, want %q (file-name order)", i, adv.Actors[i].ID, want)
 		}
 	}
+	// WHAT EACH ACTOR IS, carried off the file rather than inferred (visibility
+	// spec §5.1; actor-kind plan Task 7). Both values appear across the three
+	// because a loader that hardwired either one would satisfy a single-valued
+	// assertion — and the mistake this field exists to prevent is precisely a
+	// party member being read as a monster or the reverse.
+	wantKinds := []vttv1.ActorKind{
+		vttv1.ActorKind_ACTOR_KIND_NON_PARTY,    // brace-guard
+		vttv1.ActorKind_ACTOR_KIND_NON_PARTY,    // grit-scout
+		vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, // vim-fighter
+	}
+	for i, want := range wantKinds {
+		if got := adv.Actors[i].Kind; got != want {
+			t.Errorf("Actors[%d] (%s).Kind = %v, want %v", i, adv.Actors[i].ID, got, want)
+		}
+	}
+
 	vf := adv.Actors[2]
 	if vf.Name != "Vim Fighter" {
 		t.Errorf("vim-fighter.Name = %q", vf.Name)
@@ -142,6 +159,13 @@ func TestLoadInvalidFixtures(t *testing.T) {
 	}{
 		{"format-version-bad", []string{"adventure.json", `field "format_version"`, `"7"`}},
 		{"ruleset-mismatch", []string{"adventure.json", `field "ruleset"`}},
+		// An authored actor must say WHAT IT IS, and neither silence nor a word
+		// the format does not define counts as saying it (actor-kind plan Task
+		// 7; visibility spec §5.1). The two cases are separate fixtures because
+		// they are separate mistakes with separate fixes: one author forgot to
+		// answer, the other answered in a vocabulary nobody reads.
+		{"actor-kind-missing", []string{"vim-fighter.json", `field "kind"`, "party_member", "non_party"}},
+		{"actor-kind-unknown", []string{"vim-fighter.json", `field "kind"`, `"monster"`}},
 		{"undeclared-attribute", []string{"vim-fighter.json", `field "attributes"`, `"grit"`}},
 		{"undeclared-resource", []string{"vim-fighter.json", `field "resources"`, `"mana"`}},
 		{"resource-current-over-max", []string{"vim-fighter.json", `field "resources.focus.current"`}},
@@ -244,6 +268,7 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"note-key-empty", "note-text-empty",
 		"scene-tile-missing", "scene-placement-in-wall", "scene-override-unresolvable",
 		"scene-override-without-tiles",
+		"actor-kind-missing", "actor-kind-unknown",
 	}
 	if len(want) != len(onDisk) {
 		t.Errorf("testdata/invalid has %d dirs, case table names %d", len(onDisk), len(want))

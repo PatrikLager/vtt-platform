@@ -170,7 +170,7 @@
               "type": "array"
             },
             "kind": {
-              "description": "What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. Omitting it is safe for anything the party has not met: an actor nobody has been granted is not a party member. Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster — which is why grant_actor_control asks again every time control moves.",
+              "description": "REQUIRED. What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. There is no default and omitting it is REFUSED, because an unstated kind cannot be told from a deliberate one — if you are inventing a creature you already know which it is, so say so. Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster — which is why grant_actor_control asks again every time control moves.",
               "enum": [
                 "ACTOR_KIND_PARTY_MEMBER",
                 "ACTOR_KIND_NON_PARTY"
@@ -210,7 +210,8 @@
             }
           },
           "required": [
-            "actorId"
+            "actorId",
+            "kind"
           ],
           "type": "object"
         }

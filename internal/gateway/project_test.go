@@ -437,16 +437,30 @@ func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
 // attributes or resources.
 //
 // What only shipped sourcing buys is the FIXTURE CHECK — that the compiled
-// archer declares no kind. Task 1 shipped a green suite while the exposure it
-// was closing was still live end to end, because every fixture that EXPRESSED
-// the leak declared ACTOR_KIND_NON_PARTY by hand (twoRooms' hero and the ghost
-// at TestAnActorFromBeforeTheKindField... are deliberately kindless, so the
-// claim is about the leak fixtures, not about all of them). A hand-built actor
-// cannot notice that adventure content has no way to say what it is:
-// internal/adventure's actorJSON accepts four keys and decodeStrict calls
-// DisallowUnknownFields, so a "kind" in an adventure file is a boot-time error
-// rather than a value. The day that changes, this helper's caller fails and
-// spec §5.1's first rule wants rereading.
+// actor's kind is the one its author wrote down. Task 1 shipped a green suite
+// while the exposure it was closing was still live end to end, because every
+// fixture that EXPRESSED the leak declared ACTOR_KIND_NON_PARTY by hand
+// (twoRooms' hero and the kindless-actor fixtures elsewhere in this file are
+// deliberately kindless, so the claim is about the leak fixtures, not about
+// all of them). A hand-built actor cannot notice what adventure content can
+// and cannot say.
+//
+// The named example this paragraph used to give,
+// TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt, was
+// deleted with the migration rule on 2026-08-24 and the reference outlived it.
+// Two more of the same dangling name survive at keystone_test.go:182 and
+// viewpoint_test.go:48; they are not this task's to move, but they are the
+// same rot and somebody should.
+//
+// WHAT IT COULD NOT SAY, UNTIL TASK 7, WAS ANYTHING. actorJSON accepted four
+// keys — actor_id, name, attributes, resources — and decodeStrict calls
+// DisallowUnknownFields, so a "kind" in an adventure file was a boot-time
+// error rather than a value: every shipped actor compiled to UNSPECIFIED,
+// including the Human Fighter standing beside the two goblins. These fixture
+// checks used to assert exactly that, with a note saying that the day it
+// changed, §5.1's first rule wanted rereading. It changed; the rule is being
+// reread; and the checks now assert the author's own word instead, which is a
+// stronger thing to pin than an absence.
 func shippedActor(t *testing.T, actorID string) *vttv1.Actor {
 	t.Helper()
 	envs, err := adventure.Compile(loadGoblinAmbush(t, loadDnd45eMinimal(t)), engine.NewState())
@@ -466,24 +480,30 @@ func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *te
 	// THE ARCHER THIS ARC IS NAMED AFTER, against shipped content.
 	//
 	// Task 1 closed the mechanism and left the exposure open, and said so:
-	// adventure content cannot express a kind at all, so every actor in both
-	// committed adventures is UNSPECIFIED with no controller. One
+	// adventure content COULD NOT express a kind at all, so every actor in both
+	// committed adventures was UNSPECIFIED with no controller. One
 	// grant_actor_control on the Goblin Archer — an ordinary act, since a
 	// grant constrains the ISSUER and says nothing about the TARGET — gave it
 	// a controller, and UNSPECIFIED plus a controller was what §5.1's
 	// migration rule then read as a party member. The whole cloned Actor went
 	// to every player at the table, and MayPerch and eyes() opened on it.
-	// (That rule is gone as of 2026-08-24, so this now holds twice over: the
-	// grant states NON_PARTY, and silence would not have promoted it either.)
+	// (Both halves are gone as of 2026-08-24: the migration rule was deleted,
+	// and Task 7 gave the adventure format a kind field the archer now uses.)
 	//
 	// What closes it is that the GRANT now declares the kind. The agent
 	// taking the archer to run it says what it is taking, and the archer stays
 	// a monster.
+	//
+	// AND SINCE TASK 7, THE ARCHER SAYS SO ITSELF: adventures/goblin-ambush/
+	// actors/act-archer.json declares "non_party", so the leak is closed at
+	// birth as well as at the grant. That makes this test belt-and-braces
+	// rather than the only defence, and it is worth keeping in exactly that
+	// role — it is the one test that walks the whole path the bug took, from a
+	// file on disk to a player's roster.
 	archer := shippedActor(t, "act-archer")
-	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: this test is only worth anything while the SHIPPED archer "+
-			"declares no kind, and it declares %v — if adventure content has gained a kind "+
-			"field, spec §5.1's first rule needs rereading, not this assertion relaxing", k)
+	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Fatalf("fixture check: the SHIPPED archer must declare itself non-party — it is the "+
+			"creature this whole arc is named after — and it declares %v", k)
 	}
 
 	// twoRooms' geometry, because sight is what makes the roster exception
@@ -513,22 +533,81 @@ func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *te
 func TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember(t *testing.T) {
 	// THE OTHER HALF OF THE AMBIGUITY, and the reason no rule could have
 	// resolved it before. This grant is byte-identical to the one above in
-	// every field the contract used to carry — same actor, same shape, a
-	// different participant — and it must come out the other way. The DM
-	// assigning a pregenerated character to a player, and an agent taking a
-	// goblin to run it, are the same event until somebody is asked.
+	// every field the contract used to carry — THE SAME ACTOR, the same shape,
+	// a different participant — and it must come out the other way. An agent
+	// taking a goblin to run it, and a player being handed that same goblin as
+	// theirs (charmed, tamed, whatever the fiction is), are the same event
+	// until somebody is asked.
+	//
+	// THE ARCHER, NOT THE FIGHTER, and that is the whole bite (review finding,
+	// 2026-08-24). This test used to seed act-fighter, which worked only while
+	// every shipped actor compiled to UNSPECIFIED: since Task 7 the Human
+	// Fighter's own file says "party_member", so it would have reached the
+	// roster with this grant's Kind DELETED and the assertion would have gone
+	// on passing. The archer is born NON_PARTY, so the grant is the only thing
+	// that can put it there — which is what this test claims to be about.
+	archer := shippedActor(t, "act-archer")
+	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Fatalf("fixture check: the shipped archer must be born non-party, or the grant "+
+			"below is not what puts it on the roster; it declares %v", k)
+	}
+
 	st := twoRooms()
-	mustApply(st, 8, &vttv1.ActorAdded{Actor: shippedActor(t, "act-fighter")})
-	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-fighter", SceneId: "s",
-		ActorId: "act-fighter", Position: &vttv1.GridPosition{X: 4, Y: 1}}) // behind the shut door
-	assign := &vttv1.ActorControlGranted{ActorId: "act-fighter", ParticipantId: "p-2",
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: archer})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-archer", SceneId: "s",
+		ActorId: "act-archer", Position: &vttv1.GridPosition{X: 4, Y: 1}}) // behind the shut door
+	assign := &vttv1.ActorControlGranted{ActorId: "act-archer", ParticipantId: "p-2",
 		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
 	mustApply(st, 10, assign)
 
 	pr := gateway.NewProjector(player())
-	if roster := actorIDsIn(pr.Project(envelope(10, assign), st)); !roster["act-fighter"] {
-		t.Error("a character the DM assigned to another player is a party member: " +
-			"you know your party exists even when they are two rooms away (spec §5)")
+	if roster := actorIDsIn(pr.Project(envelope(10, assign), st)); !roster["act-archer"] {
+		t.Error("a creature the DM handed to a player AS THEIRS is a party member from that " +
+			"moment: you know your party exists even when they are two rooms away (spec §5), " +
+			"and the grant is what said so")
+	}
+}
+
+// TestTheShippedHumanFighterIsAPartyMemberBeforeAnybodyIsAssignedToIt is what
+// Task 7 buys, and it is the case §5.1's first rule currently denies.
+//
+// goblin-ambush ships a Human Fighter beside two goblins, and cellar-rats
+// ships Hollis Ketch and Mara Voss. All three are player characters, written
+// down as such by the person who made them, and until this task the file had
+// no way to say so — actorJSON took four keys and none of them was what the
+// creature IS. So the AUTHORED path, the one written deliberately in advance
+// by somebody who knew exactly what they were making, was the only path that
+// could not speak, while the improvised one (add_actor) is compelled to. That
+// was backwards.
+//
+// NOBODY IS GRANTED ANYTHING HERE, deliberately. A pregenerated character
+// sitting in a campaign before assignment IS a party member — the party seeing
+// the four available sheets is correct, not a leak — and §5.1's "an ungranted
+// actor is NOT a party member" is the sentence that makes this test fail on
+// paper while passing in fact. Patrik is amending it.
+func TestTheShippedHumanFighterIsAPartyMemberBeforeAnybodyIsAssignedToIt(t *testing.T) {
+	fighter := shippedActor(t, "act-fighter")
+	if k := fighter.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+		t.Fatalf("fixture check: goblin-ambush's Human Fighter is a player character and its "+
+			"file must say so; it declares %v", k)
+	}
+	if len(fighter.GetControllerIds()) != 0 || fighter.GetControllerId() != "" {
+		t.Fatal("fixture check: an adventure actor is compiled with NO controller " +
+			"(adventure/compile.go's buildActor), or this pins the granted case instead")
+	}
+
+	// Behind the shut door, so nothing this player can SEE introduces it: the
+	// roster exception is the only thing that can put it on the list.
+	st := twoRooms()
+	added := &vttv1.ActorAdded{Actor: fighter}
+	mustApply(st, 8, added)
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-fighter", SceneId: "s",
+		ActorId: "act-fighter", Position: &vttv1.GridPosition{X: 4, Y: 1}})
+
+	pr := gateway.NewProjector(player())
+	if roster := actorIDsIn(pr.Project(envelope(8, added), st)); !roster["act-fighter"] {
+		t.Error("a pregenerated character the adventure declares a party member must reach " +
+			"the party's roster with no grant at all: nobody inferred it, the author said it")
 	}
 }
 
@@ -546,15 +625,20 @@ func TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember(t *testing.T) {
 // OVER THE WIRE, against SHIPPED content, because that is where the previous
 // two attempts at this rule were green while the exposure was live: every
 // fixture that expressed the leak declared its own kind by hand, and the
-// shipped archer cannot. The fold refuses the same shape (engine.Apply's
+// shipped archer could not. The fold refuses the same shape (engine.Apply's
 // ActorAdded arm), so this is not the only place the rule lives — it is the
 // place a caller finds out, and the refusal it asserts names the command that
 // does confer control.
+//
+// THE REFUSAL IT PINS IS THE CONTROLLER ONE, and the shipped archer now states
+// a kind, which is what keeps that true: an actor carrying a controller AND no
+// kind would be refused either way since Task 7, and this test would go on
+// passing with the controller check deleted.
 func TestTheShippedGoblinArcherCannotBeGivenAControllerAtCreation(t *testing.T) {
 	archer := shippedActor(t, "act-archer")
-	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: this test is only worth anything while the SHIPPED archer "+
-			"declares no kind, and it declares %v", k)
+	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Fatalf("fixture check: the SHIPPED archer must declare itself non-party, or the "+
+			"refusal below could be about its kind rather than its controller; it declares %v", k)
 	}
 
 	f := newGWFixture(t)
@@ -601,7 +685,8 @@ func TestCreatingAnActorAndThenGrantingItIsTheTwoStepThatReplacesTheOne(t *testi
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "make-bandit",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-bandit", Name: "Bandit"}}},
+			Actor: &vttv1.Actor{ActorId: "act-bandit", Name: "Bandit",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}},
 	})
 	if res := readResult(t, dm); !res.GetOk() {
 		t.Fatalf("add_actor STAYS — it is the runtime path for a creature nobody wrote in "+

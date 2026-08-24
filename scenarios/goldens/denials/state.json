@@ -2,7 +2,8 @@
   "Actors": {
     "act-npc": {
       "actor_id": "act-npc",
-      "name": "NPC"
+      "name": "NPC",
+      "kind": 2
     }
   },
   "Conditions": {},

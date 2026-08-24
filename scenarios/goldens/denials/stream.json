@@ -31,7 +31,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-npc",
-        "name": "NPC"
+        "name": "NPC",
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },

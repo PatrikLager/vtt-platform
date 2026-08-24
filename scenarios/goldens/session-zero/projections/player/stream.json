@@ -17,15 +17,7 @@
         "name": "Asme"
       }
     },
-    "sequence": "5"
-  },
-  {
-    "actorControlGranted": {
-      "actorId": "act-fighter",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-player"
-    },
-    "sequence": "5"
+    "sequence": "4"
   },
   {
     "actorControlGranted": {
@@ -47,15 +39,7 @@
         "name": "Ilva"
       }
     },
-    "sequence": "7"
-  },
-  {
-    "actorControlGranted": {
-      "actorId": "act-healer",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-player"
-    },
-    "sequence": "7"
+    "sequence": "6"
   },
   {
     "actorControlGranted": {
@@ -305,6 +289,7 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-goblin-archer",
+        "kind": "ACTOR_KIND_NON_PARTY",
         "name": "Goblin Archer"
       }
     },
@@ -337,4 +322,3 @@
     "sessionId": "sess-1"
   }
 ]
-

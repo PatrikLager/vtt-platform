@@ -1,6 +1,7 @@
 {
   "actor_id": "act-fighter",
   "name": "Human Fighter",
+  "kind": "party_member",
   "attributes": {
     "str": 4,
     "dex": 2,

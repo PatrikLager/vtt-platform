@@ -8,7 +8,7 @@
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Story Table"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-table", "name": "The Rusty Flagon", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-hero", "name": "Lera"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-hero", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-hero", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-hero", "sceneId": "scn-table", "actorId": "act-hero", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"moveToken": {"tokenId": "tok-hero", "to": {"x": 1, "y": 1}}}, "expect": {"ok": true}},

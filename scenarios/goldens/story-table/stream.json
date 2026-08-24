@@ -31,7 +31,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-hero",
-        "name": "Lera"
+        "name": "Lera",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },

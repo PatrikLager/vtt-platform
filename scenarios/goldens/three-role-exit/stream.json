@@ -31,7 +31,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-ursus",
-        "name": "Ursus"
+        "name": "Ursus",
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },
@@ -44,7 +45,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-lera",
-        "name": "Lera"
+        "name": "Lera",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },

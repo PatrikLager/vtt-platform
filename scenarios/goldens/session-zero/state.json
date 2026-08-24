@@ -11,7 +11,8 @@
     },
     "act-goblin-archer": {
       "actor_id": "act-goblin-archer",
-      "name": "Goblin Archer"
+      "name": "Goblin Archer",
+      "kind": 2
     },
     "act-healer": {
       "actor_id": "act-healer",

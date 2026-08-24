@@ -1,6 +1,7 @@
 {
   "actor_id": "grit-scout",
   "name": "Grit Scout",
+  "kind": "non_party",
   "attributes": {
     "vim": 8,
     "vigor": 16,

@@ -31,7 +31,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-warden",
-        "name": "Warden"
+        "name": "Warden",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
@@ -72,7 +73,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-scout",
-        "name": "Scout"
+        "name": "Scout",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
       }
     }
   },
@@ -166,7 +168,8 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-herald",
-        "name": "Herald"
+        "name": "Herald",
+        "kind": "ACTOR_KIND_NON_PARTY"
       }
     }
   },

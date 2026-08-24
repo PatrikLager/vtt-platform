@@ -79,7 +79,8 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme"},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
@@ -109,7 +110,8 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-goblin",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-goblin-archer", Name: "Goblin Archer"},
+			Actor: &vttv1.Actor{ActorId: "act-goblin-archer", Name: "Goblin Archer",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
@@ -604,7 +606,8 @@ func (f *gwFixture) seedArmak(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-scout",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak"},
+			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {

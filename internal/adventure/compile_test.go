@@ -96,6 +96,7 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 			Actor: &vttv1.Actor{
 				ActorId:    "brace-guard",
 				Name:       "Brace Guard",
+				Kind:       vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 				Attributes: map[string]int32{"vim": 10, "vigor": 10, "brace": 14},
 				Resources:  map[string]*vttv1.Resource{"focus": {Current: 10, Max: 10}},
 			},
@@ -104,6 +105,7 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 			Actor: &vttv1.Actor{
 				ActorId:    "grit-scout",
 				Name:       "Grit Scout",
+				Kind:       vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 				Attributes: map[string]int32{"vim": 8, "vigor": 16, "brace": 8},
 				Resources:  map[string]*vttv1.Resource{"focus": {Current: 6, Max: 8}},
 			},
@@ -112,6 +114,7 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 			Actor: &vttv1.Actor{
 				ActorId:    "vim-fighter",
 				Name:       "Vim Fighter",
+				Kind:       vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 				Attributes: map[string]int32{"vim": 14, "vigor": 12, "brace": 10},
 				Resources:  map[string]*vttv1.Resource{"focus": {Current: 8, Max: 10}},
 			},

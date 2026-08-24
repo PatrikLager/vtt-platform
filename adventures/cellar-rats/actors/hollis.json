@@ -1,6 +1,7 @@
 {
   "actor_id": "hollis",
   "name": "Hollis Ketch",
+  "kind": "party_member",
   "attributes": {
     "brawn": 3,
     "grit": 2,

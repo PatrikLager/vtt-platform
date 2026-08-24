@@ -20,7 +20,7 @@ import {
   JoinDoor,
   type ClientCommand,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { ActorSchema, type ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, ActorSchema } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fromJson } from "@bufbuild/protobuf";
 
 export interface Point {
@@ -193,6 +193,31 @@ export function parseActorJSON(raw: string): ClientCommand | Error {
     if (actor.actorId === "") {
       return new Error('actor is missing "actorId", which the server requires');
     }
+    // A CONTROLLER IS ANSWERED FIRST, in the server's own order (gateway
+    // validateAddActor), and matching it is the whole point of checking here at
+    // all. "Creation does not confer control" is a misunderstanding of the
+    // model rather than a forgotten field: a DM told to add a kind first would
+    // add one and paste the same forbidden shape again. Answering in the other
+    // order costs exactly the round trip this check exists to save.
+    if (actor.controllerId !== "" || actor.controllerIds.length > 0) {
+      return new Error(
+        'actor declares a controller, which creating it may not do: control is conferred ' +
+          "by grant_actor_control, which also says what the actor is. Paste the actor with " +
+          "no controller, then grant it",
+      );
+    }
+    // And it requires the actor to say WHAT IT IS (visibility spec §5.1,
+    // actor-kind Task 7). An omitted enum arrives here as UNSPECIFIED, which
+    // is indistinguishable from a DM who typed the word — which is precisely
+    // why the server refuses both. The two values are named because this
+    // message is the only place the DM finds out what to type.
+    if (actor.kind === ActorKind.UNSPECIFIED) {
+      return new Error(
+        'actor is missing "kind", which the server requires: ' +
+          '"ACTOR_KIND_PARTY_MEMBER" for a character the party knows about, ' +
+          '"ACTOR_KIND_NON_PARTY" for a creature they must discover',
+      );
+    }
     return create(ClientCommandSchema, {
       requestId: requestId(),
       command: { case: "addActor", value: { actor } },
@@ -215,12 +240,18 @@ export function parseActorJSON(raw: string): ClientCommand | Error {
  * The server refuses a controller here now, so restoring the parameter would
  * produce a bounced command rather than a leak; it is gone anyway, because a
  * builder that can express a refused shape is a trap for its next caller.
- * grantActorControl is what confers control, and it ASKS for a kind.
+ *
+ * IT TAKES A KIND, and the same reasoning runs the other way. `kind` is a
+ * REQUIRED PARAMETER, exactly as grantActorControl's is: the server refuses an
+ * add_actor that states none (gateway validateAddActor), so making it optional
+ * here would move the omission from the wire into this file, where nothing
+ * checks it — the caller would get a bounced command instead of a type error.
+ * Every caller must ASK, which is what dm.ts's kind selector is.
  */
-export function addActor(actorId: string, name: string): ClientCommand {
+export function addActor(actorId: string, name: string, kind: ActorKind): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "addActor", value: { actor: { actorId, name } } },
+    command: { case: "addActor", value: { actor: { actorId, name, kind } } },
   });
 }
 

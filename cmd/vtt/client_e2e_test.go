@@ -301,7 +301,7 @@ const liveModeScenario = `{
 	"steps": [
 		{"by": "dm", "command": {"startSession": {"name": "s1"}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"createScene": {"sceneId": "scene-1", "name": "Scene One", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
-		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One"}}}, "expect": {"ok": true}},
+		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"placeToken": {"tokenId": "tok-1", "sceneId": "scene-1", "actorId": "act-1", "position": {"x": 3, "y": 4}}}, "expect": {"ok": true}}
 	],
 	"probes": [

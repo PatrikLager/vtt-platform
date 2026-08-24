@@ -85,16 +85,23 @@ var manifest = []toolSpec{
 		// forces every one of them — an LLM caller then has no way to
 		// tell "must supply" from "the field just happens to be
 		// non-optional on the wire", and fabricates a plausible-looking
-		// moduleId/controllerId/etc. rather than sending nothing. Only
-		// actorId is genuinely required to add an actor at all.
+		// moduleId/controllerId/etc. rather than sending nothing.
+		//
+		// actorId and kind are the two that are genuinely required, and kind
+		// is required for the OPPOSITE reason to the rest of this list. The
+		// others are optional because a caller cannot know them; kind is
+		// mandatory because a caller inventing a creature always does — it has
+		// two values, and the server refuses the command without one (gateway
+		// validateAddActor). Leaving it out of this list would teach an LLM to
+		// omit the one field that gets its command bounced.
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.Actor": {
-				requiredOverride: []string{"actorId"},
+				requiredOverride: []string{"actorId", "kind"},
 				fieldDocs: map[string]string{
 					"name":          "Optional display label for the actor.",
 					"controllerId":  "DO NOT SET. This command creates an actor; it does not hand it to anyone, and a request that sets this field is REFUSED whatever else it contains. Control is conferred by grant_actor_control, which also says whether the actor is a party member or a monster. Add the actor first, then grant it — two calls, always.",
 					"controllerIds": "DO NOT SET. Refused, exactly as controllerId is, and for the same reason: control is conferred by grant_actor_control after creation, never here.",
-					"kind":          "What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. Omitting it is safe for anything the party has not met: an actor nobody has been granted is not a party member. Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster — which is why grant_actor_control asks again every time control moves.",
+					"kind":          "REQUIRED. What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. There is no default and omitting it is REFUSED, because an unstated kind cannot be told from a deliberate one — if you are inventing a creature you already know which it is, so say so. Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster — which is why grant_actor_control asks again every time control moves.",
 					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",

@@ -113,6 +113,7 @@
     "actor_added": {
       "actor_id": "hero",
       "name": "Hero",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
       "attributes": {
         "vim": 10,
         "vigor": 8,
@@ -130,7 +131,8 @@
     "type": "actor_added",
     "actor_added": {
       "actor_id": "wraith",
-      "name": "Wraith"
+      "name": "Wraith",
+      "kind": "ACTOR_KIND_NON_PARTY"
     }
   },
   {

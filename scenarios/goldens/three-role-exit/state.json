@@ -11,7 +11,8 @@
     },
     "act-ursus": {
       "actor_id": "act-ursus",
-      "name": "Ursus"
+      "name": "Ursus",
+      "kind": 2
     }
   },
   "Conditions": {},

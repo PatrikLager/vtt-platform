@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
 import { ClientCommandSchema, JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -150,7 +151,8 @@ test("deleteNote carries the key", () => {
 // --- raw-JSON actor paste ---------------------------------------------------
 
 test("a pasted actor is parsed into an addActor command", () => {
-  const cmd = parseActorJSON('{"actorId":"a1","name":"Lera","attributes":{"brawn":3}}');
+  const cmd = parseActorJSON(
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","attributes":{"brawn":3}}');
   expect(cmd).not.toBeInstanceOf(Error);
   const json = toJson(ClientCommandSchema, cmd as never) as Record<string, any>;
   expect(json["addActor"]["actor"]).toMatchObject({ actorId: "a1", name: "Lera" });
@@ -172,11 +174,60 @@ test("valid JSON that is not an actor is rejected before it reaches the wire", (
   expect((err as Error).message).toMatch(/actorId/i);
 });
 
+test("a pasted actor that does not say what it is names the field, not the wire", () => {
+  // The paste path is the third way a DM creates an actor, and the server
+  // refuses a kindless one exactly as it refuses a kindless form submission.
+  // Catching it here names "kind" and offers the two values; the server's
+  // rejection would arrive after the DM had moved on.
+  const err = parseActorJSON('{"actorId":"a1","name":"Lera"}') as Error;
+  expect(err).toBeInstanceOf(Error);
+  expect(err.message).toMatch(/kind/i);
+  expect(err.message).toContain("ACTOR_KIND_PARTY_MEMBER");
+  expect(err.message).toContain("ACTOR_KIND_NON_PARTY");
+});
+
+test("a pasted actor that says what it is reaches the wire intact", () => {
+  const cmd = parseActorJSON('{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER"}');
+  expect(cmd).not.toBeInstanceOf(Error);
+  const json = toJson(ClientCommandSchema, cmd as never) as Record<string, any>;
+  expect(json["addActor"]["actor"]["kind"]).toBe("ACTOR_KIND_PARTY_MEMBER");
+});
+
+test("a pasted actor answers about its controller before its kind, as the server does", () => {
+  // Review finding, 2026-08-24. The server checks controller-before-kind on
+  // purpose (gateway validateAddActor): "creation does not confer control" is a
+  // misunderstanding of the model, and a caller told to add a kind first would
+  // add one and resend the same forbidden shape. This file answered in the
+  // OPPOSITE order, so the DM paid exactly the round trip that ordering exists
+  // to prevent — locally about the kind, then over the wire about the
+  // controller.
+  const err = parseActorJSON('{"actorId":"a1","name":"Lera","controllerId":"p-2"}') as Error;
+  expect(err).toBeInstanceOf(Error);
+  expect(err.message).toMatch(/grant_actor_control/);
+  // And it must not be the kind message, even though the kind is absent too.
+  expect(err.message).not.toMatch(/"kind"/);
+});
+
 test("an unknown field in a pasted actor is rejected, not silently dropped", () => {
   // Silently dropping it would let a DM believe they set something they did
   // not — the same reason the server's own decoder is strict.
   const err = parseActorJSON('{"actorId":"a1","hitPoints":10}');
   expect(err).toBeInstanceOf(Error);
+});
+
+test("addActor states what the actor IS, and the kind reaches the wire", () => {
+  // Actor-kind Task 7. The server refuses an add_actor that states no kind
+  // (gateway validateAddActor), so a builder that could not express one would
+  // put a bounced command on every caller's path — the same argument that made
+  // grantActorControl's `kind` a required parameter rather than an optional
+  // one with a default.
+  //
+  // BOTH VALUES, because a builder that hardwired either would pass a
+  // single-valued assertion while making half the callers wrong.
+  const pc = toJson(ClientCommandSchema, addActor("a1", "Lera", ActorKind.PARTY_MEMBER)) as Record<string, any>;
+  expect(pc["addActor"]["actor"]["kind"]).toBe("ACTOR_KIND_PARTY_MEMBER");
+  const npc = toJson(ClientCommandSchema, addActor("a2", "Goblin", ActorKind.NON_PARTY)) as Record<string, any>;
+  expect(npc["addActor"]["actor"]["kind"]).toBe("ACTOR_KIND_NON_PARTY");
 });
 
 test("addActor cannot confer control, whatever a caller passes it", () => {
@@ -191,12 +242,12 @@ test("addActor cannot confer control, whatever a caller passes it", () => {
   // shape assertion written against a two-argument call and fail here. The
   // cast is what lets a JS caller try what the type system has stopped
   // forbidding, which is exactly the caller the server's refusal exists for.
-  const npc = toJson(ClientCommandSchema, addActor("a1", "Goblin")) as Record<string, any>;
+  const npc = toJson(ClientCommandSchema, addActor("a1", "Goblin", ActorKind.NON_PARTY)) as Record<string, any>;
   expect(npc["addActor"]["actor"]).not.toHaveProperty("controllerId");
   expect(npc["addActor"]["actor"]).not.toHaveProperty("controllerIds");
 
   const smuggle = addActor as unknown as (...args: unknown[]) => ClientCommand;
-  const pc = toJson(ClientCommandSchema, smuggle("a2", "Lera", "p-1")) as Record<string, any>;
+  const pc = toJson(ClientCommandSchema, smuggle("a2", "Lera", ActorKind.PARTY_MEMBER, "p-1")) as Record<string, any>;
   expect(pc["addActor"]["actor"]).not.toHaveProperty("controllerId");
   expect(pc["addActor"]["actor"]).not.toHaveProperty("controllerIds");
 });

@@ -255,7 +255,8 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter"},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	if r0 := readResult(t, dmConn); !r0.Ok {
@@ -377,7 +378,8 @@ func TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 	sendCommand(t, conn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter"},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	if r0 := readResult(t, conn); !r0.Ok {

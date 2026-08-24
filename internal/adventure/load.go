@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
@@ -194,11 +195,37 @@ func loadManifest(path string) (*manifestJSON, error) {
 // --- actors/*.json (one statblock instance per file) ---
 
 type actorJSON struct {
-	ActorID    string                     `json:"actor_id"`
-	Name       string                     `json:"name"`
+	ActorID string `json:"actor_id"`
+	Name    string `json:"name"`
+	// What this creature IS — see actorKinds below for the vocabulary and for
+	// why an authored actor may not leave it out.
+	Kind       string                     `json:"kind"`
 	Attributes map[string]int32           `json:"attributes"`
 	Resources  map[string]resourceValJSON `json:"resources"`
 }
+
+// actorKinds is the authored vocabulary for an actor's kind, and the whole of
+// it: two names, mapping one-for-one onto the two ActorKind values that mean
+// something. ACTOR_KIND_UNSPECIFIED has no name here ON PURPOSE — it is the
+// absence this field exists to abolish, and giving it a spelling would hand an
+// author a way to write the silence down and call it an answer.
+//
+// SHORT NAMES rather than the wire's ACTOR_KIND_ constants, following the
+// terrain vocabulary this format already borrows (mapdef.StandardTile: a scene
+// says "wall", not TILE_KIND_WALL). They are the wire names' own suffixes
+// lowercased, so the mapping is legible in both directions rather than a
+// second vocabulary for the same idea.
+var actorKinds = map[string]vttv1.ActorKind{
+	"party_member": vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+	"non_party":    vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+}
+
+// actorKindNames is actorKinds' key set in a stable order, for error messages
+// — a map range would offer the two answers in a different order each run,
+// which is a diff in every failure output and a coin toss in a golden.
+// format_test.go's TestActorKindNamesAreExactlyTheVocabulary pins the two
+// against each other, since this is the same fact written down twice.
+var actorKindNames = []string{"party_member", "non_party"}
 
 type resourceValJSON struct {
 	Current int32 `json:"current"`
@@ -206,11 +233,16 @@ type resourceValJSON struct {
 }
 
 // loadActors decodes every actors/*.json file (file-name order — spec §5's
-// Compile order binding), validating each statblock's attribute/resource
-// vocabulary against the ruleset's declared names and each resource's
-// current<=max (when max>0). Returns the loaded actors in file-name order
-// plus the set of actor ids declared, so loadScenes can validate placement
-// actor references without a second directory read.
+// Compile order binding), validating each actor's declared KIND against the
+// two-name vocabulary above, each statblock's attribute/resource vocabulary
+// against the ruleset's declared names, and each resource's current<=max
+// (when max>0). Returns the loaded actors in file-name order plus the set of
+// actor ids declared, so loadScenes can validate placement actor references
+// without a second directory read.
+//
+// "kind" is REQUIRED and has no default — the one field in this format whose
+// absence is refused rather than interpreted. The reasoning is at the check
+// itself, where the next person to wonder about it will be standing.
 func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
@@ -235,6 +267,43 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 		}
 		seen[raw.ActorID] = true
 
+		// AN AUTHORED ACTOR MUST SAY WHAT IT IS, and this is the one place in
+		// the format where absence is refused rather than given a meaning
+		// (actor-kind plan Task 7; visibility spec §5.1).
+		//
+		// It is the opposite ruling to "tiles is optional" (loadScenes' doc
+		// comment) and the difference is what makes both right. An absent
+		// tiles map MEANS something coherent — this scene has no terrain — and
+		// a file written before terrain existed keeps loading. An absent kind
+		// means "not a party member", which is not a coherent default but a
+		// WRONG ANSWER for three of the five actors this repo ships: the Human
+		// Fighter, Hollis Ketch and Mara Voss would each drop off their own
+		// party's roster the moment they turned a corner, which is the exact
+		// regression the visibility spec's §5 exception exists to prevent.
+		//
+		// And the author is the one person who KNOWS. Adventure content is
+		// written deliberately, in advance, by someone who decided what each
+		// creature is for; add_actor — the improvised path, an LLM DM
+		// inventing a bandit mid-session — is already refused when it stays
+		// silent (gateway's validateAddActor). The prepared path being the
+		// only one that could not speak was backwards.
+		//
+		// Refused at LOAD, so it fails at boot rather than at the table
+		// (adventure-format spec §7's posture, which every rule in this file
+		// follows).
+		kind, ok := actorKinds[raw.Kind]
+		if !ok {
+			if raw.Kind == "" {
+				return nil, nil, fieldErr(path, "kind", fmt.Sprintf(
+					"must say what this creature IS — %q for a character the party knows about, "+
+						"%q for one they must discover by seeing it; there is no default, because "+
+						"an unstated kind cannot be told from a deliberate one",
+					actorKindNames[0], actorKindNames[1]))
+			}
+			return nil, nil, fieldErr(path, "kind", fmt.Sprintf(
+				"unknown kind %q (want %q or %q)", raw.Kind, actorKindNames[0], actorKindNames[1]))
+		}
+
 		for name := range raw.Attributes {
 			if !attrOrDefSet[name] {
 				return nil, nil, fieldErr(path, "attributes", fmt.Sprintf("references undeclared attribute %q (not declared as an attribute or defense by the ruleset)", name))
@@ -253,7 +322,7 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 
 		actorIDs[raw.ActorID] = true
 		out = append(out, AdventureActor{
-			ID: raw.ActorID, Name: raw.Name,
+			ID: raw.ActorID, Name: raw.Name, Kind: kind,
 			Attributes: raw.Attributes,
 			Resources:  resources,
 		})
