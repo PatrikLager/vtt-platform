@@ -293,15 +293,26 @@ tasks:
       stryker.conf.json -- note ignorePatterns, which excludes a symlinked
       adventures directory that Stryker's sandbox copy cannot follow.
 
-      IN `task check`, but scoped: `mutate` covers undo.ts and fold.ts, the
-      two files worked to zero unadjudicated survivors. It was held out while
-      that set was one file; the reason it is in now is that a gate nobody
-      runs protects nothing, and without it those two can regress silently.
-      tools/ts-mutation-scope.md carries the twelve remaining files with their
-      survivor counts, so the narrowness is a published number rather than an
-      impression -- which is the thing that would otherwise make `check` look
-      broader than it is. Adding a file to `mutate` is the last step of
-      working it down, never the first.
+      IN `task check`, AND NOT SCOPED. `mutate` is the glob
+      `client/src/**/*` less the browser entry point: every file in the client,
+      including any added tomorrow. It was held out while the worked-down set
+      was one file; it is in because a gate nobody runs protects nothing.
+
+      CORRECTED 2026-08-25. This said `mutate` covered "undo.ts and fold.ts",
+      and that ts-mutation-scope.md carried "the twelve remaining files" -- both
+      true before 2026-08-03 and false since, when the list became the glob. It
+      also said "adding a file to `mutate` is the last step of working it down,
+      never the first", which the glob makes impossible: a new file is gated the
+      moment it is created, so that is always the FIRST step now.
+
+      That is the right trade and it is kept deliberately -- no file should be
+      able to escape the gate by being new -- but it has a cost worth naming,
+      because it was paid: scene-plan.ts and canvas.ts were created by the maps
+      and visibility arcs, gated instantly by the glob, and never worked down.
+      They carried 65 survivors between them, unseen, because this gate was
+      broken from 2026-08-11 to 2026-08-25. A new client file is gated from
+      birth; work it to zero in the commit that adds it, or the debt is invisible
+      until something makes the gate speak again.
 
       Runtime grows with the gated set: ~1m12s for two files, and the full
       client measured 4m55s over 1667 mutants. If that becomes the wrong trade
