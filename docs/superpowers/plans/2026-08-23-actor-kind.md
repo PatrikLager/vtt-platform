@@ -219,6 +219,42 @@ git commit -m "A grant says what it is granting, and silence is not an answer"
 
 ---
 
+## Task 3: Delete the control record that grants nothing
+
+**Files:** `internal/identity/identity.go` (+ its schema/migration), `internal/gateway/metadata.go`, `client/src/metadata.ts`, `client/test/metadata.test.ts`, `cmd/vtt/harness_boot.go`, `internal/harness` scenario types, `scenarios/*.json`
+
+Control is recorded twice. `Actor.controller_ids` in the log is authoritative — authz, the roster rule, `eyes()` and `MayPerch` all read it. `participants.controls` is a SQLite column set at `CreateInvite`, and **verified 2026-08-24**:
+
+- **no updater exists** — no `SetControls`, no UPDATE statement, nothing in the grant or revoke path touches it;
+- **it never becomes a grant** — `mintInvites` (`cmd/vtt/harness_boot.go:200`) passes it to `CreateInvite` and no `ActorControlGranted` is emitted anywhere in the boot path;
+- **nothing reads it to decide anything** — its only consumer is `metadata.go:210`, which echoes it at `/api/me`; the client's `controlledActors` (`client/src/player.ts:13`) reads `st.Actors[].controllerIds` from the folded log instead. The single client-side reference is an assertion in `client/test/metadata.test.ts:144` that the field exists.
+
+So a DM who invites someone "controlling Hollis" is told by the API that they control Hollis, and they do not. **That is worse than a duplicate — it is a plausible-looking lie**, and it is the same one-concept-two-writers shape as RPTool's `ownerType`/`ownerList` bug.
+
+- [ ] **Step 1: RED** — a test asserting `/api/me` reports control that matches state, or simply that the field is gone. Verify the RED by test NAME.
+- [ ] **Step 2: Remove it** — the `Controls` field, the column (with a migration), `CreateInvite`'s parameter, `meJSON.Controls`, the TS type, and the scenario JSON key. If any scenario currently declares controls, that declaration was doing nothing; removing it changes no behaviour and that claim is testable — say so with a measurement, not an assurance.
+- [ ] **Step 3: Gates**, then commit.
+
+**This should not touch `scenarios/goldens/`.** Goldens are event streams and folded state; the identity DB is neither. If a golden moves, stop — something reads this field that this analysis missed, and I want to know before you work around it.
+
+---
+
+## Task 4: Control is conferred once, by a grant that says what it is
+
+**(b) from Task 2's ranked exits, chosen by Patrik 2026-08-24.**
+
+`add_actor` stops accepting a controller. Creation makes a character; a grant gives it a controller **and** a standing, together, always. After this there is exactly one way to confer control, and it is the event that declares kind — which makes spec §5.1's first rule true instead of aspirational.
+
+**Files:** `contract/vtt/v1/commands.proto` (or the `Actor` seeded by `AddActor`), `internal/gateway/convert.go`, `cmd/vtt/tools.json`, `client/src/commands.ts:206`, `client/src/view/dm.ts`, the four scenarios and their goldens.
+
+- [ ] **Step 1: RED** — an `add_actor` carrying a controller is refused; and the shipped `act-archer.json` cannot become a party member by any route.
+- [ ] **Step 2:** remove the seeding path; `addActor`'s optional `controllerId` goes, and the DM form's input with it. Control becomes a two-step act everywhere.
+- [ ] **Step 3: the fixture work, which is the bulk of this task.** Four scenarios seed controllers today — `session-zero`, `shared-control`, `three-role-exit`, `story-table` — and each must issue an explicit grant instead, stating a kind. Their goldens regenerate, **including `session-zero`'s projection goldens, which §7 calls the founding test.** Re-derive rather than accept: a regenerated golden that nobody read is a test that asserts whatever the code did.
+- [ ] **Step 4:** the ergonomic cost is real and belongs in the commit message, not hidden — an agent creating an NPC it will run now sends two commands. The trade is two round trips against two rules that must stay in sync, and RPTool shipped the second and has the resulting invariant bug in its tree today (`clearAllOwners` leaves `ownerType == OWNER_TYPE_ALL`, worked around at `EditTokenDialog.java:885`).
+- [ ] **Step 5:** §5.1's first rule becomes true — say so where it is written, and remove any hedge that anticipated this hole.
+
+---
+
 ## Out of scope, deliberately
 
 - **Testimony outliving sight** (review finding I2): a legitimately glimpsed NPC still streams its conditions and damage forever, because `pr.actors` never forgets. Separate rule, separate decision, recorded in spec §5.1's closing paragraph so this task is not mistaken for closing it.
