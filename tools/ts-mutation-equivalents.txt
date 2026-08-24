@@ -77,8 +77,8 @@
 #
 #   wire.ts       292:13 -> 460:13   landed on a COMMENT line a SECOND time
 #   wire.ts       316:7  -> 484:7
-#   app.ts        66:32  -> 67:32    one import line added above them
-#   app.ts        129:32 -> 130:32
+#   app.ts        66:32  -> 67:32    re-keyed, then KILLED 2026-08-25 and
+#   app.ts        129:32 -> 130:32   removed outright — see the app.ts note below
 #   session.ts    67:12  -> 68:12
 #   session.ts    68:12  -> 69:12
 #   spectator.ts  399:59 -> 501:59
@@ -442,12 +442,14 @@ client/src/view/feed.ts 106:43 EqualityOperator a.seq <= b.seq
 # mutants were unobservable, so claiming equivalence would have been a lie.
 # It moved to client/src/main.ts, which is excluded from `mutate`.
 
-client/src/app.ts 67:32 StringLiteral "Stryker was here!"
-    `history.replaceState(null, "", location.pathname)` on the INVITE path — the TITLE argument. The HTML specification says user agents must ignore it, and none implement it; the call is made for its third argument, which strips the bearer token from the address bar. No value passed here reaches the DOM, the history entry, or anything a test or a user can read. (Was keyed 49:30 until 2026-08-09; the column moved when boot's token handling gained an `if`.)
-
-client/src/app.ts 130:32 StringLiteral "Stryker was here!"
-    The SAME argument at the join path's call, which strips the join secret rather than a token. Two entries rather than one covering both, deliberately: the file header's rule is that an equivalence claim is about a specific call site, and these two strip different credentials for different reasons even though the argument is ignored identically.
-
+# KILLED 2026-08-25, entries removed rather than re-keyed. app.ts 67:32 and
+# 130:32 (the ignored TITLE argument of history.replaceState, on the invite and
+# join paths) were adjudicated equivalent because the value reaches nothing a
+# user or a test can read -- browsers ignore it, and happy-dom does not move
+# document.title. That was true of the DOM and false of the SPY: app.test.ts
+# already replaces history.replaceState to assert the token is stripped, so
+# recording its middle argument kills both. A test beats an excuse, and an
+# adjudication that a test can retire should be retired.
 client/src/session.ts 68:12 EqualityOperator a.participantId <= b.participantId
     Tie-break on participant id, reached only when two participants share a display name. `<` -> `<=` differs ONLY when the two ids are equal, and they cannot be: participantId is the KEY of the `present` map (session.ts, `this.present.set(p.participantId, ...)`), so two distinct entries never carry the same one, and Array.prototype.sort never compares an element with itself. The premise is stronger than the equivalent adjudications on player.ts, which depend on uniqueness established in another file: here the key and the field are assigned together, four lines apart, in this file.
 client/src/session.ts 69:12 EqualityOperator a.displayName <= b.displayName
