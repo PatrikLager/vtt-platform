@@ -69,6 +69,10 @@ type rulesetFixture struct {
 	spectatorToken          string
 }
 
+// rfSeedHead is the sequence of the last event newRulesetFixture seeds. See
+// gwSeedHead (server_test.go) for why it is a name rather than a literal.
+const rfSeedHead int64 = 8
+
 func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
@@ -106,23 +110,37 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	mustAppend(t, c, "rf-seed-2", &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 		SceneId: "tavern", Name: "Tavern", GridWidth: 5, GridHeight: 5,
 	}})
+	// Each character is TWO events — created, then granted — because creation
+	// no longer confers control (visibility spec §5.1, 2026-08-24). The grant
+	// is what says these are party members, and the fold refuses an ActorAdded
+	// that names a controller, so this is the only shape available.
 	mustAppend(t, c, "rf-seed-3", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
 		Actor: &vttv1.Actor{
-			ActorId: "brawler", Name: "Brawler", ControllerId: brawlerID,
+			ActorId: "brawler", Name: "Brawler",
 			Attributes: map[string]int32{"brawn": 3, "grit": 1},
 		},
 	}})
-	mustAppend(t, c, "rf-seed-4", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+	mustAppend(t, c, "rf-seed-4", &vttv1.Envelope_ActorControlGranted{
+		ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "brawler", ParticipantId: brawlerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}})
+	mustAppend(t, c, "rf-seed-5", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
 		Actor: &vttv1.Actor{
-			ActorId: "patron", Name: "Patron", ControllerId: patronID,
+			ActorId: "patron", Name: "Patron",
 			Attributes: map[string]int32{"footing": 0},
 			Resources:  map[string]*vttv1.Resource{"drink": {Current: 0, Max: 5}},
 		},
 	}})
-	mustAppend(t, c, "rf-seed-5", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+	mustAppend(t, c, "rf-seed-6", &vttv1.Envelope_ActorControlGranted{
+		ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "patron", ParticipantId: patronID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}})
+	mustAppend(t, c, "rf-seed-7", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 		TokenId: "tok-brawler", SceneId: "tavern", ActorId: "brawler", Position: &vttv1.GridPosition{X: 0, Y: 0},
 	}})
-	mustAppend(t, c, "rf-seed-6", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+	mustAppend(t, c, "rf-seed-8", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 		TokenId: "tok-patron", SceneId: "tavern", ActorId: "patron", Position: &vttv1.GridPosition{X: 1, Y: 0},
 	}})
 
@@ -221,9 +239,9 @@ func TestUseAbilityNoRulesetLoadedCleanError(t *testing.T) {
 func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	brawlerConn := f.dial(f.brawlerToken, 0)
-	// after=6 skips the 6 seeded events' catch-up replay (rf-seed-1..6):
-	// this connection should observe ONLY the batch's own live broadcasts.
-	dmConn := f.dial(f.dmToken, 6)
+	// Skips the 8 seeded events' catch-up replay (rf-seed-1..8): this
+	// connection should observe ONLY the batch's own live broadcasts.
+	dmConn := f.dial(f.dmToken, rfSeedHead)
 
 	sendCommand(t, brawlerConn, fistsCmd("brawler", "patron"))
 	res := readResult(t, brawlerConn)
@@ -231,8 +249,9 @@ func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 		t.Fatalf("want ok=true (footing=0 guarantees a hit), got %+v", res)
 	}
 	firstSeq := res.Sequence
-	if firstSeq != 7 { // 6 seeded events (rf-seed-1..6) + this batch starts at 7
-		t.Fatalf("result.Sequence = %d, want 7 (first seq of the batch, after 6 seeded events)", firstSeq)
+	if want := rfSeedHead + 1; firstSeq != want { // the batch starts one past the seed
+		t.Fatalf("result.Sequence = %d, want %d (first seq of the batch, after %d seeded events)",
+			firstSeq, want, rfSeedHead)
 	}
 
 	// Collect the whole batch off the DM's connection (an uninvolved

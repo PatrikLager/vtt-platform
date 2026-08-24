@@ -642,11 +642,20 @@ test("the standard baseline pack is fetched unconditionally, with NO Authorizati
 });
 
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
+// TWO EVENTS PER CHARACTER, because the fold refuses an actorAdded that names
+// a controller: creation makes a character, a grant hands it over (visibility
+// spec §5.1, 2026-08-24). This is also the shape the server's own projection
+// now sends a seat — an introduction with the grants behind it.
 function seedTable(sock: FakeSocket, actorId = "a1", participantId = "p") {
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera", controllerId: participantId } } }));
-  sock.deliver(envelope(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId, position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera" } } }));
+  sock.deliver(
+    envelope(4, {
+      actorControlGranted: { actorId, participantId, kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId, position: { x: 1, y: 1 } } }));
 }
 
 test("the ruleset's abilities reach the player panel, and nothing else does", async () => {
@@ -888,7 +897,12 @@ test("a null move command is never handed to send, even before the socket opens"
   // Deliberately NOT opened. Frames still arrive; the socket is not writable.
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", controllerId: "p" } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(
+    envelope(4, {
+      actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
 
   const board = r.querySelector(".grid") as HTMLElement;
@@ -1262,7 +1276,12 @@ test("a promoted spectator's own screen catches up without reconnecting", async 
   await settle();
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash" } } }));
+  sock.deliver(
+    envelope(2, {
+      actorControlGranted: { actorId: "a1", participantId: "p-me", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
   expect(r.querySelector(".player")).toBeNull(); // a spectator watches
 
@@ -1442,7 +1461,12 @@ test("a batch naming me AND somebody else still re-reads my own role", async () 
   await settle();
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash", controllerIds: ["p-me"] } } }));
+  sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Ash" } } }));
+  sock.deliver(
+    envelope(2, {
+      actorControlGranted: { actorId: "a1", participantId: "p-me", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
   await settle();
   const before = meCalls;
 

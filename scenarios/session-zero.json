@@ -22,8 +22,10 @@
 
     {"by": "dm", "command": {"createScene": {"sceneId": "camp", "name": "Night Camp", "gridWidth": 3, "gridHeight": 3}}, "expect": {"ok": true}},
 
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-fighter", "name": "Asme", "controllerId": "{{id:player}}"}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-healer", "name": "Ilva", "controllerId": "{{id:player}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-fighter", "name": "Asme"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-healer", "name": "Ilva"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-healer", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-goblin-archer", "name": "Goblin Archer"}}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-fighter", "sceneId": "ambush", "actorId": "act-fighter", "position": {"x": 1, "y": 4}}}, "expect": {"ok": true}},

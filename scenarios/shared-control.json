@@ -11,9 +11,11 @@
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Shared Control"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-keep", "name": "The Keep", "gridWidth": 8, "gridHeight": 8}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-warden", "name": "Warden", "controllerId": "{{id:ana}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-warden", "name": "Warden"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:ana}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-warden", "sceneId": "scn-keep", "actorId": "act-warden", "position": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-scout", "name": "Scout", "controllerId": "{{id:dee}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-scout", "name": "Scout"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-scout", "participantId": "{{id:dee}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:bo}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:bo}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"revokeActorControl": {"actorId": "act-warden", "participantId": "{{id:ana}}"}}, "expect": {"ok": true}},

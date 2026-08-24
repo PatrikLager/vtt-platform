@@ -11,7 +11,7 @@
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-goblin-fight", "name": "Forest Trail", "gridWidth": 32, "gridHeight": 32}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {
-      "actorId": "act-fighter", "name": "Human Fighter", "controllerId": "{{id:fighter}}",
+      "actorId": "act-fighter", "name": "Human Fighter",
       "attributes": {"str": 4, "dex": 2, "con": 3, "max_hp": 28, "ac": 17, "fort": 15, "ref": 13, "will": 12},
       "resources": {"hp": {"current": 28, "max": 28}, "flurry_uses": {"current": 1, "max": 1}}
     }}}, "expect": {"ok": true}},
@@ -27,6 +27,8 @@
       "attributes": {"str": 0, "dex": 4, "con": 1, "max_hp": 6, "ac": 14, "fort": 11, "ref": 15, "will": 11},
       "resources": {"hp": {"current": 6, "max": 6}}
     }}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:fighter}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-fighter", "sceneId": "scn-goblin-fight", "actorId": "act-fighter", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-cutter", "sceneId": "scn-goblin-fight", "actorId": "act-cutter", "position": {"x": 1, "y": 0}}}, "expect": {"ok": true}},

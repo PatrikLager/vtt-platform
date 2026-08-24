@@ -428,8 +428,14 @@ func ownershipFixture() *engine.State {
 	// authoritative and controller_id mirrors controller_ids[0]. Setting only
 	// the scalar would build a state the fold cannot produce, and would make
 	// this fixture disagree with production the moment authz reads the set.
+	// KIND IS DECLARED, and it has to be: an absent kind is not a party member,
+	// always (spec §5.1, 2026-08-24), and set_viewpoint's spectator cell asks
+	// exactly that question. Leaving it silent would make this fixture disagree
+	// with production in the one direction the matrix cannot see — a cell that
+	// fails for a reason unrelated to authorization.
 	st.Actors["a1"] = &vttv1.Actor{
 		ActorId: "a1", Name: "Hero",
+		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		ControllerId:  "p-1",
 		ControllerIds: []string{"p-1"},
 	}
@@ -519,6 +525,7 @@ func doorFixture(x, y int32) *engine.State {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
 		ActorId: "a1", Name: "Hero",
+		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		ControllerId:  "p-1",
 		ControllerIds: []string{"p-1"},
 	}

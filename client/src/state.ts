@@ -184,8 +184,10 @@ export interface Actor {
    * `undefined` in a mirror position where Go has 0 — a third state the dump
    * comparison cannot express and the fold would have to guess at. UNSPECIFIED
    * (0) is the "the log said nothing" value, and it is a real state rather than
-   * an error: see the contract's ActorKind for the migration rule that reads
-   * it, which belongs to the READER and never to the fold.
+   * an error. What it MEANS belongs to the reader and never to the fold: an
+   * absent kind is not a party member, always, with nothing inferred from who
+   * controls the actor (§5.1, whose migration rule saying otherwise was deleted
+   * 2026-08-24).
    *
    * The client does not enforce visibility — the server projects it, and this
    * client only ever sees what it was sent. Kind is carried so the fold stays a

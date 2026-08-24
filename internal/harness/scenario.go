@@ -61,9 +61,14 @@ type Scenario struct {
 // There is no "controls" key (2026-08-24). One existed, was described in this
 // comment as "informational at this layer", and was informational everywhere
 // else too: it reached identity.CreateInvite and stopped. Control in a
-// scenario has always come from its STEPS — an add_actor carrying a
-// controllerId, or a grant_actor_control — which is why removing the key from
+// scenario has always come from its STEPS — which is why removing the key from
 // all six scenarios that declared it left every golden stream byte-identical.
+//
+// Those steps are now exactly ONE command: grant_actor_control. An add_actor
+// carrying a controllerId was the other route until later the same day, and it
+// is refused at the command boundary and in the fold alike (visibility spec
+// §5.1) — so a scenario that wants a player to hold a character writes two
+// steps, and the second one says what the character is.
 type Participant struct {
 	Name string `json:"name"`
 	Role string `json:"role"`

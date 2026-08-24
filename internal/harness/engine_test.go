@@ -375,8 +375,15 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 // {{id:<name>}} inside a command step's JSON is resolved to ids[<name>]
 // BEFORE the command ever reaches Conn.SendCommand — the fake Conn's
 // scripted send captures the actually-dispatched command and asserts its
-// controllerId field is the real, resolved id, never the literal
+// participantId field is the real, resolved id, never the literal
 // placeholder text.
+//
+// IT CARRIES grant_actor_control rather than add_actor (2026-08-24). The
+// fixture used to embed the placeholder in an AddActor's controllerId, which
+// the server now REFUSES outright — control is conferred by a grant, and only
+// by a grant (visibility spec §5.1). Nothing here dials a real gateway, so the
+// old fixture would still have passed; it would have passed while teaching a
+// shape no scenario may contain, which is how a fixture stops being evidence.
 func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dm := newFakeConn("dm")
@@ -384,19 +391,36 @@ func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T)
 
 		const wantID = "real-participant-id-abc123"
 		var gotControllerID string
+		// TWO STEPS, one envelope each, because a grant names an actor that
+		// must already exist: RunScenario folds each participant's observed
+		// events for its probes and engine.Apply refuses a grant over an
+		// unknown actor ("actor_control_granted names unknown actor"). It is
+		// also the shape a real client now has to use, which is the point of
+		// moving this fixture off add_actor at all.
+		var seq int64
 		dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
-			gotControllerID = cmd.GetAddActor().GetActor().GetControllerId()
-			env := &vttv1.Envelope{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_ActorAdded{
-				ActorAdded: &vttv1.ActorAdded{Actor: cmd.GetAddActor().GetActor()},
-			}}
+			seq++
+			env := &vttv1.Envelope{EventId: fmt.Sprintf("e%d", seq), Sequence: seq}
+			switch {
+			case cmd.GetAddActor() != nil:
+				env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+					Actor: cmd.GetAddActor().GetActor()}}
+			default:
+				g := cmd.GetGrantActorControl()
+				gotControllerID = g.GetParticipantId()
+				env.Payload = &vttv1.Envelope_ActorControlGranted{
+					ActorControlGranted: &vttv1.ActorControlGranted{
+						ActorId: g.GetActorId(), ParticipantId: g.GetParticipantId(), Kind: g.GetKind()}}
+			}
 			broadcast(world, env, "dm")
-			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: seq}, nil
 		}
 
 		sc := &harness.Scenario{
 			Participants: []harness.Participant{{Name: "dm"}},
 			Steps: []harness.Step{
-				{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:lera}}"}}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X"}}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"grantActorControl":{"actorId":"act-1","participantId":"{{id:lera}}","kind":"ACTOR_KIND_PARTY_MEMBER"}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
 		ids := map[string]string{"lera": wantID}
@@ -408,7 +432,7 @@ func TestRunScenarioResolvesParticipantIDPlaceholderBeforeDispatch(t *testing.T)
 			t.Fatalf("Report.Pass = false, want true; steps = %+v", rep.Steps)
 		}
 		if gotControllerID != wantID {
-			t.Fatalf("dispatched command's controllerId = %q, want the resolved id %q (placeholder must resolve before dispatch, not be sent literally)", gotControllerID, wantID)
+			t.Fatalf("dispatched command's participantId = %q, want the resolved id %q (placeholder must resolve before dispatch, not be sent literally)", gotControllerID, wantID)
 		}
 	})
 }
@@ -427,7 +451,7 @@ func TestRunScenarioErrorsOnUnresolvedParticipantIDPlaceholder(t *testing.T) {
 		sc := &harness.Scenario{
 			Participants: []harness.Participant{{Name: "dm"}},
 			Steps: []harness.Step{
-				{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"X","controllerId":"{{id:nobody}}"}}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"grantActorControl":{"actorId":"act-1","participantId":"{{id:nobody}}","kind":"ACTOR_KIND_PARTY_MEMBER"}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
 		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)

@@ -102,7 +102,7 @@ type bootResult struct {
 	// IDs is participant name -> the real, server-assigned
 	// identity.Participant.ID behind that invite (P6 Task 4 fix round) —
 	// harness.RunScenario's ids parameter, resolving a scenario's
-	// {{id:<name>}} placeholder (e.g. an AddActor's controller_id that must
+	// {{id:<name>}} placeholder (e.g. a GrantActorControl's participant_id that must
 	// equal a player's own identity) automatically in self-contained mode.
 	IDs map[string]string
 	// close stops the server, closes the campaign/identity handles, and

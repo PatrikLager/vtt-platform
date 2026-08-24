@@ -40,10 +40,15 @@ func resourceChangedEnv(seq int64, actorID string) *vttv1.Envelope {
 	}}
 }
 
-func actorAddedControlled(seq int64, actorID, controllerID string) *vttv1.Envelope {
+// controllableActor creates an actor and NOTHING ELSE. It carries no controller
+// because no ActorAdded may: creation makes a character, and a grant is what
+// hands it to somebody (visibility spec §5.1, Patrik's ruling 2026-08-24).
+// Tests that need a controlled actor fold a grantEnv after this one, which is
+// the two-step every caller now performs.
+func controllableActor(seq int64, actorID string) *vttv1.Envelope {
 	return &vttv1.Envelope{Sequence: seq, EventId: "added", Payload: &vttv1.Envelope_ActorAdded{
 		ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
-			ActorId: actorID, ControllerId: controllerID,
+			ActorId: actorID,
 			// A declared resource so ResourceChanged can reach this actor —
 			// the whole-fold test needs a non-control event that MUTATES a
 			// stored actor, and every other field here is irrelevant to it.
@@ -87,18 +92,56 @@ func assertMirror(t *testing.T, st *engine.State, actorID string) {
 	}
 }
 
-func TestAddActorSeedsTheControlSetFromControllerId(t *testing.T) {
-	st := foldAll(t, actorAddedControlled(1, "thorn", "p-player"))
-	assertMirror(t, st, "thorn")
-	if ids := st.Actors["thorn"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-player" {
-		t.Fatalf("want the set seeded with the declared controller, got %v", ids)
+// TestAnActorAddedCarryingAControllerIsRefused is the fold half of "control is
+// conferred exactly once, by a grant" (visibility spec §5.1, Patrik's ruling
+// 2026-08-24).
+//
+// The fold used to SEED the control set from a declared controller_id, so
+// creating an actor and handing it to somebody were the same event. That is
+// what made the archer leak reachable through a second door: created with a
+// controller and no kind, an actor was a party member with nobody having said
+// so. The gateway refuses such a COMMAND; this refuses the EVENT, which is the
+// invariant rather than the manners — an ActorAdded carrying a controller is
+// not a thing that can be in a log.
+//
+// A REFUSAL AND NOT A SILENT DROP. Ignoring the field would fold the actor
+// with no controller and say nothing, which is the quiet kind of wrong: the
+// writer believes they handed a character over and the log disagrees. Fail
+// closed AND loudly.
+func TestAnActorAddedCarryingAControllerIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		actor *vttv1.Actor
+	}{
+		{"the mirror", &vttv1.Actor{ActorId: "thorn", ControllerId: "p-player"}},
+		{"the authoritative set", &vttv1.Actor{ActorId: "thorn", ControllerIds: []string{"p-player"}}},
+		{"both", &vttv1.Actor{ActorId: "thorn", ControllerId: "p-player",
+			ControllerIds: []string{"p-player"}}},
+		// A non-empty set of nothing. It would confer no control, and it is
+		// still refused: the fold's answer must not depend on whether the id
+		// the writer chose happened to be usable.
+		{"a declared but empty set", &vttv1.Actor{ActorId: "thorn", ControllerIds: []string{""}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := engine.NewState()
+			err := engine.Apply(st, &vttv1.Envelope{Sequence: 1, EventId: "added",
+				Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: tc.actor}}})
+			if err == nil {
+				t.Fatal("an ActorAdded that hands the actor to somebody must be refused: " +
+					"creation makes a character, a grant gives it a controller")
+			}
+			if _, exists := st.Actors["thorn"]; exists {
+				t.Error("the refusal must leave NOTHING behind — a half-created actor is worse " +
+					"than a created one")
+			}
+		})
 	}
 }
 
 func TestAddActorWithNoControllerHasAnEmptySet(t *testing.T) {
 	// Empty keeps its original meaning: DM/agent only. This is the case every
 	// NPC and monster is in, so it is the common one.
-	st := foldAll(t, actorAddedControlled(1, "goblin", ""))
+	st := foldAll(t, controllableActor(1, "goblin"))
 	assertMirror(t, st, "goblin")
 	if ids := st.Actors["goblin"].GetControllerIds(); len(ids) != 0 {
 		t.Fatalf("want an empty set for a controllerless actor, got %v", ids)
@@ -124,26 +167,38 @@ func TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt(t *testing.T) {
 	// strict mirrors on this field: copyActor in fold.ts enumerates fields by
 	// hand, so it can drop one silently where proto.Clone cannot. Its twin is
 	// client/test/fold-unit.test.ts.
+	// A CONTROLLER IS A SECOND EVENT NOW, so `holder` names the participant a
+	// kindless grant hands the actor to — the only way an actor can be
+	// controlled at all — and "" means nobody. The grant is deliberately
+	// KINDLESS in these rows: it must not invent a kind the log never stated,
+	// which is the same claim about the grant arm that the rows make about the
+	// ActorAdded arm.
 	for _, tc := range []struct {
-		name string
-		set  []string
-		kind vttv1.ActorKind
-		want vttv1.ActorKind
+		name   string
+		holder string
+		kind   vttv1.ActorKind
+		want   vttv1.ActorKind
 	}{
-		{"declared party member", []string{"p-player"}, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
-		{"declared non-party", nil, vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		{"declared party member", "p-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		{"declared non-party", "", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		// A monster somebody holds: the leak §5.1 closes, and the case that
 		// proves the fold does not quietly re-derive kind from control.
-		{"declared non-party but controlled", []string{"dm-1"}, vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
-		// The two migration shapes. Both must come back UNSPECIFIED: the log
-		// said nothing, so the state says nothing.
-		{"undeclared and controlled", []string{"p-player"}, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
-		{"undeclared and uncontrolled", nil, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
+		{"declared non-party but controlled", "dm-1", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		// Both silent shapes come back UNSPECIFIED: the log said nothing, so
+		// the state says nothing. The reader (gateway.isPartyMember) then
+		// treats that as NOT a party member, always — there is no longer a
+		// second branch that reads control instead.
+		{"undeclared and controlled", "p-player", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
+		{"undeclared and uncontrolled", "", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			st := foldAll(t, &vttv1.Envelope{Sequence: 1, EventId: "added",
+			envs := []*vttv1.Envelope{{Sequence: 1, EventId: "added",
 				Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
-					Actor: &vttv1.Actor{ActorId: "a", ControllerIds: tc.set, Kind: tc.kind}}}})
+					Actor: &vttv1.Actor{ActorId: "a", Kind: tc.kind}}}}}
+			if tc.holder != "" {
+				envs = append(envs, grantEnv(2, "a", tc.holder))
+			}
+			st := foldAll(t, envs...)
 			if got := st.Actors["a"].GetKind(); got != tc.want {
 				t.Fatalf("want the fold to store %v verbatim, got %v", tc.want, got)
 			}
@@ -209,15 +264,15 @@ func TestTheGrantDeclaresTheActorsKind(t *testing.T) {
 func TestAKindlessGrantDoesNotEraseAKindAlreadyDeclared(t *testing.T) {
 	// A GRANT THAT SAYS NOTHING SAYS NOTHING — it does not say UNSPECIFIED.
 	//
-	// Every ActorControlGranted already recorded lacks the field, so the fold
-	// must keep accepting them (the refusal for new ones lives at the command
-	// boundary, internal/gateway's validateGrantActorControl, precisely
-	// because the fold cannot refuse history). Writing the grant's kind
-	// UNCONDITIONALLY is the plausible-looking wrong thing here, and it
-	// REOPENS THE ORIGINAL LEAK: a monster declared NON_PARTY at creation
-	// would be reset to UNSPECIFIED by an old kindless grant, and UNSPECIFIED
-	// plus a controller is what §5.1's migration rule reads as a party
-	// member. The whole stat block goes back on every player's roster.
+	// The fold accepts a kindless grant; the refusal for one being ISSUED lives
+	// at the command boundary (internal/gateway's validateGrantActorControl),
+	// so this is the shape a hand-built envelope can still reach. Writing the
+	// grant's kind UNCONDITIONALLY is the plausible-looking wrong thing here,
+	// and it is a SILENT DEMOTION: since §5.1's migration rule was deleted
+	// (2026-08-24) an absent kind is not a party member, so a declared kind
+	// reset to UNSPECIFIED by a re-grant that said nothing takes the character
+	// off its own party's roster — and leaves a monster that nobody declared,
+	// which is the same information loss pointing the other way.
 	st := foldAll(t,
 		&vttv1.Envelope{Sequence: 1, EventId: "added",
 			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
@@ -282,8 +337,9 @@ func TestGrantingASecondControllerKeepsTheFirstInControllerId(t *testing.T) {
 	// THE case the rejected rule got wrong. p-player must still see Thorn as
 	// theirs after someone else is added.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		grantEnv(2, "thorn", "p-second"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
+		grantEnv(3, "thorn", "p-second"),
 	)
 	assertMirror(t, st, "thorn")
 	a := st.Actors["thorn"]
@@ -298,7 +354,7 @@ func TestGrantingASecondControllerKeepsTheFirstInControllerId(t *testing.T) {
 
 func TestGrantingToAnActorWithNoControllerFillsControllerId(t *testing.T) {
 	st := foldAll(t,
-		actorAddedControlled(1, "goblin", ""),
+		controllableActor(1, "goblin"),
 		grantEnv(2, "goblin", "p-player"),
 	)
 	assertMirror(t, st, "goblin")
@@ -312,9 +368,10 @@ func TestGrantIsIdempotent(t *testing.T) {
 	// single revoke leave a stale copy behind, so the participant would keep
 	// control they were explicitly removed from.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		grantEnv(2, "thorn", "p-second"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
 		grantEnv(3, "thorn", "p-second"),
+		grantEnv(4, "thorn", "p-second"),
 	)
 	assertMirror(t, st, "thorn")
 	if ids := st.Actors["thorn"].GetControllerIds(); len(ids) != 2 {
@@ -326,9 +383,10 @@ func TestRevokingTheFirstControllerPromotesTheNext(t *testing.T) {
 	// controller_id tracks the SET, not the original grant: once p-player is
 	// gone, an old reader must see p-second — not a departed participant.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		grantEnv(2, "thorn", "p-second"),
-		revokeEnv(3, "thorn", "p-player"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
+		grantEnv(3, "thorn", "p-second"),
+		revokeEnv(4, "thorn", "p-player"),
 	)
 	assertMirror(t, st, "thorn")
 	a := st.Actors["thorn"]
@@ -344,8 +402,9 @@ func TestRevokingTheFirstControllerPromotesTheNext(t *testing.T) {
 func TestRevokingTheLastControllerEmptiesBoth(t *testing.T) {
 	// Back to DM/agent-only, which is what empty has always meant.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		revokeEnv(2, "thorn", "p-player"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
+		revokeEnv(3, "thorn", "p-player"),
 	)
 	assertMirror(t, st, "thorn")
 	a := st.Actors["thorn"]
@@ -361,8 +420,9 @@ func TestRevokingSomeoneWhoHasNoControlIsANoOp(t *testing.T) {
 	// Idempotent in the other direction. A DM revoking twice, or revoking a
 	// participant who already released, must not error or disturb the set.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		revokeEnv(2, "thorn", "p-stranger"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
+		revokeEnv(3, "thorn", "p-stranger"),
 	)
 	assertMirror(t, st, "thorn")
 	if ids := st.Actors["thorn"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-player" {
@@ -392,11 +452,11 @@ func TestGrantAndRevokeRejectAnEmptyParticipant(t *testing.T) {
 	// ambiguity ("nobody controls this" vs "someone does") the mirror rule
 	// exists to prevent.
 	for name, env := range map[string]*vttv1.Envelope{
-		"grant":  grantEnv(2, "thorn", ""),
-		"revoke": revokeEnv(2, "thorn", ""),
+		"grant":  grantEnv(3, "thorn", ""),
+		"revoke": revokeEnv(3, "thorn", ""),
 	} {
 		t.Run(name, func(t *testing.T) {
-			st := foldAll(t, actorAddedControlled(1, "thorn", "p-player"))
+			st := foldAll(t, controllableActor(1, "thorn"), grantEnv(2, "thorn", "p-player"))
 			if err := engine.Apply(st, env); err == nil {
 				t.Fatal("want an error for an empty participant id")
 			}
@@ -420,14 +480,16 @@ func TestEveryFoldPathLeavesTheMirrorIntact(t *testing.T) {
 	// touches an actor and leaves the two fields disagreeing. Folding only the
 	// control arms would make this test a restatement of the ones above.
 	st := foldAll(t,
-		actorAddedControlled(1, "thorn", "p-player"),
-		actorAddedControlled(2, "goblin", ""),
-		actorAddedControlled(3, "shared", "p-a"),
-		grantEnv(4, "shared", "p-b"),
-		grantEnv(5, "goblin", "p-c"),
-		resourceChangedEnv(6, "thorn"),
-		revokeEnv(7, "shared", "p-a"),
-		revokeEnv(8, "thorn", "p-player"),
+		controllableActor(1, "thorn"),
+		grantEnv(2, "thorn", "p-player"),
+		controllableActor(3, "goblin"),
+		controllableActor(4, "shared"),
+		grantEnv(5, "shared", "p-a"),
+		grantEnv(6, "shared", "p-b"),
+		grantEnv(7, "goblin", "p-c"),
+		resourceChangedEnv(8, "thorn"),
+		revokeEnv(9, "shared", "p-a"),
+		revokeEnv(10, "thorn", "p-player"),
 	)
 	for id := range st.Actors {
 		assertMirror(t, st, id)
@@ -451,88 +513,17 @@ func TestEveryFoldPathLeavesTheMirrorIntact(t *testing.T) {
 	}
 }
 
-// TestAddActorDropsEmptyIdsFromTheControlSet pins the guard on the ONE path
-// the grant/revoke checks do not cover.
+// The two tests that used to sit here are DELETED, not moved, and it is worth
+// saying which and why rather than leaving a gap:
 //
-// controlTarget rejects an empty participant, but ActorAdded copies the
-// payload's set through, and internal/gateway/convert.go builds that event
-// from the client's Actor verbatim. Without this filter an ActorAdded carrying
-// controller_ids:[""] creates a NON-EMPTY set whose mirror is the empty string
-// — indistinguishable from an unowned actor to every reader — and revoke then
-// refuses to remove it, because removing it means naming an empty participant.
-// Permanently wrong, in an append-only log.
-func TestAddActorDropsEmptyIdsFromTheControlSet(t *testing.T) {
-	env := &vttv1.Envelope{Sequence: 1, EventId: "added", Payload: &vttv1.Envelope_ActorAdded{
-		ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
-			ActorId:       "thorn",
-			ControllerIds: []string{"", "p-player", ""},
-		}},
-	}}
-	st := engine.NewState()
-	if err := engine.Apply(st, env); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	assertMirror(t, st, "thorn")
-	if ids := st.Actors["thorn"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-player" {
-		t.Fatalf("want the empty ids dropped, got %v", ids)
-	}
-}
-
-// TestAddActorLetsTheSetOverrideTheDeclaredController pins the PRECEDENCE rule
-// for a payload that carries both fields and contradicts itself.
+//   - TestAddActorDropsEmptyIdsFromTheControlSet pinned that an ActorAdded
+//     carrying controller_ids:[""] had its empty ids stripped.
+//   - TestAddActorLetsTheSetOverrideTheDeclaredController pinned that when the
+//     payload declared BOTH fields and they disagreed, the set won.
 //
-// The set wins, deliberately. controller_id is a MIRROR, never a second source
-// of truth — treating it as a fallback here would reinstate exactly the
-// authority this design removes. And the two failure directions are not
-// symmetric: erasing control fails closed and is recoverable by a later
-// ActorControlGranted, whereas honouring a scalar the set contradicts grants
-// someone a character nobody granted them.
-//
-// The second case is the sharp one: {controller_id:"p-a", controller_ids:[""]}
-// yields an UNOWNED actor. That is the empty-id filter doing its job, not an
-// accident of statement order.
-//
-// Reachable verbatim — gateway/convert.go passes the client's Actor through.
-func TestAddActorLetsTheSetOverrideTheDeclaredController(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		declared string
-		set      []string
-		wantIDs  []string
-		wantMirr string
-	}{
-		{"set overrides the declared controller", "p-a", []string{"p-b"}, []string{"p-b"}, "p-b"},
-		{"a set of only empty ids erases control", "p-a", []string{""}, nil, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			st := engine.NewState()
-			env := &vttv1.Envelope{Sequence: 1, EventId: "added", Payload: &vttv1.Envelope_ActorAdded{
-				ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
-					ActorId:       "thorn",
-					ControllerId:  tc.declared,
-					ControllerIds: tc.set,
-				}},
-			}}
-			if err := engine.Apply(st, env); err != nil {
-				t.Fatalf("Apply: %v", err)
-			}
-			assertMirror(t, st, "thorn")
-			a, ok := st.Actors["thorn"]
-			if !ok {
-				t.Fatal("actor missing")
-			}
-			if got := a.GetControllerIds(); len(got) != len(tc.wantIDs) {
-				t.Fatalf("controller_ids = %v, want %v", got, tc.wantIDs)
-			} else {
-				for i := range got {
-					if got[i] != tc.wantIDs[i] {
-						t.Fatalf("controller_ids = %v, want %v", got, tc.wantIDs)
-					}
-				}
-			}
-			if got := a.GetControllerId(); got != tc.wantMirr {
-				t.Fatalf("controller_id = %q, want %q", got, tc.wantMirr)
-			}
-		})
-	}
-}
+// Both described how the fold RECONCILED a controller declared at creation,
+// and no ActorAdded may declare one any more — the arm refuses the whole shape,
+// including a declared-but-empty set, which is the case the first of the two
+// existed for. TestAnActorAddedCarryingAControllerIsRefused (top of this file)
+// covers every input either test fed in, and asserts the stronger thing:
+// nothing is stored at all.

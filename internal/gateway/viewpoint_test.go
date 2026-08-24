@@ -44,19 +44,40 @@ func TestASpectatorMayNotPerchOnAnNPCTheDMControls(t *testing.T) {
 	}
 }
 
-func TestAnActorFromBeforeTheKindFieldIsStillPerchableWhenControlled(t *testing.T) {
-	// MIGRATION at the perch (spec §5.1): absent + a controller means party
-	// member, here as everywhere. twoRooms' hero declares no kind and is
-	// controlled by p-1, which is exactly the shape of every character in
-	// every log recorded before the field existed — and a spectator who could
-	// ride them yesterday must still be able to today.
+// TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt is the INVERSION
+// of TestAnActorFromBeforeTheKindFieldIsStillPerchableWhenControlled, which
+// stood here until 2026-08-24 and asserted the opposite.
+//
+// That test pinned the migration rule at the perch: an actor with no kind but
+// a controller was a party member, so a spectator could ride it. The rule
+// existed to keep logs written before the kind field behaving as they had,
+// there are none, and it is deleted — an absent kind is NOT a party member,
+// always, and nothing reads controller_ids to decide.
+//
+// THE PERCH IS WHERE THAT MATTERS MOST, which is why the inverted test stays
+// rather than being dropped: §3.1.1 calls this the constraint the whole idea
+// rests on. A spectator perched on the Goblin Archer watches the ambush from
+// inside it, and "somebody controls it" was one of the two ways to become
+// perchable without anyone saying what the actor was.
+func TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt(t *testing.T) {
 	st := twoRooms()
-	if k := st.Actors["hero"].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: the hero must declare NO kind for this to be the migration case, got %v", k)
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wisp", Name: "Wisp"}})
+	if k := st.Actors["wisp"].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		t.Fatalf("fixture check: the wisp must declare NO kind, got %v", k)
 	}
+	// A kindless grant, which the command boundary refuses and the fold still
+	// accepts: the only remaining way to hold an actor while saying nothing.
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "p-2"})
+	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "dm-1"})
 
+	if err := gateway.MayPerch(watcher(), "wisp", st); err == nil {
+		t.Error("an actor that never said what it is is no shoulder to sit on, " +
+			"however many participants hold it")
+	}
+	// The control, and it is load-bearing: a MayPerch that refused everything
+	// would satisfy the assertion above while deleting the feature.
 	if err := gateway.MayPerch(watcher(), "hero", st); err != nil {
-		t.Errorf("a party member from before the kind field is still a shoulder to sit on: %v", err)
+		t.Errorf("a declared party member is still a shoulder to sit on: %v", err)
 	}
 }
 

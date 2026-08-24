@@ -31,14 +31,25 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-warden",
-        "name": "Warden",
-        "controllerId": "p-ana"
+        "name": "Warden"
       }
     }
   },
   {
     "eventId": "evt-4",
     "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-ana",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -53,29 +64,16 @@
     }
   },
   {
-    "eventId": "evt-5",
-    "sequence": "5",
+    "eventId": "evt-6",
+    "sequence": "6",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
     "actorAdded": {
       "actor": {
         "actorId": "act-scout",
-        "name": "Scout",
-        "controllerId": "p-dee"
+        "name": "Scout"
       }
-    }
-  },
-  {
-    "eventId": "evt-6",
-    "sequence": "6",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "actorControlGranted": {
-      "actorId": "act-warden",
-      "participantId": "p-bo",
-      "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
   {
@@ -85,8 +83,8 @@
     "actorRole": "dm",
     "participantId": "p-dm",
     "actorControlGranted": {
-      "actorId": "act-warden",
-      "participantId": "p-bo",
+      "actorId": "act-scout",
+      "participantId": "p-dee",
       "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
@@ -96,14 +94,38 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-bo",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "participantId": "p-bo",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "actorControlRevoked": {
       "actorId": "act-warden",
       "participantId": "p-ana"
     }
   },
   {
-    "eventId": "evt-9",
-    "sequence": "9",
+    "eventId": "evt-11",
+    "sequence": "11",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -113,8 +135,8 @@
     }
   },
   {
-    "eventId": "evt-10",
-    "sequence": "10",
+    "eventId": "evt-12",
+    "sequence": "12",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -125,8 +147,8 @@
     }
   },
   {
-    "eventId": "evt-11",
-    "sequence": "11",
+    "eventId": "evt-13",
+    "sequence": "13",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -136,8 +158,8 @@
     }
   },
   {
-    "eventId": "evt-12",
-    "sequence": "12",
+    "eventId": "evt-14",
+    "sequence": "14",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -149,8 +171,8 @@
     }
   },
   {
-    "eventId": "evt-13",
-    "sequence": "13",
+    "eventId": "evt-15",
+    "sequence": "15",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

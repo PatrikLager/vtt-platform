@@ -61,22 +61,30 @@ message Resource {
 // enum is additive; every future value is "not a party member" to the rule
 // below until something deliberately says otherwise, so growth fails closed.
 //
-// UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and that is
-// the one place this contract does NOT treat absence as a defect. It is NOT
-// tolerated on a COMMAND: GrantActorControl.kind is refused when absent, and
-// the two rules are the same rule seen from either end of time — history that
-// says nothing must keep meaning what it meant, and a caller who says nothing
-// today must be asked rather than guessed at. Every ActorAdded already
-// written lacks the field, and reading absence as "not a party member" would
-// retroactively drop existing party members from every roster the moment they
-// turned a corner. The migration rule is therefore:
+// UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and it means
+// exactly one thing:
 //
-//	absent + has a controller -> party member; absent + none -> not.
+//	an absent kind is NOT a party member. Always.
 //
-// That reproduces the old behaviour EXACTLY for logs already written, while
-// every new log states its intent. It is the same decision controller_id's
-// mirror made, on the same grounds: you cannot reinterpret history you have
-// written. Readers implement it; the fold stores what the log said, verbatim.
+// No inference from control, no second branch, no special case. A reader that
+// asks "but does somebody hold it?" is implementing a rule this contract
+// deleted on 2026-08-24. The fold stores what the log said, verbatim; readers
+// apply the sentence above and nothing else.
+//
+// THE RULE IT REPLACED, recorded because deleting it is the load-bearing part
+// of this design rather than a tidy-up. There was a migration rule — "absent +
+// has a controller -> party member; absent + none -> not" — whose only job was
+// to keep logs written before this field existed behaving as they had. It is
+// gone because there are no such logs, and because that arm is precisely what
+// could not tell "a log written before kind existed" from "a grant issued today
+// that forgot": every leak this design chased lived in that gap. With one rule
+// the ambiguity has nowhere to live.
+//
+// ABSENCE IS STILL NOT TOLERATED ON A COMMAND: GrantActorControl.kind is
+// refused when absent, so a caller who says nothing is asked rather than
+// guessed at. That refusal is now belt and braces — silence fails closed
+// either way — and it stays because a command that quietly demotes the
+// character it was handing over is a wrong answer given confidently.
 enum ActorKind {
   ACTOR_KIND_UNSPECIFIED = 0;
   ACTOR_KIND_PARTY_MEMBER = 1;
@@ -158,19 +166,21 @@ message ActorControlGranted {
   // precedence would freeze standing at creation, which is exactly the
   // design this revision replaced.
   //
-  // UNSPECIFIED here changes nothing. Every grant already recorded lacks
-  // this field, so a grant that says nothing must leave the actor's kind
-  // alone; clearing it would let history rewrite a declaration made after
-  // it. Revocation likewise never clears kind — a player leaving the table
-  // does not turn their character into a monster.
+  // UNSPECIFIED here changes nothing: a grant that says nothing leaves the
+  // actor's kind alone. Clearing it would be a SILENT DEMOTION, since an
+  // absent kind is not a party member (see ActorKind) — the character would
+  // drop off its own party's roster on the next corner. Revocation likewise
+  // never clears kind: a player leaving the table does not turn their
+  // character into a monster.
   //
-  // GOING FORWARD A GRANT THAT SAYS NOTHING IS REFUSED, at the command
-  // boundary (internal/gateway's validateGrantActorControl, called from
-  // handleCommand) and never in the fold: proto3 has no `required`, and the
-  // fold must keep accepting every kindless grant already written. Without
-  // that refusal an agent that omits the field reproduces the original leak
-  // while ActorKind's migration rule stands helpless — it cannot tell a log
-  // written before this field existed from a grant issued today that forgot.
+  // A GRANT THAT SAYS NOTHING IS REFUSED, at the command boundary
+  // (internal/gateway's validateGrantActorControl, called from handleCommand)
+  // and never in the fold: proto3 has no `required`, and the two seams answer
+  // different questions — the boundary decides what may be WRITTEN, the fold
+  // keeps the log's own words. The refusal is belt and braces rather than the
+  // only defence (silence fails closed either way), and it stays because a
+  // command that quietly demotes the character it is handing over is a wrong
+  // answer given confidently.
   ActorKind kind = 3;
 }
 

@@ -132,6 +132,7 @@ type oracleView struct {
 //     did, the equation would be a tautology that holds however wrong the
 //     projection is: two derivations sharing an implementation agree about
 //     their shared bug.
+//
 //   - A BUG INSIDE look() IS CAUGHT, four injections for four, and an earlier
 //     version of this comment claimed the opposite. It said "a bug INSIDE look()
 //     would move both sides of the equation together and this test would stay
@@ -159,24 +160,31 @@ type oracleView struct {
 //     earlier comment left out while listing only the benefit. TWO THINGS PASS
 //     THIS TEST SILENTLY, both measured rather than reasoned:
 //
-//       1. A WRONG internal/sight. Break Blockers so wall tiles stop casting a
-//          shadow and this test still reports `ok` — both sides ask the same
-//          broken oracle and agree. The bug is not invisible; it is invisible TO
-//          THE KEYSTONE. 11 other top-level tests in this package fail, and so
-//          does internal/sight's own suite.
-//       2. A RULE MIS-TRANSCRIBED INTO BOTH SIDES. Delete spec §5's roster
-//          exception ("party members are always known") from look() AND from
-//          visibleState below, and this test stays green. Only 4 other top-level
-//          tests in this package fail, which is the thinner margin of the two.
-//          RE-MEASURED 2026-08-23 and the number MOVED, from 2 to 4: the
-//          actor-kind branch added TestAPartyMemberIsKnownEvenWhenHeldByTheDM
-//          and TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt,
-//          which join TestAPartyMemberStaysKnownEvenWhenOutOfSight and
-//          TestASpectatorHopsFromOneShoulderToAnother. Re-run rather than
-//          carried forward, by deleting both loops and reading the failures —
-//          and this SAME HAZARD is why the count is worth keeping honest: the
-//          finding that produced §5.1 was exactly hazard 2, transcribed into
-//          this oracle and left agreeing with a wrong projection.
+//     1. A WRONG internal/sight. Break Blockers so wall tiles stop casting a
+//     shadow and this test still reports `ok` — both sides ask the same
+//     broken oracle and agree. The bug is not invisible; it is invisible TO
+//     THE KEYSTONE. 11 other top-level tests in this package fail, and so
+//     does internal/sight's own suite.
+//     2. A RULE MIS-TRANSCRIBED INTO BOTH SIDES. Delete spec §5's roster
+//     exception ("party members are always known") from look() AND from
+//     visibleState below, and this test stays green. Only 6 other top-level
+//     tests in this package fail, which is the thinner margin of the two.
+//     RE-MEASURED 2026-08-24 and the number MOVED AGAIN, from 4 to 6, by
+//     deleting both loops and reading the failures rather than carrying a
+//     number forward. They are TestAPartyMemberIsKnownEvenWhenHeldByTheDM,
+//     TestAPartyMemberStaysKnownEvenWhenOutOfSight,
+//     TestASpectatorGetsNoSightFromAnNPCTheDMControls,
+//     TestASpectatorHopsFromOneShoulderToAnother,
+//     TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember, and
+//     TestTheProjectedGoldensAreWhatTheProjectionActuallySends — the last of
+//     which is a committed-bytes gate rather than a behavioural test, so the
+//     behavioural margin is 5. The previous measurement said 4 and named
+//     TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt,
+//     which this branch DELETED along with the migration rule it pinned.
+//     This SAME HAZARD is why the count is worth keeping honest, and 2026-08-24
+//     proved it twice over: the finding that produced §5.1 was exactly hazard
+//     2, and review found the oracle below STILL carrying the migration arm
+//     after the production rule had lost it.
 //
 //     Counted as TOP-LEVEL tests and with the fixture gate excluded from the
 //     tally deliberately: it is the thing being credited in the next paragraph,
@@ -270,13 +278,21 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 //
 //   - PARTY_MEMBER is a party member. Every other declared kind is not, so the
 //     enum can grow without silently widening what a player is told.
-//   - UNSPECIFIED is the MIGRATION case, not a fallback: logs written before
-//     the field exists say party membership by having a controller, and §5.1
-//     keeps that reading rather than reinterpreting history already written.
+//   - UNSPECIFIED is NOT a party member either, and nothing here reads
+//     controller_ids. There was a migration arm — absent kind plus a controller
+//     meant party member, so logs written before the field kept their meaning —
+//     and §5.1 DELETED it on 2026-08-24 (Patrik's ruling: no campaign exists
+//     outside this repo's fixtures, so the rule protected nothing while being
+//     the exact ambiguity every leak in this arc lived in).
+//
+// THE ARM WAS STILL HERE AFTER THE PRODUCTION RULE LOST IT, found in review,
+// and it is the sharpest possible illustration of this function's own warning
+// two paragraphs up. No corpus fixture reaches the disagreement — a kindless
+// grant is refused at the command boundary, so no scenario can record one — so
+// the keystone stayed green while the oracle ENDORSED the deleted rule.
+// Reverting viewpoint.go to the two-branch form would have gone green too,
+// which is the definition of an oracle measuring nothing.
 func oracleIsPartyMember(a *vttv1.Actor) bool {
-	if a.GetKind() == vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		return len(a.GetControllerIds()) > 0
-	}
 	return a.GetKind() == vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
 }
 

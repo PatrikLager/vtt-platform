@@ -41,13 +41,18 @@ import (
 // deliberately, not imported (harness test files may not depend on
 // internal/gateway).
 var soakCommandRoles = map[string]map[string]bool{
-	"move_token":     {"dm": true, "agent": true, "player": true},
-	"create_scene":   {"dm": true, "agent": true},
-	"add_actor":      {"dm": true, "agent": true},
-	"place_token":    {"dm": true, "agent": true},
-	"start_session":  {"dm": true, "agent": true},
-	"end_session":    {"dm": true, "agent": true},
-	"retract_events": {"dm": true, "agent": true},
+	"move_token":   {"dm": true, "agent": true, "player": true},
+	"create_scene": {"dm": true, "agent": true},
+	"add_actor":    {"dm": true, "agent": true},
+	// The soak's addActor lifecycle is TWO commands as of 2026-08-24: create
+	// the actor, then grant it. Without this row the grant lands in the
+	// unknown-command arm below and comes back denied, which would fail the
+	// run on its own setup rather than on anything it set out to test.
+	"grant_actor_control": {"dm": true, "agent": true},
+	"place_token":         {"dm": true, "agent": true},
+	"start_session":       {"dm": true, "agent": true},
+	"end_session":         {"dm": true, "agent": true},
+	"retract_events":      {"dm": true, "agent": true},
 }
 
 func soakCommandKind(cmd *vttv1.ClientCommand) string {
@@ -58,6 +63,8 @@ func soakCommandKind(cmd *vttv1.ClientCommand) string {
 		return "create_scene"
 	case *vttv1.ClientCommand_AddActor:
 		return "add_actor"
+	case *vttv1.ClientCommand_GrantActorControl:
+		return "grant_actor_control"
 	case *vttv1.ClientCommand_PlaceToken:
 		return "place_token"
 	case *vttv1.ClientCommand_StartSession:
@@ -294,6 +301,15 @@ func (w *soakWorld) toEnvelope(name string, cmd *vttv1.ClientCommand) *vttv1.Env
 		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: c.AddActor.GetActor()}}
+	case *vttv1.ClientCommand_GrantActorControl:
+		// KIND CARRIED THROUGH, not dropped: the real gateway refuses a grant
+		// that states none, so a fake that silently discarded it would let the
+		// generator ship the one shape the server will not take.
+		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId:       c.GrantActorControl.GetActorId(),
+			ParticipantId: c.GrantActorControl.GetParticipantId(),
+			Kind:          c.GrantActorControl.GetKind(),
+		}}
 	case *vttv1.ClientCommand_PlaceToken:
 		env.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 			TokenId: c.PlaceToken.GetTokenId(), SceneId: c.PlaceToken.GetSceneId(),

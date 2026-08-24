@@ -289,7 +289,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
   const h = harness();
   for (const f of [
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
-    "actor-id", "actor-name", "actor-controller", "actor-json",
+    "actor-id", "actor-name", "actor-json",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text", "undo-from", "undo-to",
   ]) {
@@ -354,26 +354,45 @@ test("a scene's id and name are TRIMMED, and its dimensions become numbers", () 
   ]);
 });
 
-test("an actor's fields are trimmed, and a blank controller is sent as unset", () => {
+test("an actor's fields are trimmed", () => {
   const h = harness();
-  fill(h, { "actor-id": "  a1  ", "actor-name": "  Lera  ", "actor-controller": "   " });
+  fill(h, { "actor-id": "  a1  ", "actor-name": "  Lera  " });
   h.action("add-actor").click();
   const [p] = payloads(h);
   expect(p!.case).toBe("addActor");
-  // addActor nests the payload under `actor` (commands.ts:205).
+  // addActor nests the payload under `actor` (commands.ts).
   const a = p!.value["actor"] as Record<string, unknown>;
   expect(a["actorId"]).toBe("a1");
   expect(a["name"]).toBe("Lera");
-  // `controller.value.trim() || undefined` — whitespace must not become a
-  // participant id of "", and commands.ts omits the key entirely when unset.
-  expect(a["controllerId"] ?? "").toBe("");
 });
 
-test("a named controller is carried through", () => {
+test("the Add actor form cannot hand a character to anyone", () => {
+  // Visibility spec §5.1's first rule, at the seat where a human could break
+  // it. The console used to carry a "controller participant id (optional)"
+  // box next to the id and the name, and typing into it created a PARTY
+  // MEMBER — the whole cloned Actor on every player's roster, plus MayPerch
+  // and eyes() open on it — with no refusal anywhere on the path, because
+  // commands.ts's addActor could not express a kind at all.
+  //
+  // The box is gone rather than validated: assignment is a separate, manual
+  // act (Patrik's ruling, 2026-08-24), and the console already has the
+  // control that performs it — the per-actor grant row further down this
+  // panel, which ASKS for a kind. Two boxes that both confer control is the
+  // two-writers shape this arc exists to remove.
   const h = harness();
-  fill(h, { "actor-id": "a1", "actor-name": "Lera", "actor-controller": "  p-7  " });
+  expect(h.node.querySelector('[data-field="actor-controller"]')).toBeNull();
+
+  fill(h, { "actor-id": "a1", "actor-name": "Lera" });
   h.action("add-actor").click();
-  expect((payloads(h)[0]!.value["actor"] as Record<string, unknown>)["controllerId"]).toBe("p-7");
+  // The protobuf MESSAGE, not its JSON, so these read as the field defaults
+  // rather than as absent keys — "nobody controls this actor" is what an empty
+  // controller_id has always meant (Actor.controller_id's own doc comment).
+  // The absent-key half is pinned on the wire shape itself, in
+  // commands.test.ts's "addActor cannot confer control, whatever a caller
+  // passes it".
+  const a = payloads(h)[0]!.value["actor"] as Record<string, unknown>;
+  expect(a["controllerId"]).toBe("");
+  expect(a["controllerIds"]).toEqual([]);
 });
 
 test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", () => {
@@ -586,8 +605,8 @@ test("pasted JSON that parses is sent as an addActor command", () => {
 
 test("adding an actor clears exactly the actor fields", () => {
   const h = harness();
-  fill(h, { "actor-id": "a1", "actor-name": "Lera", "actor-controller": "p-7", "scene-id": "keep-me" });
-  for (const f of ["actor-id", "actor-name", "actor-controller", "scene-id"]) {
+  fill(h, { "actor-id": "a1", "actor-name": "Lera", "scene-id": "keep-me" });
+  for (const f of ["actor-id", "actor-name", "scene-id"]) {
     h.field(f).dispatchEvent(new Event("input"));
   }
   h.action("add-actor").click();
@@ -595,7 +614,6 @@ test("adding an actor clears exactly the actor fields", () => {
   const next = harness();
   expect(next.field("actor-id").value).toBe("");
   expect(next.field("actor-name").value).toBe("");
-  expect(next.field("actor-controller").value).toBe("");
   // A field belonging to another form must survive.
   expect(next.field("scene-id").value).toBe("keep-me");
 });
@@ -782,7 +800,7 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   for (const f of ["scene-w", "scene-h", "token-x", "token-y", "undo-from", "undo-to"]) {
     expect(h.field(f).className).toBe("tiny");
   }
-  for (const f of ["session-name", "actor-controller", "note-text"]) {
+  for (const f of ["session-name", "note-text"]) {
     expect(h.field(f).className).toBe("wide");
   }
   expect((h.node.querySelector('[data-field="actor-json"]') as HTMLElement).className).toBe("paste");
@@ -797,7 +815,7 @@ test("every box carries a placeholder saying what belongs in it", () => {
   const h = harness();
   for (const f of [
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
-    "actor-id", "actor-name", "actor-controller",
+    "actor-id", "actor-name",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text", "undo-from", "undo-to",
   ]) {

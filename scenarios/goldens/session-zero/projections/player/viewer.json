@@ -2,5 +2,5 @@
   "seat": "player",
   "participantId": "p-player",
   "role": "player",
-  "why": "The player controls act-fighter (west of the wall, in ambush) and act-healer (in camp), so this seat's eyes are the union of two actors in two different scenes. It is the seat session zero was played from: the Goblin Archer stands at 19,8 and this stream must not carry it at sequence 9."
+  "why": "The player controls act-fighter (west of the wall, in ambush) and act-healer (in camp), so this seat's eyes are the union of two actors in two different scenes. It is the seat session zero was played from: the Goblin Archer stands at 19,8 and this stream must not carry it at sequence 11, where it is placed."
 }

@@ -142,9 +142,12 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		// Kind is carried THROUGH, and dropping it would be silent in the
 		// worst way — the same failure mode CreateScene's arm above records
 		// for Tiles/Objects, but with a security consequence rather than a
-		// cosmetic one: an accepted grant, written kindless, read back as a
-		// party member by §5.1's migration rule. That is the original leak,
-		// reached through the very field meant to close it, with ok=true. The
+		// cosmetic one: an accepted grant, written kindless, DEMOTES the
+		// character it was meant to hand over. Since §5.1's migration rule was
+		// deleted (2026-08-24) an absent kind is not a party member, so the
+		// dropped field fails closed rather than open — a character silently
+		// off its own party's roster instead of a monster silently on it. Both
+		// are the command answering ok=true and doing something else. The
 		// completeness of this copy is pinned by
 		// TestToEventGrantActorControlCarriesTheKind.
 		//

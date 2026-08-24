@@ -93,7 +93,7 @@ const observeTimeout = 2 * time.Second
 // templating convention: `{{id:<participantName>}}` inside a command
 // step's raw JSON, resolved by resolveParticipantIDPlaceholders. This
 // exists because some commands need to reference a participant's
-// SERVER-ASSIGNED identity — e.g. AddActor's Actor.controller_id, which
+// SERVER-ASSIGNED identity — e.g. GrantActorControl's participant_id, which
 // gateway authz checks with a strict equality against the real
 // identity.Participant.ID behind an invite token — a value a static,
 // committed scenario file cannot embed directly: the id is minted fresh,

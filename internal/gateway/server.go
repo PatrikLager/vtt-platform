@@ -1135,6 +1135,20 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
+	// add_actor's controller gets the SAME seam and, for the fourth time, the
+	// same argument: engine.Apply is the fold, and by the time an ActorAdded
+	// reaches it the actor is already history.
+	//
+	// UNLIKE the other three, this rule ALSO lives in the fold, which refuses
+	// the same shape outright — there is no history to protect, so it can. What
+	// this seam adds is the answer: a refusal naming grant_actor_control, before
+	// anything is written, instead of a poisoned append. See validateAddActor.
+	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
+		if err := validateAddActor(aa.AddActor); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
 	// use_ability/load_adventure/load_map do not become a single Envelope via
 	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
 	// adventure.go/map.go); every other command, including remove_condition,

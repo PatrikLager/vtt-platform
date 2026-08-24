@@ -12,16 +12,19 @@
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-tavern", "name": "The Rusty Flagon", "gridWidth": 5, "gridHeight": 5}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {
-      "actorId": "act-brawler", "name": "Brawler", "controllerId": "{{id:brawler}}",
+      "actorId": "act-brawler", "name": "Brawler",
       "attributes": {"brawn": 3, "grit": 1},
       "resources": {"drink": {"current": 0, "max": 4}, "stamina": {"current": 2, "max": 2}}
     }}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {
-      "actorId": "act-patron", "name": "Patron", "controllerId": "{{id:patron}}",
+      "actorId": "act-patron", "name": "Patron",
       "attributes": {"brawn": 1, "grit": 0, "footing": 0},
       "resources": {"drink": {"current": 0, "max": 3}, "stamina": {"current": 2, "max": 2}}
     }}}, "expect": {"ok": true}},
+
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-brawler", "participantId": "{{id:brawler}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-patron", "participantId": "{{id:patron}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-brawler", "sceneId": "scn-tavern", "actorId": "act-brawler", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-patron", "sceneId": "scn-tavern", "actorId": "act-patron", "position": {"x": 1, "y": 0}}}, "expect": {"ok": true}},

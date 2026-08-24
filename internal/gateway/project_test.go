@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -106,20 +107,27 @@ func twoRooms() *engine.State {
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(st, 2, &vttv1.SceneCreated{
 		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
-	// The hero DECLARES NO KIND on purpose, so the whole suite below keeps
-	// running the migration rule spec §5.1 wrote for logs recorded before the
-	// field existed (absent + a controller means party member). The goblin
-	// declares one, because a monster's kind is the fact this fixture needs to
-	// survive somebody handing it to a participant.
+	// EVERY ACTOR DECLARES ITS KIND, and both of them have to: an absent kind
+	// is NOT a party member, always, with no second branch that reads control
+	// instead (spec §5.1, Patrik's ruling 2026-08-24). A hero left silent here
+	// would drop out of its own player's roster and off every shoulder, and
+	// the suite below would be asserting the wrong world.
+	//
+	// AND CONTROL IS A SEPARATE EVENT, at the end rather than at creation,
+	// because that is the only way an actor can hold one now — and because it
+	// is the order a table actually plays: you log in with no character and
+	// the DM assigns one afterwards.
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
 		ActorId: "goblin", Name: "Goblin",
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}) // no controller: an NPC
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}) // never granted: an NPC
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
 		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	return st
 }
 
@@ -191,9 +199,9 @@ func TestOpeningTheDoorIntroducesTheGoblinToThePlayer(t *testing.T) {
 	pr.Project(envelope(6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
 		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
 
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s",
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s",
 		At: &vttv1.GridPosition{X: 3, Y: 1}})
-	out := pr.Project(envelope(7, &vttv1.DoorOpened{SceneId: "s",
+	out := pr.Project(envelope(8, &vttv1.DoorOpened{SceneId: "s",
 		At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 
 	var sawActor, sawToken bool
@@ -203,7 +211,7 @@ func TestOpeningTheDoorIntroducesTheGoblinToThePlayer(t *testing.T) {
 		}
 		if tp := e.GetTokenPlaced(); tp != nil && tp.GetTokenId() == "t-gob" {
 			sawToken = true
-			if e.GetSequence() != 7 {
+			if e.GetSequence() != 8 {
 				t.Errorf("a synthesized introduction carries the CAUSING sequence, got %d",
 					e.GetSequence())
 			}
@@ -218,12 +226,12 @@ func TestOpeningTheDoorIntroducesTheGoblinToThePlayer(t *testing.T) {
 func TestClosingTheDoorHidesTheGoblinAgain(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-	pr.Project(envelope(7, &vttv1.DoorOpened{SceneId: "s",
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	pr.Project(envelope(8, &vttv1.DoorOpened{SceneId: "s",
 		At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 
-	mustApply(st, 8, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-	out := pr.Project(envelope(8, &vttv1.DoorClosed{SceneId: "s",
+	mustApply(st, 9, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	out := pr.Project(envelope(9, &vttv1.DoorClosed{SceneId: "s",
 		At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 
 	var hidden bool
@@ -237,22 +245,123 @@ func TestClosingTheDoorHidesTheGoblinAgain(t *testing.T) {
 	}
 }
 
+// TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt pins the SHAPE of
+// an introduction, which until this test was pinned only by files a regression
+// can regenerate.
+//
+// MEASURED, in review: deleting the grant loop in transitions fails only
+// TestTheProjectedGoldensAreWhatTheProjectionActuallySends, and emitting the
+// grants BEFORE the ActorAdded fails only that plus the fold-parity gate.
+// Both are committed-bytes comparisons over one scenario — re-record them and
+// the rule is gone with nothing to say so. This asserts the rule itself.
+//
+// Three claims, and each is a separate way to get it wrong:
+//
+//   - the ActorAdded carries NO controller, in either spelling. It cannot: both
+//     folds refuse one ("creating an actor does not hand it to anyone"), and a
+//     clone of live state carries whatever grants have accumulated.
+//   - exactly one grant per controller, IN THE SET'S OWN ORDER, so the mirror
+//     (controller_ids[0]) lands on the same participant the server has.
+//   - the batch FOLDS, which is the property the other two exist to protect.
+func TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt(t *testing.T) {
+	st := twoRooms()
+	// A SHARED party member, because one controller cannot tell "a grant per
+	// controller" from "a grant" and cannot show order at all.
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-2",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-3",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	if ids := st.Actors["scout"].GetControllerIds(); len(ids) != 2 {
+		t.Fatalf("fixture check: the scout must be shared, got %v", ids)
+	}
+
+	// Projected to a player who is NOT one of its controllers, so the scout
+	// reaches them by the roster exception rather than by being their own.
+	pr := gateway.NewProjector(player())
+	place := &vttv1.TokenPlaced{TokenId: "t-scout", SceneId: "s", ActorId: "scout",
+		Position: &vttv1.GridPosition{X: 4, Y: 1}} // behind the shut door: unseen
+	mustApply(st, 11, place)
+	out := pr.Project(envelope(11, place), st)
+
+	var introIdx = -1
+	var grants []*vttv1.ActorControlGranted
+	for i, e := range out {
+		if a := e.GetActorAdded(); a != nil && a.GetActor().GetActorId() == "scout" {
+			introIdx = i
+			if got := a.GetActor().GetControllerId(); got != "" {
+				t.Errorf("the introduction carries controller_id %q — no ActorAdded may name a "+
+					"controller, and both folds refuse one", got)
+			}
+			if got := a.GetActor().GetControllerIds(); len(got) != 0 {
+				t.Errorf("the introduction carries controller_ids %v — no ActorAdded may name a "+
+					"controller, and both folds refuse one", got)
+			}
+			if got := a.GetActor().GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+				t.Errorf("the introduction lost the actor's kind: got %v", got)
+			}
+		}
+		if g := e.GetActorControlGranted(); g != nil && g.GetActorId() == "scout" {
+			if introIdx < 0 {
+				t.Error("a grant reached this viewer BEFORE the actor it names: both folds " +
+					"reject a grant over an unknown actor, so the order is not cosmetic")
+			}
+			grants = append(grants, g)
+		}
+	}
+	if introIdx < 0 {
+		t.Fatal("the scout is a party member and must be introduced at all")
+	}
+	if len(grants) != 2 {
+		t.Fatalf("want one grant per controller (2), got %d", len(grants))
+	}
+	for i, want := range []string{"p-2", "p-3"} {
+		if got := grants[i].GetParticipantId(); got != want {
+			t.Errorf("grant %d is for %q, want %q — the set's order decides the mirror, so "+
+				"reordering here hands controller_id to the wrong participant", i, got, want)
+		}
+		if got := grants[i].GetKind(); got != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+			t.Errorf("grant %d states kind %v, want the actor's own", i, got)
+		}
+	}
+
+	// And the whole batch folds, which is the property the assertions above
+	// exist to protect rather than a restatement of them.
+	viewer := engine.NewState()
+	for i, e := range out {
+		if err := engine.Apply(viewer, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	if ids := viewer.Actors["scout"].GetControllerIds(); len(ids) != 2 ||
+		ids[0] != "p-2" || ids[1] != "p-3" {
+		t.Errorf("the viewer's fold ends with controller_ids %v, want [p-2 p-3] — the "+
+			"introduction plus its grants must reconstruct what the server holds", ids)
+	}
+}
+
 func TestAPartyMemberStaysKnownEvenWhenOutOfSight(t *testing.T) {
 	// Spec §5: party members are ALWAYS known — and §5.1 decides what counts
-	// as one. "Rogue" here declares no kind and has a controller, so it is a
-	// party member by the migration rule. You know your party
-	// exists when the rogue is two rooms away; you merely cannot see their
-	// token. Dropping them from your own roster because they turned a corner
-	// reads as a bug, not as fog.
+	// as one. "Rogue" here SAYS it is a party member, which is now the only
+	// way to be one: an absent kind is not a party member, whoever holds the
+	// actor. You know your party exists when the rogue is two rooms away; you
+	// merely cannot see their token. Dropping them from your own roster
+	// because they turned a corner reads as a bug, not as fog.
+	//
+	// It belongs to ANOTHER player (p-2, granted below), so this is the party
+	// half of the exception rather than the "your own character" half.
+	rogue := &vttv1.Actor{ActorId: "rogue", Name: "Rogue",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "rogue", Name: "Rogue", ControllerIds: []string{"p-2"}}})
-	mustApply(st, 8, &vttv1.TokenPlaced{TokenId: "t-rogue", SceneId: "s",
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: rogue})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-rogue", SceneId: "s",
 		ActorId: "rogue", Position: &vttv1.GridPosition{X: 5, Y: 1}}) // behind the closed door
+	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "rogue", ParticipantId: "p-2",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 
 	pr := gateway.NewProjector(player())
-	out := pr.Project(envelope(7, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "rogue", Name: "Rogue", ControllerIds: []string{"p-2"}}}), st)
+	out := pr.Project(envelope(8, &vttv1.ActorAdded{Actor: rogue}), st)
 
 	var knowsRogue bool
 	for _, e := range out {
@@ -265,7 +374,7 @@ func TestAPartyMemberStaysKnownEvenWhenOutOfSight(t *testing.T) {
 	}
 
 	// ...but their TOKEN must not, because creatures are pure line of sight.
-	out = pr.Project(envelope(8, &vttv1.TokenPlaced{TokenId: "t-rogue",
+	out = pr.Project(envelope(9, &vttv1.TokenPlaced{TokenId: "t-rogue",
 		SceneId: "s", ActorId: "rogue",
 		Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
 	for _, e := range out {
@@ -303,10 +412,10 @@ func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
 	// name, attributes, resources, module_data — to every player at the table.
 	st := twoRooms()
 	grant := &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"}
-	mustApply(st, 7, grant)
+	mustApply(st, 8, grant)
 
 	pr := gateway.NewProjector(player())
-	roster := actorIDsIn(pr.Project(envelope(7, grant), st))
+	roster := actorIDsIn(pr.Project(envelope(8, grant), st))
 
 	if !roster["hero"] {
 		t.Fatal("fixture check: the player's own character must be on this roster, " +
@@ -361,9 +470,11 @@ func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *te
 	// committed adventures is UNSPECIFIED with no controller. One
 	// grant_actor_control on the Goblin Archer — an ordinary act, since a
 	// grant constrains the ISSUER and says nothing about the TARGET — gave it
-	// a controller, and UNSPECIFIED plus a controller is what §5.1's
-	// migration rule reads as a party member. The whole cloned Actor went to
-	// every player at the table, and MayPerch and eyes() opened on it.
+	// a controller, and UNSPECIFIED plus a controller was what §5.1's
+	// migration rule then read as a party member. The whole cloned Actor went
+	// to every player at the table, and MayPerch and eyes() opened on it.
+	// (That rule is gone as of 2026-08-24, so this now holds twice over: the
+	// grant states NON_PARTY, and silence would not have promoted it either.)
 	//
 	// What closes it is that the GRANT now declares the kind. The agent
 	// taking the archer to run it says what it is taking, and the archer stays
@@ -379,15 +490,15 @@ func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *te
 	// observable: the archer stands behind a SHUT door, so nothing this
 	// player can see introduces it.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: archer})
-	mustApply(st, 8, &vttv1.TokenPlaced{TokenId: "t-archer", SceneId: "s",
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: archer})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-archer", SceneId: "s",
 		ActorId: "act-archer", Position: &vttv1.GridPosition{X: 4, Y: 1}})
 	take := &vttv1.ActorControlGranted{ActorId: "act-archer", ParticipantId: "agent-1",
 		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}
-	mustApply(st, 9, take)
+	mustApply(st, 10, take)
 
 	pr := gateway.NewProjector(player())
-	roster := actorIDsIn(pr.Project(envelope(9, take), st))
+	roster := actorIDsIn(pr.Project(envelope(10, take), st))
 
 	if !roster["hero"] {
 		t.Fatal("fixture check: the player's own character must be on this roster, " +
@@ -407,42 +518,160 @@ func TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember(t *testing.T) {
 	// assigning a pregenerated character to a player, and an agent taking a
 	// goblin to run it, are the same event until somebody is asked.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: shippedActor(t, "act-fighter")})
-	mustApply(st, 8, &vttv1.TokenPlaced{TokenId: "t-fighter", SceneId: "s",
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: shippedActor(t, "act-fighter")})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-fighter", SceneId: "s",
 		ActorId: "act-fighter", Position: &vttv1.GridPosition{X: 4, Y: 1}}) // behind the shut door
 	assign := &vttv1.ActorControlGranted{ActorId: "act-fighter", ParticipantId: "p-2",
 		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
-	mustApply(st, 9, assign)
+	mustApply(st, 10, assign)
 
 	pr := gateway.NewProjector(player())
-	if roster := actorIDsIn(pr.Project(envelope(9, assign), st)); !roster["act-fighter"] {
+	if roster := actorIDsIn(pr.Project(envelope(10, assign), st)); !roster["act-fighter"] {
 		t.Error("a character the DM assigned to another player is a party member: " +
 			"you know your party exists even when they are two rooms away (spec §5)")
 	}
 }
 
-func TestAnOldLogsKindlessGrantStillMakesAPartyMember(t *testing.T) {
-	// MIGRATION THROUGH THE GRANT PATH (spec §5.1). Every grant already
-	// recorded lacks the field, so a replay of one must reproduce exactly what
-	// it used to mean: absent + a controller is a party member. This is the
-	// half that makes the fix cost no migration work, and it is also what the
-	// refusal at the command boundary protects — that rule cannot tell a log
-	// written before this field existed from a grant issued today that forgot,
-	// so the ones issued today are stopped before they are written.
+// TestTheShippedGoblinArcherCannotBeGivenAControllerAtCreation closes the last
+// route by which the archer this arc is named after could become a party
+// member without anybody saying so.
+//
+// Two commands could confer control. grant_actor_control was made to declare a
+// kind (Task 2), and add_actor was not — so a caller who wanted the old
+// behaviour still had it: create the archer with a controller_id, state no
+// kind, and §5.1's migration rule as it then stood read that as a party member
+// on the spot. Same leak, different door, and reachable from both seats that
+// may issue the command.
+//
+// OVER THE WIRE, against SHIPPED content, because that is where the previous
+// two attempts at this rule were green while the exposure was live: every
+// fixture that expressed the leak declared its own kind by hand, and the
+// shipped archer cannot. The fold refuses the same shape (engine.Apply's
+// ActorAdded arm), so this is not the only place the rule lives — it is the
+// place a caller finds out, and the refusal it asserts names the command that
+// does confer control.
+func TestTheShippedGoblinArcherCannotBeGivenAControllerAtCreation(t *testing.T) {
+	archer := shippedActor(t, "act-archer")
+	if k := archer.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		t.Fatalf("fixture check: this test is only worth anything while the SHIPPED archer "+
+			"declares no kind, and it declares %v", k)
+	}
+
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	seeded := proto.Clone(archer).(*vttv1.Actor)
+	seeded.ControllerId = f.playerID
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "seed-archer",
+		Command:   &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{Actor: seeded}},
+	})
+	res := readResult(t, dm)
+	if res.GetOk() {
+		t.Fatal("add_actor accepted a controller: the archer was created already holding " +
+			"one, with no kind stated — the shape that was a party member under the " +
+			"migration rule, and that no log may contain at all now")
+	}
+	if !strings.Contains(res.GetError(), "grant_actor_control") {
+		t.Errorf("refusal %q never names the command that DOES confer control — the "+
+			"caller who tried the one step has no way to find the two", res.GetError())
+	}
+	if _, exists := f.campaign.State().Actors["act-archer"]; exists {
+		t.Error("the refusal must happen BEFORE anything is written: a refused command " +
+			"that still created the actor is worse than one that created it with a controller")
+	}
+}
+
+// TestCreatingAnActorAndThenGrantingItIsTheTwoStepThatReplacesTheOne is the
+// control, and it is where this task's cost is written down rather than
+// implied: an agent creating an NPC it will run now sends TWO commands.
+//
+// The trade is two round trips against two rules that must stay in sync
+// forever. RPTool shipped the second and carries the resulting invariant bug
+// in its tree today (clearAllOwners leaves ownerType == OWNER_TYPE_ALL, worked
+// around at EditTokenDialog.java:885).
+func TestCreatingAnActorAndThenGrantingItIsTheTwoStepThatReplacesTheOne(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "make-bandit",
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "act-bandit", Name: "Bandit"}}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("add_actor STAYS — it is the runtime path for a creature nobody wrote in "+
+			"advance — and it was refused: %q", res.GetError())
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "hand-bandit-over",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-bandit", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("the second step of the two-step was refused: %q", res.GetError())
+	}
+
+	actor, ok := f.campaign.State().Actors["act-bandit"]
+	if !ok {
+		t.Fatal("act-bandit is not in state")
+	}
+	if got := actor.GetControllerIds(); len(got) != 1 || got[0] != f.playerID {
+		t.Errorf("controller_ids = %v, want exactly [%q] — the grant is what confers control now",
+			got, f.playerID)
+	}
+	// The half the one-step could never state: a player holding a monster is
+	// still holding a monster (§5.1, "control describes who is driving").
+	if got := actor.GetKind(); got != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Errorf("kind = %v, want ACTOR_KIND_NON_PARTY — the grant declares it and nothing else does", got)
+	}
+}
+
+// TestAKindlessGrantConfersControlAndNothingElse is the INVERSION of
+// TestAnOldLogsKindlessGrantStillMakesAPartyMember, which stood here until
+// 2026-08-24 and asserted the opposite.
+//
+// That test pinned the migration rule at the grant: a grant with no kind, over
+// an actor with no kind, made a party member because a controller was now
+// present. It was right for as long as the rule existed to protect logs
+// written before the field did. There are none, the rule is deleted, and the
+// grant path is where its absence is most worth stating: a grant is the ONE
+// event that confers control, so "control alone confers nothing" has to be
+// true HERE or it is not true anywhere.
+//
+// The command boundary refuses a kindless grant (validateGrantActorControl),
+// which is why this has to build the event by hand. Belt and braces, in that
+// order: the refusal stops it being written, and this says what it would mean
+// if it were.
+func TestAKindlessGrantConfersControlAndNothingElse(t *testing.T) {
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "cleric", Name: "Cleric"}})
-	mustApply(st, 8, &vttv1.TokenPlaced{TokenId: "t-cleric", SceneId: "s",
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "cleric", Name: "Cleric"}})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-cleric", SceneId: "s",
 		ActorId: "cleric", Position: &vttv1.GridPosition{X: 4, Y: 1}}) // behind the shut door
-	old := &vttv1.ActorControlGranted{ActorId: "cleric", ParticipantId: "p-2"}
-	if k := old.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+	silent := &vttv1.ActorControlGranted{ActorId: "cleric", ParticipantId: "p-2"}
+	if k := silent.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
 		t.Fatalf("fixture check: this grant must state NO kind, got %v", k)
 	}
-	mustApply(st, 9, old)
+	mustApply(st, 10, silent)
 
+	if ids := st.Actors["cleric"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-2" {
+		t.Fatalf("fixture check: the grant must actually have conferred control, got %v", ids)
+	}
 	pr := gateway.NewProjector(player())
-	if roster := actorIDsIn(pr.Project(envelope(9, old), st)); !roster["cleric"] {
-		t.Error("a grant recorded before the kind field said party membership with a " +
-			"controller, and that is what it still says (spec §5.1)")
+	roster := actorIDsIn(pr.Project(envelope(10, silent), st))
+	if !roster["hero"] {
+		t.Fatal("fixture check: the player's own character must be on this roster, " +
+			"or the absence asserted below proves nothing")
+	}
+	if roster["cleric"] {
+		t.Error("a grant that said nothing about what it was granting made a party member: " +
+			"control confers control, and nothing else")
 	}
 }
 
@@ -454,15 +683,20 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 	// obvious repair, and the wrong one — drops them from every roster.
 	st := twoRooms()
 	cleric := &vttv1.Actor{ActorId: "cleric", Name: "Cleric",
-		Kind:          vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
-		ControllerIds: []string{"dm-1"}}
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: cleric})
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: cleric})
+	// Handed to the DM by a grant — the only way anyone holds anything now —
+	// and the grant AGREES with the actor's own declaration. A party member
+	// whose player is away is still a party member, so the DM taking it over
+	// says so again rather than restating it as something else.
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "cleric", ParticipantId: "dm-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	place := &vttv1.TokenPlaced{TokenId: "t-cleric", SceneId: "s",
 		ActorId: "cleric", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
-	mustApply(st, 8, place)
+	mustApply(st, 10, place)
 
 	pr := gateway.NewProjector(player())
-	roster := actorIDsIn(pr.Project(envelope(8, place), st))
+	roster := actorIDsIn(pr.Project(envelope(10, place), st))
 
 	if !roster["cleric"] {
 		t.Error("a party member whose player is away is still a party member: " +
@@ -470,54 +704,61 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 	}
 }
 
-func TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt(t *testing.T) {
-	// MIGRATION, first half (spec §5.1): absent + has a controller means party
-	// member. Every ActorAdded already written lacks the field, so a plain
-	// fail-closed default would retroactively drop existing party members from
-	// every roster the moment they turned a corner — breaking §5 for every
-	// campaign already recorded, which is precisely what a "safe" default
-	// looks like from the inside.
-	st := twoRooms()
-	ghost := &vttv1.Actor{ActorId: "ghost", Name: "Ghost", ControllerIds: []string{"p-2"}}
-	if ghost.GetKind() != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: this actor must declare NO kind, got %v", ghost.GetKind())
-	}
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: ghost})
-	place := &vttv1.TokenPlaced{TokenId: "t-ghost", SceneId: "s",
-		ActorId: "ghost", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
-	mustApply(st, 8, place)
+// TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt is the rule
+// that REPLACED the migration rule, and it is the inversion of a test that
+// stood here until 2026-08-24.
+//
+// The old pair pinned two branches: absent kind + a controller meant party
+// member; absent kind + nobody meant not. The first branch existed only to
+// keep logs written before the kind field behaving as they had, and Patrik
+// ruled it out on the ground that there are no such logs — no campaign exists
+// outside this repo's own fixtures.
+//
+// DELETING IT IS THE POINT, not a tidy-up. That branch is precisely what could
+// not tell "a log written before kind existed" from "a grant issued today that
+// forgot", and every leak this arc chased lived in that gap. One rule now: an
+// absent kind is NOT a party member, always, and nothing reads controller_ids
+// to decide. The ghost below is the exact fixture the deleted test asserted the
+// OPPOSITE about — kept, rather than removed, so the change is visible as a
+// change.
+func TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		id     string
+		holder string
+	}{
+		{"held by another player", "ghost", "p-2"},
+		{"held by the DM", "wisp", "dm-1"},
+		{"held by nobody", "rat", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := twoRooms()
+			a := &vttv1.Actor{ActorId: tc.id, Name: tc.id}
+			if k := a.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+				t.Fatalf("fixture check: this actor must declare NO kind, got %v", k)
+			}
+			mustApply(st, 8, &vttv1.ActorAdded{Actor: a})
+			if tc.holder != "" {
+				// A KINDLESS grant, which the command boundary refuses and the
+				// fold still accepts — the only remaining way an actor can hold
+				// a controller while saying nothing about what it is.
+				mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: tc.id, ParticipantId: tc.holder})
+			}
+			place := &vttv1.TokenPlaced{TokenId: "t-" + tc.id, SceneId: "s",
+				ActorId: tc.id, Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
+			mustApply(st, 10, place)
 
-	pr := gateway.NewProjector(player())
-	if roster := actorIDsIn(pr.Project(envelope(8, place), st)); !roster["ghost"] {
-		t.Error("a log written before the kind field said party membership with a " +
-			"controller, and that is what it still says (spec §5.1)")
-	}
-}
-
-func TestAnActorFromBeforeTheKindFieldIsNotAPartyMemberWithNoController(t *testing.T) {
-	// MIGRATION, second half. Absent + nobody controls it means NOT a party
-	// member — the same reading "empty controller_ids" already had, kept
-	// rather than reinterpreted. Without this half the migration rule would
-	// read "absent means party member", and every monster in every recorded
-	// campaign would be on every roster.
-	st := twoRooms()
-	rat := &vttv1.Actor{ActorId: "rat", Name: "Rat"}
-	if ratKind := rat.GetKind(); ratKind != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: this actor must declare NO kind, got %v", ratKind)
-	}
-	mustApply(st, 7, &vttv1.ActorAdded{Actor: rat})
-	place := &vttv1.TokenPlaced{TokenId: "t-rat", SceneId: "s",
-		ActorId: "rat", Position: &vttv1.GridPosition{X: 5, Y: 1}} // behind the shut door
-	mustApply(st, 8, place)
-
-	pr := gateway.NewProjector(player())
-	roster := actorIDsIn(pr.Project(envelope(8, place), st))
-	if !roster["hero"] {
-		t.Fatal("fixture check: the player's own character must be on this roster, " +
-			"or the absence asserted below proves nothing")
-	}
-	if roster["rat"] {
-		t.Error("an uncontrolled actor with no declared kind is not a party member")
+			pr := gateway.NewProjector(player())
+			roster := actorIDsIn(pr.Project(envelope(10, place), st))
+			if !roster["hero"] {
+				t.Fatal("fixture check: the player's own character must be on this roster, " +
+					"or the absence asserted below proves nothing")
+			}
+			if roster[tc.id] {
+				t.Errorf("%q declares no kind, so it is not a party member and must not reach "+
+					"a player's roster — control confers nothing", tc.id)
+			}
+		})
 	}
 }
 
@@ -528,7 +769,7 @@ func TestASpectatorGetsNoSightFromAnNPCTheDMControls(t *testing.T) {
 	// Archer sees the ambush from INSIDE it. Fixing only the roster would
 	// leave that open to any DM who takes control of a monster.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"})
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"})
 
 	pr := gateway.NewProjector(gateway.Viewer{
 		ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "goblin"})
@@ -592,7 +833,7 @@ func TestAPlayerLearnsOnlyTheSceneTheirActorStandsIn(t *testing.T) {
 	// absent from their stream ENTIRELY. Six loaded scenes must not hand a
 	// player a table of contents for an adventure they have not played.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.SceneCreated{
+	mustApply(st, 8, &vttv1.SceneCreated{
 		SceneId: "lair", Name: "The Dragon's Lair", GridWidth: 40, GridHeight: 40})
 
 	pr := gateway.NewProjector(player())
@@ -689,8 +930,8 @@ func TestASceneThatLeavesSightEntirelyIsReportedDark(t *testing.T) {
 		t.Fatalf("the control fails: the hero's room must be reported LIT first, got %v", lit)
 	}
 
-	mustApply(st, 7, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
-	out := pr.Project(envelope(7, &vttv1.ActorControlRevoked{
+	mustApply(st, 8, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
+	out := pr.Project(envelope(8, &vttv1.ActorControlRevoked{
 		ActorId: "hero", ParticipantId: "p-1"}), st)
 
 	dark := sceneSeenIn(out, "s")
@@ -713,11 +954,11 @@ func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
-	pr.Project(envelope(7, &vttv1.ActorControlRevoked{
+	mustApply(st, 8, &vttv1.ActorControlRevoked{ActorId: "hero", ParticipantId: "p-1"})
+	pr.Project(envelope(8, &vttv1.ActorControlRevoked{
 		ActorId: "hero", ParticipantId: "p-1"}), st)
 
-	again := pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the room falls quiet"}), st)
+	again := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the room falls quiet"}), st)
 	if ss := sceneSeenIn(again, "s"); ss != nil {
 		t.Errorf("a scene already reported dark must stay silent, got %v", ss)
 	}
@@ -751,7 +992,7 @@ func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
 
 	gone := engine.NewState()
 	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
-	out := pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+	out := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
 
 	for _, e := range out {
 		if ss := e.GetSceneSeen(); ss != nil {
@@ -760,7 +1001,7 @@ func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
 	}
 
 	// And it is forgotten, so nothing re-fires it once the world moves on.
-	again := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "quiet"}), gone)
+	again := pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "quiet"}), gone)
 	for _, e := range again {
 		if ss := e.GetSceneSeen(); ss != nil {
 			t.Errorf("the scene was already forgotten and must stay silent, got %v", ss)
@@ -779,12 +1020,14 @@ func twoRoomsMissing(sq string) *engine.State {
 	mustApply(st, 2, &vttv1.SceneCreated{
 		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: tiles})
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
 		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	return st
 }
 
@@ -870,12 +1113,14 @@ func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
 	gone := engine.NewState()
 	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
-	pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+	mustApply(gone, 5, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
 
 	// The same room again, which is what a re-created scene folds to.
-	out := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "and rebuilt"}), twoRooms())
+	out := pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "and rebuilt"}), twoRooms())
 
 	// A viewer who dropped the scene when they folded the retraction, and who
 	// still holds the actors it did not reach.
@@ -913,7 +1158,7 @@ func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
 func TestASceneThatComesBackBringsItsOpenDoorsBack(t *testing.T) {
 	open := func() *engine.State {
 		st := twoRooms()
-		mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+		mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 		return st
 	}
 	pr := gateway.NewProjector(player())
@@ -930,12 +1175,14 @@ func TestASceneThatComesBackBringsItsOpenDoorsBack(t *testing.T) {
 	gone := engine.NewState()
 	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
-	pr.Project(envelope(8, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
+	mustApply(gone, 5, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
 
 	var again bool
-	for _, e := range pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "and rebuilt"}), open()) {
+	for _, e := range pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "and rebuilt"}), open()) {
 		if d := e.GetDoorOpened(); d != nil && d.GetSceneId() == "s" {
 			again = true
 		}
@@ -957,12 +1204,14 @@ func bareCanvas() *engine.State {
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(st, 2, &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 3, GridHeight: 3})
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
 		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 2}})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	return st
 }
 
@@ -1096,9 +1345,9 @@ func TestASpectatorRidesTheShoulderTheyPerchOn(t *testing.T) {
 		ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "hero"})
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 	var sawGoblin bool
-	for _, e := range pr.Project(envelope(7, &vttv1.DoorOpened{
+	for _, e := range pr.Project(envelope(8, &vttv1.DoorOpened{
 		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st) {
 		if tp := e.GetTokenPlaced(); tp != nil && tp.GetTokenId() == "t-gob" {
 			sawGoblin = true
@@ -1229,7 +1478,7 @@ func aWholeFight() []step {
 		{2, &vttv1.SceneCreated{SceneId: "s", Name: "S",
 			GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()}},
 		{3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-			ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}}},
+			ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}},
 		{4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}}},
 		{5, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "ogre", Name: "Ogre"}}},
 		{6, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s", ActorId: "hero",
@@ -1238,26 +1487,33 @@ func aWholeFight() []step {
 			Position: &vttv1.GridPosition{X: 5, Y: 1}}},
 		{8, &vttv1.TokenPlaced{TokenId: "t-ogre", SceneId: "s", ActorId: "ogre",
 			Position: &vttv1.GridPosition{X: 4, Y: 1}}},
-		{9, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}},
-		{10, &vttv1.TokenMoved{TokenId: "t-ogre", SceneId: "s",
+		// The hero is handed to p-1 HERE rather than at creation, because a
+		// grant is the only thing that can confer control now. It sits before
+		// the door opens so that everything downstream — the two-at-once
+		// reveals, the ordering assertions — sees the same player with the
+		// same eyes it always did.
+		{9, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
+		{10, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}},
+		{11, &vttv1.TokenMoved{TokenId: "t-ogre", SceneId: "s",
 			From: &vttv1.GridPosition{X: 4, Y: 1}, To: &vttv1.GridPosition{X: 5, Y: 1}}},
-		{11, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}},
-		{12, &vttv1.NarrationAdded{Text: "The door slams.", As: "DM"}},
+		{12, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}},
+		{13, &vttv1.NarrationAdded{Text: "The door slams.", As: "DM"}},
 
 		// A scout with a foot in two rooms. Odd at a table and legal on the
 		// wire — nothing binds an actor to one scene — and it is the only
 		// shape that puts a viewer into two scenes on ONE event, which is
 		// what makes the scene loop's ordering observable.
-		{13, &vttv1.SceneCreated{SceneId: "vault", Name: "Vault",
+		{14, &vttv1.SceneCreated{SceneId: "vault", Name: "Vault",
 			GridWidth: 3, GridHeight: 3, Tiles: openFloor(3, 3)}},
-		{14, &vttv1.SceneCreated{SceneId: "crypt", Name: "Crypt",
+		{15, &vttv1.SceneCreated{SceneId: "crypt", Name: "Crypt",
 			GridWidth: 3, GridHeight: 3, Tiles: openFloor(3, 3)}},
-		{15, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout"}}},
-		{16, &vttv1.TokenPlaced{TokenId: "t-sv", SceneId: "vault", ActorId: "scout",
+		{16, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout"}}},
+		{17, &vttv1.TokenPlaced{TokenId: "t-sv", SceneId: "vault", ActorId: "scout",
 			Position: &vttv1.GridPosition{X: 1, Y: 1}}},
-		{17, &vttv1.TokenPlaced{TokenId: "t-sc", SceneId: "crypt", ActorId: "scout",
+		{18, &vttv1.TokenPlaced{TokenId: "t-sc", SceneId: "crypt", ActorId: "scout",
 			Position: &vttv1.GridPosition{X: 1, Y: 1}}},
-		{18, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-1"}},
+		{19, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-1"}},
 
 		// A SECOND controller for an actor already introduced, and the log's
 		// only event that mutates an Actor the projection has already put on
@@ -1267,17 +1523,17 @@ func aWholeFight() []step {
 		// the ActorAdded emitted at step 18 was cloned or merely aliased —
 		// without it, project.go's claim that it must be cloned is prose
 		// nothing runs.
-		{19, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-2"}},
+		{20, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-2"}},
 
 		// A condition applied to an actor this player cannot see, and removed
 		// once they can. Withheld, carried by the introduction, then removed —
 		// and if the middle step is missing the LAST one is a hard fold error
 		// rather than a wrong pixel. See
 		// TestAConditionAppliedOutOfSightArrivesWithTheActor.
-		{20, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "ghoul", Name: "Ghoul"}}},
-		{21, &vttv1.ConditionApplied{ActorId: "ghoul", ConditionId: "marked", Source: "the DM"}},
-		{22, &vttv1.ActorControlGranted{ActorId: "ghoul", ParticipantId: "p-1"}},
-		{23, &vttv1.ConditionRemoved{ActorId: "ghoul", ConditionId: "marked"}},
+		{21, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "ghoul", Name: "Ghoul"}}},
+		{22, &vttv1.ConditionApplied{ActorId: "ghoul", ConditionId: "marked", Source: "the DM"}},
+		{23, &vttv1.ActorControlGranted{ActorId: "ghoul", ParticipantId: "p-1"}},
+		{24, &vttv1.ConditionRemoved{ActorId: "ghoul", ConditionId: "marked"}},
 	}
 }
 
@@ -1296,7 +1552,7 @@ func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	// to carry the actor's conditions — unlike its resources, which are fields
 	// of the Actor and ride along in the clone for free.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ConditionApplied{
+	mustApply(st, 8, &vttv1.ConditionApplied{
 		ActorId: "goblin", ConditionId: "marked", Source: "the DM"})
 
 	pr := gateway.NewProjector(player())
@@ -1312,7 +1568,7 @@ func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	// on the projection's behalf ("token placed in unknown scene"), which says
 	// nothing about the projection and everything about where the test cut the
 	// stream.
-	intro := pr.Project(envelope(7, &vttv1.ConditionApplied{
+	intro := pr.Project(envelope(8, &vttv1.ConditionApplied{
 		ActorId: "goblin", ConditionId: "marked", Source: "the DM"}), st)
 	for _, e := range intro {
 		if e.GetConditionApplied() != nil {
@@ -1321,8 +1577,8 @@ func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	}
 
 	// The door opens, the goblin is introduced — and its condition with it.
-	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-	out := pr.Project(envelope(8, &vttv1.DoorOpened{
+	mustApply(st, 9, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	out := pr.Project(envelope(9, &vttv1.DoorOpened{
 		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 
 	var got *vttv1.ConditionApplied
@@ -1354,8 +1610,8 @@ func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	if n := len(viewerState.Conditions["goblin"]); n != 1 {
 		t.Fatalf("the introduction must leave the condition ON the folded actor, got %d", n)
 	}
-	mustApply(st, 9, &vttv1.ConditionRemoved{ActorId: "goblin", ConditionId: "marked"})
-	for _, e := range pr.Project(envelope(9, &vttv1.ConditionRemoved{
+	mustApply(st, 10, &vttv1.ConditionRemoved{ActorId: "goblin", ConditionId: "marked"})
+	for _, e := range pr.Project(envelope(10, &vttv1.ConditionRemoved{
 		ActorId: "goblin", ConditionId: "marked"}), st) {
 		if err := engine.Apply(viewerState, e); err != nil {
 			t.Fatalf("the removal does not fold, which is a permanent client freeze: %v", err)
@@ -1664,7 +1920,7 @@ func TestARetractionReachesThePlayerWithoutItsReason(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	in := envelope(7, &vttv1.EventsRetracted{FromSequence: 6, ToSequence: 6,
+	in := envelope(8, &vttv1.EventsRetracted{FromSequence: 6, ToSequence: 6,
 		Reason: "mis-keyed: the archer is at 19,8"})
 	var got *vttv1.EventsRetracted
 	for _, e := range pr.Project(in, st) {
@@ -1708,9 +1964,9 @@ func TestAMoveIsWithheldWhileTheMoverIsOutOfSight(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
+	mustApply(st, 8, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
 		From: &vttv1.GridPosition{X: 5, Y: 1}, To: &vttv1.GridPosition{X: 4, Y: 1}})
-	in := envelope(7, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
+	in := envelope(8, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
 		From: &vttv1.GridPosition{X: 5, Y: 1}, To: &vttv1.GridPosition{X: 4, Y: 1}})
 
 	for _, e := range pr.Project(in, st) {
@@ -1730,9 +1986,9 @@ func TestSteppingIntoViewArrivesRatherThanMoves(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
+	mustApply(st, 8, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
 		From: &vttv1.GridPosition{X: 5, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1}})
-	in := envelope(7, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
+	in := envelope(8, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s",
 		From: &vttv1.GridPosition{X: 5, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1}})
 
 	var arrived bool
@@ -1757,14 +2013,14 @@ func TestADoorInARoomYouAreNotInStaysSilent(t *testing.T) {
 	// events about what their actors can see). A door swinging in a scene
 	// they have never entered would announce that the scene exists.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.SceneCreated{
+	mustApply(st, 8, &vttv1.SceneCreated{
 		SceneId: "lair", Name: "The Dragon's Lair", GridWidth: 5, GridHeight: 5,
 		Tiles: map[string]*vttv1.TileRef{key(2, 2): {Kind: "door"}}})
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "lair", At: &vttv1.GridPosition{X: 2, Y: 2}})
-	in := envelope(8, &vttv1.DoorOpened{SceneId: "lair", At: &vttv1.GridPosition{X: 2, Y: 2}})
+	mustApply(st, 9, &vttv1.DoorOpened{SceneId: "lair", At: &vttv1.GridPosition{X: 2, Y: 2}})
+	in := envelope(9, &vttv1.DoorOpened{SceneId: "lair", At: &vttv1.GridPosition{X: 2, Y: 2}})
 	for _, e := range pr.Project(in, st) {
 		if e.GetDoorOpened() != nil {
 			t.Error("a door in a scene this player has never entered must not reach them")
@@ -1788,8 +2044,8 @@ func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-	in := envelope(7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	in := envelope(8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 
 	// EXACTLY ONE, because two code paths now know about doors: classify
 	// forwards this envelope, and doorTransitions corrects the viewer's belief
@@ -1826,13 +2082,13 @@ func TestADoorYouCanSeeSwingShutReachesThePlayerOnce(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-	pr.Project(envelope(7, &vttv1.DoorOpened{
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	pr.Project(envelope(8, &vttv1.DoorOpened{
 		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 
-	mustApply(st, 8, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	mustApply(st, 9, &vttv1.DoorClosed{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 	var closed int
-	for _, e := range pr.Project(envelope(8, &vttv1.DoorClosed{
+	for _, e := range pr.Project(envelope(9, &vttv1.DoorClosed{
 		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st) {
 		if e.GetDoorClosed() != nil {
 			closed++
@@ -1850,9 +2106,9 @@ func TestAVisibleTokensMoveDoesReachThePlayer(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	mustApply(st, 7, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+	mustApply(st, 8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
 		From: &vttv1.GridPosition{X: 1, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1}})
-	in := envelope(7, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+	in := envelope(8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
 		From: &vttv1.GridPosition{X: 1, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1}})
 
 	var moved bool
@@ -1901,12 +2157,14 @@ func oneRoomWithAPillar() *engine.State {
 				Width: 0, Height: 1},
 		}})
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
 		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	return st
 }
 
@@ -1975,9 +2233,11 @@ func oneRoomWithAGapInTheWall() *engine.State {
 				Width: 1, Height: 1},
 		}})
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", ControllerIds: []string{"p-1"}}})
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 2, Y: 4}})
+	mustApply(st, 5, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	return st
 }
 
@@ -2062,13 +2322,13 @@ func TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen(t *testing.T) {
 	// sees a lit room through a door its client draws SHUT
 	// (client/src/view/scene-plan.ts:74,89), for the rest of the session.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
+	mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
 
 	// A seat with no actor yet: the door event is rightly withheld. The batch
 	// is KEPT — it already carries ActorAdded for the party (spec §5 knows a
 	// controlled actor before it can see one), and a batch is not a fold unit.
 	pr := gateway.NewProjector(gateway.Viewer{ParticipantID: "p-2", Role: identity.RolePlayer})
-	before := pr.Project(envelope(7, &vttv1.DoorOpened{
+	before := pr.Project(envelope(8, &vttv1.DoorOpened{
 		SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}}), st)
 	for _, e := range before {
 		if e.GetDoorOpened() != nil {
@@ -2077,8 +2337,8 @@ func TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen(t *testing.T) {
 	}
 
 	// The DM assigns them a character. THIS is the introduction batch.
-	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-2"})
-	out := pr.Project(envelope(8, &vttv1.ActorControlGranted{
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-2"})
+	out := pr.Project(envelope(9, &vttv1.ActorControlGranted{
 		ActorId: "hero", ParticipantId: "p-2"}), st)
 
 	viewer := engine.NewState()
@@ -2113,8 +2373,8 @@ func TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView(t *testing.T) {
 
 	// 0,1 is dark from 2,4 — TestAnObjectIsRevealedOnlyByTheSquaresItStandsOn
 	// pins that. Opening a door there must tell this viewer nothing yet.
-	mustApply(st, 5, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 0, Y: 1}})
-	for _, e := range pr.Project(envelope(5, &vttv1.DoorOpened{
+	mustApply(st, 6, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 0, Y: 1}})
+	for _, e := range pr.Project(envelope(6, &vttv1.DoorOpened{
 		SceneId: "s", At: &vttv1.GridPosition{X: 0, Y: 1}}), st) {
 		if e.GetDoorOpened() != nil {
 			t.Fatal("a door on a square this viewer cannot see must stay silent")
@@ -2122,9 +2382,9 @@ func TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView(t *testing.T) {
 	}
 
 	// Now they walk north through the gap, and 0,1 comes into view.
-	mustApply(st, 6, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+	mustApply(st, 8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
 		From: &vttv1.GridPosition{X: 2, Y: 4}, To: &vttv1.GridPosition{X: 1, Y: 1}})
-	out := pr.Project(envelope(6, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+	out := pr.Project(envelope(8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
 		From: &vttv1.GridPosition{X: 2, Y: 4}, To: &vttv1.GridPosition{X: 1, Y: 1}}), st)
 
 	var seen *vttv1.SceneSeen
@@ -2234,7 +2494,7 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
-	narration := envelope(7, &vttv1.NarrationAdded{Text: "The door creaks.", As: "DM"})
+	narration := envelope(8, &vttv1.NarrationAdded{Text: "The door creaks.", As: "DM"})
 	var toldStory bool
 	for _, e := range pr.Project(narration, st) {
 		if e.GetNarrationAdded() != nil {
@@ -2245,7 +2505,7 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 		t.Error("withholding narration from players silences the table's story channel")
 	}
 
-	note := envelope(8, &vttv1.NoteUpserted{
+	note := envelope(9, &vttv1.NoteUpserted{
 		Key: "ambush", Title: "Ambush", Text: "Archer waits at 19,8"})
 	for _, e := range pr.Project(note, st) {
 		if e.GetNoteUpserted() != nil {
@@ -2257,7 +2517,7 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 	// exercises one leaves the other free to drift to the opposite ruling. The
 	// KEY alone is the leak here: "ambush" names the DM's plan whether or not
 	// any text travels with it.
-	deleted := envelope(9, &vttv1.NoteDeleted{Key: "ambush"})
+	deleted := envelope(10, &vttv1.NoteDeleted{Key: "ambush"})
 	for _, e := range pr.Project(deleted, st) {
 		if e.GetNoteDeleted() != nil {
 			t.Error("deleting a note names the note, and must not reach a player either")

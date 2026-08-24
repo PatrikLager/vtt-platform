@@ -137,6 +137,19 @@ function apply(st: State, env: Envelope): void {
       const a = p.value.actor;
       if (!a || a.actorId === "") throw new FoldError("actor added with no actor or empty id");
       if (st.Actors[a.actorId]) throw new FoldError(`duplicate actor "${a.actorId}"`);
+      // CREATION DOES NOT CONFER CONTROL (visibility spec §5.1, Patrik's
+      // ruling 2026-08-24), and this is the strict mirror of internal/engine's
+      // ActorAdded arm — same rule, same two spellings, same refusal rather
+      // than a silent drop. Read that arm for why: an actor created with a
+      // controller and no kind was a party member with nobody having said so,
+      // which is the archer leak through a second door.
+      if (a.controllerId !== "" || a.controllerIds.length > 0) {
+        throw new FoldError(
+          `actor "${a.actorId}" added with a controller — creating an actor does not hand it ` +
+            `to anyone; control is conferred by actor control granted, which also declares ` +
+            `what the actor is`,
+        );
+      }
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
@@ -150,9 +163,9 @@ function apply(st: State, env: Envelope): void {
       // swallow a standing change stated in the same event.
       //
       // CONDITIONAL, matching Go: a grant that says nothing says nothing, not
-      // UNSPECIFIED. Every grant already recorded lacks the field, and
-      // clearing a declared kind on replay would hand it back to the "absent
-      // + a controller means party member" reading — the leak §5.1 closes.
+      // UNSPECIFIED. Clearing a declared kind on replay is a SILENT DEMOTION —
+      // since §5.1's migration rule was deleted (2026-08-24) an absent kind is
+      // not a party member, so the character drops off its own party's roster.
       if (v.kind !== ActorKind.UNSPECIFIED) a.kind = v.kind;
       if (a.controllerIds.includes(v.participantId)) return; // idempotent
       Object.assign(a, mirrorControl([...a.controllerIds, v.participantId]));
@@ -435,27 +448,16 @@ function copyActor(a: {
     // it here would make state say something the log never said, and the dump
     // this fold is byte-compared against is a rendering of the log.
     kind: a.kind,
-    // Empty ids are dropped here, matching internal/engine's fold: the
-    // grant/revoke guard does not cover ActorAdded, so a payload carrying
-    // controllerIds:[""] would otherwise create a non-empty set whose mirror
-    // is the empty string — indistinguishable from an unowned actor, and
-    // unremovable, since revoke rejects an empty participant.
+    // ALWAYS EMPTY, and mirrorControl is still called rather than the pair
+    // being written out as literals: it is the one place the "controllerId is
+    // controllerIds[0]" rule lives, and a fold that spelled the empty case out
+    // by hand would be a second statement of it that could drift.
     //
-    // NOT `?? []`, unlike the two neighbours above. Review flagged the
-    // asymmetry and I added the guard; CI's mutation gate then showed it
-    // SURVIVING, and the reason is that it is unreachable: every fold path
-    // decodes through protobuf-es, which always materialises a repeated field
-    // as [], and copyActor is not exported. Nothing can pass undefined, so
-    // nothing can test it — and an adjudication for dead code is worse than
-    // not writing the dead code. The asymmetry is the honest state: those
-    // guards predate this change and carry their own adjudications.
-    ...mirrorControl(
-      a.controllerIds.length > 0
-        ? a.controllerIds.filter((id) => id !== "")
-        : a.controllerId !== ""
-          ? [a.controllerId]
-          : [],
-    ),
+    // The branch that used to sit here — seed the set from controllerId, strip
+    // empty ids — is gone with the seeding it existed for: the actorAdded arm
+    // above now REFUSES an actor that declares either field, so by the time
+    // copyActor runs there is nothing to seed and nothing to strip.
+    ...mirrorControl([]),
   };
 }
 

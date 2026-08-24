@@ -39,8 +39,8 @@ import (
 // parameter and cmd/vtt's tokensFile.IDs already establish (see engine.go's
 // resolveParticipantIDPlaceholders doc comment for the precedent this
 // mirrors): the generator's addActor lifecycle assigns each of the two
-// players a controlled actor by setting Actor.controller_id to their REAL,
-// server-assigned identity.Participant.ID — a value nothing in this package
+// players a controlled actor by GRANTING it to their REAL, server-assigned
+// identity.Participant.ID — a value nothing in this package
 // can invent (minted fresh, randomly, per invite; harness may not import
 // internal/identity at all — client.go's package comment) — so the caller
 // supplies it here, keyed by SoakParticipants()'s participant names, in
@@ -895,9 +895,30 @@ type soakModel struct {
 	// other player of their own turn.
 	playerControlledActor map[string]bool
 
+	// pendingGrant is the SECOND HALF of an assignment (visibility spec §5.1,
+	// 2026-08-24): add_actor no longer accepts a controller, so handing a
+	// generated actor to a player is two commands, and the model has to carry
+	// the intention from the first to the second. Non-nil for exactly one draw
+	// — planStep issues it and clears it before anything else is picked, which
+	// is what keeps a grant from ever being planned against an actor the
+	// server has not accepted yet.
+	pendingGrant *soakGrant
+
 	// retracted marks sequences already retracted, so planRetraction never
 	// offers the same one twice.
 	retracted map[int64]bool
+}
+
+// soakGrant is one owed grant: who issues it, over which actor, to which
+// player. The ISSUER is carried rather than redrawn on purpose — a fresh
+// pickDMOrAgent here would consume an rng draw that the addActor half already
+// spent, and RunSoak's same-seed-twice obligation is a property of the whole
+// draw sequence, not of each call in isolation.
+type soakGrant struct {
+	issuer         string
+	actorID        string
+	controllerName string
+	controllerID   string
 }
 
 func newSoakModel() *soakModel {
@@ -924,7 +945,18 @@ func (m *soakModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.act
 // (nothing to place on top of, no tokens to move, nothing eligible to
 // retract or deny), this falls back to addActor — always valid — the same
 // "guarantee forward progress" shape property_test.go's step() uses.
+//
+// ONE DRAW IS NOT ALWAYS ONE BUCKET, as of 2026-08-24. An owed grant is
+// issued FIRST and consumes no rng at all, so the bucket that would have been
+// drawn is simply drawn on the next iteration instead. It happens at most
+// twice in a run (once per player), and it is counted as addActor because it
+// is the second half of one act rather than an action of its own — a bucket of
+// its own would have to be given a share of a mix that is tuned, and would
+// then fire on runs where no assignment is owed.
 func (m *soakModel) planStep(rng *rand.Rand, ids map[string]string, agentHistory []*vttv1.Envelope) soakStep {
+	if step, ok := m.planPendingGrant(); ok {
+		return step
+	}
 	switch pickBucket(rng.Float64()) {
 	case actionCreateScene:
 		return m.planCreateScene(rng)
@@ -987,10 +1019,18 @@ func (m *soakModel) planCreateScene(rng *rand.Rand) soakStep {
 
 // planAddActor assigns the FIRST two addActor draws (in whatever order they
 // land across the whole run — deterministic per seed, not a fixed prefix of
-// the run) to player1 then player2's controller_id, in that priority order;
-// every subsequent addActor stays uncontrolled (NPC). This guarantees both
-// players eventually get a controllable actor without the mix needing a
-// dedicated "assign ownership" bucket of its own.
+// the run) to player1 then player2, in that priority order; every subsequent
+// addActor stays uncontrolled (NPC). This guarantees both players eventually
+// get a controllable actor without the mix needing a dedicated "assign
+// ownership" bucket of its own.
+//
+// ASSIGNING IS NOW THE NEXT STEP, NOT THIS ONE. add_actor stopped accepting a
+// controller on 2026-08-24 (visibility spec §5.1): creating an actor makes a
+// character, and a grant is what gives it a controller AND a standing. So this
+// records the intention in m.pendingGrant and planStep issues the grant on the
+// following draw. The cost is real and is the point — an agent creating an NPC
+// it will run sends two commands — and the soak paying it is what keeps this
+// generator an honest model of what a client may do.
 func (m *soakModel) planAddActor(rng *rand.Rand, ids map[string]string) soakStep {
 	m.actorN++
 	id := fmt.Sprintf("soak-actor-%d", m.actorN)
@@ -1009,20 +1049,50 @@ func (m *soakModel) planAddActor(rng *rand.Rand, ids map[string]string) soakStep
 	}
 
 	actor := &vttv1.Actor{ActorId: id, Name: id}
-	if controllerID != "" {
-		actor.ControllerId = controllerID
-	}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{Actor: actor}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionAddActor, apply: func(int64) {
 		m.actors = append(m.actors, id)
 		m.actorController[id] = ""
-		if controllerName != "" {
-			m.playerControlledActor[controllerName] = true
-			if controllerID != "" {
-				m.actorController[id] = controllerName
-			}
+		if controllerName == "" {
+			return
 		}
+		// Marked ATTEMPTED here rather than when the grant lands, which is
+		// what this flag has always meant: a missing id degrades that one
+		// player's ownership coverage instead of starving the other of a turn.
+		m.playerControlledActor[controllerName] = true
+		if controllerID == "" {
+			return
+		}
+		m.pendingGrant = &soakGrant{issuer: issuer, actorID: id,
+			controllerName: controllerName, controllerID: controllerID}
 	}}
+}
+
+// planPendingGrant issues the grant an earlier addActor owes, if any.
+//
+// THE KIND IS PARTY_MEMBER because that is what these actors ARE: the soak
+// hands them to a PLAYER to drive, and everything downstream of this
+// (planMoveOwn, the players-only-move-own invariant) treats them as that
+// player's character. Stating it is not optional — the server refuses a grant
+// that says nothing (gateway validateGrantActorControl) — and a soak issuing
+// the refused shape would spend its whole run failing on its own setup.
+//
+// It takes no rng and clears the slot BEFORE returning, so the same seed
+// produces the same sequence and no grant can be issued twice.
+func (m *soakModel) planPendingGrant() (soakStep, bool) {
+	g := m.pendingGrant
+	if g == nil {
+		return soakStep{}, false
+	}
+	m.pendingGrant = nil
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_GrantActorControl{
+		GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: g.actorID, ParticipantId: g.controllerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}}}
+	return soakStep{issuer: g.issuer, cmd: cmd, kind: actionAddActor, apply: func(int64) {
+		m.actorController[g.actorID] = g.controllerName
+	}}, true
 }
 
 func (m *soakModel) planPlaceToken(rng *rand.Rand) soakStep {

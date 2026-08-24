@@ -10,7 +10,8 @@
     {"by": "dm", "command": {"startSession": {"name": "Exit Scenario"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"createScene": {"sceneId": "scn-exit", "name": "Exit Hall", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-ursus", "name": "Ursus"}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-lera", "name": "Lera", "controllerId": "{{id:player}}"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-lera", "name": "Lera"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-lera", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-ursus", "sceneId": "scn-exit", "actorId": "act-ursus", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-lera", "sceneId": "scn-exit", "actorId": "act-lera", "position": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
 
@@ -18,7 +19,7 @@
     {"by": "player", "command": {"moveToken": {"tokenId": "tok-ursus", "to": {"x": 9, "y": 9}}}, "expect": {"deniedContaining": "not authorized"}},
 
     {"by": "agent", "command": {"moveToken": {"tokenId": "tok-ursus", "to": {"x": 5, "y": 5}}}, "expect": {"ok": true}},
-    {"by": "agent", "command": {"retractEvents": {"fromSequence": 8, "toSequence": 8, "reason": "test retraction"}}, "expect": {"ok": true}},
+    {"by": "agent", "command": {"retractEvents": {"fromSequence": 9, "toSequence": 9, "reason": "test retraction"}}, "expect": {"ok": true}},
 
     {"by": "spectator", "command": {"startSession": {"name": "hijack"}}, "expect": {"deniedContaining": "not authorized"}},
 

@@ -202,14 +202,25 @@ export function parseActorJSON(raw: string): ClientCommand | Error {
   }
 }
 
-/** addActor from an already-built actor object (the form path). */
-export function addActor(actorId: string, name: string, controllerId?: string): ClientCommand {
+/**
+ * addActor from an already-built actor object (the form path).
+ *
+ * IT TAKES NO CONTROLLER, and that is the rule rather than an omission
+ * (visibility spec §5.1, Patrik's ruling 2026-08-24). Creating an actor makes
+ * a character; a grant gives it a controller AND a standing, together, always.
+ * This builder used to take an optional `controllerId`, and a DM who typed one
+ * into the console created a PARTY MEMBER — no kind stated, no refusal
+ * anywhere on the path, the whole cloned Actor on every player's roster.
+ *
+ * The server refuses a controller here now, so restoring the parameter would
+ * produce a bounced command rather than a leak; it is gone anyway, because a
+ * builder that can express a refused shape is a trap for its next caller.
+ * grantActorControl is what confers control, and it ASKS for a kind.
+ */
+export function addActor(actorId: string, name: string): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: {
-      case: "addActor",
-      value: { actor: { actorId, name, ...(controllerId ? { controllerId } : {}) } },
-    },
+    command: { case: "addActor", value: { actor: { actorId, name } } },
   });
 }
 

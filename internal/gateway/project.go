@@ -361,8 +361,9 @@ func (pr *Projector) look(st *engine.State) sightView {
 		// here, and rather than the "has any controller" this used to read. §5
 		// says controlled by any PLAYER; the code said has any CONTROLLER, and
 		// one grant_actor_control on a hidden monster published its whole
-		// cloned Actor to every player at the table. Spec §5.1 has the ruling
-		// and the migration rule.
+		// cloned Actor to every player at the table. Spec §5.1 has the ruling;
+		// its migration rule was deleted 2026-08-24 and an absent kind is now
+		// simply not a party member.
 		if isPartyMember(a) {
 			v.actors[id] = true
 		}
@@ -551,9 +552,41 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		// ActorControlGranted mutates an Actor in place. Handing the same
 		// pointer out would put live state on a connection's wire, where a
 		// later grant would retroactively change an envelope already sent.
+		clone := proto.Clone(a).(*vttv1.Actor)
+
+		// AN INTRODUCTION CANNOT CARRY A CONTROLLER, so who holds this actor
+		// travels as GRANTS behind it — one per controller, in the set's own
+		// order (visibility spec §5.1, 2026-08-24).
+		//
+		// This is not cosmetic and it is not a redaction: both folds now REFUSE
+		// an ActorAdded that names a controller ("creating an actor does not
+		// hand it to anyone"), so an introduction built from a clone of live
+		// state was unfoldable the moment anyone had been granted anything.
+		// Measured, not reasoned: TestAProjectedStreamFoldsCleanly and
+		// TestAConditionAppliedOutOfSightArrivesWithTheActor both failed on
+		// exactly that error before this loop existed.
+		//
+		// It also makes the projection say the same thing the log says. A
+		// viewer who joins late gets creation-then-grant just as the log has
+		// it, rather than a shape no log could hold; and a viewer already
+		// present gets the grant twice — once here, once forwarded — which both
+		// folds treat as idempotent by an explicit membership check.
+		//
+		// The KIND rides on each grant as well as on the clone. The fold's
+		// grant arm writes kind only when the grant states one, so an
+		// UNSPECIFIED here would leave the clone's kind standing — correct, but
+		// only by accident of ordering. Stating it makes each envelope true on
+		// its own.
+		controllers := clone.GetControllerIds()
+		clone.ControllerId = ""
+		clone.ControllerIds = nil
 		out = append(out, &vttv1.Envelope{Sequence: seq,
-			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
-				Actor: proto.Clone(a).(*vttv1.Actor)}}})
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: clone}}})
+		for _, cid := range controllers {
+			out = append(out, &vttv1.Envelope{Sequence: seq,
+				Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+					ActorId: id, ParticipantId: cid, Kind: a.GetKind()}}})
+		}
 		pr.actors[id] = true
 
 		// AND THE CONDITIONS ON IT, which do NOT ride along in the Actor.

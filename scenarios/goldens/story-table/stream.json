@@ -31,14 +31,25 @@
     "actorAdded": {
       "actor": {
         "actorId": "act-hero",
-        "name": "Lera",
-        "controllerId": "p-player"
+        "name": "Lera"
       }
     }
   },
   {
     "eventId": "evt-4",
     "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-hero",
+      "participantId": "p-player",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -50,8 +61,8 @@
     }
   },
   {
-    "eventId": "evt-5",
-    "sequence": "5",
+    "eventId": "evt-6",
+    "sequence": "6",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -66,25 +77,15 @@
     }
   },
   {
-    "eventId": "evt-6",
-    "sequence": "6",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "narrationAdded": {
-      "text": "Lera steps toward the bar, anchored to her own move.",
-      "anchorFromSeq": "5",
-      "anchorToSeq": "5"
-    }
-  },
-  {
     "eventId": "evt-7",
     "sequence": "7",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
     "narrationAdded": {
-      "text": "A hush falls over the tavern as the story begins."
+      "text": "Lera steps toward the bar, anchored to her own move.",
+      "anchorFromSeq": "6",
+      "anchorToSeq": "6"
     }
   },
   {
@@ -94,30 +95,28 @@
     "actorRole": "dm",
     "participantId": "p-dm",
     "narrationAdded": {
-      "text": "You'll not pass, adventurer!",
-      "as": "Goblin Cutter"
+      "text": "A hush falls over the tavern as the story begins."
     }
   },
   {
     "eventId": "evt-9",
     "sequence": "9",
     "sessionId": "sess-1",
-    "actorRole": "player",
-    "participantId": "p-player",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "narrationAdded": {
-      "text": "I raise my sword and step forward."
+      "text": "You'll not pass, adventurer!",
+      "as": "Goblin Cutter"
     }
   },
   {
     "eventId": "evt-10",
     "sequence": "10",
     "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "noteUpserted": {
-      "key": "kobold-den",
-      "title": "Kobold Den",
-      "text": "Three kobolds guard the east tunnel."
+    "actorRole": "player",
+    "participantId": "p-player",
+    "narrationAdded": {
+      "text": "I raise my sword and step forward."
     }
   },
   {
@@ -128,13 +127,25 @@
     "participantId": "p-dm",
     "noteUpserted": {
       "key": "kobold-den",
-      "title": "Kobold Den (cleared)",
-      "text": "The tunnel is empty now; the kobolds fled west."
+      "title": "Kobold Den",
+      "text": "Three kobolds guard the east tunnel."
     }
   },
   {
     "eventId": "evt-12",
     "sequence": "12",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteUpserted": {
+      "key": "kobold-den",
+      "title": "Kobold Den (cleared)",
+      "text": "The tunnel is empty now; the kobolds fled west."
+    }
+  },
+  {
+    "eventId": "evt-13",
+    "sequence": "13",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -145,8 +156,8 @@
     }
   },
   {
-    "eventId": "evt-13",
-    "sequence": "13",
+    "eventId": "evt-14",
+    "sequence": "14",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -155,8 +166,8 @@
     }
   },
   {
-    "eventId": "evt-14",
-    "sequence": "14",
+    "eventId": "evt-15",
+    "sequence": "15",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

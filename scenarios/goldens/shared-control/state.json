@@ -11,7 +11,8 @@
     },
     "act-scout": {
       "actor_id": "act-scout",
-      "name": "Scout"
+      "name": "Scout",
+      "kind": 1
     },
     "act-warden": {
       "actor_id": "act-warden",
@@ -54,5 +55,5 @@
       "Y": 1
     }
   },
-  "headSequence": 13
+  "headSequence": 15
 }

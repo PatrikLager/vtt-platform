@@ -35,18 +35,29 @@ import (
 // sighting is a bug, a player gaining one is the defect this arc exists to
 // prevent.
 //
-// THE UNSPECIFIED ARM IS A MIGRATION RULE, NOT A FALLBACK, and it is the only
-// place here that reads controller_ids at all. Every ActorAdded written before
-// this field lacks it, so fail-closed on absence would retroactively drop
-// existing party members from every roster the moment they turned a corner.
-// Absent + a controller therefore means party member, absent + none means not,
-// which reproduces the old behaviour EXACTLY for logs already written while
-// every new log states its intent (spec §5.1). It expires only when no
-// unmigrated log exists, which for an append-only contract is never.
+// AN ABSENT KIND IS NOT A PARTY MEMBER. ALWAYS. One rule, no second branch,
+// and nothing here reads controller_ids at all.
+//
+// There used to be a migration arm — absent + a controller meant party member —
+// and it existed for one reason: to keep logs written before the field existed
+// behaving as they had. DELETED 2026-08-24, Patrik's ruling, on the ground that
+// there are no such logs: no campaign exists outside this repo's own fixtures,
+// so the rule was protecting nothing while costing everything.
+//
+// AND THE COST WAS THE BUG. That arm is what could not tell "a log written
+// before kind existed" from "a grant issued today that forgot", and every leak
+// this arc chased lived in exactly that gap: control silently promoting a
+// monster, an add_actor conferring party membership nobody had declared. With
+// the arm gone the ambiguity has nowhere left to live, and the command-boundary
+// refusals (validateGrantActorControl, validateAddActor) become belt and braces
+// rather than the only thing standing between the table and the archer.
+//
+// So this is now a plain equality, and the fail-closed direction is total:
+// every value the enum grows later — a neutral, a familiar, a summon — and
+// UNSPECIFIED itself are all "not a party member" until something deliberately
+// says otherwise. Spec §4.4's direction: a player losing a sighting is a bug, a
+// player gaining one is the defect this arc exists to prevent.
 func isPartyMember(a *vttv1.Actor) bool {
-	if a.GetKind() == vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		return len(a.GetControllerIds()) > 0
-	}
 	return a.GetKind() == vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
 }
 

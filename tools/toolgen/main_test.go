@@ -176,12 +176,19 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	}
 
 	wantSubstr := map[string]string{
-		"name":         "Optional",
-		"controllerId": "DM/agent-controlled",
-		"moduleId":     "opaque",
-		"attributes":   "opaque",
-		"resources":    "opaque",
-		"moduleData":   "opaque",
+		"name": "Optional",
+		// controllerId/controllerIds are the two fields this tool does not
+		// merely leave optional — it REFUSES them (visibility spec §5.1,
+		// gateway validateAddActor), so their guidance must send the caller to
+		// the command that does confer control rather than describe a value
+		// they might pick. An LLM told "omit or empty" reads that as an
+		// invitation to fill it in when it has an id to hand.
+		"controllerId":  "grant_actor_control",
+		"controllerIds": "grant_actor_control",
+		"moduleId":      "opaque",
+		"attributes":    "opaque",
+		"resources":     "opaque",
+		"moduleData":    "opaque",
 	}
 	for field, substr := range wantSubstr {
 		prop, ok := props[field].(map[string]any)

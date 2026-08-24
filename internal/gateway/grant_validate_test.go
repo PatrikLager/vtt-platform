@@ -15,9 +15,11 @@ import (
 // That is the entire failure mode. Defaulting is wrong in both directions —
 // default to party member and one forgotten field publishes a monster's stat
 // block to the whole table; default to non-party and one forgotten field
-// drops a character out of its own party's roster — and §5.1's migration rule
-// cannot rescue either, because it cannot tell a log written before this
-// field existed from a grant issued today that forgot.
+// drops a character out of its own party's roster. Refusing is the only answer
+// that asks rather than guesses. (This used to add that §5.1's migration rule
+// could not rescue either; that rule was deleted 2026-08-24, which makes
+// non-party the safe default and this refusal a second line rather than the
+// only one.)
 //
 // So the answer is a refusal, and it has to be here rather than in the fold:
 // the fold must keep accepting every kindless grant already recorded

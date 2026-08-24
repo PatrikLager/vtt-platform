@@ -44,8 +44,7 @@
             "current": 2,
             "max": 2
           }
-        },
-        "controllerId": "p-brawler"
+        }
       }
     }
   },
@@ -72,14 +71,37 @@
             "current": 2,
             "max": 2
           }
-        },
-        "controllerId": "p-patron"
+        }
       }
     }
   },
   {
     "eventId": "evt-5",
     "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-brawler",
+      "participantId": "p-brawler",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-patron",
+      "participantId": "p-patron",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -91,8 +113,8 @@
     }
   },
   {
-    "eventId": "evt-6",
-    "sequence": "6",
+    "eventId": "evt-8",
+    "sequence": "8",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -106,8 +128,8 @@
     }
   },
   {
-    "eventId": "evt-7",
-    "sequence": "7",
+    "eventId": "evt-9",
+    "sequence": "9",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
@@ -121,17 +143,17 @@
         {
           "expression": "1d20 + @caster.brawn",
           "results": [
-            12
+            6
           ],
-          "total": 15
+          "total": 9
         }
       ],
-      "outcomeSummary": "Fists on act-patron: hit (15 vs 0)"
+      "outcomeSummary": "Fists on act-patron: hit (9 vs 0)"
     }
   },
   {
-    "eventId": "evt-8",
-    "sequence": "8",
+    "eventId": "evt-10",
+    "sequence": "10",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
@@ -144,8 +166,8 @@
     }
   },
   {
-    "eventId": "evt-9",
-    "sequence": "9",
+    "eventId": "evt-11",
+    "sequence": "11",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
@@ -156,8 +178,8 @@
     }
   },
   {
-    "eventId": "evt-10",
-    "sequence": "10",
+    "eventId": "evt-12",
+    "sequence": "12",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -168,8 +190,8 @@
     }
   },
   {
-    "eventId": "evt-11",
-    "sequence": "11",
+    "eventId": "evt-13",
+    "sequence": "13",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

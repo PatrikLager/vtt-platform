@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
-import { ClientCommandSchema, JoinDoor } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { ClientCommandSchema, JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -179,15 +179,26 @@ test("an unknown field in a pasted actor is rejected, not silently dropped", () 
   expect(err).toBeInstanceOf(Error);
 });
 
-test("addActor from the form omits an empty controller rather than sending \"\"", () => {
-  // An empty controller_id means "DM-run NPC" on the wire. Sending an empty
-  // string explicitly is the same value but a different shape than the
-  // server's fixtures, and shape is what the round-trip tests pin.
+test("addActor cannot confer control, whatever a caller passes it", () => {
+  // Visibility spec §5.1: control is conferred exactly once, by a grant that
+  // says what it is conferring. The builder used to take an optional
+  // `controllerId` and put it on the wire, which created a party member with
+  // no kind stated and no refusal on the path.
+  //
+  // The SECOND assertion is the load-bearing one. Dropping the parameter from
+  // the signature is a TypeScript fact, and `bun test` runs JavaScript — a
+  // builder that still spread a third argument onto the actor would pass a
+  // shape assertion written against a two-argument call and fail here. The
+  // cast is what lets a JS caller try what the type system has stopped
+  // forbidding, which is exactly the caller the server's refusal exists for.
   const npc = toJson(ClientCommandSchema, addActor("a1", "Goblin")) as Record<string, any>;
   expect(npc["addActor"]["actor"]).not.toHaveProperty("controllerId");
+  expect(npc["addActor"]["actor"]).not.toHaveProperty("controllerIds");
 
-  const pc = toJson(ClientCommandSchema, addActor("a2", "Lera", "p-1")) as Record<string, any>;
-  expect(pc["addActor"]["actor"]["controllerId"]).toBe("p-1");
+  const smuggle = addActor as unknown as (...args: unknown[]) => ClientCommand;
+  const pc = toJson(ClientCommandSchema, smuggle("a2", "Lera", "p-1")) as Record<string, any>;
+  expect(pc["addActor"]["actor"]).not.toHaveProperty("controllerId");
+  expect(pc["addActor"]["actor"]).not.toHaveProperty("controllerIds");
 });
 
 // --- the two rejection messages, and the id fallback -------------------------

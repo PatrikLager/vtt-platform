@@ -16,11 +16,16 @@ import (
 // that shows up as a live table getting the wrong information: default to
 // party member and one forgotten field publishes a monster's whole stat block
 // to everyone; default to non-party and one forgotten field drops a
-// character out of its own party's roster. §5.1's migration rule cannot
-// rescue either, because that rule reads absence — and it cannot tell a log
-// written before this field existed from a grant issued today that forgot.
-// Without this refusal an agent that simply omits the field reproduces the
-// original leak exactly, with ok=true.
+// character out of its own party's roster. Refusing is the only answer that
+// asks rather than guesses.
+//
+// (This used to reason from §5.1's migration rule — that the rule read absence
+// and could not tell an old log from a grant issued today that forgot. The
+// rule was deleted 2026-08-24: an absent kind is not a party member, full
+// stop. That makes the SECOND default the safe one and this refusal no longer
+// the only thing between the table and the leak — but a grant that silently
+// demotes a character is still a wrong answer given confidently, which is what
+// this refuses to do.)
 //
 // WHY HERE AND NOT IN THE FOLD. engine.Apply must keep accepting every
 // kindless grant already recorded (its own ActorControlGranted arm says so at

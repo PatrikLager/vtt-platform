@@ -385,7 +385,7 @@ func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 // kind lives at the command boundary (validateGrantActorControl, called from
 // handleCommand), but nothing there helps if the conversion then drops the
 // field a caller did supply: the grant would be accepted, written kindless,
-// and read back as a party member by the migration rule — the original leak,
+// and read back as something nobody declared — the original leak's shape,
 // reached through the very check meant to close it, with ok=true.
 //
 // This is the same failure mode the CreateScene arm's own comment records

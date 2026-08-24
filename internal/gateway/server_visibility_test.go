@@ -39,7 +39,7 @@ import (
 // suite uses, and one DB handle.
 func (f *gwFixture) seedAmbush(t *testing.T) {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	tiles := map[string]*vttv1.TileRef{}
 	for y := int32(0); y < 32; y++ {
@@ -72,14 +72,28 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 		t.Fatalf("seed CreateScene ambush: %s", r.Error)
 	}
 
+	// TWO COMMANDS, which is the whole of what this arc's last task changed:
+	// add_actor makes a character and grant_actor_control hands it over, SAYING
+	// what it is. Sent over the wire like every other seed here, so the seed
+	// itself exercises the refusal it would hit if it tried the one-step.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme", ControllerId: f.playerID},
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Asme"},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("seed AddActor act-fighter: %s", r.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-ambush-grant-fighter",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-fighter", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed GrantActorControl act-fighter: %s", r.Error)
 	}
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-tok-fighter",
@@ -585,16 +599,26 @@ func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 // and Asme herself disappears when the watcher leaves her.
 func (f *gwFixture) seedArmak(t *testing.T) {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, 4)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-scout",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak", ControllerId: f.playerID},
+			Actor: &vttv1.Actor{ActorId: "act-scout", Name: "Armak"},
 		}},
 	})
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("seed AddActor act-scout: %s", r.Error)
+	}
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-grant-scout",
+		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
+			ActorId: "act-scout", ParticipantId: f.playerID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("seed GrantActorControl act-scout: %s", r.Error)
 	}
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-tok-scout",

@@ -20,6 +20,7 @@
     {"by": "player", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 2, "y": 2}}}, "expect": {"deniedContaining": "not authorized"}},
 
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-npc", "participantId": "{{id:player}}"}}, "expect": {"deniedContaining": "must say what the actor IS"}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-seeded", "name": "Seeded", "controllerId": "{{id:player}}"}}}, "expect": {"deniedContaining": "control is conferred by grant_actor_control"}},
 
     {"by": "spectator", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 3, "y": 3}}}, "expect": {"deniedContaining": "not authorized"}},
     {"by": "spectator", "command": {"createScene": {"sceneId": "scn-spectator-deny", "name": "nope", "gridWidth": 1, "gridHeight": 1}}, "expect": {"deniedContaining": "not authorized"}},
