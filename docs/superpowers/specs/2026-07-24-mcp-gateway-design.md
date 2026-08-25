@@ -33,13 +33,19 @@ gateway's authz table server-side, stamped with the agent's participant_id.
   process lifetime; on connection loss the MCP server reports tool errors
   and attempts reconnect with catch-up (harness reconnect semantics).
 
-## 4. Tools (nine)
+## 4. Tools
 
-- **Seven command tools, loaded from the committed `contract/gen/tools/
+> The count that stood in this heading is withdrawn, along with the "seven"
+> that used to open the first bullet — see §10's 2026-08-25 amendment. Both
+> were accurate when written and went stale by addition. What remains below
+> describes the KINDS of tool, which is the part that has held.
+
+- **Command tools, loaded from the committed `contract/gen/tools/
   tools.json`** — generic dispatch: tool name → ClientCommand oneof field
   by matching the manifest's message; arguments are the protojson command
-  body verbatim. Zero per-command code; the manifest-completeness test
-  already guarantees every future command appears. Tool result: the
+  body verbatim. Zero per-command code; two tests plus a startup check
+  guarantee every future command appears — see §10 for which link each holds.
+  Tool result: the
   `CommandResult` protojson (ok / error / sequence — read-your-writes).
 - **`get_state`** — the dump contract verbatim: folded state JSON + top-level
   `headSequence`.
@@ -89,7 +95,50 @@ seats (one agent connection per `vtt mcp` process).
 
 ## 10. Amendment (2026-07-25, sub-project 5a merge)
 
-Tool count is now TWELVE (§4's "nine" is superseded):
+**AMENDED AGAIN 2026-08-25 (Patrik's ruling): the tool surface is stated as an
+INVARIANT, not a count. §4's "nine" and this section's "TWELVE" are both
+withdrawn — not because either was wrong, but because both were right and then
+stopped being.**
+
+The surface is:
+
+- **Every campaign command in the contract is a tool.** The manifest is
+  generated and `server.go` registers each entry through one shared handler, so
+  a new command costs ZERO per-command MCP code — which is what §4 was really
+  promising and what the count was standing in for.
+
+  That invariant is TWO LINKS:
+
+  1. contract command → manifest entry —
+     `toolgen.TestManifestCoversAllCommandMessages`
+  2. manifest entry → registered tool —
+     `TestEveryManifestCommandIsRegisteredAsATool`, plus `buildDispatch`'s
+     symmetric startup check, which makes any disagreement between tools.json
+     and the ClientCommand oneof an error from `mcp.New` rather than a silent
+     gap.
+
+  Link 2 was not unguarded before 2026-08-25 — a skipped registration already
+  reddened two tests. What it lacked was a SELF-MAINTAINING guard: the existing
+  ones lean on `wantCommandToolNames`, a hand-written list, and that list has
+  silently stopped growing before (`load_adventure`, recorded in tools_test.go).
+  A command that reaches the manifest, never reaches the list, and is skipped by
+  the loop was green. Test 2 reads the generated manifest instead, so it covers
+  a command added tomorrow without anyone editing anything.
+- **Plus a small hand-written set registered in Go**, each with its own
+  behaviour and its own tests: `get_state`, `get_events_since`,
+  `get_ruleset_guide`, `get_adventure_guide`, `get_join_link`,
+  `get_participants`.
+
+WHY NO NUMBER. A count is a fact about how many rows a generated file has. It
+changes every time the contract grows, it says nothing about whether any
+particular tool works, and most of what it counts is not even separate code —
+the command tools are one dispatch path, not N implementations. Three counts in
+three places had already gone stale by addition (§4's nine, this section's
+twelve, README's nine) and every one of them was accurate on the day it was
+written. What a reader needs is that the tool they are about to call exists and
+does what it says; that is now asserted rather than asserted-about.
+
+The changes this amendment originally recorded, which stand:
 
 - `use_ability` + `remove_condition` auto-appeared from the toolgen
   manifest — zero per-command code, as §4 already guaranteed.

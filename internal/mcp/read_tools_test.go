@@ -21,8 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -301,50 +299,79 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 			t.Errorf("list_tools missing %q", name)
 		}
 	}
-
-	assertREADMEAdvertisesTheRealToolCount(t, len(wantCommandToolNames), len(mcppkg.GoRegisteredToolNames))
 }
 
-// assertREADMEAdvertisesTheRealToolCount pins the front door to the registry.
+// TestEveryManifestCommandIsRegisteredAsATool pins the guarantee the spec
+// actually makes, which is not a number.
 //
-// README.md told every reader the MCP server serves "nine tools (seven generic
-// command tools plus get_state/get_events_since)". It served twenty-eight.
+// §4's promise is that a new campaign command costs ZERO per-command MCP code:
+// server.go loops the generated manifest and registers every entry through one
+// shared handler. So the property worth holding is "every command in the
+// manifest becomes a callable tool" — and it is self-maintaining, because the
+// manifest is generated from the contract. Add a command, regenerate, and this
+// test covers it without anyone editing a list.
 //
-// NEITHER NUMBER WAS EVER A LIE — that is the point. "Nine" was exact on
-// 2026-07-24, when seven manifest tools plus get_state and get_events_since
-// were the whole surface. The session-zero walkthrough counted twenty-four on
-// 2026-08-12 and that was exact too (eighteen manifest tools plus six
-// registered in Go). Both went stale by addition: 26 on 08-13, 27 on 08-16,
-// 28 on 08-19. Nobody wrote anything false; the count simply moved and the
-// prose did not, because nothing compared them.
+// THIS REPLACED A TOOL-COUNT ASSERTION, deliberately. README.md said "nine
+// tools" while the server served twenty-eight, and the first fix pinned the
+// README to the live total. That worked and measured the wrong thing: the
+// count is a fact about how many rows a GENERATED FILE has, it changes every
+// time the contract grows, and no reader of that README needs it — they need
+// to know the tool they are about to call exists and behaves as documented.
+// Twenty-two of the twenty-eight are not even separate implementations; they
+// are one dispatch path over a manifest. Counting them counts rows, not
+// behaviour. (Patrik, 2026-08-25.)
 //
-// This is deliberately attached to the test that already owns the total, and
-// it reads the counts LIVE rather than restating them, so the only way to make
-// it wrong is to edit the README to disagree with the code. A number in prose
-// that nothing verifies does not stay true; it stays written.
-// The second parameter is what is REGISTERED IN GO, not what is read-only.
-// All six happen to be reads today, so "read tools" is true of the README's
-// wording; register a mutating tool in Go rather than through the manifest and
-// this assertion keeps passing while the README starts lying in a new way.
-// Rename both together if that day comes.
-func assertREADMEAdvertisesTheRealToolCount(t *testing.T, commands, goRegistered int) {
-	t.Helper()
+// WHAT THIS ADDS OVER THE SIBLING, stated narrowly because the first draft of
+// this comment overstated it. A skipped registration already reddens the
+// sibling and tools_test.go — both pin the 22 current commands BY NAME — and
+// buildDispatch rejects a tools.json/oneof disagreement at startup. So the
+// loop was not unguarded.
+//
+// The gap is that those guards lean on wantCommandToolNames, a HAND-WRITTEN
+// list which has silently stopped growing before (load_adventure, recorded at
+// the top of tools_test.go). A command that reaches the manifest, never
+// reaches that list, and is skipped by the loop was green everywhere. This
+// test reads the generated manifest, so it cannot fall behind that way.
+//
+// The sibling still earns its place for the opposite direction: a command
+// REMOVED from the contract disappears from the manifest too, so this test
+// cannot notice it and the hand-written list can.
+func TestEveryManifestCommandIsRegisteredAsATool(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
 
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := cs.ListTools(ctx, nil)
 	if err != nil {
-		t.Fatalf("read README.md: %v", err)
+		t.Fatalf("ListTools: %v", err)
 	}
-	// WHITESPACE COLLAPSED FIRST. README.md is hard-wrapped, so the phrase can
-	// straddle a line break — and then this would fail with a message naming
-	// the phrase but not the reason, over a rewrap that changed nothing.
-	flat := strings.Join(strings.Fields(string(readme)), " ")
-	want := fmt.Sprintf("%d tools (%d command tools plus %d read tools)",
-		commands+goRegistered, commands, goRegistered)
-	if !strings.Contains(flat, want) {
-		t.Errorf("README.md does not advertise the tool count the server actually serves.\n"+
-			"It must contain the exact phrase: %q\n"+
-			"Update README.md, or if the wording must change, update this assertion with it — "+
-			"do not leave the number to drift again.", want)
+	registered := make(map[string]bool, len(res.Tools))
+	for _, tl := range res.Tools {
+		registered[tl.Name] = true
+	}
+
+	var manifest []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(loadToolsJSON(t), &manifest); err != nil {
+		t.Fatalf("decode tools.json: %v", err)
+	}
+	// Belt and braces, and honestly labelled: this is currently UNREACHABLE.
+	// A missing, malformed or empty tools.json is rejected by mcp.New during
+	// startSession above, so the test Fatals before reaching here. It stays as
+	// a guard against a future refactor that stops booting a real server, in
+	// which case an empty manifest would otherwise loop zero times and pass.
+	if len(manifest) == 0 {
+		t.Fatal("the manifest decoded to zero entries, so this test compared nothing")
+	}
+
+	for _, e := range manifest {
+		if !registered[e.Name] {
+			t.Errorf("%q is in the generated manifest but was not registered as a tool — "+
+				"the zero-per-command-code guarantee (spec §4) is broken", e.Name)
+		}
 	}
 }
 
