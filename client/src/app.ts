@@ -20,7 +20,8 @@ import {
   type Ability, type AdventureMeta, type Me, type JoinLink, type Roster, type MapMeta,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
-import { requestJoin } from "./join";
+import { setViewpoint } from "./commands";
+import { joinSecretFrom, requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
 import { loadPackImages, loadStandardPackImages } from "./view/pack-assets";
 import type { ImageMap } from "./view/canvas";
@@ -43,6 +44,19 @@ function mayShare(who: Me): boolean {
   // has one — a null check here would be a branch no call site can reach, and
   // an unreachable branch is a claim no test can check.
   return who.role === "dm" || who.role === "agent";
+}
+
+/**
+ * Whether this role may ride a shoulder.
+ *
+ * One definition for the same reason mayShare has one: the question is asked
+ * twice — once to offer the control, once by the redial that re-takes the
+ * shoulder — and MayPerch refuses the other three roles outright
+ * (internal/gateway/viewpoint.go: "role %q does not perch — a viewpoint is the
+ * spectator's"). Two copies is two places to drift out of step with that.
+ */
+function mayPerch(who: Me): boolean {
+  return who.role === "spectator";
 }
 
 export function boot(root: HTMLElement): Session | null {
@@ -74,7 +88,7 @@ export function boot(root: HTMLElement): Session | null {
   // reopens; if it won, every visit would mint a NEW participant, and a
   // returning player would arrive as a stranger with none of their characters
   // while the roster filled with duplicates nobody can tell apart.
-  const secret = params.get("join");
+  const secret = joinSecretFrom(params);
   if (secret !== null) {
     runJoin(root, auth, secret);
     return null;
@@ -138,6 +152,26 @@ function startSession(root: HTMLElement, token: string): Session {
   let status = "connecting";
   let failure = "";
   let me: Me | null = null;
+
+  /**
+   * "May I ride a shoulder, right now?" — asked in exactly one place.
+   *
+   * The null half and the role half belong together and used to be written out
+   * twice: once by paint() to decide whether to offer the control, once by
+   * redial() to decide whether to re-take the shoulder. The mutation gate is
+   * what showed that mattered. paint()'s copy is exercised with `me` still
+   * null (the first frame, before fetchMe resolves) so its null check is
+   * pinned; redial()'s copy is NOT, because reaching it needs a viewpoint,
+   * which needs an accepted perch, which needs the control, which needs a
+   * non-null `me` — and `me` is never assigned null again after line 154. So
+   * one copy's guard was checkable and the other's was unreachable, and the
+   * unreachable one survived as a mutant nobody could kill.
+   *
+   * One definition makes it one claim, checked where it IS reachable. That is
+   * the same argument mayPerch's own comment makes about the role question,
+   * applied one level up: two copies is two places to drift.
+   */
+  const iMayPerch = (): boolean => me !== null && mayPerch(me);
   let abilities: Ability[] = [];
   let adventures: AdventureMeta[] = [];
   let joinLink: JoinLink | null = null;
@@ -252,6 +286,63 @@ function startSession(root: HTMLElement, token: string): Session {
   };
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "" };
 
+  // The shoulder this spectator is riding (visibility spec §3.1.1). "" is a
+  // real value and the one every connection opens in: perched on nobody, which
+  // is no eyes and no board at all.
+  //
+  // WHAT THE SERVER CONFIRMED, never what was last clicked — see perchOn.
+  let viewpoint = "";
+  // A shoulder the server said YES to, on the log this client is holding. One
+  // of the two witnesses perchShaped reads; cleared where that log is thrown
+  // away (redial).
+  let perchGranted = false;
+
+  /**
+   * Whether a perch has SHAPED THE LOG this client is holding, which is the
+   * one question the redial below has to answer. See it for why neither "am I
+   * perched right now" nor "am I a spectator" is that question.
+   *
+   * READ FROM THE LOG AS WELL AS FROM THE ANSWER, and the log half is the
+   * whole of why this is a function. The two are not ordered against each
+   * other: the gateway's PUMP goroutine computes and enqueues a perch's frames
+   * (internal/gateway/server.go's `case <-perches.wake` arm) while the READ
+   * LOOP enqueues the CommandResult, and wire.ts's header note says either can
+   * win. When the pump wins and the socket then dies before the result gets
+   * out, wire.ts answers the waiting command "connection closed before a result
+   * arrived" — a perch that has already shaped this log, reported as a failure.
+   * The same divergence arrives with no race at all when a result fails to
+   * encode: server.go drops it and the connection lives on, so the promise is
+   * never resolved at all.
+   *
+   * THE FRAMES CANNOT LIE ABOUT IT. A perch's frames carry SEQUENCE ZERO and
+   * nothing else does — every other synthesized envelope is stamped with the
+   * sequence of the event that caused it, and real sequences start at 1
+   * (project.go's perchSequence; undo.ts refuses a range below 1). So a
+   * sequence-0 envelope in this log is proof a perch put it there, whatever
+   * came back about the command.
+   *
+   * BOTH WITNESSES, because neither contains the other. The frames alone would
+   * miss a granted perch that has introduced nothing YET — that watcher takes
+   * the resume arm, which does not re-send the shoulder, and the reborn
+   * projector is perched on nobody and sends this seat nothing: Wire.restart's
+   * third measured outcome, a board that folds and is then dead. The answer
+   * alone is the defect above. Either being enough is the right way round
+   * because the error is one-sided: a log wrongly called shaped costs one full
+   * replay, once, while a shaped log called unshaped is the duplicate-
+   * introduction freeze, and session.ts re-folds its whole log on every event,
+   * so that one is permanent.
+   *
+   * THE EMPTY SHOULDER SHAPES NOTHING, by either witness, which is what keeps
+   * "leave the shoulder" cheap. perchGranted is set by a shoulder, never by the
+   * empty id; and a watcher who has only ever hopped off nobody is sent no
+   * frames to hold, because a perch is a diff against what those eyes have
+   * already been shown (project.go's reperch) and there is nothing to un-say. A
+   * REFUSED perch shapes nothing either, for the sharper reason that the server
+   * sent it nothing at all.
+   */
+  const perchShaped = (): boolean =>
+    perchGranted || session.events.some((e) => e.sequence === 0n);
+
   // Returns the promise rather than swallowing it, so a caller that must read
   // server state back AFTER a command lands can wait for it. The DM console
   // does: the door and role commands produce no event, so an HTTP re-read
@@ -264,6 +355,87 @@ function startSession(root: HTMLElement, token: string): Session {
       toast = res.ok ? "" : `refused: ${res.error}`;
       paint();
     });
+
+  /**
+   * Hop onto a shoulder, or off one.
+   *
+   * THE INDICATOR MOVES ON THE SERVER'S ANSWER, not on the click, and the
+   * extra line that costs is the point. A refused perch that had already moved
+   * the label would tell the watcher they are riding a shoulder the server
+   * never gave them, while the board — which comes from the server — showed
+   * something else. That is the "the board changes under you with no way to
+   * know why" failure the indicator exists to prevent, arriving from the other
+   * direction. The refusal is shown verbatim, like every other command's.
+   *
+   * The empty id goes through here unchanged: it is a real command with a real
+   * effect (setViewpoint's own comment), never a no-op to be skipped.
+   */
+  const perchOn = (actorId: string): Promise<void> =>
+    session.send(setViewpoint(actorId)).then((res) => {
+      if (res.ok) viewpoint = actorId;
+      // STICKY, and set by a shoulder rather than by the current one. From the
+      // moment a perch is accepted this client's log holds frames no replay
+      // will ever produce again — see redial.
+      //
+      // ONE OF THE TWO WITNESSES, and the one that can go missing: this line
+      // never runs for a perch the server granted and answered on a socket that
+      // died first. perchShaped says what covers that.
+      if (res.ok && actorId !== "") perchGranted = true;
+      toast = res.ok ? "" : `refused: ${res.error}`;
+      paint();
+    });
+
+  /**
+   * Redial after the connection dropped.
+   *
+   * A CLIENT WHOSE LOG A PERCH HAS SHAPED STARTS OVER; everyone else resumes.
+   * A perch is connection state, so the server's projector is reborn perched
+   * on nobody and its memory no longer matches the board this client is
+   * holding — Wire.restart has the measurements, including why dropping the
+   * sequence-0 frames instead makes it worse rather than better.
+   *
+   * THE CONDITION IS ABOUT THE LOG, and the two nearer-looking questions are
+   * both wrong. "Am I perched RIGHT NOW" misses the watcher who hopped OFF
+   * before redialling: nothing on the wire un-introduces a scene or an actor,
+   * so their log still holds everything the perch put there. "Am I a
+   * spectator" misses the other direction — a role is not fixed, and a
+   * spectator PROMOTED to player (which the presence handler below re-reads
+   * and applies mid-session) would take the resume path still holding perch
+   * frames, and their new seat's projection re-introduces what it never sent
+   * them. Whether a perch has shaped this log is neither, and it is the thing
+   * that actually decides — perchShaped says how it is established, and why
+   * the command's own answer cannot be the only source.
+   *
+   * Then the shoulder is re-sent — TO A SEAT THAT MAY STILL HAVE ONE. The
+   * promotion above changes only the second half of this: their log still
+   * holds perch frames, so they still start over, but MayPerch refuses their
+   * new role, so re-sending would earn them a refusal toast for a command they
+   * never issued, over a board the replay has already rebuilt correctly
+   * through their own eyes.
+   *
+   * A shoulder is re-sent at all because the perch is the client's to keep
+   * (spec §3.1.1: "a perch does not survive a reconnect, and the client
+   * re-sends it on connect"). Sent as soon as the socket opens rather than
+   * after the replay: the gateway's pump delivers this seat's whole backlog
+   * before it takes a perch out of its box (internal/gateway/server.go), so
+   * the ordering is structural and not a race — measured on the real server,
+   * where an immediate perch's frames still arrived behind the entire replay.
+   *
+   * NOT re-sent when there is no shoulder: a fresh connection is already
+   * perched on nobody, so setViewpoint("") would be a command with nothing to
+   * do — and the emptied log is then no longer perch-shaped, which is why the
+   * GRANT is cleared rather than left standing. The other witness needs no
+   * clearing: it is read off the log, and the log is gone.
+   */
+  const redial = async (): Promise<void> => {
+    if (!perchShaped()) {
+      await session.reconnect();
+      return;
+    }
+    await session.restart();
+    perchGranted = false;
+    if (viewpoint !== "" && iMayPerch()) await perchOn(viewpoint);
+  };
 
   const paint = () => {
     if (failure !== "") {
@@ -279,6 +451,11 @@ function startSession(root: HTMLElement, token: string): Session {
     }
     const canAct = me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
+    // The one role that perches. MayPerch refuses the other three outright, so
+    // offering them the control would be an affordance whose every use is a
+    // refusal — and an unassigned PLAYER's answer to an empty board is to be
+    // given a character, which is the onboarding flow working as intended.
+    const isSpectator = iMayPerch();
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint) : undefined,
       console: isDM
@@ -310,10 +487,13 @@ function startSession(root: HTMLElement, token: string): Session {
         : undefined,
       toast: toast || undefined,
       participants: session.participants,
-      // Redial from the last sequence already folded, so a reconnect resumes
-      // rather than replaying the whole campaign. Manual by spec §3.4.
+      perch: isSpectator ? { current: viewpoint, onPerch: (id) => void perchOn(id) } : undefined,
+      // Manual by spec §3.4. A client whose log a perch has SHAPED starts over;
+      // everyone else resumes from the last sequence already folded. Not "a
+      // spectator starts over" — redial rejects the role as the question, and
+      // names the two cases where it gives the wrong answer.
       onReconnect: () => {
-        void session.reconnect();
+        void redial();
       },
       images,
     });

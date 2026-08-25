@@ -52,13 +52,21 @@ import { FoldError } from "../src/state";
 // twice and tokenHidden once, and client/test/projection-parity.test.ts folds
 // both arms against a hand-derived state.
 //
-// So what the 34 hand-written cases below are for is the ARMS' EDGES. THREE of
-// the four in this file's tokenHidden/sceneSeen section are reached by no stream
+// So what the 41 hand-written cases below are for is the ARMS' EDGES. FOUR of
+// the five in this file's tokenHidden/sceneSeen section are reached by no stream
 // at all, recorded or derived: a re-sent hide (the corpus holds exactly one
 // tokenHidden), Explored unioning across messages (no single stream folds two
 // sceneSeen for one scene, and only one of the corpus's three carries `tiles` at
-// all — Explored unions from tile keys, never from `visible`), and sceneSeen's
-// objects replacing a repeated id (no sceneSeen anywhere carries objects).
+// all — Explored unions from tile keys, never from `visible`), and BOTH
+// object-merge cases (no sceneSeen anywhere carries objects, and no corpus
+// stream carries a scene object at all — which is also why the sceneCreated
+// object cases in the terrain section stand on nothing but themselves).
+//
+// (That count read 34 until 2026-08-24, when three cases driven by surviving
+// mutants were added and the number was RE-COUNTED rather than incremented by
+// three — it was already four short of the file, which is what a number nobody
+// recounts does. The section count read "four" on the same date and for the
+// same reason.)
 //
 // The remaining one — "tokenHidden forgets only that token", a hide that leaves
 // its neighbours standing — is no longer one of them: session-zero's projected
@@ -272,6 +280,18 @@ test("adding an actor that names a controller is REFUSED", () => {
   //
   // Both spellings and the declared-but-empty set, because a fold that refused
   // only the mirror would leave the authoritative field open.
+  //
+  // THE WHOLE MESSAGE, not the memorable clause. This read
+  // `/does not hand it to anyone/` and that matched the first of three
+  // concatenated fragments, so the last one — the clause naming what actually
+  // confers control and what it declares — could be emptied entirely with this
+  // test still green. That clause is the whole point of the refusal: an author
+  // reading "you may not do this" needs the sentence that says what to do
+  // instead, and the message is the only place it is said.
+  const refusal = new FoldError(
+    `actor "a1" added with a controller — creating an actor does not hand it to anyone; ` +
+      `control is conferred by actor control granted, which also declares what the actor is`,
+  );
   for (const actor of [
     { actorId: "a1", controllerId: "p-1" },
     { actorId: "a1", controllerIds: ["p-1"] },
@@ -280,7 +300,7 @@ test("adding an actor that names a controller is REFUSED", () => {
   ]) {
     expect(() =>
       fold([env(1, { sessionStarted: { name: "S" } }), env(2, { actorAdded: { actor } })]),
-    ).toThrow(/does not hand it to anyone/);
+    ).toThrow(refusal);
   }
 
   // NOT ASSERTED HERE, and the asymmetry is deliberate rather than an omission:
@@ -576,7 +596,10 @@ test("revoking control leaves a party member a party member", () => {
 //
 //   an object's every field surviving  — UNREACHED, and comfortably so. Zero
 //       scene objects appear in any of the ten corpus streams and zero in any
-//       state.json, so nothing pins the object round-trip but the case below.
+//       state.json, so nothing pins the object round-trip but the two cases
+//       below that walk it: every field intact, and an object that arrives with
+//       no position at all (added 2026-08-24 — the corpus's silence here is
+//       exactly why three mutants of that one line lived through this file).
 //   the dump shape                     — REACHED FOR TERRAIN, unreached for the
 //       rest. adventure-night's state.json byte-compares 1024 Tiles entries and
 //       session-zero's 180; OpenDoors is empty in every one, and Objects has
@@ -644,6 +667,40 @@ test("a scene's tiles and objects survive the fold with every field intact", () 
   });
 });
 
+test("a scene object with NO position folds to the origin, and a non-zero Y is carried", () => {
+  // Two halves of one line — `X: o.at?.x ?? 0, Y: o.at?.y ?? 0` — and both are
+  // parity with internal/engine/apply.go's `X: o.GetAt().GetX(), Y:
+  // o.GetAt().GetY()`. Go's generated getters read a nil At as the zero
+  // Position, so an object that arrives carrying no position at all is LEGAL
+  // in both folds and sits at (0,0): not rejected, not skipped, placed. A TS
+  // fold that reached straight through to `o.at.x` would throw a TypeError
+  // where Go returns 0 — this client refusing a log the server accepted, which
+  // is precisely the divergence fold.ts's opening line exists to prevent — and
+  // one the golden corpus cannot catch, since no corpus stream carries a scene
+  // object at all (counted in this section's banner).
+  //
+  // The non-zero Y is the other half and needs its own object, because `?? 0`
+  // and `&& 0` agree on every value that is already zero. sceneWithADoor's
+  // pillar stands at (1,0) — X non-zero, Y zero — so a Y quietly replaced by 0
+  // would have stood every piece of scenery in the game on row 0 with every
+  // test in this suite still green.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, {
+      sceneCreated: {
+        sceneId: "s1", name: "Cell", gridWidth: 4, gridHeight: 4,
+        objects: [
+          { objectId: "adrift-1", kind: "mote" },
+          { objectId: "deep-1", kind: "crate", at: { x: 1, y: 3 } },
+        ],
+      },
+    }),
+  ]);
+  const objs = st.Scenes["s1"]!.Objects!;
+  expect(objs[0]).toMatchObject({ ObjectID: "adrift-1", X: 0, Y: 0 });
+  expect(objs[1]).toMatchObject({ ObjectID: "deep-1", X: 1, Y: 3 });
+});
+
 test("a door is CLOSED until opened, and closing restores the never-touched state", () => {
   // Mirrors internal/engine/apply.go's arms exactly, which is the point: Go
   // initialises OpenDoors empty and DELETES on close rather than storing
@@ -664,6 +721,35 @@ test("a door is CLOSED until opened, and closing restores the never-touched stat
   ]);
   expect(closed.Scenes["s1"]!.OpenDoors).toEqual({});
   expect("0,1" in closed.Scenes["s1"]!.OpenDoors!).toBe(false);
+});
+
+test("opening a second door leaves the first one open, and shutting one leaves the other", () => {
+  // ensureOpenDoors is a LAZY-init guard, and the failure mode of a lazy guard
+  // is the one this scene is shaped to catch: a guard that fires when it
+  // should not. `if (!sc.OpenDoors) sc.OpenDoors = {}` becoming an
+  // unconditional `sc.OpenDoors = {}` resets the map on every door event, so
+  // every door becomes the only open door in its scene — and "a door is CLOSED
+  // until opened, and closing restores the never-touched state" opens exactly
+  // one door, so it cannot tell that apart from working. Two doors is the
+  // smallest shape that can, and closing is asserted separately because
+  // doorClosed reaches the same guard by its own call.
+  //
+  // Both squares are opened even though only (0,1) declares a door tile:
+  // neither fold checks terrain here, because OpenDoors is keyed GEOMETRY and
+  // not terrain (maps-as-geometry spec §4.1) — apply.go's DoorOpened arm looks
+  // only at the scene and the position. Asserting on a square with no door
+  // tile keeps that deliberate looseness pinned rather than accidental.
+  const open = (seq: number, x: number, y: number) =>
+    env(seq, { doorOpened: { sceneId: "s1", at: { x, y } } });
+
+  const both = fold([...sceneWithADoor(), open(3, 0, 1), open(4, 1, 1)]);
+  expect(both.Scenes["s1"]!.OpenDoors).toEqual({ "0,1": true, "1,1": true });
+
+  const oneShut = fold([
+    ...sceneWithADoor(), open(3, 0, 1), open(4, 1, 1),
+    env(5, { doorClosed: { sceneId: "s1", at: { x: 1, y: 1 } } }),
+  ]);
+  expect(oneShut.Scenes["s1"]!.OpenDoors).toEqual({ "0,1": true });
 });
 
 test("a door event naming an unknown scene or no position is refused", () => {
@@ -733,12 +819,21 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
 // false statement, whereas a second copy of the fact silently can, which is this
 // file's documented recurring defect.
 //
-// What this banner owns instead is PARITY. All FOUR have a named counterpart in
-// internal/engine/visibility_fold_test.go —
+// What this banner owns instead is PARITY. FOUR of the five have a named
+// counterpart in internal/engine/visibility_fold_test.go —
 // TestTokenHiddenForgetsOnlyThatToken, TestHidingATokenTwiceIsNotAnError,
 // TestSceneSeenUnionsIntoExploredAndNeverShrinks and
 // TestSceneSeenObjectsMergeReplacingDuplicatesAndAppendingNew — because the two
 // folds are the load-bearing mirror the keystone (spec §4.3) depends on.
+//
+// THE FIFTH HAS NONE, and that is stated rather than quietly left out: the merge
+// SLOT-and-origin case (added 2026-08-24 against surviving mutants) asserts two
+// things no Go test asserts. Go's twin finds its objects by id exactly as the
+// mirror case here did, so it does not pin the slot either; and no Go test folds
+// an object with a nil At, because in Go it CANNOT fail — `o.GetAt().GetX()` is
+// nil-safe by generation, while TypeScript's `o.at?.x` is nil-safe only by
+// somebody having typed the `?.`. The asymmetry is in the languages, not in a
+// gap on this side.
 //
 // THREE OF THE FOUR MIRROR THEIRS EXACTLY, same scenario shape and same
 // assertions. The re-sent hide does NOT, deliberately: its Go counterpart hides
@@ -853,4 +948,158 @@ test("sceneSeen's objects REPLACE a repeated id in place and APPEND a new one", 
   const pillar = objs.find((o) => o.ObjectID === "pillar-1");
   expect(crate).toMatchObject({ X: 1, BlocksSight: true });
   expect(pillar).toBeDefined();
+});
+
+test("sceneSeen's merge keeps SLOTS, keeps objects it does not mention, and takes a positionless one at the origin", () => {
+  // The three things the mirror case above cannot see, all of which the merge
+  // gets wrong in a DIFFERENT way and all of which internal/engine's
+  // mergeObjects gets right, so each is a live parity risk:
+  //
+  //   SLOT — "sceneSeen's objects REPLACE a repeated id in place and APPEND a
+  //   new one" finds its objects by id and so passes just as well if the merge
+  //   matched on `ObjectID !== o.objectId`, which replaces the first
+  //   NON-matching entry and appends the matching one. Two objects on the board
+  //   before the message arrives makes the difference show: the ids in ORDER
+  //   are what mergeObjects' index map guarantees, and a renderer walking
+  //   Objects walks them in that order.
+  //
+  //   NOT MENTIONED — sceneSeen UPSERTS; it never becomes the scene's whole
+  //   object list. `if (!sc.Objects) sc.Objects = []` firing unconditionally
+  //   would empty the list on every message, and since a visible object is
+  //   re-sent on every frame it stays visible, the only casualty would be
+  //   scenery this seat cannot currently see: statue-1 below, which is exactly
+  //   what a partly-lit room looks like on the wire.
+  //
+  //   POSITIONLESS — the sceneSeen arm has its own copy of `o.at?.x ?? 0`,
+  //   independent of the sceneCreated arm's, mirroring mergeObjects' own
+  //   `o.GetAt().GetX()`. "a scene object with NO position folds to the origin,
+  //   and a non-zero Y is carried" owns why a nil position is legal rather than
+  //   refused and that reasoning is not restated here — but the CODE is
+  //   duplicated, so the test has to be too.
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, {
+      sceneCreated: {
+        sceneId: "s", name: "S", gridWidth: 4, gridHeight: 4,
+        objects: [
+          { objectId: "crate-1", kind: "crate", at: { x: 0, y: 3 } },
+          { objectId: "statue-1", kind: "statue", at: { x: 3, y: 3 } },
+        ],
+      },
+    }),
+    env(3, {
+      sceneSeen: {
+        sceneId: "s",
+        objects: [
+          // Deliberately NOT in the scene's own order: a new object first, an
+          // existing one second. The merge's answer must not depend on it.
+          { objectId: "pillar-1", kind: "pillar", at: { x: 2, y: 2 } },
+          { objectId: "crate-1", kind: "crate", at: { x: 1, y: 3 }, blocksMove: true },
+          { objectId: "mote-1", kind: "mote" },
+        ],
+      },
+    }),
+  ]);
+
+  const objs = st.Scenes["s"]!.Objects!;
+  expect(objs.map((o) => o.ObjectID)).toEqual(["crate-1", "statue-1", "pillar-1", "mote-1"]);
+  expect(objs[0]).toEqual({
+    ObjectID: "crate-1", Kind: "crate", X: 1, Y: 3,
+    Width: 0, Height: 0, RotationDegrees: 0,
+    BlocksSight: false, BlocksMove: true, Art: "",
+  });
+  expect(objs[2]).toMatchObject({ ObjectID: "pillar-1", X: 2, Y: 2 });
+  expect(objs[3]).toMatchObject({ ObjectID: "mote-1", X: 0, Y: 0 });
+});
+
+// --- ids that name a prototype member ---------------------------------------
+//
+// A Go map has no prototype: `st.Scenes["hasOwnProperty"]` on a map that was
+// never written is the zero value, and that is the whole story. A JavaScript
+// object literal inherits from Object.prototype, so the SAME lookup returns a
+// function — truthy, and carrying none of the fields the fold goes on to read.
+// So `{}` is not a mirror of a Go map, and the two folds disagreed on every id
+// below until st's maps became prototype-less dictionaries (state.ts's
+// emptyMap).
+//
+// These are ordinary strings on the wire. "constructor", "toString",
+// "valueOf", "hasOwnProperty" and "__proto__" are legal actor ids, scene ids,
+// token ids and note keys in the contract, in internal/gateway's validation,
+// and in Go's map; nothing anywhere reserves them. A campaign only has to name
+// a character Constructor.
+//
+// The ACCEPT half lives here and the REJECT half in fold-rejections.test.ts,
+// each with the section its file is for. Both halves are needed: this file's
+// cases are logs Go folds cleanly and this fold used to refuse, and that file's
+// are logs Go refuses and this fold used to accept — the second direction being
+// the worse one, since an accepted-but-wrong event is permanent in an
+// append-only log.
+
+test("a scene whose id names a prototype member is created, not refused as a duplicate", () => {
+  // The duplicate guard reads `if (st.Scenes[v.sceneId])`, and before the fix
+  // that found Object.prototype.hasOwnProperty on the FIRST scene of that
+  // name — so this log, which Go folds without complaint, could not be folded
+  // here at all. session.ts re-folds the whole log on every event, so the
+  // rejection would not have been one bad frame; it would have been this
+  // client frozen for the rest of the session.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "hasOwnProperty", name: "Vault", gridWidth: 4, gridHeight: 4 } }),
+    env(3, { doorOpened: { sceneId: "hasOwnProperty", at: { x: 1, y: 2 } } }),
+  ]);
+
+  expect(Object.keys(st.Scenes)).toEqual(["hasOwnProperty"]);
+  expect(st.Scenes["hasOwnProperty"]!.Name).toBe("Vault");
+  expect(st.Scenes["hasOwnProperty"]!.OpenDoors).toEqual({ "1,2": true });
+});
+
+test("an actor whose id names a prototype member takes control and conditions like any other", () => {
+  // Three maps in one log, because they fail differently. st.Actors refused
+  // the add as a duplicate; st.Conditions[id] returned a FUNCTION, so
+  // `list.some(...)` was a TypeError rather than a FoldError — a crash, not a
+  // parity failure with a message; and the grant's controlTarget read
+  // `a.controllerIds` off that same function.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "constructor", name: "Ser Constructor" } } }),
+    env(3, { actorControlGranted: { actorId: "constructor", participantId: "p-1", kind: "ACTOR_KIND_PARTY_MEMBER" } }),
+    env(4, { conditionApplied: { actorId: "constructor", conditionId: "prone", source: "spell" } }),
+  ]);
+
+  expect(Object.keys(st.Actors)).toEqual(["constructor"]);
+  expect(st.Actors["constructor"]!.controllerIds).toEqual(["p-1"]);
+  expect(st.Actors["constructor"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+  expect(st.Conditions["constructor"]!.map((c) => c.ID)).toEqual(["prone"]);
+});
+
+test("a token whose id names a prototype member is placed and moved like any other", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "A" } } }),
+    env(4, { tokenPlaced: { tokenId: "toString", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(5, { tokenMoved: { tokenId: "toString", to: { x: 3, y: 2 } } }),
+  ]);
+
+  expect(Object.keys(st.Tokens)).toEqual(["toString"]);
+  expect(st.Tokens["toString"]).toEqual({ ID: "toString", SceneID: "s1", ActorID: "a1", X: 3, Y: 2 });
+});
+
+test("__proto__ is an ordinary map key, not the map's prototype", () => {
+  // The one id that breaks on the WRITE as well as the read, and the reason
+  // Object.hasOwn checks at each lookup would not have been enough: assigning
+  // `st.Scenes["__proto__"] = scene` on an object literal calls the inherited
+  // setter and re-parents the MAP instead of storing anything, so the scene
+  // vanishes while every other key in st.Scenes starts inheriting its fields.
+  // Go stores a key called __proto__ and nothing else happens.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "__proto__", name: "N", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { noteUpserted: { key: "__proto__", title: "T", text: "x" } }),
+  ]);
+
+  expect(Object.keys(st.Scenes)).toEqual(["__proto__"]);
+  expect(st.Scenes["__proto__"]!.ID).toBe("__proto__");
+  expect(Object.keys(st.Notes)).toEqual(["__proto__"]);
+  expect(st.Notes["__proto__"]!.Title).toBe("T");
 });

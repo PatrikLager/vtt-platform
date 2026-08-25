@@ -218,9 +218,18 @@ test("shadeFog fills one rect per region, in the fog's own ink", () => {
     { x: 88, y: 44, w: 44, h: 44 },
   ]);
   expect(calls).toEqual([
-    `fillRect:${fogInk}:0,44,44,44`,
-    `fillRect:${fogInk}:88,44,44,44`,
+    // THE LITERAL, NOT THE CONSTANT — see the note in spectator-view.test.ts.
+    // Interpolating `${fogInk}` put the value under test on BOTH sides of the
+    // comparison, so blanking it blanked expectation and actual together and
+    // the fog could turn fully transparent behind a green suite. The separate
+    // assertion below is what pins the constant itself.
+    "fillRect:rgba(0, 0, 0, 0.4):0,44,44,44",
+    "fillRect:rgba(0, 0, 0, 0.4):88,44,44,44",
   ]);
+  // The constant itself, pinned once and separately. Fog that is exported so a
+  // test can assert on it deserves an assertion that reads it rather than one
+  // that substitutes it.
+  expect(fogInk).toBe("rgba(0, 0, 0, 0.4)");
 });
 
 test("shadeFog draws nothing at all when there is no fog", () => {

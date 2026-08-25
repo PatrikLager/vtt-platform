@@ -381,6 +381,22 @@ test("the Add actor form asks what the creature is, and sends the answer", () =>
   const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
   expect(kind).not.toBeNull();
   expect(kind.value).toBe("");
+  // AND THE BOX SHOWS THE QUESTION, which `value` alone cannot see. Per the
+  // HTML spec, setting a select to a string no option carries deselects
+  // everything: selectedIndex goes to -1, the getter still reports "", and the
+  // DM meets an EMPTY box where a question should be. An empty box reads as a
+  // field with nothing in it; "what is it?" reads as something waiting for an
+  // answer, and the difference is whether the DM knows to look.
+  //
+  // STATED HONESTLY: the selectedIndex line cannot fail under happy-dom, which
+  // re-runs the "ask for a reset" algorithm when the select is inserted into a
+  // parent and so re-selects option 0 on the way into the group. A browser does
+  // not, so this pins the intent and would catch the regression where it is
+  // real. The LABEL assertion below is load-bearing here and now: it is the only
+  // place the wording of the blank option is checked, and the option list
+  // assertion under it reads values, which are blank for the blank one.
+  expect(kind.selectedIndex).toBe(0);
+  expect(kind.options[kind.selectedIndex]!.textContent).toBe("what is it?");
   expect(Array.from(kind.options).map((o) => o.value)).toEqual([
     "",
     "ACTOR_KIND_PARTY_MEMBER",
@@ -404,6 +420,57 @@ test("an actor with no kind chosen is refused here, not sent and bounced", () =>
   h.action("add-actor").click();
   expect(h.sent).toHaveLength(0);
   expect(h.notices[0]).toMatch(/what it is/i);
+});
+
+// --- what the box SHOWS, read off the option rather than off .value ---------
+//
+// `sel.value` is a poor witness for what the DM is looking at. Per the HTML
+// spec a select carrying a value no option matches has selectedIndex -1 while
+// the getter still reports "" — so an EMPTY box and a box reading "what is it?"
+// are the same string to `.value`, and only one of them tells the DM that
+// something is waiting for an answer.
+//
+// These two read the OPTION's own selectedness instead, which is the state the
+// browser paints, and they are what stops kindSelect being "simplified" back to
+// assigning `sel.value` (see the comment there). Characterization tests over an
+// existing builder (ADR-009 §3): each assertion below was proven able to fail by
+// injection rather than by a red phase, because the builder they pin was
+// restructured WITHOUT changing behaviour and a genuine red phase would have
+// meant the restructure broke something.
+
+test("a fresh kind select has the QUESTION selected, not an empty box", () => {
+  const h = harness();
+  const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
+  // Exactly one option is chosen, and it is the one that asks. Counting matters
+  // as much as naming: a builder that marked several would leave the browser to
+  // pick the last, which is "monster / NPC" — a default answer to the one
+  // question this field exists to make the DM answer themselves.
+  const chosen = Array.from(kind.options).filter((o) => o.selected);
+  expect(chosen).toHaveLength(1);
+  expect(chosen[0]!.value).toBe("");
+  expect(chosen[0]!.textContent).toBe("what is it?");
+  expect(kind.selectedIndex).toBe(0);
+});
+
+test("a remembered kind selects THAT option, and only that one", () => {
+  // The middle option on purpose. The last one is where a builder that selected
+  // every non-matching option would land by accident, so pinning it would let
+  // that mistake pass; the middle one can only be reached by matching.
+  const st = newState();
+  st.Actors["act-boar"] = {
+    actorId: "act-boar", name: "Boar", moduleId: "",
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+  };
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const sel = first.node.querySelector('.control-actor[data-actor="act-boar"] .grant-kind') as HTMLSelectElement;
+  sel.value = "ACTOR_KIND_PARTY_MEMBER";
+  sel.dispatchEvent(new Event("change"));
+
+  const again = harness(st, [], { participants: parts })
+    .node.querySelector('.control-actor[data-actor="act-boar"] .grant-kind') as HTMLSelectElement;
+  expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, true, false]);
+  expect(again.options[again.selectedIndex]!.textContent).toBe("party member");
 });
 
 test("the Add actor form cannot hand a character to anyone", () => {
@@ -577,10 +644,19 @@ test("a whitespace-only id is refused everywhere one is required", () => {
   scene.button("Create").click();
   expect(scene.sent).toHaveLength(0);
 
+  // THE KIND IS ANSWERED HERE, and that is what makes this arm discriminate.
+  // Add actor asks two questions and refuses on the first that fails; with the
+  // kind left blank the SECOND guard answers, nothing is sent either way, and
+  // this assertion passes with the id's `.trim()` removed. That is exactly how
+  // it came back once the kind selector landed beside it. The wording is
+  // asserted for the same reason — "nothing was sent" cannot tell which of the
+  // two guards did the refusing.
   const actor = harness();
-  fill(actor, { "actor-id": "   " });
+  fill(actor, { "actor-id": "   ", "actor-name": "Lera" });
+  (actor.node.querySelector(".actor-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
   actor.action("add-actor").click();
   expect(actor.sent).toHaveLength(0);
+  expect(actor.notices).toEqual(["an actor needs an id"]);
 
   for (const field of ["token-id", "token-scene", "token-actor"]) {
     const h = harness();
@@ -1104,6 +1180,37 @@ test("each actor remembers its OWN grant choice", () => {
   const second = harness(st, [], { participants: parts });
   expect((second.node.querySelector('.control-actor[data-actor="act-warden"] .grant-target') as HTMLSelectElement).value).toBe("p-bo");
   expect((second.node.querySelector('.control-actor[data-actor="act-adder"] .grant-target') as HTMLSelectElement).value).toBe("");
+});
+
+test("each actor remembers its OWN answer about what it is", () => {
+  // The kind draft key is per-actor too, and a shared one is worse here than
+  // on the participant dropdown beside it. A participant picked for the wrong
+  // row is VISIBLE in the row — it names a person the DM did not choose — while
+  // a kind picked for the wrong row looks exactly like the answer they meant to
+  // give. The DM says "monster" about the goblin, the party member below it
+  // comes up pre-answered "monster", and the grant that follows tells every
+  // client to treat a character as a creature the party has to discover.
+  //
+  // The blank second row is the whole assertion: the first row's retained
+  // choice is already pinned by "the DM's answer to what the actor is survives
+  // a re-render too", and one row alone cannot tell a per-actor key from a
+  // shared one.
+  const st = tableWithActor();
+  st.Actors["act-adder"] = {
+    actorId: "act-adder", name: "Adder", moduleId: "",
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+  };
+  const parts = [{ participantId: "p-bo", displayName: "Bo" }];
+  const first = harness(st, [], { participants: parts });
+  const warden = first.node.querySelector('.control-actor[data-actor="act-warden"] .grant-kind') as HTMLSelectElement;
+  warden.value = "ACTOR_KIND_NON_PARTY";
+  warden.dispatchEvent(new Event("change"));
+
+  const second = harness(st, [], { participants: parts });
+  expect((second.node.querySelector('.control-actor[data-actor="act-warden"] .grant-kind') as HTMLSelectElement).value)
+    .toBe("ACTOR_KIND_NON_PARTY");
+  expect((second.node.querySelector('.control-actor[data-actor="act-adder"] .grant-kind') as HTMLSelectElement).value)
+    .toBe("");
 });
 
 test("the control panel's order does not depend on insertion order", () => {

@@ -78,6 +78,44 @@ test("a duplicate actor id is rejected", () => {
   rejects([started, actor(2, "a1"), actor(3, "a1")], 'duplicate actor "a1"');
 });
 
+// --- doors (maps-as-geometry spec §4.1) -------------------------------------
+//
+// fold-unit.test.ts folds these same four bad events in "a door event naming an
+// unknown scene or no position is refused" and asserts only that a FoldError
+// comes out — which is what four emptied MESSAGES hid behind: replace all four
+// templates with "" and every one of them still throws, still of the right
+// type, with that file still green. The two failures are different bugs on the
+// wire and want telling apart: an unknown scene means this seat was sent a door
+// event for a scene it never received, while a missing position means an event
+// the server would not have written at all. Both arms exist in duplicate, one
+// per direction, so all four are asserted rather than one of each.
+//
+// The unit-test case is left standing rather than folded into these: it is the
+// only thing that folds both arms in one pass, and this file's header explains
+// why message assertions live here instead of there.
+
+const doorScene = [started, scene(2, "s1")];
+
+test("a door opened in an unknown scene is rejected", () => {
+  rejects([...doorScene, env(3, { doorOpened: { sceneId: "nope", at: { x: 0, y: 1 } } })],
+    'door opened in unknown scene "nope"');
+});
+
+test("a door opened with no position is rejected", () => {
+  rejects([...doorScene, env(3, { doorOpened: { sceneId: "s1" } })],
+    "door opened without position");
+});
+
+test("a door closed in an unknown scene is rejected", () => {
+  rejects([...doorScene, env(3, { doorClosed: { sceneId: "nope", at: { x: 0, y: 1 } } })],
+    'door closed in unknown scene "nope"');
+});
+
+test("a door closed with no position is rejected", () => {
+  rejects([...doorScene, env(3, { doorClosed: { sceneId: "s1" } })],
+    "door closed without position");
+});
+
 // --- tokens -----------------------------------------------------------------
 
 const placeable = [started, scene(2, "s1"), actor(3, "a1")];
@@ -340,4 +378,74 @@ test("actor control revoked with no participant", () => {
     [started, actor(2, "a1"), env(3, { actorControlRevoked: { actorId: "a1", participantId: "" } })],
     "actor control revoked requires a participant id",
   );
+});
+
+// --- ids that name a prototype member ---------------------------------------
+//
+// Every guard below asks "is this thing in the map?" by reading the map. On a
+// Go map that question has one answer; on a JavaScript object literal it has
+// two, because a lookup of "valueOf" or "toString" finds Object.prototype's
+// member and answers YES for something no writer ever put there. So each of
+// these is a rejection Go makes that this fold made differently — or did not
+// make at all — until st's maps became prototype-less dictionaries (state.ts's
+// emptyMap). client/test/fold-unit.test.ts's section of the same name holds
+// the other direction: logs Go ACCEPTS that this fold used to refuse.
+//
+// Two of the five accepted silently, which is the worse failure and the reason
+// this is a correctness fix rather than hardening. The log is append-only and
+// session.ts re-folds all of it on every event, so a silently-accepted event
+// is not one wrong frame: this client's board and the server's disagree from
+// that sequence onwards, with nothing reported to anyone.
+
+test("a note that was never written cannot be deleted, even when its key names a prototype member", () => {
+  // ACCEPTED SILENTLY before the fix: `st.Notes["valueOf"]` found
+  // Object.prototype.valueOf, the guard saw a truthy value and let the delete
+  // through, and `delete` on an inherited member removes nothing and reports
+  // success. Go rejects the event, so the two folds disagreed about whether
+  // the log was valid at all.
+  rejects([started, env(2, { noteDeleted: { key: "valueOf" } })],
+    'note "valueOf" deleted but not present');
+});
+
+test("a token that was never placed cannot be moved, even when its id names a prototype member", () => {
+  // The same silent acceptance with a second consequence: `tok` WAS
+  // Object.prototype.toString, so `tok.X = v.to.x` wrote through onto the real
+  // prototype member — process-wide, for every object in the client, from
+  // folding one ordinary-looking event.
+  rejects([...placeable, env(4, { tokenMoved: { tokenId: "toString", to: { x: 1, y: 1 } } })],
+    'unknown token "toString" moved');
+});
+
+test("sceneSeen for a scene that never arrived is refused, even when its id names a prototype member", () => {
+  // This is the lookup that reached the sceneSeen arm's three defaulting
+  // guards: `sc` was truthy and had no Tiles, no Explored and no Objects, so
+  // the guards fired and defaulted them ONTO Object.prototype.hasOwnProperty.
+  // With the scene lookup answering honestly the arm rejects here instead, and
+  // those guards go back to being unreachable — which is what the four
+  // adjudications in tools/ts-mutation-equivalents.txt claim, and what was not
+  // true while this test was failing.
+  rejects([started, env(2, { sceneSeen: { sceneId: "hasOwnProperty", tiles: { "0,0": { kind: "floor" } } } })],
+    'scene seen for unknown scene "hasOwnProperty"');
+});
+
+test("actor control granted for an actor that was never added is refused, even when its id names a prototype member", () => {
+  // Not a FoldError before the fix but a TypeError from reading
+  // `a.controllerIds` off a function. session.ts hands whatever comes out to
+  // its error handlers, so the seat was told something went wrong without
+  // being told which parity rule fired — and nothing that branches on
+  // FoldError could recognise it.
+  rejects(
+    [started, env(2, { actorControlGranted: { actorId: "toString", participantId: "p-1" } })],
+    'actor control granted names unknown actor "toString"',
+  );
+});
+
+test("a resource the actor does not have is refused BY NAME, even when that name is a prototype member", () => {
+  // The message is the assertion, as everywhere in this file. Before the fix
+  // this threw too, so a bare "it rejects" would have been green — but for the
+  // wrong reason and with the wrong words: `res` was a function, `res.current`
+  // undefined, and the arithmetic check reported 'new_value 4 does not match
+  // computed NaN' where Go names the resource that does not exist.
+  rejects([...withHP(5, 10), env(3, { resourceChanged: { actorId: "a1", resource: "hasOwnProperty", delta: -1, newValue: 4 } })],
+    'resource changed for unknown resource "hasOwnProperty" on actor "a1"');
 });

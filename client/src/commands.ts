@@ -308,6 +308,34 @@ export function setJoinDoor(open: boolean): ClientCommand {
   });
 }
 
+/**
+ * Perch a spectator on a party member's shoulder (visibility spec §3.1.1,
+ * Patrik 2026-08-18: "like a bird hopping from one shoulder to another").
+ *
+ * THE EMPTY STRING IS A LEGAL ARGUMENT AND IT MEANS SOMETHING. It is how a
+ * bird leaves a shoulder without taking another, and it is the state every
+ * spectator starts a connection in — internal/gateway/viewpoint.go returns nil
+ * for it explicitly rather than refusing it. So this builder must never
+ * shortcut an empty id into "no command": a spectator with no way to stop
+ * seeing is a spectator stuck inside someone's eyes.
+ *
+ * On the wire the empty id then VANISHES, because protojson omits empty
+ * scalars — the meaning is carried by the PRESENCE of the set_viewpoint arm,
+ * not by a field inside it, and the server reads an absent actor_id as
+ * "un-perch". Same shape as an omitted move reason, opposite consequence.
+ *
+ * APPENDS NOTHING (commands.proto). Where a watcher points their camera is not
+ * a fact about the campaign, so there is no event to wait for and no undo that
+ * can name it — which is also why a perch does not survive a reconnect and the
+ * client is what re-sends it. See app.ts's redial for what that costs.
+ */
+export function setViewpoint(actorId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "setViewpoint", value: { actorId } },
+  });
+}
+
 /** Replace the join link's secret, locking out a link that has leaked. */
 export function rotateJoinLink(): ClientCommand {
   return create(ClientCommandSchema, {

@@ -77,6 +77,24 @@ test("a tile entry naming no file at all resolves to nothing, rather than a brok
   expect(imageRequestsForPack(base, pack, manifest)).toEqual([]);
 });
 
+test("an object entry naming no file resolves to nothing, not a request ending in 'undefined'", () => {
+  // The objects loop needs its own guard, and its own test: the tile loop's
+  // three `if`s above cannot cover it, and an object array is where a
+  // hand-authored pack.json is likeliest to carry a descriptive-only entry
+  // (mapdef.PackTile permits every field but `name` to be absent, and desc
+  // is one of them). Dropping the guard would push
+  // packFileURL(base, pack, undefined) — a URL ending in a literal
+  // "/undefined" that no pack can serve — and loadPackImages' per-file 404
+  // path would then swallow it silently, so the only symptom of the bug
+  // would be one wasted request per description-only object.
+  const manifest: PackManifestJSON = {
+    id: "p", name: "P", cell_px: 64,
+    tiles: [],
+    objects: [{ name: "ghost-crate", desc: "a crate nobody drew yet" }],
+  };
+  expect(imageRequestsForPack(base, pack, manifest)).toEqual([]);
+});
+
 test("tiles and objects both contribute, in their own array order", () => {
   const manifest: PackManifestJSON = {
     id: "p", name: "P", cell_px: 64,
@@ -245,6 +263,28 @@ test("a tile entry naming no kind or material contributes nothing — defensive,
   const manifest: PackManifestJSON = {
     id: "std", name: "Standard Vocabulary", cell_px: 64,
     tiles: [{ name: "ghost", file: "ghost.png" }],
+    objects: [],
+  };
+  expect(imageRequestsForStandardPack("http://x", manifest)).toEqual([]);
+});
+
+test("a standard tile naming only ONE of kind and material is skipped too — both halves of the key, or neither", () => {
+  // The test above only exercises a tile missing BOTH halves, which any
+  // guard shape agrees to skip; these two entries are the ones that tell
+  // "either missing" apart from "both missing". Half a pair is worse than
+  // no pair, which is why the guard cannot weaken to the both-missing
+  // reading: the key is `std:${kind}/${material}`, so a kind-only tile
+  // would key as "std:floor/undefined" — a string scene-plan.ts's tileImage
+  // can never ask for, since it always builds the key from a folded tile's
+  // OWN kind and material, both always set. The picture would be fetched
+  // and decoded and then sit in the ImageMap unreachable, so the square it
+  // was meant for still draws blank while the load looks entirely healthy.
+  const manifest: PackManifestJSON = {
+    id: "std", name: "Standard Vocabulary", cell_px: 64,
+    tiles: [
+      { name: "kind-only", kind: "floor", file: "half_a.png" },
+      { name: "material-only", material: "earth", file: "half_b.png" },
+    ],
     objects: [],
   };
   expect(imageRequestsForStandardPack("http://x", manifest)).toEqual([]);

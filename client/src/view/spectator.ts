@@ -9,7 +9,7 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
@@ -319,6 +319,97 @@ function renderTicker(log: Envelope[]): HTMLElement {
   return wrap;
 }
 
+/**
+ * The spectator's perch: which shoulder they are riding, and the party to
+ * choose from (visibility spec §3.1.1).
+ *
+ * `current` is the shoulder the SERVER has confirmed, never the last one
+ * clicked — see app.ts, which only moves it when the command comes back ok.
+ * "" is a real value here and means perched on nobody.
+ */
+export interface PerchControl {
+  current: string;
+  onPerch: (actorId: string) => void;
+}
+
+/**
+ * A LIST, NOT A CLICK ON A TOKEN, and that is forced rather than chosen.
+ *
+ * An unperched spectator has NO EYES, so their board is empty — there is no
+ * token on it to click, and direct manipulation cannot bootstrap itself. What
+ * makes the list possible is that spec §5's party-member exception is not
+ * gated on eyes: internal/gateway/project.go's look() walks st.Actors flat and
+ * marks every party member known, so an unperched spectator is told the whole
+ * party and nothing else. That is where these names come from. Clicking a
+ * token could be added ON TOP of this later; it could never replace it.
+ *
+ * PARTY MEMBERS ONLY, by KIND (spec §5.1). Not "has a controller" — that was
+ * the defect that ruling closed, and it made the Goblin Archer perchable the
+ * moment a DM took control of it. The server refuses such a perch anyway
+ * (MayPerch); this is the UI not offering the click in the first place, which
+ * is a different job and not a substitute for it.
+ */
+function renderPerch(st: State, perch: PerchControl): HTMLElement {
+  const wrap = el("section", "perch");
+  wrap.appendChild(el("h2", undefined, "Whose eyes"));
+
+  const party = Object.values(st.Actors).filter((a) => a.kind === ActorKind.PARTY_MEMBER);
+  // Sorted by name, ties on the id — the same comparator and the same reasoning
+  // as session.ts's participant list: arrival order (here, object key order) is
+  // an accident of the log, and a list that reshuffles is hard to read and
+  // impossible to test stably. Two arms, not three: actorId is st.Actors' KEY,
+  // so no two entries can share one and an "equal" arm would be unreachable.
+  party.sort((a, b) =>
+    label(a, a.actorId) === label(b, b.actorId)
+      ? (a.actorId < b.actorId ? -1 : 1)
+      : (label(a, a.actorId) < label(b, b.actorId) ? -1 : 1),
+  );
+
+  wrap.appendChild(el("p", "perched-on", `Perched on: ${label(st.Actors[perch.current], perch.current)}`));
+
+  // OFFERED AT ANY SIZE, INCLUDING NONE. A control that vanished when the
+  // party list was empty would make "nobody has a character yet" look
+  // identical to "the perch is broken", which is the reading a watcher
+  // reaches for the moment their board is blank.
+  if (party.length === 0) {
+    wrap.appendChild(el("p", "empty", "No party members yet."));
+  }
+  for (const a of party) {
+    const btn = document.createElement("button");
+    btn.className = a.actorId === perch.current ? "shoulder on" : "shoulder";
+    btn.textContent = label(a, a.actorId);
+    btn.addEventListener("click", () => perch.onPerch(a.actorId));
+    wrap.appendChild(btn);
+  }
+
+  // THE EMPTY ID IS AN OPTION, not the absence of one. "Naming no actor is how
+  // a bird LEAVES a shoulder without immediately sitting on another"
+  // (internal/gateway/viewpoint.go). It sends, like every other choice here.
+  const off = document.createElement("button");
+  off.className = perch.current === "" ? "unperch on" : "unperch";
+  off.textContent = "No shoulder";
+  off.addEventListener("click", () => perch.onPerch(""));
+  wrap.appendChild(off);
+
+  return wrap;
+}
+
+/**
+ * How one shoulder reads: its actor's name, its id when the actor has none or
+ * is not in this roster, and "nobody" for the empty id.
+ *
+ * THREE ANSWERS, because there are three states and collapsing any two of them
+ * loses something a watcher needs. "" is perched on nobody, which is where
+ * every connection starts. An id the roster does not hold is a shoulder this
+ * client asked for and can no longer name — an undo covering the ActorAdded
+ * reaches here — and showing "nobody" for it would say the board is blank
+ * because they chose that, when it is blank because the character is gone.
+ */
+function label(a: { name: string } | undefined, id: string): string {
+  if (id === "") return "nobody";
+  return a?.name || id;
+}
+
 function renderStatus(st: State, status: string, extras: ViewExtras): HTMLElement {
   const open = st.Sessions.find((s) => s.EndSeq === 0);
   const wrap = el("header", "status");
@@ -371,6 +462,17 @@ export interface ViewExtras {
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
   /**
+   * Whose eyes this spectator is looking through, and how to change it.
+   *
+   * ABSENT FOR EVERY OTHER ROLE, which is the whole of the negative case:
+   * MayPerch refuses a player, a DM and an agent outright ("role %q does not
+   * perch — a viewpoint is the spectator's"), so offering them the control
+   * would be an affordance that can only ever produce a refusal. app.ts is
+   * what withholds it; renderSpectator honours the omission rather than
+   * defaulting to a control.
+   */
+  perch?: PerchControl | undefined;
+  /**
    * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task
    * 10) — keyed exactly as canvas.ts's paint() expects. Omitted (or not yet
    * resolved) draws NO_IMAGES, which is not a failure: paint() skips an
@@ -405,6 +507,9 @@ export function renderSpectator(
     renderNotes(st),
     renderTicker(log),
   ];
+  // Only the spectator is ever given one, and a spectator has neither a panel
+  // nor a console, so this never actually competes with them for position.
+  if (extras.perch) nodes.push(renderPerch(st, extras.perch));
   if (extras.panel) nodes.push(extras.panel);
   if (extras.console) nodes.push(extras.console);
   if (extras.toast) {

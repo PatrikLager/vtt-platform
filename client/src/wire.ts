@@ -89,11 +89,28 @@ export interface PresenceEvent {
 
 export class Wire {
   private ws: WebSocket | null = null;
-  private readonly pending = new Map<string, (r: CommandResult) => void>();
+  // ONE MAP, MANY SOCKETS — so every entry records the socket it was written
+  // to. A wire outlives its connections and this map outlives them with it, so
+  // "who is waiting for a result" and "which connection is that result coming
+  // back on" are two questions, and only the resolver answered the first. The
+  // close handler in connect() is where the second one is read, and why.
+  //
+  // WHAT THE NARROWING COSTS, stated rather than glossed. reconnect() and
+  // restart() both CLOSE the socket they forget, so anything sent on it still
+  // has a close of its own coming and is still answered. A bare second
+  // connect() does not — it leaves the previous socket live (see the message
+  // handler's own note) — so an entry made on THAT socket now waits for a close
+  // that may never be dispatched, where before it was ended early by the next
+  // close of any socket at all. Neither is a result; the trade is one caller
+  // waiting on a socket nobody closed against every caller being told their
+  // command failed when it did not. No path in this client reaches it: the app
+  // dials once and redials only through reconnect() or restart().
+  private readonly pending = new Map<string, { ws: WebSocket; resolve: (r: CommandResult) => void }>();
   private eventHandlers: ((e: Envelope) => void)[] = [];
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private rollbackHandlers: ((throughSeq: bigint) => void)[] = [];
+  private restartHandlers: (() => void)[] = [];
   // TWO CURSORS, because they answer different questions and sharing one made
   // a reconnect rewind the board — see the replay-cursor note at the top of
   // this file, which names seenSeq as the one a resume point is derived from.
@@ -137,6 +154,20 @@ export class Wire {
   }
 
   /**
+   * Called before a restart: this client is about to be sent the whole log
+   * again, so whatever it holds must go.
+   *
+   * A SEPARATE CHANNEL FROM onRollback, and it cannot be expressed as one.
+   * Rollback keeps everything at or below its cursor, and a perch frame
+   * carries sequence 0 — below every cursor there is — so no rollback can ever
+   * drop one. Emptying is a different instruction, not a rollback with a
+   * smaller number.
+   */
+  onRestart(fn: () => void): void {
+    this.restartHandlers.push(fn);
+  }
+
+  /**
    * Subscribe to presence.
    *
    * `replace` distinguishes a SNAPSHOT from a delta, and that distinction is
@@ -170,7 +201,22 @@ export class Wire {
     for (const fn of this.statusHandlers) fn(s);
   }
 
-  connect(after: bigint): Promise<void> {
+  /**
+   * Dial, replaying after `after`.
+   *
+   * `onOpen` runs INSIDE the socket's open event, before this promise resolves
+   * and before any frame can be delivered. That window is not available to a
+   * caller awaiting the promise — measured, and the measurement is the reason
+   * this parameter exists: emptying the log in `await connect(...)`'s
+   * continuation instead let the server's replay arrive FIRST, so the log was
+   * folded and then thrown away, leaving a client holding nothing with no
+   * frames left to come (client/test/session.test.ts's restart test, which
+   * timed out waiting for a replay it had already discarded). `open` is
+   * dispatched ahead of the first `message` for the same socket, so a hook
+   * here has no such window — and a dial that never opens never runs it, which
+   * is what lets Wire.restart leave a failed redial costing nothing.
+   */
+  connect(after: bigint, onOpen?: () => void): Promise<void> {
     this.status("connecting");
     // The token is a query parameter here and a Bearer header on the metadata
     // routes. Not an inconsistency: browsers cannot set headers on a
@@ -182,6 +228,10 @@ export class Wire {
 
     return new Promise((resolve, reject) => {
       ws.onopen = () => {
+        // FIRST, ahead of the status handler as well as of the resolve: status
+        // "open" repaints, and a repaint between a restart's dial and its
+        // discard would draw the board this connection is about to replace.
+        onOpen?.();
         this.status("open");
         resolve();
       };
@@ -191,16 +241,51 @@ export class Wire {
       };
       ws.onclose = () => {
         this.status("closed");
-        // Anything still waiting will never be answered on this socket.
-        // Rejecting is kinder than a promise that hangs for the session.
-        for (const [id, resolveFn] of this.pending) {
-          resolveFn(create(CommandResultSchema, {
+        // THIS SOCKET'S COMMANDS ONLY, and the identity check is the whole of
+        // the difference. Anything written to THIS socket will never be
+        // answered on it now, so failing it explicitly is kinder than a promise
+        // that hangs for the rest of the session — that half has always been
+        // right. What was wrong is that the map belongs to the WIRE, not to the
+        // socket, so walking all of it let a close end commands a LATER socket
+        // was still waiting on.
+        //
+        // Its sibling below was given the same guard for the same reason
+        // (45ae70d), and until this one had it too the asymmetry was the
+        // defect: a stale frame could not reach the fold, but a stale close
+        // could end a live command — with a failure the server never sent.
+        //
+        // NARROW THROUGH THE UI TODAY, and stated that way because the honest
+        // version is the useful one — the same shape as the message handler's
+        // note below. The Reconnect button appears only on status "closed"
+        // (view/spectator.ts), and that status is set at the top of this very
+        // handler, in the same task that walks this map — so in the shipped
+        // client the sockets are strictly serial and no close has ever run with
+        // another socket's commands in front of it. What makes it worth
+        // guarding anyway is that connect(), reconnect() and restart() are
+        // public API and restart() is close-then-send by construction: it
+        // closes the old socket, dials, and its caller re-sends on the new one.
+        // Any automatic redial, or any embedder holding two connections, puts a
+        // live command in this loop's path — and what it would lose is a
+        // setViewpoint the server is about to ACCEPT, leaving app.ts reading a
+        // refusal nobody sent while the perch frames arrive and are folded
+        // anyway. client/test/app.test.ts's "a redial whose abandoned socket
+        // closes late still ends up perch-shaped" walks the whole of that.
+        //
+        // Deleted entry by entry rather than cleared, which is the same rule
+        // stated for the map instead of for the promises. Clearing takes the
+        // newer socket's entries with it, so the result the server sends for
+        // one of them arrives as an unknown request id and is dropped — and a
+        // command with no result and no failure is the hang the loop below
+        // exists to prevent.
+        for (const [id, waiting] of this.pending) {
+          if (waiting.ws !== ws) continue;
+          this.pending.delete(id);
+          waiting.resolve(create(CommandResultSchema, {
             requestId: id,
             ok: false,
             error: "wire: connection closed before a result arrived",
           }));
         }
-        this.pending.clear();
       };
       // GUARDED ON IDENTITY, and this one line is the whole fix. The handler
       // is bound per socket but knows nothing about which socket it belongs
@@ -268,6 +353,79 @@ export class Wire {
     await this.connect(resume);
   }
 
+  /**
+   * Dial from the very beginning, throwing away everything this client holds.
+   *
+   * THIS IS THE SPECTATOR'S REDIAL, and it exists because reconnect() cannot
+   * be one. A perch is CONNECTION state (visibility spec §3.1.1): the server's
+   * projector is reborn perched on nobody, and it replays the log through
+   * those empty eyes — so it holds no memory of the scene, the actors or the
+   * tokens the previous connection's perch put on this client's board. Nothing
+   * on the wire un-introduces any of them, and both folds refuse a second
+   * introduction, so a resumed connection and this client disagree about what
+   * has been said and the next perch is a duplicate.
+   *
+   * MEASURED AGAINST THE REAL GATEWAY (2026-08-24), on a watcher who had
+   * perched and then seen a goblin walk into view. All four of the available
+   * answers, so that the two the reconnect() note above offers are not
+   * re-tried:
+   *
+   *   - resume, then re-perch: `engine: scene "ambush" already exists`. The
+   *     duplicate-introduction freeze — session.ts re-folds its whole log on
+   *     every event, so it is permanent.
+   *   - resume, drop the sequence-0 frames, then re-perch: fails EARLIER, with
+   *     `engine: token placed in unknown scene "ambush"`, and before the
+   *     re-perch is even sent. The frames an ordinary event delivered to a
+   *     perched seat — the goblin's arrival — are stamped with the CAUSING
+   *     sequence, not with 0, so they survive the rollback while depending on
+   *     a scene only the perch ever introduced. Dropping the perch frames
+   *     breaks the log that is left behind.
+   *   - resume and do not re-perch: folds, and the board is dead. The reborn
+   *     projector sends this seat nothing at all, and the sequence the
+   *     rollback dropped is never re-sent either, so the watcher is left
+   *     looking at a stale room forever.
+   *   - THIS: dial after=0 holding nothing, then re-perch. Folds cleanly, and
+   *     is the only one of the four that also shows a live board.
+   *
+   * The cost is one full replay for a watcher who may not have needed it. That
+   * is the honest price of a view preference the log deliberately does not
+   * record, and it is paid by the one role whose board is otherwise a lie.
+   *
+   * BOTH CURSORS GO BACK TO ZERO, which is not tidiness: seenSeq is what the
+   * next redial derives its resume point from, and a stale mark over an
+   * emptied log would ask for events after a sequence this client never
+   * folded — silently skipping everything between, which is the direction that
+   * leaves an enemy token on a board.
+   */
+  async restart(): Promise<void> {
+    // Same order as reconnect(): forget the socket before closing it, because
+    // forgetting is what the message handler's identity check reads and
+    // closing does not cancel an event already queued on it. A frame from the
+    // abandoned socket would otherwise be folded into a log that is about to
+    // be emptied and re-sent whole.
+    const old = this.ws;
+    this.ws = null;
+    old?.close();
+
+    // NOTHING IS DISCARDED UNTIL THE NEW SOCKET IS OPEN, which is the one
+    // place this deliberately does NOT follow reconnect(). Reconnect throws
+    // away one sequence up front, and a failed redial costs that sequence;
+    // this throws away EVERYTHING, and doing it before a dial that then fails
+    // would leave a watcher staring at a blank page with no board to go back
+    // to. A refused dial is a no-op here — log and cursors intact — because
+    // the hook below never runs.
+    //
+    // IN THE OPEN EVENT rather than after awaiting it, and connect's own
+    // comment records what awaiting cost: the replay arrived before the
+    // continuation, so the log was folded and then discarded, and nothing was
+    // left to fold again.
+    await this.connect(0n, () => {
+      this.seenSeq = 0n;
+      this.lastSeq = 0n;
+      for (const fn of this.restartHandlers) fn();
+    });
+  }
+
   close(): void {
     this.ws?.close();
   }
@@ -280,8 +438,18 @@ export class Wire {
         const waiting = this.pending.get(res.requestId);
         if (waiting) {
           this.pending.delete(res.requestId);
-          waiting(res);
+          waiting.resolve(res);
         }
+        // MATCHED ON THE REQUEST ID ALONE, though the entry now also carries a
+        // socket. Two things make that safe where the close handler's walk was
+        // not: the message handler has already established that this frame came
+        // from the CURRENT socket, and an id is minted per COMMAND — by
+        // commands.ts's requestId(), a UUID with a monotonic fallback where
+        // crypto is absent — so two entries do not collide.
+        // And a result is an answer to a command: an answer is welcome
+        // whichever connection carries it, where a close is only ever news
+        // about one.
+        //
         // An unmatched result is dropped, not an error: it can legitimately
         // belong to a command abandoned by a previous connection.
         return;
@@ -335,7 +503,12 @@ export class Wire {
     const withID = create(ClientCommandSchema, { ...cmd, requestId });
 
     return new Promise((resolve) => {
-      this.pending.set(requestId, resolve);
+      // THE SOCKET IT IS ACTUALLY WRITTEN TO, recorded beside the resolver
+      // rather than read back off `this.ws` later: by the time a close comes to
+      // answer this entry, `this.ws` may be a socket that has never heard of
+      // this command. Only the close of THIS socket may end it — see the close
+      // handler in connect() for what a close of any other one cost.
+      this.pending.set(requestId, { ws, resolve });
       ws.send(JSON.stringify(toJson(ClientCommandSchema, withID)));
     });
   }

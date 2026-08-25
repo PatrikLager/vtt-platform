@@ -1,10 +1,27 @@
 // The canvas layer: executes what Task 8's pure functions already decided.
 //
-// Deliberately thin. happy-dom has NO canvas implementation, so nothing this
-// function does can be asserted by the suite — which is exactly how the
-// participant list shipped rendering as "ArmakAsmeDM" behind a passing test
-// (backlog #13). Every decision therefore lives in planScene, which is pure and
-// fully tested; this loop is small enough to verify by reading.
+// Deliberately thin: every DECISION lives in planScene, which is pure and fully
+// tested. Keep it that way.
+//
+// CORRECTED 2026-08-25. This said "happy-dom has NO canvas implementation, so
+// nothing this function does can be asserted by the suite", and concluded that
+// the loop was "small enough to verify by reading". The first half is true and
+// the inference from it is false, which made this the most expensive comment in
+// the client: it licensed thirty-two surviving mutants — arithmetic, colours,
+// the rotation pivot, and guards that could be deleted whole — in a file that
+// simultaneously reported 100.00% line coverage. Thirty-one were killed on
+// 2026-08-25 without a canvas existing anywhere.
+//
+// Nothing here ever CREATES a canvas; every export TAKES a
+// CanvasRenderingContext2D and touches exactly thirteen of its members. So a
+// test passes a recording double and asserts the ordered call log with exact
+// arguments — see client/test/canvas.test.ts. "No canvas" bounds how you
+// observe this code; it never made it unobservable.
+//
+// The cautionary tale in the original still stands and is why this matters: the
+// participant list once shipped rendering as "ArmakAsmeDM" behind a passing
+// test (backlog #13). "Verify by reading" is what was tried here, and thirty-one
+// defects-in-waiting got past the reading.
 
 import type { DrawOp, FogRect, GridLine } from "./scene-plan";
 

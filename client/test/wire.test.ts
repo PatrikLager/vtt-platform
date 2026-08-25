@@ -353,6 +353,15 @@ test("an out-of-order replay never walks the resume cursor backwards", async () 
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(3) }));
     await until(() => seen.length === 2, "the older event");
 
+    // BOTH CURSORS, asserted separately, because the query below reads only
+    // one of them. `head` is lastSeq — what a caller is told this client has
+    // folded up to (Session.head, and the catch-up progress the UI draws from
+    // it) — while the resume point is derived from seenSeq. An advance made
+    // unconditional moves lastSeq DOWN to 3 here and leaves after=4 intact, so
+    // a test that stops at the query cannot see it. An older event is not
+    // hypothetical either: a perch's frames carry sequence 0 deliberately.
+    expect(wire.head).toBe(5n);
+
     await wire.reconnect();
     // Two connections: the redial must resume from the HIGHEST sequence seen,
     // 5, not from the older 3 that arrived after it. One below either way (see
@@ -584,6 +593,11 @@ test("a snapshot entry with no state is skipped, and the rest still arrive", asy
 // test whose subject is a race must not be one.
 class ScriptedSocket {
   static instances: ScriptedSocket[] = [];
+  // send()'s guard reads WebSocket.OPEN off the GLOBAL, which is this class
+  // while a test has installed it. Without the constant the comparison is
+  // against undefined, every send is refused as "wire: not connected", and a
+  // test about what happens to an in-flight command would quietly have none.
+  static readonly OPEN = 1;
   readyState = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -687,6 +701,83 @@ test("a second connect silences the socket the first one left behind", async () 
   }
 });
 
+test("a close answers the commands sent on ITS socket, and no others", async () => {
+  // THE PENDING MAP OUTLIVES EVERY SOCKET, and the close handler used to walk
+  // the whole of it: one socket's close resolved every command in flight —
+  // including the ones a LATER socket was still waiting on — with
+  // `ok:false, "wire: connection closed before a result arrived"`, and then
+  // cleared the map. So the caller got a fast, confident, WRONG answer, and the
+  // server's real result landed a moment later on a promise that had already
+  // settled and an id the map no longer held.
+  //
+  // The message handler beside it was given an identity guard in 45ae70d
+  // (`if (this.ws !== ws) return`), and the asymmetry between the two was the
+  // defect: a stale frame could not reach the fold, but a stale close could end
+  // a live command.
+  //
+  // Narrow through the UI today — the Reconnect button shows only on status
+  // "closed", which this same handler sets one line before it walks the map, so
+  // the app's sockets are strictly serial. But connect() and restart() are
+  // public API, restart() is close-then-send by construction, and a second
+  // connect() (below) holds two live sockets with one map between them.
+  // app.test.ts's "a redial whose abandoned socket closes late still ends up
+  // perch-shaped" walks what the wrong answer costs a watcher.
+  //
+  // BOTH DIRECTIONS IN ONE TEST, deliberately, because the cheap way to pass
+  // the first half is to answer nothing at all. A command written to the socket
+  // that is closing can never be answered on the wire, so leaving its promise
+  // unresolved hangs whatever the UI was awaiting for the rest of the session —
+  // that guarantee is what "a socket closing answers every in-flight command
+  // instead of hanging" pins for a lone socket, and this pins it for a map
+  // holding two sockets' worth.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    const onOld = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-old-socket" }));
+
+    // A second connect abandons the first socket WITHOUT closing it, which is
+    // what holds two live sockets long enough to tell whose command is whose —
+    // the same shape as the test above, which covers the frame half of it.
+    const second = wire.connect(0n);
+    ScriptedSocket.instances[1]!.open();
+    await second;
+    const onNew = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-new-socket" }));
+    // Recorded rather than awaited: a wrongly-answered command resolves on a
+    // microtask, and awaiting it would hang the test on the correct behaviour
+    // instead of failing on the wrong one.
+    const answeredByTheClose: string[] = [];
+    void onNew.then((r) => answeredByTheClose.push(r.error || "ok"));
+
+    ScriptedSocket.instances[0]!.close();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(answeredByTheClose).toEqual([]);
+
+    // Its own command IS answered, and with its own request id, so a caller
+    // can tell which command it lost.
+    const old = await onOld;
+    expect(old.ok).toBe(false);
+    expect(old.error).toBe("wire: connection closed before a result arrived");
+    expect(old.requestId).toBe("sent-on-the-old-socket");
+
+    // And the surviving entry is still correlatable: a cleared map drops this
+    // result as belonging to nobody.
+    ScriptedSocket.instances[1]!.deliver({
+      result: { requestId: "sent-on-the-new-socket", ok: true },
+    });
+    const fresh = await onNew;
+    expect(fresh.ok).toBe(true);
+    expect(fresh.error).toBe("");
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
 test("reconnecting repeatedly does not walk the cursor backwards", async () => {
   // The resume cursor steps back one sequence per redial so a torn batch can
   // be taken again whole. It must step back from the HIGHEST SEQUENCE EVER
@@ -713,5 +804,114 @@ test("reconnecting repeatedly does not walk the cursor backwards", async () => {
     wire.close();
   } finally {
     gw.stop();
+  }
+});
+
+test("a frame from the socket a restart abandoned is never folded", async () => {
+  // The same race as the reconnect case above, one redial apart, and it is
+  // worse here rather than merely equal: a restart empties the log entirely,
+  // so a stale frame landing after it does not re-add a sequence — it seeds a
+  // log with an envelope the replay is about to send AGAIN, which is the
+  // duplicate introduction that freezes a client for good.
+  //
+  // Scripted rather than served, for the reason the class above gives: whether
+  // a queued frame still lands after a close is the runtime's decision, and a
+  // test whose subject is a race must not be one.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    const seen: bigint[] = [];
+    let emptied = 0;
+    wire.onEvent((e) => seen.push(e.sequence));
+    wire.onRestart(() => emptied++);
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(seen).toEqual([2n]);
+    expect(wire.head).toBe(2n);
+
+    const again = wire.restart();
+    // Dialled from the beginning, and the emptying has NOT happened yet: it
+    // rides the open event, so a dial that never opens costs nothing.
+    expect(ScriptedSocket.instances[1]!.url).toContain("after=0");
+    expect(emptied).toBe(0);
+    ScriptedSocket.instances[1]!.open();
+    await again;
+    expect(emptied).toBe(1);
+    expect(wire.head).toBe(0n);
+
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(seen).toEqual([2n]);
+    expect(wire.head).toBe(0n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a restart before anything was ever connected dials from zero rather than throwing", async () => {
+  // restart() forgets its socket and then closes it, and on a wire that never
+  // dialled there is no socket to close. Its sibling is pinned two hundred
+  // lines up ("close and reconnect are safe before anything was ever
+  // connected") and this is the same reach one method over — the optional call
+  // is the whole of what stands between a spectator who clicks Reconnect on a
+  // dial that never opened and a TypeError thrown during teardown, where it is
+  // least visible.
+  //
+  // The DISCRIMINATOR is that a socket was created at all: the close comes
+  // BEFORE the dial in restart(), so throwing on the socket that never existed
+  // means the redial never happens either, and the watcher is left with no
+  // connection rather than with a fresh one.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    let emptied = 0;
+    wire.onRestart(() => emptied++);
+
+    const dial = wire.restart();
+    expect(ScriptedSocket.instances).toHaveLength(1);
+    expect(ScriptedSocket.instances[0]!.url).toContain("after=0");
+    ScriptedSocket.instances[0]!.open();
+    await dial;
+
+    expect(emptied).toBe(1);
+    expect(wire.head).toBe(0n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("a restart whose dial fails leaves the wire exactly as it was", async () => {
+  // A watcher clicking Reconnect on a network that is still down must not be
+  // punished with a blank page: reconnect() forfeits one sequence when its
+  // dial fails, and restart() would forfeit the WHOLE log. So the discard
+  // rides the open event, and a socket that errors instead never runs it.
+  const nativeWS = globalThis.WebSocket;
+  ScriptedSocket.instances = [];
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const wire = new Wire("ws://scripted/ws", "tok-1");
+    let emptied = 0;
+    wire.onRestart(() => emptied++);
+
+    const first = wire.connect(0n);
+    ScriptedSocket.instances[0]!.open();
+    await first;
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(3) });
+    expect(wire.head).toBe(3n);
+
+    const doomed = wire.restart();
+    ScriptedSocket.instances[1]!.onerror?.();
+    await expect(doomed).rejects.toThrow("wire: connection failed");
+
+    expect(emptied).toBe(0);
+    expect(wire.head).toBe(3n);
+  } finally {
+    globalThis.WebSocket = nativeWS;
   }
 });

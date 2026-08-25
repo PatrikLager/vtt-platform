@@ -30,6 +30,56 @@ this gate existing, and closing it took two passes.
 | `client/src/auth.ts` | — | 2 → 0 | 1 |
 | `client/src/session.ts` | — | 1 → 0 | 0 |
 | `client/src/state.ts` | — | 0 | 0 |
+| `client/src/view/scene-plan.ts` | 100% lines | 33 → 0 | 1 |
+| `client/src/view/canvas.ts` | 100% lines | 32 → 0 | 1 |
+| `client/src/view/pack-assets.ts` | 100% lines | 2 → 0 | 0 |
+| `client/src/view/camera.ts` | 100% lines | 1 → 0 | 0 |
+| `client/src/join.ts` | — | 0 | 0 |
+| `client/src/view/join.ts` | — | 0 | 0 |
+
+`client/src/main.ts` is the only file with no row, and it is the only file
+excluded from `mutate`: it is the browser entry point, wiring rather than
+logic. It still carries a normal 100.00 line-coverage floor.
+
+**This table is now every gated file, checked mechanically rather than
+believed** — 21 gated files, 21 rows. It was not before: four files had no row
+while being gated, which is how 68 survivors went unrecorded.
+
+The last five rows were added 2026-08-25 and the first four of them had **no
+row at all** until then — not because they were out of scope, but because the
+`mutate` glob gated them the moment the maps and visibility arcs created them,
+so nobody ever ran the work that produces a row. Their "before" column is not a
+mutation score but a LINE-COVERAGE floor, and that is the point: all four sat
+at 100.00% line coverage while carrying 68 survivors between them. Every line
+ran; nothing checked a boundary.
+
+### 2026-08-25: 125 survivors, and what actually caused them
+
+The gate stopped testing mutants on 2026-08-11 and nobody could tell, because
+the native task self-skips on macOS (kernel bug FB21686886) and CI stopped
+running per-PR when the Actions allowance was exhausted. A test that read
+`app.ts`'s own SOURCE and asserted the text `params.get("join")` broke Stryker's
+dry run — instrumentation rewrites string literals, so the text it looked for
+stopped existing. One failing assertion, zero mutants tested, for two weeks.
+
+Repaired 2026-08-25 (`69434ef`), which surfaced 125 unadjudicated survivors:
+**57 REGRESSION** in seven files this table already recorded as `→ 0`, and
+**68** in the four never-worked files above. Closed at 113 killed, 12
+adjudicated. Final: **2764 mutants, 2660 killed, 31 timed out, 73 adjudicated
+equivalent, zero unadjudicated survivors** — against 1772 mutants at the last
+green run on 2026-08-07, so the client grew 56% and all of that growth was
+ungated while the gate was silent.
+
+**One root cause dominates, and it is worth internalising: a fixture chosen so
+that two different operators produce the same answer.** Every camera in the
+suite was `fitCamera()` at exactly scale 1 and offset 0, where `*scale` IS
+`/scale` and `+offset` IS `-offset` — that single degeneracy hid 18 arithmetic
+mutants. Every Y coordinate in the fold suite was 0, so `?? 0` and `&& 0` were
+indistinguishable. Every perch fixture had exactly two party members, and a
+two-element sort calls its comparator once, so "always before" and "always
+after" each score 50%. Five separate instances of the same shape, all in files
+at or near 100% line coverage. **The test looks specific and cannot fail** —
+which is precisely the thing coverage cannot see and this gate can.
 
 ### Eleven of those "kills" are timeouts, not evaluated detections
 

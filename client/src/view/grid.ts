@@ -103,7 +103,7 @@ export function tokensOnScene(
     if (visible !== undefined && !visible[`${tok.X},${tok.Y}`]) continue;
     const actor = st.Actors[tok.ActorID];
 
-    // Resources are sorted by name: st.Actors[].resources is a plain object
+    // Resources are sorted by name: st.Actors[].resources is a dictionary
     // and its key order is not something to render a stable UI from.
     const resources: ResourceChip[] = actor
       ? Object.keys(actor.resources)

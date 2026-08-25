@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import fixture from "../../contract/testdata/join_url_format.json";
+import { joinSecretFrom } from "../src/join";
 
 // The ?join= format spans Go and TypeScript, so neither mutation gate can see
 // it whole: gremlins does not mutate string literals, and Stryker cannot see
@@ -27,10 +28,25 @@ test("the reader looks for the parameter the writers write", () => {
   expect(url.searchParams.get(fixture.queryParameter)).toBe("THE-SECRET");
 });
 
-test("app.ts asks for exactly this parameter", async () => {
-  // The READER side, read from the source. app.ts is a module with a
-  // DOM-dependent boot, so importing it to observe the lookup would drag the
-  // whole client in; the lookup itself is one call and this pins its argument.
-  const src = await Bun.file(new URL("../src/app.ts", import.meta.url)).text();
-  expect(src).toContain(`params.get("${fixture.queryParameter}")`);
+test("the client's reader returns the secret a fixture-shaped link carries", () => {
+  // The READER side, OBSERVED rather than read out of the source.
+  //
+  // This used to assert that app.ts's text contained `params.get("join")`.
+  // That assertion could not survive mutation testing: Stryker rewrites string
+  // literals in every file it mutates, so the text it looked for stopped
+  // existing and the gate died in its dry run, before a single mutant ran.
+  // See joinSecretFrom's own comment for the whole story.
+  //
+  // Behaviour is also the better assertion. Text proved a call was WRITTEN;
+  // this proves it WORKS, on a URL built from the fixture rather than from a
+  // literal typed here — which is the whole point of there being a fixture.
+  const url = new URL(`https://table.example${fixture.shareSuffix}THE-SECRET`);
+  expect(joinSecretFrom(url.searchParams)).toBe("THE-SECRET");
+});
+
+test("the client's reader reports NO secret when the link carries none", () => {
+  // The other half, and not decoration: a reader that returned something for
+  // an ordinary visit would send every arriving player down the join flow
+  // instead of the table, and the assertion above cannot tell the difference.
+  expect(joinSecretFrom(new URL("https://table.example/").searchParams)).toBeNull();
 });
