@@ -66,9 +66,9 @@ bearer credentials for live-mode runs — `chmod 600` it and never commit it
 ## Claude Code: seating an LLM as the agent participant
 
 `vtt mcp --server <ws-url> [--token <token>]` serves an MCP server over
-stdio: nine tools (seven generic command tools plus `get_state`/
-`get_events_since`) that let an MCP host play at the table as the agent
-participant, judged by the exact same authz table any other client is (see
+stdio: 28 tools (22 command tools plus 6 read tools) that let an MCP host
+play at the table as the agent participant, judged by the exact same authz
+table any other client is (see
 `docs/superpowers/specs/2026-07-24-mcp-gateway-design.md`). `--token` and
 the `VTT_TOKEN` environment variable are both honored; `--token` wins if
 both are given.

@@ -7,7 +7,9 @@ package mcp_test
 // as a STRING inside each one — the convention divergence the tool's own
 // Description documents); a fold-with-retraction case (mirroring
 // internal/harness/fold_test.go's own parity case) proves get_state reflects
-// retraction, not just a naive apply-everything fold; list_tools reports 9.
+// retraction, not just a naive apply-everything fold. NO TOOL COUNT HERE — the
+// one that used to sit at the end of this sentence said 9 while the server
+// served 28. The count is asserted below, against the live registry.
 //
 // canned/seedEvents below are a parallel, not shared, implementation of
 // internal/harness/fold_test.go's foldEnv helper (unexported in package
@@ -19,6 +21,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -254,7 +258,8 @@ func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
 // in the SAME tool table as every generic command tool
 // (wantCommandToolNames, tools_test.go).
 //
-// The total is asserted as len(wantCommandToolNames)+4 rather than as a
+// The total is asserted as len(wantCommandToolNames)+len(GoRegisteredToolNames)
+// rather than as a
 // literal, and this test is no longer named for the number. It was
 // TestListToolsReturnsSeventeenToolsIncludingReadAndGuideTools, and its
 // comment had accumulated a six-entry history of past bumps (7->9, 9->12,
@@ -278,9 +283,11 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	// wantCommandToolNames carries every generic command tool; only the four
-	// read/guide tools registered separately (read_tools.go, guide_tool.go,
-	// adventure_guide_tool.go) are appended here.
+	// wantCommandToolNames carries every generic command tool; the tools
+	// registered separately in Go (read_tools.go, guide_tool.go,
+	// adventure_guide_tool.go, door_tools.go) are appended from
+	// GoRegisteredToolNames. Counting them here is what went stale before —
+	// this said "the four" when there were six, and omitted door_tools.go.
 	//
 	// NO RUNNING TALLY. This comment used to carry one and it went stale twice
 	// — a comment warning about stale counts, shipping a stale count. The total
@@ -293,6 +300,51 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 		if !got[name] {
 			t.Errorf("list_tools missing %q", name)
 		}
+	}
+
+	assertREADMEAdvertisesTheRealToolCount(t, len(wantCommandToolNames), len(mcppkg.GoRegisteredToolNames))
+}
+
+// assertREADMEAdvertisesTheRealToolCount pins the front door to the registry.
+//
+// README.md told every reader the MCP server serves "nine tools (seven generic
+// command tools plus get_state/get_events_since)". It served twenty-eight.
+//
+// NEITHER NUMBER WAS EVER A LIE — that is the point. "Nine" was exact on
+// 2026-07-24, when seven manifest tools plus get_state and get_events_since
+// were the whole surface. The session-zero walkthrough counted twenty-four on
+// 2026-08-12 and that was exact too (eighteen manifest tools plus six
+// registered in Go). Both went stale by addition: 26 on 08-13, 27 on 08-16,
+// 28 on 08-19. Nobody wrote anything false; the count simply moved and the
+// prose did not, because nothing compared them.
+//
+// This is deliberately attached to the test that already owns the total, and
+// it reads the counts LIVE rather than restating them, so the only way to make
+// it wrong is to edit the README to disagree with the code. A number in prose
+// that nothing verifies does not stay true; it stays written.
+// The second parameter is what is REGISTERED IN GO, not what is read-only.
+// All six happen to be reads today, so "read tools" is true of the README's
+// wording; register a mutating tool in Go rather than through the manifest and
+// this assertion keeps passing while the README starts lying in a new way.
+// Rename both together if that day comes.
+func assertREADMEAdvertisesTheRealToolCount(t *testing.T, commands, goRegistered int) {
+	t.Helper()
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	// WHITESPACE COLLAPSED FIRST. README.md is hard-wrapped, so the phrase can
+	// straddle a line break — and then this would fail with a message naming
+	// the phrase but not the reason, over a rewrap that changed nothing.
+	flat := strings.Join(strings.Fields(string(readme)), " ")
+	want := fmt.Sprintf("%d tools (%d command tools plus %d read tools)",
+		commands+goRegistered, commands, goRegistered)
+	if !strings.Contains(flat, want) {
+		t.Errorf("README.md does not advertise the tool count the server actually serves.\n"+
+			"It must contain the exact phrase: %q\n"+
+			"Update README.md, or if the wording must change, update this assertion with it — "+
+			"do not leave the number to drift again.", want)
 	}
 }
 
