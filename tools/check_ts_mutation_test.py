@@ -58,6 +58,25 @@ TS_LINES = {
                                     # apart -- the near miss that "looks
                                     # plausible at the new location"
     20: "const twenty = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 };",
+    21: "if (a > b) c(); // — an em dash AFTER the operator, harmless",
+    22: 'const dash = "—"; if (a > b) c();',
+                                    # ...and one BEFORE it, which is not. U+2014
+                                    # is ONE character and THREE UTF-8 bytes, so
+                                    # a byte-indexed column lands two early. In
+                                    # code rather than in a leading comment, or
+                                    # the comment rule answers first and this
+                                    # never reaches the column rule.
+    23: 'const e = "😀"; if (a > b) c();',
+                                    # THE ONE THAT SEPARATES UTF-16 FROM
+                                    # CHARACTERS. U+1F600 is astral: JavaScript
+                                    # counts it as TWO code units, Python as one
+                                    # character. Verified against @babel/parser
+                                    # — it reports the BinaryExpression at
+                                    # 0-based column 20, so Stryker says 21.
+                                    # Character counting maps 21 to a space and
+                                    # refuses a sound key; only UTF-16 lands on
+                                    # the `a`. Without this line the em-dash
+                                    # fixtures pass under either scheme.
     30: 'send("tag");',             # col 6 opens a string literal
     40: 'send("tag");',             # three more copies of ONE statement, so a
     50: 'send("tag");',             # move between them is indistinguishable by
@@ -313,6 +332,39 @@ class KeyPosition(unittest.TestCase):
             source_tree(root)
             entries = {k: "reason" for k in keys}
             return {k[1]: fault for k, fault in ctm.suspect_positions(entries, root=root)}
+
+    def test_a_column_is_counted_the_way_stryker_counts_it(self):
+        """Stryker's columns come from Babel, which indexes JS strings — UTF-16
+        code units, NOT bytes.
+
+        source_line's docstring asserted the opposite ("the column is a byte
+        offset"), so any line with a non-ASCII character before the mutant was
+        read at the wrong place: `—` is one character and THREE UTF-8 bytes, so
+        a byte-indexed lookup lands two early and the operator is not where the
+        checker looks.
+
+        The direction is the safe one — a sound key is REJECTED rather than a
+        broken one accepted — but it is still a gate refusing correct work, and
+        this repo's comments are full of em dashes. Line 22 of the fixture puts
+        one before the operator; line 21 puts one after, where byte and
+        character columns agree, so the two together separate "handles
+        non-ASCII" from "happens to work when it appears late"."""
+        self.assertEqual(self.faults(("client/src/a.ts", "22:23", "EqualityOperator", "a >= b")),
+                         {}, "column 23 is where Stryker says the expression starts")
+        self.assertEqual(self.faults(("client/src/a.ts", "21:5", "EqualityOperator", "a >= b")),
+                         {}, "an em dash AFTER the operator must not matter either")
+        # ...and the check still bites on this line: a column that is wrong in
+        # Stryker's own counting is still refused, so the fix widened nothing.
+        self.assertNotEqual(self.faults(("client/src/a.ts", "22:25", "EqualityOperator", "a >= b")),
+                            {}, "byte column 25 is NOT the expression start and must be refused")
+        # THE ASTRAL CASE, and without it this test does not pin its own name.
+        # Every character above is BMP, where UTF-16 units and Python characters
+        # agree — so a character-counting implementation passes all three
+        # assertions and the docstring's design decision goes unchecked. Found
+        # by review, fault-injected to confirm: swapping byte_offset for a
+        # character version leaves those three green and fails only this one.
+        self.assertEqual(self.faults(("client/src/a.ts", "23:21", "EqualityOperator", "a >= b")),
+                         {}, "an emoji is TWO UTF-16 units; column 21 is Babel's answer")
 
     def test_a_key_on_a_line_comment_is_rejected(self):
         faults = self.faults(("client/src/a.ts", "70:1", "ConditionalExpression", "false"))

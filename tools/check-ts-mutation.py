@@ -205,11 +205,38 @@ COMMENT_PREFIXES = (b"//", b"/*", b"*")
 REPO = Path(__file__).resolve().parent.parent
 
 
+def byte_offset(line, col):
+    """Stryker's 1-based column -> a 0-based BYTE offset into `line`.
+
+    THESE ARE NOT THE SAME NUMBER, and this function exists because the code
+    below used to assume they were. Stryker's columns come from Babel, which
+    indexes JavaScript strings — UTF-16 code units. `—` is ONE unit and THREE
+    UTF-8 bytes, so on any line holding one, a column used directly as a byte
+    offset lands two early and the operator is not where the check looks.
+
+    Round-tripping through UTF-16-LE is exact rather than close. Counting
+    decoded CHARACTERS would agree with Babel across the Basic Multilingual
+    Plane and disagree on emoji, which JavaScript counts as two units and
+    Python as one — a difference no test would notice until source containing
+    one reached a gated file.
+
+    The bug this fixes failed SAFE: a sound key was rejected, never a broken
+    one accepted. It still had to go. A gate that refuses correct work over an
+    em dash is one people learn to argue with, and this repo's comments are
+    full of em dashes.
+    """
+    text = line.decode("utf-8", "replace")
+    units = text.encode("utf-16-le")
+    prefix = units[: max(col - 1, 0) * 2].decode("utf-16-le", "replace")
+    return len(prefix.encode("utf-8"))
+
+
 def source_line(root, path, where):
     """The raw BYTES of the line a key names, or None if it cannot be read.
 
-    Bytes, not text: the column is a byte offset, and decoding first would move
-    it on any line containing a non-ASCII character.
+    Bytes, not text, so the tokens compared against it stay bytes throughout.
+    The COLUMN is converted separately — see byte_offset, and do not index this
+    with a Stryker column directly.
     """
     try:
         wanted = int(where.split(":")[0])
@@ -293,8 +320,9 @@ def read_position(root, key):
         return (f"{where!r} is not a line:col", anchor)
     if mutator in NO_POSITION_RULE:
         return ("", anchor)
+    off = byte_offset(line, col)
     if mutator in STRING_MUTATORS:
-        opener = line[col - 1:col] if 1 <= col <= len(line) else b""
+        opener = line[off:off + 1] if 1 <= col and off < len(line) else b""
         if opener not in (b'"', b"'", b"`"):
             return (f"column {col} of {anchor!r} holds {opener.decode('utf-8', 'replace')!r}, "
                     f"which opens no string or template literal", anchor)
@@ -308,9 +336,9 @@ def read_position(root, key):
         return (f"{mutator} is in neither MUTATOR_TOKENS nor NO_POSITION_RULE, so this gate "
                 f"cannot say what its column should hold and is not checking this key at all. "
                 f"Add it to whichever it belongs in, with the reason", anchor)
-    if col < 1 or col > len(line):
+    if col < 1 or off >= len(line):
         return (f"column {col} is past the end of {anchor!r}", anchor)
-    was = operator_at(line[col - 1:], replacement.encode(), tokens)
+    was = operator_at(line[off:], replacement.encode(), tokens)
     if not was:
         return (f"column {col} of {anchor!r} does not begin the expression {replacement!r} "
                 f"names — no {mutator} operator ({' '.join(tokens)}) stands where the "

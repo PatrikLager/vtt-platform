@@ -355,13 +355,13 @@ client/src/view/grid.ts 139:61 EqualityOperator a.tokenId <= b.tokenId
 
 # --- client/src/wire.ts -----------------------------------------------------
 
-client/src/wire.ts 460:13 EqualityOperator env.sequence >= this.lastSeq
-    `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. Equality makes the assignment write the value lastSeq already holds. Same shape as the two undo.ts entries above, and lastSeq's only consumer is reconnect's resume cursor, which sees an unchanged number either way.
+client/src/wire.ts 464:13 EqualityOperator env.sequence >= this.lastSeq
+    `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. The two differ on exactly one input — an envelope whose sequence EQUALS the mark — and on that input the mutant performs the assignment the original skips, writing the value the field already holds. bigint is a primitive compared by value, so there is no identity to see the write: `Object.is(4n, 4n)` is true. CORRECTED 2026-08-25: this used to say "lastSeq's only consumer is reconnect's resume cursor", and BOTH halves were false. reconnect() never reads lastSeq — it WRITES it (wire.ts 355-356), deriving resume from seenSeq, as this file's own header says in capitals. And lastSeq is not private to the wire: `get head()` (wire.ts:130) exposes it, Session.head forwards it (session.ts:73-74), and a dozen tests assert on it directly. The conclusion survives the correction — head returns the same bigint either way — but the old reason sent an auditor looking for a consumer that does not exist, past the public getter that does.
 
-client/src/wire.ts 484:7 ConditionalExpression default:
+client/src/wire.ts 488:7 ConditionalExpression default:
     Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
 
-client/src/wire.ts 459:13 EqualityOperator env.sequence >= this.seenSeq
+client/src/wire.ts 463:13 EqualityOperator env.sequence >= this.seenSeq
     `if (env.sequence > this.seenSeq) this.seenSeq = env.sequence;` -> `>=` in handleFrame's event arm. The two branches differ on exactly one input — an envelope whose sequence EQUALS the high-water mark, which the projection makes ordinary rather than exotic (one log event reaches a seat as several envelopes sharing one sequence). On that input the mutant performs the assignment the original skips, and the assignment writes the value the field already holds. Both are bigint, a primitive compared by value, so there is no identity to distinguish either: `Object.is(4n, 4n)` is true, and the field is a plain private with no getter, setter or Proxy on it. seenSeq is read in exactly two places — `reconnect()`'s `this.seenSeq > 0n ? this.seenSeq - 1n : 0n`, and this comparison itself — and neither can tell a re-written 4n from an untouched one. MEASURED 2026-08-24: mutant hand-applied, the WHOLE client suite run (639 tests, 26 files), 0 failures. Same shape as the two undo.ts entries already in this file.
 
 # --- client/src/view/feed.ts ------------------------------------------------
