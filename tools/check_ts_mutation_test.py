@@ -383,8 +383,21 @@ class KeyPosition(unittest.TestCase):
     def test_a_mutator_with_no_position_rule_is_still_checked_for_comments(self):
         """ConditionalExpression spans a whole clause, so its column says
         nothing about a token — but "not on a comment" still applies, and it is
-        the rule that catches the drift that actually happened."""
-        self.assertEqual(self.faults(("client/src/a.ts", "20:51", "ConditionalExpression", "false")), {})
+        the rule that catches the drift that actually happened.
+
+        BOTH HALVES, because until 2026-08-25 this test asserted only the first
+        and its name was a lie: a key on ORDINARY CODE producing no fault says
+        nothing about whether the comment rule runs. Delete the comment rule
+        entirely and the old single assertion stayed green — a test that cannot
+        fail for the property it names, which is the defect class this whole
+        file exists to pin."""
+        self.assertEqual(
+            self.faults(("client/src/a.ts", "20:51", "ConditionalExpression", "false")), {},
+            "a NO_POSITION_RULE mutator on real code must not be rejected outright")
+        self.assertIn(
+            "COMMENT",
+            self.faults(("client/src/a.ts", "70:1", "ConditionalExpression", "false")).get("70:1", ""),
+            "...and the comment rule must still apply to it")
 
     def test_a_string_key_whose_column_does_not_open_a_string_is_rejected(self):
         faults = self.faults(("client/src/a.ts", "80:16", "StringLiteral", '"Stryker was here!"'))

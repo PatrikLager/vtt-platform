@@ -904,7 +904,13 @@ class KeyPositionTest(unittest.TestCase):
         CONDITIONALS_BOUNDARY cannot."""
         faults = self.faults([("p", "a.go:80:7", "CONDITIONALS_BOUNDARY")])
         self.assertIn("a.go:80:7", faults)
-        self.assertIn("+", faults["a.go:80:7"])
+        # THE TOKEN AS THE MESSAGE REPORTS IT, not a bare "+" anywhere in the
+        # string. The fault interpolates the whole line as an anchor before it
+        # names what it found — "column 7 of 'n := a+b' holds 'a+b'" — so a
+        # bare assertIn("+") is satisfied by the ANCHOR and survives the found
+        # token being blanked entirely. It passed for a reason unrelated to the
+        # property this test is named for.
+        self.assertIn("holds '+", faults["a.go:80:7"])
 
     def test_the_same_column_is_accepted_for_the_mutator_that_does_live_there(self):
         """The control that stops the rule above from being 'reject everything'."""
