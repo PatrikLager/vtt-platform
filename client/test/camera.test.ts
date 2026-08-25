@@ -45,6 +45,35 @@ test("a viewport TALLER than the fitted scene centres it vertically, by exactly 
   expect(corner.y).toBeCloseTo(0, 4);
 });
 
+test("a scene TALLER than it is wide is fitted by its height, not its width", () => {
+  // WITHOUT THIS, NOTHING IN THE REPO DISTINGUISHES fitCamera's TWO SCENE
+  // DIMENSIONS. Stated as a MEASUREMENT rather than a survey of fixtures:
+  // rewriting camera.ts's `worldH` to read `sceneW` left the WHOLE client
+  // suite green, 684 pass / 0 fail.
+  //
+  // The survey is deliberately not written out. An earlier draft listed the
+  // square fixtures and named app.test.ts as the only non-square one; review
+  // found a second (spectator-view.test.ts's 6x4 scene, reaching fitCamera
+  // fifty-three times) and that the stated reason for app.test.ts's blindness
+  // did not transfer to it. A list like that is a claim about every file in the
+  // repo, it goes stale on the next fixture anyone adds, and the measurement
+  // above already carries the whole argument.
+  //
+  // The mutation gate would not have caught this either: camera.ts IS gated and
+  // sits at zero survivors, but swapping one identifier for another is not a
+  // mutation Stryker makes.
+  //
+  // 2 wide by 8 tall at cell 10 is 20x80 world px in a square 100x100
+  // viewport, so HEIGHT binds: scale is 100/80, and the horizontal slack is
+  // what gets halved. Under the sceneW-for-sceneH defect the scene reads as
+  // 20x20, width and height bind together at 100/20, and BOTH numbers below
+  // move — scale to 5 and offsetX to 0.
+  const cam = fitCamera(2, 8, 10, 100, 100);
+  expect(cam.scale).toBeCloseTo(100 / 80, 4);
+  expect(cam.offsetX).toBeCloseTo(37.5, 4);
+  expect(cam.offsetY).toBeCloseTo(0, 4);
+});
+
 test("clicking maps back to the square under the cursor at any zoom", () => {
   const cam = fitCamera(10, 10, 44, 440, 440); // 1:1
   const geom = { cell: 44, width: 10, height: 10 };

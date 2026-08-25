@@ -115,7 +115,44 @@ function recorder(): { calls: string[]; ctx: CanvasRenderingContext2D } {
       calls.push(`drawImage(${(img as { tag: string }).tag},${dx},${dy},${dw},${dh})`);
     },
   } as unknown as CanvasRenderingContext2D;
-  return { calls, ctx };
+
+  // A PROXY, because the guarantee above was only half true and the missing
+  // half is the one this file rests on. Measured both ways, by inserting each
+  // into paint(): `ctx.setTransform(1,0,0,1,0,0)` FAILS TESTS — the method is
+  // absent from the double, so calling it throws — while `ctx.globalAlpha =
+  // 0.5` failed NOTHING and recorded nothing, because assigning to a property
+  // a plain object does not declare simply creates it, in silence. Neither is
+  // caught by client:typecheck: both are real CanvasRenderingContext2D
+  // members, and the double reaches its type through `as unknown`.
+  //
+  // No failure count here on purpose. It depends on where in paint() the
+  // injection goes — above the op loop it also takes the empty-ops tests, below
+  // it does not — so any number written down is true of one probe and wrong for
+  // the next reader's.
+  //
+  // So the doc comment above promised "anything not here throws" while a new
+  // alpha, colour or line-dash setting could appear in canvas.ts with no test
+  // moving — in the file whose whole argument is that PROPERTY ASSIGNMENTS ARE
+  // CALLS, and which rests three of its kills on exactly that.
+  //
+  // Trapped on WRITES, not reads: reading an unknown property yields undefined
+  // and the assertion that follows would catch it, but a write leaves no result
+  // for anything to look at.
+  return {
+    calls,
+    ctx: new Proxy(ctx, {
+      set(target, prop, value) {
+        if (!(prop in target)) {
+          throw new Error(
+            `canvas.ts set ctx.${String(prop)} = ${String(value)}, which this double does not ` +
+              `record — a new decision in the layer meant to make none. Add it to recorder() ` +
+              `and assert on it, or move the decision into scene-plan.ts.`,
+          );
+        }
+        return Reflect.set(target, prop, value);
+      },
+    }) as CanvasRenderingContext2D,
+  };
 }
 
 /**
