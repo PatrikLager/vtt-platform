@@ -60,6 +60,64 @@ def equivalents(text):
     return fh.name
 
 
+# The source every equivalents fixture below is keyed against.
+#
+# It has to be REAL source at REAL columns, because the gate now reads the tree
+# at each key's file:line:col and rejects a key that no longer points at a
+# mutant of the kind it names. A fixture of blank lines would make every test
+# here fail with a position complaint instead of the thing it is about.
+#
+# COLUMNS ARE 1-BASED BYTE OFFSETS and the operator has to land on the one the
+# key already spells, which is why these read `if a<b {` rather than the
+# gofmt-ed `if a < b {`: the historic fixtures in this file say 10:5, and the
+# column is the thing under test.
+#
+# The lines are DELIBERATELY DISTINCT where the tests rely on two keys being
+# different claims (10 vs 11 vs 14), and DELIBERATELY IDENTICAL where they rely
+# on a pairing being possible (30/40/50/60). That is the whole content-anchor
+# idea in a fixture: two keys pair when the source says they are the same
+# statement, and never merely because they share a file and a mutator.
+GO_LINES = {
+    10: "if a<b {",            # col 5 is `<`   -- the canonical adjudication
+    11: "if c>d {",            # col 5 is `>`   -- one line away, DIFFERENT text
+    14: "if e<f {",            # col 5 is `<`   -- same token, different text
+    20: "if abcde<f {",        # col 9 is `<`
+    30: "if dup<lim {",        # col 7 is `<`   -- four copies of ONE statement,
+    40: "if dup<lim {",        # col 7 is `<`      so a move between them is
+    50: "if dup<lim {",        # col 7 is `<`      indistinguishable by content
+    60: "if dup<lim {",        # col 7 is `<`      and pairable by it
+    70: "// a line comment",
+    71: "/* a block comment */",
+    72: " * a doc-comment continuation line",
+    80: "n := a+b",            # col 7 is `+`
+    90: "\tif tab<x {",        # col 8 is `<`, counting the TAB as one byte
+}
+
+
+def _go_file(path, clause):
+    """Write GO_LINES out as a .go file, padded so the line numbers are real.
+
+    The package clause has to MATCH THE DIRECTORY NAME or unresolvable_packages
+    refuses the run before anything is measured — a real guard, and one that
+    would otherwise red every test here with a diagnosis from the wrong
+    subsystem now that these directories contain Go source at all.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    body = [f"package {clause}", "", "func F() {"]
+    while len(body) < max(GO_LINES):
+        body.append(GO_LINES.get(len(body) + 1, "\t_ = 0"))
+    with open(path, "w") as fh:
+        fh.write("\n".join(body) + "\n}\n")
+
+
+def source_tree(root):
+    """The two packages and two files every fixture key in this file names."""
+    for pkg in ("p", "q"):
+        for name in ("a.go", "b.go"):
+            _go_file(os.path.join(root, pkg, name), pkg)
+    return root
+
+
 class MutationGateTest(unittest.TestCase):
     def gate(self, eq_path, mapping, packages=("./p/",)):
         out, err = io.StringIO(), io.StringIO()
@@ -69,6 +127,7 @@ class MutationGateTest(unittest.TestCase):
         # symlink anywhere under the working directory short-circuits run()
         # and reds all of them with a diagnosis from the wrong subsystem.
         with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
             # free_bytes pinned for the same reason root is: without it every
             # test here reads the REAL disk, and on a machine below the floor
             # all of them fail with a diagnosis from the wrong subsystem — 26
@@ -146,11 +205,17 @@ class MutationGateTest(unittest.TestCase):
     # leaves the survivor unexplained. Measured: that happened four times in one
     # day, across both gates.
     #
-    # The TS gate can go further and NAME the move, because its keys carry the
-    # replacement text. The Go keys do not, so "same file, same mutator" cannot
-    # tell a moved mutant from a different one a line away — which is precisely
-    # what test_adjudication_is_matched_on_all_three_fields above pins. So this
-    # side gets a hint that changes the MESSAGE and never the verdict.
+    # THIS IS THE RESIDUE, not the whole answer, and it stopped being the whole
+    # answer when moved_entries landed — see MovedAdjudicationTest below. A
+    # move the SOURCE can prove (same package, file, mutator, operator and line
+    # text) is now reported as a move with its new key. What is left here is
+    # the ordinary shift, where an insertion above leaves the entry's old line
+    # holding somebody else's code and nothing in the tree can pair the two:
+    # the Go key carries no replacement text, so "same file, same mutator" on
+    # its own cannot tell a moved mutant from a different one a line away —
+    # which is precisely what test_adjudication_is_matched_on_all_three_fields
+    # above pins. For that residue the hint changes the MESSAGE and never the
+    # verdict.
 
     def test_stale_entry_hints_at_a_same_file_survivor(self):
         eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
@@ -786,6 +851,260 @@ class MutationGateTest(unittest.TestCase):
         code, _, err = self.gate(eq, m, packages=("./p/", "./q/"))
         self.assertEqual(code, 1, "a survivor in the SECOND package must still fail the gate")
         self.assertIn("b.go:2:2", err)
+
+
+class KeyPositionTest(unittest.TestCase):
+    """A key must still point at a mutant of the kind it names.
+
+    THE CLASS OF DRIFT THIS CATCHES IS THE DANGEROUS ONE. A key that has merely
+    MOVED fails the gate anyway, loudly, as a stale entry beside an
+    unadjudicated survivor. A key that has landed on a COMMENT or on a
+    different token fails NOTHING: no mutant lives there, so it never appears
+    in a survivor list, and the entry sits in the file silently pre-approving
+    whatever does land on that line later.
+
+    Measured on the TS side: `wire.ts 292:13` and `316:7` sat on comment lines
+    for three days, and a canvas.ts key landed on one WITHIN AN HOUR of being
+    written, because a comment edit above it shifted the line.
+
+    The trap this class is written against is recorded in the equivalents
+    file's own header: the hand-rolled version of this check tested
+    `startswith("//")`, which a `/**` doc comment does not match, and had no
+    branch for the mutator on the entry that had drifted — so it reported "0
+    suspect" TWICE over a genuinely broken key. Every rule below therefore has
+    a DELIBERATELY BROKEN key that must fail, not only a good key that passes.
+    """
+
+    def faults(self, keys):
+        """suspect_positions over a hermetic tree, as {location: complaint}."""
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            entries = {k: "reason" for k in keys}
+            return {k[1]: fault for k, fault in cm.suspect_positions(entries, root=root)}
+
+    def test_a_key_on_a_line_comment_is_rejected(self):
+        faults = self.faults([("p", "a.go:70:1", "CONDITIONALS_BOUNDARY")])
+        self.assertIn("a.go:70:1", faults)
+        self.assertIn("COMMENT", faults["a.go:70:1"])
+
+    def test_a_key_on_a_block_comment_is_rejected(self):
+        """`/*`, which the shipped check's `startswith("//")` did not match."""
+        faults = self.faults([("p", "a.go:71:1", "CONDITIONALS_BOUNDARY")])
+        self.assertIn("COMMENT", faults.get("a.go:71:1", ""))
+
+    def test_a_key_on_a_doc_comment_continuation_is_rejected(self):
+        """A line whose first non-space is `*` — the middle of a /** block, and
+        the exact shape the drifted key landed on."""
+        faults = self.faults([("p", "a.go:72:3", "CONDITIONALS_BOUNDARY")])
+        self.assertIn("COMMENT", faults.get("a.go:72:3", ""))
+
+    def test_a_key_whose_column_holds_a_token_the_mutator_cannot_apply_to(self):
+        """80:7 is the `+` of `n := a+b`. ARITHMETIC_BASE lives there;
+        CONDITIONALS_BOUNDARY cannot."""
+        faults = self.faults([("p", "a.go:80:7", "CONDITIONALS_BOUNDARY")])
+        self.assertIn("a.go:80:7", faults)
+        self.assertIn("+", faults["a.go:80:7"])
+
+    def test_the_same_column_is_accepted_for_the_mutator_that_does_live_there(self):
+        """The control that stops the rule above from being 'reject everything'."""
+        self.assertEqual(self.faults([("p", "a.go:80:7", "ARITHMETIC_BASE")]), {})
+
+    def test_a_key_one_column_off_is_rejected(self):
+        """The near miss, which is what a hand-re-keyed column actually looks
+        like. 10:5 is the `<`; 10:6 is the `b` beside it."""
+        self.assertIn("a.go:10:6", self.faults([("p", "a.go:10:6", "CONDITIONALS_BOUNDARY")]))
+
+    def test_a_sound_key_is_accepted(self):
+        self.assertEqual(self.faults([("p", "a.go:10:5", "CONDITIONALS_BOUNDARY")]), {})
+
+    def test_the_column_is_a_byte_offset_so_a_tab_counts_as_one(self):
+        """Go source is TAB-indented. Counting a tab as a tab stop puts every
+        key in every indented file at the wrong column, and the check would
+        then reject the whole file — a gate that fails on good data gets
+        loosened, and a loosened gate is how this started.
+
+        90 is `\\tif tab<x {`: the `<` is at byte column 8, not 15.
+        """
+        self.assertEqual(self.faults([("p", "a.go:90:8", "CONDITIONALS_BOUNDARY")]), {})
+        self.assertIn("a.go:90:15", self.faults([("p", "a.go:90:15", "CONDITIONALS_BOUNDARY")]))
+
+    def test_a_key_naming_a_line_that_is_not_there_is_rejected(self):
+        self.assertIn("a.go:9999:5", self.faults([("p", "a.go:9999:5", "CONDITIONALS_BOUNDARY")]))
+
+    def test_a_key_naming_a_file_that_is_not_there_is_rejected(self):
+        self.assertIn("gone.go:10:5", self.faults([("p", "gone.go:10:5", "CONDITIONALS_BOUNDARY")]))
+
+    def test_a_mutator_with_no_rule_is_fatal_rather_than_silently_skipped(self):
+        """THE SECOND HALF OF THE RECORDED BUG. The shipped check had no branch
+        for one entry's mutator and skipped it without a word, which is how it
+        reported "0 suspect" over a key that had drifted.
+
+        A mutator this gate cannot place must therefore FAIL rather than pass.
+        Weakening this to "unknown means fine" re-creates the defect exactly.
+        """
+        faults = self.faults([("p", "a.go:10:5", "NO_SUCH_MUTATOR")])
+        self.assertIn("a.go:10:5", faults)
+        self.assertIn("NO_SUCH_MUTATOR", faults["a.go:10:5"])
+
+    def test_the_gate_itself_fails_and_names_the_key(self):
+        """Through run(), not just the helper: a check nothing calls is a check
+        that does not run."""
+        eq = equivalents("p  a.go:70:1  CONDITIONALS_BOUNDARY\n    reason\n")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 1, "a key on a comment must FAIL the gate")
+        self.assertIn("a.go:70:1", err.getvalue())
+        self.assertIn("COMMENT", err.getvalue())
+        self.assertNotIn("zero unadjudicated survivors", out.getvalue())
+
+    def test_a_suspect_key_is_not_also_told_to_delete_itself(self):
+        """TWO MESSAGES THAT CONTRADICT EACH OTHER ARE WORSE THAN ONE.
+
+        A key on a comment has no mutant, so it is stale as well as suspect,
+        and the generic stale line fires beside the position one: "re-key it,
+        do not delete it" immediately under "remove the entry". A reader
+        following the second loses the reasoning, which is the exact harm this
+        whole change exists to stop. The position diagnosis is strictly the
+        more informative of the two, so it is the one that survives.
+
+        It costs the gate nothing: the entry is still reported and the gate
+        still fails.
+        """
+        eq = equivalents("p  a.go:70:1  CONDITIONALS_BOUNDARY\n    reason\n")
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 1, "a suspect key must still FAIL the gate")
+        self.assertIn("a.go:70:1", err.getvalue())
+        self.assertNotIn("remove the entry", err.getvalue())
+
+    def test_a_sound_file_of_keys_does_not_red_the_gate(self):
+        """The control at the gate level. A position check that refuses good
+        keys would be worked around rather than obeyed."""
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(eq, ["./p/"], runner_for(m), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 0, err.getvalue())
+
+    def test_every_real_adjudication_still_points_at_its_mutant(self):
+        """THE ACCEPTANCE ASSERTION, against the real tree and the real file.
+
+        This is the one that would have caught all four of the comment-line
+        keys, and it is also the one that keeps the table above honest: a rule
+        that rejected any of the 39 recorded adjudications would be a bug in
+        the rule, not a finding.
+        """
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        entries = cm.read_equivalents(os.path.join(repo, "tools", "mutation-equivalents.txt"))
+        self.assertGreater(len(entries), 30, "the real file must not have gone empty under this")
+        self.assertEqual(cm.suspect_positions(entries, root=repo), [],
+                         "every key in tools/mutation-equivalents.txt must still point at a "
+                         "token its mutator can apply to")
+
+
+class MovedAdjudicationTest(unittest.TestCase):
+    """Pairing a stale entry to the survivor it became, and never advising a
+    deletion when a pairing exists.
+
+    THE HARM IS THE DELETE-THE-ADJUDICATION REFLEX. "No longer survives, remove
+    the entry" reads as an instruction; obeying it when the mutant merely moved
+    throws away reasoning somebody did and leaves a real survivor unexplained.
+    Measured: four times in one day, across both gates.
+
+    THE GO KEY CARRIES NO REPLACEMENT TEXT, which is why this gate had only a
+    prose hint for so long — `(package, file, mutator)` cannot tell a moved
+    mutant from a different one a line away. The signature it pairs on now is
+    derived from the SOURCE instead: the operator at the column and the trimmed
+    text of the line. Two keys pair when the tree says they are the same
+    statement, and the hint is what remains for everything else.
+    """
+
+    def gate(self, eq_path, mapping, packages=("./p/",)):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(eq_path, list(packages), runner_for(mapping),
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3,
+                          cache_bytes=0)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_move_the_source_can_prove_is_reported_as_a_move(self):
+        """30 and 40 are the same statement, so a mutant that moved between
+        them is pairable by content even with no replacement text in the key."""
+        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    reasoned\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1, "a re-key is still a failure, not a pass")
+        self.assertIn("ADJUDICATION MOVED", err)
+        self.assertIn("30:7", err)   # where it was
+        self.assertIn("40:7", err)   # where it is now
+        # And NOT as the two separate failures it used to be, because that
+        # framing is what makes deleting a sound adjudication look like the fix.
+        self.assertNotIn("no longer survives", err)
+        self.assertNotIn("SURVIVED", err)
+
+    def test_a_survivor_on_a_different_statement_is_not_paired(self):
+        """THE CAUTION THIS EXTENDS RATHER THAN REPLACES. 10 and 14 carry the
+        same mutator and the same operator one screen apart, and they are
+        DIFFERENT CLAIMS — pairing them would re-key an adjudication onto a
+        mutant nobody judged, which is the failure the gate exists to prevent,
+        arrived at by a convenience."""
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reasoned\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        self.assertNotIn("ADJUDICATION MOVED", err)
+        self.assertIn("no longer survives", err)
+        self.assertIn("not adjudicated", err)
+
+    def test_two_entries_and_two_survivors_pair_by_position_order(self):
+        """The AMBIGUOUS class, and the one the gate used to answer with
+        "delete them". Four copies of one statement: nothing in the source can
+        say which entry became which survivor, and it does not matter, because
+        the statements are identical and so the adjudications are
+        interchangeable. Deleting two sound adjudications and leaving two real
+        survivors unexplained is worse than either ordering."""
+        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    first\n"
+                         "p  a.go:40:7  CONDITIONALS_BOUNDARY\n    second\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:50:7"),
+                                     ("CONDITIONALS_BOUNDARY", "a.go:60:7"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        # Paired in position order, and SAID so, so a reader can object.
+        self.assertIn("POSITION ORDER", err)
+        self.assertIn("30:7 -> 50:7", err)
+        self.assertIn("40:7 -> 60:7", err)
+        self.assertNotIn("no longer survives", err)
+
+    def test_mismatched_counts_still_refuse_to_guess(self):
+        """Two entries, one survivor. There is no pairing, only a choice, and
+        the gate does not make choices — it reports both sides and fails."""
+        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    first\n"
+                         "p  a.go:40:7  CONDITIONALS_BOUNDARY\n    second\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:50:7"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        self.assertNotIn("ADJUDICATION MOVED", err)
+        self.assertIn("no longer survives", err)
+        self.assertIn("not adjudicated", err)
+
+    def test_a_move_is_never_advice_to_delete(self):
+        """The property the whole of Part B is for, asserted on the message
+        rather than inferred from the pairing."""
+        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    reasoned\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
+        _, _, err = self.gate(eq, m)
+        self.assertIn("RE-KEY", err)
+        self.assertNotIn("remove the entry", err)
 
 
 def _pkg_dir(root, rel, clause, with_test=True):
