@@ -221,7 +221,9 @@ func closeDoorCmd(sceneID string, x, y int32) *vttv1.ClientCommand {
 	}}
 }
 
-// authzCase is one cell of the 21 commands x 4 roles authorization matrix.
+// authzCase is one cell of the commands x roles authorization matrix. No
+// count in this sentence: TestAuthorizeTableAllCommandsAllRoles asserts the
+// total, and this comment said 21 while that assertion said 88 = 22 x 4.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.

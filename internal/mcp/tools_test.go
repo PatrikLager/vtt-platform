@@ -20,29 +20,25 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// wantCommandToolNames are the 16 oneof-field names in vttv1.ClientCommand's
+// wantCommandToolNames are the oneof-field names in vttv1.ClientCommand's
 // "command" oneof, restated here (not derived from the SDK under test) so
 // this test pins the actual expected set rather than trivially re-deriving
-// whatever tools.go happened to register. Grew from 7 to 9 with
-// use_ability/remove_condition (ruleset-interpreter sub-project 5a, Task 1
-// — contract's rules vocabulary), 9 to 12 with add_narration/upsert_note/
-// delete_note (world-layer sub-project 8, P11 Task 1), 12 to 13 with
-// load_adventure (adventure-format sub-project 9, P12 Task 1 — fix-wave F5
-// sweep: this pin had silently stopped growing with the oneof itself,
-// leaving load_adventure unpinned here even though it landed on this
-// branch), 13 to 15 with open_door/close_door (maps-as-geometry
-// sub-project, Task 1 — contract's terrain and door vocabulary; not yet
-// authorized or convertible by the gateway, which is Task 6's job, but
-// already a real MCP tool per spec §5: "open_door and close_door appear as
-// MCP tools automatically, the way load_adventure did"), and 15 to 16 with
-// load_map (maps-as-geometry whole-branch review C1: a standalone map could
-// be validated, listed and have its art served, but never loaded into a
-// campaign — load_map is load_adventure's sibling for a standalone map), and
-// 16 to 17 with set_viewpoint (visibility sub-project, Task 2 — a spectator's
-// perch; it is a real MCP tool the moment the oneof carries it, same as
-// open_door/close_door were before their Task 6. It is now authorized and
-// handled too (visibility Task 6), though it converts to no event at all: a
-// perch appends nothing, so the gateway answers it without ToEvent).
+// whatever tools.go happened to register.
+//
+// NO COUNT IN THAT SENTENCE, AND NO RUNNING TALLY. Until 2026-08-25 this
+// comment carried both: a lead sentence naming 16 and a per-addition
+// changelog that ran 7 -> 9 -> 12 -> 13 -> 15 -> 16 -> 17 and then stopped
+// growing, over a list that by then held 22. git holds that history in full;
+// a second copy here only supplied two numbers to be wrong in.
+//
+// The one part worth keeping is the warning: this pin has SILENTLY STOPPED
+// GROWING before. load_adventure reached the oneof and never reached this
+// list, and nothing went red. That is why no guard on the tool surface may
+// rest on a hand-written list alone —
+// TestEveryManifestCommandIsRegisteredAsATool reads the generated manifest
+// instead. This list earns its place on the OTHER direction: a command
+// removed from the contract vanishes from the manifest too, so only a
+// hand-written set can notice it is gone.
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
 	"start_session", "end_session", "retract_events",

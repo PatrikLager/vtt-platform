@@ -124,10 +124,10 @@ func TestMCPCommandMissingTokenErrorsViaRunCLI(t *testing.T) {
 // RunE(ctx, &mcpsdk.StdioTransport{}) path actually works end to end, not
 // just the in-memory-transport substitute TestMCPSpecSevenExitCriteria
 // uses below. list_tools must report every command tool in the embedded
-// manifest plus the four read/guide tools. The command count is DERIVED
-// from the embedded manifest rather than written down, since a hand-kept
-// number is a second copy of a fact tools.json already holds; only the four
-// Go-registered read/guide tools remain a literal; closing the client
+// manifest plus every tool registered in Go. Neither side is a hand-kept
+// number here — the command tools come from the embedded manifest, the
+// Go-registered ones from the single list mcp.GoRegisteredToolNames, an
+// asymmetry the comments at the assertion spell out; closing the client
 // session then closes the subprocess's stdin, which is enough to let the
 // process exit on its own (asserted via a bounded Wait, Kill as the
 // fallback safety net matching this package's established subprocess-test
@@ -175,8 +175,8 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	// four separate sites that each carried their own copy of "17" — the
 	// adventure-format sub-project shipped a stale one three times on a single
 	// rename. The embedded tools.json is the same bytes the binary serves, so
-	// this asserts the real relationship: every command tool, plus the four
-	// read/guide tools registered separately.
+	// this asserts the real relationship: every command tool, plus every tool
+	// registered separately in Go.
 	var manifest []struct {
 		Name string `json:"name"`
 	}
@@ -188,15 +188,15 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	// internal/mcp's own ListTools test holds to the registered set. A literal
 	// here was the fifth copy of a number #30 spent a task consolidating, and
 	// it went stale the first time a tool was added after that.
-	readAndGuideTools := len(mcppkg.GoRegisteredToolNames)
-	want := len(manifest) + readAndGuideTools
+	goRegisteredTools := len(mcppkg.GoRegisteredToolNames)
+	want := len(manifest) + goRegisteredTools
 	if len(res.Tools) != want {
 		names := make([]string, 0, len(res.Tools))
 		for _, tl := range res.Tools {
 			names = append(names, tl.Name)
 		}
-		t.Fatalf("ListTools over real stdio: got %d tools, want %d (%d command + %d read/guide): %v",
-			len(res.Tools), want, len(manifest), readAndGuideTools, names)
+		t.Fatalf("ListTools over real stdio: got %d tools, want %d (%d command + %d Go-registered): %v",
+			len(res.Tools), want, len(manifest), goRegisteredTools, names)
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.

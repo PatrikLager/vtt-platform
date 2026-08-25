@@ -11,7 +11,7 @@ import (
 
 // run is the generator's whole job: render buildTools() as indented JSON and
 // put it either on a writer or on disk. Its output IS cmd/vtt/tools.json,
-// which the drift gate pins and which defines all 13 MCP command tools — a
+// which the drift gate pins and which defines every MCP command tool — a
 // silent failure here ships wrong tool definitions to the seated agent.
 //
 // Note the deleted sibling: valueSchema (a one-line wrapper over

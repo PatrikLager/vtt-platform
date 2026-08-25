@@ -92,9 +92,6 @@ var getEventsSinceInputSchema = map[string]any{
 	"required": []string{"afterSequence"},
 }
 
-// registerReadTools adds get_state and get_events_since to the same tool
-// table New builds the 13 generic command tools into (spec §4: "Both
-// registered in the same tool table").
 // GoRegisteredToolNames are the tools registered in GO rather than generated
 // from the contract manifest — the ones no tools.json can be derived from.
 //
@@ -113,6 +110,11 @@ var GoRegisteredToolNames = []string{
 	"get_participants",    // door_tools.go (#45)
 }
 
+// registerReadTools adds get_state and get_events_since to the same tool
+// table New builds the generated command tools into — spec §4 lists them as
+// siblings of the command tools. (The sentence "Both registered in the same
+// tool table" that used to be quoted here as §4 is not in the spec at all; it
+// is the PLAN's Task 2, docs/superpowers/plans/2026-07-24-mcp-gateway.md:53.)
 func (s *Server) registerReadTools() {
 	s.mcp.AddTool(&mcpsdk.Tool{
 		Name:        "get_state",

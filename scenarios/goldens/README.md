@@ -196,7 +196,14 @@ entry in the fixture.
 
 ## Coverage
 
-Eight scenarios, covering **all fifteen** command types.
+Eight scenarios, covering fifteen of the contract's command types — **a
+subset, not all of them.** "All fifteen" stood here until 2026-08-25: it was
+true when fifteen WAS the whole contract, and stayed on the page as the
+contract grew past it, turning a corpus statistic into a false completeness
+claim. The door, map and viewpoint commands have no golden. Derive the
+current gap by diffing the scenarios' command keys against
+`contract/gen/tools/tools.json` rather than trusting a list written here,
+which is how this sentence went wrong in the first place.
 
 `session-zero` was added 2026-08-22 with the visibility arc's keystone. It is
 the only scenario in the corpus with a sight blocker, the only one with two

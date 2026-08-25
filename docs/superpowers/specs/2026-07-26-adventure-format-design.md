@@ -144,7 +144,8 @@ flees at half hp).
   several tables; per-adventure load still rejects a mismatch outright,
   §"Load-time validation" above, since asking for THAT adventure is a
   mistake).
-- Gateway authz: load_adventure — dm/agent only (13 commands × 4 roles).
+- Gateway authz: load_adventure — dm/agent only (the table goes 12 → 13
+  commands × 4 roles; corrected from a bare "13" 2026-08-25, see §8).
 - MCP: load_adventure auto-appears; `get_adventure_guide{adventure_id}`
   via `vtt mcp --adventures-dir` (startup snapshot, the ruleset-guide
   precedent; server-authoritative delivery stays residue). Tool count
@@ -164,10 +165,35 @@ invalid fixture per rule; compiled-batch goldens hand-derived; the
 collision rule tested against live state (load twice = second rejected);
 boot-time validation failure = serve exits nonzero with the file+field
 error; property/scenario pins byte-identical except the new scenario's
-own pins; MCP e2e: 17 tools, load_adventure round-trip, guide served,
-no-dir clean error. Remote demo before the merge gate (the 5b pattern):
-a fresh subagent DM with guide-only knowledge loads goblin-ambush and
-plays the opening; event log independently verified.
+own pins; MCP e2e: the tool total, derived rather than written down;
+load_adventure round-trip, guide served, no-dir clean error. Remote demo
+before the merge gate (the 5b pattern): a fresh subagent DM with
+guide-only knowledge loads goblin-ambush and plays the opening; event log
+independently verified.
+
+**AMENDED 2026-08-25: the e2e pins the tool total as a relationship, not a
+count.** "17 tools" was a TARGET the day this was written, never a description
+— §7 above records the surface as 15 on that same date — and it was stale by
+the next contract addition. This number and the literal beside it in the test
+were two copies of one fact, and neither could tell the other it had gone
+wrong. `cmd/vtt`'s stdio e2e now computes the total: the command tools DERIVED
+from the embedded `tools.json`, the hand-registered ones counted from the one
+list `mcp.GoRegisteredToolNames` — declared rather than derived, deliberately,
+since nothing generates them. A command added later is covered with nobody
+editing a number. The e2e asserts the TOTAL; the names are pinned in
+`internal/mcp`'s own ListTools test.
+
+§7's "Tool count 15 → 17" stands: it records the delta THIS sub-project made,
+which is history, not a claim about today. Its neighbour did not stand — "13
+commands × 4 roles" was a bare snapshot of the authz table, stale by nine, and
+is corrected to the delta it meant.
+
+And what made any of this findable was NOT the copies disagreeing. They agreed
+with each other perfectly — 13 command tools, 13+3 = 16, 13+4 = 17, a
+consistent arithmetic that read like corroboration — and every one of them
+disagreed with the code, which had 22. Agreeing copies are the harder case,
+because each one confirms the others. The only thing that catches them is
+re-running the sentence against the thing it describes.
 
 ## 9. Non-goals (YAGNI)
 

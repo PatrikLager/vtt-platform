@@ -180,20 +180,17 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// get_state / get_events_since (read_tools.go): registered in the same
-	// tool table as the 13 generic command tools above (spec §4).
+	// tool table as the generated command tools above (spec §4).
 	s.registerReadTools()
 
 	// get_ruleset_guide (ruleset-interpreter Task 6, guide_tool.go):
-	// registered in the SAME tool table, bringing the count to 16 as of
-	// adventure-format P12 Task 1's load_adventure contract addition (13
-	// generic command tools + get_state + get_events_since + this one; was
-	// 15 with 12 generic command tools before that task).
+	// registered in the SAME tool table, and named in GoRegisteredToolNames
+	// like every other Go-registered tool.
 	s.registerGuideTool()
 
 	// get_adventure_guide (adventure-format Task 4, adventure_guide_tool.go):
-	// registered in the SAME tool table too, bringing the count to 17 (the
-	// 13 generic command tools as of P12 Task 1's load_adventure addition +
-	// get_state + get_events_since + get_ruleset_guide + this one).
+	// registered in the SAME tool table too, and likewise named in
+	// GoRegisteredToolNames.
 	s.registerAdventureGuideTool()
 
 	// get_join_link / get_participants (door_tools.go, #45): the door was
