@@ -334,9 +334,14 @@ export class Wire {
    *     is below every cursor, so perch frames SURVIVE a rollback that drops
    *     ordinary ones.
    *
-   * So re-perch on a connection that resumed from 0 with an empty log, or drop
-   * the sequence-0 frames from the log before re-sending. Do not simply call
-   * setViewpoint again after reconnect().
+   * SO A CLIENT WHOSE LOG A PERCH HAS SHAPED MUST NOT RESUME — not with a
+   * re-perch, not without one. Use restart(), which dials after=0 and empties
+   * the log, and re-send the shoulder yourself afterwards, the way app.ts's
+   * redial() does. restart() itself sends nothing — it dials, and the re-perch
+   * is the caller's line.
+   *
+   * restart()'s table below records all four candidates run against the real
+   * gateway, with the outcome each produced. Read them there, not here.
    */
   async reconnect(): Promise<void> {
     // Abandon the old socket by forgetting it, then close it. Forgetting is
@@ -367,8 +372,7 @@ export class Wire {
    *
    * MEASURED AGAINST THE REAL GATEWAY (2026-08-24), on a watcher who had
    * perched and then seen a goblin walk into view. All four of the available
-   * answers, so that the two the reconnect() note above offers are not
-   * re-tried:
+   * answers, so that the dead ones are not re-tried:
    *
    *   - resume, then re-perch: `engine: scene "ambush" already exists`. The
    *     duplicate-introduction freeze — session.ts re-folds its whole log on
