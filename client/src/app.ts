@@ -152,6 +152,26 @@ function startSession(root: HTMLElement, token: string): Session {
   let status = "connecting";
   let failure = "";
   let me: Me | null = null;
+
+  /**
+   * "May I ride a shoulder, right now?" — asked in exactly one place.
+   *
+   * The null half and the role half belong together and used to be written out
+   * twice: once by paint() to decide whether to offer the control, once by
+   * redial() to decide whether to re-take the shoulder. The mutation gate is
+   * what showed that mattered. paint()'s copy is exercised with `me` still
+   * null (the first frame, before fetchMe resolves) so its null check is
+   * pinned; redial()'s copy is NOT, because reaching it needs a viewpoint,
+   * which needs an accepted perch, which needs the control, which needs a
+   * non-null `me` — and `me` is never assigned null again after line 154. So
+   * one copy's guard was checkable and the other's was unreachable, and the
+   * unreachable one survived as a mutant nobody could kill.
+   *
+   * One definition makes it one claim, checked where it IS reachable. That is
+   * the same argument mayPerch's own comment makes about the role question,
+   * applied one level up: two copies is two places to drift.
+   */
+  const iMayPerch = (): boolean => me !== null && mayPerch(me);
   let abilities: Ability[] = [];
   let adventures: AdventureMeta[] = [];
   let joinLink: JoinLink | null = null;
@@ -414,7 +434,7 @@ function startSession(root: HTMLElement, token: string): Session {
     }
     await session.restart();
     perchGranted = false;
-    if (viewpoint !== "" && me !== null && mayPerch(me)) await perchOn(viewpoint);
+    if (viewpoint !== "" && iMayPerch()) await perchOn(viewpoint);
   };
 
   const paint = () => {
@@ -435,7 +455,7 @@ function startSession(root: HTMLElement, token: string): Session {
     // offering them the control would be an affordance whose every use is a
     // refusal — and an unassigned PLAYER's answer to an empty board is to be
     // given a character, which is the onboarding flow working as intended.
-    const isSpectator = me !== null && mayPerch(me);
+    const isSpectator = iMayPerch();
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint) : undefined,
       console: isDM
