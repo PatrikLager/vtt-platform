@@ -26,6 +26,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"net"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,130 @@ func TestScenarioLibraryRunsSelfContained(t *testing.T) {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			runLibraryScenarioSelfContained(t, path)
 		})
+	}
+}
+
+// TestEveryScenarioFileIsActuallyRun fails if a scenario exists that the glob
+// above does not execute.
+//
+// THE GLOB IS ONE DIRECTORY DEEP AND NOTHING SAID SO. `scenarios/*.json` does
+// not descend, while the corpus guard that validates this library
+// (internal/harness/corpus_actor_kind_test.go) walks every .json under
+// scenarios/ AT ANY DEPTH. So a scenario committed to scenarios/arcs/foo.json
+// would be validated, would appear in the library to anyone reading the
+// directory, and would run ZERO TIMES — the shape this repo keeps finding:
+// something that looks covered and is not. Latent when written (all scenarios
+// sit at the top level), exactly as a byte-vs-character column was latent while
+// every key happened to be ASCII.
+//
+// The existing "no scenarios found" guard above does not cover this. It catches
+// the glob matching NOTHING; this catches it matching only SOME.
+//
+// goldens/ is excluded because its contents are not scenarios. How each was
+// produced differs, and the differences are load-bearing rather than trivia
+// (scenarios/goldens/README.md):
+//
+//	state.json                    HAND-DERIVED from the scenario definition
+//	<name>/stream.json            RECORDED from a real server run
+//	<name>/projections/*/stream.json  DERIVED from that recording, and
+//	                              byte-pinned by recomputing it
+//	<name>/projections/*/viewer.json  DECLARED — which seat a projection is
+//	                              for; a perch never reaches the log, so it
+//	                              cannot be derived from the stream beside it
+//
+// The hand-derived state and the recorded stream are arrived at INDEPENDENTLY,
+// and that independence is what makes their agreement evidence instead of a
+// tautology — regenerating state.json from a run would quietly destroy the
+// property the fold gate exists to test. Feeding any of these to LoadScenario
+// would be a category error.
+//
+// The exclusion is deliberately narrow: one named subdirectory, not "any
+// subdirectory", so a new subdirectory holding a .json is a failure and
+// somebody has to decide what it is.
+func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
+	run := map[string]bool{}
+	paths, err := filepath.Glob(scenarioLibraryGlob)
+	if err != nil {
+		t.Fatalf("glob %s: %v", scenarioLibraryGlob, err)
+	}
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			t.Fatalf("abs(%s): %v", p, err)
+		}
+		run[abs] = true
+	}
+
+	root := filepath.Dir(scenarioLibraryGlob)
+	seen := map[string]bool{}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// EqualFold on the EXTENSION, matching the corpus guard
+		// (internal/harness/corpus_actor_kind_test.go) rather than the glob.
+		// A case-sensitive suffix test here would reproduce this test's own
+		// premise verbatim: `scenarios/Adventure.JSON` is not matched by
+		// `*.json` (filepath.Match is case-sensitive on every platform) so it
+		// never runs, IS walked by the corpus guard so it is validated and
+		// looks like part of the library — and a case-sensitive check here
+		// would skip it before the comparison and say nothing.
+		if d.IsDir() || !strings.EqualFold(filepath.Ext(path), ".json") {
+			return nil
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		seen[abs] = true
+		if run[abs] {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(filepath.ToSlash(rel), "goldens/") {
+			return nil
+		}
+		t.Errorf("scenarios/%s exists but %s does not match it, so it never runs. "+
+			"The glob wants a file at the TOP LEVEL with a lower-case .json extension — "+
+			"a nested path and an upper-case .JSON both miss it. Move or rename it, or if it "+
+			"is not a scenario at all, exclude it here and say what it is.",
+			filepath.ToSlash(rel), scenarioLibraryGlob)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+
+	// THE WALK MUST HAVE SEEN WHAT THE GLOB SEES, or this test compared two
+	// sets and one of them was empty. Every sibling that enumerates this corpus
+	// carries a vacuity guard and the repo treats it as a rule
+	// (scenario_goldens_test.go: "an empty corpus must fail rather than
+	// vacuously pass"; corpus_actor_kind_test.go has a dedicated test for it).
+	//
+	// "The walk saw every glob match" rather than "the walk saw something",
+	// because it is a SUPERSET whenever the glob is non-empty: it catches the
+	// walk seeing nothing AND the walk seeing only some. A bare emptiness check
+	// would pass on a partial divergence.
+	//
+	// Not because the weaker form misses the symlink case — an earlier draft of
+	// this comment claimed that and was refuted by its own example. Make
+	// scenarios/ a symlink and WalkDir does not follow the root: it lstats it,
+	// sees a non-directory, and fires one callback with no .json, so `seen`
+	// ends up EMPTY and either form fires. Glob, meanwhile, resolves straight
+	// through and matches every scenario.
+	//
+	// What this form does NOT cover: both sides empty. The loop then iterates
+	// nothing and passes. That case belongs to the sibling above, whose
+	// len(paths) == 0 guard fires on it.
+	for abs := range run {
+		if !seen[abs] {
+			t.Errorf("%s matched %s but the walk of %s never visited it, so this test compared "+
+				"nothing. A symlinked scenarios/ does exactly this: Glob resolves through it, "+
+				"WalkDir does not.", abs, scenarioLibraryGlob, root)
+		}
 	}
 }
 
