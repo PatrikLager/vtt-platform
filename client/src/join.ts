@@ -46,15 +46,16 @@ function humanReadable(body: string): string {
   return stripped === "" ? NAME_FALLBACK : stripped;
 }
 
-/** The reader half of the ?join= link format, and the ONLY place the client
- *  spells that parameter name.
+/** The reader half of the ?join= link format, and the client's ONLY reader of
+ *  that parameter name.
  *
  *  A function rather than a bare constant, and it lives here rather than in
  *  app.ts, because of what has to be able to check it. The name has three
- *  writers on the Go side and one reader here, so what needs pinning is that
- *  the reader asks for what the writers wrote — and the shared truth is
- *  contract/testdata/join_url_format.json, which no constant in either
- *  language can be derived from.
+ *  writers — `vtt join-link` show and rotate on the Go side, and the DM
+ *  console's share box on this one — against this single reader, so what needs
+ *  pinning is that the reader asks for what the writers wrote; the shared
+ *  truth is contract/testdata/join_url_format.json, which no constant in
+ *  either language can be derived from.
  *
  *  It used to be pinned by READING app.ts's source and asserting the text
  *  `params.get("join")` appeared in it. That worked until the text stopped

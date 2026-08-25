@@ -45,7 +45,7 @@ logic. It still carries a normal 100.00 line-coverage floor.
 believed** — 21 gated files, 21 rows. It was not before: four files had no row
 while being gated, which is how 68 survivors went unrecorded.
 
-The last five rows were added 2026-08-25 and the first four of them had **no
+The last six rows were added 2026-08-25 and the first four of them had **no
 row at all** until then — not because they were out of scope, but because the
 `mutate` glob gated them the moment the maps and visibility arcs created them,
 so nobody ever ran the work that produces a row. Their "before" column is not a
@@ -64,11 +64,20 @@ stopped existing. One failing assertion, zero mutants tested, for two weeks.
 
 Repaired 2026-08-25 (`69434ef`), which surfaced 125 unadjudicated survivors:
 **57 REGRESSION** in seven files this table already recorded as `→ 0`, and
-**68** in the four never-worked files above. Closed at 113 killed, 12
-adjudicated. Final: **2764 mutants, 2660 killed, 31 timed out, 73 adjudicated
-equivalent, zero unadjudicated survivors** — against 1772 mutants at the last
-green run on 2026-08-07, so the client grew 56% and all of that growth was
-ungated while the gate was silent.
+**68** in the four never-worked files above. Closed at 113 killed and 11
+adjudicated, plus one that was neither: a mutant both unkillable and not
+equivalent, the combination the equivalents file has no shape for, so `fb6b2d8`
+restructured the source instead.
+Latest green run, 2026-08-25 14:08 (recorded in `76e45c2`): **2777 mutants,
+2673 killed, 31 timed out, 73 adjudicated equivalent, zero unadjudicated
+survivors** — against 1772 mutants at the previous green run on 2026-08-07, so
+the client grew 57% and all of that growth was ungated while the gate was
+silent.
+
+"Latest" rather than "final", because it is a measurement with a date on it and
+this line has already been a run behind once: the earlier 2764/2660 figures
+were `3c01695`'s, taken thirteen hours before the merge re-ran the gate over a
+larger tree.
 
 **One root cause dominates, and it is worth internalising: a fixture chosen so
 that two different operators produce the same answer.** Every camera in the

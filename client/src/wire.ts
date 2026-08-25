@@ -126,7 +126,18 @@ export class Wire {
     private readonly token: string,
   ) {}
 
-  /** The sequence this client's next redial would resume after. */
+  /** How far this client has folded — lastSeq.
+   *
+   *  NOT the redial resume point, which reconnect() derives from seenSeq and
+   *  which is a DIFFERENT number once one event can arrive as several
+   *  envelopes (see the replay-cursor note at the top of this file). This doc
+   *  said "the sequence this client's next redial would resume after" until
+   *  2026-08-25, which is true only in the moment just after a redial.
+   *
+   *  Exported for observation. Nothing in client/src reads it today — the only
+   *  callers are tests, through Session.head. That is worth knowing before
+   *  reasoning about what a change here can break.
+   */
   get head(): bigint {
     return this.lastSeq;
   }

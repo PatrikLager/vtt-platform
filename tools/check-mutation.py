@@ -382,17 +382,26 @@ def _norm_pkg(name):
 # and the entry sits in the file silently pre-approving whatever DOES land on
 # that line later. It is an excuse with no mutant behind it.
 #
-# Measured on the TS side, where the same drift is easier to see: two wire.ts
-# keys sat on comment lines for three days, and a canvas.ts key landed on one
-# WITHIN AN HOUR of being written, because a comment edit above it shifted the
-# line. Nothing about editing a comment suggests a mutation key is downstream
-# of it, which is the whole problem.
+# Measured on the TS side, where the same drift is easier to see: a wire.ts
+# pair landed on comment lines in TWO separate episodes three days apart — one
+# of the two on 2026-08-21, both of them on 2026-08-24 — and a canvas.ts key
+# landed on one WITHIN AN HOUR of being written, because a comment edit above it
+# shifted the line. Nothing about editing a comment suggests a mutation key is
+# downstream of it, which is the whole problem.
 #
 # THE TABLE IS SMALL ON PURPOSE and it is evidence, not taste: a probe over all
 # 39 recorded adjudications matched 39 of 39, so this rejects today's bad data
 # and accepts today's good data. check_mutation_test.py asserts that over the
 # real file, so a rule that started rejecting a sound key would red the gate's
 # own tests rather than quietly getting loosened.
+#
+# WHAT IT DOES NOT CATCH, because token_at is a byte match with no parser behind
+# it and the comment rule reads only the line's first non-space bytes. Measured
+# by handing read_position each of these: the `<` of a `<-` channel receive
+# passes as CONDITIONALS_BOUNDARY; a pointer or deref `*` mid-line passes as
+# ARITHMETIC_BASE; and the first `/` of a TRAILING `//` comment passes as
+# ARITHMETIC_BASE, because the line it sits on begins with code. This is the
+# common landing caught mechanically, not a proof that a key points at a mutant.
 #
 # gremlins' columns are 1-BASED BYTE OFFSETS into the line, and Go source is
 # TAB-INDENTED — a tab is one byte and one column, never a tab stop. Getting

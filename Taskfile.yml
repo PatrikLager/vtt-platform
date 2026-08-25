@@ -377,11 +377,11 @@ tasks:
       wall. Do not check pcbcount to decide whether it is safe to run.
     cmds:
       # ABOVE the platform guard deliberately: this is the gate-checker's own
-      # 18 unit tests, it opens no sockets, it runs in 0.092s, and it runs
-      # nowhere else in the repo. FB21686886 is no reason to stop proving the
-      # enforcement code -- check-ts-mutation.py's own header records that 8
-      # of 9 defects across five review rounds were in hand-rolled enforcement
-      # rather than in the thing being enforced.
+      # 44 unit tests, it opens no sockets, it runs in well under a second, and
+      # it runs nowhere else in the repo. FB21686886 is no reason to stop
+      # proving the enforcement code -- check-ts-mutation.py's own header
+      # records that 8 of 9 defects across five review rounds were in
+      # hand-rolled enforcement rather than in the thing being enforced.
       - python3 tools/check_ts_mutation_test.py -q
       - |
         set -e

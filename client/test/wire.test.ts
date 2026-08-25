@@ -339,9 +339,12 @@ test("an unknown frame kind is ignored and the stream keeps working", async () =
 });
 
 test("an out-of-order replay never walks the resume cursor backwards", async () => {
-  // lastSeq is what reconnect resumes from. Letting an older event lower it
-  // would make a redial re-request history already folded, and the session
-  // would double-apply it.
+  // NOT "lastSeq is what reconnect resumes from" — it is not, and this comment
+  // said so until 2026-08-25. reconnect() derives its resume point from
+  // seenSeq and then WRITES lastSeq (wire.ts). lastSeq is what `head` reports:
+  // how far this client has folded. Letting an older event lower it would make
+  // `head` claim less progress than the client has actually made, and this
+  // test guards both cursors separately for that reason.
   const gw = fakeGateway(() => {});
   const wire = new Wire(gw.url, "tok");
   try {
@@ -354,9 +357,10 @@ test("an out-of-order replay never walks the resume cursor backwards", async () 
     await until(() => seen.length === 2, "the older event");
 
     // BOTH CURSORS, asserted separately, because the query below reads only
-    // one of them. `head` is lastSeq — what a caller is told this client has
-    // folded up to (Session.head, and the catch-up progress the UI draws from
-    // it) — while the resume point is derived from seenSeq. An advance made
+    // one of them. `head` is lastSeq — how far this client has folded, exposed
+    // by Wire's own `get head()` and forwarded by Session.head, though nothing
+    // in client/src reads either today — while the resume point is derived
+    // from seenSeq, a different number. An advance made
     // unconditional moves lastSeq DOWN to 3 here and leaves after=4 intact, so
     // a test that stops at the query cannot see it. An older event is not
     // hypothetical either: a perch's frames carry sequence 0 deliberately.

@@ -133,18 +133,22 @@ def mutants(report):
 # report, and the entry sits in the file silently pre-approving whatever DOES
 # land on that line later. It is an excuse with no mutant behind it.
 #
-# Not hypothetical, and not rare: `wire.ts 292:13` and `316:7` sat on comment
-# lines for THREE DAYS, and a canvas.ts key landed on one within an HOUR of
-# being written, because a comment edit above it shifted the line. Nothing
-# about editing a comment suggests a mutation key is downstream of it.
+# Not hypothetical, and not rare: the wire.ts pair landed on comment lines in
+# TWO separate episodes three days apart — one of the two on 2026-08-21, both
+# of them on 2026-08-24, and the equivalents file's header records each — while
+# a canvas.ts key landed on one within an HOUR of being written, because a
+# comment edit above it shifted the line. Nothing about editing a comment
+# suggests a mutation key is downstream of it, which is why catching it has to
+# be mechanical rather than noticed.
 #
 # THE COLUMN IS NOT THE OPERATOR, which is the one thing to know before reading
 # the rule below. Stryker reports the START of the mutated node, so
 # `undo.ts 39:26` points at the `e` of `e.sequence > best`, not at the `>`.
 # The REPLACEMENT is what says where the operator is: it is the same expression
 # with one operator rewritten, so the first place the source and the
-# replacement diverge IS the operator, and comparing them pins the OPERANDS
-# too. A key that drifted onto a different comparison is rejected even when a
+# replacement diverge IS the operator, and comparing them compares the OPERANDS
+# too — as a prefix test, with the gap that leaves written out on operator_at.
+# A key that drifted onto a different comparison is rejected even when a
 # `>` sits in exactly the same place.
 MUTATOR_TOKENS = {
     "EqualityOperator": ("===", "!==", "==", "!=", "<=", ">=", "<", ">"),
@@ -275,16 +279,22 @@ def operator_at(tail, replacement, tokens):
     BOTH sides start with an operator of this mutator's kind finds it, and
     everything before that offset is equal by construction.
 
-    BOTH OPERANDS ARE PINNED, NOT JUST THE LEFT ONE, and the right one is the
+    THE RIGHT OPERAND IS CHECKED TOO, NOT JUST THE LEFT ONE, and that is the
     half that matters most. The equivalents file records the worst of the six
     keys its 2026-08-21 sweep had to fix as one that "landed on the SIBLING
     comparison, right shape wrong operand — the worst of the six, because it
     looks plausible at the new location". That is exactly a key one line off
     where the left operand and the operator still agree: `env.sequence >
     this.seenSeq` against `env.sequence > this.lastSeq`. Comparing what follows
-    the operator too is what tells those two apart. The source runs on to the
-    end of the line while the replacement ends with the expression, so it is a
-    prefix test rather than an equality.
+    the operator too is what tells those two apart.
+
+    IT IS A PREFIX TEST, NOT AN EQUALITY, and that is a real gap rather than a
+    detail: the source runs on to the end of the line while the replacement
+    ends with the expression, so there is nothing to compare the end against.
+    A recorded right operand that is a proper prefix of the one now in the
+    source passes — `this.lastSeq` is accepted against a drifted
+    `this.lastSeqExtra` — because no token boundary is required after it. The
+    sibling case above is still caught; a longer namesake is not.
     """
     n = min(len(tail), len(replacement))
     i = 0

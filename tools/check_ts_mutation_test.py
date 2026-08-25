@@ -314,9 +314,10 @@ class KeyPosition(unittest.TestCase):
     gate anyway — a stale entry beside an unadjudicated survivor. A key that
     landed on a COMMENT fails nothing: Stryker generates no mutant there, so it
     never appears in the report, and the entry sits in the file pre-approving
-    whatever lands on that line next. `wire.ts 292:13` and `316:7` sat on
-    comment lines for three days; a canvas.ts key landed on one within an hour
-    of being written, because a comment edit above it shifted the line.
+    whatever lands on that line next. One wire.ts pair landed on comment lines
+    in two separate episodes three days apart — one of the two on 2026-08-21,
+    both of them on 2026-08-24; a canvas.ts key landed on one within an hour of
+    being written, because a comment edit above it shifted the line.
 
     The trap these tests are written against is recorded in the equivalents
     file's own header: the hand-rolled version of this check tested

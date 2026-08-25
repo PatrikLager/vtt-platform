@@ -76,16 +76,16 @@
 # address. The perch UI moved six of them again and they are now:
 #
 #   wire.ts       292:13 -> 460:13   landed on a COMMENT line a SECOND time
-#   wire.ts       316:7  -> 484:7
+#   wire.ts       316:7  -> 484:7     a COMMENT line too, this time round
 #   app.ts        66:32  -> 67:32    re-keyed, then KILLED 2026-08-25 and
 #   app.ts        129:32 -> 130:32   removed outright — see the app.ts note below
 #   session.ts    67:12  -> 68:12
 #   session.ts    68:12  -> 69:12
 #   spectator.ts  399:59 -> 501:59
 #
-# Read the entries themselves, never this table. That the SAME two wire.ts keys
-# landed on comment lines twice in three days is the argument for keying on
-# something other than a line number, and it is why the gate's own MOVED
+# Read the entries themselves, never this table. That comment landings hit this
+# same wire.ts pair in TWO episodes three days apart is the argument for keying
+# on something other than a line number, and it is why the gate's own MOVED
 # detection could not rescue the app.ts pair: their replacement text is
 # `"Stryker was here!"`, which is identical for EVERY string literal in a file,
 # so the pairing is ambiguous by construction and the gate correctly refused to
@@ -141,10 +141,23 @@
 # own contents is the failure this file exists to prevent, so when you move an
 # entry, grep this header for its old line before you stop.
 #
-# UNVERIFIED BY THE GATE, and that is stated rather than glossed: check:
-# ts-mutation skips on macOS (kernel bug FB21686886, see Taskfile.yml), so these
-# keys were derived by reading the source, not by watching Stryker agree. The
-# first Linux run is what confirms or corrects them.
+# CONFIRMED BY A GREEN RUN, 2026-08-25 14:08 (recorded in 76e45c2's message):
+# 2777 mutants, 2673 killed, 31 timed out, 73 adjudicated equivalent, zero
+# unadjudicated survivors. Run in a Linux container, which is the only place
+# this gate executes — it skips itself on macOS (kernel bug FB21686886, see
+# Taskfile.yml) and CI is workflow_dispatch-only.
+#
+# THAT CONFIRMATION DOES NOT RENEW ITSELF, so what matters is which entries
+# post-date it. THREE do — the wire.ts keys re-pointed by 5ac05e9 at 14:52,
+# now at 474:13, 475:13 and 499:7. Those three are currently derived by reading
+# the source rather than by watching Stryker agree. Every other entry was in
+# place at 14:08.
+#
+# Do not read "re-pointed since 3c01695" as that set: 3c01695 (01:48) reported
+# 2764/2660 and was superseded the same afternoon, and the 20 fold.ts keys
+# 619517f re-pointed at 04:46 sit BEFORE the 14:08 run, not after it. An
+# earlier version of this paragraph anchored to the first run and left a reader
+# to conclude 23 entries were unconfirmed.
 
 client/src/undo.ts 39:26 EqualityOperator e.sequence >= best
     `e.sequence > best` -> `>=` in lastUndoable. The two differ only when e.sequence equals best, and in that case the mutant's extra assignment writes the value best already holds. The guard `best === null ||` short-circuits before this operand on the first iteration, so the null case never reaches it. No observable: not the return value, not the number of iterations, not identity (BigInt is a value type).
@@ -355,13 +368,13 @@ client/src/view/grid.ts 139:61 EqualityOperator a.tokenId <= b.tokenId
 
 # --- client/src/wire.ts -----------------------------------------------------
 
-client/src/wire.ts 464:13 EqualityOperator env.sequence >= this.lastSeq
+client/src/wire.ts 475:13 EqualityOperator env.sequence >= this.lastSeq
     `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. The two differ on exactly one input — an envelope whose sequence EQUALS the mark — and on that input the mutant performs the assignment the original skips, writing the value the field already holds. bigint is a primitive compared by value, so there is no identity to see the write: `Object.is(4n, 4n)` is true. CORRECTED 2026-08-25: this used to say "lastSeq's only consumer is reconnect's resume cursor", and BOTH halves were false. reconnect() never reads lastSeq — it WRITES it (wire.ts 355-356), deriving resume from seenSeq, as this file's own header says in capitals. And lastSeq is not private to the wire: `get head()` (wire.ts:130) exposes it, Session.head forwards it (session.ts:73-74), and a dozen tests assert on it directly. The conclusion survives the correction — head returns the same bigint either way — but the old reason sent an auditor looking for a consumer that does not exist, past the public getter that does.
 
-client/src/wire.ts 488:7 ConditionalExpression default:
+client/src/wire.ts 499:7 ConditionalExpression default:
     Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
 
-client/src/wire.ts 463:13 EqualityOperator env.sequence >= this.seenSeq
+client/src/wire.ts 474:13 EqualityOperator env.sequence >= this.seenSeq
     `if (env.sequence > this.seenSeq) this.seenSeq = env.sequence;` -> `>=` in handleFrame's event arm. The two branches differ on exactly one input — an envelope whose sequence EQUALS the high-water mark, which the projection makes ordinary rather than exotic (one log event reaches a seat as several envelopes sharing one sequence). On that input the mutant performs the assignment the original skips, and the assignment writes the value the field already holds. Both are bigint, a primitive compared by value, so there is no identity to distinguish either: `Object.is(4n, 4n)` is true, and the field is a plain private with no getter, setter or Proxy on it. seenSeq is read in exactly two places — `reconnect()`'s `this.seenSeq > 0n ? this.seenSeq - 1n : 0n`, and this comparison itself — and neither can tell a re-written 4n from an untouched one. MEASURED 2026-08-24: mutant hand-applied, the WHOLE client suite run (639 tests, 26 files), 0 failures. Same shape as the two undo.ts entries already in this file.
 
 # --- client/src/view/feed.ts ------------------------------------------------
@@ -463,7 +476,7 @@ client/src/view/dm.ts 497:36 StringLiteral "Stryker was here!"
 # --- client/src/view/canvas.ts -------------------------------------------
 
 client/src/view/canvas.ts 65:24 ArithmeticOperator gx - gy
-    drawMissingTile's checkerboard parity. `(gx + gy) % 2 === 0` and `(gx - gy) % 2 === 0` are the same predicate on every integer pair, not merely on the four this loop produces: (gx+gy) and (gx-gy) differ by 2*gy, so they always share a parity, and JS's sign-preserving `%` cannot separate them either, because the one case where it differs at all is an even negative, whose remainder is `-0`, and `-0 === 0` is true. The only observable this function has is the ordered sequence of fillStyle assignments and fillRect arguments reaching the context; a recording double (client/test/canvas.test.ts) captures both, and the two versions produce a byte-identical log — #ff00ff, #1a1a1a, #1a1a1a, #ff00ff over the same four rects. No input can widen the gx/gy range either: the bounds are the literal 2s on lines 46-47, drawMissingTile is module-private, and its one caller passes only sw and sh. Verified by hand-applying the mutant (suite stayed green, 11/11) and by exhaustively comparing both predicates over 10,201 integer pairs in [-50, 50]^2: zero divergences.
+    drawMissingTile's checkerboard parity. `(gx + gy) % 2 === 0` and `(gx - gy) % 2 === 0` are the same predicate on every integer pair, not merely on the four this loop produces: (gx+gy) and (gx-gy) differ by 2*gy, so they always share a parity, and JS's sign-preserving `%` cannot separate them either, because the one case where it differs at all is an even negative, whose remainder is `-0`, and `-0 === 0` is true. The only observable this function has is the ordered sequence of fillStyle assignments and fillRect arguments reaching the context; a recording double (client/test/canvas.test.ts) captures both, and the two versions produce a byte-identical log — #ff00ff, #1a1a1a, #1a1a1a, #ff00ff over the same four rects. No input can widen the gx/gy range either: the bounds are the literal 2s in drawMissingTile's own two `for` headers, drawMissingTile is module-private, and its one caller passes only sw and sh. Verified by hand-applying the mutant (suite stayed green, 11/11) and by exhaustively comparing both predicates over 10,201 integer pairs in [-50, 50]^2: zero divergences.
 
 # --- client/src/view/scene-plan.ts ---------------------------------------
 

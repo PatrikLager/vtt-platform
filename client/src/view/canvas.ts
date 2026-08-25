@@ -12,7 +12,7 @@
 // simultaneously reported 100.00% line coverage. Thirty-one were killed on
 // 2026-08-25 without a canvas existing anywhere.
 //
-// Nothing here ever CREATES a canvas; every export TAKES a
+// Nothing here ever CREATES a canvas; every exported FUNCTION takes a
 // CanvasRenderingContext2D and touches exactly thirteen of its members. So a
 // test passes a recording double and asserts the ordered call log with exact
 // arguments — see client/test/canvas.test.ts. "No canvas" bounds how you
@@ -115,8 +115,7 @@ export function paint(ctx: CanvasRenderingContext2D, ops: DrawOp[], images: Imag
  *
  * Colour rather than position, which is why it is allowed to live here: WHERE
  * the lines go is planGrid's decision and is asserted; how they look is
- * presentation, and presentation is the only thing this untestable layer may
- * own.
+ * presentation, and presentation is the only thing this layer may own.
  */
 const gridInk = "rgba(0, 0, 0, 0.22)";
 
@@ -148,8 +147,8 @@ export function strokeGrid(ctx: CanvasRenderingContext2D, lines: GridLine[]): vo
  * fogInk is what remembered-but-unseen ground is shaded with, and the second
  * judgement this file makes, allowed here for the same reason gridInk is:
  * WHERE the fog goes is planFog's decision and is asserted; how it looks is
- * presentation, and presentation is the only thing this untestable layer may
- * own (spec §6.1 makes that division the whole reason fog is a pass rather
+ * presentation, and presentation is the only thing this layer may own
+ * (spec §6.1 makes that division the whole reason fog is a pass rather
  * than a per-op `dim` flag).
  *
  * Darker than gridInk's 0.22 by enough that "I remember this" is never

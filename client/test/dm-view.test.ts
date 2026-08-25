@@ -392,9 +392,9 @@ test("the Add actor form asks what the creature is, and sends the answer", () =>
   // re-runs the "ask for a reset" algorithm when the select is inserted into a
   // parent and so re-selects option 0 on the way into the group. A browser does
   // not, so this pins the intent and would catch the regression where it is
-  // real. The LABEL assertion below is load-bearing here and now: it is the only
-  // place the wording of the blank option is checked, and the option list
-  // assertion under it reads values, which are blank for the blank one.
+  // real. The LABEL assertion below is load-bearing here and now: the option
+  // list assertion under it reads values, which are blank for the blank one, so
+  // nothing else in this test would notice the wording changing.
   expect(kind.selectedIndex).toBe(0);
   expect(kind.options[kind.selectedIndex]!.textContent).toBe("what is it?");
   expect(Array.from(kind.options).map((o) => o.value)).toEqual([
