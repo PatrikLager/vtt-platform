@@ -348,10 +348,19 @@ tasks:
       unadjudicated survivors. So the local signal is NOT lost on a Mac; it
       just is not this task that provides it.
 
-      CI (.github/workflows/ci.yml, ubuntu-latest) still runs it on every push
-      to main. It stopped running per-PR on 2026-08-07 when the Actions
-      allowance was exhausted until 1 September — the container is what covers
-      the gap, and it is why that was an acceptable trade rather than a hole.
+      CI RUNS THIS GATE ONLY WHEN SOMEBODY ASKS IT TO. `.github/workflows/
+      ci.yml` is `on: workflow_dispatch:` and nothing else -- no push trigger,
+      no pull_request trigger. THE CONTAINER IS THE ONLY THING THAT RUNS THIS
+      GATE UNASKED, so `task check:ts-mutation:docker` is not a convenience,
+      it is the gate.
+
+      CORRECTED 2026-08-25, and this sentence is why the correction matters.
+      It read "CI still runs it on every push to main", which was false, and it
+      was the belief that let this gate die: it tested ZERO mutants from
+      2026-08-11 to 2026-08-25 while everyone had a documented reason to think
+      something else was covering it. Fourteen days, 125 accumulated survivors,
+      and a green `task check` on a Mac the whole time. If you find yourself
+      trusting a downstream runner named in a comment, CHECK ITS TRIGGER.
 
       A green `task check` on a Mac has still not proven THIS gate. That is
       what the skip banner says, and it stays loud.
@@ -396,9 +405,13 @@ tasks:
           echo "  per boot before socket() returns ENOBUFS. It cannot pass" >&2
           echo "  here, and trying takes the machine's networking with it." >&2
           echo "" >&2
-          echo "  CI (ubuntu-latest) runs this gate at FULL STRENGTH and is" >&2
-          echo "  AUTHORITATIVE. A green 'task check' on macOS has NOT" >&2
-          echo "  proven the mutation gate." >&2
+          echo "  A green 'task check' on macOS has NOT proven this gate." >&2
+          echo "" >&2
+          echo "  NOTHING ELSE WILL PROVE IT FOR YOU. CI is" >&2
+          echo "  workflow_dispatch-only -- it runs when somebody asks, not" >&2
+          echo "  on push. This banner used to call CI AUTHORITATIVE, and" >&2
+          echo "  that is how the gate tested zero mutants for 14 days in" >&2
+          echo "  August 2026 while everyone read this and moved on." >&2
           echo "" >&2
           echo "  RUN IT ANYWAY, on Linux, in a container, same strength:" >&2
           echo "    task check:ts-mutation:docker" >&2

@@ -1011,3 +1011,95 @@ test("sceneSeen's merge keeps SLOTS, keeps objects it does not mention, and take
   expect(objs[2]).toMatchObject({ ObjectID: "pillar-1", X: 2, Y: 2 });
   expect(objs[3]).toMatchObject({ ObjectID: "mote-1", X: 0, Y: 0 });
 });
+
+// --- ids that name a prototype member ---------------------------------------
+//
+// A Go map has no prototype: `st.Scenes["hasOwnProperty"]` on a map that was
+// never written is the zero value, and that is the whole story. A JavaScript
+// object literal inherits from Object.prototype, so the SAME lookup returns a
+// function — truthy, and carrying none of the fields the fold goes on to read.
+// So `{}` is not a mirror of a Go map, and the two folds disagreed on every id
+// below until st's maps became prototype-less dictionaries (state.ts's
+// emptyMap).
+//
+// These are ordinary strings on the wire. "constructor", "toString",
+// "valueOf", "hasOwnProperty" and "__proto__" are legal actor ids, scene ids,
+// token ids and note keys in the contract, in internal/gateway's validation,
+// and in Go's map; nothing anywhere reserves them. A campaign only has to name
+// a character Constructor.
+//
+// The ACCEPT half lives here and the REJECT half in fold-rejections.test.ts,
+// each with the section its file is for. Both halves are needed: this file's
+// cases are logs Go folds cleanly and this fold used to refuse, and that file's
+// are logs Go refuses and this fold used to accept — the second direction being
+// the worse one, since an accepted-but-wrong event is permanent in an
+// append-only log.
+
+test("a scene whose id names a prototype member is created, not refused as a duplicate", () => {
+  // The duplicate guard reads `if (st.Scenes[v.sceneId])`, and before the fix
+  // that found Object.prototype.hasOwnProperty on the FIRST scene of that
+  // name — so this log, which Go folds without complaint, could not be folded
+  // here at all. session.ts re-folds the whole log on every event, so the
+  // rejection would not have been one bad frame; it would have been this
+  // client frozen for the rest of the session.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "hasOwnProperty", name: "Vault", gridWidth: 4, gridHeight: 4 } }),
+    env(3, { doorOpened: { sceneId: "hasOwnProperty", at: { x: 1, y: 2 } } }),
+  ]);
+
+  expect(Object.keys(st.Scenes)).toEqual(["hasOwnProperty"]);
+  expect(st.Scenes["hasOwnProperty"]!.Name).toBe("Vault");
+  expect(st.Scenes["hasOwnProperty"]!.OpenDoors).toEqual({ "1,2": true });
+});
+
+test("an actor whose id names a prototype member takes control and conditions like any other", () => {
+  // Three maps in one log, because they fail differently. st.Actors refused
+  // the add as a duplicate; st.Conditions[id] returned a FUNCTION, so
+  // `list.some(...)` was a TypeError rather than a FoldError — a crash, not a
+  // parity failure with a message; and the grant's controlTarget read
+  // `a.controllerIds` off that same function.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { actorAdded: { actor: { actorId: "constructor", name: "Ser Constructor" } } }),
+    env(3, { actorControlGranted: { actorId: "constructor", participantId: "p-1", kind: "ACTOR_KIND_PARTY_MEMBER" } }),
+    env(4, { conditionApplied: { actorId: "constructor", conditionId: "prone", source: "spell" } }),
+  ]);
+
+  expect(Object.keys(st.Actors)).toEqual(["constructor"]);
+  expect(st.Actors["constructor"]!.controllerIds).toEqual(["p-1"]);
+  expect(st.Actors["constructor"]!.kind).toBe(ActorKind.PARTY_MEMBER);
+  expect(st.Conditions["constructor"]!.map((c) => c.ID)).toEqual(["prone"]);
+});
+
+test("a token whose id names a prototype member is placed and moved like any other", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "A" } } }),
+    env(4, { tokenPlaced: { tokenId: "toString", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(5, { tokenMoved: { tokenId: "toString", to: { x: 3, y: 2 } } }),
+  ]);
+
+  expect(Object.keys(st.Tokens)).toEqual(["toString"]);
+  expect(st.Tokens["toString"]).toEqual({ ID: "toString", SceneID: "s1", ActorID: "a1", X: 3, Y: 2 });
+});
+
+test("__proto__ is an ordinary map key, not the map's prototype", () => {
+  // The one id that breaks on the WRITE as well as the read, and the reason
+  // Object.hasOwn checks at each lookup would not have been enough: assigning
+  // `st.Scenes["__proto__"] = scene` on an object literal calls the inherited
+  // setter and re-parents the MAP instead of storing anything, so the scene
+  // vanishes while every other key in st.Scenes starts inheriting its fields.
+  // Go stores a key called __proto__ and nothing else happens.
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "__proto__", name: "N", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { noteUpserted: { key: "__proto__", title: "T", text: "x" } }),
+  ]);
+
+  expect(Object.keys(st.Scenes)).toEqual(["__proto__"]);
+  expect(st.Scenes["__proto__"]!.ID).toBe("__proto__");
+  expect(Object.keys(st.Notes)).toEqual(["__proto__"]);
+  expect(st.Notes["__proto__"]!.Title).toBe("T");
+});

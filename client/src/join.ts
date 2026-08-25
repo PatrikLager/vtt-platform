@@ -61,8 +61,10 @@ function humanReadable(body: string): string {
  *  being the text: Stryker instruments every mutated file and rewrites string
  *  literals into ternaries, so the assertion failed in the DRY RUN and the
  *  whole TypeScript mutation gate died before testing a single mutant. It had
- *  been dead since 2026-08-11 and nothing said so, because the gate skips
- *  itself on macOS and CI is where it actually runs.
+ *  been dead since 2026-08-11 and nothing said so: the gate skips itself on
+ *  macOS, and CI — which the Taskfile then described as running it "on every
+ *  push to main" — is `on: workflow_dispatch:` and runs only when asked. The
+ *  container target is the only thing that runs it unasked.
  *
  *  So the lookup is a function taking the params it reads: the test calls it
  *  with a URL built from the fixture and checks the secret comes back. That

@@ -369,8 +369,17 @@ def _by_position(key):
         return (0, 0)
 
 
-def _pair(entries, survivors, sig_of):
-    """{entry: (survivor, ordered)} for every group whose two sides balance."""
+def _pair(entries, survivors, sig_of, basis):
+    """{entry: (survivor, ordered, basis)} for every group whose sides balance.
+
+    `basis` names WHICH facts the signature compared, and it is carried out to
+    the message rather than assumed there. The two passes do not compare the
+    same things — the anchored one reads a source line, the coarse one cannot —
+    so a single fixed justification is false for one of them. It was: the
+    ordered wording claimed the group shared "file, mutator, replacement and
+    source line" no matter which pass matched, which told a reader that lines
+    had been compared when the file could not even be read.
+    """
     groups = {}
     for key in entries:
         sig = sig_of(key)
@@ -387,7 +396,7 @@ def _pair(entries, survivors, sig_of):
             continue
         for was, now in zip(sorted(was_side, key=_by_position),
                             sorted(now_side, key=_by_position)):
-            moved[was] = (now, len(was_side) > 1)
+            moved[was] = (now, len(was_side) > 1, basis)
     return moved
 
 
@@ -404,10 +413,10 @@ def pair_moves(stale, unadjudicated, root="."):
         return coarse(key) + (anchor,) if anchor else None
 
     moved = {}
-    for sig_of in (anchored, coarse):
-        taken = {now for now, _ in moved.values()}
+    for sig_of, basis in ((anchored, "anchored"), (coarse, "coarse")):
+        taken = {now for now, _, _ in moved.values()}
         moved.update(_pair([k for k in stale if k not in moved],
-                           [m for m in unadjudicated if m not in taken], sig_of))
+                           [m for m in unadjudicated if m not in taken], sig_of, basis))
     return moved
 
 
@@ -479,12 +488,21 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
     unadjudicated = [m for m in survived if m not in equivalents]
 
     moved = pair_moves(stale_keys, unadjudicated, root=root)
-    for was, (now, ordered) in sorted(moved.items()):
-        why = ("PAIRED BY POSITION ORDER: several entries and the same number of survivors share "
-               "that file, mutator, replacement and source line, so nothing can say which became "
-               "which — and it does not matter, because identical statements have "
-               "interchangeable reasons. Object if you know better; the alternative is deleting "
-               "sound adjudications and leaving real survivors unexplained."
+    for was, (now, ordered, basis) in sorted(moved.items()):
+        # WHAT WAS ACTUALLY COMPARED, named rather than assumed. An order-based
+        # pairing asks the reader to accept that two adjudications are
+        # interchangeable, so it has to be honest about the evidence: the
+        # anchored pass read and matched the statements, the coarse one never
+        # opened the file. Saying "and source line" in both cases invited
+        # agreement on evidence nobody gathered.
+        shared = ("that file, mutator, replacement and the statement each sits on"
+                  if basis == "anchored" else
+                  "that file, mutator and replacement — the statements themselves could NOT be "
+                  "read and were not compared")
+        why = (f"PAIRED BY POSITION ORDER: several entries and the same number of survivors share "
+               f"{shared}, so nothing can say which became which — and it does not matter, because "
+               f"identical statements have interchangeable reasons. Object if you know better; the "
+               f"alternative is deleting sound adjudications and leaving real survivors unexplained."
                if ordered else
                "Same mutator and same mutation, so an edit shifted it.")
         print(f"check:ts-mutation: ADJUDICATION MOVED {was[0]} {was[2]} (-> {was[3]}): "
@@ -492,7 +510,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
               f"or its reasoning is lost and the survivor is left unexplained.", file=err)
         fail = True
 
-    paired = {now for now, _ in moved.values()}
+    paired = {now for now, _, _ in moved.values()}
     unadjudicated = [m for m in unadjudicated if m not in paired]
     # `not in moved` because a pairing already told the reader where to re-key.
     # `not in suspect` because a key on a comment has no mutant, so it is STALE

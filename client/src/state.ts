@@ -206,8 +206,52 @@ export interface State {
   Notes: Record<string, Note>;
 }
 
+/**
+ * emptyMap builds the TypeScript mirror of a Go map: a dictionary with NO
+ * prototype. Every `Record<string, T>` below that stands for a `map[string]T`
+ * in internal/engine's State is built with it — here and in fold.ts, which
+ * owns the per-scene and per-actor ones — and `{}` is wrong for all of them.
+ *
+ * `{}` INHERITS FROM Object.prototype, and a Go map inherits from nothing. So
+ * `{}["hasOwnProperty"]` is a function — truthy, and carrying none of the
+ * fields a Scene or a Token has — where `map[string]Scene["hasOwnProperty"]`
+ * is the zero value. Every fold guard shaped "is this id in the map?" answers
+ * that question by READING the map, so on an object literal each of them
+ * answers yes for something no writer ever put there: a first-ever scene is
+ * refused as a duplicate, a note that was never written is deleted
+ * "successfully", a token that was never placed is moved — by writing through
+ * onto the real Object.prototype member. The ids that do it are ordinary
+ * strings on the wire ("constructor", "toString", "valueOf",
+ * "hasOwnProperty", "__proto__"); nothing in the contract or in
+ * internal/gateway reserves them, and a campaign only has to name a character
+ * Constructor.
+ *
+ * Chosen over an `Object.hasOwn(...)` check at each lookup, which would fix
+ * the reads and leave the WRITES broken: `m["__proto__"] = v` on an object
+ * literal calls the inherited setter, re-parenting the map instead of storing
+ * anything, so the entry vanishes and every other key starts inheriting its
+ * fields. A prototype-less dictionary fixes both directions at once, in one
+ * place, and states the invariant structurally instead of asking every lookup
+ * in the fold to remember it. Pinned by the "ids that name a prototype member"
+ * sections of client/test/fold-unit.test.ts and fold-rejections.test.ts.
+ *
+ * The dump is unaffected: JSON.stringify, Object.keys/entries/values and
+ * bun's toEqual all read own enumerable properties only and neither know nor
+ * care what the prototype is.
+ */
+export function emptyMap<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
 export function newState(): State {
-  return { Scenes: {}, Actors: {}, Tokens: {}, Sessions: [], Conditions: {}, Notes: {} };
+  return {
+    Scenes: emptyMap(),
+    Actors: emptyMap(),
+    Tokens: emptyMap(),
+    Sessions: [],
+    Conditions: emptyMap(),
+    Notes: emptyMap(),
+  };
 }
 
 /** Thrown for any event the Go fold would reject. Parity includes failing. */

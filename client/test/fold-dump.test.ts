@@ -141,8 +141,11 @@ test("every actor and token is stored under a key equal to its own id", () => {
   // from a distance: fifteen adjudications in tools/ts-mutation-equivalents.txt
   // declare player.ts's sort comparators equivalent, and the whole argument is
   // that the ids being sorted are UNIQUE. They are unique only because the map
-  // key equals the id field, which is maintained HERE — fold.ts:77 and :87 —
-  // not in the file those adjudications describe.
+  // key equals the id field, which is maintained HERE — by fold.ts's actorAdded
+  // and tokenPlaced arms — not in the file those adjudications describe. (Named
+  // rather than numbered as of 2026-08-25: this read "fold.ts:77 and :87", and
+  // both were stale — 77 built a Scene's tiles and 87 sat inside its object
+  // mapper. Neither has ever written st.Actors or st.Tokens.)
   //
   // Without this test, a fold that stored an actor under some other key would
   // quietly invalidate those fifteen claims with nothing failing.
@@ -165,4 +168,28 @@ test("every actor and token is stored under a key equal to its own id", () => {
   const tokenIds = Object.values(st.Tokens).map((t) => t.ID);
   expect(new Set(actorIds).size).toBe(actorIds.length);
   expect(new Set(tokenIds).size).toBe(tokenIds.length);
+});
+
+test("an id that names a prototype member reaches the dump as an ordinary key", () => {
+  // The dump has its own copy of the problem, one layer down from the fold's.
+  // sortedMap rebuilds each map to emit it in Go's sorted key order, and
+  // rebuilding into an object LITERAL loses exactly what the fold just learned
+  // to keep: `out["__proto__"] = scene` re-parents the accumulator instead of
+  // storing a key, so the scene would be folded correctly and then vanish
+  // between state and JSON. Go's encoding/json emits the key like any other,
+  // and this file is what holds the two to the same bytes.
+  //
+  // __proto__ and hasOwnProperty together: the first is the write that
+  // disappears, the second the read that used to invent an entry, and the
+  // sorted order across them is asserted too, since that is the other thing
+  // sortedMap is for.
+  const { raw, parsed } = dumpOf([
+    started,
+    env(2, { sceneCreated: { sceneId: "__proto__", name: "N", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { sceneCreated: { sceneId: "hasOwnProperty", name: "M", gridWidth: 2, gridHeight: 2 } }),
+  ]);
+
+  expect(Object.keys(parsed.Scenes)).toEqual(["__proto__", "hasOwnProperty"]);
+  expect(parsed.Scenes["__proto__"].Name).toBe("N");
+  expect(raw).toContain('"__proto__": {');
 });

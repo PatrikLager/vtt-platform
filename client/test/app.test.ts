@@ -2358,6 +2358,82 @@ test("a redial whose abandoned socket closes late still ends up perch-shaped", a
   s?.close();
 });
 
+test("perch frames that outran a result the drop swallowed still start the next redial over", async () => {
+  // THE ROUTE NO IDENTITY GUARD CAN CLOSE, and the sibling above is exactly the
+  // one it is not: THAT socket was abandoned and reported its close late, so a
+  // guard on identity keeps its news to itself. THIS socket is the live one,
+  // and it genuinely dies with a command still on it.
+  //
+  // The gateway does not order a CommandResult against the envelopes the same
+  // command produced (wire.ts's header note), and for a perch the two are not
+  // even written by the same goroutine: the PUMP computes and enqueues the
+  // perch's frames (internal/gateway/server.go's `case <-perches.wake` arm)
+  // while the READ LOOP enqueues the result. So the pump wins, the sequence-0
+  // frames land and are folded, and then the connection drops before the result
+  // gets out. wire.ts answers the waiting command "connection closed before a
+  // result arrived" — a refusal for a perch the server granted and has already
+  // acted on.
+  //
+  // A flag read off THAT answer says false over a log that holds the perch's
+  // whole board, and everything follows: the next redial resumes; rollback
+  // keeps everything at or below its cursor and perch frames carry sequence 0,
+  // so they survive it; the reborn projector, perched on nobody, sends this
+  // seat nothing; and the next accepted perch re-introduces the scene, which
+  // fold.ts refuses. session.ts re-folds the whole log on every event, so the
+  // fatal panel never leaves. The same end state as the sibling above, reached
+  // with one socket and no staging.
+  //
+  // AND IT NEEDS NO RACE AT ALL by the second door: server.go drops a result it
+  // cannot encode (`if err != nil { continue }`) and the connection lives on,
+  // leaving the promise unresolved over a log the perch has already shaped.
+  const { r, s, sock } = await tableAs("spectator");
+  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
+    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
+  asme.click();
+  await settle();
+
+  // THE PUMP WINS. Sequence 0 is what makes these a perch's frames and nothing
+  // else's: every other synthesized envelope carries the sequence of the event
+  // that caused it, and real sequences start at 1 (project.go's perchSequence).
+  sock.deliver(envelope(0, { sceneCreated: { sceneId: "s2", name: "Ambush", gridWidth: 4, gridHeight: 4 } }));
+  await settle();
+  expect(s!.state.Scenes["s2"]).toBeDefined();
+
+  // ...and the socket dies with the result still behind it.
+  sock.close();
+  await settle();
+
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+  const redial = FakeSocket.instances[1]!;
+  // after=4 is the resume, and it would be asking for events to sit on top of a
+  // scene only that perch ever introduced.
+  expect(redial.url).toContain("after=0");
+  redial.open();
+  await settle();
+  expect(s!.events).toHaveLength(0);
+  expect(s!.state.Scenes["s2"]).toBeUndefined();
+  // NO shoulder is re-taken, and that is right rather than a shortfall:
+  // `viewpoint` holds what the server CONFIRMED, nothing ever confirmed this
+  // one, and the indicator must not claim a shoulder on the strength of a
+  // refusal. The watcher lands perched on nobody over a clean log with the
+  // perch control in front of them — which works, where the freeze did not.
+  expect(redial.sent).toHaveLength(0);
+
+  // AND THE FRESH LOG IS UNSHAPED AGAIN, so the redial after this one resumes.
+  // The witness is read off the log this client is holding, so emptying that
+  // log answers it; one that latched instead would replay the whole campaign on
+  // every reconnect for the rest of the session.
+  seedTable(redial);
+  await settle();
+  redial.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+  expect(FakeSocket.instances[2]!.url).toContain("after=4");
+  s?.close();
+});
+
 test("'no shoulder' reaches the wire, and is not quietly skipped", async () => {
   // THE THIRD BEHAVIOUR, and the plan calls it the one most likely to be got
   // wrong. Everything either side of this seam is pinned — the builder makes a
@@ -2560,6 +2636,15 @@ test("a spectator PROMOTED to player still starts over, because their log is per
   FakeSocket.instances[1]!.open();
   await settle();
   expect(s!.events).toHaveLength(0);
+  // AND THE SHOULDER IS NOT RE-TAKEN, because this seat may no longer have one.
+  // MayPerch refuses every role but the spectator's ("role %q does not perch —
+  // a viewpoint is the spectator's"), so a redial that re-sends the last
+  // confirmed shoulder regardless of role greets a promoted watcher with a
+  // refusal toast for a command they never issued — over a board that is
+  // already correct, since a player's own eyes are what the replay just rebuilt.
+  // The restart above is still right (their log holds perch frames); the
+  // re-perch is what their new role has no use for.
+  expect(FakeSocket.instances[1]!.sent).toHaveLength(0);
   s?.close();
 });
 

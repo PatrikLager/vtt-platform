@@ -454,6 +454,27 @@ class AmbiguousMove(unittest.TestCase):
         self.assertIn("40:6 -> 60:6", msg)
         self.assertNotIn("no longer survives", msg)
 
+    def test_an_anchorless_ordered_pairing_does_not_claim_a_shared_source_line(self):
+        """The justification must describe the signature that actually paired.
+
+        pair_moves has two passes: anchored (file, mutator, replacement AND the
+        source line) and coarse (the first three only). The ordered wording
+        claimed all four, which is false whenever the coarse pass is what
+        matched — and that is not an exotic case, it is every entry whose file
+        cannot be read, including the one the test above uses. A reader
+        objecting to an order-based pairing needs to know which facts were
+        actually compared; telling them the source lines matched when nothing
+        read a source line invites them to accept a pairing on evidence that
+        was never gathered."""
+        code, msg = run(
+            report(("client/src/does-not-exist.ts", 50, 6, "StringLiteral", "Survived", '""'),
+                   ("client/src/does-not-exist.ts", 60, 6, "StringLiteral", "Survived", '""')),
+            {("client/src/does-not-exist.ts", "30:6", "StringLiteral", '""'): "first",
+             ("client/src/does-not-exist.ts", "40:6", "StringLiteral", '""'): "second"})
+        self.assertEqual(code, 1)
+        self.assertIn("POSITION ORDER", msg)
+        self.assertNotIn("source line", msg)
+
     def test_mismatched_counts_still_refuse_to_guess(self):
         """Two entries, one survivor. There is no pairing, only a choice, and
         the gate does not make choices — it reports both sides and fails."""

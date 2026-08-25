@@ -4,6 +4,23 @@
 // "Mirror" is load-bearing: parity includes REJECTING what Go rejects. A fold
 // that quietly tolerates a malformed event would diverge from the server's
 // own view of history and show a player a state the log does not support.
+//
+// IT MIRRORS GO'S MAPS, NOT ONLY GO'S LOGIC, and that is a claim about the
+// data structure rather than the code. Every map below — st.Scenes, st.Actors,
+// st.Tokens, st.Conditions, st.Notes, and the per-scene and per-actor maps
+// this file builds — is a PROTOTYPE-LESS dictionary (state.ts's emptyMap, whose
+// comment owns the reasoning). `{}` inherits from Object.prototype and a Go
+// map inherits from nothing, so on an object literal a lookup of "toString" or
+// "hasOwnProperty" finds a function and answers "yes, it is in the map" for
+// something no writer ever put there, and an assignment keyed "__proto__"
+// re-parents the map instead of storing an entry.
+//
+// Read that before writing a lookup or an assignment against any of them. The
+// guards in this file are all written as if a lookup could only find what a
+// writer put there — including the duplicate guards below, which read
+// TRUTHINESS where Go reads presence and agree with it only because every
+// value stored here is a fresh object and no fresh object is falsy. That is
+// true now. It is true because of emptyMap, and it was false before it.
 
 // ActorKind is imported as a VALUE, not just a type: the grant arm below
 // compares against ACTOR_KIND_UNSPECIFIED, and `v.kind !== 0` would state the
@@ -11,6 +28,7 @@
 import { ActorKind, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import {
   FoldError,
+  emptyMap,
   newState,
   type Actor,
   type Resource,
@@ -74,7 +92,7 @@ function apply(st: State, env: Envelope): void {
       // protobuf-es always materialises a map field as {} and a repeated
       // field as [] (never undefined; see copyActor's comment below for the
       // same guarantee on a repeated field), so no `?? {}` is needed here.
-      const tiles: Record<string, Tile> = {};
+      const tiles = emptyMap<Tile>();
       for (const [k, t] of Object.entries(v.tiles)) {
         tiles[k] = { Kind: t.kind, Material: t.material, Art: t.art };
       }
@@ -103,13 +121,13 @@ function apply(st: State, env: Envelope): void {
         // is an ambush that does not happen). Initialised as a real empty
         // object, not left absent, so doorOpened/doorClosed below never
         // need their lazy-init guard for a scene built HERE.
-        OpenDoors: {},
+        OpenDoors: emptyMap<boolean>(),
         // Explored starts empty too, mirroring apply.go's SceneCreated arm
-        // (which leaves it nil — Go's zero value for "nothing"). `{}` here
-        // rather than nil for the same reason OpenDoors is `{}`: TypeScript
-        // has no implicit "absent means empty" read, so sceneSeen below can
-        // always write into it without its own lazy-init guard.
-        Explored: {},
+        // (which leaves it nil — Go's zero value for "nothing"). A real empty
+        // map here rather than nil, for the same reason OpenDoors is one:
+        // TypeScript has no implicit "absent means empty" read, so sceneSeen
+        // below can always write into it without its own lazy-init guard.
+        Explored: emptyMap<boolean>(),
       };
       return;
     }
@@ -238,8 +256,8 @@ function apply(st: State, env: Envelope): void {
       // (state.ts) to let bare test literals elsewhere keep compiling — so
       // this arm defaults defensively before writing, the same guard shape
       // ensureOpenDoors below uses for doorOpened/doorClosed.
-      if (!sc.Tiles) sc.Tiles = {};
-      if (!sc.Explored) sc.Explored = {};
+      if (!sc.Tiles) sc.Tiles = emptyMap<Tile>();
+      if (!sc.Explored) sc.Explored = emptyMap<boolean>();
       if (!sc.Objects) sc.Objects = [];
       // TWO FIELDS, TWO SOURCES, and they are no longer the same set. Visible
       // comes from v.visible — the server's own sight answer, which owes
@@ -259,7 +277,7 @@ function apply(st: State, env: Envelope): void {
       // than the `undefined` that means no projection ever arrived (state.ts's
       // Scene.Visible on why those differ). Mirrors internal/engine/apply.go's
       // SceneSeen arm.
-      sc.Visible = {};
+      sc.Visible = emptyMap<boolean>();
       for (const sq of v.visible) sc.Visible[sq] = true;
       for (const [key, ref] of Object.entries(v.tiles)) {
         sc.Tiles[key] = { Kind: ref.kind, Material: ref.material, Art: ref.art };
@@ -398,7 +416,7 @@ function doorKey(x: number, y: number): string {
  * caught here before it needed its own fix round.
  */
 function ensureOpenDoors(sc: Scene): Record<string, boolean> {
-  if (!sc.OpenDoors) sc.OpenDoors = {};
+  if (!sc.OpenDoors) sc.OpenDoors = emptyMap<boolean>();
   return sc.OpenDoors;
 }
 
@@ -432,7 +450,7 @@ function copyActor(a: {
   controllerIds: string[];
   kind: ActorKind;
 }): Actor {
-  const resources: Record<string, Resource> = {};
+  const resources = emptyMap<Resource>();
   for (const [k, v] of Object.entries(a.resources ?? {})) {
     resources[k] = { current: v.current, max: v.max };
   }
@@ -440,7 +458,7 @@ function copyActor(a: {
     actorId: a.actorId,
     name: a.name,
     moduleId: a.moduleId,
-    attributes: { ...(a.attributes ?? {}) },
+    attributes: Object.assign(emptyMap<number>(), a.attributes),
     resources,
     // VERBATIM, and no migration here — the strict mirror of internal/engine's
     // Apply, which gets this for free from proto.Clone. "Absent + a controller
@@ -590,7 +608,7 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
 }
 
 function sortedMap<T, U>(m: Record<string, T>, f: (v: T) => U): Record<string, U> {
-  const out: Record<string, U> = {};
+  const out = emptyMap<U>(); // NOT {}: a key of "__proto__" would re-parent this accumulator instead of landing in it, and Go emits it like any other key. See the header.
   for (const k of Object.keys(m).sort()) out[k] = f(m[k]!);
   return out;
 }
