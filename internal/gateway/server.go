@@ -83,8 +83,23 @@ const gatewayBuffer = 256
 //
 // Prior art: MapTool (net.rptools.clientserver) bounds its per-connection
 // queue not at all and detects a departed client purely with a socket timeout
-// — one minute, against a 20s client heartbeat. We have no such deadline on
-// conn.Write; see the pump's note on the window that leaves open.
+// — one minute, against a 20s CLIENT heartbeat.
+//
+// BOTH HALVES ARE OURS NOW. Server.writeTimeout is the socket deadline (it has
+// been since 2026-08-06, the same commit that added this citation — the
+// sentence that used to sit here, "we have no such deadline on conn.Write",
+// was already false when it was written), and gatewayPingInterval /
+// gatewayPingTimeout are the heartbeat, added 2026-08-26 after session zero
+// found an idle browser reaped through a tunnel. See keepalive.go.
+//
+// ONE ASYMMETRY THE CITATION STATES IN A SINGLE WORD, worth spelling out
+// because the consequence is large: MapTool's heartbeat is CLIENT-side and
+// ours is SERVER-side. That is why ours needs no client change at all. A
+// browser's WebSocket
+// stack answers a ping frame below JavaScript, so pinging from the server
+// keeps clients honest including the ones we did not write, whereas the JS
+// WebSocket API cannot send a ping frame in the first place. Borrowing
+// MapTool's INTERVALS is sound; borrowing its direction would not have been.
 const gatewayNoProgress = 30 * time.Second
 
 // maxWSFrameBytes is the per-connection websocket message read limit,
@@ -136,6 +151,15 @@ type Server struct {
 	// drops first, so the write path can never be exercised in isolation —
 	// which is exactly how its absence went unnoticed.
 	writeTimeout time.Duration
+
+	// pingInterval and pingTimeout govern the keepalive (keepalive.go): how
+	// often an otherwise-silent connection is pinged, and how long the pong may
+	// take before the peer is judged gone. Defaults are gatewayPingInterval and
+	// gatewayPingTimeout; unexported and overridden only by this package's own
+	// tests, exactly like buffer and noProgress above, because a suite cannot
+	// wait twenty wall-clock seconds per assertion.
+	pingInterval time.Duration
+	pingTimeout  time.Duration
 
 	// encodeFrame is EncodeFrame behind a per-Server seam, so a test can force
 	// an encode failure without reaching across into another Server's
@@ -228,6 +252,7 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 	return &Server{
 		campaign: c, ids: ids,
 		buffer: gatewayBuffer, noProgress: gatewayNoProgress, writeTimeout: gatewayNoProgress,
+		pingInterval: gatewayPingInterval, pingTimeout: gatewayPingTimeout,
 		presence:    newPresenceRegistry(),
 		encodeFrame: EncodeFrame,
 	}
@@ -433,9 +458,14 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	// took three attempts to get right.
 	flush := make(chan struct{})
 	writerDone := make(chan struct{})
+	// activity is read by the keepalive's busy predicate, below. It is declared
+	// out here rather than inside the goroutine because the pinger reads it
+	// from a third goroutine; see keepalive.go for why a ping must never
+	// contend with a write for the library's frame lock.
+	var activity writeActivity
 	go func() {
 		defer close(writerDone)
-		write := func(b []byte) bool {
+		write := stampedWrite(&activity, func(b []byte) bool {
 			// Bounded, and load-bearing. A client that stops reading backs
 			// the socket up; without a deadline this parks forever while the
 			// command loop still waits in conn.Read — a connection that is
@@ -456,7 +486,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			err := conn.Write(wctx, websocket.MessageText, b)
 			wcancel()
 			return err == nil
-		}
+		})
 		writeUntilFlushed(outCh, flush, write)
 	}()
 
@@ -786,6 +816,38 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		close(flush)
 		<-writerDone
 	}
+
+	// The keepalive, on its OWN goroutine — keepalive.go carries the reasoning
+	// for why it cannot be the writer's and why that does not breach the
+	// single-writer discipline the writer block above establishes.
+	//
+	// STARTED HERE rather than beside the writer, and the reason is the
+	// hand-rolled teardowns above, not tidiness. Between the writer goroutine
+	// and this point sit two early returns that unwind by hand — unsubscribe,
+	// close(flush), wait on writerDone, then conn.Close with a reason. A pinger
+	// already running there could CloseNow the socket out from under that
+	// reasoned Close, turning a diagnosable failure into a bare disconnect.
+	//
+	// AN EARLIER VERSION OF THIS COMMENT ARGUED SOMETHING ELSE and it was
+	// wrong: that starting earlier would risk pinging during catch-up and the
+	// presence fan-out. It would not. The first tick is a whole pingInterval
+	// after this line, setup finishes in milliseconds, and presenceSendBudget
+	// bounds time spent handing bytes to OTHER connections' writers — which
+	// never makes THIS connection's writer hold the frame lock. Worse, if it
+	// somehow did, activity.busy() is already the defence. Recorded because
+	// the wrong reason was plausible enough to survive being written down.
+	//
+	// Nothing waits for it to exit, deliberately, and nothing needs to. The
+	// pinger has two independent exits: this stop channel, and ctx — which
+	// net/http cancels as soon as ServeHTTP returns — so it cannot outlive the
+	// request by more than one in-flight ping. Note that the LIFO position of
+	// this defer buys nothing on its own: every return past this point calls
+	// shutdown() explicitly, and shutdown()'s first act is leavePresence, so
+	// the ordering only ever matters if a panic unwinds through net/http.
+	stopPing := make(chan struct{})
+	defer close(stopPing)
+	go pingUntilStopped(ctx, s.pingInterval, s.pingTimeout, stopPing,
+		activity.busy, conn.Ping, func() { _ = conn.CloseNow() })
 
 	for {
 		_, raw, err := conn.Read(ctx)

@@ -218,8 +218,14 @@ not come back. Both halves matter. The ping keeps intermediaries from reaping a
 silent socket; the pong is what MapTool actually used it for — *"to check if
 any connections were down on the player side"* — and it is what finally lets
 the table stop seeing ghosts. Cheap: ~12 bytes per round trip, about 18 KB
-across six players for a ninety-minute session, less than a single
-`PresenceSnapshot` costs per hour.
+across six players for a ninety-minute session — roughly twenty-six
+`PresenceSnapshot`s' worth in total, so about seventeen an hour.
+
+*(CORRECTED 2026-08-26. That last clause read "less than a single
+`PresenceSnapshot` costs per hour" and was wrong by a factor of about twenty; a
+six-participant snapshot runs around 700 bytes. The 18 KB was right. The
+CONCLUSION — negligible — survives the correction untouched, which is exactly
+why nobody checked the arithmetic underneath it.)*
 
 Server-side rather than client-side, which is not a coin flip. A browser's
 WebSocket stack answers a ping frame below JavaScript, so pinging FROM the
@@ -230,7 +236,7 @@ to implement it, and the JS `WebSocket` API cannot send a ping frame at all.
 whether iOS keeps answering control frames through it is unverified — which
 matters, because a frozen tab is one of the ways a player is "inactive".)
 
-**NOT YET FIXED, and the first attempt was wrong** — recorded because it is
+**NOT YET FIXED (as of 2026-08-12 — see the update below), and the first attempt was wrong** — recorded because it is
 evidence about the fix rather than about the platform. A ping was written
 during the walk, reviewed, and found to reap healthy players:
 coder/websocket wraps every control frame in a hard-coded five-second context,
@@ -250,6 +256,25 @@ Two open questions the fix must answer rather than assume:
 - **Where is this written down?** An unsolicited control frame every 20s and a
   close on a missed pong is wire-visible behaviour every client author must
   tolerate. It belongs in the gateway spec (rule 7), not only here.
+
+**UPDATE 2026-08-26 — fixed, and both questions answered.** The heading above
+stays as written; it was true for a fortnight and the reason it stayed true is
+part of the record.
+
+- *Which case do we lose?* Patrik chose the ghost over the reap: a 60s pong
+  budget, three intervals, MapTool's ratio. Two pongs may be lost or arrive
+  late before anyone is declared dead, and a genuinely dead peer lingers 60-80s holding one idle socket and one presence entry. Reaping a live player is
+  the worse failure and it is invisible from the outside — it looks exactly
+  like the disconnect this whole entry is about.
+- *Where is it written down?* `internal/gateway/keepalive.go` carries the
+  reasoning; the wire contract goes in the gateway spec, which is the last
+  piece of this arc still outstanding.
+
+The fix landed in two commits: the verdict and the busy-skip, then the seam in
+`serve()` that makes them live. A ping is now a verdict about the pong and
+nothing else, and a tick is skipped entirely while the writer holds the frame
+lock — so the contention that produced the first wrong version mostly does not
+arise, and cannot be misread when it does.
 
 ### 8. `join-link show` prints a placeholder nobody can substitute from there — AWKWARD
 

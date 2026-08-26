@@ -3,8 +3,36 @@ package gateway
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 )
+
+// writeActivity is the seam keepAlive's busy predicate reads: whether this
+// connection's writer is mid-frame right now.
+//
+// A NAMED TYPE RATHER THAN A CLOSURE, for the reason writeUntilFlushed is a
+// free function — a closure buried in serve() is a seam nothing can reach, and
+// this repo has already shipped one seam whose justification was written down
+// and never honoured. Three methods, all trivial, all directly tested.
+//
+// IN-FLIGHT ONLY, deliberately. An earlier design also skipped the tick when a
+// write had merely COMPLETED within the last interval, on the reasoning that a
+// socket carrying data recently does not need a keepalive. True, but not
+// needed: the only thing that must not happen is a ping contending with a write
+// that HOLDS writeFrameMu, and that is exactly what inFlight reports. The extra
+// clause bought fewer pings at the price of a second piece of state and a
+// clock comparison, and correctness never rested on it.
+//
+// The race it does NOT close is real and is covered elsewhere: busy() can
+// report false a moment before the writer takes the lock, so a ping can still
+// lose the five-second race. That is precisely why pingUntilStopped refuses to
+// read a send failure as peer death — the skip reduces how often it happens,
+// the verdict makes it harmless when it does.
+type writeActivity struct{ inFlight atomic.Bool }
+
+func (w *writeActivity) begin()     { w.inFlight.Store(true) }
+func (w *writeActivity) end()       { w.inFlight.Store(false) }
+func (w *writeActivity) busy() bool { return w.inFlight.Load() }
 
 // gatewayPingInterval is how often serve pings an otherwise-silent connection.
 //
@@ -40,12 +68,14 @@ import (
 // ninety-minute session spends roughly 18 KB of WebSocket framing on
 // keepalive. That much was right. What was wrong, by a factor of twenty, was
 // calling it "less than one PresenceSnapshot per hour": a six-participant
-// snapshot runs around 700 bytes of protojson, which puts 18 KB at roughly
-// twenty-six snapshots across the session — about seventeen an hour. Still
-// negligible — which is exactly why the wrong figure survived being written.
-// Deliberately an order of magnitude and not a byte count: protojson output is
-// build-randomised in this repo, so an exact figure written here would be
-// wrong on somebody else's machine before it was wrong for any other reason.
+// snapshot runs around 700 bytes of protojson — measured 2026-08-26 by
+// marshalling a six-entry PresenceSnapshot with 25-character participant ids
+// and CONNECTED states, which came to 694 — so 18 KB is roughly twenty-six
+// snapshots across the session, about seventeen an hour. Still negligible,
+// which is exactly why the wrong figure survived being written. Rounded on
+// purpose: the conclusion needs an order of magnitude, and protojson output in
+// this repo is build-randomised, so a byte-exact figure invites a reader to
+// trust a number that can shift under them.
 // Counting WebSocket framing only, too: TCP, TLS and any tunnel add per-packet
 // overhead that dominates at frames this small.
 const gatewayPingInterval = 20 * time.Second
@@ -208,6 +238,17 @@ func keepAlive(
 // actually notices. Before this, a peer that had silently gone stayed
 // CONNECTED forever, because departure hangs off serve() returning and serve()
 // was parked in conn.Read on a socket nobody had told it was gone.
+//
+// IT CAN ALSO PRE-EMPT SOMEBODY ELSE'S CLOSE REASON, which the paragraph above
+// does not cover because it is about a different thing. Close and CloseNow both
+// open by swapping coder/websocket's `closing` flag; whoever wins, the loser
+// returns net.ErrClosed without writing its close frame. So a pinger that reaps
+// at the same moment the pump is closing with "gateway: credential no longer
+// valid" costs that peer its reason — the told-why-SOMETIMES failure recorded
+// in server.go. The window is narrow and the case is benign: reaching it takes
+// a peer that has already missed a 60s pong, and such a peer will not read a
+// close frame either. Recorded rather than guarded, because the guard the other
+// two sites use keys on `closing`, which is only set inside shutdown().
 func pingUntilStopped(
 	ctx context.Context,
 	interval, timeout time.Duration,
@@ -225,4 +266,29 @@ func pingUntilStopped(
 		}
 		return err
 	}, closeNow)
+}
+
+// stampedWrite wraps a connection's write func so its writeActivity reports
+// in-flight for exactly the duration of each call.
+//
+// A NAMED HELPER rather than two statements inside serve()'s closure, and the
+// reason is measured rather than stylistic: with the stamping inline, DELETING
+// the begin() call left the entire gateway suite green. The busy-skip is the
+// whole purpose of writeActivity, and nothing anywhere observed that serve()
+// actually stamps the real writer around the real write — the type was tested
+// in isolation and keepAlive was tested with an injected predicate, so the one
+// join between them was the one thing unpinned. That is the same shape this
+// file already warns about twice, arriving one level up.
+//
+// defer, not a trailing call: a panic between begin and end would strand
+// inFlight true, which disables that connection's keepalive permanently and
+// silently. Unreachable today — the writer goroutine has no recover, so a panic
+// there takes the process — but the deferred form costs nothing and removes the
+// reasoning step.
+func stampedWrite(a *writeActivity, write func([]byte) bool) func([]byte) bool {
+	return func(b []byte) bool {
+		a.begin()
+		defer a.end()
+		return write(b)
+	}
 }

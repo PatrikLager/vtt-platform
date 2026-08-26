@@ -294,3 +294,79 @@ func TestACancelledConnectionStopsItsOwnPinger(t *testing.T) {
 		}
 	})
 }
+
+// TestWriteActivityReportsAWriteInFlight pins the seam serve() hands keepAlive
+// as its busy predicate.
+//
+// Three one-line methods look too small to test, and that is exactly the shape
+// this package has been burned by: the last seam here was argued for in a doc
+// comment, reached only through a live connection, and turned out to be inert
+// under mutation. A predicate stuck at false silently disables the skip; a
+// predicate stuck at true silently disables the KEEPALIVE, and neither shows up
+// as a failure anywhere else. Both directions are asserted.
+func TestWriteActivityReportsAWriteInFlight(t *testing.T) {
+	var w writeActivity
+
+	if w.busy() {
+		t.Error("a connection that has never written reports its writer busy — every tick " +
+			"would be skipped and the connection would never be pinged at all")
+	}
+
+	w.begin()
+	if !w.busy() {
+		t.Error("a write is in flight and the writer does not report busy — the ping will " +
+			"contend for writeFrameMu against it and lose the 5s race the library allows a " +
+			"control frame")
+	}
+
+	w.end()
+	if w.busy() {
+		t.Error("the write finished and the writer still reports busy — a skip that never " +
+			"re-enables leaves the connection with no keepalive, which is the bug this whole " +
+			"file exists to prevent")
+	}
+}
+
+// TestTheWriterIsReportedBusyForExactlyTheDurationOfAWrite pins the JOIN
+// between writeActivity and the writer — the one part of this mechanism that
+// nothing else observes.
+//
+// keepAlive is driven by tests with an INJECTED busy predicate, and
+// writeActivity is driven directly, so both halves are covered and the wiring
+// between them was not: deleting the begin() stamp from serve() left every test
+// in this package green. A connection-level test cannot close that gap either,
+// because a client that stops reading (the only way to hold a write open) also
+// stops processing the ping frames the assertion would need to count.
+//
+// So the stamping lives in a helper and is asserted here, deterministically,
+// with no sockets and no clock.
+func TestTheWriterIsReportedBusyForExactlyTheDurationOfAWrite(t *testing.T) {
+	var a writeActivity
+	var busyDuring bool
+
+	w := stampedWrite(&a, func([]byte) bool {
+		busyDuring = a.busy()
+		return true
+	})
+
+	if a.busy() {
+		t.Error("a connection reports its writer busy before it has written anything — " +
+			"every keepalive tick would be skipped and the connection never pinged at all")
+	}
+
+	w([]byte("a frame"))
+
+	if !busyDuring {
+		t.Error("the writer was NOT reported busy while its write was in flight — the ping " +
+			"is then free to contend for writeFrameMu against a write that may hold it for " +
+			"up to writeTimeout, and coder/websocket gives a control frame 5s to win that " +
+			"race before reporting a failure. That is the exact defect this seam exists to " +
+			"prevent, and with the stamp inline in serve() nothing in this package noticed " +
+			"its absence")
+	}
+
+	if a.busy() {
+		t.Error("the write returned and the writer still reports busy — a skip that never " +
+			"re-enables leaves the connection with no keepalive for the rest of its life")
+	}
+}
