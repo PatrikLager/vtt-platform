@@ -67,6 +67,72 @@ LLM's MCP tools all drive a live table through the same wire API.
 - Catch-up: client sends `after_sequence` at connect; server streams history
   then live (store.Subscribe semantics, buffer 256 — a named constant;
   overflow = WebSocket close, client reconnects and catches up).
+- **Server-initiated ping/pong keepalive** — **amended 2026-08-26** (Patrik
+  approved; found by session zero, not by reasoning). The server sends an
+  unsolicited WebSocket PING control frame on a connection that has been
+  otherwise silent for 20 seconds, and force-closes it if no PONG comes back
+  within 60 seconds.
+
+  NO CLIENT CODE IS REQUIRED, which is what lets this be added to a shipped
+  contract without breaking anyone. A WebSocket implementation answers a ping
+  below application level: a browser's stack replies without the page's
+  JavaScript being involved, and the JS `WebSocket` API cannot send or suppress
+  a ping frame at all. Every client here — browser, harness, MCP, CLI — already
+  satisfies this, as does any conformant third-party client. What a client
+  author must know is the CONSEQUENCE: stop answering and you are closed, with
+  no close frame.
+
+  WHY IT EXISTS. Neither existing deadline watches an idle connection.
+  `store.SubscriberNoProgressTimeout` is armed only while an event waits to be
+  handed over, so on a quiet table it never starts; `Server.writeTimeout` bounds
+  a write, and an idle connection performs none. Both ask whether a client is
+  READING — the right question, and no answer at all about a socket where
+  neither side has anything to say. So an idle connection carried zero bytes in
+  either direction indefinitely, and every hop between a player and the server
+  (Cloudflare, carrier NAT, a home router's connection table, a corporate proxy)
+  was entitled to reap it. In session zero a browser left idle came back reading
+  `closed`. Patrik's requirement: "you have to be able to be 'inactive' without
+  being kicked out."
+
+  20s AND 60s, AND THE RATIO IS THE POINT. Both come from MapTool
+  (net.rptools.clientserver), which runs a 20s heartbeat against a one-minute
+  socket timeout; 3x means two pongs may be lost or arrive late before anyone is
+  declared dead. Direction of error matters far more than speed of detection: a
+  budget tight enough to lose a race with a phone on a slow cellular link reaps
+  players who are perfectly fine, and a spuriously reaped player sees exactly
+  what a genuinely disconnected one sees. Patrik's call, 2026-08-26, against 40s
+  and 20s alternatives. The cost of that generosity is bounded: a peer that has
+  genuinely gone stays listed 60-80s, holding one idle socket and one presence
+  entry. Note the borrowing is of INTERVALS, not direction — MapTool's heartbeat
+  is client-side and ours is server-side, per the paragraph above.
+
+  THE CLOSE IS UNCEREMONIOUS, deliberately. A missed pong closes with no close
+  frame and no reason, unlike revocation, which sends one. There is nobody left
+  to tell: a peer that did not answer a ping will not read a close frame either,
+  and a graceful close would first sit through its own handshake timeout. The
+  connection then unwinds through the ordinary path, presence departure
+  included — the half a table actually notices, and the half that was missing
+  before. Until this landed, a peer that had silently gone stayed CONNECTED
+  forever, because departure hangs off the connection handler returning and the
+  handler was parked reading a socket nobody had told it was gone.
+
+  WHAT IS NOT PROMISED. The ping is skipped entirely while the connection's
+  writer is mid-frame, so a client receiving a burst may see no ping for well
+  over 20 seconds. That is deliberate — a socket carrying data does not need a
+  keepalive, and pinging into a busy writer makes the ping contend for the
+  library's frame lock. **The interval is not a clock, and nothing may be
+  inferred from a ping that does not arrive.**
+
+  ONE KNOWN GAP, recorded rather than closed: whether a mobile OS keeps
+  answering control frames for a FROZEN tab is unverified. If it does not, a
+  frozen tab is reaped after ~80s — which is precisely one of the ways a player
+  is "inactive". Worth a real-device check before anyone relies on background
+  tabs surviving.
+
+  NOT A CONTRACT CHANGE. Ping and pong are WebSocket control frames, not
+  protobuf messages, so ADR-007's additive-only rule is not engaged and
+  `check:breaking` has nothing to compare. Said out loud because "wire protocol
+  change" normally implies a contract change in this repo, and this one is not.
 - HTTP: `GET /healthz` only. (The static-file stub originally sketched here
   was dropped as YAGNI at build time; the browser client is sub-project 7's.)
 

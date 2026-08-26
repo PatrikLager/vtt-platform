@@ -267,8 +267,9 @@ part of the record.
   the worse failure and it is invisible from the outside — it looks exactly
   like the disconnect this whole entry is about.
 - *Where is it written down?* `internal/gateway/keepalive.go` carries the
-  reasoning; the wire contract goes in the gateway spec, which is the last
-  piece of this arc still outstanding.
+  reasoning, and the wire contract is now in the gateway spec
+  (`2026-07-23-api-gateway-design.md` §3, amended 2026-08-26) — where a client
+  author looks, rather than only in a findings note.
 
 The fix landed in two commits: the verdict and the busy-skip, then the seam in
 `serve()` that makes them live. A ping is now a verdict about the pong and
