@@ -149,6 +149,44 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// drop a healthy subscriber and report a logic failure that is not there.
 	srv := New(c, ids)
 	srv.noProgress = 10 * time.Minute
+	// THE PING BUDGET IS PART OF THE SAME STATEMENT, and this block is the
+	// canonical reason for every ping pin in this file. The other four sites
+	// point here rather than restating it — one mechanism, one place to rot.
+	//
+	// A REAP NEEDS TWO CONDITIONS AT ONCE, which is the part that is easy to
+	// get wrong: the writer must hold no frame, so activity.busy() is false
+	// and the tick is not skipped, AND the client must not be inside Read, so
+	// nothing answers the ping. coder/websocket writes the pong from
+	// handleControl, reachable only from an active Read (read.go:317-323,
+	// pinned v1.8.15), so a client that stops reading stops ponging. Every
+	// test here that parks a peer creates exactly that pairing in the window
+	// between the 101 and the first frame the peer will park on: nothing to
+	// write yet, and nobody reading.
+	//
+	// THE BUSY-SKIP DOES NOT COVER THAT WINDOW, and an earlier version of this
+	// comment claimed it did. It suppresses a ping only while the writer HOLDS
+	// a frame; before the burst starts there is no frame to hold.
+	//
+	// MEASURED 2026-08-26, because the first version of this reasoning was
+	// argued rather than run. Drop the budgets to a 20ms interval and a 100ms
+	// pong deadline and the joiner test below loses its wedged peer to the
+	// reap, failing that test's own wedge witness intermittently. Fire pings at
+	// the same rate with the pong deadline left long — every ping sent, no
+	// verdict possible — and it passes every time. The failure is the REAP,
+	// not the ping traffic.
+	//
+	// NOTHING HERE IS EXPOSED AT THE PRODUCTION BUDGETS: the first tick is a
+	// whole 20s out and the slowest test in this package runs well inside that.
+	// The pin exists for the reason noProgress is pinned above — a budget a
+	// test's result depends on is one the test states rather than inherits.
+	//
+	// THIS server is the weakest of the five cases and the comment should not
+	// oversell it. Its clients drain continuously on background readers, so
+	// they are inside Read and they do pong; nothing has measured one stalling,
+	// and the 17.4s recorded below is the DRIVER'S WRITES against a slow disk,
+	// not a starved reader. Precaution and uniformity, not an observed reap.
+	srv.pingInterval = 10 * time.Minute
+	srv.pingTimeout = 10 * time.Minute
 	httpSrv := httptest.NewUnstartedServer(srv.Handler())
 	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
 	httpSrv.Start()
@@ -164,6 +202,15 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	victimSrv := New(c, ids)
 	victimSrv.buffer = 0
 	victimSrv.noProgress = 5 * time.Millisecond
+	// Pushed out of the way so the teardown this test observes is unambiguously
+	// noProgress's — the rule is stated in full at the healthy server above.
+	// Do NOT rest it on the busy-skip: the victim's writer is parked inside
+	// conn.Write only once the burst starts, and before that it sits idle while
+	// the victim already never reads. At the production budgets 5ms ends this
+	// connection long before the 20s first tick, so the pin is not load-bearing
+	// today; it removes a second mechanism from a test that should have one.
+	victimSrv.pingInterval = 10 * time.Minute
+	victimSrv.pingTimeout = 10 * time.Minute
 	victimHTTP := httptest.NewUnstartedServer(victimSrv.Handler())
 	victimHTTP.Listener = &sndbufListener{Listener: victimHTTP.Listener}
 	victimHTTP.Start()
@@ -525,6 +572,14 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	// aggressive, and it is the mechanism under test.
 	deafSrv.noProgress = 30 * time.Second
 	deafSrv.writeTimeout = 25 * time.Millisecond
+	// The ping budget too, for the rule stated in full at
+	// TestAWedgedConnectionIsTornDownAndOthersKeepServing: this client never
+	// reads, which is the reap precondition by construction. The 25ms write
+	// deadline ends it long before the 20s first tick, so the pin is not
+	// load-bearing today — it keeps the mechanism under test the only one that
+	// can end this connection.
+	deafSrv.pingInterval = 10 * time.Minute
+	deafSrv.pingTimeout = 10 * time.Minute
 	deafSrv.onServeDone = func() { served <- struct{}{} }
 	deafHTTP := httptest.NewUnstartedServer(deafSrv.Handler())
 	deafHTTP.Listener = &sndbufListener{Listener: deafHTTP.Listener}
@@ -655,6 +710,13 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	// one that produces a client gone without a goodbye.
 	srv.noProgress = 30 * time.Second
 	srv.writeTimeout = 25 * time.Millisecond
+	// Ping budget pinned for the same reason, stated in full at
+	// TestAWedgedConnectionIsTornDownAndOthersKeepServing: a client that never
+	// reads never pongs, and this test's whole subject is WHICH mechanism ended
+	// the connection. 25ms beats the 20s first tick today; pinning it means
+	// that ordering is not what the result rests on.
+	srv.pingInterval = 10 * time.Minute
+	srv.pingTimeout = 10 * time.Minute
 	httpSrv := httptest.NewUnstartedServer(srv.Handler())
 	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
 	httpSrv.Start()
@@ -943,6 +1005,15 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	srv := New(c, ids)
 	srv.buffer = 0 // no slot for the wedged peer to hide behind
 	srv.noProgress = 10 * time.Minute
+	// The ping budget, for the rule stated in full at the wedged-connection
+	// test above — and this is the test that MEASURED it. Its wedged peer sits
+	// idle and unreading between its own 101 and the first oversized broadcast,
+	// which is exactly the window a tick can reap it in; at a 20ms interval and
+	// a 100ms pong deadline it does, and the wedge witness below then fails.
+	// Left at the defaults it is safe only because the first tick is 20s out
+	// and this test finishes in about 2.5s.
+	srv.pingInterval = 10 * time.Minute
+	srv.pingTimeout = 10 * time.Minute
 	srv.presence.sendBudget = budget
 	httpSrv := httptest.NewUnstartedServer(srv.Handler())
 	httpSrv.Listener = &sndbufListener{Listener: httpSrv.Listener}
