@@ -521,7 +521,44 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
 
     # PAIR BEFORE REPORTING EITHER SIDE — see pair_moves above for what the two
     # passes are and why the anchor refines rather than gates.
-    live = set(survived)
+    # A TIMED OUT MUTANT COUNTS AS LIVE HERE, AND ONLY HERE. A timeout is a
+    # detection for the pass/fail verdict — Patrik, 2026-07-28, and that is
+    # right: a mutant that hangs the suite was detected. It is NOT an
+    # EVALUATION, so it cannot be evidence that an adjudication has expired.
+    #
+    # Reusing "not a survivor" for staleness inverted the gate into advice to
+    # destroy good work. Measured 2026-08-27: three entries on
+    # client/src/view/spectator.ts (364:10, 365:10, 501:59) were reported stale
+    # with "Remove the entry rather than let it pre-approve a future mutant".
+    # All three were applied by hand and SURVIVED the full suite. Deleting them
+    # would have thrown away exhaustive reasoning — one rests on fold.ts
+    # rejecting duplicate actorIds, another on 150 checked permutations — and
+    # they would have come back as UNADJUDICATED survivors the moment the
+    # timeouts were fixed, unexplained.
+    #
+    # THE ASYMMETRY IS DELIBERATE: `unadjudicated` below still reads only
+    # `survived`, so a timeout never invents a survivor to complain about
+    # either. Nothing is excused that would otherwise FAIL: an unadjudicated
+    # survivor still fails, and every timeout is still printed and still
+    # counted against MAX_TIMEOUT_FRACTION above.
+    #
+    # ONE THING DOES CHANGE BESIDES THE STALE MESSAGE, and the paragraph above
+    # would otherwise read as exhaustive. `stale_keys` is what pair_moves
+    # searches, so an entry excused here also leaves the pairing. If a mutant
+    # genuinely MOVED and its old key happens to host a same-(file, mutator,
+    # replacement) mutant that times out, the gate reports the survivor at the
+    # new position as a plain SURVIVED and never says the entry became it. The
+    # run still fails; the DIAGNOSIS is what is lost, and it inverts into the
+    # advice this fix exists to stop — write a new adjudication rather than
+    # re-key the old one.
+    #
+    # NOT FIXED, DELIBERATELY. Pairing on `equivalents - survived` instead would
+    # drag every adjudicated timeout into _pair's count balance and break
+    # pairings that work today — 94 timeouts against 73 entries on the
+    # 2026-08-27 report. The lost diagnosis is the price, this is the record,
+    # and test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing pins
+    # it so it stays a decision rather than becoming a surprise.
+    live = set(survived) | set(timed_out)
     stale_keys = sorted(set(equivalents) - live)
     unadjudicated = [m for m in survived if m not in equivalents]
 
@@ -575,7 +612,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
     if fail:
         return 1
     print(f"check:ts-mutation: {measured} mutants, {killed} killed, "
-          f"{len(timed_out)} timed out, {len(survived)} adjudicated equivalent, "
+          f"{len(timed_out)} timed out, {len(survived)} survivors all adjudicated equivalent, "
           f"zero unadjudicated survivors.", file=out)
     return 0
 

@@ -174,6 +174,55 @@ class Gate(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", msg)
 
+    def test_an_adjudication_whose_mutant_timed_out_is_not_called_stale(self):
+        # A TIMED OUT mutant was NOT EVALUATED, so it is no evidence that the
+        # adjudication above it has expired. The gate counts a timeout as a
+        # detection for the pass/fail verdict (Patrik, 2026-07-28) and that is
+        # right: a mutant that hangs the suite was detected. Reusing that for
+        # STALENESS is not, and it inverted into advice to delete good work.
+        #
+        # MEASURED 2026-08-27, which is why this test exists: three entries on
+        # client/src/view/spectator.ts (364:10 and 365:10 EqualityOperator,
+        # 501:59 StringLiteral) were reported stale with "Remove the entry".
+        # All three were applied by hand and SURVIVED a full `bun test
+        # client/test` — 685 pass, 0 fail. Following the advice would have
+        # deleted three exhaustively-reasoned adjudications, and they would
+        # have returned as UNADJUDICATED survivors the moment the timeouts
+        # were fixed, with their reasoning gone.
+        code, msg = run(
+            report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
+                   ("client/src/a.ts", 9, 5, "BooleanLiteral", "Timeout")),
+            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "no observable difference"})
+        self.assertEqual(code, 0, msg)
+        self.assertNotIn("no longer survives", msg)
+        # And it is still reported as unevaluated, because suppressing the
+        # staleness complaint must not also suppress the timeout itself.
+        self.assertIn("timed out: client/src/a.ts:9:5", msg)
+
+    def test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing(self):
+        # CHARACTERIZATION, not an endorsement. Excusing a timed-out entry also
+        # removes it from what pair_moves searches. So a mutant that genuinely
+        # MOVED, whose OLD key now hosts a same-(file, mutator, replacement)
+        # mutant that times out, is reported as a bare survivor at its new
+        # position and nothing says the entry became it — the reader is steered
+        # to write a NEW adjudication instead of re-keying, which is the mirror
+        # image of the harm the timeout fix exists to prevent.
+        #
+        # The run still FAILS, so nothing ships that would not have. Only the
+        # diagnosis is lost. Fixing it by pairing on `equivalents - survived`
+        # would drag every adjudicated timeout into _pair's count balance and
+        # break pairings that work today (94 timeouts against 73 entries on the
+        # 2026-08-27 report), so the diagnosis is the accepted price. This test
+        # is the record, so the next reader meets a decision, not a surprise.
+        code, msg = run(
+            report(("client/src/a.ts", 90, 7, "StringLiteral", "Timeout",  '""'),
+                   ("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""')),
+            {("client/src/a.ts", "90:7", "StringLiteral", '""'): "exhaustively reasoned"})
+        self.assertEqual(code, 1)
+        self.assertIn("SURVIVED StringLiteral at client/src/a.ts:30:6", msg)
+        self.assertIn("timed out: client/src/a.ts:90:7", msg)
+        self.assertNotIn("ADJUDICATION MOVED", msg)
+
     def test_an_adjudication_is_keyed_by_mutator_not_just_location(self):
         # Two mutators at one location are two different claims; excusing one
         # must not excuse the other.

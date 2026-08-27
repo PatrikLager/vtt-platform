@@ -154,6 +154,37 @@ class MutationGateTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("zero unadjudicated survivors", out)
 
+    def test_an_adjudication_whose_mutant_timed_out_is_not_called_stale(self):
+        # THE SAME DEFECT FOUND IN check-ts-mutation.py on 2026-08-27. A
+        # timeout is a detection for the verdict but NOT an evaluation, so it
+        # is no evidence that an adjudication expired. `claimed` is built only
+        # from survivors, so a timed-out adjudicated mutant falls out of it and
+        # the gate demands the entry's deletion. check-mutation.py already says
+        # "a timed-out mutant can be a genuine survivor", directly above the
+        # very loop this test is about.
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    assigns a value already held\n")
+        m = {"./p/": gremlins_output(killed=9, timed_out=1,
+                                     timed_out_locs=(("CONDITIONALS_BOUNDARY", "a.go:10:5"),))}
+        code, out, err = self.gate(eq, m)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("no longer survives", out + err)
+        self.assertIn("timed out", out)
+
+    def test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing(self):
+        # CHARACTERIZATION, not an endorsement — the Go half of the same
+        # accepted price. See the sibling test in check_ts_mutation_test.py and
+        # the paragraph at check-mutation.py's claimed_timeouts for why pairing
+        # on `equivalents - survivors` was rejected rather than overlooked.
+        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    exhaustively reasoned\n")
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"),
+                                     killed=9, timed_out=1,
+                                     timed_out_locs=(("CONDITIONALS_BOUNDARY", "a.go:30:7"),))}
+        code, out, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        self.assertIn("a.go:40:7 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", err)
+        self.assertIn("timed out: p a.go:30:7", out)
+        self.assertNotIn("ADJUDICATION MOVED", err)
+
     def test_no_survivors_passes(self):
         eq = equivalents("")
         code, out, _ = self.gate(eq, {"./p/": gremlins_output()})

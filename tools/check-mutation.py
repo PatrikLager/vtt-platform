@@ -1210,8 +1210,52 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
                 claimed.add(key)
             else:
                 unadjudicated.append(key)
+        # A TIMED OUT MUTANT COUNTS AS CLAIMED, which is the other consequence
+        # of the "genuine survivor" sentence below and was missing for as long
+        # as that sentence has been here. A timeout is a detection for the
+        # pass/fail verdict — Patrik, 2026-07-28, and that is right: a mutant
+        # that hangs the suite was detected. It is NOT an EVALUATION, so it is
+        # no evidence that an adjudication expired. Without this, `claimed` is
+        # built from survivors alone and a timed-out adjudicated mutant is
+        # reported stale with "remove the entry" — advice to delete a sound
+        # adjudication on the strength of a mutant nobody ran.
+        #
+        # FOUND ON THE TS SIDE FIRST, 2026-08-27, where it was live rather than
+        # latent: three entries on client/src/view/spectator.ts were flagged
+        # stale, and all three were applied by hand and SURVIVED the full suite.
+        # No instance among the GATED packages here, only because no adjudicated
+        # Go mutant in them has happened to time out — but it was predicted in
+        # writing all the same. The header at line 74 records soak.go:611
+        # flipping between LIVED and TIMED OUT across runs, "so even an
+        # adjudication for it goes stale at random", and gives that as one
+        # reason internal/harness is not gated. This removes that obstacle.
+        #
+        # NOTHING IS EXCUSED THAT WOULD OTHERWISE FAIL. There is deliberately no
+        # else-branch: a timed-out mutant that is NOT adjudicated does not join
+        # `unadjudicated` either, because an unevaluated mutant is no evidence
+        # in that direction either. Every timeout is still printed, and still
+        # counted against MAX_TIMEOUT_FRACTION.
+        #
+        # ONE THING DOES CHANGE BESIDES THE STALE MESSAGE. `stale` is what
+        # moved_entries searches, so an entry claimed here also leaves the
+        # pairing: a mutant that genuinely MOVED, whose old key now hosts a
+        # timing-out mutant of the same mutator, is reported as a plain
+        # unadjudicated survivor at its new position with nothing saying the
+        # entry became it. The run still fails; the DIAGNOSIS is what is lost.
+        # Pairing on `equivalents - survivors` instead would drag every
+        # adjudicated timeout into the count balance and break pairings that
+        # work today, so this is the price and this is the record —
+        # test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing pins
+        # it so it stays a decision rather than becoming a surprise.
+        claimed_timeouts = [(loc, mut) for loc, mut in timed_out
+                            if (name, loc, mut) in equivalents]
+        claimed.update((name, loc, mut) for loc, mut in claimed_timeouts)
+
         adjudicated = len([s for s in survivors if (name, s[0], s[1]) in equivalents])
         note = f", {len(timed_out)} TIMED OUT (counted as killed, NOT measured)" if timed_out else ""
+        if claimed_timeouts:
+            note += (f"; {len(claimed_timeouts)} of those hold an adjudication this run "
+                     f"did not re-test, so the entry count will exceed the adjudicated count")
         print(f"ok  {name}: {len(survivors)} survivor(s), {adjudicated} adjudicated{note}", file=out)
         # Name them. A timed-out mutant can be a genuine survivor (see
         # MAX_TIMEOUT_FRACTION), so the one thing the gate must not do is let
