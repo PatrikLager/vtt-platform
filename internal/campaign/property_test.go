@@ -3,8 +3,10 @@ package campaign_test
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -13,10 +15,71 @@ import (
 )
 
 const (
-	propertySeed       = 1
-	propertyEventCount = 400
-	propertyCheckEvery = 50
+	defaultPropertySeed = 1
+	propertyEventCount  = 400
+	propertyCheckEvery  = 50
 )
+
+// propertySeeds is the walk (or walks) this run performs.
+//
+// THE SEED WAS A CONST UNTIL 2026-08-27, and that made this a fixed scenario
+// wearing a property test's clothes: every run, in every CI job, walked the
+// identical 400 actions. Running it a thousand times explored one path a
+// thousand times, so it could never find tomorrow what it did not find today.
+// The model, the generators and the oracle were all already here; only the
+// search was missing.
+//
+// DEFAULT IS UNCHANGED AND DELIBERATELY SO. With neither variable set this
+// returns exactly seed 1, so tier 1, the commit hook and CI keep running the
+// same walk they always did, at the same cost, with the same determinism. A
+// sweep is something you ASK for.
+//
+//	VTT_PROPERTY_SEEDS=500  walks seeds 1..500 as subtests (~0.13s each)
+//	VTT_PROPERTY_SEED=37    walks only seed 37
+//
+// The single-seed form is not a convenience: once seeds vary, a failure report
+// naming seed 37 is only reproducible if seed 37 can be re-run on its own, and
+// propMust's doc records that reproducing from the output alone is a spec
+// requirement. A sweep-only knob would have quietly broken it. If BOTH are set,
+// VTT_PROPERTY_SEED wins — it is checked first, and naming one seed is the more
+// specific request.
+//
+// THE TWO BOOLS SAY WHAT WAS ASKED FOR, NOT HOW MANY SEEDS CAME BACK, and that
+// distinction is load-bearing: keying the ensemble check on len(seeds) > 1 left
+// VTT_PROPERTY_SEEDS=1 judged by neither guard, which is the first thing anyone
+// types to check the harness works.
+//
+// A named seed skips the PER-KIND coverage check only. Somebody reproducing a
+// walk the sweep pointed at does not need to be told it is narrow — 15% of
+// walks legitimately never move a token — and the check can only ever speak on
+// a reproduce that PASSED, since a real failure aborts before it. The undo
+// check is NOT skipped: its measured miss rate over 500 walks is 0, so it
+// cannot false-positive, and retraction is the property this test exists for.
+func propertySeeds(t *testing.T) (seeds []int64, guardEachWalk, guardEnsemble bool) {
+	t.Helper()
+	if v := os.Getenv("VTT_PROPERTY_SEED"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			t.Fatalf("VTT_PROPERTY_SEED=%q is not an integer: %v", v, err)
+		}
+		return []int64{n}, false, false
+	}
+	if v := os.Getenv("VTT_PROPERTY_SEEDS"); v != "" {
+		// The cap is not fussiness: make([]int64, n) for a typo'd
+		// 9999999999 asks for 80 GB and the binary dies to the OOM killer
+		// with no diagnostic at all, 17s in.
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 100000 {
+			t.Fatalf("VTT_PROPERTY_SEEDS=%q must be a positive integer count of at most 100000", v)
+		}
+		out := make([]int64, n)
+		for i := range out {
+			out[i] = int64(i + 1)
+		}
+		return out, false, true
+	}
+	return []int64{defaultPropertySeed}, true, false
+}
 
 // propModel tracks just enough campaign shape to generate only valid
 // forward actions: which scenes/actors/tokens exist (so place/move never
@@ -85,12 +148,13 @@ func (m *propModel) canUndo() bool { return len(m.eligibleUndoSeqs()) > 0 }
 
 // propMust appends env and fails the test with the failing action index and
 // seed on error (spec requirement: failures must be reproducible from the
-// output alone).
+// output alone). The seed reaches the message through the subtest's NAME,
+// which TestRebuildEqualsLiveProperty formats as "seed=N".
 func propMust(t *testing.T, c *campaign.Campaign, env *vttv1.Envelope, idx int, kind string) int64 {
 	t.Helper()
 	seq, err := c.Append(env)
 	if err != nil {
-		t.Fatalf("property test (seed=%d): action #%d (%s) failed: %v", propertySeed, idx, kind, err)
+		t.Fatalf("property test (%s): action #%d (%s) failed: %v", t.Name(), idx, kind, err)
 	}
 	return seq
 }
@@ -326,13 +390,13 @@ func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 	_, err := c.Append(env)
 	if err != nil {
 		if !absent {
-			t.Fatalf("property test (seed=%d): action #%d (deleteNote) failed unexpectedly for a tracked key %q: %v", propertySeed, idx, key, err)
+			t.Fatalf("property test (%s): action #%d (deleteNote) failed unexpectedly for a tracked key %q: %v", t.Name(), idx, key, err)
 		}
 		counts["deleteNoteRejected"]++
 		return
 	}
 	if absent {
-		t.Fatalf("property test (seed=%d): action #%d (deleteNote) unexpectedly succeeded for an absent key %q", propertySeed, idx, key)
+		t.Fatalf("property test (%s): action #%d (deleteNote) unexpectedly succeeded for an absent key %q", t.Name(), idx, key)
 	}
 	counts["deleteNote"]++
 }
@@ -350,10 +414,10 @@ func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 // succeed), upsert note ~8%, delete note ~5% (absent-key rejections
 // counted, not failures — same posture as undo), start/end session for
 // the remainder (start if none open; end if one's open, gated further to
-// rand<0.05 so sessions stay open across most of the run). Any bucket
+// rand<0.15 so sessions stay open across most of the run). Any bucket
 // whose precondition
 // isn't met falls through to the next check using the same draw, and the
-// session bucket's own "session open, but the 0.05 gate didn't fire" branch
+// session bucket's own "session open, but the 0.15 gate didn't fire" branch
 // falls back to addActor — always valid — so every iteration guarantees
 // forward progress toward the requested event count.
 func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
@@ -402,14 +466,106 @@ func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx
 // events (single-writer: the SQLite file must be closed before it can be
 // reopened) and comparing State() before and after.
 func TestRebuildEqualsLiveProperty(t *testing.T) {
-	rng := rand.New(rand.NewSource(propertySeed))
+	seeds, guardEachWalk, guardEnsemble := propertySeeds(t)
+
+	total := map[string]int{}
+	for _, seed := range seeds {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			counts := runPropertyWalk(t, seed)
+			for k, v := range counts {
+				total[k] += v
+			}
+			assertUndoExercised(t, "this walk", counts)
+			if guardEachWalk {
+				assertKindCoverage(t, "this walk", counts)
+			}
+		})
+	}
+	if guardEnsemble {
+		t.Logf("sweep of %d seeds, aggregate action counts: %+v", len(seeds), total)
+		// A seed that Fatalf'd never reached the accumulation above, so `total`
+		// describes a sweep that did not happen. Judging it invents a finding
+		// and lands it on top of the real one — the same noise-on-top-of-the-
+		// answer this file argues against for the reproduce path.
+		if !t.Failed() {
+			assertKindCoverage(t, "the sweep", total)
+		}
+	}
+}
+
+// assertActionCoverage refuses a VACUOUS run: a walk that never drew an action
+// kind proves nothing about it, however green it looks.
+//
+// THE SCOPE IS THE WHOLE POINT, AND IT CHANGED 2026-08-27 when the seed stopped
+// being a constant. Per WALK is right for the default single-seed run — one
+// fixed walk that quietly stopped exercising undo would otherwise pass forever,
+// which is what this guard was added to prevent.
+//
+// Per walk is WRONG for a sweep, and not marginally. placeToken needs a scene
+// AND an actor to exist first; endSession needs a session already open; so a
+// legitimately narrow walk is not a defect. MEASURED over 500 seeds: 15% of
+// walks never move a token, 13% never place one, 21% never end a session.
+// Guarding each walk individually reds 132 of 500 runs — while the property
+// itself, rebuild == live, held on every one of them. A sweep that is red by
+// construction is a sweep nobody can automate or read.
+//
+// So the ensemble carries it instead: across the seeds actually run, every
+// action kind must appear somewhere. That claim is WEAKER than requiring it of
+// every walk — 499 silent walks and one that ends a session would still pass
+// it. What it buys is sensitivity to the thing this guard exists for, a kind
+// that stops being drawn AT ALL: the default walk draws endSession exactly
+// once, where 500 walks draw it 910 times, so a regression that silences the
+// draw reds the sweep as surely as it reds the default, without the 132 red
+// walks that are merely narrow.
+func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
+	t.Helper()
+	for _, kind := range []string{
+		"createScene", "addActor", "placeToken", "moveToken", "startSession", "endSession",
+		"addNarration", "upsertNote", "deleteNote",
+	} {
+		if counts[kind] == 0 {
+			t.Errorf("property test (%s): action type %q was never exercised in %s",
+				t.Name(), kind, scope)
+		}
+	}
+	// deleteNoteRejected (absent-key) is EXPECTED to be non-zero too — see
+	// doDeleteNote's doc comment — but a zero count there is not itself a
+	// failure (a different seed/mix could legitimately avoid drawing it);
+	// the actual counts are logged either way.
+}
+
+// assertUndoExercised runs in EVERY mode, unlike the per-kind check.
+//
+// It is the one guard that cannot false-positive: over 500 seeds undo was drawn
+// in every single walk, minimum 13 times, so a zero here means the generator
+// stopped drawing it rather than that this walk was narrow. It is also the
+// guard that matters most — retraction is what a rebuild-equals-live property
+// is really testing, and a run that never retracted proves nothing about it
+// however green it looks.
+func assertUndoExercised(t *testing.T, scope string, counts map[string]int) {
+	t.Helper()
+	if counts["undo"] == 0 {
+		t.Fatalf("property test (%s): undo was never exercised — %s proves nothing about retraction",
+			t.Name(), scope)
+	}
+}
+
+// runPropertyWalk is one seed's walk: propertyEventCount model-driven actions
+// against a real campaign file, closing and reopening every propertyCheckEvery
+// to check that the state rebuilt from the log equals the state held live.
+//
+// Returns its action counts so the caller can judge coverage at the right
+// scope — see assertActionCoverage.
+func runPropertyWalk(t *testing.T, seed int64) map[string]int {
+	t.Helper()
+	rng := rand.New(rand.NewSource(seed))
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "campaign.db")
 
 	c, err := campaign.Open(path)
 	if err != nil {
-		t.Fatalf("property test (seed=%d): initial open: %v", propertySeed, err)
+		t.Fatalf("property test (seed=%d): initial open: %v", seed, err)
 	}
 	t.Cleanup(func() {
 		if c != nil {
@@ -427,37 +583,22 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 			snapshot := c.State()
 
 			if err := c.Close(); err != nil {
-				t.Fatalf("property test (seed=%d): close after action #%d: %v", propertySeed, i, err)
+				t.Fatalf("property test (seed=%d): close after action #%d: %v", seed, i, err)
 			}
 			c, err = campaign.Open(path)
 			if err != nil {
-				t.Fatalf("property test (seed=%d): reopen after action #%d: %v", propertySeed, i, err)
+				t.Fatalf("property test (seed=%d): reopen after action #%d: %v", seed, i, err)
 			}
 
 			live := c.State()
 			if !statesEqual(snapshot, live) {
-				t.Fatalf("property test (seed=%d): rebuild != live after action #%d\nsnapshot: %+v\nlive:     %+v",
-					propertySeed, i, snapshot, live)
+				t.Fatalf("property test (seed=%d): rebuild != live after action #%d\nsnapshot: %+v\nlive:     %+v\n"+
+					"reproduce: VTT_PROPERTY_SEED=%d go test -run TestRebuildEqualsLiveProperty ./internal/campaign/",
+					seed, i, snapshot, live, seed)
 			}
 		}
 	}
 
-	t.Logf("property test (seed=%d): %d events, action counts: %+v", propertySeed, propertyEventCount, counts)
-
-	if counts["undo"] == 0 {
-		t.Fatalf("property test (seed=%d): undo was never exercised — this run proves nothing about retraction", propertySeed)
-	}
-	for _, kind := range []string{
-		"createScene", "addActor", "placeToken", "moveToken", "startSession", "endSession",
-		"addNarration", "upsertNote", "deleteNote",
-	} {
-		if counts[kind] == 0 {
-			t.Errorf("property test (seed=%d): action type %q was never exercised", propertySeed, kind)
-		}
-	}
-	// deleteNoteRejected (absent-key) is EXPECTED to be non-zero too — see
-	// doDeleteNote's doc comment — but a zero count there is not itself a
-	// failure (a different seed/mix could legitimately avoid drawing it);
-	// this run's actual counts are logged below regardless, for the
-	// report's old->new pin.
+	t.Logf("property test (seed=%d): %d events, action counts: %+v", seed, propertyEventCount, counts)
+	return counts
 }
