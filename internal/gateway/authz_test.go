@@ -944,6 +944,53 @@ func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 	}
 }
 
+func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
+	// THE SAME GUARD AS THE TEST ABOVE, ASSERTED FOR THE ACTOR WHO MATTERS.
+	// Every requested-role REFUSAL in this file is issued by a DM, and
+	// authorizePromotionTarget is actor-agnostic by construction — it reads
+	// req.GetRole() and nothing else, and its doc says it is "checked for every
+	// role including the DM's own". Nothing pinned that for the AGENT.
+	//
+	// The agent is the role an LLM holds: internal/mcp is a WebSocket client
+	// (harness.Dial with a token), so a prompt-injected tool call arrives here
+	// with agent authority. An agent that could mint a dm or a second agent
+	// would turn one bad tool call into a permanent takeover — and unlike the
+	// demotion case, nothing downstream would refuse it, because the new dm is
+	// a legitimate dm.
+	//
+	// THE MUTATION STORY IS MEASURED, and the first draft of this comment got
+	// it wrong in the direction that would have made the test look better than
+	// it is. `if p.Role == identity.RoleAgent { return nil }` in
+	// authorizePromotionTarget — the same non-player bypass mayWorkDoor uses —
+	// leaves the WHOLE gateway package passing except this test.
+	//
+	// The DM-shaped bypasses are already pinned and this test does NOT catch
+	// them: both `p.Role == RoleDM` and `p.Role != RolePlayer` fail
+	// TestPromotionMayOnlyTargetPlayerOrSpectator. The agent row was the
+	// uncovered one — and not because the other agent-actor tests use a DM,
+	// which is false (TestPromotionCannotUNMAKEADMOrAgent dials the agent
+	// token, and authzCases' promote_participant/agent cell drives this guard
+	// as an agent). They survive it because they request a LEGAL role, so they
+	// never ask this guard to refuse anything.
+	st := ownershipFixture()
+	agent := &identity.Participant{ID: "p-agent", Role: identity.RoleAgent}
+
+	for _, role := range []string{"dm", "agent"} {
+		if err := gateway.Authorize(agent, promoteCmd("p-2", role), st); err == nil {
+			t.Fatalf("an agent must not be able to promote anyone to %q — one injected "+
+				"tool call would otherwise be a permanent takeover", role)
+		}
+	}
+	// AND THE POSITIVE HALF, so this cannot pass by refusing everything: the
+	// agent is genuinely authorized to promote, which is what makes the two
+	// refusals above a boundary rather than a blanket denial.
+	for _, role := range []string{"player", "spectator"} {
+		if err := gateway.Authorize(agent, promoteCmd("p-2", role), st); err != nil {
+			t.Fatalf("an agent must still be AUTHORIZED to promote to %q: %v", role, err)
+		}
+	}
+}
+
 func TestASpectatorCannotPromoteItself(t *testing.T) {
 	// NOT the same test as "a spectator cannot promote". The participant id in
 	// the COMMAND and the id on the CONNECTION are different fields, and
