@@ -33,9 +33,20 @@ func TestDecodeCommandRoundTrip(t *testing.T) {
 }
 
 func TestDecodeCommandMalformedJSONErrorsCleanly(t *testing.T) {
-	_, err := gateway.DecodeCommand([]byte("{not valid json"))
+	cmd, err := gateway.DecodeCommand([]byte("{not valid json"))
 	if err == nil {
 		t.Fatal("want error for malformed JSON")
+	}
+	// AND NOTHING ALONGSIDE IT. This half was unasserted until 2026-08-27:
+	// the command was discarded into `_`, so `return &cmd, err` on the failure
+	// path passed the whole suite. serve() checks only the error
+	// (server.go:859), which is the correct shape and exactly what makes the
+	// other half unguarded — a decoder that returned both would hand a caller
+	// a half-populated command it had already refused, and protojson populates
+	// as it goes, so "refused" does not mean "empty".
+	if cmd != nil {
+		t.Fatalf("decode refused the frame AND returned a command %v — a caller "+
+			"checking only one of the two would act on a frame the decoder rejected", cmd)
 	}
 }
 
