@@ -1049,6 +1049,142 @@ class KeyPositionTest(unittest.TestCase):
                          "token its mutator can apply to")
 
 
+class SkipCacheTest(unittest.TestCase):
+    """A package whose closure cannot have changed need not be re-measured.
+
+    The whole point is that a 32-minute gate gets skipped by people, and a
+    skipped gate is how ddf2d96 landed red. Every test here is about the skip
+    being EARNED and LOUD, never assumed and never silent.
+    """
+
+    def gate(self, eq_path, mapping, cache_path, fingerprints, packages=("./p/",)):
+        """run() with a real cache file and injected fingerprints.
+
+        Returns (code, out, err, ran) where `ran` is the packages that actually
+        reached the runner — the only way to tell a skip from a fast run.
+        """
+        ran = []
+
+        def runner(pkg):
+            ran.append(pkg)
+            return mapping.get(pkg, gremlins_output())
+
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(eq_path, list(packages), runner,
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3,
+                          cache_bytes=0, fingerprint=lambda pkg: fingerprints.get(pkg),
+                          skip_cache_path=cache_path)
+        return code, out.getvalue(), err.getvalue(), ran
+
+    def cache_file(self):
+        d = tempfile.mkdtemp()
+        return os.path.join(d, "mutation-cache.json")
+
+    def test_an_unchanged_package_is_skipped_and_says_so(self):
+        # THE POINT OF THE WHOLE CHANGE, and the skip must announce itself:
+        # a summary that got thinner without saying why is the failure mode
+        # this repo keeps finding.
+        cache, fps = self.cache_file(), {"./p/": "fp-1"}
+        eq = equivalents("")
+        code, _, _, ran = self.gate(eq, {}, cache, fps)
+        self.assertEqual(code, 0)
+        self.assertEqual(ran, ["./p/"], "first run must measure")
+
+        code, out, _, ran = self.gate(eq, {}, cache, fps)
+        self.assertEqual(code, 0)
+        self.assertEqual(ran, [], "second run must skip an unchanged package")
+        self.assertIn("UNCHANGED since its last passing run", out)
+
+    def test_a_changed_fingerprint_is_re_measured(self):
+        cache, eq = self.cache_file(), equivalents("")
+        self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        _, _, _, ran = self.gate(eq, {}, cache, {"./p/": "fp-2"})
+        self.assertEqual(ran, ["./p/"], "a changed closure must be re-measured")
+
+    def test_no_fingerprint_always_measures(self):
+        # FAIL CLOSED. A closure that cannot be computed — go list failed, a
+        # file was unreadable — is not evidence that nothing changed.
+        cache, eq = self.cache_file(), equivalents("")
+        self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        _, _, _, ran = self.gate(eq, {}, cache, {"./p/": None})
+        self.assertEqual(ran, ["./p/"])
+
+    def test_a_null_fingerprint_IN_THE_CACHE_does_not_match_a_null_one_now(self):
+        # THE GUARD test_no_fingerprint_always_measures DOES NOT REACH. That
+        # test passes with `if not fingerprint: return None` deleted, because
+        # the equality comparison already fails against a real stored hash.
+        # The guard only bites when BOTH sides are null — a cache written when
+        # the closure could not be computed — and null == null would then
+        # authorise a skip on the strength of two unknowns. Found by review,
+        # 2026-08-28, by injecting the deletion and watching nothing go red.
+        cache = {"p": {"fingerprint": None, "survivors": [], "timed_out": []}}
+        self.assertIsNone(cm.reusable_result(cache, "p", None))
+
+    def test_a_run_that_fails_on_a_STALE_ENTRY_caches_nothing(self):
+        # The sibling of test_a_failing_run_records_nothing, and the case that
+        # one leaves open: there, the package itself produced the unadjudicated
+        # survivor, so the per-package guard suppressed its entry anyway. Here
+        # the package is CLEAN and the run fails globally on a stale
+        # adjudication — only `save_skip_cache` sitting after `if failed` stops
+        # the pass being recorded. Hoisting it above the failure return passes
+        # every other test in this file.
+        cache = self.cache_file()
+        eq = equivalents("p  a.go:99:9  CONDITIONALS_BOUNDARY\n    names no live mutant\n")
+        code, _, _, ran = self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        self.assertEqual(code, 1, "a stale entry must fail the run")
+        self.assertEqual(ran, ["./p/"])
+        code, _, _, ran = self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        self.assertEqual(ran, ["./p/"],
+                         "nothing may be cached from a run that failed")
+
+    def test_an_unreadable_cache_measures_everything(self):
+        cache, eq = self.cache_file(), equivalents("")
+        self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        with open(cache, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        _, _, _, ran = self.gate(eq, {}, cache, {"./p/": "fp-1"})
+        self.assertEqual(ran, ["./p/"], "a corrupt cache must never authorise a skip")
+
+    def test_a_failing_run_records_nothing(self):
+        # Otherwise the next run skips its way straight past the failure.
+        cache = self.cache_file()
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        code, _, _, _ = self.gate(equivalents(""), m, cache, {"./p/": "fp-1"})
+        self.assertEqual(code, 1)
+        _, _, _, ran = self.gate(equivalents(""), m, cache, {"./p/": "fp-1"})
+        self.assertEqual(ran, ["./p/"], "a package that failed must be re-measured")
+
+    def test_a_reused_survivor_still_faces_the_adjudication_check(self):
+        # THE SOUNDNESS PROPERTY. Skipping reuses gremlins' verdict, NOT the
+        # gate's: the recorded survivors are matched against the CURRENT
+        # equivalents file every run. Delete the entry that excused one and the
+        # gate must fail on the next run even though nothing was measured.
+        cache = self.cache_file()
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        eq_ok = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    adjudicated\n")
+        code, _, _, ran = self.gate(eq_ok, m, cache, {"./p/": "fp-1"})
+        self.assertEqual(code, 0)
+        self.assertEqual(ran, ["./p/"])
+
+        code, _, err, ran = self.gate(equivalents(""), m, cache, {"./p/": "fp-1"})
+        self.assertEqual(ran, [], "the package was unchanged, so it is not re-measured")
+        self.assertEqual(code, 1, "but its survivor is now unadjudicated and must fail")
+        self.assertIn("a.go:10:5", err)
+
+    def test_a_skipped_package_still_reports_its_survivors(self):
+        # A skip may cost time, never information: the survivor count in the
+        # summary must be the same one a full run would have printed.
+        cache = self.cache_file()
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    adjudicated\n")
+        self.gate(eq, m, cache, {"./p/": "fp-1"})
+        code, out, _, ran = self.gate(eq, m, cache, {"./p/": "fp-1"})
+        self.assertEqual((code, ran), (0, []))
+        self.assertIn("1 survivor(s)", out)
+
+
 class MovedAdjudicationTest(unittest.TestCase):
     """Pairing a stale entry to the survivor it became, and never advising a
     deletion when a pairing exists.

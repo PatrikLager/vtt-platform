@@ -52,7 +52,7 @@ tasks:
       # Now covers EVERY file under client/src/ except the browser entry
       # point -- the backlog that made this "scoped to two files" is closed,
       # and tools/ts-mutation-scope.md records how it was worked down and what
-      # it cost. Same shape as check:mutation, which gates 8 Go packages and
+      # it cost. Same shape as check:mutation, which gates every package in
       # documents why internal/harness is out.
       #
       # RUNS ON LINUX ONLY. macOS 26's socket-accounting kernel bug
@@ -383,6 +383,10 @@ tasks:
       # records that 8 of 9 defects across five review rounds were in
       # hand-rolled enforcement rather than in the thing being enforced.
       - python3 tools/check_ts_mutation_test.py -q
+      # The split's own decision logic: hashing too little reports a stale
+      # report as current, which is the gate silently ceasing to cover the
+      # client while still printing a verdict.
+      - python3 tools/ts_mutation_inputs_test.py -q
       - |
         set -e
         # PLATFORM GUARD -- full rationale in this task's desc. Short version:
@@ -395,36 +399,79 @@ tasks:
         # the test is >= 25. When Apple ships a fix, raise the ceiling here
         # rather than deleting the guard -- the affected range is closed at
         # the bottom and still open at the top.
+        # SPLIT INTO A CHEAP HALF AND AN EXPENSIVE ONE (2026-08-28, Patrik's
+        # call). PRODUCING the report costs 62 minutes in the container;
+        # CHECKING it costs 2.7 seconds against the stored report. Only the
+        # second is needed when the checker or the adjudication file changes.
+        # On 2026-08-27 six commits were pushed, NONE of which touched anything
+        # Stryker mutates, and the 62 minutes were spent anyway.
+        #
+        # So the verify runs every time and the mutate runs only when the
+        # report's inputs hash differently than when it was made. That is what
+        # makes it affordable to invoke the CONTAINER from here rather than
+        # printing a banner and hoping somebody types it -- the honour-system
+        # arrangement that let this gate test zero mutants for fourteen days.
+        REPORT=reports/mutation/mutation.json
+        STAMP=reports/mutation/ts-inputs.sha256
+        WANT="$(python3 tools/ts-mutation-inputs.py || true)"
+        HAVE=""
+        [ -f "$STAMP" ] && HAVE="$(cat "$STAMP")"
+        # FAIL TOWARDS PRODUCING. No report, no stamp, an unhashable tree, or
+        # any mismatch all mean re-measure. Only an exact match on a report
+        # that exists may skip the expensive half.
+        NEED_REPORT=1
+        if [ -f "$REPORT" ] && [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ]; then NEED_REPORT=0; fi
+
         DARWIN_MAJOR=0
         if [ "$(uname -s)" = "Darwin" ]; then DARWIN_MAJOR="$(uname -r | cut -d. -f1)"; fi
-        if [ "$DARWIN_MAJOR" -ge 25 ] && [ "${VTT_FORCE_TS_MUTATION:-0}" != "1" ]; then
+
+        if [ "$NEED_REPORT" = "0" ]; then
+          echo "check:ts-mutation: client sources, tests, config and lockfile are"
+          echo "  unchanged since the stored report was produced. Verifying that"
+          echo "  report; not re-mutating. (Force: rm $STAMP)"
+        elif [ "$DARWIN_MAJOR" -ge 25 ] && [ "${VTT_FORCE_TS_MUTATION:-0}" != "1" ]; then
           echo "==============================================================" >&2
-          echo "  check:ts-mutation SKIPPED -- macOS kernel bug FB21686886" >&2
+          echo "  check:ts-mutation cannot run NATIVELY on macOS 26" >&2
+          echo "  (kernel bug FB21686886), so it is running in the Linux" >&2
+          echo "  container instead. THIS IS NOT A SKIP." >&2
           echo "" >&2
           echo "  Needs ~292,000 socket creations; macOS 26 allows ~161,000" >&2
-          echo "  per boot before socket() returns ENOBUFS. It cannot pass" >&2
-          echo "  here, and trying takes the machine's networking with it." >&2
+          echo "  per boot before socket() returns ENOBUFS. Same config, same" >&2
+          echo "  mutate list, same checker -- only the kernel changes." >&2
           echo "" >&2
-          echo "  A green 'task check' on macOS has NOT proven this gate." >&2
+          echo "  IT COSTS ABOUT AN HOUR and needs Docker Desktop running." >&2
+          echo "  You are seeing this because the client sources, tests," >&2
+          echo "  config or lockfile changed since the stored report was" >&2
+          echo "  made; nothing else triggers it." >&2
           echo "" >&2
           echo "  NOTHING ELSE WILL PROVE IT FOR YOU. CI is" >&2
           echo "  workflow_dispatch-only -- it runs when somebody asks, not" >&2
-          echo "  on push. This banner used to call CI AUTHORITATIVE, and" >&2
+          echo "  on push. This banner used to say CI was AUTHORITATIVE, and" >&2
           echo "  that is how the gate tested zero mutants for 14 days in" >&2
-          echo "  August 2026 while everyone read this and moved on." >&2
+          echo "  August 2026 while everyone read this and moved on. It then" >&2
+          echo "  said to run the container YOURSELF, which was the same" >&2
+          echo "  honour system wearing a different hat; now the gate runs it." >&2
           echo "" >&2
-          echo "  RUN IT ANYWAY, on Linux, in a container, same strength:" >&2
-          echo "    task check:ts-mutation:docker" >&2
-          echo "" >&2
-          echo "  Fresh-boot override: VTT_FORCE_TS_MUTATION=1 task check:ts-mutation" >&2
+          echo "  Native override (fresh boot only): VTT_FORCE_TS_MUTATION=1" >&2
           echo "==============================================================" >&2
-          exit 0
+          task check:ts-mutation:docker
+          # $WANT, not a fresh hash: it describes the tree the report was made
+          # from. Re-hashing after an hour-long run would certify a report that
+          # predates any edit made while it ran.
+          [ -n "$WANT" ] || { echo "check:ts-mutation: inputs unhashable; refusing to stamp" >&2; exit 1; }
+          printf '%s\n' "$WANT" > "$STAMP"
+        else
+          # NO PIPES here, for the reason check:coverage and check:mutation both
+          # document: `cmd | tail` takes the pipeline's status without pipefail,
+          # so under `set -e` a failing gate ships green. A guard that swallows
+          # a real failure is worse than no guard at all.
+          npx stryker run stryker.conf.json
+          [ -n "$WANT" ] || { echo "check:ts-mutation: inputs unhashable; refusing to stamp" >&2; exit 1; }
+          printf '%s\n' "$WANT" > "$STAMP"
         fi
-        # NO PIPES here, for the reason check:coverage and check:mutation both
-        # document: `cmd | tail` takes the pipeline's status without pipefail,
-        # so under `set -e` a failing gate ships green. A guard that swallows
-        # a real failure is worse than no guard at all.
-        npx stryker run stryker.conf.json
+        # ALWAYS, on every path: the verdict is recomputed from the report
+        # against the CURRENT adjudication file, so an entry edited since the
+        # report was produced is still judged.
         python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
 
   check:ts-mutation:docker:

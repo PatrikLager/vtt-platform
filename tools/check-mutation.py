@@ -35,6 +35,8 @@ this landed, and this file's own history is full of comments that were true
 when written and stopped being so with nothing to notice.
 """
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -1066,6 +1068,173 @@ def clear_test_cache():
         pass
 
 
+# THE SKIP CACHE, AND EVERY PATH THROUGH IT FAILS TOWARDS RUNNING.
+#
+# A mutation run costs ~32 minutes across twelve packages, which is why the
+# whole TASK gets skipped, and that is how ddf2d96 landed red and survived three
+# commits on top of it (nine by 2026-08-28). Note what that does NOT claim: the
+# check that caught ddf2d96 is suspect_positions, which runs BEFORE gremlins and
+# costs milliseconds, so the 32 minutes never delayed the finding — they deterred
+# the run that would have produced it. The fix is not to run less carefully; it
+# is to stop paying for packages whose verdict cannot have changed, so that
+# running the gate stops being a decision. Nothing here may ever make the gate
+# QUIETER: a skip prints a line naming what was reused, so a thinner summary is
+# never a silent one.
+#
+# The cache is machine-local and gitignored (Patrik, 2026-08-28). A committed
+# cache would make "this package passed" a claim in git that can be stale,
+# wrong, or conflicted — the exact class of defect this repo spent 2026-08-27
+# on. A fresh clone runs everything once, which is the right default.
+
+
+def package_fingerprint(pkg, root=".", lister=None, go_version=None):
+    """A hash of everything that can change this package's mutation verdict.
+
+    None means "cannot tell", which the caller must read as "run it".
+
+    THE CLOSURE IS `-test`, AND THAT IS NOT A DETAIL. gremlins kills a
+    package's mutants by running `go test` on it, which compiles the TEST
+    binary — so the tests' imports decide verdicts just as much as the
+    package's own. Measured 2026-08-28: internal/identity's non-test closure
+    omits contract/gen, internal/store AND internal/testdb, all three of which
+    its tests compile. Fingerprinting the non-test closure would have left a
+    change to internal/testdb unable to re-run internal/identity, and the gate
+    would have gone quietly narrower for exactly the packages whose tests reach
+    furthest. Scoping by directory rather than import path keeps the module
+    filter to one prefix comparison and needs no module path lookup.
+
+    THE TOOLCHAIN IS IN THE HASH TOO. A Go upgrade changes generated code and
+    inlining, and TIMEOUT_COEFFICIENT decides which mutants time out rather
+    than live — both move verdicts without touching a source byte.
+    """
+    root = os.path.abspath(root)
+    try:
+        if lister is None:
+            proc = subprocess.run(
+                ["go", "list", "-deps", "-test", "-f", "{{.Dir}}", pkg],
+                capture_output=True, text=True, cwd=root, timeout=120)
+            if proc.returncode != 0:
+                return None
+            dirs = proc.stdout.split()
+        else:
+            dirs = lister(pkg)
+        if go_version is None:
+            gv = subprocess.run(["go", "version"], capture_output=True, text=True, timeout=60)
+            go_version = gv.stdout.strip() if gv.returncode == 0 else None
+            if not go_version:
+                return None
+
+        digest = hashlib.sha256()
+        digest.update(go_version.encode("utf-8"))
+        # THE INVOCATION, not just the coefficient. gremlins_args derives
+        # --exclude-files for a parent from PACKAGES, so removing a gated CHILD
+        # changes what its parent measures while leaving every source byte
+        # alone. Hashing the argv covers the coefficient, the exclusion set and
+        # the status flags together, and cannot drift from them.
+        digest.update("\x00".join(gremlins_args(pkg)).encode("utf-8"))
+        # go.mod and go.sum, because gremlins itself is pinned there
+        # (go.mod's `tool (` block) and third-party source is correctly outside
+        # the module filter below. Without these a version bump leaves all
+        # twelve fingerprints unchanged, every package skips, and the new
+        # mutator never runs — while gremlins_args' own doc tells you to
+        # RE-VERIFY on a bump, in a run that would never happen.
+        for meta in ("go.mod", "go.sum"):
+            mp = os.path.join(root, meta)
+            if os.path.isfile(mp):
+                with open(mp, "rb") as fh:
+                    digest.update(fh.read())
+        files = []
+        for d in sorted(set(dirs)):
+            ad = os.path.abspath(d)
+            if not (ad == root or ad.startswith(root + os.sep)):
+                continue  # outside the module: stdlib and third-party
+            # EVERY FILE, NOT JUST *.go, AND RECURSIVELY. This read
+            # `listdir` + endswith(".go") until 2026-08-28, and review proved
+            # the hole: seven of the twelve gated packages have testdata,
+            # fixtures or //go:embed assets in their -test closure — around a
+            # thousand files — and none of them moved the fingerprint.
+            # internal/mapdef drives every assertion off testdata/valid/
+            # cellar.json; internal/rules/schema/*.json is EMBEDDED production
+            # input. Weaken a boundary case in a fixture, mutants that were
+            # killed now live, the fingerprint does not move, the package is
+            # skipped, and the gate prints "zero unadjudicated survivors".
+            # That is the gate lying, which is the one thing it may not do.
+            #
+            # THE PRUNE IS NOT DEFENSIVENESS. If a doc.go ever lands at the
+            # module root then root itself joins `dirs`, and an unpruned walk
+            # would hash reports/mutation/mutation.json — 238 MB, every run.
+            for dirpath, dirnames, names in os.walk(ad):
+                dirnames[:] = [n for n in dirnames
+                               if not n.startswith(".") and n not in FINGERPRINT_SKIP_DIRS]
+                for n in names:
+                    files.append(os.path.join(dirpath, n))
+        if not files:
+            return None  # a closure with no source is a lookup that went wrong
+        for f in sorted(files):
+            digest.update(os.path.relpath(f, root).encode("utf-8"))
+            with open(f, "rb") as fh:
+                digest.update(fh.read())
+        return digest.hexdigest()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def load_skip_cache(path):
+    """The recorded verdicts, or {} — an unreadable cache runs everything.
+
+    EVERY failure mode returns {}: no path, missing file, unparseable JSON, a
+    payload that is not a dict. None of them may raise and none may skip, since
+    a cache that cannot be read is indistinguishable from one that says
+    "nothing is known", and that is exactly the answer that runs the gate.
+    """
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_skip_cache(path, data):
+    """Best effort. A cache that cannot be written costs time, never accuracy."""
+    if not path:
+        return
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        # Write-then-rename. A truncate-in-place torn by two concurrent
+        # `task check` runs is already recoverable — load_skip_cache returns {}
+        # and everything runs — but needlessly so.
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=1, sort_keys=True)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def reusable_result(cache, name, fingerprint):
+    """(survivors, timed_out) if this package provably cannot have changed.
+
+    None means RUN IT, and that is the answer to every uncertainty: no
+    fingerprint (the closure could not be computed), no entry, a fingerprint
+    that differs, or an entry whose shape is not what was written. A skip has
+    to be earned by an exact match on a recorded PASS; nothing else will do.
+    """
+    if not fingerprint:
+        return None
+    entry = cache.get(name)
+    if not isinstance(entry, dict) or entry.get("fingerprint") != fingerprint:
+        return None
+    try:
+        survivors = [(str(a), str(b)) for a, b in entry["survivors"]]
+        timed_out = [(str(a), str(b)) for a, b in entry["timed_out"]]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return survivors, timed_out
+
+
 def default_runner(pkg):
     proc = subprocess.run(gremlins_args(pkg), capture_output=True, text=True)
     return proc.stdout + proc.stderr
@@ -1090,7 +1259,8 @@ def _free(path):
 
 def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         out=sys.stdout, err=sys.stderr, root=".", free_bytes=None,
-        cache_bytes=None, prepare=clear_test_cache):
+        cache_bytes=None, prepare=clear_test_cache,
+        fingerprint=None, skip_cache_path=None):
     # BEFORE anything is spent. Discovering a full disk as a corrupt verdict is
     # the failure this whole file's error handling is about; discovering it as
     # a number, up front, costs nothing.
@@ -1181,7 +1351,7 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         return 1
 
     # BEFORE the run, because it costs milliseconds and the reader should have
-    # it in front of them for the hour the run takes. NOT a `return`, though,
+    # it in front of them for the ~32 minutes the run takes. NOT a `return`, though,
     # and that is deliberate: the run still measures the code correctly — only
     # the adjudication file is suspect — and stopping here would mean fixing a
     # key blind and spending the hour again to find out whether the guess was
@@ -1197,19 +1367,39 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
 
     unadjudicated = []
     claimed = set()
+    skip_cache = load_skip_cache(skip_cache_path)
+    fresh_cache = {}
     for pkg in packages:
         name = _norm_pkg(pkg)
-        try:
-            survivors, timed_out = run_package(pkg, runner)
-        except EquivalentsError as exc:
-            print(f"check:mutation: {exc}", file=err)
-            return 1
+        fp = None
+        if fingerprint is not None:
+            fp = fingerprint(pkg)
+        reused = reusable_result(skip_cache, name, fp)
+        if reused is not None:
+            survivors, timed_out = reused
+            fresh_cache[name] = skip_cache[name]
+            print(f"..  {name}: UNCHANGED since its last passing run, reusing that "
+                  f"verdict ({len(survivors)} survivor(s), {len(timed_out)} timed out). "
+                  f"Nothing in its dependency closure differs.", file=out)
+        else:
+            try:
+                survivors, timed_out = run_package(pkg, runner)
+            except EquivalentsError as exc:
+                print(f"check:mutation: {exc}", file=err)
+                return 1
+        before = len(unadjudicated)
         for location, mutator in survivors:
             key = (name, location, mutator)
             if key in equivalents:
                 claimed.add(key)
             else:
                 unadjudicated.append(key)
+        if fp is not None and len(unadjudicated) == before:
+            fresh_cache[name] = {
+                "fingerprint": fp,
+                "survivors": [list(s) for s in survivors],
+                "timed_out": [list(t) for t in timed_out],
+            }
         # A TIMED OUT MUTANT COUNTS AS CLAIMED, which is the other consequence
         # of the "genuine survivor" sentence below and was missing for as long
         # as that sentence has been here. A timeout is a detection for the
@@ -1314,15 +1504,34 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
 
     if failed:
         return 1
+    # WRITTEN ONLY ON A CLEAN RUN, and only for packages that contributed no
+    # unadjudicated survivor. A cache entry is a claim that this package passed;
+    # recording one from a failing run would let the next run skip its way past
+    # the failure, which is the one way this optimisation could become a
+    # correctness bug rather than a speed one.
+    save_skip_cache(skip_cache_path, fresh_cache)
     print(f"\ncheck:mutation: {len(packages)} packages, zero unadjudicated survivors.", file=out)
     return 0
+
+
+# Where the skip cache lives. Under reports/, which .gitignore already covers,
+# because it is a MACHINE-LOCAL fact and not a repo one: a committed cache would
+# put "this package passed" into git where it can go stale, be wrong, or conflict
+# on a merge. VTT_MUTATION_NO_SKIP=1 forces a full measurement — for when you
+# want the number rather than the verdict, or do not trust the cache.
+FINGERPRINT_SKIP_DIRS = {"node_modules", "reports", "webdist", ".task"}
+
+SKIP_CACHE_PATH = os.path.join("reports", "mutation-skip-cache.json")
 
 
 def main(argv):
     if len(argv) != 2:
         print("usage: check-mutation.py <equivalents-file>", file=sys.stderr)
         return 2
-    return run(argv[1])
+    if os.environ.get("VTT_MUTATION_NO_SKIP"):
+        return run(argv[1])
+    return run(argv[1], fingerprint=package_fingerprint,
+               skip_cache_path=SKIP_CACHE_PATH)
 
 
 if __name__ == "__main__":

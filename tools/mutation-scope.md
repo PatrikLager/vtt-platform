@@ -552,3 +552,83 @@ test. The tally check above is the backstop if that ever drifts again.
 **The gate does not prune the cache**, deliberately: deleting a developer's
 build cache as a side effect of a check is a surprise, and `go clean -cache` is
 one command in the failure message.
+
+## Verdicts are now REUSED when a package cannot have changed (2026-08-28)
+
+`check-mutation.py` keeps a machine-local skip cache (`reports/mutation-skip-cache.json`,
+gitignored) and reuses a package's recorded survivors when a fingerprint over its
+dependency closure matches its last PASSING run. Warm, the gate is **2.6s instead
+of ~32 minutes**; two consecutive full runs were measured, the second invoking
+gremlins zero times and printing the same `12 packages, zero unadjudicated
+survivors`.
+
+**Why, since this file's job is to publish narrowness rather than hide it.** The
+gate cost is what got it skipped: `ddf2d96` landed red and nine commits stacked on
+it before anyone ran the gate again, and CI has been `workflow_dispatch`-only
+since 2026-08-10. A gate nobody runs is narrower than any scoping.
+
+**What the fingerprint covers**, after review closed three holes on 2026-08-28
+before this shipped: every file — not just `*.go` — in every module-internal
+directory of `go list -deps -test <pkg>`, walked recursively; plus `go.mod`,
+`go.sum`, and the package's full gremlins argv.
+
+- `-test`, not the plain closure: `internal/identity`'s TESTS import
+  `internal/testdb`, `internal/store` and `contract/gen` where its production
+  code does not. Scoping on the non-test closure would have left a change to
+  `internal/testdb` unable to re-run `internal/identity`.
+- Every file, not `*.go`: seven of the twelve gated packages carry testdata,
+  fixtures or `//go:embed` assets in their closure — roughly a thousand files.
+  `internal/mapdef` drives every assertion off `testdata/valid/cellar.json`;
+  `internal/rules/schema/*.json` is embedded production input. A weakened fixture
+  would have moved no fingerprint and the gate would have printed a green verdict
+  over unmeasured code.
+- `go.mod`/`go.sum`: gremlins is pinned there (`v0.6.0`, in the `tool (` block)
+  and third-party source is correctly outside the module filter. Without them a
+  version bump left all twelve fingerprints unchanged.
+- The gremlins argv: `gremlins_args` derives `--exclude-files` for a parent from
+  `PACKAGES`, so removing a gated CHILD changes what its parent measures without
+  touching a source byte.
+
+**What it still does not cover, stated rather than discovered later:** anything
+outside the module (third-party source is represented only by `go.sum`), the
+gremlins BINARY if it is rebuilt without a `go.mod` change, and environment that
+alters test behaviour — a run made under a narrowing `GREMLINS_*` env var or a
+stray `.gremlins.yaml` records the narrowed verdict as a PASS and the cache serves
+it afterwards. `VTT_MUTATION_NO_SKIP=1` forces a full measurement; delete
+`reports/mutation-skip-cache.json` to do the same.
+
+Every reuse prints a `..  <pkg>: UNCHANGED since its last passing run` line
+alongside the ordinary `ok` verdict, so a reused run is never a thinner one.
+
+## The TS report is a NOISY measurement, and the cache freezes one sample (2026-08-28)
+
+Two full container runs over **byte-identical inputs** (same
+ts-mutation-inputs hash, `58529d71…`):
+
+| | 2026-08-27 | 2026-08-28 |
+|---|---|---|
+| killed | 2613 | 2383 |
+| timed out | 94 | **322** |
+| survivors | 70 | 72 |
+
+Same 2,777 mutants, same code, 3.4x the timeouts. The difference is machine
+load, not the client. **Three mutants that TIMED OUT on the 27th SURVIVED on the
+28th** — the `client/src/view/spectator.ts` 364:10 / 365:10 / 501:59 entries.
+
+Two consequences, both load-bearing:
+
+1. It is the proof that `1f975ef` was right. Those three are exactly the entries
+   the gate demanded be DELETED on the 27th, on the strength of mutants that had
+   merely timed out. Had that advice been followed, the 28th's run would have had
+   three unadjudicated survivors and a red gate with the reasoning gone.
+2. Reusing a stored report reuses one sample of this. A run that happened to time
+   a mutant out records a clean verdict that a fresh run would not have given.
+   The inputs-hash trigger cannot see that, by construction — the inputs are
+   identical.
+
+**Patrik's call, 2026-08-28: attack the timeouts rather than sample around
+them.** Not an age-based re-produce trigger, not a recorded blind spot left
+alone — 322 of 2,777 mutants unevaluated is the defect, and the gate's own
+standing advice on every timeout line ("make the test that blocks under it fail
+fast") is the fix.
+
