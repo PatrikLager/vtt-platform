@@ -509,14 +509,32 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
     # Printed, always. These are the mutants the run did NOT actually evaluate;
     # discarding them silently is how a survivor disappears.
     for path, where, mutator, _ in timed_out:
-        print(f"    timed out: {path}:{where} {mutator} — not evaluated; if this "
-              f"persists, make the test that blocks under it fail fast", file=out)
+        print(f"    timed out: {path}:{where} {mutator} — NOT EVALUATED, counted as killed",
+              file=out)
+
+    # ONCE, not once per mutant — 322 copies of it in the 2026-08-28 run — and
+    # naming the cause that was actually happening. See TimeoutAdvice in
+    # check_ts_mutation_test.py.
+    if timed_out:
+        print(f"\ncheck:ts-mutation: {len(timed_out)} mutant(s) above were NOT EVALUATED and "
+              f"are counted as killed. TWO different failures wear that label and the fix for "
+              f"one is wrong for the other: A TEST THAT BLOCKS under the mutant, hanging the "
+              f"suite instead of failing it — make it fail fast — or A RUN STARVED of the "
+              f"machine, where nothing blocks at all. Measured 2026-08-29: all 179 mutants of "
+              f"client/src/view/scene-plan.ts timed out inside a full `task check`, while a "
+              f"standalone container run of that same file killed 172 of them in 298s and two "
+              f"of the supposedly hung mutants died in about a second. THE COUNT IS A "
+              f"MEASUREMENT OF THE MACHINE, not of the tests: over byte-identical inputs it "
+              f"has read 31 (2026-08-25), 94 (08-27), 322 (08-28) and 31 again (08-29). "
+              f"RE-RUN ON AN IDLE MACHINE before changing any test.", file=out)
 
     fraction = len(timed_out) / measured
     if fraction > MAX_TIMEOUT_FRACTION:
         print(f"check:ts-mutation: {len(timed_out)} of {measured} mutants timed out "
               f"({fraction:.0%}). Counting those as kills would score a broken run as a "
-              f"good one — fix what hangs before trusting this.", file=err)
+              f"good one. Either a test BLOCKS under the mutant or the machine was loaded "
+              f"and nothing blocked at all; they are indistinguishable from here, so re-run "
+              f"on an idle machine before changing a test.", file=err)
         fail = True
 
     # PAIR BEFORE REPORTING EITHER SIDE — see pair_moves above for what the two

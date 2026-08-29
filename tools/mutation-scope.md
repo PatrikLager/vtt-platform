@@ -422,17 +422,22 @@ same cache-driven timeout effect described at the foot of this file, where
 deadline depend on whether the baseline run was cached.
 
 `check-mutation.py` counts a timeout as a detection
-(Patrik's ruling, 2026-07-28) and prints each with "counted as killed, NOT
-measured" — loud rather than hidden, but nothing carries the standing total,
-and a number nobody totals is a number nobody watches. Same category as the 11
-recorded in `tools/ts-mutation-scope.md`.
+(Patrik's ruling, 2026-07-28) and prints each one, and since 2026-08-29 it also
+carries the STANDING TOTAL in a single line after the last package — a number
+nobody totals is a number nobody watches, which is what this paragraph used to
+record as missing. Same category as the 11 recorded in
+`tools/ts-mutation-scope.md`.
 
-The gate's own advice on each line is the right fix — make the test that blocks
-under the mutant fail fast — rather than adjudicating them or raising the
-timeout.
+**CORRECTED 2026-08-29.** This section used to continue: *"The gate's own advice
+on each line is the right fix — make the test that blocks under the mutant fail
+fast — rather than adjudicating them or raising the timeout."* A blocking test
+is ONE cause of three, and on the TypeScript side it was not the one happening —
+see *The timeouts were STARVATION* at the foot of this file. Both gates now name
+every cause they have evidence for, once per run rather than on every line, and
+both say not to change a test on the strength of one run's count.
 
 `internal/sight`, gated 2026-08-18, is the one entry here whose timeouts are
-NOT that story and will not respond to that advice. It prints **4**, and the
+NOT a slow or blocked test and will not respond to a test change. It prints **4**, and the
 same 4 on every run rather than a figure that moves: they are the
 `INCREMENT_DECREMENT` mutants on the four grid-walk loop counters (`x++`/`y++`
 in `Blockers` and `VisibleFrom`), which count DOWN from zero and so never reach
@@ -631,4 +636,45 @@ them.** Not an age-based re-produce trigger, not a recorded blind spot left
 alone — 322 of 2,777 mutants unevaluated is the defect, and the gate's own
 standing advice on every timeout line ("make the test that blocks under it fail
 fast") is the fix.
+
+## The timeouts were STARVATION, and the advice above is not the fix (2026-08-29)
+
+The last clause of the entry above is wrong, and it is left standing rather than
+edited because it is dated and attributed. **There was no test to make fail
+fast. Nothing was blocking.**
+
+What the 322-run was actually made of: **all 179 mutants of
+`client/src/view/scene-plan.ts` came back `Timeout`** — 6.4% of the whole gate
+unevaluated in a single file, counted as kills, under a verdict whose words are
+"zero unadjudicated survivors". A standalone container run of that same file
+scores it **172 killed / 6 timed out / 1 survived in 298s**, and two of the
+mutants the full run called `Timeout` die natively in about a second.
+
+**The count is a measurement of the machine, not of the client.** Four runs over
+byte-identical inputs — the same `58529d71…` stamp in every one:
+
+| date | run | timed out | recorded in |
+|---|---|---|---|
+| 2026-08-25 14:08 | standalone | **31** | `76e45c2`, `ts-mutation-scope.md` |
+| 2026-08-27 | standalone | 94 | ledger |
+| 2026-08-28 | after the Go gate | **322** | ledger |
+| 2026-08-29 | after the Go gate, `$TMPDIR` cleaned | **31** | `reports/mutation/mutation.json` |
+
+**Read the first row before drawing any conclusion from the last.** 31 was
+already the number on 2026-08-25, days before anything was cleaned and before
+`334eae7` paired the two gates at all. So 31 is what an unloaded run of this
+suite gives — the floor, not an improvement — and 94 and 322 are load. A
+cleanup experiment on the 29th reproduced the floor; it did not cause it.
+
+The consequence for anyone reading a timeout count: **one run's figure is not
+evidence about a test.** A gremlins-side mechanism makes the same point on the
+Go side, measured and recorded at `clear_test_cache`: the deadline is the
+coverage run's own wall time times `TIMEOUT_COEFFICIENT`, and a warm Go test
+cache collapses it 41x, to below the suite's own runtime. Three causes, then —
+a blocking test, a collapsed deadline, a loaded machine — and only the first is
+fixed by touching a test. Both checkers now say so, once per run.
+
+Only the numbers in the last row are verifiable from this tree: `reports/` is
+gitignored and `mutation.json` holds whichever run wrote it last. The 08-27 and
+08-28 figures live in `.superpowers/sdd/progress.md`.
 

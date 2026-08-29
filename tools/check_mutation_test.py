@@ -1583,5 +1583,65 @@ class DroppedSymlinkTest(unittest.TestCase):
                          "stays in writing")
 
 
+class TimeoutAdviceTest(unittest.TestCase):
+    """What the gate tells a reader about a mutant it did not evaluate.
+
+    Every timeout line used to end "if this persists, make the test that blocks
+    under it fail fast", naming ONE cause of three. On 2026-08-29 that advice
+    sent a session hunting a hang that did not exist: all 179 mutants in
+    client/src/view/scene-plan.ts came back Timeout inside a full `task check`,
+    while a standalone container run of the same file killed 172 of them and two
+    of the supposedly hung mutants died in about a second. Nothing blocked.
+
+    The second cause is documented in check-mutation.py itself and was also
+    missing from the message: clear_test_cache's docstring measures a 41x
+    deadline collapse from a warm Go test cache, landing the deadline BELOW the
+    suite's own runtime. The third is machine contention. The three call for
+    different actions, and only the first is "fix a test".
+    """
+
+    def gate(self, mapping, packages=("./p/",)):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            code = cm.run(equivalents(""), list(packages), runner_for(mapping),
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3,
+                          cache_bytes=0)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_the_advice_names_all_three_causes(self):
+        code, out, err = self.gate({"./p/": gremlins_output(killed=9, timed_out=1)})
+        self.assertEqual(code, 0, err)
+        low = out.lower()
+        # Phrases, not bare words: "blocks" also occurs in the starvation
+        # clause ("nothing blocks at all") and "alone" inside "standalone", so
+        # asserting either would pass with the clause it names deleted.
+        self.assertIn("a test that blocks", low)
+        self.assertIn("collapsed deadline", low)
+        self.assertIn("starved", low)
+
+    def test_the_advice_refuses_to_licence_a_test_change_from_one_run(self):
+        """The actionable half. Naming three causes and then saying "fix it"
+        would leave the reader exactly where the old advice did."""
+        code, out, err = self.gate({"./p/": gremlins_output(killed=9, timed_out=1)})
+        self.assertEqual(code, 0, err)
+        self.assertIn("do not change a test", out.lower())
+
+    def test_the_advice_is_printed_once_however_many_mutants_timed_out(self):
+        """Three hundred copies of a paragraph is why nobody reads one."""
+        m = {"./p/": gremlins_output(killed=9, timed_out=3),
+             "./q/": gremlins_output(killed=9, timed_out=2)}
+        code, out, err = self.gate(m, packages=("./p/", "./q/"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.lower().count("starved"), 1)
+        self.assertEqual(out.count("timed out:"), 5,
+                         "every unevaluated mutant is still named, one line each")
+
+    def test_a_run_with_no_timeouts_gives_no_advice(self):
+        code, out, err = self.gate({})
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("starved", out.lower())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

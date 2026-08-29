@@ -79,6 +79,13 @@ this line has already been a run behind once: the earlier 2764/2660 figures
 were `3c01695`'s, taken thirteen hours before the merge re-ran the gate over a
 larger tree.
 
+**And it went a run behind again.** Runs on 2026-08-27, 08-28 and 08-29 over
+BYTE-IDENTICAL inputs read 94, 322 and 31 timed out against this row's 31 —
+every other column unchanged. The timeout count measures machine load, not the
+client, so this row is the floor rather than the current figure. What that cost
+a reader, and why both checkers stopped advising a test change on the strength
+of one run, is in `tools/mutation-scope.md`.
+
 **One root cause dominates, and it is worth internalising: a fixture chosen so
 that two different operators produce the same answer.** Every camera in the
 suite was `fitCamera()` at exactly scale 1 and offset 0, where `*scale` IS

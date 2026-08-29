@@ -813,12 +813,13 @@ def run_package(pkg, runner):
     if total > 0 and timed_out / total > MAX_TIMEOUT_FRACTION:
         raise EquivalentsError(
             f"{pkg}: {timed_out} of {total} mutants TIMED OUT ({timed_out / total:.0%}) — "
-                f"a majority, so this is a broken measurement rather than detection, and "
-                f"gremlins would still report a clean efficacy (it computes killed/(killed+"
-                f"lived) and ignores timeouts). The usual cause is a test that BLOCKS on a "
-                f"long deadline: a broken mutant hangs it instead of failing it. Make such "
-            f"tests fail fast — dropping two mcp deadlines from 10s to 3s took that "
-            f"package from 58 timeouts to 1.")
+            f"a majority, so this is a broken measurement rather than detection, and "
+            f"gremlins would still report a clean efficacy (it computes killed/(killed+"
+            f"lived) and ignores timeouts). A test that BLOCKS on a long deadline is one "
+            f"cause and the only one a test change fixes — dropping two mcp deadlines from "
+            f"10s to 3s took that package from 58 timeouts to 1. A deadline collapsed by a "
+            f"warm coverage cache and a starved machine are the other two, and neither has "
+            f"anything to do with the tests. Establish which before touching one.")
     return parse_survivors(out), parse_timed_out(out)
 
 
@@ -1367,6 +1368,7 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
 
     unadjudicated = []
     claimed = set()
+    unevaluated = 0
     skip_cache = load_skip_cache(skip_cache_path)
     fresh_cache = {}
     for pkg in packages:
@@ -1451,8 +1453,37 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         # MAX_TIMEOUT_FRACTION), so the one thing the gate must not do is let
         # them vanish between gremlins' output and this report.
         for location, mutator in timed_out:
-            print(f"    timed out: {name} {location} {mutator} — not evaluated; if this "
-                  f"persists, make the test that blocks under it fail fast", file=out)
+            print(f"    timed out: {name} {location} {mutator} — NOT EVALUATED, "
+                  f"counted as killed", file=out)
+        unevaluated += len(timed_out)
+
+    # ONCE, not once per mutant, and naming all THREE causes this repo has
+    # actually measured. The advice used to ride every timeout line and name
+    # only the first — which on 2026-08-29 sent a session hunting a hang that
+    # did not exist. See check_mutation_test.py's TimeoutAdviceTest.
+    #
+    # The mcp "58 timeouts, then 1, then 58 over identical code" history is
+    # deliberately NOT cited here. TIMEOUT_COEFFICIENT attributes it to
+    # compilation, clear_test_cache to the cached baseline "with no appeal to
+    # machine load at all", and tools/mutation-scope.md calls the cache the
+    # likeliest and this file's attribution wrong. A message is the wrong place
+    # to settle that, and citing it under any one cause is how it got contested.
+    if unevaluated:
+        print(f"\ncheck:mutation: {unevaluated} mutant(s) above were NOT EVALUATED and are "
+              f"counted as killed. THREE different failures wear that label here and the fix "
+              f"for one is wrong for the others. (1) A TEST THAT BLOCKS under the mutant, "
+              f"hanging the suite instead of failing it — make it fail fast. (2) A COLLAPSED "
+              f"DEADLINE: every mutant's timeout is gremlins' own coverage-run time times "
+              f"TIMEOUT_COEFFICIENT, and that coverage run carries no -count=1, so a warm Go "
+              f"test cache shrinks it — measured 41x, to below the suite's own runtime "
+              f"(clear_test_cache, this file, which is why the gate clears that cache first). "
+              f"(3) A RUN STARVED of the machine, where nothing blocks and no deadline moved: "
+              f"on 2026-08-29 all 179 mutants in one client file timed out inside a full `task "
+              f"check` while a standalone run of that same file killed 172 of them. DO NOT "
+              f"CHANGE A TEST on one run's count. The deadline moves with the baseline, so two "
+              f"runs are comparable only at the same cache state and the same machine load — "
+              f"tools/mutation-scope.md: compare like with like, and state the cache state.",
+              file=out)
 
     failed = bool(suspect)
 

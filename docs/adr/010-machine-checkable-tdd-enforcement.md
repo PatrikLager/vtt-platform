@@ -171,6 +171,34 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    suite runs too long; in this codebase those are overwhelmingly mutations
    that hang a socket or a wait, which the suite did notice.
 
+   **AMENDED 2026-08-29 — "overwhelmingly" is not what the measurements say.**
+   THREE different failures produce a TIMED OUT here, and only the first is a
+   mutation the suite noticed:
+
+   - **A mutant that genuinely does not terminate.** `internal/sight`'s four
+     `INCREMENT_DECREMENT` mutants on the grid-walk loop counters are the clean
+     case — they count DOWN from zero and never reach the bound, so no test can
+     be made to fail fast under them. The same 4 every run.
+   - **A COLLAPSED DEADLINE, which says nothing about the mutant at all.** Every
+     mutant's deadline is gremlins' own coverage-run wall time times
+     `TIMEOUT_COEFFICIENT`, and that coverage run carries no `-count=1`, so Go's
+     test cache can serve it. Measured on `internal/gateway` back to back:
+     9.286s, then 0.27s cached — a 41x collapse, landing the deadline at ~8.1s
+     against a suite that takes 9.3s, so everything times out. That is the
+     55-of-78 gateway timeouts. `check-mutation.py` clears the test cache before
+     the first package for this reason.
+   - **A LOADED MACHINE.** On the TypeScript side, over byte-identical inputs —
+     one `58529d71…` stamp in every run — the count read 31, 94, 322 and 31
+     again between 2026-08-25 and 08-29. The 322-run reported ALL 179 mutants of
+     `client/src/view/scene-plan.ts` as `Timeout` while a standalone run of that
+     same file killed 172 of them in 298s.
+
+   The ruling itself is unchanged, but the CAP is carrying more of it than the
+   sentence above implied: with three causes and only one of them a detection,
+   "a majority fails the run" is most of what makes a timeout safe to count.
+   Both checkers now name the causes once per run and refuse to licence a test
+   change on one run's count; `tools/mutation-scope.md` holds the tables.
+
    **They are not reliably detections, and the record should say so.** A
    review disproved the general claim with a working case: a lenient assertion
    over a value whose upper bound the mutation removes (`if d > ceiling { d =
@@ -199,6 +227,15 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
 `internal/mcp` alone is ~857s) and a new class of failure: a change that adds
 behavior without tests now fails the gate rather than reaching review. That is
 the point, and per the ruling above the runtime is not an argument against it.
+
+**AMENDED 2026-08-29 — both numbers in that sentence have moved.** The gated set
+is **twelve** packages, not eight (`PACKAGES` in `tools/check-mutation.py` is the
+list). And the cost is no longer a single figure: `334eae7` made it conditional,
+so a package whose dependency closure is unchanged since its last PASSING run is
+served from `reports/mutation-skip-cache.json`. Measured — about **32 minutes**
+when everything must be re-measured, **2.6 seconds** when nothing has changed.
+The ruling that runtime is not an argument stands either way; it is simply no
+longer the argument anyone would reach for.
 
 **This does not make ADR-009 fully machine-checked, and it should not be
 claimed as such.** §1 (no impl-then-test) and §2 (behavioral RED) are about the

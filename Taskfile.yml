@@ -52,12 +52,24 @@ tasks:
       # Now covers EVERY file under client/src/ except the browser entry
       # point -- the backlog that made this "scoped to two files" is closed,
       # and tools/ts-mutation-scope.md records how it was worked down and what
-      # it cost. Same shape as check:mutation, which gates every package in
+      # it cost. Same shape as check:mutation, whose tools/mutation-scope.md
       # documents why internal/harness is out.
       #
-      # RUNS ON LINUX ONLY. macOS 26's socket-accounting kernel bug
-      # (FB21686886) makes it arithmetically impossible locally; the task
-      # skips loudly there and CI is authoritative. Full detail in its desc.
+      # RUNS ON LINUX, WHICH ON THIS MAC MEANS A CONTAINER THE TASK STARTS
+      # ITSELF. macOS 26's socket-accounting kernel bug (FB21686886) makes a
+      # native run arithmetically impossible. Until 2026-08-29 this comment
+      # said the task "skips loudly there and CI is authoritative", and BOTH
+      # halves were false: 334eae7 made it invoke the container, and ci.yml
+      # has been workflow_dispatch-only since 2026-08-10. Full detail in its
+      # desc.
+      #
+      # 334eae7 also made this the SECOND mutation gate in a row on one
+      # machine -- the list order above is older, but before that commit this
+      # task skipped on macOS, so the pair had never actually run back to
+      # back. It is not free: over byte-identical inputs the TS timeout count
+      # has read 31, 94, 322 and 31 again; the 94 and the 322 are the loaded
+      # runs and 31 is the floor. tools/mutation-scope.md has the table; read
+      # it before concluding anything from one run's timeout figure.
       - task: check:ts-mutation
 
   # --- test tiers -----------------------------------------------------------

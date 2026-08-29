@@ -638,5 +638,47 @@ class AmbiguousMove(unittest.TestCase):
         self.assertNotIn("Remove the entry", msg)
 
 
+class TimeoutAdvice(unittest.TestCase):
+    """See check_mutation_test.py's TimeoutAdviceTest — same defect, same fix.
+
+    This is the checker that printed the misaimed line 322 times on 2026-08-28,
+    and client/src/view/scene-plan.ts, the file it printed 179 of them about, is
+    the one a standalone container run then measured at 172 killed / 6 timed out
+    / 1 survived in 298s.
+    """
+
+    def test_the_advice_names_starvation_as_well_as_a_hang(self):
+        code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
+                               ("client/src/a.ts", 2, 1, "Eq", "Timeout")))
+        self.assertEqual(code, 0, msg)
+        # Phrases, not bare words: "blocks" also occurs in the starvation
+        # clause, so asserting it alone would pass with the hang clause gone.
+        self.assertIn("a test that blocks", msg.lower())
+        self.assertIn("starved", msg.lower())
+
+    def test_the_advice_gives_the_load_evidence_rather_than_a_verdict(self):
+        """One run's timeout count is not evidence about a test, and the four
+        recorded runs over byte-identical inputs are what shows it."""
+        code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
+                               ("client/src/a.ts", 2, 1, "Eq", "Timeout")))
+        self.assertEqual(code, 0, msg)
+        self.assertIn("re-run on an idle machine", msg.lower())
+
+    def test_the_advice_is_printed_once_however_many_mutants_timed_out(self):
+        code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
+                               ("client/src/a.ts", 2, 1, "Eq", "Killed"),
+                               ("client/src/a.ts", 3, 1, "Eq", "Timeout"),
+                               ("client/src/b.ts", 4, 1, "Eq", "Timeout")))
+        self.assertEqual(code, 0, msg)
+        self.assertEqual(msg.lower().count("starved"), 1)
+        self.assertEqual(msg.count("timed out:"), 2,
+                         "every unevaluated mutant is still named, one line each")
+
+    def test_a_run_with_no_timeouts_gives_no_advice(self):
+        code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed")))
+        self.assertEqual(code, 0, msg)
+        self.assertNotIn("starved", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
