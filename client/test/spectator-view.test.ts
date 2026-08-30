@@ -13,7 +13,7 @@ import {
 import { renderSpectator, describe as describeEvent, CELL, boardCamera } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
-import { renderPlayerPanel } from "../src/view/player";
+import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
@@ -196,9 +196,14 @@ const costly: Ability = {
 function panel(
   st: State,
   abilities: Ability[],
-  ui = { selectedActorId: "", selectedAbilityId: "" },
+  // A PARTIAL override, not a full PlayerUIState: every existing call site
+  // here predates doorsArmed (Task 4) and names only the two fields it
+  // actually varies, so defaulting the third here is what keeps all of them
+  // compiling without each one having to say "doors are not armed".
+  uiOverrides: Partial<PlayerUIState> = {},
   who: Me = me,
 ) {
+  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false, ...uiOverrides };
   const sent: ClientCommand[] = [];
   // Rerenders are counted: a handler that mutates ui without asking for a
   // repaint leaves the panel showing the old selection, which is the same
@@ -897,6 +902,38 @@ test("panel, console and toast appear only when supplied", () => {
   expect(full.querySelector(".toast")?.textContent).toBe("refused: nope");
 });
 
+// --- the board's own armed indication (Task 4) ------------------------------
+//
+// The console or panel that armed doors is not the only thing on screen: §8
+// of the spec records a DM who arms doors, walks away and comes back --
+// their clicks have stopped moving tokens, and nothing but the board itself
+// is in front of them at that moment.
+
+test("doors armed marks the board's canvas container and adds a legible label", () => {
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", { doorsArmed: true });
+  const grid = root.querySelector(".grid") as HTMLElement;
+  expect(grid.classList.contains("armed")).toBe(true);
+  const label = root.querySelector(".armed-label");
+  expect(label).not.toBeNull();
+  expect(label!.textContent!.length).toBeGreaterThan(0);
+});
+
+test("doors NOT armed leaves the board plain -- no class, no label", () => {
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", { doorsArmed: false });
+  const grid = root.querySelector(".grid") as HTMLElement;
+  expect(grid.classList.contains("armed")).toBe(false);
+  expect(root.querySelector(".armed-label")).toBeNull();
+});
+
+test("doorsArmed omitted entirely reads the same as false, not as undefined leaking through", () => {
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", {});
+  expect((root.querySelector(".grid") as HTMLElement).classList.contains("armed")).toBe(false);
+  expect(root.querySelector(".armed-label")).toBeNull();
+});
+
 test("the ticker section carries its class, and headings carry none", () => {
   const root = render(world(), [env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) })]);
   expect(root.querySelector(".ticker")).not.toBeNull();
@@ -909,14 +946,52 @@ test("a scene keyed by the empty string is still rendered", () => {
   // Pins that `.at(-1)` picks the last sorted key even when that key is the
   // empty string — `.at(-1) ?? ""` must not treat a real "" key as "no scene".
   //
-  // It does NOT kill the `?? ""` fallback itself, and the comment here used to
-  // claim it did: the fallback fires only when there are NO scenes at all, in
-  // which case at(-1) is undefined. See ts-mutation-equivalents.txt.
+  // It does NOT kill the `?? ""` fallback itself: the fallback fires only
+  // when there are NO scenes at all (`.at(-1)` undefined), and this fixture
+  // has one scene, reached directly by `.at(-1)` returning "" -- never via
+  // the `??`. "a prototype-injected empty-string scene defeats the
+  // renderSpectator `?? ""` equivalence claim" (below) is what kills the
+  // fallback -- named here rather than "the next test", which stops being
+  // true the moment anything is inserted between them.
   const st = world();
   st.Scenes = { "": { ID: "", Name: "Nowhere", GridWidth: 2, GridHeight: 2 } };
   st.Tokens = {};
   const root = render(st);
   expect(root.querySelector(".grid")).not.toBeNull();
+  expect(Array.from(root.querySelectorAll(".empty")).some((n) => n.textContent === "No scene yet.")).toBe(false);
+});
+
+test("a prototype-injected empty-string scene defeats the renderSpectator `?? \"\"` equivalence claim -- the entry is WITHDRAWN, not filed", () => {
+  // ts-mutation-equivalents.txt carried an entry for
+  // `Object.keys(st.Scenes).sort().at(-1) ?? ""` (renderSpectator's own
+  // scene pick, immediately above where it calls renderGrid) arguing that
+  // whatever string the fallback yields is "looked up in st.Scenes and
+  // missed either way". That argument is the SAME SHAPE that turned out
+  // false for view/player.ts's mayWorkAnyDoor (same fallback expression,
+  // fix round 2): it misses the PROTOTYPE CHAIN. `st.Scenes[key]` for a key
+  // outside `Object.keys(st.Scenes)` still resolves through whatever
+  // `st.Scenes` inherits from, and "zero own keys" says nothing about what
+  // is inherited.
+  //
+  // st.Scenes here has ZERO OWN keys (`.at(-1)` is undefined, so the `??`
+  // fires either way) but a PROTOTYPE that answers "" with a real scene --
+  // never a state fold() can build (fold.ts always hands Scenes an
+  // `Object.create(null)` via state.ts's emptyMap), the same
+  // hand-built-past-the-fold category doors.test.ts already uses for this
+  // module family. The real fallback ("") finds the scene via the
+  // prototype and renders its heading; the mutant's fallback ("Stryker was
+  // here!") is not on that prototype either, finds nothing, and renders
+  // "No scene yet." instead -- a real, reproduced divergence.
+  const st = newState();
+  const fakeScene = { ID: "", Name: "Ghost Hall", GridWidth: 4, GridHeight: 4 };
+  Object.setPrototypeOf(st.Scenes, { "": fakeScene });
+  const root = render(st);
+  // Scoped to `.board` specifically, not the page's first h2: under the
+  // mutant, renderGrid's early "no scene" return means the board renders NO
+  // h2 at all, and the page's first h2 becomes the feed's "Story" heading
+  // instead -- a real divergence, but a confusing one to read off an
+  // unscoped query.
+  expect(root.querySelector(".board h2")?.textContent).toBe("Ghost Hall");
   expect(Array.from(root.querySelectorAll(".empty")).some((n) => n.textContent === "No scene yet.")).toBe(false);
 });
 
@@ -1168,7 +1243,7 @@ test("a selection naming an actor that no longer exists renders nothing further"
   // repaint that follows it. Continuing past this point reads resources off
   // undefined and throws, taking the panel down.
   const st = world();
-  const ui = { selectedActorId: "gone", selectedAbilityId: "" };
+  const ui: PlayerUIState = { selectedActorId: "gone", selectedAbilityId: "", doorsArmed: false };
   let node: HTMLElement | null = null;
   expect(() => { node = renderPlayerPanel(st, me, [atWill], ui, () => {}, () => {}); }).not.toThrow();
   expect(Array.from(node!.querySelectorAll("h3")).some((n) => n.textContent === "Abilities")).toBe(false);

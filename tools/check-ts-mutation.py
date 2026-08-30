@@ -554,6 +554,18 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
     # they would have come back as UNADJUDICATED survivors the moment the
     # timeouts were fixed, unexplained.
     #
+    # UPDATE 2026-08-30: the 501:59 example is now two-thirds valid. Task 4
+    # (dm-hands-and-retraction) proved that ONE of the three — the
+    # equivalence claim, not the timeout finding — was itself false (a
+    # prototype-injected state makes the fallback string observable) and
+    # withdrew it deliberately; it carries no entry today. 364:10 and 365:10
+    # remain sound and still illustrate the point below. The ARGUMENT this
+    # paragraph makes — a timeout is not an evaluation, so it cannot be
+    # evidence an adjudication has expired — is untouched by that: it would
+    # have been just as wrong to delete 501:59 FOR THIS REASON in 2026-08-27,
+    # since a timeout still tells you nothing about whether the reasoning
+    # was ever correct in the first place.
+    #
     # THE ASYMMETRY IS DELIBERATE: `unadjudicated` below still reads only
     # `survived`, so a timeout never invents a survivor to complain about
     # either. Nothing is excused that would otherwise FAIL: an unadjudicated

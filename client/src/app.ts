@@ -14,6 +14,7 @@ import { Session } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
 import { renderPlayerPanel, moveCommandFor, type PlayerUIState } from "./view/player";
+import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
   fetchJoinLink, fetchParticipants,
@@ -285,7 +286,18 @@ function startSession(root: HTMLElement, token: string): Session {
         paint();
       });
   };
-  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "" };
+  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
+
+  /**
+   * Flip the shared arm-doors bit and repaint. A LOCAL mode change, not a
+   * command: it sends nothing over the wire, so unlike act() below there is
+   * no server round trip to await before the DM console or player panel can
+   * show the new state — this just mutates `ui` and calls paint().
+   */
+  const toggleDoors = (): void => {
+    ui.doorsArmed = !ui.doorsArmed;
+    paint();
+  };
 
   // The shoulder this spectator is riding (visibility spec §3.1.1). "" is a
   // real value and the one every connection opens in: perched on nobody, which
@@ -479,11 +491,23 @@ function startSession(root: HTMLElement, token: string): Session {
             // window.confirm is deliberate for a destructive action: it is
             // modal and unmissable, which a custom banner is not.
             confirm: (m) => window.confirm(m),
+            doorsArmed: ui.doorsArmed,
+            toggleDoors,
           })
         : undefined,
+      // ARMED MEANS A NON-DOOR CLICK DOES NOTHING, not "falls through to a
+      // move" — that is the whole point of arming (spec §8): while the tool
+      // is armed, a board click is either a door command or nothing at all.
+      // doorCommandFor already returns null when `!armed`, so the `??`
+      // right side only ever runs moveCommandFor while UNarmed; while armed
+      // and doorCommandFor found no workable door at that cell (wrong role,
+      // out of reach, not a door), it evaluates to `ui.doorsArmed ? null :
+      // ...` = null, and the move never fires.
       onCell: canAct
         ? (cell) => {
-            const cmd = moveCommandFor(session.state, me!, ui, cell);
+            const cmd =
+              doorCommandFor(session.state, me!, ui.doorsArmed, cell) ??
+              (ui.doorsArmed ? null : moveCommandFor(session.state, me!, ui, cell));
             if (cmd) act(cmd);
           }
         : undefined,
@@ -498,6 +522,10 @@ function startSession(root: HTMLElement, token: string): Session {
         void redial();
       },
       images,
+      // BOARD-VISIBLE, not only console/panel-visible (Task 4, spec §8): a DM
+      // who arms doors, walks away and comes back must be able to see why
+      // their clicks have stopped moving tokens, from the board alone.
+      doorsArmed: ui.doorsArmed,
     });
   };
 

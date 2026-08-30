@@ -189,6 +189,15 @@ class Gate(unittest.TestCase):
         # deleted three exhaustively-reasoned adjudications, and they would
         # have returned as UNADJUDICATED survivors the moment the timeouts
         # were fixed, with their reasoning gone.
+        #
+        # UPDATE 2026-08-30: 501:59's own REASONING has since been proven
+        # false by Task 4 (dm-hands-and-retraction) — a prototype-injected
+        # state makes that fallback string observable after all — and the
+        # entry was deliberately withdrawn; it carries no adjudication
+        # today. 364:10 and 365:10 remain sound. That does not touch what
+        # this test is checking: the point was never that 501:59's claim was
+        # correct, only that a TIMEOUT is not the thing that would have told
+        # anyone it was wrong.
         code, msg = run(
             report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
                    ("client/src/a.ts", 9, 5, "BooleanLiteral", "Timeout")),

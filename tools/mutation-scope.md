@@ -631,6 +631,16 @@ Two consequences, both load-bearing:
    The inputs-hash trigger cannot see that, by construction — the inputs are
    identical.
 
+**UPDATE 2026-08-30: the 501:59 example is now two-thirds valid.** Task 4
+(dm-hands-and-retraction) proved that entry's own equivalence claim false — a
+prototype-injected state makes the fallback string it argued about
+observable — and withdrew it; it carries no adjudication today. 364:10 and
+365:10 remain sound and still prove point 1 above. That point is untouched by
+the correction: it was never a claim that 501:59's REASONING was right, only
+that a mutant timing out is not what would have told anyone it was wrong —
+which stays true of an entry that turns out correct and one that later turns
+out mistaken alike.
+
 **Patrik's call, 2026-08-28: attack the timeouts rather than sample around
 them.** Not an age-based re-produce trigger, not a recorded blind spot left
 alone — 322 of 2,777 mutants unevaluated is the defect, and the gate's own
