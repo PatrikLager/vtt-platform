@@ -400,8 +400,12 @@ function apply(st: State, env: Envelope): void {
  * doorKey matches Go's gridKey: "x,y", column then row, comma-separated
  * (maps-as-geometry spec §4.1) — SceneCreated's Tiles map and OpenDoors are
  * both keyed this way, so this fold and apply.go's have to agree on it.
+ *
+ * Exported so view/doors.ts's doorCommandFor can read a folded scene's
+ * Tiles/OpenDoors the same way this fold writes them, rather than inventing
+ * a second key format that could drift from this one.
  */
-function doorKey(x: number, y: number): string {
+export function doorKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
