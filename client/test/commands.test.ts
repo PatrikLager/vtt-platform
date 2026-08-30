@@ -417,3 +417,38 @@ test("promotion names the participant and the role", () => {
   expect(cmd.command.case).toBe("promoteParticipant");
   expect(cmd.command.value).toMatchObject({ participantId: "p-7", role: "player" });
 });
+
+// --- door and map commands (Task 1: hands on the board) ---------------------
+
+import { openDoor, closeDoor, loadMap } from "../src/commands";
+
+// command-surface.test.ts proves each of these has a same-named builder; it
+// does not look at what that builder puts on the wire. sceneId and mapId are
+// both plain strings, which is exactly the shape a builder wired to the
+// wrong oneof case, or with its arguments transposed, would still satisfy —
+// nothing in the type checker would catch it. These three assert the EXACT
+// object (toEqual, not toMatchObject), the same idiom sameShape already uses
+// against a fixture: here the "fixture" is a literal, not a committed file
+// (see commands.ts's file header for what that distinction is worth), but a
+// subset match would still let a stray or misplaced field through unnoticed.
+
+test("openDoor matches the client's own expected shape, scene and square in order", () => {
+  const cmd = openDoor("scn-vault", { x: 3, y: 4 });
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    openDoor: { sceneId: "scn-vault", at: { x: 3, y: 4 } },
+  });
+});
+
+test("closeDoor matches the client's own expected shape, scene and square in order", () => {
+  const cmd = closeDoor("scn-cellar", { x: 7, y: 1 });
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    closeDoor: { sceneId: "scn-cellar", at: { x: 7, y: 1 } },
+  });
+});
+
+test("loadMap matches the client's own expected shape", () => {
+  const cmd = loadMap("map-crypt");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    loadMap: { mapId: "map-crypt" },
+  });
+});

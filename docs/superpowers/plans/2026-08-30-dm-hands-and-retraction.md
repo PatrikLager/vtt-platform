@@ -19,7 +19,7 @@
 - **No game-system vocabulary in platform code** (pillar P2/P4, semgrep enforces).
 - **Review before commit.** Nothing lands unreviewed; the dev-cycle hook enforces it. Commit with `CLAUDE_REVIEW_DONE=1` after the task's review.
 - **State the invariant, not the count.** No assertion or comment may encode "twenty-two commands". Assert the relationship.
-- **Rebuild the embedded bundle** after any `client/src` change: `task client:build` refreshes `cmd/vtt/webdist`, and the commit hook will NOT catch a stale one.
+- **Rebuild the embedded bundle** after any `client/src` change: `task build:client` refreshes `cmd/vtt/webdist`, and the commit hook will NOT catch a stale one.
 
 ---
 
@@ -292,7 +292,7 @@ At `client/src/app.ts` ~line 591 the maps are already fetched and handed to `loa
 - [ ] **Step 5: Run tests, rebuild the bundle, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src/view/dm.ts client/src/app.ts client/test/dm-view.test.ts cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
@@ -449,7 +449,7 @@ Give every existing console control its `action` string where one is missing, si
 - [ ] **Step 4: Run tests, typecheck, rebuild, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src client/test cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
@@ -599,7 +599,7 @@ Add a `case "restart"` to `handleFrame` that does what `restart()` does: fire th
 - [ ] **Step 4: Run tests, typecheck, rebuild, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src/wire.ts client/test cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
