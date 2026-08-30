@@ -174,6 +174,7 @@ function startSession(root: HTMLElement, token: string): Session {
   const iMayPerch = (): boolean => me !== null && mayPerch(me);
   let abilities: Ability[] = [];
   let adventures: AdventureMeta[] = [];
+  let maps: MapMeta[] = [];
   let joinLink: JoinLink | null = null;
   let roster: Roster[] | null = null;
   let toast = "";
@@ -464,6 +465,7 @@ function startSession(root: HTMLElement, token: string): Session {
             log: [...session.events],
             participants: session.participants,
             adventures,
+            maps,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
             joinLink,
             roster,
@@ -590,12 +592,14 @@ function startSession(root: HTMLElement, token: string): Session {
       paint();
       return fetchMaps(location.origin, token);
     })
-    .then((maps) => {
+    .then((fetched) => {
+      maps = fetched;
+      paint();
       // Kicks off pack loading; does NOT block on it (loadMapPacks fires
       // fetches and returns immediately) — a slow or large pack must not
       // hold up anything else in this chain, and each pack's own images
       // arrive on their own schedule via the .then inside loadMapPacks.
-      loadMapPacks(maps);
+      loadMapPacks(fetched);
     })
     .catch(() => {
       // Metadata being unavailable degrades the client to spectator-shaped:

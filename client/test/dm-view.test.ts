@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
-import type { Roster } from "../src/metadata";
+import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -15,6 +15,7 @@ function harness(
   log: Envelope[] = [],
   opts: {
     adventures?: { id: string; name: string }[];
+    maps?: MapMeta[];
     guide?: string | null;
     participants?: { participantId: string; displayName: string }[];
   } = {},
@@ -31,6 +32,7 @@ function harness(
     st,
     log,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
+    maps: opts.maps ?? [],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
     // The sharing panel is exercised by its own tests below; these existing
@@ -165,7 +167,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
     roster: [],
     origin: "https://table.example",
     refreshSharing: () => {},
-    st, log: [moved(1)], adventures: [],
+    st, log: [moved(1)], adventures: [], maps: [],
     guideFor: async () => null,
     send: async () => {},
     notify: () => {},
@@ -632,6 +634,38 @@ test("an adventure with no guide says so rather than showing nothing", async () 
   h.button("guide").click();
   await new Promise((r) => setTimeout(r, 0));
   expect(h.notices).toEqual(["no guide for that adventure"]);
+});
+
+// --- maps ---------------------------------------------------------------
+
+test("a DM loads a map by picking it, and the button says which one", () => {
+  const h = harness(newState(), [], {
+    maps: [
+      { id: "cellar", name: "The Cellar", gridWidth: 10, gridHeight: 9 },
+      { id: "wood", name: "", gridWidth: 40, gridHeight: 40 },
+    ],
+  });
+  const load = h.node.querySelector<HTMLButtonElement>('[data-action="load-map"]');
+  expect(load).not.toBeNull();
+  expect(load!.textContent).toContain("The Cellar");
+  load!.click();
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.case).toBe("loadMap");
+  expect((h.sent[0]!.command.value as { mapId: string }).mapId).toBe("cellar");
+});
+
+test("a map with no name is offered under its id rather than a blank button", () => {
+  const h = harness(newState(), [], {
+    maps: [{ id: "wood", name: "", gridWidth: 40, gridHeight: 40 }],
+  });
+  const buttons = Array.from(h.node.querySelectorAll<HTMLButtonElement>('[data-action="load-map"]'));
+  expect(buttons.map((b) => b.textContent)).toEqual(["Load wood"]);
+});
+
+test("no maps configured means no Maps group at all, not an empty one", () => {
+  const h = harness(newState(), [], { maps: [] });
+  expect(h.node.querySelector('[data-action="load-map"]')).toBeNull();
+  expect(h.node.textContent).not.toContain("Maps");
 });
 
 // --- whitespace is not content ----------------------------------------------
@@ -1307,6 +1341,7 @@ function shareConsole(opts: {
     st: emptyState(),
     log: [],
     adventures: [],
+    maps: [],
     guideFor: async () => null,
     participants: [],
     joinLink: opts.joinLink === undefined ? { open: false, secret: "s3cret" } : opts.joinLink,
@@ -1379,7 +1414,7 @@ test("rotating asks first, because it locks out a link already sent", () => {
   const sent: ClientCommand[] = [];
   let asked = 0;
   const node = renderDMConsole({
-    st: emptyState(), log: [], adventures: [], guideFor: async () => null,
+    st: emptyState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async (c) => void sent.push(c), notify: () => {},
@@ -1443,7 +1478,7 @@ test("ending a session is addressable, not just clickable by its label", () => {
   st.Sessions = [{ ID: "s1", Name: "Open Table", StartSeq: 1, EndSeq: 0 }];
   const sent: ClientCommand[] = [];
   const node = renderDMConsole({
-    st, log: [], adventures: [], guideFor: async () => null,
+    st, log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
     refreshSharing: () => {}, send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
   });
@@ -1458,7 +1493,7 @@ test("rotating goes through once the DM says yes", async () => {
   const sent: ClientCommand[] = [];
   let refreshes = 0;
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
     send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
@@ -1545,7 +1580,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
   // "Are you sure?" gives them nothing to be sure ABOUT.
   let asked = "";
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async () => {}, notify: () => {},

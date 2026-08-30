@@ -9,11 +9,11 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { AdventureMeta, JoinLink, Roster } from "../metadata";
+import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
-  startSession, endSession, createScene, placeToken, loadAdventure,
+  startSession, endSession, createScene, placeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, retractEvents, parseActorJSON, addActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
@@ -192,6 +192,13 @@ export interface DMDeps {
    */
   participants: Participant[];
   adventures: AdventureMeta[];
+  /**
+   * Every standalone map the server loaded at boot (GET /api/maps), already
+   * fetched by app.ts for pack loading. Empty renders no group: a Maps
+   * heading with nothing under it tells a DM their maps failed to load, which
+   * is a different and false story from "this table has none configured".
+   */
+  maps: MapMeta[];
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -378,6 +385,15 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       );
     }
     wrap.appendChild(group("Adventures", ...row));
+  }
+
+  // --- maps ---
+  if (d.maps.length > 0) {
+    const row: HTMLElement[] = [];
+    for (const m of d.maps) {
+      row.push(button(`Load ${m.name || m.id}`, () => void d.send(loadMap(m.id)), "load-map"));
+    }
+    wrap.appendChild(group("Maps", ...row));
   }
 
   // --- notes ---
