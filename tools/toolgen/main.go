@@ -129,12 +129,6 @@ var manifest = []toolSpec{
 		descriptor:  (&vttv1.EndSession{}).ProtoReflect().Descriptor(),
 	},
 	{
-		message:     "vtt.v1.RetractEvents",
-		name:        "retract_events",
-		description: "Retract a range of events from the record with a stated reason.",
-		descriptor:  (&vttv1.RetractEvents{}).ProtoReflect().Descriptor(),
-	},
-	{
 		message:     "vtt.v1.UseAbility",
 		name:        "use_ability",
 		description: "Use one of the loaded ruleset's abilities as an actor against explicit targets.",

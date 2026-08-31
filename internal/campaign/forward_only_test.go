@@ -11,61 +11,6 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
-// TestTheFoldAppliesTheEventsARetractionMarkerNames is the behavioural half
-// of retraction leaving the campaign (spec 2026-08-30-retraction-leaves): the
-// fold applies every envelope in the log, in order, and no envelope can take
-// an earlier one back.
-//
-// THE LOG IS BUILT BY HAND rather than through Undo, and it has to be: this
-// is a test of what the fold does with a marker it may still be handed, and
-// nothing in the platform produces one any more. Append and AppendBatch both
-// refuse the payload outright, and a log that still holds one is either a file
-// written before this change or a corrupt one — either way the fold must
-// answer, and the answer is "the events named are part of history".
-//
-// THE MARKER ITSELF FOLDS TO NOTHING, and it did before this change too, so it
-// is not what this test is about: engine.Apply has an explicit no-op arm for
-// EventsRetracted (apply.go — "handled by campaign rebuild, not in-line", a
-// comment that stopped being true today and dies with the arm in Task 7). What
-// this test pins is the RANGE: sequence 5 moved the token to (5,8), and it is
-// still there at head.
-func TestTheFoldAppliesTheEventsARetractionMarkerNames(t *testing.T) {
-	log := seqLog(
-		cenv(nextID(), &vttv1.SessionStarted{Name: "n"}),
-		cenv(nextID(), &vttv1.SceneCreated{
-			SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10,
-		}),
-		cenv(nextID(), &vttv1.ActorAdded{
-			Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
-		}),
-		cenv(nextID(), &vttv1.TokenPlaced{
-			TokenId: "t1", SceneId: "scn", ActorId: "a1",
-			Position: &vttv1.GridPosition{X: 3, Y: 7},
-		}),
-		cenv(nextID(), &vttv1.TokenMoved{
-			TokenId: "t1", SceneId: "scn",
-			From: &vttv1.GridPosition{X: 3, Y: 7},
-			To:   &vttv1.GridPosition{X: 5, Y: 8},
-		}),
-		cenv(nextID(), &vttv1.EventsRetracted{
-			FromSequence: 5, ToSequence: 5, Reason: "misclick",
-		}),
-	)
-
-	st, err := campaign.FoldPrefix(log)
-	if err != nil {
-		t.Fatalf("FoldPrefix over a log holding a marker: %v", err)
-	}
-	tok, ok := st.Tokens["t1"]
-	if !ok {
-		t.Fatal("want token t1 present: no envelope removes a token from the world")
-	}
-	if tok.X != 5 || tok.Y != 8 {
-		t.Fatalf("t1 at (%d,%d), want (5,8): the move at seq 5 happened and cannot be taken back",
-			tok.X, tok.Y)
-	}
-}
-
 // TestCampaignOffersNoWayToUnmakeHistory pins the removal itself as an
 // invariant rather than as the absence of one named method: no exported entry
 // point on *Campaign undoes or retracts anything.

@@ -125,23 +125,21 @@ func foldEvents(events []*vttv1.Envelope) (*engine.State, error) {
 // advances the live projection. Any validation error writes nothing (spec §7).
 // Returns errPoisoned without touching the log if the Campaign is poisoned
 // (see the Campaign doc comment) — reopen the Campaign to recover.
+//
+// THERE IS NO EventsRetracted GUARD ANY MORE, and the reason it could go is
+// worth stating rather than inferring from its absence. Append and AppendBatch
+// each refused that payload outright for one day — the marker's writer had
+// left but the message had not, and engine.Apply's no-op arm would have let
+// one validate and persist into a log where it meant nothing. Both the arm and
+// the message left the contract on 2026-08-31 (spec
+// 2026-08-30-retraction-leaves), so no envelope can carry the payload at all
+// and the guard has nothing left to guard: the type system now says what the
+// runtime check said.
 func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.poisoned {
 		return 0, errPoisoned
-	}
-	// NOTHING APPENDS AN EventsRetracted. There is no longer a path that
-	// produces one — the marker's only writer left with retraction on
-	// 2026-08-31 — and the payload survives solely because the contract has
-	// not caught up yet (Task 7 deletes the message and this guard with it).
-	//
-	// THE GUARD IS LOAD-BEARING, not a nicety: engine.Apply has an explicit
-	// NO-OP arm for this payload ("handled by campaign rebuild, not in-line"),
-	// so the validating fold below would accept it and the marker would
-	// persist into a log where it now means nothing at all.
-	if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-		return 0, errors.New("campaign: EventsRetracted is not an appendable event; the log only goes forward")
 	}
 	if env.Payload == nil {
 		return 0, engine.ErrUnknownVariant
@@ -289,10 +287,11 @@ func newSessionID() (string, error) {
 // session-open check — exactly as two sequential Append calls would behave
 // (see stampSessionIDAgainst).
 //
-// Rejects a zero-length batch and any EventsRetracted envelope — nothing
-// produces one at all now (see Append's own guard) — exactly as Append does
-// per-event. Returns errPoisoned without touching the log if the Campaign is
-// poisoned (see the Campaign doc comment) — reopen the Campaign to recover.
+// Rejects a zero-length batch, and rejects an envelope with no payload at all
+// exactly as Append does per-event (see Append's doc comment for the guard
+// that used to stand beside that one and why it no longer needs to). Returns
+// errPoisoned without touching the log if the Campaign is poisoned (see the
+// Campaign doc comment) — reopen the Campaign to recover.
 // A post-persist live-apply failure poisons the Campaign, exactly matching
 // Append's poison contract.
 func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
@@ -305,9 +304,6 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 		return 0, errors.New("campaign: append batch must not be empty")
 	}
 	for _, env := range envs {
-		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			return 0, errors.New("campaign: EventsRetracted is not an appendable event; the log only goes forward")
-		}
 		if env.Payload == nil {
 			return 0, engine.ErrUnknownVariant
 		}

@@ -961,46 +961,6 @@ func TestSpectatorCommandDenied(t *testing.T) {
 	}
 }
 
-// TestAnAgentsRetractionIsRefusedAndChangesNothing is the end-to-end statement
-// that retraction has left the gateway, and it REPLACES the test that pinned
-// the opposite (TestAgentRetractEventsBroadcastToAll: an agent retracts, the
-// marker reaches every client, the result carries the marker's sequence).
-//
-// The agent is the seat that used to be allowed, so it is the one worth
-// asking. "Refused" and "wrote nothing" are separate claims and both are
-// asserted: the command comes back ok=false with a reason, AND the log's head
-// is exactly where it was. A refusal that had nonetheless appended a marker
-// would satisfy the first and fail the second, which is why the second is
-// here.
-//
-// Patrik, 2026-08-30: the log only goes forward. A retraction tries to make
-// something not have happened, and it cannot, because the player has already
-// read it.
-func TestAnAgentsRetractionIsRefusedAndChangesNothing(t *testing.T) {
-	f := newGWFixture(t)
-	before := f.head(t)
-	agentConn := f.dial(f.agentToken, gwSeedHead)
-
-	sendCommand(t, agentConn, &vttv1.ClientCommand{
-		RequestId: "r-undo",
-		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-			FromSequence: gwSeedHead, ToSequence: gwSeedHead, Reason: "test retraction",
-		}},
-	})
-	result := readResult(t, agentConn)
-	if result.Ok {
-		t.Fatal("an agent retraction was accepted; no seat may retract any more")
-	}
-	if result.Error == "" {
-		t.Fatal("a refusal must say why: a client shown ok=false and no reason cannot tell " +
-			"a denied command from a broken one")
-	}
-	if after := f.head(t); after != before {
-		t.Fatalf("the log head moved from %d to %d on a refused retraction: nothing was retracted, "+
-			"but something was written", before, after)
-	}
-}
-
 // TestMalformedFrameClosesOnlyThatConnection covers isolation: a
 // syntactically invalid frame closes the sender's own connection, but a
 // second, unrelated connection stays fully live.

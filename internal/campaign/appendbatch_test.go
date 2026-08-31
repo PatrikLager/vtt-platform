@@ -65,25 +65,6 @@ func TestAppendBatchRejectsEmptyBatch(t *testing.T) {
 	}
 }
 
-// TestAppendBatchRejectsEventsRetractedEnvelope mirrors Append's guard: an
-// EventsRetracted envelope anywhere in the batch is rejected — nothing
-// produces one now that retraction has left the platform — and rejecting it
-// persists nothing from the batch at all.
-func TestAppendBatchRejectsEventsRetractedEnvelope(t *testing.T) {
-	c := openTemp(t)
-	envs := []*vttv1.Envelope{
-		cenv(nextID(), &vttv1.SceneCreated{SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10}),
-		cenv(nextID(), &vttv1.EventsRetracted{FromSequence: 1, ToSequence: 1, Reason: "x"}),
-	}
-	if _, err := c.AppendBatch(envs); err == nil {
-		t.Fatal("want error appending a batch containing an EventsRetracted envelope")
-	}
-	st := c.State()
-	if _, ok := st.Scenes["scn"]; ok {
-		t.Fatal("want scene NOT present: the whole batch must be rejected, including the valid SceneCreated before it")
-	}
-}
-
 // TestAppendBatchMidBatchValidationFailurePersistsNothing is the core
 // atomicity guarantee: the second event of a three-event batch is invalid
 // (TokenMoved for an unknown token). Nothing from the batch may persist —

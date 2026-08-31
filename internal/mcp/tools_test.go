@@ -41,7 +41,7 @@ import (
 // hand-written set can notice it is gone.
 var wantCommandToolNames = []string{
 	"move_token", "create_scene", "add_actor", "place_token",
-	"start_session", "end_session", "retract_events",
+	"start_session", "end_session",
 	"use_ability", "remove_condition",
 	"add_narration", "upsert_note", "delete_note",
 	"load_adventure",

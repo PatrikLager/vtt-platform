@@ -312,15 +312,6 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "start_session"
 	case *vttv1.ClientCommand_EndSession:
 		return "end_session"
-	// retract_events has NO commandRoles row (retraction left the platform,
-	// 2026-08-31) and is refused for every role. The NAME still resolves, and
-	// deliberately: an unlisted arm answers "", so the refusal a DM reads
-	// becomes `may not issue ""` — the exact signature
-	// TestEveryClientCommandHasRoleCells' doc names as the bug that test
-	// exists to catch. Naming the command costs one line and dies with the
-	// oneof arm in Task 7, which the compiler will not let anyone forget.
-	case *vttv1.ClientCommand_RetractEvents:
-		return "retract_events"
 	case *vttv1.ClientCommand_UseAbility:
 		return "use_ability"
 	case *vttv1.ClientCommand_RemoveCondition:

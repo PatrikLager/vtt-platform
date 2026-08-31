@@ -1,7 +1,6 @@
 package gateway_test
 
 import (
-	"errors"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -218,34 +217,6 @@ func TestToEventEndSessionProducesSessionEnded(t *testing.T) {
 	}
 }
 
-// TestToEventKnowsNothingOfRetraction REPLACES the test that pinned the arm it
-// removes (TestToEventRetractEventsReturnsSentinel: nil envelope plus an error
-// wrapping ErrIsRetraction, carrying the parsed range out via errors.As, so
-// that server.go could hand it to campaign.Undo).
-//
-// There is no such caller now, and the sentinel and its range type are gone
-// with it. What is left is the DEFAULT: retract_events is a oneof arm ToEvent
-// has no case for, so it comes back as the unknown command it has become. That
-// is a statement about conversion only — Authorize refuses the command before
-// this function is ever reached (TestNoRoleMayRetract), which is where the
-// refusal a client sees comes from.
-//
-// It dies with the contract arm it names, in Task 7.
-func TestToEventKnowsNothingOfRetraction(t *testing.T) {
-	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
-	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
-		RetractEvents: &vttv1.RetractEvents{FromSequence: 3, ToSequence: 5, Reason: "mistake"},
-	}}
-
-	env, err := gateway.ToEvent(cmd, p)
-	if env != nil {
-		t.Fatalf("want no envelope for a retraction command, got %v", env)
-	}
-	if !errors.Is(err, gateway.ErrUnknownCommand) {
-		t.Fatalf("want ErrUnknownCommand for a retraction command, got %v", err)
-	}
-}
-
 // TestToEventRemoveConditionProducesConditionRemoved covers the ONE Task 6
 // command that DOES flow through ToEvent (use_ability does not — see
 // server.go's handleCommand): a plain single-Envelope conversion, exactly
@@ -458,11 +429,6 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
 		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
 			"same shape as load_adventure directly above",
-		"retract_events": "retraction has left the platform (spec " +
-			"2026-08-30-retraction-leaves): there is no arm, no handler and no " +
-			"role that may issue it — Authorize refuses it before conversion is " +
-			"reached (TestNoRoleMayRetract). Transitional: the entry goes when " +
-			"the contract arm does, in Task 7",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",

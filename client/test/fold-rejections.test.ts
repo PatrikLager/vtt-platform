@@ -307,26 +307,6 @@ test("a narration anchor pointing at the immediately preceding event is ACCEPTED
   expect(st.Sessions).toHaveLength(1);
 });
 
-// --- the log only goes forward ----------------------------------------------
-
-test("a retraction marker in the log removes NOTHING — the fold is one pass", () => {
-  // Retraction left the platform (Patrik, 2026-08-30). This asserts the
-  // ABSENCE of the machinery that used to read this marker: before the
-  // removal both scenes were erased and this expected 0.
-  //
-  // The marker can still reach a client, because the ClientCommand/Event
-  // oneofs still carry the arm; when the contract-deletion task removes
-  // EventsRetracted this test cannot be written any more and dies with it.
-  // Until then it is the only thing standing between "we deleted the second
-  // pass" and "we deleted the second pass and nobody checked".
-  const st = fold([
-    started, scene(2, "s1"), scene(3, "s2"),
-    env(4, { eventsRetracted: { fromSequence: "2", toSequence: "3", reason: "undo" } }),
-  ]);
-  expect(Object.keys(st.Scenes)).toHaveLength(2);
-  expect(st.Sessions).toHaveLength(1);
-});
-
 // --- forward compatibility --------------------------------------------------
 
 test("an event kind the fold does not know is skipped, not fatal", () => {

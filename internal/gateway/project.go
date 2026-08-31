@@ -799,32 +799,6 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// world, and the client's session panel is built from them.
 		return forwarded
 
-	case *vttv1.Envelope_EventsRetracted:
-		// A DEAD ARM, kept only because the contract has not caught up yet.
-		// Retraction has left the platform (spec 2026-08-30-retraction-leaves):
-		// no command produces this payload, no role may ask for one, and since
-		// 2026-08-31 nothing can append one either — campaign.Undo, the last
-		// writer, is gone. The oneof field still exists, and
-		// TestEveryEnvelopePayloadArmHasAnExplicitRuling walks the descriptor
-		// and demands a ruling for every arm the contract declares — so this
-		// arm stands until the field goes, and goes with it.
-		//
-		// WITHHELD, which is the reverse of the ruling it replaces. That one
-		// forwarded the range and cloned the marker to strip its free-text
-		// reason, because withholding was then the DANGEROUS direction: while
-		// the RECIPIENT's fold skipped retracted sequence numbers, a viewer
-		// who missed the marker went on applying an event the table had agreed
-		// did not happen. Neither recipient fold does that now —
-		// client/src/fold.ts and internal/harness.Fold are both single-pass —
-		// so the range buys a projected seat nothing, while `reason` is free
-		// text supplied by whoever typed it and is the NoteUpserted ruling's
-		// own argument under a different message name. With the benefit gone,
-		// the cost decides. (campaign.FoldPrefix, the server's own replay, is
-		// single-pass with them since 2026-08-31: every fold in the platform
-		// now applies what it is handed, in order, and none of them reads a
-		// marker's range.)
-		return withheld
-
 	case *vttv1.Envelope_NarrationAdded:
 		// RULED, not obvious, and the opposite of the note ruling below.
 		// Narration is ADDRESSED: someone at the table wrote it to be heard,

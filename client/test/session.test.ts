@@ -7,7 +7,6 @@ import {
   ActorAddedSchema,
   TokenPlacedSchema,
   TokenMovedSchema,
-  EventsRetractedSchema,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { Session } from "../src/session";
 
@@ -75,29 +74,6 @@ test("a session folds the replayed log into state", async () => {
 
     expect(s.head).toBe(4n);
     expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
-    s.close();
-  } finally {
-    gw.stop();
-  }
-});
-
-test("a retraction arriving later changes NOTHING — the token stays where it moved", async () => {
-  // The absence, asserted end to end rather than only at the fold: an
-  // EventsRetracted can still reach a client over the wire until the
-  // contract-deletion task removes the arm, and until then this is what says
-  // the client ignores it. Before the removal this expected {X: 0, Y: 0}.
-  const gw = gatewayServing([
-    ...world,
-    { event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 5, y: 5 } }) }) },
-    { event: env(6, { case: "eventsRetracted", value: create(EventsRetractedSchema, { fromSequence: 5n, toSequence: 5n, reason: "undo" }) }) },
-  ]);
-  try {
-    const s = new Session(gw.url, "tok");
-    await s.start();
-    await until(() => s.head === 6n, "the replay to reach sequence 6");
-
-    expect(s.head).toBe(6n);
-    expect(s.state.Tokens["t1"]).toMatchObject({ X: 5, Y: 5 });
     s.close();
   } finally {
     gw.stop();

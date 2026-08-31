@@ -5,14 +5,14 @@ package mcp_test
 // headSequence; get_events_since paginates that same history with correct
 // `more`-flag boundary semantics and returns protojson envelopes (sequence
 // as a STRING inside each one — the convention divergence the tool's own
-// Description documents); a fold-across-an-EventsRetracted-marker case
-// (mirroring internal/harness/fold_test.go's own transitional case,
-// 2026-08-31-retraction-leaves task-4-brief.md) proves get_state applies
-// every envelope harness.Fold hands it — there is no code path left that
-// skips by sequence, at this tool boundary any more than in the harness
-// itself. NO TOOL COUNT HERE — the one that used to sit at the end of this
-// sentence said 9 while the server served 28. The count is asserted below,
-// against the live registry.
+// Description documents). A fold-across-an-EventsRetracted-marker case stood
+// beside those until 2026-08-31, mirroring internal/harness/fold_test.go's
+// own transitional one; both died with the message they had to construct
+// (2026-08-31-retraction-leaves Task 7), and what they proved — get_state
+// applies every envelope harness.Fold hands it — is now structural, because
+// no payload exists that any fold could skip by sequence. NO TOOL COUNT HERE
+// — the one that used to sit at the end of this sentence said 9 while the
+// server served 28. The count is asserted below, against the live registry.
 //
 // canned/seedEvents below are a parallel, not shared, implementation of
 // internal/harness/fold_test.go's foldEnv helper (unexported in package
@@ -52,8 +52,6 @@ func canned(seq int64, id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	}
 	return e
 }
@@ -223,45 +221,6 @@ func TestGetStateReturnsFoldedTokenPositionAndHeadSequence(t *testing.T) {
 	}
 	if st.HeadSequence != 5 {
 		t.Fatalf("get_state: headSequence = %d, want 5", st.HeadSequence)
-	}
-}
-
-// TestGetStateAppliesEveryEnvelopeEvenAcrossAnEventsRetractedMarker is the
-// mcp-side mirror of internal/harness/fold_test.go's own
-// TestFoldAppliesEveryEnvelopeEvenAcrossAnEventsRetractedMarker
-// (2026-08-31-retraction-leaves task-4-brief.md fix round, C2): get_state
-// calls harness.Fold directly (handleGetState), so the same removal RED
-// applies here at the tool boundary — seeding a log that CONTAINS an
-// EventsRetracted marker retracting the TokenMoved must still show tok-1 at
-// its MOVED-TO position (9,9), because Fold no longer has any code path
-// that skips by sequence; a marker envelope is just another no-op
-// engine.Apply case (apply.go's EventsRetracted arm).
-//
-// TRANSITIONAL BY DESIGN, same as its harness-side mirror: this test
-// constructs an EventsRetracted message, which Task 7 of
-// 2026-08-31-retraction-leaves deletes from the contract. It cannot survive
-// that deletion and is not meant to — once the message cannot exist, this
-// case collapses into the ordinary basicChain() one above.
-func TestGetStateAppliesEveryEnvelopeEvenAcrossAnEventsRetractedMarker(t *testing.T) {
-	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
-	cs, cleanup := startSession(t, fs.wsURL())
-	defer cleanup()
-
-	conn := fs.firstConn(t)
-	events := basicChain()
-	events = append(events, canned(6, "ev-retract", &vttv1.EventsRetracted{FromSequence: 5, ToSequence: 5, Reason: "undo the move"}))
-	seedEvents(t, conn, events...)
-
-	st := waitForHeadSequence(t, cs, 6)
-	tok, ok := st.Tokens["tok-1"]
-	if !ok {
-		t.Fatalf("get_state: Tokens[\"tok-1\"] missing: %+v", st)
-	}
-	if tok.X != 9 || tok.Y != 9 {
-		t.Fatalf("get_state: tok-1 position = (%d,%d), want (9,9) — Fold must apply every envelope, including one an EventsRetracted marker used to cover", tok.X, tok.Y)
-	}
-	if st.HeadSequence != 6 {
-		t.Fatalf("get_state: headSequence = %d, want 6 (historySnapshot's head tracks the last seeded sequence regardless of what Fold does with it)", st.HeadSequence)
 	}
 }
 

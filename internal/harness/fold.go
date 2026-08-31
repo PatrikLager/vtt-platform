@@ -18,12 +18,13 @@ import (
 // internal/store (the P1 boundary this whole package is bound by).
 //
 // Single pass, since 2026-08-31-retraction-leaves task-4-brief.md: Fold no
-// longer collects a skip-set from an EventsRetracted marker (the message
-// itself still lives in the contract until Task 7), because there is no
-// code path left that skips by sequence at all. Any envelope whose payload
-// engine.Apply reports as engine.ErrUnknownVariant is skipped (not failed
-// on) — the same forward-compatibility behavior the server's own replay
-// gives an event variant it doesn't recognize yet.
+// longer collects a skip-set from an EventsRetracted marker, because there is
+// no code path left that skips by sequence at all. Task 7 of the same spec
+// then deleted the message itself, so there is no longer a payload any fold
+// could be asked to skip on. Any envelope whose payload engine.Apply reports
+// as engine.ErrUnknownVariant is skipped (not failed on) — the same
+// forward-compatibility behavior the server's own replay gives an event
+// variant it doesn't recognize yet.
 func Fold(events []*vttv1.Envelope) (*engine.State, error) {
 	st := engine.NewState()
 	for _, env := range events {

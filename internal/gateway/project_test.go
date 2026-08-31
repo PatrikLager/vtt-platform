@@ -53,8 +53,6 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
 	case *vttv1.NoteDeleted:
 		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
-	case *vttv1.EventsRetracted:
-		env.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.ActorControlGranted:
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
 	case *vttv1.ActorControlRevoked:
@@ -1847,47 +1845,6 @@ func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 	}
 	if _, ok := viewerState.Tokens["t-hero"]; !ok {
 		t.Error("a player must still be able to see their own character")
-	}
-}
-
-// TestARetractionReachesNoProjectedSeat REPLACES the test that pinned the
-// opposite ruling (TestARetractionReachesThePlayerWithoutItsReason: the range
-// reaches every seat, the free-text reason is stripped out of a clone).
-//
-// That ruling was bought entirely by the RECIPIENT's fold: while that fold
-// SKIPPED retracted sequence numbers, a viewer who missed the marker went on
-// applying an event the table had agreed did not happen, so withholding it was
-// the dangerous direction and forwarding it cost only the reason. Neither
-// recipient fold does that now — client/src/fold.ts and internal/harness.Fold
-// are both single-pass — and retraction is leaving the platform entirely, so a
-// marker forwarded to a player buys that player nothing at all, while its
-// `reason` field stays exactly the free-text channel the NoteUpserted ruling
-// refuses. With the benefit gone the cost decides it, and the answer flips.
-//
-// The DM half is unchanged and is the control: the identity projection is
-// byte-for-byte what it is today (spec §3.1, exit criterion 8), so a payload
-// no longer offered to players still reaches the log's own reader untouched.
-func TestARetractionReachesNoProjectedSeat(t *testing.T) {
-	st := twoRooms()
-	pr := gateway.NewProjector(player())
-	firstPlace(pr, st)
-
-	in := envelope(8, &vttv1.EventsRetracted{FromSequence: 6, ToSequence: 6,
-		Reason: "mis-keyed: the archer is at 19,8"})
-	for _, e := range pr.Project(in, st) {
-		if r := e.GetEventsRetracted(); r != nil {
-			t.Fatalf("a retraction reached a player carrying %q; no seat is offered one, and "+
-				"its reason is free text the projection must never pass on", r.GetReason())
-		}
-	}
-
-	dm := gateway.NewProjector(gateway.Viewer{ParticipantID: "dm", Role: identity.RoleDM})
-	out := dm.Project(in, st)
-	if len(out) != 1 {
-		t.Fatalf("the DM's stream is the log itself: one envelope, got %d", len(out))
-	}
-	if out[0] != in {
-		t.Fatal("the DM reads the very envelope they were sent, not a copy")
 	}
 }
 

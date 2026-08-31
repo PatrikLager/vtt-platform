@@ -48,9 +48,6 @@ func TestMoveTokenRequestRoundTrip(t *testing.T) {
 func TestEnvelopeRoundTrip(t *testing.T) { roundTrip(t, "envelope.json", &vttv1.Envelope{}) }
 
 func TestSceneEnvelopeRoundTrip(t *testing.T) { roundTrip(t, "scene_envelope.json", &vttv1.Envelope{}) }
-func TestRetractionEnvelopeRoundTrip(t *testing.T) {
-	roundTrip(t, "retraction_envelope.json", &vttv1.Envelope{})
-}
 func TestClientCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "client_command.json", &vttv1.ClientCommand{})
 }

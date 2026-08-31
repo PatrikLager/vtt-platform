@@ -27,8 +27,6 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.AttackRolled:
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.AbilityUsed:
 		e.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
 	case *vttv1.ResourceChanged:
@@ -696,23 +694,6 @@ func TestNoteDeletedAccept(t *testing.T) {
 
 	if _, ok := st.Notes["town-hollowreach"]; ok {
 		t.Fatal("want note town-hollowreach absent after delete")
-	}
-}
-
-func TestEventsRetractedIsNoOpInline(t *testing.T) {
-	st := seedScene(t)
-	before := st.Snapshot()
-
-	err := engine.Apply(st, env(3, &vttv1.EventsRetracted{
-		FromSequence: 1, ToSequence: 2, Reason: "mistake",
-	}))
-	if err != nil {
-		t.Fatalf("want nil error, got %v", err)
-	}
-
-	after := st.Snapshot()
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("EventsRetracted must not mutate state in-line")
 	}
 }
 

@@ -5,7 +5,6 @@ import {
   SessionStartedSchema,
   TokenMovedSchema,
   NarrationAddedSchema,
-  EventsRetractedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed } from "../src/view/feed";
@@ -74,25 +73,6 @@ test("in-character speech keeps its speaker", () => {
   expect(feed[0]!.narrations[0]!.as).toBe("Goblin Cutter");
 });
 
-test("a retraction marker hides NOTHING — every envelope in the log reaches the feed", () => {
-  // Retraction left the platform (Patrik, 2026-08-30), and the feed's job is
-  // still to agree with the fold about what happened. The fold now applies
-  // every envelope, so the feed shows every envelope. This asserts the
-  // ABSENCE of the hiding: before the removal it was [1], because 2 and 3
-  // were erased and 4 was bookkeeping nobody rendered.
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 9, y: 9 }),
-    said(3, "A misstep, undone.", [2, 2]),
-    env(4, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 2n, toSequence: 3n, reason: "undo" }),
-    }),
-  ]);
-  // 3 groups onto 2, the move it anchors; 4 is its own beat like any other.
-  expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 4]);
-});
-
 test("narration anchored to a sequence that is not present still shows", () => {
   // A spectator who connected mid-session has a truncated log. Dropping the
   // narration because its anchor is below their cursor would silently hide
@@ -100,20 +80,6 @@ test("narration anchored to a sequence that is not present still shows", () => {
   const feed = buildFeed([said(9, "Earlier, a bargain was struck.", [2, 2])]);
   expect(feed).toHaveLength(1);
   expect(feed[0]!.narrations[0]!.text).toBe("Earlier, a bargain was struck.");
-});
-
-test("the retraction marker is an ordinary envelope now, with a beat of its own", () => {
-  // It used to be filtered out as bookkeeping, on the grounds that rendering
-  // it would narrate an erasure. Nothing is erased, so there is nothing to
-  // treat specially: it is an event that happened, shown where it happened.
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    env(2, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 1n, toSequence: 1n, reason: "undo" }),
-    }),
-  ]);
-  expect(feed.map((e) => Number(e.seq))).toEqual([1, 2]);
 });
 
 // --- anchor boundaries, grouping rules, and what the feed refuses to show ----

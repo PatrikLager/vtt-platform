@@ -287,29 +287,6 @@
     "name": "end_session"
   },
   {
-    "description": "Retract a range of events from the record with a stated reason.",
-    "inputSchema": {
-      "properties": {
-        "fromSequence": {
-          "type": "integer"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "toSequence": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "fromSequence",
-        "toSequence",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "name": "retract_events"
-  },
-  {
     "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
     "inputSchema": {
       "properties": {

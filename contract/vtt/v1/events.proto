@@ -402,14 +402,6 @@ message SessionStarted {
 
 message SessionEnded {}
 
-// Compensating undo marker (spec §6). Retraction events cannot themselves
-// be retracted. Sequences follow wire convention 1 (int64 → JSON string).
-message EventsRetracted {
-  int64 from_sequence = 1;
-  int64 to_sequence = 2;
-  string reason = 3;
-}
-
 message AbilityUsed {
   string actor_id = 1;
   string ability_id = 2;
@@ -474,7 +466,6 @@ message Envelope {
     TokenPlaced token_placed = 14;
     SessionStarted session_started = 15;
     SessionEnded session_ended = 16;
-    EventsRetracted events_retracted = 17;
     AbilityUsed ability_used = 18;
     ResourceChanged resource_changed = 19;
     ConditionApplied condition_applied = 20;

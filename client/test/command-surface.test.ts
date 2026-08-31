@@ -82,23 +82,6 @@ export const COMMAND_SURFACE: Record<
   // which of the two this row claims.
   addNarration: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
-  // NOT REMOVED FROM THIS TABLE YET, and the delay is the honest answer
-  // rather than a shortcut. Retraction left the client in this task — no
-  // builder, no control, no fold arm — but `retract_events` is still an arm of
-  // the ClientCommand oneof, and commandCases() reads that oneof from the
-  // generated descriptor. Deleting this row now would fail "every command the
-  // contract defines has a declared human surface" for a command that really
-  // does exist on the wire and really has no control. The row goes when the
-  // proto arm goes, and "the table declares nothing the contract does not
-  // define" is what will demand it that day.
-  retractEvents: {
-    surface: "not-user-issued",
-    why:
-      "Retraction left the platform (Patrik, 2026-08-30): a retraction's " +
-      "purpose is to make something not have happened, and it cannot, " +
-      "because the player already read the log. No client builds it and no " +
-      "control sends it; the proto arm is deleted in its own task.",
-  },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },

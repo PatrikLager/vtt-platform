@@ -35,7 +35,6 @@ var theCommandTools = []string{
 	"place_token",
 	"start_session",
 	"end_session",
-	"retract_events",
 	"use_ability",
 	"remove_condition",
 	"add_narration",

@@ -202,9 +202,11 @@ all of them.** "All fifteen" stood here until 2026-08-25: it was true when
 fifteen WAS the whole contract, and stayed on the page as the contract grew
 past it, turning a corpus statistic into a false completeness claim. Door,
 map, viewpoint, join-link and participant-promotion commands are among those
-with no golden today — examples, not the complete list; `retract_events`
-joined them the moment sub-project 13 deleted the corpus's last retraction
-step. Derive the current gap by diffing the scenarios' command keys against
+with no golden today — examples, not the complete list. `retract_events` was
+listed here beside them for the days between sub-project 13 deleting the
+corpus's last retraction step and the same sub-project deleting the command
+itself: it is not a gap now, because it is not a command. Derive the current
+gap by diffing the scenarios' command keys against
 `contract/gen/tools/tools.json` rather than trusting a list written here,
 which is how this sentence went wrong in the first place.
 

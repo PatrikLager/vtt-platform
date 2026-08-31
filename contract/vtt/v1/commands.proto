@@ -59,12 +59,6 @@ message StartSession {
 
 message EndSession {}
 
-message RetractEvents {
-  int64 from_sequence = 1;
-  int64 to_sequence = 2;
-  string reason = 3;
-}
-
 message UseAbility {
   string actor_id = 1;
   string ability_id = 2;
@@ -111,11 +105,14 @@ message LoadMap { string map_id = 1; }
 // (internal/gateway/server.go's handleJoinDoor) says so outright in its own
 // doc comment. Where a spectator points their camera is not a fact about the
 // campaign: it is a view preference like zoom, so logging it would replay
-// forever, add story-panel noise, and make it RETRACTABLE, letting a DM
-// "undo" somebody having looked at Asme. A perch therefore lives on the
-// connection and the client re-sends it on reconnect. This message and the
-// oneof field are added here; Task 6 wires the handler that gives the
-// comment above a body.
+// forever, add story-panel noise, and — the log only going forward since
+// 2026-08-31 — stay in the record for good. That last clause used to read
+// "make it RETRACTABLE, letting a DM 'undo' somebody having looked at Asme",
+// which was true while retraction existed and stopped being true when
+// RetractEvents left this file: the cost is now PERMANENCE, not a DM's power
+// to unsee. A perch therefore lives on the connection and the client re-sends
+// it on reconnect. This message and the oneof field are added here; Task 6 of
+// the visibility arc wires the handler that gives the comment above a body.
 //
 // An empty actor_id un-perches.
 message SetViewpoint {
@@ -131,7 +128,6 @@ message ClientCommand {
     PlaceToken place_token = 13;
     StartSession start_session = 14;
     EndSession end_session = 15;
-    RetractEvents retract_events = 16;
     UseAbility use_ability = 17;
     RemoveCondition remove_condition = 18;
     AddNarration add_narration = 19;

@@ -29,12 +29,12 @@ const (
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
-// return leaves st unchanged. AttackRolled, EventsRetracted, AbilityUsed,
-// NarrationAdded, and AdventureLoaded are deliberate no-ops here (spec §5;
-// world-layer spec §4 for NarrationAdded — the feed IS the log, read via
-// the existing event streams; adventure-format spec §3 for AdventureLoaded
-// — AbilityUsed's pattern, meaning arrives via the other events in the same
-// Compile batch, internal/adventure).
+// return leaves st unchanged. AttackRolled, AbilityUsed, NarrationAdded, and
+// AdventureLoaded are deliberate no-ops here (spec §5; world-layer spec §4 for
+// NarrationAdded — the feed IS the log, read via the existing event streams;
+// adventure-format spec §3 for AdventureLoaded — AbilityUsed's pattern,
+// meaning arrives via the other events in the same Compile batch,
+// internal/adventure).
 // Complexity: one switch over every event type. ADR-003 mandates a SINGLE
 // fold, so this is dispatch breadth, not tangled logic — splitting it into
 // per-event helpers would scatter the very thing ADR-003 exists to keep in
@@ -302,9 +302,6 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_AttackRolled:
 		return nil // testimony, not state — rules meaning arrives in sub-project 5
-
-	case *vttv1.Envelope_EventsRetracted:
-		return nil // handled by campaign rebuild, not in-line
 
 	case *vttv1.Envelope_AbilityUsed:
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)
