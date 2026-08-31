@@ -461,10 +461,11 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		// campaign.FoldPrefix is engine.Apply behind the campaign's own replay
 		// semantics (see FoldPrefix's own doc comment: it exists so the gateway
 		// does not grow a second event-application loop). Folding the PROJECTION
-		// with it is the left-hand side of §4.3. It used to be named here as the
-		// twin of internal/harness.Fold and client/src/fold.ts, which mirrored
-		// its two retraction passes; both are single-pass since 2026-08-31 and
-		// FoldPrefix collapses to match when retraction leaves campaign.
+		// with it is the left-hand side of §4.3. It was named here as the twin
+		// of internal/harness.Fold and client/src/fold.ts, which mirrored its
+		// two retraction passes; all three are single-pass as of 2026-08-31, so
+		// the three folds are once again the same loop written three times —
+		// apply what you are handed, in order.
 		got, err := campaign.FoldPrefix(projected)
 		if err != nil {
 			t.Fatalf("prefix %d (seq %d): folding this seat's PROJECTION failed — a stream the "+

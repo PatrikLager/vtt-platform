@@ -10,11 +10,10 @@ import (
 
 // TestPoisonedCampaignRejectsAllOperations is a white-box test (package
 // campaign, not campaign_test): the two paths that set poisoned are both
-// post-persist and defensively unreachable in normal operation (Append
-// validates on a snapshot before persisting; Undo dry-runs the full fold
-// before persisting the marker), so there is no way to reach a poisoned
-// Campaign through the public API alone. This test sets c.poisoned directly
-// to exercise the guard on every method.
+// post-persist and defensively unreachable in normal operation — Append and
+// AppendBatch each fold a snapshot clone before persisting anything — so
+// there is no way to reach a poisoned Campaign through the public API alone.
+// This test sets c.poisoned directly to exercise the guard on every method.
 func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "campaign.db")
@@ -41,10 +40,6 @@ func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 
 	if _, err := c.AppendBatch([]*vttv1.Envelope{env}); !errors.Is(err, errPoisoned) {
 		t.Fatalf("AppendBatch on poisoned Campaign: got %v, want errPoisoned", err)
-	}
-
-	if _, err := c.Undo(1, 1, "reason", "e2", "dm", "test-participant"); !errors.Is(err, errPoisoned) {
-		t.Fatalf("Undo on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 
 	if st := c.State(); st != nil {

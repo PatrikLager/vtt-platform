@@ -8,10 +8,10 @@ import (
 )
 
 // TestStatesEqualDiscriminatesConditions pins F9 for the campaign keystone
-// oracle: statesEqual (used by TestRebuildEqualsLiveProperty, TestExitScenario,
-// and the undo restore-to-pre-batch assertion) must compare the
-// engine.State.Conditions dimension this branch added — otherwise a
-// rebuild-vs-live or undo divergence in conditions passes silently.
+// oracle: statesEqual (used by TestRebuildEqualsLiveProperty and
+// TestExitScenario) must compare the engine.State.Conditions dimension this
+// branch added — otherwise a rebuild-vs-live divergence in conditions passes
+// silently.
 func TestStatesEqualDiscriminatesConditions(t *testing.T) {
 	mk := func(conds []engine.ActorCondition) *engine.State {
 		st := engine.NewState()

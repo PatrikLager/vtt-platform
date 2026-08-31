@@ -395,10 +395,9 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // dangling reference where the DM's identical undo folded cleanly — because
 // the goblin's existence reached the DM at its own sequence and the player at
 // the revealing one. That asymmetry left with undo (2026-08-31: the log only
-// goes forward): no command produces a ranged marker and no role may ask for
-// one, so stamping a derived envelope with its cause's number costs a seat
-// nothing. campaign.Undo can still append one; nothing reaches it, and Task 5
-// deletes it — the same wording classify's own arm uses, for the same reason.
+// goes forward): no command produces a ranged marker, no role may ask for one,
+// and campaign.Undo — the last thing that could append one — is gone too, so
+// stamping a derived envelope with its cause's number costs a seat nothing.
 //
 // Stamping also means several envelopes legitimately share one sequence, and
 // before this task every envelope had a unique one. An introduction batch can
@@ -444,44 +443,45 @@ func (pr *Projector) eyes(st *engine.State) []string {
 func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
-	// MEMORY CAN OUTLIVE THE WORLD, and forgetting has to be total. An undo
-	// covering a SceneCreated removes that scene from the state seat.receive
-	// re-folds (campaign.FoldPrefix skips retracted ranges) while these maps
-	// still hold it. Two things then go wrong, and dropping only `seen` fixes
-	// neither. st.Scenes is a VALUE map, so anything reported about the scene
-	// names the ZERO Scene and puts an empty scene id on the wire. And a scene
-	// id is CALLER-SUPPLIED, so the same id can be created again — at which
-	// point `scenes` still says "introduced", no introduction is re-sent, and
-	// every envelope about it lands on a scene the viewer's own fold dropped
-	// when it folded the retraction. Measured before this loop existed: the
-	// returning scene produced a TokenPlaced and a SceneSeen, and BOTH were
-	// rejected ("token placed in unknown scene", "scene seen for unknown
-	// scene") — spec §8's "the strict fold throws, taking the whole client down
-	// rather than merely showing too much", which is permanent here because
-	// client/src/session.ts re-folds its whole log on every event.
+	// pr.scenes AND pr.seen CANNOT OUTLIVE THE WORLD, and until 2026-08-31 they
+	// could. A loop stood here that forgot any scene missing from st, because an
+	// undo covering a SceneCreated removed that scene from the state seat.receive
+	// re-folds while these maps still held it. st.Scenes is a VALUE map, so
+	// anything reported about a scene it had lost named the ZERO Scene and put an
+	// empty scene id on the wire — measured then: the returning scene produced a
+	// TokenPlaced and a SceneSeen and BOTH were rejected ("token placed in
+	// unknown scene", "scene seen for unknown scene"), which spec §8 calls the
+	// worst failure available because client/src/session.ts re-folds its whole log
+	// on every event and the throw therefore recurs forever.
 	//
-	// POSITION IS FOR READING, NOT FOR CORRECTNESS, and that was measured
-	// rather than assumed: moving this loop below the introduction loop leaves
-	// the whole gateway suite green. The two cannot both fire for one scene in
-	// a single call, because they read the SAME st — a scene is either in it,
-	// in which case nothing here forgets it, or absent, in which case look()
-	// gave it no squares and the introduction loop never reaches it. It sits
-	// first because "forget what is gone, then introduce what is new" is the
-	// order a reader needs, not because anything depends on it.
+	// THE LOOP LEFT WITH RETRACTION, on a premise checked rather than assumed:
+	// nothing removes a scene from engine.State. engine.Apply's SceneCreated arm
+	// only inserts, DoorOpened/DoorClosed/SceneSeen only update in place, and no
+	// code anywhere deletes from st.Scenes. seat.received only grows, so the scene
+	// set of the fold it drives is monotone and pr.scenes is a subset of st.Scenes
+	// at every call. What was left was not a cheap guard but a SILENT one: the
+	// only thing that could now trigger it is a caller feeding one Projector
+	// states from two different logs, and quietly forgetting is the wrong answer
+	// to that — unreachable defence in this codebase fails LOUD (campaign's poison
+	// contract, receive's FAIL CLOSED).
 	//
-	// `actors` is deliberately NOT touched. Actors are not scene-scoped and
-	// pr.actors never forgets by design (see the Projector doc comment). An undo
-	// that reaches the ActorAdded itself leaves that map stale in the same way
-	// this loop fixes for scenes, and no test here covers it — a separate gap,
-	// recorded rather than quietly widened into by this loop.
-	for _, id := range sortedSet(pr.scenes) {
-		if _, exists := st.Scenes[id]; exists {
-			continue
-		}
-		delete(pr.scenes, id)
-		delete(pr.seen, id)
-		delete(pr.doors, id)
-	}
+	// SO WHY NOTHING RATHER THAN A LOUD GUARD, since that argument reaches only as
+	// far as "not this loop": because the gate decides it. This package is
+	// mutation-gated, so a guard here is a branch whose mutants must be killed by
+	// a test, and the only tests that could reach one are tests that build an
+	// impossible world by hand — three of them stood in project_test.go and went
+	// with the loop, which records which and what they said. A loud guard would
+	// buy the same unreachable branch back under a better name, and the reader
+	// after it would face this decision again with one more adjudication attached.
+	// The bare st.Scenes[id] in the SceneSeen walk below states the invariant
+	// instead, and says where it comes from.
+	//
+	// pr.actors WAS NEVER GUARDED BY IT and still is not, which is worth carrying
+	// forward rather than losing with the loop: actors are not scene-scoped and
+	// pr.actors never forgets by design (see the Projector doc comment). Nothing
+	// removes an actor from the world today either. The day something does, both
+	// maps need an answer chosen deliberately, and this note is where that reader
+	// should start.
 
 	for _, id := range sortedSceneIDs(now.squares) {
 		if pr.scenes[id] {
@@ -619,12 +619,13 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	// Walking the union keeps the scene in play for exactly one more step, and
 	// sameSet reports the difference between the last non-empty set and nothing.
 	for _, id := range sortedSceneIDsUnion(pr.seen, now.squares) {
-		// st.Scenes[id] IS PRESENT for every id this walk can produce, and the
-		// forgetting loop at the top of this function is what guarantees it:
-		// now.squares only holds scenes look() found in st, and pr.seen has just
-		// had every scene the world lost removed from it. A plain lookup rather
-		// than a guarded one, because a guard here would be a branch no test
-		// could reach.
+		// st.Scenes[id] IS PRESENT for every id this walk can produce, and since
+		// 2026-08-31 the world itself guarantees it rather than a forgetting
+		// loop above: now.squares only holds scenes look() found in st, pr.seen
+		// only ever gains a key for a scene that was in st when it was reported,
+		// and nothing removes a scene from st. A plain lookup rather than a
+		// guarded one, because a guard here would be a branch no test could
+		// reach.
 		sc := st.Scenes[id]
 		lit, inSight := now.squares[id]
 		if sameSet(pr.seen[id], lit) {
@@ -800,9 +801,10 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_EventsRetracted:
 		// A DEAD ARM, kept only because the contract has not caught up yet.
-		// Retraction is leaving the platform (spec
-		// 2026-08-30-retraction-leaves): no command produces this payload and
-		// no role may ask for one. The oneof field still exists, and
+		// Retraction has left the platform (spec 2026-08-30-retraction-leaves):
+		// no command produces this payload, no role may ask for one, and since
+		// 2026-08-31 nothing can append one either — campaign.Undo, the last
+		// writer, is gone. The oneof field still exists, and
 		// TestEveryEnvelopePayloadArmHasAnExplicitRuling walks the descriptor
 		// and demands a ruling for every arm the contract declares — so this
 		// arm stands until the field goes, and goes with it.
@@ -818,8 +820,9 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// text supplied by whoever typed it and is the NoteUpserted ruling's
 		// own argument under a different message name. With the benefit gone,
 		// the cost decides. (campaign.FoldPrefix, the server's own replay, is
-		// still two-pass until Task 5; it builds the WORLD a seat judges
-		// against, not the stream a seat folds.)
+		// single-pass with them since 2026-08-31: every fold in the platform
+		// now applies what it is handed, in order, and none of them reads a
+		// marker's range.)
 		return withheld
 
 	case *vttv1.Envelope_NarrationAdded:

@@ -849,8 +849,12 @@ func (h *soakHistories) waitAllCaughtUp(names []string, seq int64, timeout time.
 // closure that commits this step's bookkeeping into the model. RunSoak
 // calls apply ONLY after confirming the wire actually accepted the command
 // (result.Ok), so the model never assumes success ahead of the ground truth
-// the server returns (the same discipline internal/campaign/property_test.go's
-// doUndo uses for its own not-guaranteed-to-succeed action).
+// the server returns. internal/campaign/property_test.go's doUndo held the
+// same discipline for its own not-guaranteed-to-succeed action — it marked a
+// sequence retracted only after campaign.Undo returned success — and that is a
+// RECORD rather than a live cross-reference: the action and the method left
+// with retraction on 2026-08-31, and no sibling in that file replaces it
+// (doDeleteNote untracks its key BEFORE appending, which is the opposite).
 type soakStep struct {
 	issuer     string
 	cmd        *vttv1.ClientCommand

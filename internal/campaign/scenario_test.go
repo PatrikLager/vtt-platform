@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -50,9 +49,15 @@ func statesEqual(a, b *engine.State) bool {
 }
 
 // TestExitScenario is the spec §9 exit scenario: a full session lifecycle —
-// scene, actors, tokens, moves, a mid-log undo, session end — followed by a
-// close/reopen and a full-state comparison against the pre-close snapshot.
-// This is the seed for the future simulation harness (sub-project 4).
+// scene, actors, tokens, moves, session end — followed by a close/reopen and
+// a full-state comparison against the pre-close snapshot. This is the seed for
+// the future simulation harness (sub-project 4).
+//
+// IT HELD A MID-LOG UNDO until 2026-08-31, and a subscription that existed
+// only to watch the EventsRetracted marker arrive live. Both left with
+// retraction (spec 2026-08-30-retraction-leaves). Live delivery to a
+// subscriber is pinned by TestSubscriberSeesAppendedEvents, so nothing but
+// the marker went with the subscription.
 func TestExitScenario(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "campaign.db")
@@ -61,12 +66,6 @@ func TestExitScenario(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-
-	ch, unsubscribe, _, err := c.Subscribe(0, 32)
-	if err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	defer unsubscribe()
 
 	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "exit-scenario"}))
 
@@ -90,19 +89,17 @@ func TestExitScenario(t *testing.T) {
 		Position: &vttv1.GridPosition{X: 8, Y: 8},
 	}))
 
-	// Three TokenMoved events: the first two move t1 (t1's second move is the
-	// one that gets retracted below), the third moves t2. Because the third
-	// move targets a different token, retracting the middle move leaves t1's
-	// final position exactly where it was right before the retracted move —
-	// the clean "reverts to the pre-retracted-move position" check — while
-	// t2's independent move remains intact, proving the retraction didn't
-	// affect events outside its range.
+	// Three TokenMoved events: the first two move t1 in succession, the third
+	// moves t2. The pair on t1 is what makes the close/reopen comparison below
+	// say something — a fold that kept the FIRST position of a token rather
+	// than its last would still round-trip a single move — and t2's
+	// independent move keeps the check from being about one token alone.
 	must(t, c, cenv(nextID(), &vttv1.TokenMoved{
 		TokenId: "t1", SceneId: "scn",
 		From: &vttv1.GridPosition{X: 2, Y: 2},
 		To:   &vttv1.GridPosition{X: 3, Y: 3},
 	}))
-	middleMoveSeq := must(t, c, cenv(nextID(), &vttv1.TokenMoved{
+	must(t, c, cenv(nextID(), &vttv1.TokenMoved{
 		TokenId: "t1", SceneId: "scn",
 		From: &vttv1.GridPosition{X: 3, Y: 3},
 		To:   &vttv1.GridPosition{X: 4, Y: 4},
@@ -113,47 +110,20 @@ func TestExitScenario(t *testing.T) {
 		To:   &vttv1.GridPosition{X: 9, Y: 9},
 	}))
 
-	markerID := nextID()
-	if _, err := c.Undo(middleMoveSeq, middleMoveSeq, "mistaken move", markerID, "dm", "test-participant"); err != nil {
-		t.Fatalf("undo middle move: %v", err)
-	}
-
 	st := c.State()
 	tok1, ok := st.Tokens["t1"]
 	if !ok {
-		t.Fatal("want token t1 present after undo")
+		t.Fatal("want token t1 present")
 	}
-	if tok1.X != 3 || tok1.Y != 3 {
-		t.Fatalf("t1 position after undo: got (%d,%d), want (3,3) (the pre-retracted-move position)", tok1.X, tok1.Y)
+	if tok1.X != 4 || tok1.Y != 4 {
+		t.Fatalf("t1 position: got (%d,%d), want (4,4) (the last move it was given)", tok1.X, tok1.Y)
 	}
 	tok2, ok := st.Tokens["t2"]
 	if !ok {
-		t.Fatal("want token t2 present after undo")
+		t.Fatal("want token t2 present")
 	}
 	if tok2.X != 9 || tok2.Y != 9 {
-		t.Fatalf("t2 position after undo: got (%d,%d), want (9,9) (unaffected by the retraction)", tok2.X, tok2.Y)
-	}
-
-	// The subscriber, caught up since before any of this happened, must
-	// receive the EventsRetracted marker itself as a live event.
-	foundMarker := false
-drain:
-	for {
-		select {
-		case env, ok := <-ch:
-			if !ok {
-				break drain
-			}
-			if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker && env.EventId == markerID {
-				foundMarker = true
-				break drain
-			}
-		case <-time.After(2 * time.Second):
-			break drain
-		}
-	}
-	if !foundMarker {
-		t.Fatal("subscriber did not receive the EventsRetracted marker")
+		t.Fatalf("t2 position: got (%d,%d), want (9,9)", tok2.X, tok2.Y)
 	}
 
 	must(t, c, cenv(nextID(), &vttv1.SessionEnded{}))

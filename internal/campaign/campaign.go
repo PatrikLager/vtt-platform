@@ -1,6 +1,12 @@
-// Package campaign composes the store and the engine: replay on open, the
-// validate→persist→apply append path, and compensating-marker undo (spec §3,
-// §6, §7). It is the only package that imports both store and engine.
+// Package campaign composes the store and the engine: replay on open and the
+// validate→persist→apply append path (spec §3, §7). It is the only package
+// that imports both store and engine.
+//
+// IT NO LONGER COMPOSES AN UNDO. Spec §6 of the event-core design specified
+// one, and the whole of it — Undo, the retracted set, and the fold's first
+// pass — left on 2026-08-31 (spec 2026-08-30-retraction-leaves): a retraction
+// exists to make something not have happened, and it cannot, because the
+// table has already read the log. The log only goes forward.
 package campaign
 
 import (
@@ -13,7 +19,6 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -22,20 +27,20 @@ import (
 
 // errPoisoned is returned by every Campaign method once poisoned is set.
 // The two paths that set it are both post-persist: the log already holds an
-// event or marker that the live projection failed to fold. At that point
-// c.state no longer reliably reflects the log, and continuing to serve
-// reads/writes from it risks compounding the divergence. Both trigger paths
-// are defensively unreachable by design (Append validates on a snapshot
-// before persisting; Undo dry-runs the full fold before persisting the
-// marker) — poisoning exists as a fail-loud backstop, not an expected state.
+// event that the live projection failed to fold. At that point c.state no
+// longer reliably reflects the log, and continuing to serve reads/writes
+// from it risks compounding the divergence. Both trigger paths are
+// defensively unreachable by design — Append and AppendBatch each fold a
+// snapshot clone before persisting anything — so poisoning exists as a
+// fail-loud backstop, not an expected state.
 var errPoisoned = errors.New("campaign: poisoned by post-persist failure; reopen required")
 
 // Campaign composes a store.Store (the log) with an engine.State (the live
 // projection). If a post-persist step ever fails — the log was written but
 // the in-memory projection could not be advanced to match — the Campaign
-// marks itself poisoned: every subsequent Append, Undo, State, and Subscribe
-// call fails (State returns nil) rather than serve state that may no longer
-// match the log. There is no in-process recovery from a poisoned Campaign;
+// marks itself poisoned: every subsequent Append, AppendBatch, State, and
+// Subscribe call fails (State returns nil) rather than serve state that may
+// no longer match the log. There is no in-process recovery from a poisoned Campaign;
 // the caller must Close and Open it again, which rebuilds the projection
 // from the log from scratch.
 type Campaign struct {
@@ -48,9 +53,8 @@ type Campaign struct {
 	// rebuild/append. It exists so AppendBatch can validate against clones
 	// stamped with the SAME contiguous sequences the store is about to
 	// assign (head+1..head+N); see AppendBatch for why that equivalence
-	// holds. head counts every persisted row, including retraction markers
-	// and retracted events (nothing is ever deleted from the log), exactly
-	// as store's MAX(seq) does.
+	// holds. head counts every persisted row — nothing is ever deleted from
+	// the log — exactly as store's MAX(seq) does.
 	head int64
 
 	// poisoned is set when a post-persist step fails (see errPoisoned). Once
@@ -71,21 +75,19 @@ func Open(path string) (*Campaign, error) {
 	return c, nil
 }
 
-// rebuildLocked derives state from the full log: pass 1 collects retracted
-// ranges, pass 2 folds the non-retracted events via foldEvents.
+// rebuildLocked derives state from the full log: one pass through
+// foldEvents, applying every event the store returns in sequence order.
 func (c *Campaign) rebuildLocked() error {
 	events, err := c.log.ReadAfter(0)
 	if err != nil {
 		return err
 	}
-	st, err := foldEvents(events, retractedSet(events))
+	st, err := foldEvents(events)
 	if err != nil {
 		return err
 	}
 	c.state = st
-	// events are ordered by sequence; the last one is the log head (markers
-	// and retracted events included — they are real persisted rows the store
-	// still counts in MAX(seq)).
+	// events are ordered by sequence; the last one is the log head.
 	c.head = 0
 	if n := len(events); n > 0 {
 		c.head = events[n-1].Sequence
@@ -93,22 +95,20 @@ func (c *Campaign) rebuildLocked() error {
 	return nil
 }
 
-// foldEvents folds events into a fresh engine.State, skipping any sequence
-// present in retracted and every EventsRetracted marker itself. Unknown
-// variants are skipped with a warning (forward compatibility, spec §7); any
-// other apply error means the resulting fold does not replay cleanly. This
-// is the single fold shared by rebuildLocked (the live/on-open rebuild) and
-// Undo's dry-run viability check — the codebase's core principle is one
-// fold, not two copies of the same loop.
-func foldEvents(events []*vttv1.Envelope, retracted map[int64]bool) (*engine.State, error) {
+// foldEvents folds events into a fresh engine.State, applying every envelope
+// it is given in the order it is given them. Unknown variants are skipped
+// with a warning (forward compatibility, spec §7); any other apply error
+// means the resulting fold does not replay cleanly. This is the single fold,
+// reached two ways — rebuildLocked's on-open rebuild and FoldPrefix's answer
+// for the gateway — because the codebase's core principle is one fold, not
+// two copies of the same loop (CLAUDE.md rule 4).
+//
+// NOTHING IS SKIPPED BY SEQUENCE any more (2026-08-31: the log only goes
+// forward). It took a set of retracted sequences until then, and dropping
+// that parameter is the whole of retraction's departure from this loop.
+func foldEvents(events []*vttv1.Envelope) (*engine.State, error) {
 	st := engine.NewState()
 	for _, env := range events {
-		if retracted[env.Sequence] {
-			continue
-		}
-		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			continue
-		}
 		if err := engine.Apply(st, env); err != nil {
 			if errors.Is(err, engine.ErrUnknownVariant) {
 				slog.Warn("campaign: skipping unknown event variant during replay",
@@ -121,18 +121,6 @@ func foldEvents(events []*vttv1.Envelope, retracted map[int64]bool) (*engine.Sta
 	return st, nil
 }
 
-func retractedSet(events []*vttv1.Envelope) map[int64]bool {
-	out := map[int64]bool{}
-	for _, env := range events {
-		if r, ok := env.Payload.(*vttv1.Envelope_EventsRetracted); ok {
-			for seq := r.EventsRetracted.FromSequence; seq <= r.EventsRetracted.ToSequence; seq++ {
-				out[seq] = true
-			}
-		}
-	}
-	return out
-}
-
 // Append validates against the projection, persists (the commit point), then
 // advances the live projection. Any validation error writes nothing (spec §7).
 // Returns errPoisoned without touching the log if the Campaign is poisoned
@@ -143,8 +131,17 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	if c.poisoned {
 		return 0, errPoisoned
 	}
+	// NOTHING APPENDS AN EventsRetracted. There is no longer a path that
+	// produces one — the marker's only writer left with retraction on
+	// 2026-08-31 — and the payload survives solely because the contract has
+	// not caught up yet (Task 7 deletes the message and this guard with it).
+	//
+	// THE GUARD IS LOAD-BEARING, not a nicety: engine.Apply has an explicit
+	// NO-OP arm for this payload ("handled by campaign rebuild, not in-line"),
+	// so the validating fold below would accept it and the marker would
+	// persist into a log where it now means nothing at all.
 	if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-		return 0, errors.New("campaign: EventsRetracted must be appended via Undo")
+		return 0, errors.New("campaign: EventsRetracted is not an appendable event; the log only goes forward")
 	}
 	if env.Payload == nil {
 		return 0, engine.ErrUnknownVariant
@@ -160,8 +157,8 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	// equivalence proof, as AppendBatch's clone-and-stamp validation below
 	// (see AppendBatch's doc comment for the full argument): c.head is
 	// maintained to equal store's MAX(seq) after every append/rebuild,
-	// this whole call holds c.mu, and every log-appending path (Append,
-	// AppendBatch, Undo) runs under c.mu, so no other append can advance
+	// this whole call holds c.mu, and every log-appending path (Append and
+	// AppendBatch, the only two) runs under c.mu, so no other append can advance
 	// MAX(seq) between reading c.head here and store.Append's own
 	// MAX(seq)+1 read — same lock ⇒ same head ⇒ identical sequence.
 	//
@@ -218,8 +215,7 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 // (merge-gate decision, sub-project 4; corrected to match spec §1.1 during
 // workflow-level final review — see docs/superpowers/specs/
 // 2026-07-24-hardening-design.md): a SessionStarted event gets a fresh,
-// generated id; every other event — and Undo's EventsRetracted marker, which
-// also routes through here — gets the currently open session's id,
+// generated id; every other event gets the currently open session's id,
 // overwriting any caller-supplied value (the campaign is authoritative, not
 // the caller). With no session open, the incoming value is CLEARED to ""
 // rather than left as-is: a closed (or never-opened) session must never let
@@ -231,8 +227,8 @@ func (c *Campaign) stampSessionID(env *vttv1.Envelope) error {
 }
 
 // stampSessionIDAgainst is stampSessionID's logic parameterized on WHICH
-// state's Sessions to read the open session from. Single-event Append/Undo
-// always check the live c.state (via stampSessionID above). AppendBatch
+// state's Sessions to read the open session from. Single-event Append
+// always checks the live c.state (via stampSessionID above). AppendBatch
 // instead passes an evolving snapshot clone that it folds against event by
 // event, so a SessionStarted earlier in the SAME batch is already visible
 // (session considered open) when a later envelope in that batch is stamped
@@ -293,11 +289,12 @@ func newSessionID() (string, error) {
 // session-open check — exactly as two sequential Append calls would behave
 // (see stampSessionIDAgainst).
 //
-// Rejects a zero-length batch and any EventsRetracted envelope (must go
-// through Undo), exactly as Append does per-event. Returns errPoisoned
-// without touching the log if the Campaign is poisoned (see the Campaign
-// doc comment) — reopen the Campaign to recover. A post-persist live-apply
-// failure poisons the Campaign, exactly matching Append's poison contract.
+// Rejects a zero-length batch and any EventsRetracted envelope — nothing
+// produces one at all now (see Append's own guard) — exactly as Append does
+// per-event. Returns errPoisoned without touching the log if the Campaign is
+// poisoned (see the Campaign doc comment) — reopen the Campaign to recover.
+// A post-persist live-apply failure poisons the Campaign, exactly matching
+// Append's poison contract.
 func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -309,7 +306,7 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	}
 	for _, env := range envs {
 		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			return 0, errors.New("campaign: EventsRetracted must be appended via Undo")
+			return 0, errors.New("campaign: EventsRetracted is not an appendable event; the log only goes forward")
 		}
 		if env.Payload == nil {
 			return 0, engine.ErrUnknownVariant
@@ -334,8 +331,8 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 	// will assign below: the store assigns MAX(seq)+1..MAX(seq)+N, and c.head
 	// is maintained to equal store's MAX(seq) after every append/rebuild.
 	// The whole call holds c.mu, and every path that appends to the log
-	// (Append, AppendBatch, Undo) runs under c.mu, so no other append can
-	// advance MAX(seq) between reading c.head here and store.AppendBatch's
+	// (Append and AppendBatch, the only two) runs under c.mu, so no other
+	// append can advance MAX(seq) between reading c.head here and store.AppendBatch's
 	// own MAX(seq) read — same lock ⇒ same head ⇒ identical sequences. The
 	// real envelopes keep Sequence==0 (store.AppendBatch requires that and
 	// stamps them itself); only the throwaway clones carry the provisional
@@ -378,116 +375,6 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 		c.log.Notify(env)
 	}
 	return firstSeq, nil
-}
-
-// Undo appends an EventsRetracted marker and rebuilds the projection.
-// The range must exist, contain no retraction markers (no nesting), and not
-// overlap an already-retracted span (spec §6).
-// Returns errPoisoned without touching the log if the Campaign is poisoned
-// (see the Campaign doc comment) — reopen the Campaign to recover.
-//
-// actorRole and participantID stamp the marker's Envelope.ActorRole and
-// Envelope.ParticipantId (spec §4: "every accepted command stamps
-// actor_role AND ... participant_id"). Campaign has no identity concept of
-// its own — it never sees a token or a *identity.Participant — so
-// attribution is caller-supplied; the gateway is the authority on who
-// issued the retraction and passes those values straight through.
-//
-// The marker's session_id is NOT caller-supplied (unlike actorRole and
-// participantID): it is stamped the same way Append stamps every other
-// event's, via stampSessionID, right before persisting — the currently open
-// session's id, or cleared to "" if none is open (spec §1.1).
-//
-// Returns the marker's own assigned sequence on success (P6 Task 4 pre-step,
-// controller decision: closes the P4 carry-forward "Undo may return it"; spec
-// §3's EXCEPTION note was updated accordingly). Its one caller,
-// gateway.handleRetraction, threaded that sequence into CommandResult.Sequence
-// and was DELETED on 2026-08-31 when retraction left the gateway, so nothing
-// outside tests calls this now. The returned sequence is 0 on every error path
-// (poisoned, invalid range, rebuild failure) — callers must check the error,
-// not assume a zero sequence means success.
-func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) (int64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.poisoned {
-		return 0, errPoisoned
-	}
-	if from < 1 || to < from {
-		return 0, fmt.Errorf("campaign: invalid retraction range [%d,%d]", from, to)
-	}
-	events, err := c.log.ReadAfter(0)
-	if err != nil {
-		return 0, err
-	}
-	var maxSeq int64
-	if n := len(events); n > 0 {
-		maxSeq = events[n-1].Sequence
-	}
-	if to > maxSeq {
-		return 0, fmt.Errorf("campaign: retraction range end %d beyond log head %d", to, maxSeq)
-	}
-	already := retractedSet(events)
-	for _, env := range events {
-		if env.Sequence < from || env.Sequence > to {
-			continue
-		}
-		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			return 0, fmt.Errorf("campaign: cannot retract a retraction (seq %d)", env.Sequence)
-		}
-		if already[env.Sequence] {
-			return 0, fmt.Errorf("campaign: seq %d is already retracted", env.Sequence)
-		}
-	}
-
-	// Dry-run the filtered fold before persisting anything: the range shape
-	// checks above (bounds, no-nesting, no-double-retraction) don't tell us
-	// whether the log still replays once this range is retracted too. Build
-	// the would-be retracted set (already-retracted ∪ this range) and fold
-	// the full log against it through a scratch state. If that fold fails,
-	// this retraction would corrupt replay — reject it and persist nothing.
-	wouldBeRetracted := make(map[int64]bool, len(already)+int(to-from)+1)
-	for seq, v := range already {
-		wouldBeRetracted[seq] = v
-	}
-	for seq := from; seq <= to; seq++ {
-		wouldBeRetracted[seq] = true
-	}
-	if _, err := foldEvents(events, wouldBeRetracted); err != nil {
-		return 0, fmt.Errorf("campaign: retraction would corrupt replay: %w", err)
-	}
-
-	marker := &vttv1.Envelope{
-		EventId:       eventID,
-		ActorRole:     actorRole,
-		ParticipantId: participantID,
-		OccurredAt:    timestamppb.Now(),
-		Payload: &vttv1.Envelope_EventsRetracted{
-			EventsRetracted: &vttv1.EventsRetracted{
-				FromSequence: from, ToSequence: to, Reason: reason,
-			},
-		},
-	}
-	// stampSessionID never errors on a non-SessionStarted payload (the
-	// generation path, which can, is only reachable for SessionStarted) —
-	// the marker's payload is always EventsRetracted.
-	_ = c.stampSessionID(marker)
-	seq, err := c.log.Append(marker)
-	if err != nil {
-		return 0, err
-	}
-	if err := c.rebuildLocked(); err != nil {
-		// The marker is already persisted (commit point above) but the
-		// projection could not be rebuilt to match — poison the Campaign
-		// rather than serve a projection that has silently fallen behind
-		// the log. Do not notify: a poisoned campaign must not advertise an
-		// event its own projection couldn't fold.
-		c.poisoned = true
-		return 0, err
-	}
-	// Notify only after the rebuilt projection reflects marker, mirroring
-	// Append's post-apply notify ordering.
-	c.log.Notify(marker)
-	return seq, nil
 }
 
 // State returns a snapshot of the live projection, or nil if the Campaign is

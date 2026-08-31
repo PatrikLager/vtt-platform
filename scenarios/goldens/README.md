@@ -136,43 +136,39 @@ is the direction this arc exists to close.
 
 ### What `session-zero` deliberately does NOT do
 
-**It never retracts an event that CAUSED an introduction**, and that is an
+**It never retracted an event that CAUSED an introduction**, and that was an
 exclusion rather than an oversight — the two look identical in a diff a year
-from now, so it is written down here rather than only in a task report.
+from now, so it was written down here rather than only in a task report. It is
+kept as a CLOSED record: sub-project 13 removed retraction from the platform
+outright (spec `2026-08-30-retraction-leaves`), so there is no longer a command,
+a marker, or a scenario step that could reach the shape below.
 
-Synthesized envelopes carry the sequence of the event that caused them
-(visibility spec §4.2), so retracting the event that first revealed a scene
-deletes the viewer's own `SceneCreated` for it. `transitions` then still emits an
-empty `SceneSeen` for that scene at the retraction's sequence — its union walk
-keeps a scene in play for one more step — and the recipient's fold rejects it
-with `scene seen for unknown scene`. Both folds are strict and
-`client/src/session.ts` re-folds its whole log on every event, so that is a
-permanent freeze rather than one bad frame.
+**What the hazard was.** Synthesized envelopes carry the sequence of the event
+that caused them (visibility spec §4.2), so retracting the event that first
+revealed a scene deleted the viewer's own `SceneCreated` for it. `transitions`
+then still emitted an empty `SceneSeen` for that scene at the retraction's
+sequence — its union walk keeps a scene in play for one more step — and the
+recipient's fold rejected it with `scene seen for unknown scene`. Both folds are
+strict and `client/src/session.ts` re-folds its whole log on every event, so that
+was a permanent freeze rather than one bad frame. Putting it into a scenario
+would have left the gate red on a design decision that belonged to whoever made
+it, not to a corpus entry.
 
-The defect is pre-existing, and `internal/gateway/project.go`'s `transitions` doc
-comment is where it is recorded — as the DANGLING-REFERENCE form, a later
-forwarded event about a retracted introduction failing with `moved unknown
-token`. The prediction "spec §4.3's keystone is where it is catchable" sits
-there, verbatim, and is correct.
+The corpus's own three retraction steps went with the platform's: two in
+`denials` that were authorization probes, refused before they reached a log, and
+`three-role-exit`'s, which landed. That one retracted an ordinary MOVE and folded
+cleanly, which is exactly what made the point above legible — retraction itself
+was never the hazard here, only a retraction landing on an event that CAUSED an
+introduction was.
 
-**Do not read the forgetting-loop comment further down that function as the same
-thing.** It contains the string `scene seen for unknown scene` too, which makes it
-look like the nearer match, and it is not: its case is an undo covering the
-`SceneCreated` ITSELF, its cause is `pr.scenes`/`pr.seen` outliving `st.Scenes`
-rather than an introduction stamped at a retracted sequence, and it says
-"Measured before this loop existed" — the loop directly beneath it **fixed** that
-case. Shared error string, different defect, already closed.
-
-Putting the shape above into this scenario would leave the gate red, and the fix
-is a design decision (a per-viewer pre-flight in `campaign.Undo`, or a different
-sequence for a synthesized introduction) that belongs to whoever makes it, not to
-a corpus entry. No scenario in the corpus retracts anything any more — sub-project 13
-removes retraction from the platform outright, and the corpus's three
-retraction steps went with it: two in `denials` that were authorization probes,
-refused before they reached a log, and `three-role-exit`'s, which landed. That
-one retracted an ordinary MOVE and folded cleanly, which is exactly what made
-the point above legible: retraction itself was never the hazard here, only a
-retraction landing on an event that CAUSED an introduction is.
+**Two things this section used to cite are gone**, said plainly so that the next
+reader does not go hunting for them. It quoted a prediction from `transitions`'
+doc comment ("spec §4.3's keystone is where it is catchable"), which was
+rewritten when retraction left the gateway on 2026-08-31; and it warned readers
+off the forgetting loop further down that same function, which shared the `scene
+seen for unknown scene` string while answering a different case. That loop was
+deleted the same day, because nothing removes a scene from the world — spec
+`2026-08-30-retraction-leaves` §5.3: there is no `delete_scene`.
 
 ### Deriving a projected golden
 

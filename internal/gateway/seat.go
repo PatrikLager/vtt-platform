@@ -98,8 +98,19 @@ type seat struct {
 	// is what builds the projector's memory of what this seat has been shown.
 	resume int64
 	// received is every envelope this seat's projector has been fed, kept
-	// because the state each event produced is a fold of the log so far and a
-	// retraction is retroactive (see campaign.FoldPrefix).
+	// because the state each event produced is a fold of the log SO FAR and
+	// campaign.FoldPrefix answers that from the prefix itself.
+	//
+	// A SINGLE engine.State WOULD NOW DO, and saying so is more honest than
+	// leaving the old reason standing. This slice was load-bearing while
+	// retraction existed: a marker landed at head and unmade a range folded
+	// long before it, so nothing but a re-fold of the whole prefix could
+	// answer. Retraction left on 2026-08-31 and no envelope is retroactive
+	// any more, so a seat could keep one accumulated state instead. It keeps
+	// the slice because advancing a state per event here would be a second
+	// event-application loop in the gateway (CLAUDE.md rule 4) — see
+	// campaign.FoldPrefix's doc comment, which states that cost and what it
+	// buys.
 	//
 	// This is per-connection state, and the pump's own comment used to say it
 	// had none. It is bounded by the log, holds no locks and no sockets, and
