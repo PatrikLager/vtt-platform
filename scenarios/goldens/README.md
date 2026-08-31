@@ -166,8 +166,13 @@ case. Shared error string, different defect, already closed.
 Putting the shape above into this scenario would leave the gate red, and the fix
 is a design decision (a per-viewer pre-flight in `campaign.Undo`, or a different
 sequence for a synthesized introduction) that belongs to whoever makes it, not to
-a corpus entry. `three-role-exit` DOES retract, and the keystone folds it cleanly,
-because what it retracts is a MOVE.
+a corpus entry. No scenario in the corpus retracts anything any more — sub-project 13
+removes retraction from the platform outright, and the corpus's three
+retraction steps went with it: two in `denials` that were authorization probes,
+refused before they reached a log, and `three-role-exit`'s, which landed. That
+one retracted an ordinary MOVE and folded cleanly, which is exactly what made
+the point above legible: retraction itself was never the hazard here, only a
+retraction landing on an event that CAUSED an introduction is.
 
 ### Deriving a projected golden
 
@@ -196,12 +201,14 @@ entry in the fixture.
 
 ## Coverage
 
-Eight scenarios, covering fifteen of the contract's command types — **a
-subset, not all of them.** "All fifteen" stood here until 2026-08-25: it was
-true when fifteen WAS the whole contract, and stayed on the page as the
-contract grew past it, turning a corpus statistic into a false completeness
-claim. The door, map and viewpoint commands have no golden. Derive the
-current gap by diffing the scenarios' command keys against
+Eight scenarios, covering a subset of the contract's command types, **not
+all of them.** "All fifteen" stood here until 2026-08-25: it was true when
+fifteen WAS the whole contract, and stayed on the page as the contract grew
+past it, turning a corpus statistic into a false completeness claim. Door,
+map, viewpoint, join-link and participant-promotion commands are among those
+with no golden today — examples, not the complete list; `retract_events`
+joined them the moment sub-project 13 deleted the corpus's last retraction
+step. Derive the current gap by diffing the scenarios' command keys against
 `contract/gen/tools/tools.json` rather than trusting a list written here,
 which is how this sentence went wrong in the first place.
 

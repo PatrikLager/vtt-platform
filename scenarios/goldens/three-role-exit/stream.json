@@ -130,18 +130,6 @@
     "eventId": "evt-10",
     "sequence": "10",
     "sessionId": "sess-1",
-    "actorRole": "agent",
-    "participantId": "p-agent",
-    "eventsRetracted": {
-      "fromSequence": "9",
-      "toSequence": "9",
-      "reason": "test retraction"
-    }
-  },
-  {
-    "eventId": "evt-11",
-    "sequence": "11",
-    "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
     "sessionEnded": {}

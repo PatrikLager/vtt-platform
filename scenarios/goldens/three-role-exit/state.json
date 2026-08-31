@@ -33,7 +33,7 @@
       "ID": "sess-1",
       "Name": "Exit Scenario",
       "StartSeq": 1,
-      "EndSeq": 11
+      "EndSeq": 10
     }
   ],
   "Tokens": {
@@ -48,9 +48,9 @@
       "ID": "tok-ursus",
       "SceneID": "scn-exit",
       "ActorID": "act-ursus",
-      "X": 0,
-      "Y": 0
+      "X": 5,
+      "Y": 5
     }
   },
-  "headSequence": 11
+  "headSequence": 10
 }

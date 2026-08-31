@@ -19,7 +19,6 @@
     {"by": "player", "command": {"moveToken": {"tokenId": "tok-ursus", "to": {"x": 9, "y": 9}}}, "expect": {"deniedContaining": "not authorized"}},
 
     {"by": "agent", "command": {"moveToken": {"tokenId": "tok-ursus", "to": {"x": 5, "y": 5}}}, "expect": {"ok": true}},
-    {"by": "agent", "command": {"retractEvents": {"fromSequence": 9, "toSequence": 9, "reason": "test retraction"}}, "expect": {"ok": true}},
 
     {"by": "spectator", "command": {"startSession": {"name": "hijack"}}, "expect": {"deniedContaining": "not authorized"}},
 
@@ -30,7 +29,7 @@
   ],
   "probes": [
     {"tokenAt": {"tokenId": "tok-lera", "x": 2, "y": 2}},
-    {"tokenAt": {"tokenId": "tok-ursus", "x": 0, "y": 0}},
+    {"tokenAt": {"tokenId": "tok-ursus", "x": 5, "y": 5}},
     {"sessionCount": {"open": 0, "total": 1}},
     {"actorExists": {"actorId": "act-ursus"}},
     {"actorExists": {"actorId": "act-lera"}}
