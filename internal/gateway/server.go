@@ -1218,8 +1218,11 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	// use_ability/load_adventure/load_map do not become a single Envelope via
 	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
-	// adventure.go/map.go); every other command, including remove_condition,
-	// still flows through the plain ToEvent -> campaign.Append path below.
+	// adventure.go/map.go); every other command, including remove_condition
+	// and remove_token (retraction-leaves Task 8 — no board-position seam
+	// needed here, since it is DM/agent only and engine.Apply's own
+	// unknown-token guard is the entire validation story), still flows
+	// through the plain ToEvent -> campaign.Append path below.
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}

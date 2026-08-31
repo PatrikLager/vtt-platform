@@ -396,6 +396,23 @@ message TokenPlaced {
   GridPosition position = 4;
 }
 
+// TokenRemoved takes a token off the board, for good, going forward
+// (retraction-leaves spec §5.1). Produced by RemoveToken (commands.proto).
+//
+// NOT TokenHidden. TokenHidden, below, is PROJECTION-ONLY — no command
+// produces it, so it can never reach the log — and it means "you cannot see
+// it", a fact about one viewer's knowledge of the world. TokenRemoved is a
+// REAL event that reaches every fold, and it means the piece is not part of
+// the world anymore: engine.Apply and client/src/fold.ts both delete it from
+// state, and it stays gone for every future reader. It does not erase that
+// the token ever existed — the log still carries whatever TokenPlaced/
+// TokenMoved/etc. it had before this event, unaltered; the log only goes
+// forward (2026-08-31), so removal is the platform's answer to "get rid of a
+// token" now that retraction is gone.
+message TokenRemoved {
+  string token_id = 1;
+}
+
 message SessionStarted {
   string name = 1;
 }
@@ -486,5 +503,8 @@ message Envelope {
     // the actual next-free numbers instead (visibility Task 2 report).
     TokenHidden token_hidden = 30;
     SceneSeen scene_seen = 31;
+    // 32 is the next-free slot after scene_seen = 31 (retraction-leaves
+    // Task 8 report).
+    TokenRemoved token_removed = 32;
   }
 }

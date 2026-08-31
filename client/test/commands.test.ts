@@ -441,3 +441,18 @@ test("loadMap matches the client's own expected shape", () => {
     loadMap: { mapId: "map-crypt" },
   });
 });
+
+// --- token removal (retraction-leaves Task 8) --------------------------------
+
+import { removeToken } from "../src/commands";
+
+test("removeToken matches the client's own expected shape", () => {
+  // Same idiom as openDoor/closeDoor/loadMap directly above (this file's own
+  // comment on why the exact object, not a subset, is asserted): a bare
+  // tokenId is exactly the shape a builder wired to the wrong oneof case
+  // would still satisfy under toMatchObject, so the full object is compared.
+  const cmd = removeToken("tok-goblin-2");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    removeToken: { tokenId: "tok-goblin-2" },
+  });
+});

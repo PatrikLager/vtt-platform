@@ -25,6 +25,8 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
+	case *vttv1.TokenRemoved:
+		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
 	case *vttv1.AttackRolled:
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
 	case *vttv1.AbilityUsed:
@@ -116,6 +118,60 @@ func TestSceneActorTokenLifecycle(t *testing.T) {
 	}
 	if st.Sessions[0].EndSeq != 0 {
 		t.Fatalf("want open session (EndSeq 0), got EndSeq %d", st.Sessions[0].EndSeq)
+	}
+}
+
+// TestTokenRemoved pins the success path of the retraction-leaves Task 8
+// arm: removal means "no longer part of the world going forward" (spec
+// 2026-08-30-retraction-leaves-design §5.1), which for the fold means the
+// token is gone from st.Tokens after Apply returns nil — the same
+// forward-only shape TokenHidden's projection-only removal has, but here it
+// is a REAL event that reaches the log and every fold, not a per-viewer
+// projection.
+func TestTokenRemoved(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
+	})))
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{
+		TokenId:  "t1",
+		SceneId:  "scn",
+		ActorId:  "a1",
+		Position: &vttv1.GridPosition{X: 3, Y: 7},
+	})))
+
+	must(t, engine.Apply(st, env(5, &vttv1.TokenRemoved{TokenId: "t1"})))
+
+	if _, ok := st.Tokens["t1"]; ok {
+		t.Fatal("want token t1 gone from state after TokenRemoved")
+	}
+	// The scene and actor are UNTOUCHED: removing a token takes the piece off
+	// the board, nothing more.
+	if _, ok := st.Scenes["scn"]; !ok {
+		t.Fatal("want scene scn to survive a token removal")
+	}
+	if _, ok := st.Actors["a1"]; !ok {
+		t.Fatal("want actor a1 to survive a token removal")
+	}
+}
+
+// TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording pins the EXACT
+// error text for removing a token that does not exist, in the same words
+// TokenMoved's own unknown-token error already uses ("engine: moved unknown
+// token %q" -> "engine: removed unknown token %q") — task-8-brief.md's own
+// requirement: "Removing a token that does not exist must fail... in the same
+// words the codebase already uses for an unknown token."
+func TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording(t *testing.T) {
+	st := seedScene(t)
+
+	err := engine.Apply(st, env(3, &vttv1.TokenRemoved{TokenId: "ghost"}))
+	if err == nil {
+		t.Fatal("want error removing an unknown token")
+	}
+	want := `engine: removed unknown token "ghost"`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
 	}
 }
 

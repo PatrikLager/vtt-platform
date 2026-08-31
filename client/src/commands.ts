@@ -149,6 +149,20 @@ export function placeToken(
   });
 }
 
+/**
+ * Take a token off the board, for good (retraction-leaves spec §5.1: "takes
+ * a piece off the board"). NOT the same thing as a token going out of sight —
+ * that is a viewer-side TokenHidden the server projects; this appends a real
+ * TokenRemoved that removes the piece for everyone, permanently. DM/agent
+ * only (see internal/gateway/authz.go's commandRoles "remove_token" row).
+ */
+export function removeToken(tokenId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeToken", value: { tokenId } },
+  });
+}
+
 export function loadAdventure(adventureId: string): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),

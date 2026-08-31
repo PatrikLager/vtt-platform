@@ -263,6 +263,21 @@
     "name": "place_token"
   },
   {
+    "description": "Take a token off the board, for good. This is NOT hiding it — the piece is no longer part of the world going forward, for everyone at the table. It does not erase that the token was ever there; the log keeps whatever place_token/move_token history it had before this. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "tokenId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId"
+      ],
+      "type": "object"
+    },
+    "name": "remove_token"
+  },
+  {
     "description": "Start a new play session.",
     "inputSchema": {
       "properties": {

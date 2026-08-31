@@ -6,16 +6,25 @@ import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant, and the gap is a MEASURED
 // list rather than an argument. Across all eight `scenarios/goldens/*/
-// stream.json` AND both projected streams under `projections/*/`, three of
-// fold.ts's twenty-one arms are never folded: **attackRolled, doorOpened and
-// doorClosed**. Said at the level of the EVENT VARIANT, which is the level that
-// matters for parity: `attackRolled` shares its arm BODY with `abilityUsed` and
-// `adventureLoaded`, both of which the corpus does fold, so that code path runs —
-// it is the variant that no corpus stream carries, and
-// client/test/fold-rejections.test.ts's "an event kind the fold does not know is
-// skipped, not fatal" is what folds one directly. Named rather than cited by line
-// for the reason this file states below: an offset into another file rots the
-// moment anything is inserted above it, and nothing pins it.
+// stream.json` AND both projected streams under `projections/*/`, four of
+// fold.ts's twenty-two arms are never folded: **attackRolled, doorOpened,
+// doorClosed and tokenRemoved**. Said at the level of the EVENT VARIANT, which
+// is the level that matters for parity: `attackRolled` shares its arm BODY
+// with `abilityUsed` and `adventureLoaded`, both of which the corpus does
+// fold, so that code path runs — it is the variant that no corpus stream
+// carries, and client/test/fold-rejections.test.ts's "an event kind the fold
+// does not know is skipped, not fatal" is what folds one directly. Named
+// rather than cited by line for the reason this file states below: an offset
+// into another file rots the moment anything is inserted above it, and
+// nothing pins it.
+//
+// tokenRemoved is the newest of the four, added by retraction-leaves Task 8
+// (2026-08-31) — every corpus stream predates it, so none can carry it. It
+// gets the same answer as the door pair below rather than attackRolled's:
+// exercised directly, not folded incidentally. "tokenRemoved removes only
+// that token" (this file) and "removing an unknown token is rejected"
+// (fold-rejections.test.ts) fold both its arms — success and rejection — the
+// same way the door tests below fold doorOpened/doorClosed.
 //
 // The door pair has its own note at the terrain section, which owns why it
 // matters. Not restated here — and the reason is worth one sentence, because this
@@ -52,7 +61,7 @@ import { FoldError } from "../src/state";
 // twice and tokenHidden once, and client/test/projection-parity.test.ts folds
 // both arms against a hand-derived state.
 //
-// So what the 41 hand-written cases below are for is the ARMS' EDGES. FOUR of
+// So what the hand-written cases below are for is the ARMS' EDGES. FOUR of
 // the five in this file's tokenHidden/sceneSeen section are reached by no stream
 // at all, recorded or derived: a re-sent hide (the corpus holds exactly one
 // tokenHidden), Explored unioning across messages (no single stream folds two
@@ -899,6 +908,20 @@ test("hiding a token twice is not an error", () => {
   ]);
   expect(twice.Tokens["t1"]).toBeUndefined();
   expect(twice.Tokens["t2"]).toBeDefined();
+});
+
+// tokenRemoved (retraction-leaves Task 8, spec §5.1: "takes a piece off the
+// board") is NOT tokenHidden, and the difference this test exists to pin is
+// that tokenRemoved is a REAL event with a real guard: unlike hiding (which
+// tolerates a repeat because the projection may legitimately re-send one),
+// removing an unknown token is an error (fold-rejections.test.ts's "removing
+// an unknown token is rejected") — this test is the success half, and it
+// mirrors "tokenHidden forgets only that token" above: only the named token
+// disappears, its neighbour is untouched.
+test("tokenRemoved removes only that token", () => {
+  const st = fold([...twoTokenScene(), env(6, { tokenRemoved: { tokenId: "t1" } })]);
+  expect(st.Tokens["t1"]).toBeUndefined();
+  expect(st.Tokens["t2"]).toBeDefined();
 });
 
 test("sceneSeen unions into Explored and never shrinks", () => {

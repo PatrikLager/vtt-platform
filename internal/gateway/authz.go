@@ -16,10 +16,17 @@ import (
 // commandRoles is THE authorization policy (spec §4). Player MoveToken has an
 // additional ownership check in Authorize; everything not listed is denied.
 var commandRoles = map[string]map[identity.Role]bool{
-	"move_token":    {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"create_scene":  {identity.RoleDM: true, identity.RoleAgent: true},
-	"add_actor":     {identity.RoleDM: true, identity.RoleAgent: true},
-	"place_token":   {identity.RoleDM: true, identity.RoleAgent: true},
+	"move_token":   {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"create_scene": {identity.RoleDM: true, identity.RoleAgent: true},
+	"add_actor":    {identity.RoleDM: true, identity.RoleAgent: true},
+	"place_token":  {identity.RoleDM: true, identity.RoleAgent: true},
+	// remove_token (retraction-leaves Task 8, spec §5.1: "takes a piece off
+	// the board"). SAME ROLE SET AS place_token, deliberately — see
+	// authz_test.go's authzCases comment on this row for the reasoning:
+	// removal is place_token's inverse (authoring the board) and NOT
+	// move_token's neighbour (using a piece already on it), so a player who
+	// may move a token they control does not thereby get to remove it.
+	"remove_token":  {identity.RoleDM: true, identity.RoleAgent: true},
 	"start_session": {identity.RoleDM: true, identity.RoleAgent: true},
 	"end_session":   {identity.RoleDM: true, identity.RoleAgent: true},
 	// use_ability/remove_condition (ruleset-interpreter Task 6): dm/agent
@@ -308,6 +315,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "add_actor"
 	case *vttv1.ClientCommand_PlaceToken:
 		return "place_token"
+	case *vttv1.ClientCommand_RemoveToken:
+		return "remove_token"
 	case *vttv1.ClientCommand_StartSession:
 		return "start_session"
 	case *vttv1.ClientCommand_EndSession:

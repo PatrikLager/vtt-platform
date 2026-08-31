@@ -285,6 +285,7 @@ test("each guard refuses with its own exact wording", () => {
     ["scene needs an id and a positive width and height", () => { const h = harness(); h.button("Create").click(); return h; }],
     ["an actor needs an id", () => { const h = harness(); h.action("add-actor").click(); return h; }],
     ["a token needs an id, a scene and an actor", () => { const h = harness(); h.action("place-token").click(); return h; }],
+    ["name the token to remove", () => { const h = harness(); h.action("remove-token").click(); return h; }],
     ["a note needs a key and some text", () => { const h = harness(); h.button("Save").click(); return h; }],
     ["name the note to delete", () => { const h = harness(); h.button("Delete").click(); return h; }],
   ];
@@ -491,6 +492,20 @@ test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", ()
   expect(p!.value["actorId"]).toBe("a1");
   // `Number(ty.value) || 0` — an empty box is the origin, not NaN.
   expect(p!.value["position"]).toEqual(expect.objectContaining({ x: 3, y: 0 }));
+});
+
+// removeToken (retraction-leaves Task 8, fix round 1): the restored DM
+// control, sharing token-id with Place rather than a field of its own.
+test("removing a token sends its trimmed id and clears the field", () => {
+  const h = harness();
+  fill(h, { "token-id": " t1 " });
+  h.action("remove-token").click();
+  const [p] = payloads(h);
+  expect(p!.case).toBe("removeToken");
+  expect(p!.value["tokenId"]).toBe("t1");
+
+  const next = harness();
+  expect(next.field("token-id").value).toBe("");
 });
 
 test("a note's key, title and text are trimmed on the way out", () => {

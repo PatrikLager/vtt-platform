@@ -240,6 +240,34 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		st.Tokens[tm.TokenId] = tok
 		return nil
 
+	case *vttv1.Envelope_TokenRemoved:
+		// Takes a piece off the board (retraction-leaves spec §5.1): "no
+		// longer part of the world going forward", never "this never
+		// happened".
+		//
+		// NOT TokenHidden (that arm below). The narrow, true claim: no
+		// COMMAND produces TokenHidden, so it never reaches this switch FROM
+		// THE LOG — production Apply only ever folds real log events, which
+		// structurally excludes it. That arm's own comment explains why it
+		// stays TOLERANT of a re-sent hide rather than refusing one, which
+		// is a fact about the PROJECTED streams this same Apply also folds
+		// (TestAProjectedStreamFoldsCleanly and its siblings) — it IS
+		// reached there, just never from a real campaign log. TokenRemoved
+		// has no such exemption: it is a real, log-carrying event, and this
+		// arm deletes the token from every fold's state permanently, for
+		// everyone.
+		//
+		// The error wording DELIBERATELY MATCHES TokenMoved's own unknown-
+		// token error above ("moved" -> "removed"), per task-8-brief.md:
+		// removing a token that does not exist must fail in the same words
+		// the codebase already uses for an unknown token.
+		tr := p.TokenRemoved
+		if _, ok := st.Tokens[tr.TokenId]; !ok {
+			return fmt.Errorf("engine: removed unknown token %q", tr.TokenId)
+		}
+		delete(st.Tokens, tr.TokenId)
+		return nil
+
 	case *vttv1.Envelope_DoorOpened:
 		do := p.DoorOpened
 		sc, ok := st.Scenes[do.SceneId]

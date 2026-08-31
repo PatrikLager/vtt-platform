@@ -13,7 +13,7 @@ import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
-  startSession, endSession, createScene, placeToken, loadAdventure, loadMap,
+  startSession, endSession, createScene, placeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
@@ -383,6 +383,15 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         }));
         clearDraft("token-id", "token-scene", "token-actor", "token-x", "token-y");
       }, "place-token"),
+      // Takes a piece off the board for good (retraction-leaves Task 8, spec
+      // §5.1) — the DM control this branch's own Task 3 left without one
+      // when the Undo group came out. Shares tokId with Place rather than a
+      // field of its own: naming a token to remove needs nothing else.
+      button("Remove", () => {
+        if (!tokId.value.trim()) return d.notify("name the token to remove");
+        d.send(removeToken(tokId.value.trim()));
+        clearDraft("token-id");
+      }, "remove-token"),
     ),
   );
 

@@ -53,6 +53,21 @@ message PlaceToken {
   GridPosition position = 4;
 }
 
+// RemoveToken takes a piece off the board (retraction-leaves spec §5.1):
+// "no longer part of the world going forward", never "this never happened".
+//
+// NOT TokenHidden. TokenHidden (events.proto) is PROJECTION-ONLY — no command
+// produces it, it never reaches the log, and it means "you cannot see it": a
+// fact about one viewer's knowledge. RemoveToken is a real command that
+// appends a real event (TokenRemoved), and it means the piece is not on the
+// board anymore, for everyone, from here forward. It does not erase that the
+// token was ever there — the log still carries whatever TokenPlaced/
+// TokenMoved/etc. came before this event, unaltered; the log only goes
+// forward (2026-08-31).
+message RemoveToken {
+  string token_id = 1;
+}
+
 message StartSession {
   string name = 1;
 }
@@ -145,6 +160,9 @@ message ClientCommand {
     // Brief did not pin a number for this arm; 31 is the next-free slot
     // after load_map = 30 (visibility Task 2 report).
     SetViewpoint set_viewpoint = 31;
+    // 32 is the next-free slot after set_viewpoint = 31 (retraction-leaves
+    // Task 8 report).
+    RemoveToken remove_token = 32;
   }
 }
 

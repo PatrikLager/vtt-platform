@@ -117,6 +117,16 @@ var manifest = []toolSpec{
 		descriptor:  (&vttv1.PlaceToken{}).ProtoReflect().Descriptor(),
 	},
 	{
+		message:     "vtt.v1.RemoveToken",
+		name:        "remove_token",
+		description: "Take a token off the board, for good. This is NOT hiding it — the piece is no longer part of the world going forward, for everyone at the table. It does not erase that the token was ever there; the log keeps whatever place_token/move_token history it had before this. DM/agent only.",
+		descriptor:  (&vttv1.RemoveToken{}).ProtoReflect().Descriptor(),
+		// requiredOverride check (the fabrication-trap lesson — see
+		// add_actor/add_narration above): RemoveToken has exactly one field,
+		// token_id, and it is genuinely required — there is no way to remove
+		// "a" token without naming which one. No override needed.
+	},
+	{
 		message:     "vtt.v1.StartSession",
 		name:        "start_session",
 		description: "Start a new play session.",

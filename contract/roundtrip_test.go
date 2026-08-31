@@ -38,6 +38,14 @@ func roundTrip(t *testing.T, fixture string, msg proto.Message) {
 }
 
 func TestTokenMovedRoundTrip(t *testing.T) { roundTrip(t, "token_moved.json", &vttv1.TokenMoved{}) }
+
+// TestRemoveTokenCommandRoundTrip is retraction-leaves Task 8's own fixture:
+// remove_token is the newest ClientCommand oneof arm, and this pins its wire
+// shape exactly as move_token_request.json pins MoveTokenRequest's — a bare
+// token_id, nothing else.
+func TestRemoveTokenCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "remove_token_command.json", &vttv1.ClientCommand{})
+}
 func TestAttackRolledRoundTrip(t *testing.T) {
 	roundTrip(t, "attack_rolled.json", &vttv1.AttackRolled{})
 }

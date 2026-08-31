@@ -61,6 +61,15 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ActorId:  c.PlaceToken.GetActorId(),
 			Position: c.PlaceToken.GetPosition(),
 		}}
+	case *vttv1.ClientCommand_RemoveToken:
+		// retraction-leaves Task 8. Plain single-Envelope conversion, the
+		// same shape OpenDoor/CloseDoor use below: Authorize has already
+		// decided this participant may issue it (a DM/agent-only row), and
+		// engine.Apply owns the "unknown token" rejection — there is
+		// nothing left to validate at this layer.
+		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: &vttv1.TokenRemoved{
+			TokenId: c.RemoveToken.GetTokenId(),
+		}}
 	case *vttv1.ClientCommand_StartSession:
 		env.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{
 			Name: c.StartSession.GetName(),

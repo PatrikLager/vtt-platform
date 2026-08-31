@@ -33,6 +33,7 @@ var theCommandTools = []string{
 	"create_scene",
 	"add_actor",
 	"place_token",
+	"remove_token",
 	"start_session",
 	"end_session",
 	"use_ability",

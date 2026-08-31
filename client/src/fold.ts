@@ -213,6 +213,30 @@ function apply(st: State, env: Envelope): void {
       tok.Y = v.to.y;
       return;
     }
+    case "tokenRemoved": {
+      // Takes a piece off the board (retraction-leaves spec §5.1): "no
+      // longer part of the world going forward", never "this never
+      // happened".
+      //
+      // NOT tokenHidden (below) — but not because that arm stays away from
+      // this fold; it does not. tokenHidden reaches THIS SAME switch, on a
+      // player's own projected stream, every time a token leaves their
+      // sight — the arm right below folds it constantly. The difference is
+      // where the fact comes from: no COMMAND produces tokenHidden — the
+      // server's projection layer (internal/gateway/project.go) synthesizes
+      // it, so it can never appear in the actual campaign log — while
+      // tokenRemoved is a real, log-carrying event, produced by a real
+      // command (remove_token), that removes the piece for everyone, not
+      // just one viewer's sight of it.
+      //
+      // The message DELIBERATELY MATCHES tokenMoved's own unknown-token
+      // message above ("moved" -> "removed"), the same wording apply.go's
+      // two arms share.
+      const v = p.value;
+      if (!st.Tokens[v.tokenId]) throw new FoldError(`unknown token "${v.tokenId}" removed`);
+      delete st.Tokens[v.tokenId];
+      return;
+    }
     case "tokenHidden": {
       // PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
       // token left their view. Deleting an absent token is deliberately NOT

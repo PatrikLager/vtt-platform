@@ -157,6 +157,15 @@ test("moving a token with no destination is rejected", () => {
     'token "t1" moved with no destination');
 });
 
+// tokenRemoved (retraction-leaves Task 8, spec §5.1). Same idiom as
+// tokenMoved's own unknown-token case directly above, and the message
+// mirrors it word for word ("moved" -> "removed") per task-8-brief.md's own
+// requirement that the two read as the same wording.
+test("removing an unknown token is rejected", () => {
+  rejects([...placeable, env(4, { tokenRemoved: { tokenId: "ghost" } })],
+    'unknown token "ghost" removed');
+});
+
 // --- sceneSeen (visibility spec §6) ------------------------------------------
 //
 // tokenHidden has no rejection case: hiding an absent token is deliberately a

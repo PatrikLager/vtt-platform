@@ -842,6 +842,26 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// viewer only as an arrival synthesized from what they can see.
 		return withheld
 
+	case *vttv1.Envelope_TokenRemoved:
+		// retraction-leaves Task 8, and the SAME single-path reasoning as
+		// TokenPlaced directly above, run in the other direction. A token's
+		// departure from a viewer's board — whichever of three reasons
+		// causes it: it walked out of sight, its actor lost every eye that
+		// could see it, or (this arm) it was REMOVED from the world — is
+		// always told the same way: transitions' own "for _, id := range
+		// sortedSet(pr.tokens)" loop, which already emits TokenHidden the
+		// moment `now.tokens` stops containing an id `pr.tokens` still holds
+		// (this event's fold deletes the token from engine.State, so `now`
+		// no longer contains it). Forwarding the raw TokenRemoved here as
+		// well would be a SECOND path narrating the same disappearance, and
+		// for a viewer who never held the token in the first place,
+		// forwarding it would leak that a token existed and was removed
+		// off-screen — exactly the kind of leak withheld exists to prevent.
+		// A viewer who DID see it gets the TokenHidden that same loop
+		// already produces; nothing here is lost. Pinned end-to-end by
+		// TestARemovedTokenReachesAPlayerOnlyAsHidden (project_test.go).
+		return withheld
+
 	case *vttv1.Envelope_TokenHidden, *vttv1.Envelope_SceneSeen:
 		// PROJECTION-ONLY (spec §5): no command produces either, so neither
 		// can structurally reach the log, and one arriving from the log is a

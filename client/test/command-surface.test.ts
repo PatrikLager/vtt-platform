@@ -105,6 +105,12 @@ export const COMMAND_SURFACE: Record<
   closeDoor: { surface: "board" },
   useAbility: { surface: "player-panel", action: "use-ability" },
   setViewpoint: { surface: "spectator" },
+  // removeToken (retraction-leaves Task 8, fix round 1): a Remove button
+  // beside Place token's own token-id input (view/dm.ts). This is a
+  // restoration, not a new capability — Task 3 of this same branch deleted
+  // the Undo group, and with it the only way a DM could take a token off the
+  // board at all; this row and its control are what put that back.
+  removeToken: { surface: "dm-console", action: "remove-token" },
 };
 
 /** The oneof's case names, read from the generated descriptor. */

@@ -43,6 +43,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
+	case *vttv1.TokenRemoved:
+		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
 	case *vttv1.DoorOpened:
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: p}
 	case *vttv1.DoorClosed:
@@ -1845,6 +1847,50 @@ func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 	}
 	if _, ok := viewerState.Tokens["t-hero"]; !ok {
 		t.Error("a player must still be able to see their own character")
+	}
+}
+
+// TestARemovedTokenReachesAPlayerOnlyAsHidden pins classify's TokenRemoved
+// ruling (withheld): the raw event must never reach a player directly. The
+// transitions loop already narrates a token's disappearance as TokenHidden
+// for anyone who held it, whatever the cause — walked out of sight, its
+// actor lost every eye, or (here) removal — and forwarding the raw event too
+// would be a SECOND narration of the same disappearance, reaching this fold
+// AFTER TokenHidden has already deleted the token: "engine: removed unknown
+// token" — which through session.ts's re-fold-the-whole-log-on-every-event
+// is the permanent client freeze spec §8 names as the worst failure
+// available. engine.Apply is the SAME fold the client mirrors, so what it
+// refuses here is what a real client would refuse too.
+func TestARemovedTokenReachesAPlayerOnlyAsHidden(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	intro := firstPlace(pr, st)
+
+	mustApply(st, 8, &vttv1.TokenRemoved{TokenId: "t-hero"})
+	out := pr.Project(envelope(8, &vttv1.TokenRemoved{TokenId: "t-hero"}), st)
+
+	var hidden bool
+	for _, e := range out {
+		if e.GetTokenRemoved() != nil {
+			t.Fatal("a removed token must reach a player as TokenHidden, never the raw TokenRemoved")
+		}
+		if h := e.GetTokenHidden(); h != nil && h.GetTokenId() == "t-hero" {
+			hidden = true
+		}
+	}
+	if !hidden {
+		t.Fatal("want a synthesized TokenHidden for the player's own removed token")
+	}
+
+	// Folded from an empty state through EVERYTHING this player has been
+	// sent so far, exactly as TestAProjectedStreamFoldsCleanly does — intro
+	// first (the scene/actor/token introductions firstPlace produced), then
+	// this event's own output, in the order a real client would receive them.
+	viewerState := engine.NewState()
+	for i, e := range append(append([]*vttv1.Envelope{}, intro...), out...) {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
 	}
 }
 

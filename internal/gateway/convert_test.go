@@ -183,6 +183,31 @@ func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 	}
 }
 
+// TestToEventRemoveTokenProducesTokenRemoved is PlaceToken's own test
+// (TestToEventPlaceTokenProducesTokenPlaced, above) mirrored for removal
+// (retraction-leaves Task 8): a plain single-Envelope conversion, the same
+// shape as OpenDoor/CloseDoor/RemoveCondition — no adjacency or ownership
+// check here, since Authorize (a DM/agent-only row) has already decided this
+// participant may issue it by the time ToEvent runs.
+func TestToEventRemoveTokenProducesTokenRemoved(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveToken{
+		RemoveToken: &vttv1.RemoveToken{TokenId: "t1"},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := env.Payload.(*vttv1.Envelope_TokenRemoved)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_TokenRemoved", env.Payload)
+	}
+	if tr.TokenRemoved.TokenId != "t1" {
+		t.Fatalf("TokenId = %q, want %q", tr.TokenRemoved.TokenId, "t1")
+	}
+}
+
 func TestToEventStartSessionProducesSessionStarted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{

@@ -59,6 +59,13 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{
 			PlaceToken: &vttv1.PlaceToken{TokenId: "t2", SceneId: "s1", ActorId: "a1"},
 		}}
+	case "remove_token":
+		// Names "t1" — the same token ownershipFixture gives participant
+		// "p-1" — but this row has no player cell true (see authzCases'
+		// comment on remove_token below): Authorize never reaches an
+		// ownership check for it, so the id chosen here is arbitrary for
+		// authz purposes and only has to be a syntactically valid command.
+		return removeTokenCmd("t1")
 	case "start_session":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{
 			StartSession: &vttv1.StartSession{Name: "session"},
@@ -217,9 +224,20 @@ func closeDoorCmd(sceneID string, x, y int32) *vttv1.ClientCommand {
 	}}
 }
 
+// removeTokenCmd builds a minimal, valid RemoveToken ClientCommand
+// (retraction-leaves Task 8). Authorize never checks token existence — only
+// role — so a bare id is trivially valid for authz purposes; engine.Apply
+// owns the "unknown token" rejection.
+func removeTokenCmd(tokenID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveToken{
+		RemoveToken: &vttv1.RemoveToken{TokenId: tokenID},
+	}}
+}
+
 // authzCase is one cell of the commands x roles authorization matrix. No
 // count in this sentence: TestAuthorizeTableAllCommandsAllRoles asserts the
-// total, and this comment said 21 while that assertion said 88 = 22 x 4.
+// total, and a comment here once said 21 while that assertion said 88 = 22 x
+// 4 — the exact drift a count-free sentence exists to make impossible.
 // want is written out LITERALLY per task-4-brief.md Step 1 — it must never
 // be derived from commandRoles (the map under test) or this test proves
 // nothing about the table's actual content.
@@ -229,7 +247,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 84-cell matrix (spec §4/§7): every command against
+// authzCases is the full 88-cell matrix (spec §4/§7): every command against
 // every one of the four roles. It reached 88 by growing from 84 with
 // visibility Task 6's set_viewpoint row, from 80 with the whole-branch-review
 // C1 remediation's load_map row, from 72 with maps-as-geometry Task 1's
@@ -238,8 +256,10 @@ type authzCase struct {
 // load_adventure row, which itself grew from 36 with world-layer Task 3's
 // add_narration/upsert_note/delete_note rows, and from 28 with
 // ruleset-interpreter Task 6's use_ability/remove_condition rows — then SHRANK
-// for the first time on 2026-08-31, back to 84, when retract_events left with
-// retraction itself. move_token/player,
+// on 2026-08-31, back to 84, when retract_events left with retraction itself,
+// and grew again the same day, back to 88, with retraction-leaves Task 8's
+// remove_token row: a SECOND arrival at 88 from an unrelated row, not a round
+// trip back to the one retraction took with it. move_token/player,
 // use_ability/player, remove_condition/player, open_door/player and
 // close_door/player are all TRUE here because the shared fixture in
 // TestAuthorizeTableAllCommandsAllRoles gives participant "p-1" ownership of
@@ -272,6 +292,22 @@ var authzCases = []authzCase{
 	{"place_token", identity.RoleAgent, true},
 	{"place_token", identity.RolePlayer, false},
 	{"place_token", identity.RoleSpectator, false},
+
+	// remove_token (retraction-leaves Task 8, spec §5.1: "takes a piece off
+	// the board"). SAME ROLE SET AS place_token, deliberately, and the
+	// symmetry is the reasoning: removal is place_token's inverse — taking a
+	// piece OFF the board is authoring the board, not manipulating a piece
+	// already on it — so a player who controls an actor and may MOVE its
+	// token (move_token's ownership row, above) does not thereby get to
+	// REMOVE it. That is a bigger, one-way decision (the log only goes
+	// forward — there is no un-remove), symmetric with who may PLACE a token
+	// in the first place, not with who may walk one around. No ownership
+	// check: this row is a plain role lookup, the same shape place_token's
+	// own row is.
+	{"remove_token", identity.RoleDM, true},
+	{"remove_token", identity.RoleAgent, true},
+	{"remove_token", identity.RolePlayer, false},
+	{"remove_token", identity.RoleSpectator, false},
 
 	{"start_session", identity.RoleDM, true},
 	{"start_session", identity.RoleAgent, true},
@@ -444,8 +480,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 84 {
-		t.Fatalf("authzCases has %d entries, want 84 (21 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 88 {
+		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
