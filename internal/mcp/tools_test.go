@@ -40,7 +40,7 @@ import (
 // removed from the contract vanishes from the manifest too, so only a
 // hand-written set can notice it is gone.
 var wantCommandToolNames = []string{
-	"move_token", "create_scene", "add_actor", "place_token", "remove_token",
+	"move_token", "create_scene", "add_actor", "place_token", "remove_token", "remove_actor",
 	"start_session", "end_session",
 	"use_ability", "remove_condition",
 	"add_narration", "upsert_note", "delete_note",

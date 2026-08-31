@@ -68,6 +68,28 @@ message RemoveToken {
   string token_id = 1;
 }
 
+// RemoveActor takes an actor out of the world (retraction-leaves spec §5.2),
+// the same rule one level up from RemoveToken: "no longer part of the world
+// going forward", never "this never happened". The log keeps every
+// ActorAdded/TokenPlaced/AbilityUsed the actor ever had, unaltered.
+//
+// IT YIELDS A BATCH, not one event, and that is a CORRECTNESS requirement
+// rather than a convenience. Both folds refuse a token whose actor they do not
+// know (engine.Apply's TokenPlaced arm, client/src/fold.ts's tokenPlaced arm),
+// so an ActorRemoved that left this actor's tokens standing would leave a world
+// whose own introductions no longer fold — the permanent client freeze this arc
+// exists to make impossible. So the gateway emits one TokenRemoved per token of
+// this actor, in token-id order, and then the ActorRemoved, as ONE ordered batch
+// accepted or rejected atomically (LoadMap is the precedent — read its own
+// comment in this file).
+//
+// CONTROL GRANTS NEED NO EVENT OF THEIR OWN: controller_ids is a field ON the
+// actor (Actor, events.proto), so removing the actor removes them with it. That
+// is a consequence of the removal, not a second cascade.
+message RemoveActor {
+  string actor_id = 1;
+}
+
 message StartSession {
   string name = 1;
 }
@@ -163,6 +185,9 @@ message ClientCommand {
     // 32 is the next-free slot after set_viewpoint = 31 (retraction-leaves
     // Task 8 report).
     RemoveToken remove_token = 32;
+    // 33 is the next-free slot after remove_token = 32 (retraction-leaves
+    // Task 9 report).
+    RemoveActor remove_actor = 33;
   }
 }
 

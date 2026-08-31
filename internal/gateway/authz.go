@@ -26,7 +26,16 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// removal is place_token's inverse (authoring the board) and NOT
 	// move_token's neighbour (using a piece already on it), so a player who
 	// may move a token they control does not thereby get to remove it.
-	"remove_token":  {identity.RoleDM: true, identity.RoleAgent: true},
+	"remove_token": {identity.RoleDM: true, identity.RoleAgent: true},
+	// remove_actor (retraction-leaves Task 9, spec §5.2). DM/agent only, and
+	// this row is add_actor's read backwards: removing an actor authors WHO IS
+	// IN THE WORLD, so it inherits add_actor's role set rather than
+	// move_token's. No player row even for an actor the player CONTROLS —
+	// control is not ownership of existence, and this command emits
+	// remove_token's event for every token the actor has, so a player row
+	// would be a route around remove_token's own. See authz_test.go's
+	// authzCases comment on this row for the argument in full.
+	"remove_actor":  {identity.RoleDM: true, identity.RoleAgent: true},
 	"start_session": {identity.RoleDM: true, identity.RoleAgent: true},
 	"end_session":   {identity.RoleDM: true, identity.RoleAgent: true},
 	// use_ability/remove_condition (ruleset-interpreter Task 6): dm/agent
@@ -317,6 +326,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "place_token"
 	case *vttv1.ClientCommand_RemoveToken:
 		return "remove_token"
+	case *vttv1.ClientCommand_RemoveActor:
+		return "remove_actor"
 	case *vttv1.ClientCommand_StartSession:
 		return "start_session"
 	case *vttv1.ClientCommand_EndSession:

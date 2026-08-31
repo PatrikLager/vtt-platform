@@ -111,6 +111,14 @@ export const COMMAND_SURFACE: Record<
   // the Undo group, and with it the only way a DM could take a token off the
   // board at all; this row and its control are what put that back.
   removeToken: { surface: "dm-console", action: "remove-token" },
+  // removeActor (retraction-leaves Task 9): a Remove button beside Add
+  // actor's own actor-id input (view/dm.ts), the same shape removeToken's
+  // control has one group down. It gets a control for the reason Task 8's
+  // review found for removeToken: this branch is the one that took the DM's
+  // corrections away, and a removal the agent can issue and the DM cannot
+  // reach is a capability the console loses on the branch that argues
+  // corrections happen by appending.
+  removeActor: { surface: "dm-console", action: "remove-actor" },
 };
 
 /** The oneof's case names, read from the generated descriptor. */

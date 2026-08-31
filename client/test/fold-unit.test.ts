@@ -924,6 +924,57 @@ test("tokenRemoved removes only that token", () => {
   expect(st.Tokens["t2"]).toBeDefined();
 });
 
+// actorRemoved (retraction-leaves Task 9, spec §5.2): the success half, the
+// mirror of "tokenRemoved removes only that token" one level up. The token has
+// to go FIRST — that is remove_actor's own batch order, and the fold refuses
+// the other order (fold-rejections.test.ts's "removing an actor whose token is
+// still on the board is rejected").
+//
+// AND NOTHING ELSE GOES WITH THE ACTOR. This arm does NOT cascade: the other
+// actor's token is still standing afterwards, and even the removed actor's
+// removal was the batch's doing, not this arm's.
+test("actorRemoved removes only that actor", () => {
+  const st = fold([
+    ...twoTokenScene(),
+    env(6, { tokenRemoved: { tokenId: "t1" } }),
+    env(7, { actorRemoved: { actorId: "a1" } }),
+  ]);
+  expect(st.Actors["a1"]).toBeUndefined();
+  expect(st.Actors["a2"]).toBeDefined();
+  expect(st.Tokens["t2"]).toBeDefined();
+});
+
+// A CONDITION IS PART OF THE ACTOR, so it leaves with it — the mirror of
+// internal/engine's TestActorRemovedTakesItsConditionsWithIt, which existed
+// while this one did not (fix round 1, I2). st.Conditions is a sibling map for
+// storage reasons only; nothing addresses a condition independently of its
+// actor.
+//
+// MEASURED, NOT ASSERTED EMPTY, because leaving them is a FREEZE rather than
+// untidiness: both folds accept an actorAdded for an id whose actor was
+// removed, so the id can come back, and a ghost condition makes the first
+// conditionApplied on the NEW actor a duplicate — which this fold refuses,
+// and Session.ingest re-folds the whole log on every event, so that throw is
+// permanent. It is reachable in production because the projector's actor
+// introduction re-emits st.Conditions[id] behind a re-introduction
+// (internal/gateway's transitions).
+test("actorRemoved takes its conditions with it, so the id can be used again", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 3, gridHeight: 3 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "a1" } } }),
+    env(4, { conditionApplied: { actorId: "a1", conditionId: "prone", source: "dm" } }),
+    env(5, { actorRemoved: { actorId: "a1" } }),
+    // The id comes back, and the SAME condition applies cleanly to the new
+    // actor. Without the arm's `delete st.Conditions[...]` this envelope
+    // throws `duplicate condition "prone" on actor "a1"`.
+    env(6, { actorAdded: { actor: { actorId: "a1", name: "a1 again" } } }),
+    env(7, { conditionApplied: { actorId: "a1", conditionId: "prone", source: "dm" } }),
+  ]);
+  expect(st.Conditions["a1"]).toHaveLength(1);
+  expect(st.Conditions["a1"]![0]!.AppliedSeq).toBe(7);
+});
+
 test("sceneSeen unions into Explored and never shrinks", () => {
   const st = fold([
     env(1, { sessionStarted: { name: "n" } }),

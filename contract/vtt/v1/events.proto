@@ -413,6 +413,24 @@ message TokenRemoved {
   string token_id = 1;
 }
 
+// ActorRemoved takes an actor out of the world, for good, going forward
+// (retraction-leaves spec §5.2). Produced by RemoveActor (commands.proto), and
+// never on its own: it is the LAST event of the batch that command emits, after
+// one TokenRemoved per token the actor had. Both folds refuse a token whose
+// actor is unknown, so an actor that departed ahead of its pieces would leave a
+// world whose introductions no longer fold.
+//
+// It does not erase that the actor ever existed — the log still carries its
+// ActorAdded and everything that happened to it, unaltered; the log only goes
+// forward (2026-08-31).
+//
+// NO SEPARATE EVENT FOR ITS CONTROL GRANTS: controller_ids lives on Actor, so
+// whoever held this actor stops holding it because the actor is gone, not
+// because anything revoked them.
+message ActorRemoved {
+  string actor_id = 1;
+}
+
 message SessionStarted {
   string name = 1;
 }
@@ -506,5 +524,8 @@ message Envelope {
     // 32 is the next-free slot after scene_seen = 31 (retraction-leaves
     // Task 8 report).
     TokenRemoved token_removed = 32;
+    // 33 is the next-free slot after token_removed = 32 (retraction-leaves
+    // Task 9 report).
+    ActorRemoved actor_removed = 33;
   }
 }

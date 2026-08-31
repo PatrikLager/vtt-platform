@@ -127,6 +127,16 @@ var manifest = []toolSpec{
 		// "a" token without naming which one. No override needed.
 	},
 	{
+		message:     "vtt.v1.RemoveActor",
+		name:        "remove_actor",
+		description: "Take an actor out of the world, for good, along with every token it has on the board. This is NOT hiding it and NOT revoking control — the actor is no longer part of the world going forward, for everyone at the table, and there is no un-remove. It does not erase that the actor ever existed; the log keeps its add_actor and everything that happened to it. This ONE call also removes each of the actor's tokens, so do not call remove_token first. DM/agent only.",
+		descriptor:  (&vttv1.RemoveActor{}).ProtoReflect().Descriptor(),
+		// No requiredOverride, for the same reason RemoveToken above needs
+		// none: RemoveActor has exactly one field, actor_id, and it is
+		// genuinely required — there is no way to remove "an" actor without
+		// naming which one.
+	},
+	{
 		message:     "vtt.v1.StartSession",
 		name:        "start_session",
 		description: "Start a new play session.",

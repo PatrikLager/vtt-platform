@@ -454,6 +454,12 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
 		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
 			"same shape as load_adventure directly above",
+		"remove_actor": "expands to a batch of events — one TokenRemoved per token of " +
+			"the actor, then the ActorRemoved — handled before ToEvent (handleRemoveActor " +
+			"in server.go). Both folds refuse a token whose actor is unknown, so an " +
+			"ActorRemoved on its own would leave a world whose own INTRODUCTIONS no " +
+			"longer fold: the projection synthesizes a TokenPlaced naming an actor no " +
+			"path can introduce, and the seat that receives it never folds again",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",

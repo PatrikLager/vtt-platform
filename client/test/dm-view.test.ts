@@ -286,6 +286,7 @@ test("each guard refuses with its own exact wording", () => {
     ["an actor needs an id", () => { const h = harness(); h.action("add-actor").click(); return h; }],
     ["a token needs an id, a scene and an actor", () => { const h = harness(); h.action("place-token").click(); return h; }],
     ["name the token to remove", () => { const h = harness(); h.action("remove-token").click(); return h; }],
+    ["name the actor to remove", () => { const h = harness(); h.action("remove-actor").click(); return h; }],
     ["a note needs a key and some text", () => { const h = harness(); h.button("Save").click(); return h; }],
     ["name the note to delete", () => { const h = harness(); h.button("Delete").click(); return h; }],
   ];
@@ -506,6 +507,27 @@ test("removing a token sends its trimmed id and clears the field", () => {
 
   const next = harness();
   expect(next.field("token-id").value).toBe("");
+});
+
+// removeActor (retraction-leaves Task 9): the DM control for the batch
+// command, sharing actor-id with Add rather than a field of its own — naming
+// an actor to remove needs nothing else.
+//
+// NO CONFIRMATION, and that is this file's own rule rather than an omission:
+// dm.ts's header says exactly one control asks first, and it is the one whose
+// damage lands OUTSIDE the room (rotating the join link strands copies held by
+// people who are not here). A removal lands on the log every seat at this
+// table can see.
+test("removing an actor sends its trimmed id and clears the field", () => {
+  const h = harness();
+  fill(h, { "actor-id": " a1 " });
+  h.action("remove-actor").click();
+  const [p] = payloads(h);
+  expect(p!.case).toBe("removeActor");
+  expect(p!.value["actorId"]).toBe("a1");
+
+  const next = harness();
+  expect(next.field("actor-id").value).toBe("");
 });
 
 test("a note's key, title and text are trimmed on the way out", () => {

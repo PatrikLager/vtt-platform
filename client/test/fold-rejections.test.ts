@@ -166,6 +166,26 @@ test("removing an unknown token is rejected", () => {
     'unknown token "ghost" removed');
 });
 
+// actorRemoved (retraction-leaves Task 9, spec §5.2). Two guards, and the
+// second is the one that makes remove_actor's batch atomic: engine.Apply's
+// ActorRemoved arm refuses an actor whose tokens are still on the board, so
+// campaign.AppendBatch — which validates by folding — rejects a batch that
+// would leave a token whose actor nobody can introduce. This fold mirrors both
+// refusals, because "parity includes REJECTING what Go rejects".
+
+test("removing an unknown actor is rejected", () => {
+  rejects([...placeable, env(4, { actorRemoved: { actorId: "nope" } })],
+    'unknown actor "nope" removed');
+});
+
+test("removing an actor whose token is still on the board is rejected", () => {
+  rejects([
+    ...placeable,
+    env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(5, { actorRemoved: { actorId: "a1" } }),
+  ], 'actor "a1" still has token "t1" on the board — a token cannot outlive its actor');
+});
+
 // --- sceneSeen (visibility spec §6) ------------------------------------------
 //
 // tokenHidden has no rejection case: hiding an absent token is deliberately a

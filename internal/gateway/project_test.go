@@ -45,6 +45,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.TokenRemoved:
 		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.ActorRemoved:
+		env.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
 	case *vttv1.DoorOpened:
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: p}
 	case *vttv1.DoorClosed:
@@ -1888,6 +1890,142 @@ func TestARemovedTokenReachesAPlayerOnlyAsHidden(t *testing.T) {
 	// this event's own output, in the order a real client would receive them.
 	viewerState := engine.NewState()
 	for i, e := range append(append([]*vttv1.Envelope{}, intro...), out...) {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+}
+
+// removeActorBatch projects the batch remove_actor emits — one TokenRemoved
+// per token of the actor, in token-id order, then the ActorRemoved — through
+// pr, folding each event into st first, exactly as the pump does. It returns
+// everything the viewer was sent, in order.
+//
+// The order is the handler's (gateway handleRemoveActor); reproducing it here
+// rather than asserting against a hand-picked single event is what makes these
+// tests about the REAL sequence a seat receives.
+func removeActorBatch(pr *gateway.Projector, st *engine.State, seq int64,
+	actorID string, tokenIDs []string) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, id := range tokenIDs {
+		mustApply(st, seq, &vttv1.TokenRemoved{TokenId: id})
+		out = append(out, pr.Project(envelope(seq, &vttv1.TokenRemoved{TokenId: id}), st)...)
+		seq++
+	}
+	mustApply(st, seq, &vttv1.ActorRemoved{ActorId: actorID})
+	return append(out, pr.Project(envelope(seq, &vttv1.ActorRemoved{ActorId: actorID}), st)...)
+}
+
+// TestARemovedActorReachesOnlyTheSeatThatHeldIt pins classify's ActorRemoved
+// ruling, and it is written to fail in BOTH directions, because an
+// exhaustiveness gate only asks whether an arm exists and never what it
+// returns (the Task 8 lesson).
+//
+// FORWARDED TO A SEAT THAT HELD THE ACTOR. Unlike a token's departure, an
+// actor's has no synthesized narration: pr.actors "never withdraws" and there
+// is no un-introduce message. Withholding it would leave the seat holding a
+// character that is not in the world, in its roster, for the rest of the
+// session — and, since the id can be added again, would eventually leave that
+// seat unable to fold its own stream.
+//
+// WITHHELD FROM A SEAT THAT NEVER HELD IT, for two reasons, and the first is
+// fatal on its own: their fold has no such actor, so the raw event fails with
+// "engine: removed unknown actor" — through session.ts's
+// re-fold-the-whole-log-on-every-event, the permanent freeze spec §8 names as
+// the worst failure available. And it would tell a player an actor they never
+// saw existed and was removed off-screen, which is the leak withheld exists to
+// prevent.
+func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	intro := firstPlace(pr, st)
+
+	// The GOBLIN first: this player has never seen it (it stands behind a
+	// closed door) and its removal must reach them as nothing at all.
+	unseen := removeActorBatch(pr, st, 8, "goblin", []string{"t-gob"})
+	for _, e := range unseen {
+		if e.GetActorRemoved() != nil {
+			t.Fatal("an actor this seat never held must not be announced as removed — it would name a creature they never saw")
+		}
+	}
+
+	// Then their OWN character, which they hold: this one they must be told
+	// about, or their roster keeps a character the world no longer has.
+	held := removeActorBatch(pr, st, 10, "hero", []string{"t-hero"})
+	var told bool
+	for _, e := range held {
+		if ar := e.GetActorRemoved(); ar != nil && ar.GetActorId() == "hero" {
+			told = true
+		}
+	}
+	if !told {
+		t.Fatal("want the raw ActorRemoved forwarded to a seat that holds the actor")
+	}
+
+	// And everything this seat was sent, from the introductions onward, folds
+	// through the SAME Apply the client mirrors — in the order it arrived.
+	viewerState := engine.NewState()
+	var stream []*vttv1.Envelope
+	stream = append(stream, intro...)
+	stream = append(stream, unseen...)
+	stream = append(stream, held...)
+	for i, e := range stream {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+}
+
+// TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh is the deliberate
+// answer to the question transitions' own comment left open: "nothing removes
+// an actor from the world today either. The day something does, both maps need
+// an answer chosen deliberately."
+//
+// pr.actors FORGETS an actor the world no longer has. It has to. engine.Apply
+// accepts an ActorAdded for an id whose actor was removed (the duplicate check
+// reads the CURRENT world), so the id can come back — and a projector that
+// still believed it had introduced it would skip the introduction while the
+// seat's own fold, which applied the forwarded ActorRemoved, no longer has the
+// actor at all. The next token to arrive for it is then "token placed for
+// unknown actor" on that seat, forever.
+func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	stream := firstPlace(pr, st)
+
+	stream = append(stream, removeActorBatch(pr, st, 8, "hero", []string{"t-hero"})...)
+
+	// The same id, added again — a fresh party member, granted to the same
+	// player, with a token of its own.
+	steps := []struct {
+		seq     int64
+		payload proto.Message
+	}{
+		{10, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "hero", Name: "Hero II",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}},
+		{11, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
+		{12, &vttv1.TokenPlaced{TokenId: "t-hero-2", SceneId: "s", ActorId: "hero",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}}},
+	}
+	mark := len(stream)
+	for _, step := range steps {
+		mustApply(st, step.seq, step.payload)
+		stream = append(stream, pr.Project(envelope(step.seq, step.payload), st)...)
+	}
+
+	var reintroduced bool
+	for _, e := range stream[mark:] {
+		if aa := e.GetActorAdded(); aa != nil && aa.GetActor().GetActorId() == "hero" {
+			reintroduced = true
+		}
+	}
+	if !reintroduced {
+		t.Fatal("want the reused actor id introduced again — the seat's own fold no longer has it")
+	}
+
+	viewerState := engine.NewState()
+	for i, e := range stream {
 		if err := engine.Apply(viewerState, e); err != nil {
 			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
 		}

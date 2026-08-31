@@ -14,7 +14,7 @@ import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, createScene, placeToken, removeToken, loadAdventure, loadMap,
-  upsertNote, deleteNote, removeCondition, parseActorJSON, addActor,
+  upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
   rotateJoinLink,
@@ -334,6 +334,21 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         d.send(addActor(actorId.value.trim(), actorName.value.trim(), kind));
         clearDraft("actor-id", "actor-name", "actor-kind");
       }, "add-actor"),
+      // Takes an actor out of the world for good, and every token it has on
+      // the board with it (retraction-leaves Task 9, spec §5.2) — the DM's
+      // reach for the one command in this arc that emits a batch. Shares
+      // actorId with Add rather than a field of its own: naming an actor to
+      // remove needs nothing else, which is exactly how Remove sits beside
+      // Place one group down.
+      //
+      // NO CONFIRMATION, per this file's own opening rule: exactly one control
+      // asks first, and it is the one whose damage lands OUTSIDE the room. A
+      // removal lands on the log every seat at this table can see.
+      button("Remove", () => {
+        if (actorId.value.trim() === "") return d.notify("name the actor to remove");
+        d.send(removeActor(actorId.value.trim()));
+        clearDraft("actor-id");
+      }, "remove-actor"),
     ),
   );
 

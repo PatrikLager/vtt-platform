@@ -59,6 +59,13 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{
 			PlaceToken: &vttv1.PlaceToken{TokenId: "t2", SceneId: "s1", ActorId: "a1"},
 		}}
+	case "remove_actor":
+		// Names "a1" — the actor ownershipFixture gives participant "p-1" —
+		// deliberately, so authzCases' remove_actor/player cell is FALSE
+		// against the strongest possible case: a player who controls this
+		// very actor still may not remove it. See authzCases' own comment on
+		// the remove_actor rows.
+		return removeActorCmd("a1")
 	case "remove_token":
 		// Names "t1" — the same token ownershipFixture gives participant
 		// "p-1" — but this row has no player cell true (see authzCases'
@@ -234,6 +241,18 @@ func removeTokenCmd(tokenID string) *vttv1.ClientCommand {
 	}}
 }
 
+// removeActorCmd builds a minimal, valid RemoveActor ClientCommand
+// (retraction-leaves Task 9). Authorize checks role and nothing else for this
+// command — no ownership switch, exactly as removeTokenCmd's own comment says
+// of remove_token — so a bare id is trivially valid for authz purposes;
+// engine.Apply owns the "unknown actor" rejection and the gateway handler owns
+// the token cascade.
+func removeActorCmd(actorID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveActor{
+		RemoveActor: &vttv1.RemoveActor{ActorId: actorID},
+	}}
+}
+
 // authzCase is one cell of the commands x roles authorization matrix. No
 // count in this sentence: TestAuthorizeTableAllCommandsAllRoles asserts the
 // total, and a comment here once said 21 while that assertion said 88 = 22 x
@@ -247,8 +266,10 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 88-cell matrix (spec §4/§7): every command against
-// every one of the four roles. It reached 88 by growing from 84 with
+// authzCases is the full 92-cell matrix (spec §4/§7): every command against
+// every one of the four roles. It reached 92 with retraction-leaves Task 9's
+// remove_actor row, from an 88 that had itself been reached twice — see the
+// end of this chain. 88 came first from 84 with
 // visibility Task 6's set_viewpoint row, from 80 with the whole-branch-review
 // C1 remediation's load_map row, from 72 with maps-as-geometry Task 1's
 // open_door/close_door rows, from 52 with presence-and-actor-control Task 3's
@@ -308,6 +329,29 @@ var authzCases = []authzCase{
 	{"remove_token", identity.RoleAgent, true},
 	{"remove_token", identity.RolePlayer, false},
 	{"remove_token", identity.RoleSpectator, false},
+
+	// remove_actor (retraction-leaves Task 9, spec §5.2). DM/AGENT ONLY, and
+	// the reasoning is add_actor's row read backwards: remove_actor is
+	// add_actor's inverse — it authors WHO IS IN THE WORLD — so it inherits
+	// add_actor's role set, not move_token's.
+	//
+	// THE PLAYER CELL IS THE DECISION, and it is false against the strongest
+	// case: commandFor builds this command naming "a1", the very actor
+	// ownershipFixture gives participant "p-1", and a player who CONTROLS an
+	// actor still may not remove it. Two reasons, and either alone is
+	// sufficient. First, control is not ownership of existence: a player may
+	// put a character DOWN (revoke_actor_control's own player row, which
+	// names only themselves) and that is reversible and about who HOLDS the
+	// actor; removal deletes it from the world for everyone, forward-only,
+	// with no un-remove. Second, this command EMITS remove_token's event for
+	// every token the actor has, and remove_token is dm/agent only — a player
+	// row here would be a route around that row, clearing a board by
+	// removing its actor. No ownership check either: like place_token's and
+	// remove_token's, this row is a plain role lookup.
+	{"remove_actor", identity.RoleDM, true},
+	{"remove_actor", identity.RoleAgent, true},
+	{"remove_actor", identity.RolePlayer, false},
+	{"remove_actor", identity.RoleSpectator, false},
 
 	{"start_session", identity.RoleDM, true},
 	{"start_session", identity.RoleAgent, true},
@@ -480,8 +524,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 88 {
-		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 92 {
+		t.Fatalf("authzCases has %d entries, want 92 (23 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

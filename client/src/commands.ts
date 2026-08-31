@@ -163,6 +163,30 @@ export function removeToken(tokenId: string): ClientCommand {
   });
 }
 
+/**
+ * Take an actor out of the world, for good (retraction-leaves spec §5.2),
+ * along with every token it has on the board.
+ *
+ * ONE COMMAND, A WHOLE BATCH. The server answers this with an ordered batch —
+ * a TokenRemoved per token of the actor, in token-id order, then the
+ * ActorRemoved — appended or rejected as one (internal/gateway's
+ * handleRemoveActor). It is not a convenience: both folds refuse a token whose
+ * actor is unknown, so an ActorRemoved on its own would leave a world whose own
+ * INTRODUCTIONS no longer fold — the server would synthesize a tokenPlaced
+ * naming an actor no path can introduce, and this module's fold would throw on
+ * it for the rest of the session.
+ *
+ * NOT revokeActorControl. That hands a character back and is reversible; this
+ * removes it from the world for everyone, and nothing un-removes it. DM/agent
+ * only (see internal/gateway/authz.go's commandRoles "remove_actor" row).
+ */
+export function removeActor(actorId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeActor", value: { actorId } },
+  });
+}
+
 export function loadAdventure(adventureId: string): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),

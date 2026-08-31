@@ -444,7 +444,17 @@ test("loadMap matches the client's own expected shape", () => {
 
 // --- token removal (retraction-leaves Task 8) --------------------------------
 
-import { removeToken } from "../src/commands";
+import { removeToken, removeActor } from "../src/commands";
+
+test("removeActor matches the client's own expected shape", () => {
+  // Same idiom, one level up: a bare actorId is exactly the shape a builder
+  // wired to the wrong oneof case would still satisfy under toMatchObject,
+  // so the full object is compared.
+  const cmd = removeActor("act-goblin-2");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    removeActor: { actorId: "act-goblin-2" },
+  });
+});
 
 test("removeToken matches the client's own expected shape", () => {
   // Same idiom as openDoor/closeDoor/loadMap directly above (this file's own

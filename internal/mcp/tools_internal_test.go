@@ -34,6 +34,7 @@ var theCommandTools = []string{
 	"add_actor",
 	"place_token",
 	"remove_token",
+	"remove_actor",
 	"start_session",
 	"end_session",
 	"use_ability",

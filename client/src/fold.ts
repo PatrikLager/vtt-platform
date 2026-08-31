@@ -237,6 +237,52 @@ function apply(st: State, env: Envelope): void {
       delete st.Tokens[v.tokenId];
       return;
     }
+    case "actorRemoved": {
+      // Takes an actor out of the world (retraction-leaves spec §5.2), the
+      // same rule tokenRemoved states one level down: "no longer part of the
+      // world going forward", never "this never happened".
+      //
+      // IT REMOVES THE ACTOR AND NOTHING ELSE — in particular it does NOT
+      // remove that actor's tokens, and it must not. Taking them off the board
+      // is the COMMAND's job: remove_actor emits a tokenRemoved per token, in
+      // token-id order, ahead of this event, as one batch (the server's
+      // handleRemoveActor). Cascading here as well would put the same rule in
+      // two places and make the batch do the work twice.
+      //
+      // SO IT REFUSES INSTEAD, the strict mirror of internal/engine's
+      // ActorRemoved arm, down to the order of the two guards. Read that arm
+      // for why: an ActorRemoved that left a token standing would leave a
+      // world whose own introductions no longer fold, and this module is where
+      // that costs a viewer everything — Session.ingest re-folds the entire
+      // log on every event, so one throw here is permanent.
+      //
+      // A player's stream never reaches either guard: the server forwards this
+      // event only to a seat that HOLDS the actor (project.go's classify), and
+      // that seat's tokens for it were hidden by the batch's earlier events.
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`unknown actor "${v.actorId}" removed`);
+      // The first token in id order, so the message reads the same way twice —
+      // mirroring the Go arm, which sorts for the same reason.
+      const standing = Object.keys(st.Tokens)
+        .filter((id) => st.Tokens[id]!.ActorID === v.actorId)
+        .sort()[0];
+      if (standing !== undefined) {
+        throw new FoldError(
+          `actor "${v.actorId}" still has token "${standing}" on the board — ` +
+            `a token cannot outlive its actor`,
+        );
+      }
+      delete st.Actors[v.actorId];
+      // AND ITS CONDITIONS, which is a CONSEQUENCE of the actor leaving and
+      // not a second cascade — st.Conditions is keyed by actor id and holds
+      // facts ABOUT the actor, exactly as its controllerIds do. Mirrors Go's
+      // `delete(st.Conditions, ...)`; leaving them behind would make the first
+      // conditionApplied on a later actor with the same id a duplicate, which
+      // both folds refuse.
+      delete st.Conditions[v.actorId];
+      return;
+    }
     case "tokenHidden": {
       // PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
       // token left their view. Deleting an absent token is deliberately NOT

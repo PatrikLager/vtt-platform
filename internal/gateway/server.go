@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
@@ -1216,9 +1218,10 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// use_ability/load_adventure/load_map do not become a single Envelope via
-	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
-	// adventure.go/map.go); every other command, including remove_condition
+	// use_ability/load_adventure/load_map/remove_actor do not become a single
+	// Envelope via ToEvent (they each produce a whole ordered batch instead —
+	// ruleset.go/adventure.go/map.go and handleRemoveActor in this file);
+	// every other command, including remove_condition
 	// and remove_token (retraction-leaves Task 8 — no board-position seam
 	// needed here, since it is DM/agent only and engine.Apply's own
 	// unknown-token guard is the entire validation story), still flows
@@ -1231,6 +1234,12 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 	if lm, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadMap); ok {
 		return s.handleLoadMap(requestID, lm.LoadMap, p)
+	}
+	// remove_actor is the fourth batch command and the only one in this arc:
+	// it emits a TokenRemoved per token of the actor and then the
+	// ActorRemoved, as ONE ordered batch (handleRemoveActor, in this file).
+	if ra, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveActor); ok {
+		return s.handleRemoveActor(requestID, ra.RemoveActor, st, p)
 	}
 	// promote_participant produces NO EVENT AT ALL, unlike the two above which
 	// produce a batch. A role lives in participants.role beside the token —
@@ -1415,6 +1424,80 @@ func (s *Server) announcePromotion(participantID string) {
 		}
 		return b
 	})
+}
+
+// handleRemoveActor takes an actor out of the world AND the pieces it had on
+// the board, as one ordered batch (retraction-leaves spec §5.2, Task 9).
+//
+// THE CASCADE IS CORRECTNESS, NOT CONVENIENCE, and it is the whole reason this
+// command is not a plain ToEvent conversion. engine.Apply's TokenPlaced arm
+// and client/src/fold.ts's tokenPlaced arm both refuse a token whose actor
+// they do not know, in almost the same words — so an ActorRemoved that left
+// this actor's tokens standing would leave a world whose own introductions no
+// longer fold, and through client/src/session.ts's
+// re-fold-the-whole-log-on-every-event that is a permanent client freeze. The
+// batch is therefore one TokenRemoved per token of this actor, in token-id
+// order, and then the ActorRemoved, last.
+//
+// ONE campaign.AppendBatch, which is what makes it atomic: the batch is
+// validated by folding the whole of it before any of it is persisted, so a
+// rejection anywhere appends nothing. handleLoadMap (map.go) is the precedent
+// for the shape, down to this function's own stamping loop.
+//
+// SORTED BY TOKEN ID, not by map iteration order. Go randomises the latter, and
+// the log is permanent: two identical tables would otherwise record the same
+// removal in different orders, and no test could assert either.
+//
+// NOTHING IS CHECKED HERE. An unknown actor id produces a one-event batch that
+// campaign.AppendBatch rejects with the fold's own "removed unknown actor"
+// wording — the same division of labour remove_token has, where engine.Apply
+// owns the unknown-subject rejection and this layer owns the shape. And the
+// snapshot this reads can go stale between here and the append, which the fold
+// also owns: its ActorRemoved arm refuses an actor whose tokens still stand, so
+// a place_token that lands in between costs a clean rejection rather than an
+// orphaned token.
+//
+// CONTROL GRANTS NEED NO EVENT: controller_ids is a field on the Actor, so
+// whoever held this actor stops holding it because the actor is gone.
+func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
+	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
+	var tokenIDs []string
+	for id, tok := range st.Tokens {
+		if tok.ActorID == cmd.GetActorId() {
+			tokenIDs = append(tokenIDs, id)
+		}
+	}
+	sort.Strings(tokenIDs)
+
+	envs := make([]*vttv1.Envelope, 0, len(tokenIDs)+1)
+	for _, id := range tokenIDs {
+		envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_TokenRemoved{
+			TokenRemoved: &vttv1.TokenRemoved{TokenId: id}}})
+	}
+	envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_ActorRemoved{
+		ActorRemoved: &vttv1.ActorRemoved{ActorId: cmd.GetActorId()}}})
+
+	// Stamped here rather than by ToEvent, which this command does not use —
+	// the same loop handleLoadMap runs over the envelopes mapdef.Compile
+	// returns, and for the same reason: a batch has no single envelope for
+	// ToEvent to build.
+	now := timestamppb.Now()
+	for _, env := range envs {
+		id, err := newEventID()
+		if err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+		env.EventId = id
+		env.ParticipantId = p.ID
+		env.ActorRole = string(p.Role)
+		env.OccurredAt = now
+	}
+
+	firstSeq, err := s.campaign.AppendBatch(envs)
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
 
 // handleJoinDoor opens or closes the shared join link (joining-a-table §2).

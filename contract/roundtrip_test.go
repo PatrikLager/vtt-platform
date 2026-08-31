@@ -46,6 +46,15 @@ func TestTokenMovedRoundTrip(t *testing.T) { roundTrip(t, "token_moved.json", &v
 func TestRemoveTokenCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "remove_token_command.json", &vttv1.ClientCommand{})
 }
+
+// TestRemoveActorCommandRoundTrip is retraction-leaves Task 9's own fixture:
+// remove_actor is the newest ClientCommand oneof arm, and this pins its wire
+// shape — a bare actor_id, nothing else. The BATCH it produces is not visible
+// here and is not meant to be: the wire carries a command, and the events it
+// becomes are the gateway's (internal/gateway's handleRemoveActor).
+func TestRemoveActorCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "remove_actor_command.json", &vttv1.ClientCommand{})
+}
 func TestAttackRolledRoundTrip(t *testing.T) {
 	roundTrip(t, "attack_rolled.json", &vttv1.AttackRolled{})
 }

@@ -268,6 +268,68 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		delete(st.Tokens, tr.TokenId)
 		return nil
 
+	case *vttv1.Envelope_ActorRemoved:
+		// Takes an actor out of the world (retraction-leaves spec §5.2), the
+		// same rule TokenRemoved states one level down: "no longer part of
+		// the world going forward", never "this never happened". The log
+		// keeps every ActorAdded, grant and ability the actor ever had.
+		//
+		// IT REMOVES THE ACTOR AND NOTHING ELSE — in particular it does NOT
+		// remove that actor's tokens, and it must not. Taking them off the
+		// board is the COMMAND's job: remove_actor emits one TokenRemoved per
+		// token, in token-id order, ahead of this event, as one batch
+		// (internal/gateway's handleRemoveActor). Cascading here as well would
+		// put the same rule in two places and make the batch do the work
+		// twice.
+		//
+		// SO IT REFUSES INSTEAD, which is the other half of the same
+		// decision and is what makes that batch's atomicity mean something.
+		// Both folds reject a token whose actor they do not know
+		// (this switch's own Envelope_TokenPlaced arm, client/src/fold.ts's
+		// tokenPlaced arm),
+		// so an ActorRemoved that left a token standing would leave a world
+		// whose own introductions no longer fold — and through
+		// client/src/session.ts's re-fold-the-whole-log-on-every-event that is
+		// a permanent client freeze. The gateway builds its batch from a
+		// SNAPSHOT and campaign.AppendBatch takes the lock afterwards, so a
+		// place_token landing in between would otherwise append exactly that;
+		// AppendBatch validates by folding, so this refusal turns the race
+		// into a clean rejection of the whole batch. Pinned by
+		// TestActorRemovedRefusesWhileOneOfItsTokensStillStands and by
+		// TestAnOutOfOrderRemovalBatchIsRejectedWhole (internal/gateway).
+		//
+		// THE FIRST TOKEN IN ID ORDER is named, not whichever the map hands
+		// back first: Go randomises map iteration, and an error message that
+		// changes between runs cannot be asserted on and cannot be read twice
+		// the same way.
+		ar := p.ActorRemoved
+		if _, ok := st.Actors[ar.ActorId]; !ok {
+			return fmt.Errorf("engine: removed unknown actor %q", ar.ActorId)
+		}
+		standing := ""
+		for id, tok := range st.Tokens {
+			if tok.ActorID == ar.ActorId && (standing == "" || id < standing) {
+				standing = id
+			}
+		}
+		if standing != "" {
+			return fmt.Errorf("engine: actor %q still has token %q on the board — "+
+				"a token cannot outlive its actor", ar.ActorId, standing)
+		}
+		delete(st.Actors, ar.ActorId)
+		// AND ITS CONDITIONS, which is a CONSEQUENCE of the actor leaving and
+		// not a second cascade. st.Conditions is keyed by actor id and holds
+		// facts ABOUT the actor, exactly as vttv1.Actor.ControllerIds does —
+		// they live in a sibling map for storage reasons only, and no event
+		// addresses one independently of its actor. Leaving them behind is not
+		// untidiness but a freeze: this same arm lets the id come back (the
+		// ActorAdded duplicate check reads the CURRENT world), and a ghost
+		// condition makes the first ConditionApplied on the new actor a
+		// duplicate, which both folds refuse. Pinned by
+		// TestActorRemovedTakesItsConditionsWithIt.
+		delete(st.Conditions, ar.ActorId)
+		return nil
+
 	case *vttv1.Envelope_DoorOpened:
 		do := p.DoorOpened
 		sc, ok := st.Scenes[do.SceneId]

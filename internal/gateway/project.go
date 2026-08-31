@@ -90,8 +90,13 @@ type Viewer struct {
 type Projector struct {
 	viewer Viewer
 
-	// scenes, actors: introduced to this viewer, and never withdrawn. There
-	// is no un-introduce on the wire.
+	// scenes: introduced to this viewer, and never withdrawn — nothing removes
+	// a scene from the world.
+	// actors: introduced, and withdrawn only when the ACTOR leaves the world
+	// (ActorRemoved, retraction-leaves Task 9). There is still no un-introduce
+	// message: the seats that held the actor are forwarded the removal itself,
+	// and transitions forgets it here in the same step — see the loop that
+	// does, which explains why those two are one decision.
 	scenes map[string]bool
 	actors map[string]bool
 	// tokens: on this viewer's board RIGHT NOW. Grows on arrival, shrinks on
@@ -476,12 +481,31 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	// The bare st.Scenes[id] in the SceneSeen walk below states the invariant
 	// instead, and says where it comes from.
 	//
-	// pr.actors WAS NEVER GUARDED BY IT and still is not, which is worth carrying
-	// forward rather than losing with the loop: actors are not scene-scoped and
-	// pr.actors never forgets by design (see the Projector doc comment). Nothing
-	// removes an actor from the world today either. The day something does, both
-	// maps need an answer chosen deliberately, and this note is where that reader
-	// should start.
+	// pr.actors WAS NEVER GUARDED BY IT, and the note that stood here said the
+	// day something removed an actor from the world, both maps would need an
+	// answer chosen deliberately. That day is retraction-leaves Task 9, and the
+	// answer is the forgetting loop this comment introduces: pr.actors FORGETS,
+	// pr.scenes still does not, because nothing removes a scene.
+
+	// AN ACTOR THE WORLD NO LONGER HAS IS FORGOTTEN HERE, and it has to be.
+	// classify forwards ActorRemoved to exactly the seats that hold the actor,
+	// so their own fold drops it — and engine.Apply accepts an ActorAdded for
+	// an id whose actor was removed, so the id can come back. A projector that
+	// still believed it had introduced that id would skip the introduction
+	// while the seat no longer has the actor, and the next token to arrive for
+	// it is "token placed for unknown actor" on that seat, forever. Forgetting
+	// and forwarding are therefore ONE decision: a seat that was not told
+	// (because it never held the actor) has nothing here to forget, so the two
+	// maps and the seat's fold stay in step either way.
+	//
+	// EMITS NOTHING, so it needs no sorted walk — deletion order cannot reach
+	// the wire. It runs AFTER classify (Project's own order), which is what
+	// lets classify still see that the seat held the actor.
+	for id := range pr.actors {
+		if _, ok := st.Actors[id]; !ok {
+			delete(pr.actors, id)
+		}
+	}
 
 	for _, id := range sortedSceneIDs(now.squares) {
 		if pr.scenes[id] {
@@ -982,6 +1006,43 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_ConditionRemoved:
 		return passIf(pr.actors[p.ConditionRemoved.GetActorId()])
+
+	// --- forwarded only to a viewer who HELD the actor, and for a reason no
+	// other arm in this switch shares --------------------------------------
+
+	case *vttv1.Envelope_ActorRemoved:
+		// retraction-leaves Task 9, and the ONE arm whose forwarding is not a
+		// concession but the only way the fact can arrive at all.
+		//
+		// The Envelope_TokenRemoved arm withholds outright because a token's
+		// departure is ALREADY narrated: transitions synthesizes TokenHidden
+		// for anyone holding it. An ACTOR's departure has no such narration —
+		// pr.actors has no un-introduce message behind it, and inventing one
+		// would be a new payload for a fact this event already states. So a
+		// seat that holds the actor is told, in the log's own words, and its
+		// roster stops naming a character the world no longer has.
+		//
+		// WITHHELD FROM A SEAT THAT NEVER HELD IT, and that half is fatal
+		// rather than merely tidy. Their fold has no such actor, so the raw
+		// event fails with "engine: removed unknown actor" — and
+		// client/src/session.ts re-folds its whole log on every event, so that
+		// is a permanent freeze, the worst failure spec §8 names. It would
+		// also tell them an actor they never saw existed and was removed
+		// off-screen, the same leak withheld exists to prevent everywhere else
+		// in this switch.
+		//
+		// pr.actors AND now.actors would be the wrong test: a removed actor is
+		// gone from st, so now.actors never holds it, and knows() would answer
+		// on pr.actors alone anyway. Named directly so the rule reads as what
+		// it is — did this seat ever hold this actor.
+		//
+		// The seat's tokens for it are already gone by the time this arrives:
+		// remove_actor's batch removes them first, and each of those events
+		// produced the TokenHidden that took them off this board. Pinned by
+		// TestARemovedActorReachesOnlyTheSeatThatHeldIt, which asserts BOTH
+		// directions — an arm that returned a bare constant either way would
+		// pass an exhaustiveness gate and fail that test.
+		return passIf(pr.actors[p.ActorRemoved.GetActorId()])
 
 	default:
 		return unrecognised
