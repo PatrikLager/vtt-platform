@@ -655,6 +655,48 @@ func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 	}
 }
 
+// TestAuthorizePlayerMayWorkDiagonallyAdjacentDoor pins CHEBYSHEV distance,
+// not Manhattan. No pre-existing case above has |dx| = |dy| = 1: the two
+// "adjacent" cases each vary a single axis (dx=0/dy=1, dx=1/dy=0), the two
+// west/north cases vary a single axis too (dx=-4/dy=0, dx=0/dy=-4), and the
+// remaining "distant" cases (e.g. token (5,5) against the door at (0,1):
+// dx=5, dy=4) fail `<= 1` under either metric, so they cannot tell Chebyshev
+// from Manhattan either. Here BOTH axes are 1 at once: Manhattan sums to 2
+// and would refuse this door; Chebyshev takes the max, stays at 1, and
+// allows it.
+//
+// Same scene and offsets as client/test/doors.test.ts's "player, controlled
+// token at distance 1 diagonally" case (sub-project 12, dm-hands-and-
+// retraction task 3, 2026-08-30), so both languages are pinned on the same
+// numbers.
+func TestAuthorizePlayerMayWorkDiagonallyAdjacentDoor(t *testing.T) {
+	st := doorFixture(4, 4) // door at (3,3): dx=1, dy=1 — diagonally adjacent
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 3, 3), st); err != nil {
+		t.Fatalf("want nil error opening a door diagonally adjacent to a controlled token: %v", err)
+	}
+	if err := gateway.Authorize(p, closeDoorCmd("scn", 3, 3), st); err != nil {
+		t.Fatalf("want nil error closing a door diagonally adjacent to a controlled token: %v", err)
+	}
+}
+
+// TestAuthorizePlayerMayNotWorkDiagonallyDistantDoor is the refusal
+// direction one square further out on the same diagonal (dx=2, dy=2) —
+// Chebyshev distance 2, over the limit on both metrics, so this alone does
+// not distinguish the two the way the adjacent case above does. It exists
+// to pin the same offsets as doors.test.ts's paired "distance 2" case,
+// keeping both languages' fixtures readable side by side.
+func TestAuthorizePlayerMayNotWorkDiagonallyDistantDoor(t *testing.T) {
+	st := doorFixture(5, 5) // door at (3,3): dx=2, dy=2
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 3, 3), st); err == nil {
+		t.Fatal("want error opening a door two squares away on both axes")
+	}
+	if err := gateway.Authorize(p, closeDoorCmd("scn", 3, 3), st); err == nil {
+		t.Fatal("want error closing a door two squares away on both axes")
+	}
+}
+
 // --- set_viewpoint: which shoulders exist (visibility Task 6) -------------
 
 // TestAuthorizeSpectatorMayNotPerchOnAnNpc is the direction the matrix cell

@@ -1,11 +1,22 @@
 // Command construction.
 //
-// Every builder here is asserted against the COMMITTED protojson fixtures in
-// contract/testdata (client/test/commands.test.ts) — the same files the Go
-// and TS contract round-trip tests use. That makes the shapes a
-// cross-language claim rather than a self-consistent one: if the client's
-// idea of a command drifts from what the server parses, a test fails instead
-// of a player getting a rejection nobody can explain.
+// Not every builder here carries the same strength of proof. Four —
+// moveToken, useAbility, upsertNote, loadAdventure — are asserted against
+// COMMITTED protojson fixtures in contract/testdata (client/test/
+// commands.test.ts), the same files the Go and TS contract round-trip tests
+// use. That makes THEIR shape a cross-language claim: if the client's idea
+// of one of those four drifts from what the server parses, a test fails
+// instead of a player getting a rejection nobody can explain.
+//
+// The rest rest on weaker ground: a literal shape written by hand in the
+// same test file (self-consistency — it catches the builder disagreeing
+// with itself, not with the server), or a check further away still, such as
+// a view test that only asserts which command.case was sent. openDoor,
+// closeDoor and loadMap (Task 1, 2026-08-30) are in the self-consistency
+// camp, not the fixture one — command-surface.test.ts only proves a
+// same-named function exists, and commands.test.ts checks their wire shape
+// against a literal this file's own author wrote, which is worth widening
+// to a real fixture if these three ever need the cross-language guarantee.
 //
 // Two protojson facts these builders exist to get right:
 //   * int64 fields travel as STRINGS. anchor_from_seq must be "4", not 4.
@@ -305,6 +316,41 @@ export function setJoinDoor(open: boolean): ClientCommand {
       case: "setJoinDoor",
       value: { door: open ? JoinDoor.OPEN : JoinDoor.CLOSED },
     },
+  });
+}
+
+/**
+ * OpenDoor / CloseDoor work a door in a WALL, and are not the join door.
+ *
+ * view/dm.ts renders buttons labelled "Open the door" and "Close the door"
+ * already, and they are setJoinDoor — the admissions door for seating people
+ * at the table. Two different doors, one word. These carry a scene and a
+ * square; that one carries a policy.
+ */
+export function openDoor(sceneId: string, at: Point): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "openDoor", value: { sceneId, at } },
+  });
+}
+
+export function closeDoor(sceneId: string, at: Point): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "closeDoor", value: { sceneId, at } },
+  });
+}
+
+/**
+ * LoadMap brings one standalone map into the campaign as a whole ordered
+ * batch — a SceneCreated plus one TokenPlaced per declared placement — and is
+ * rejected atomically if a placement names an actor that does not exist yet.
+ * So a refusal means nothing loaded, and the caller may say so plainly.
+ */
+export function loadMap(mapId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "loadMap", value: { mapId } },
   });
 }
 

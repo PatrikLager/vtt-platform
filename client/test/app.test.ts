@@ -923,6 +923,60 @@ test("a map with no pack is skipped, and a pack two maps share is fetched once",
   }
 });
 
+test("before /api/maps resolves, the console renders no Maps group at all", async () => {
+  // Kills the ArrayDeclaration mutant on app.ts's `let maps: MapMeta[] =
+  // [];`: a leaked `["Stryker was here"]` sentinel would render a Maps
+  // group with one bogus entry the moment the DM console first paints --
+  // well before the fetch that is SUPPOSED to populate it ever resolves.
+  //
+  // Task 2's own commit message named "zero maps renders nothing at all" as
+  // the one behaviour worth testing; the actual test is dm-view.test.ts's
+  // "no maps configured means no Maps group at all, not an empty one",
+  // which pins that at renderDMConsole's boundary, with `maps: []` handed
+  // in directly by the TEST -- it says nothing about what app.ts's own
+  // composition starts that parameter as. This is the other half:
+  // /api/maps held open so the console paints (me, ruleset and adventures
+  // all resolved) while `maps` is still whatever its declaration
+  // initialised it to.
+  localStorage.setItem("vtt.token", "tok-dm");
+  let releaseMaps: ((v: Response) => void) | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return Response.json({ participantId: "p-dm", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") {
+      // Held open deliberately: the console must already be rendering by
+      // the time this resolves, so whatever `maps` starts as is what it
+      // renders here, not what the fetch would eventually supply.
+      return new Promise<Response>((r) => { releaseMaps = r; });
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  await settle();
+
+  // The fetch is genuinely still in flight, not merely unawaited -- the
+  // guard below would be meaningless if the promise had already settled.
+  expect(releaseMaps).not.toBeNull();
+  expect(r.querySelector('[data-action="load-map"]')).toBeNull();
+  expect(r.textContent).not.toContain("Maps");
+
+  // Let it resolve and close cleanly, rather than leaving a dangling
+  // fetch/timer for a later test to trip over.
+  releaseMaps!(Response.json({ maps: [] }));
+  await settle();
+  s?.close();
+});
+
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
 // TWO EVENTS PER CHARACTER, because the fold refuses an actorAdded that names
 // a controller: creation makes a character, a grant hands it over (visibility
@@ -1038,6 +1092,90 @@ test("a spectator's clicks on the board send nothing", async () => {
   s?.close();
 });
 
+// --- arming doors on the board (Task 4) -------------------------------------
+//
+// A live table with a 4x4 scene (fitCamera(4,4,44,640,480) -> scale
+// 2.727273, offsetX 80, offsetY 0 -- boardCamera's own arithmetic, not
+// hand-picked) carrying a door tile at (0,0) and the player's own token at
+// (1,1): Chebyshev distance 1, adjacent, so mayWorkDoor passes and the panel
+// offers the toggle at all. Pixel (90,10) resolves to world ((90-80)/2.727,
+// 10/2.727) = (3.67, 3.67) -> cell (0,0), the door. Pixel (210,10) resolves
+// to world ((210-80)/2.727, 3.67) = (47.67, 3.67) -> cell (1,0), a plain
+// square with no Tiles entry at all.
+async function playerTableWithDoor() {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(
+    envelope(2, {
+      sceneCreated: {
+        sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4,
+        tiles: { "0,0": { kind: "door", material: "wood", art: "" } },
+      },
+    }),
+  );
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(
+    envelope(4, {
+      actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" },
+    }),
+  );
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+  await settle();
+  return { r, s, sock };
+}
+
+const arm = (r: HTMLElement) => r.querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!.click();
+const clickBoard = (r: HTMLElement, clientX: number, clientY: number) =>
+  (r.querySelector(".grid") as HTMLElement).dispatchEvent(
+    new MouseEvent("click", { clientX, clientY, bubbles: true }),
+  );
+
+test("with doors armed, a click on a door square opens it and sends no move", async () => {
+  const { r, s, sock } = await playerTableWithDoor();
+  arm(r);
+  clickBoard(r, 90, 10); // cell (0,0), the door
+  await settle();
+
+  expect(sock.sent).toHaveLength(1);
+  expect(JSON.parse(sock.sent[0]!)).toHaveProperty("openDoor");
+  s?.close();
+});
+
+test("with doors disarmed, the same click moves the token instead", async () => {
+  const { r, s, sock } = await playerTableWithDoor();
+  // Deliberately NOT armed -- doorsArmed starts false.
+  clickBoard(r, 90, 10); // same cell (0,0) as the armed case above
+  await settle();
+
+  expect(sock.sent).toHaveLength(1);
+  expect(JSON.parse(sock.sent[0]!)).toHaveProperty("moveToken");
+  s?.close();
+});
+
+test("with doors armed, a click on a plain square sends nothing at all", async () => {
+  // Armed means a non-door click does NOTHING -- it must not fall through to
+  // a move. This is the behaviour change on the path players already use to
+  // move tokens, so it gets its own direct assertion rather than relying on
+  // the door-square case above to imply it.
+  const { r, s, sock } = await playerTableWithDoor();
+  arm(r);
+  clickBoard(r, 210, 10); // cell (1,0): no Tiles entry at all, so not a door
+  await settle();
+
+  expect(sock.sent).toHaveLength(0);
+  s?.close();
+});
+
 /** A DM at a live table, with the metadata routes served from `routes`. */
 async function dmTable(routes: Record<string, unknown>) {
   localStorage.setItem("vtt.token", "tok-dm");
@@ -1093,6 +1231,39 @@ test("with no adventures loaded the console shows no Adventures section", async 
   // have.
   const { r, s } = await dmTable({});
   expect(r.textContent).not.toContain("Adventures");
+  s?.close();
+});
+
+test("the DM's own console toggle arms doors, board-wide", async () => {
+  // Exercises app.ts's real toggleDoors closure end to end, not the isolated
+  // one dm-view.test.ts's harness tracks: a click on the CONSOLE's own
+  // control (unlike the player-panel one, which mutates ui.doorsArmed
+  // directly) goes through DMDeps.toggleDoors, which is this function.
+  const { r, s, sock } = await dmTable({});
+  // A scene, so there is a `.grid` at all to carry the class -- dmTable's
+  // own default log has none (renderGrid's early "No scene yet." return
+  // otherwise leaves nothing for the assertions below to find).
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
+  await settle();
+  // Re-queried after every click, deliberately: paint() rebuilds the whole
+  // tree (renderSpectator's own root.replaceChildren), so a node reference
+  // taken before a click is a DETACHED copy of the old DOM afterwards --
+  // re-reading its textContent would silently pass on stale content.
+  r.querySelector<HTMLButtonElement>('.dm [data-action="arm-doors"]')!.click();
+  await settle();
+
+  // The console's own label updates...
+  expect(r.querySelector('.dm [data-action="arm-doors"]')!.textContent).toContain("armed");
+  // ...and so does the board, which is the point of Task 4's board-visible
+  // indication: a DM who arms doors and looks only at the board must still
+  // be able to tell.
+  expect(r.querySelector(".grid")!.classList.contains("armed")).toBe(true);
+  expect(r.querySelector(".armed-label")).not.toBeNull();
+
+  // Click again: it backs off, rather than being a one-way door.
+  r.querySelector<HTMLButtonElement>('.dm [data-action="arm-doors"]')!.click();
+  await settle();
+  expect(r.querySelector(".grid")!.classList.contains("armed")).toBe(false);
   s?.close();
 });
 

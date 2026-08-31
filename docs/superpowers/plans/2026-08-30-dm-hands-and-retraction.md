@@ -19,7 +19,8 @@
 - **No game-system vocabulary in platform code** (pillar P2/P4, semgrep enforces).
 - **Review before commit.** Nothing lands unreviewed; the dev-cycle hook enforces it. Commit with `CLAUDE_REVIEW_DONE=1` after the task's review.
 - **State the invariant, not the count.** No assertion or comment may encode "twenty-two commands". Assert the relationship.
-- **Rebuild the embedded bundle** after any `client/src` change: `task client:build` refreshes `cmd/vtt/webdist`, and the commit hook will NOT catch a stale one.
+- **Rebuild the embedded bundle** after any `client/src` change: `task build:client` refreshes `cmd/vtt/webdist`, and the commit hook will NOT catch a stale one.
+- **A NEW file under `client/src` needs a coverage floor** in `tools/ts-coverage-thresholds.txt` in the same change, or `check:ts-coverage` reds with "measured but has no recorded floor". `check:fast` does not run that gate, so a task that stops at `check:fast` will not see it.
 
 ---
 
@@ -292,7 +293,7 @@ At `client/src/app.ts` ~line 591 the maps are already fetched and handed to `loa
 - [ ] **Step 5: Run tests, rebuild the bundle, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src/view/dm.ts client/src/app.ts client/test/dm-view.test.ts cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
@@ -326,13 +327,18 @@ import type { Me } from "../src/metadata";
  * THE CLIENT HALF OF A RULE THAT LIVES IN TWO PLACES.
  * internal/gateway/authz.go's mayWorkDoor is the enforcing copy; this one
  * decides whether to OFFER the control. They must agree on the geometry, so
- * cases 7 and 8 below use the same offsets as its Go table test.
+ * cases 7 and 8 below use the same offsets as the Go door cases.
  */
 function scene(opts: { open?: boolean } = {}): State {
   const st = newState();
   st.Scenes["scn"] = {
-    SceneId: "scn", Name: "Cellar", GridWidth: 10, GridHeight: 9,
-    Tiles: { "3,3": "door" },
+    // ID, not SceneId — see client/src/state.ts. And a Tiles entry is a Tile
+    // object, not a bare kind string: fold.ts writes {Kind, Material, Art}.
+    ID: "scn", Name: "Cellar", GridWidth: 10, GridHeight: 9,
+    Tiles: {
+      "3,3": { Kind: "door", Material: "wood", Art: "" },
+      "5,5": { Kind: "wall", Material: "stone", Art: "" },  // case 4 needs one
+    },
     OpenDoors: opts.open ? { "3,3": true } : {},
   } as State["Scenes"][string];
   return st;
@@ -343,7 +349,12 @@ const dm: Me = { participantId: "p-dm", role: "dm" } as Me;
 test("armed, a closed door opens", () => {
   const cmd = doorCommandFor(scene(), dm, true, { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("openDoor");
-  expect((cmd!.command.value as { at: { x: number; y: number } }).at).toEqual({ x: 3, y: 3 });
+  // Through toJson and then EXACT. protobuf-es create() puts a $typeName on
+  // the raw message, which is what tempts a subset match — and a subset match
+  // here would assert nothing about sceneId, the one field this function
+  // computes rather than copies.
+  const j = toJson(ClientCommandSchema, cmd!) as Record<string, any>;
+  expect(j["openDoor"]).toEqual({ sceneId: "scn", at: { x: 3, y: 3 } });
 });
 
 test("armed, an open door closes — one control, both verbs", () => {
@@ -369,6 +380,11 @@ The remaining cases, same shape:
 Case 7 pins Chebyshev rather than Manhattan distance; case 9 pins "a non-player
 passes unconditionally". Both mirror `internal/gateway/authz.go`.
 
+CORRECTED 2026-08-30: an earlier draft of this task called the Go door cases a
+"table test" and told you to add a case to it. `TestAuthorizeTableAllCommands
+AllRoles` is the table-driven one; the door-adjacency cases are standalone
+funcs, so a new case is a new func.
+
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `bun test client/test/doors.test.ts`
@@ -384,7 +400,11 @@ Run: `bun test client/test/doors.test.ts` — 9 pass.
 
 - [ ] **Step 5: Cross-language mirror check**
 
-Add a case to the existing Go table test for `mayWorkDoor` in `internal/gateway/authz_test.go` using the same scene and offsets as TS case 7 and 8, so both languages are pinned on the same numbers. If the Go test already covers the diagonal, cite it in the TS header instead of adding a duplicate.
+Read `internal/gateway/authz_test.go` first. If a case already pins the
+diagonal — `|dx| = |dy| = 1` — cite it in the TS test file's header rather than
+adding a duplicate. If none does, add standalone test funcs beside the existing
+door cases (they are standalone, not table-driven), using the same offsets as
+TS cases 7 and 8 so both languages are pinned on the same numbers.
 
 - [ ] **Step 6: Commit**
 
@@ -449,7 +469,7 @@ Give every existing console control its `action` string where one is missing, si
 - [ ] **Step 4: Run tests, typecheck, rebuild, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src client/test cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
@@ -599,7 +619,7 @@ Add a `case "restart"` to `handleFrame` that does what `restart()` does: fire th
 - [ ] **Step 4: Run tests, typecheck, rebuild, commit**
 
 ```bash
-bun test client/test && task client:typecheck && task client:build
+bun test client/test && task client:typecheck && task build:client
 git add client/src/wire.ts client/test cmd/vtt/webdist
 CLAUDE_REVIEW_DONE=1 git commit
 ```
@@ -654,11 +674,26 @@ It declares the torn-batch hazard unresolved and hands it to "whoever wires the 
 
 `session.ts:158-160` now points at a presence function. The append is `this.log.push(e)` in `ingest`. Cite the function, not the line — a line number is what rotted.
 
-- [ ] **Step 3: Sweep for the same rot in this file**
+- [ ] **Step 3: Record the citation convention where readers look**
+
+Patrik's ruling, 2026-08-30: cite a NAME (function, test, constant, named arm);
+for the nameless residual — one line inside a long function, one branch, one row
+of a data file — place `[anchor:kebab-name]` at the target and cite that. Bare
+`file:line` in prose is out. The exception is a mutation-adjudication
+coordinate, which is a mutant's identity rather than prose.
+
+The reason is the failure mode, and it belongs in the record: a stale line
+number fails SILENTLY, still looking valid while pointing at the wrong code; a
+deleted anchor fails LOUDLY, because grep returns nothing.
+
+Add it to `CLAUDE.md`'s rules. At the time of the ruling the repo carried 82
+bare citations across 37 files; converting those is NOT this arc's work.
+
+- [ ] **Step 4: Sweep for the same rot in this file**
 
 Every other file:line reference in `project.go` — open each and confirm it still names what the sentence says. Fix or re-anchor any that have moved. This is the cheapest moment to do it, because the file is already open and the arc has already paid for one of them.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 task check:fast

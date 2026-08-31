@@ -9,11 +9,11 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { AdventureMeta, JoinLink, Roster } from "../metadata";
+import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
-  startSession, endSession, createScene, placeToken, loadAdventure,
+  startSession, endSession, createScene, placeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, retractEvents, parseActorJSON, addActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
@@ -192,6 +192,13 @@ export interface DMDeps {
    */
   participants: Participant[];
   adventures: AdventureMeta[];
+  /**
+   * Every standalone map the server loaded at boot (GET /api/maps), already
+   * fetched by app.ts for pack loading. Empty renders no group: a Maps
+   * heading with nothing under it tells a DM their maps failed to load, which
+   * is a different and false story from "this table has none configured".
+   */
+  maps: MapMeta[];
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -230,6 +237,21 @@ export interface DMDeps {
   send: (c: ClientCommand) => Promise<void>;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
+  /**
+   * Whether the door tool is armed on THIS table (Task 4) — a single bit
+   * app.ts's `ui.doorsArmed` owns, not a DM-only setting: the player panel
+   * (view/player.ts) offers the same toggle to a player, and the board
+   * itself (spectator.ts) shows the state on the canvas, because arming
+   * doors changes what a board click means everywhere at once.
+   */
+  doorsArmed: boolean;
+  /**
+   * Flip doorsArmed and repaint. A LOCAL mode change, not a command — it
+   * sends nothing over the wire, so unlike every `d.send(...)` call above
+   * there is no server round trip to await; the caller (app.ts) mutates the
+   * shared bit and calls paint() itself.
+   */
+  toggleDoors: () => void;
 }
 
 export function renderDMConsole(d: DMDeps): HTMLElement {
@@ -275,7 +297,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           return d.notify("scene needs an id and a positive width and height");
         }
         d.send(createScene(sceneId.value.trim(), sceneName.value.trim(), gw, gh));
-      }),
+      }, "create-scene"),
     ),
   );
 
@@ -366,11 +388,33 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     ),
   );
 
+  // --- doors ---
+  //
+  // A pure UI mode, not a command of its own (Task 4): arming sends nothing
+  // — app.ts's onCell reads this bit to decide what a board click means.
+  // Offered UNCONDITIONALLY, unlike the player panel's own copy of this
+  // toggle. The rejected alternative was reapplying view/player.ts's
+  // mayWorkAnyDoor gate here too, and that is NOT a guard with no branch it
+  // could ever take: mayWorkAnyDoor asks BOTH whether a door exists in the
+  // scene at all AND whether the viewer may work it, and a DM fails the
+  // FIRST half in the ordinary case of a scene with no doors yet, or no
+  // scene at all — doors.ts's mayWorkDoor only ever waives the second half
+  // for dm/agent. Rejected anyway: a DM authoring a map is exactly who
+  // should be able to arm the tool BEFORE the first door tile exists,
+  // unlike a player, who is offered the control only once refusing it would
+  // be pointless rather than merely premature.
+  wrap.appendChild(
+    group(
+      "Doors",
+      button(d.doorsArmed ? "Doors armed" : "Arm doors", d.toggleDoors, "arm-doors"),
+    ),
+  );
+
   // --- adventures ---
   if (d.adventures.length > 0) {
     const row: HTMLElement[] = [];
     for (const a of d.adventures) {
-      row.push(button(`Load ${a.name || a.id}`, () => d.send(loadAdventure(a.id))));
+      row.push(button(`Load ${a.name || a.id}`, () => d.send(loadAdventure(a.id)), "load-adventure"));
       row.push(
         button("guide", () => {
           void d.guideFor(a.id).then((g) => d.notify(g ?? "no guide for that adventure"));
@@ -378,6 +422,15 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       );
     }
     wrap.appendChild(group("Adventures", ...row));
+  }
+
+  // --- maps ---
+  if (d.maps.length > 0) {
+    const row: HTMLElement[] = [];
+    for (const m of d.maps) {
+      row.push(button(`Load ${m.name || m.id}`, () => void d.send(loadMap(m.id)), "load-map"));
+    }
+    wrap.appendChild(group("Maps", ...row));
   }
 
   // --- notes ---
@@ -393,11 +446,11 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           return d.notify("a note needs a key and some text");
         }
         d.send(upsertNote(noteKey.value.trim(), noteTitle.value.trim(), noteText.value.trim()));
-      }),
+      }, "upsert-note"),
       button("Delete", () => {
         if (!noteKey.value.trim()) return d.notify("name the note to delete");
         d.send(deleteNote(noteKey.value.trim()));
-      }),
+      }, "delete-note"),
     ),
   );
 
@@ -406,7 +459,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   for (const [actor, list] of Object.entries(d.st.Conditions)) {
     for (const c of list) {
       condRow.push(
-        button(`${actor}: ${c.ID} ✕`, () => d.send(removeCondition(actor, c.ID))),
+        button(`${actor}: ${c.ID} ✕`, () => d.send(removeCondition(actor, c.ID)), "remove-condition"),
       );
     }
   }
@@ -427,7 +480,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       // table the moment it lands.
       if (!d.confirm(`Retract event #${last}? Everyone at the table sees this.`)) return;
       d.send(retractEvents(last, last, "undo"));
-    }),
+    }, "retract-events"),
   );
   undoRow.push(from, to);
   undoRow.push(
@@ -440,7 +493,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       if (why !== null) return d.notify(why);
       if (!d.confirm(`Retract events #${f}–#${t}? Everyone at the table sees this.`)) return;
       d.send(retractEvents(f, t, "undo"));
-    }),
+    }, "retract-events"),
   );
   wrap.appendChild(group("Undo", ...undoRow));
 
@@ -467,6 +520,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       const off = document.createElement("button");
       off.className = "chip revoke";
       off.textContent = "Revoke";
+      off.dataset["action"] = "revoke-actor-control";
       // The id is captured per BUTTON, not read back from the row: a handler
       // that recomputed it would revoke controllerIds[0] every time, which
       // looks right and takes the wrong character from the wrong person.
@@ -520,6 +574,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     const give = document.createElement("button");
     give.className = "chip grant";
     give.textContent = "Grant";
+    give.dataset["action"] = "grant-actor-control";
     give.addEventListener("click", () => {
       // Refused HERE rather than sent and bounced: the server rejects an empty
       // participant (gateway authz, engine controlTarget), and a toast saying

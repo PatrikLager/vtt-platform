@@ -14,10 +14,27 @@ import type { Ability, Me } from "../metadata";
 import { affordable, controlledActors, targetableTokens } from "../player";
 import { moveToken, useAbility, addNarration } from "../commands";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
+import { mayWorkDoor } from "./doors";
 
 export interface PlayerUIState {
   selectedActorId: string;
   selectedAbilityId: string;
+  /**
+   * Whether a board click works a door instead of moving a token (Task 4).
+   *
+   * ONE BIT, THREE ROUTES TO IT — not one shared object. app.ts hands THIS
+   * PANEL the real PlayerUIState object, so this file's own toggle mutates
+   * `ui.doorsArmed` directly. The DM console and the board each get only a
+   * COPY of the current boolean (`doorsArmed: ui.doorsArmed`) read fresh at
+   * every paint(); the console's own toggle writes back through a separate
+   * `toggleDoors` closure app.ts owns (view/dm.ts's DMDeps), not through this
+   * object at all. The conclusion the sharing exists for still holds — arm
+   * it from either panel and the other panel and the board (spectator.ts's
+   * armed indication) agree at the next paint — but it holds because all
+   * three read the SAME app.ts-owned bit each time, not because they hold
+   * the same reference.
+   */
+  doorsArmed: boolean;
 }
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
@@ -36,6 +53,67 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
 export function tokenForActor(st: State, actorId: string): string {
   const t = Object.values(st.Tokens).find((tok) => tok.ActorID === actorId);
   return t?.ID ?? "";
+}
+
+/**
+ * Whether ANY door in the current scene is one this player could actually
+ * work — the gate for offering the arm-doors toggle at all, so a player with
+ * no controlled token near any door gets no control whose every use
+ * mayWorkDoor would refuse (doors.ts's own reasoning about mayWorkDoor,
+ * applied one level up: don't even OFFER what it would refuse every time).
+ *
+ * Walks the scene's own door tiles and asks mayWorkDoor about each, rather
+ * than re-deriving the adjacency geometry here: the two must never drift,
+ * or this offers a control mayWorkDoor is certain to refuse.
+ *
+ * NO SCENE, NO TOGGLE: `if (!scene) return false` is what a player with no
+ * campaign scene yet meets — not a fallback into "sure, offer it anyway".
+ * Pinned by name, not just implied by the guard's shape — see
+ * client/test/player.test.ts's "no scenes at all means no toggle, even with
+ * a controlled actor" (that file, not this one: nothing in THIS file is
+ * "below" a doc comment).
+ *
+ * The "current scene" pick — the lexicographically greatest scene id, via
+ * `.sort().at(-1)` — is the SAME ONE-LINE COMPUTATION doors.ts's own
+ * currentSceneId and spectator.ts's renderSpectator each write out
+ * independently: three copies, not one shared helper. NEITHER OF THE OTHER
+ * TWO COMMENTS EXPLAINS WHY IT IS A COPY RATHER THAN A CALL — an earlier
+ * draft of this comment invented a reason and attributed it to
+ * spectator.ts's comment, which says nothing of the kind (it says only that
+ * the active scene is the most recently created one, and that a scene
+ * selector belongs with the DM console). This file makes no claim on
+ * either of their behalf; the fact stated here is only that the
+ * computation is duplicated three times, not why.
+ *
+ * THE `?? ""` FALLBACK IS NOT EQUIVALENT, and an earlier draft of this
+ * comment claimed it was — the same mistake Task 3 nearly made about
+ * doors.ts's identically-shaped copy, caught there before it reached that
+ * file and caught here only after it did. The false argument was that the
+ * fallback feeds only a SCENE LOOKUP (`st.Scenes[sceneId]`) on an object
+ * with zero own keys, so no string could make the lookup succeed. That
+ * misses the PROTOTYPE CHAIN: `st.Scenes[key]` for a key outside
+ * `Object.keys(st.Scenes)` still resolves through whatever `st.Scenes`
+ * inherits from, and "zero own keys" says nothing about what is inherited.
+ * player.test.ts's "a prototype-injected empty-string scene defeats the `??
+ * ""` equivalence claim" builds exactly that state — Scenes with no own
+ * keys but a prototype answering "" with a real scene — and kills the
+ * mutant: the real fallback ("") finds that scene, the mutant
+ * ("Stryker was here!") finds nothing. NOT a state fold() can ever build
+ * (fold.ts always hands Scenes an `Object.create(null)` via state.ts's
+ * emptyMap, so no real campaign log can give it a prototype at all) — the
+ * same category of hand-built-past-the-fold state doors.test.ts already
+ * uses for this module family, and doors.ts's own currentSceneId doc
+ * comment cites for its own paired claim.
+ */
+function mayWorkAnyDoor(st: State, me: Me): boolean {
+  const sceneId = Object.keys(st.Scenes).sort().at(-1) ?? "";
+  const scene = st.Scenes[sceneId];
+  if (!scene) return false;
+  return Object.entries(scene.Tiles ?? {}).some(([key, tile]) => {
+    if (tile.Kind !== "door") return false;
+    const [x, y] = key.split(",").map(Number);
+    return mayWorkDoor(st, me, { x: x!, y: y! });
+  });
 }
 
 export function renderPlayerPanel(
@@ -109,6 +187,7 @@ export function renderPlayerPanel(
     for (const t of targets) {
       const label = st.Actors[t.ActorID]?.name || t.ID;
       const b = el("button", "chip", label);
+      b.dataset["action"] = "use-ability";
       b.addEventListener("click", () => {
         send(useAbility(actorId, armed.id, [t.ID]));
         ui.selectedAbilityId = "";
@@ -130,6 +209,28 @@ export function renderPlayerPanel(
     wrap.appendChild(el("p", "hint", "Click the board to move."));
   }
 
+  // --- doors ---
+  //
+  // PLAYER ONLY (Task 4): dm and agent already get this from the DM console,
+  // which they also see beside this very panel (app.ts's canAct/isDM both
+  // admit a DM) — offering it here too would be a second control for the
+  // exact same bit. Gated on mayWorkAnyDoor so a player with no controlled
+  // token near any door gets no toggle at all, rather than one whose every
+  // use mayWorkDoor would refuse.
+  if (me.role === "player" && mayWorkAnyDoor(st, me)) {
+    const armBtn = el(
+      "button",
+      ui.doorsArmed ? "chip sel" : "chip",
+      ui.doorsArmed ? "Doors armed" : "Arm doors",
+    );
+    armBtn.dataset["action"] = "arm-doors";
+    armBtn.addEventListener("click", () => {
+      ui.doorsArmed = !ui.doorsArmed;
+      rerender();
+    });
+    wrap.appendChild(armBtn);
+  }
+
   // --- speaking ---
   wrap.appendChild(el("h3", undefined, "Say something"));
   const form = el("div", "say");
@@ -140,6 +241,7 @@ export function renderPlayerPanel(
   text.placeholder = "say or narrate";
   text.className = "text";
   const send3 = el("button", "chip", "Send");
+  send3.dataset["action"] = "add-narration";
   const submit = () => {
     const t = text.value.trim();
     if (t === "") return;

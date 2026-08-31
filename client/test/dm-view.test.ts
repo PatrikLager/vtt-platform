@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect, beforeEach } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
-import type { Roster } from "../src/metadata";
+import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -15,8 +15,10 @@ function harness(
   log: Envelope[] = [],
   opts: {
     adventures?: { id: string; name: string }[];
+    maps?: MapMeta[];
     guide?: string | null;
     participants?: { participantId: string; displayName: string }[];
+    doorsArmed?: boolean;
   } = {},
 ) {
   const sent: ClientCommand[] = [];
@@ -27,10 +29,18 @@ function harness(
   // confirmation.
   let confirmCount = 0;
   const confirmMessages: string[] = [];
+  // A LOCAL bit, not a re-render: renderDMConsole runs once per harness()
+  // call here (app.ts's paint() is what rebuilds it for real on a toggle),
+  // so this tracks what toggleDoors DID rather than what the static node
+  // shows after clicking it — the same reason `sent`/`notices` are tracked
+  // this way rather than read back off the DOM.
+  let doorsArmed = opts.doorsArmed ?? false;
+  let toggles = 0;
   const node = renderDMConsole({
     st,
     log,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
+    maps: opts.maps ?? [],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
     // The sharing panel is exercised by its own tests below; these existing
@@ -46,12 +56,19 @@ function harness(
       confirmMessages.push(m);
       return confirmAnswer;
     },
+    doorsArmed,
+    toggleDoors: () => {
+      doorsArmed = !doorsArmed;
+      toggles++;
+    },
   });
   return {
     node, sent, notices,
     confirmCount: () => confirmCount,
     confirmMessages: () => confirmMessages,
     setConfirm: (v: boolean) => (confirmAnswer = v),
+    doorsArmed: () => doorsArmed,
+    toggles: () => toggles,
     field: (f: string) => node.querySelector(`[data-field="${f}"]`) as HTMLInputElement,
     action: (a: string) => node.querySelector(`[data-action="${a}"]`) as HTMLButtonElement,
     button: (label: string) =>
@@ -154,6 +171,22 @@ test("an empty log offers nothing to undo and sends nothing", () => {
   expect(h.sent).toHaveLength(0);
 });
 
+test("both the single-event and range Undo buttons carry their OWN data-action, not just one of the two", () => {
+  // The two buttons cover for each other under controlExistsFor
+  // (command-surface.test.ts): that invariant only asks "does A control for
+  // retractEvents exist ANYWHERE", so mutating either button's action string
+  // to "" still leaves the invariant satisfied by the other one, and
+  // button()'s own `if (action) b.dataset["action"] = action` silently drops
+  // the attribute for "" rather than setting it to the empty string — so
+  // the mutant is a REAL, observable difference (no attribute at all), not
+  // a value nothing reads. Asserted on each button BY LABEL, not by a single
+  // querySelector, so a mutation on either one is caught independently of
+  // the other.
+  const h = harness(newState(), [moved(1)]);
+  expect(h.button("Undo #1")!.dataset["action"]).toBe("retract-events");
+  expect(h.button("Undo range")!.dataset["action"]).toBe("retract-events");
+});
+
 test("an invalid range is refused BEFORE the confirmation dialog", () => {
   // Confirming an undo that would do nothing still writes a marker implying
   // something changed.
@@ -165,7 +198,7 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
     roster: [],
     origin: "https://table.example",
     refreshSharing: () => {},
-    st, log: [moved(1)], adventures: [],
+    st, log: [moved(1)], adventures: [], maps: [],
     guideFor: async () => null,
     send: async () => {},
     notify: () => {},
@@ -173,6 +206,8 @@ test("an invalid range is refused BEFORE the confirmation dialog", () => {
       confirmCalls++;
       return true;
     },
+    doorsArmed: false,
+    toggleDoors: () => {},
   });
   (node.querySelector('[data-field="undo-from"]') as HTMLInputElement).value = "5";
   (node.querySelector('[data-field="undo-to"]') as HTMLInputElement).value = "9";
@@ -634,6 +669,38 @@ test("an adventure with no guide says so rather than showing nothing", async () 
   expect(h.notices).toEqual(["no guide for that adventure"]);
 });
 
+// --- maps ---------------------------------------------------------------
+
+test("a DM loads a map by picking it, and the button says which one", () => {
+  const h = harness(newState(), [], {
+    maps: [
+      { id: "cellar", name: "The Cellar", gridWidth: 10, gridHeight: 9 },
+      { id: "wood", name: "", gridWidth: 40, gridHeight: 40 },
+    ],
+  });
+  const load = h.node.querySelector<HTMLButtonElement>('[data-action="load-map"]');
+  expect(load).not.toBeNull();
+  expect(load!.textContent).toContain("The Cellar");
+  load!.click();
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.case).toBe("loadMap");
+  expect((h.sent[0]!.command.value as { mapId: string }).mapId).toBe("cellar");
+});
+
+test("a map with no name is offered under its id rather than a blank button", () => {
+  const h = harness(newState(), [], {
+    maps: [{ id: "wood", name: "", gridWidth: 40, gridHeight: 40 }],
+  });
+  const buttons = Array.from(h.node.querySelectorAll<HTMLButtonElement>('[data-action="load-map"]'));
+  expect(buttons.map((b) => b.textContent)).toEqual(["Load wood"]);
+});
+
+test("no maps configured means no Maps group at all, not an empty one", () => {
+  const h = harness(newState(), [], { maps: [] });
+  expect(h.node.querySelector('[data-action="load-map"]')).toBeNull();
+  expect(h.node.textContent).not.toContain("Maps");
+});
+
 // --- whitespace is not content ----------------------------------------------
 
 test("a whitespace-only id is refused everywhere one is required", () => {
@@ -843,9 +910,16 @@ test("buttons carry the labels the DM clicks, not blanks", () => {
 test("every group carries a heading", () => {
   const open = newState();
   open.Conditions["a1"] = [{ ID: "prone", Source: "s", AppliedSeq: 1 }];
-  const titles = Array.from(harness(open).node.querySelectorAll("h3")).map((n) => n.textContent);
+  // maps: [...], not the default [] -- the Maps group renders (and so its
+  // own "Maps" heading exists to check) only when there is at least one.
+  // Its absence here previously left `"Maps" -> ""` (StringLiteral) an
+  // unadjudicated survivor: nothing ever rendered the heading this test
+  // could have caught it reading.
+  const titles = Array.from(
+    harness(open, [], { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }] }).node.querySelectorAll("h3"),
+  ).map((n) => n.textContent);
   for (const t of ["Session", "Create scene", "Add actor", "…or paste actor JSON",
-                   "Place token", "Adventures", "Notes", "Remove condition", "Undo"]) {
+                   "Place token", "Adventures", "Maps", "Notes", "Remove condition", "Undo"]) {
     expect(titles).toContain(t);
   }
   expect(titles.every((t) => t !== "")).toBe(true);
@@ -855,7 +929,17 @@ test("a group's row holds only its elements, with no stray text", () => {
   // `const row: HTMLElement[] = []` seeded with a sentinel, and
   // `if (text !== undefined) n.textContent = text` forced true, both leak
   // text into containers that should hold only controls.
-  const h = harness(newState(), [], { adventures: [{ id: "a", name: "A" }] });
+  //
+  // BOTH `row` DECLARATIONS, not just Adventures': dm.ts has two identical
+  // `const row: HTMLElement[] = [];` statements (Adventures and Maps), and
+  // an adventures-only fixture exercises only the first -- the Maps one
+  // survived a mutant exactly this comment already described, because
+  // nothing here ever gave it a row to check. `maps: [...]` makes the loop
+  // below walk that row too.
+  const h = harness(newState(), [], {
+    adventures: [{ id: "a", name: "A" }],
+    maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }],
+  });
   const rows = Array.from(h.node.querySelectorAll(".row"));
   expect(rows.length).toBeGreaterThan(0);
   for (const row of rows) {
@@ -884,8 +968,20 @@ test("an input created without a class carries no class at all", () => {
 test("a button created without an action carries no data-action", () => {
   // `if (action) b.dataset["action"] = action` -> true stamps
   // data-action="undefined" on every plain button, which these tests select by.
+  //
+  // "guide" (not "Create"): Create now carries "create-scene" (Task 4 filled
+  // in every submit button the control-level invariant in
+  // command-surface.test.ts needed one for). "guide" fetches an adventure's
+  // text; it is not a ClientCommand at all, so it never needed one. It is
+  // NOT the only bare button left in the default fixture -- "Add from JSON"
+  // is built without a third argument too, since the structured "Add"
+  // button above it already gives addActor a reachable "add-actor" control
+  // and the invariant asks for one control per command, not one per button.
+  // "guide" is picked here only because it is the simpler case to reason
+  // about: it names no command at all, where "Add from JSON" names one a
+  // sibling button already covers.
   const h = harness();
-  const plain = Array.from(h.node.querySelectorAll("button")).find((b) => b.textContent === "Create")!;
+  const plain = Array.from(h.node.querySelectorAll("button")).find((b) => b.textContent === "guide")!;
   expect(plain.hasAttribute("data-action")).toBe(false);
   expect(h.action("start-session").getAttribute("data-action")).toBe("start-session");
 });
@@ -1307,7 +1403,10 @@ function shareConsole(opts: {
     st: emptyState(),
     log: [],
     adventures: [],
+    maps: [],
     guideFor: async () => null,
+    doorsArmed: false,
+    toggleDoors: () => {},
     participants: [],
     joinLink: opts.joinLink === undefined ? { open: false, secret: "s3cret" } : opts.joinLink,
     // `=== undefined`, not `??`: null is a MEANINGFUL value here (the read
@@ -1379,10 +1478,11 @@ test("rotating asks first, because it locks out a link already sent", () => {
   const sent: ClientCommand[] = [];
   let asked = 0;
   const node = renderDMConsole({
-    st: emptyState(), log: [], adventures: [], guideFor: async () => null,
+    st: emptyState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async (c) => void sent.push(c), notify: () => {},
+    doorsArmed: false, toggleDoors: () => {},
     confirm: () => {
       asked++;
       return false;
@@ -1443,9 +1543,10 @@ test("ending a session is addressable, not just clickable by its label", () => {
   st.Sessions = [{ ID: "s1", Name: "Open Table", StartSeq: 1, EndSeq: 0 }];
   const sent: ClientCommand[] = [];
   const node = renderDMConsole({
-    st, log: [], adventures: [], guideFor: async () => null,
+    st, log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
     refreshSharing: () => {}, send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+    doorsArmed: false, toggleDoors: () => {},
   });
 
   node.querySelector<HTMLButtonElement>('[data-action="end-session"]')!.click();
@@ -1458,10 +1559,11 @@ test("rotating goes through once the DM says yes", async () => {
   const sent: ClientCommand[] = [];
   let refreshes = 0;
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
     send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+    doorsArmed: false, toggleDoors: () => {},
   });
 
   node.querySelector<HTMLButtonElement>('[data-action="rotate-link"]')!.click();
@@ -1545,7 +1647,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
   // "Are you sure?" gives them nothing to be sure ABOUT.
   let asked = "";
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], guideFor: async () => null,
+    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async () => {}, notify: () => {},
@@ -1553,9 +1655,48 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
       asked = m;
       return false;
     },
+    doorsArmed: false,
+    toggleDoors: () => {},
   });
   node.querySelector<HTMLButtonElement>('[data-action="rotate-link"]')!.click();
 
   expect(asked).toContain("old one");
   expect(asked.length).toBeGreaterThan(20);
+});
+
+// --- doors (Task 4) ----------------------------------------------------
+
+test("the doors toggle exists and flips the shared armed bit on each click", () => {
+  const h = harness();
+  expect(h.action("arm-doors")).not.toBeNull();
+  expect(h.doorsArmed()).toBe(false);
+
+  h.action("arm-doors").click();
+  expect(h.doorsArmed()).toBe(true);
+  expect(h.toggles()).toBe(1);
+
+  // BACK OFF, not stuck armed: a DM who arms doors by mistake needs the same
+  // control to undo it, not a second one.
+  h.action("arm-doors").click();
+  expect(h.doorsArmed()).toBe(false);
+  expect(h.toggles()).toBe(2);
+});
+
+test("the toggle's label says which state it is in, at render time", () => {
+  // Two SEPARATE renders, not one harness clicked twice: renderDMConsole runs
+  // once per harness() call (see harness()'s own comment), so this is what
+  // actually exercises the `d.doorsArmed ? ... : ...` label's two arms.
+  expect(harness(newState(), [], { doorsArmed: false }).action("arm-doors").textContent)
+    .toBe("Arm doors");
+  expect(harness(newState(), [], { doorsArmed: true }).action("arm-doors").textContent)
+    .toContain("armed");
+});
+
+test("arming doors sends nothing over the wire — it is a local mode, not a command", () => {
+  // doorCommandFor/openDoor/closeDoor are what send something; the toggle
+  // itself never should, or arming would write a spurious entry into a log
+  // meant only for things that actually happened at the table.
+  const h = harness();
+  h.action("arm-doors").click();
+  expect(h.sent).toHaveLength(0);
 });

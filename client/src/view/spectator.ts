@@ -102,6 +102,18 @@ function renderGrid(
   st: State,
   sceneId: string,
   images: ImageMap,
+  // Whether the door tool is armed (Task 4, spec §8) — shown on the board
+  // itself, not only in whichever panel armed it, so a DM who arms doors,
+  // walks away and comes back can still see why their clicks have stopped
+  // moving tokens. NO DEFAULT, deliberately: renderGrid is module-private
+  // with exactly one call site (renderSpectator's own, below), which always
+  // passes a value, so a default here would be dead code no test could ever
+  // reach through it — a `= false` here survived as an unadjudicated
+  // Stryker mutant for exactly that reason (fix round 1). Do not re-add
+  // one; there is no second caller for it to serve. Placed ahead of the two
+  // optional/defaulted parameters below it: TypeScript refuses a required
+  // parameter after an optional one.
+  doorsArmed: boolean,
   onCell?: (c: { x: number; y: number }) => void,
   // TEST-ONLY SEAM (review finding C4, 2026-08-16): how this function
   // obtains a 2D context. Defaults to the real canvas.getContext, which is
@@ -124,6 +136,13 @@ function renderGrid(
     return wrap;
   }
   wrap.appendChild(el("h2", undefined, scene.Name));
+  // A LEGIBLE LABEL, beside the class below on the canvas container: the
+  // class is what a stylesheet hooks (a border, a cursor), and is not
+  // itself something a returning DM reads off the page — the label is the
+  // part that actually answers "why did my click just do nothing" (spec §8).
+  if (doorsArmed) {
+    wrap.appendChild(el("p", "armed-label", "Doors armed — click a door to open or close it."));
+  }
 
   const geom: Geometry = { cell: CELL, width: scene.GridWidth, height: scene.GridHeight };
   // Computed BEFORE anything below reads it (fix round: this used to run
@@ -146,6 +165,11 @@ function renderGrid(
   // letterboxed margin, drawing squares outside the map that the server would
   // refuse to move a token onto.
   board.dataset["sceneId"] = sceneId;
+  // THE CANVAS CONTAINER carries the class, not `wrap` (the outer section):
+  // this div is what directly wraps the `<canvas>` a click lands on, so a
+  // stylesheet styling "the board itself" (a border, a cursor change) hooks
+  // here rather than on the section that also holds the scene name heading.
+  if (doorsArmed) board.classList.add("armed");
 
   const canvas = document.createElement("canvas");
   canvas.width = PANE_W;
@@ -486,6 +510,14 @@ export interface ViewExtras {
    * comment on the parameter this threads into for the full reasoning.
    */
   getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
+  /**
+   * Whether the door tool is armed on THIS board (Task 4, spec §8) — the
+   * same bit app.ts's `ui.doorsArmed` shares with the DM console and the
+   * player panel, threaded here so the board shows it too. Omitted (or
+   * false) draws the board exactly as before this task; renderGrid's own
+   * comment covers what "armed" adds.
+   */
+  doorsArmed?: boolean | undefined;
 }
 
 export function renderSpectator(
@@ -502,7 +534,7 @@ export function renderSpectator(
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.onCell, extras.getContext),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, extras.onCell, extras.getContext),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),
