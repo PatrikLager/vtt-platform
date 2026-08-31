@@ -857,36 +857,50 @@ tasks:
   check:breaking:
     desc: Fail on breaking changes to contract/ vs main
     cmds:
-      - |
-        # Resolve main as a LOCAL branch first, then origin/main.
-        #
-        # The fallback is not belt-and-braces, it is the only thing that makes
-        # this gate run on a pull request at all. actions/checkout creates a
-        # local branch only for the ref it checks out: on a push to main that
-        # IS main, but on a PR it is the PR branch, and main exists solely as
-        # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
-        # failed with "no local 'main' ref" on the repo's FIRST pull request,
-        # having passed every previous run — every one of which was a push to
-        # main, where the ref it wanted happened to exist.
-        #
-        # Read that the other way round: until that first PR, the contract
-        # breaking-change gate had never once executed in the situation it was
-        # built for. A breaking change would have been caught only after it
-        # landed on main.
-        REF=""
-        if git rev-parse --verify -q main >/dev/null; then
-          REF=main
-        elif git rev-parse --verify -q origin/main >/dev/null; then
-          REF=origin/main
-        else
-          echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
-          exit 1
-        fi
-        if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
-          cd contract && go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
-        else
-          echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
-        fi
+      # silent: true suppresses only Task's own pre-run echo of this command's
+      # source (which would otherwise print the literal string "pre-release"
+      # from the else-branch below regardless of which branch actually runs,
+      # defeating anything that greps this task's real output for that word).
+      # The echo/buf-breaking output the script itself produces is untouched.
+      - cmd: |
+          # Resolve main as a LOCAL branch first, then origin/main.
+          #
+          # The fallback is not belt-and-braces, it is the only thing that makes
+          # this gate run on a pull request at all. actions/checkout creates a
+          # local branch only for the ref it checks out: on a push to main that
+          # IS main, but on a PR it is the PR branch, and main exists solely as
+          # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
+          # failed with "no local 'main' ref" on the repo's FIRST pull request,
+          # having passed every previous run — every one of which was a push to
+          # main, where the ref it wanted happened to exist.
+          #
+          # Read that the other way round: until that first PR, the contract
+          # breaking-change gate had never once executed in the situation it was
+          # built for. A breaking change would have been caught only after it
+          # landed on main.
+          REF=""
+          if git rev-parse --verify -q main >/dev/null; then
+            REF=main
+          elif git rev-parse --verify -q origin/main >/dev/null; then
+            REF=origin/main
+          else
+            echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
+            exit 1
+          fi
+          if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
+            cd contract
+            if [ -f RELEASED ]; then
+              go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
+            else
+              echo "check:breaking: pre-release (contract/RELEASED absent) — REPORTING, not enforcing."
+              echo "  ADR-007's additive-only rule binds from the first release others can run."
+              echo "  Anything buf objects to below is real and will fail once that file exists."
+              go tool buf breaking --against "../.git#ref=$REF,subdir=contract" || true
+            fi
+          else
+            echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
+          fi
+        silent: true
 
   generate:contract:
     dir: contract

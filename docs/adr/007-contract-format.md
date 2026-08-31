@@ -286,6 +286,25 @@ build, concretely:
 - **CI:** drift gate and breaking gate as required checks; buf version and
   PATH setup baked into the CI environment.
 
+**AMENDED 2026-08-30 — additive-only was enforced before it had anything to
+protect.** `check:breaking` as decided above enforces the additive-only rule
+unconditionally, from the moment `contract/` first exists on `main`. But the
+rule's purpose is to protect compatibility with artifacts OUTSIDE this repo —
+a client someone else built, a message already stored somewhere — and until a
+release goes out that others can run, no such artifact exists. A gate
+stricter than the rule it enforces is a gate people work around, which is how
+gates get quietly weakened.
+
+Patrik's ruling, 2026-08-30: **additive-only binds from the first release
+others can run.** Before that release, a breaking change to the contract is
+permitted, provided the change states its reason. `check:breaking` encodes
+the same trigger mechanically via `contract/RELEASED`: absent, the gate
+reports whatever `buf breaking` would have objected to and exits 0; present,
+it enforces exactly as originally decided above. Creating `contract/RELEASED`
+is therefore a deliberate commit in its own right, not a byproduct of
+anything else — it is the moment additive-only turns on for good, and it
+must never be created incidentally.
+
 ## Fate of the losing prototypes
 
 contract-spike/ is retained as decision evidence, excluded from coverage
