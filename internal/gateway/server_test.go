@@ -961,22 +961,25 @@ func TestSpectatorCommandDenied(t *testing.T) {
 	}
 }
 
-// TestAgentRetractEventsBroadcastToAll covers the retraction path end to
-// end: an agent's RetractEvents command succeeds (ok=true) and the
-// EventsRetracted marker is broadcast to every connected client, this one
-// included.
+// TestAnAgentsRetractionIsRefusedAndChangesNothing is the end-to-end statement
+// that retraction has left the gateway, and it REPLACES the test that pinned
+// the opposite (TestAgentRetractEventsBroadcastToAll: an agent retracts, the
+// marker reaches every client, the result carries the marker's sequence).
 //
-// P6 Task 4 pre-step (ADR-009 binding, controller decision): the result's
-// Sequence must equal the broadcast marker Envelope's Sequence, closing the
-// P4 carry-forward ("RetractEvents' result carries no sequence" — spec §3
-// EXCEPTION note). Before campaign.Undo returned the marker's sequence,
-// result.Sequence was always left 0 here (handleRetraction's zero-value
-// CommandResult literal), so this assertion is genuine behavioral RED
-// against the pre-fix code — not a hypothetical.
-func TestAgentRetractEventsBroadcastToAll(t *testing.T) {
+// The agent is the seat that used to be allowed, so it is the one worth
+// asking. "Refused" and "wrote nothing" are separate claims and both are
+// asserted: the command comes back ok=false with a reason, AND the log's head
+// is exactly where it was. A refusal that had nonetheless appended a marker
+// would satisfy the first and fail the second, which is why the second is
+// here.
+//
+// Patrik, 2026-08-30: the log only goes forward. A retraction tries to make
+// something not have happened, and it cannot, because the player has already
+// read it.
+func TestAnAgentsRetractionIsRefusedAndChangesNothing(t *testing.T) {
 	f := newGWFixture(t)
+	before := f.head(t)
 	agentConn := f.dial(f.agentToken, gwSeedHead)
-	watcherConn := f.dial(f.spectatorToken, gwSeedHead)
 
 	sendCommand(t, agentConn, &vttv1.ClientCommand{
 		RequestId: "r-undo",
@@ -985,25 +988,16 @@ func TestAgentRetractEventsBroadcastToAll(t *testing.T) {
 		}},
 	})
 	result := readResult(t, agentConn)
-	if !result.Ok {
-		t.Fatalf("want ok=true for agent retraction, got error %q", result.Error)
+	if result.Ok {
+		t.Fatal("an agent retraction was accepted; no seat may retract any more")
 	}
-
-	agentEvent := readEvent(t, agentConn)
-	watcherEvent := readEvent(t, watcherConn)
-	for name, env := range map[string]*vttv1.Envelope{"agent": agentEvent, "watcher": watcherEvent} {
-		if _, ok := env.Payload.(*vttv1.Envelope_EventsRetracted); !ok {
-			t.Fatalf("%s payload = %T, want EventsRetracted", name, env.Payload)
-		}
+	if result.Error == "" {
+		t.Fatal("a refusal must say why: a client shown ok=false and no reason cannot tell " +
+			"a denied command from a broken one")
 	}
-	if agentEvent.Sequence != watcherEvent.Sequence {
-		t.Fatalf("marker sequence mismatch across connections: agent=%d watcher=%d", agentEvent.Sequence, watcherEvent.Sequence)
-	}
-	if result.Sequence == 0 {
-		t.Fatalf("result.Sequence = 0, want the marker's non-zero sequence (%d)", agentEvent.Sequence)
-	}
-	if result.Sequence != agentEvent.Sequence {
-		t.Fatalf("result.Sequence = %d, want it to equal the broadcast marker's sequence %d", result.Sequence, agentEvent.Sequence)
+	if after := f.head(t); after != before {
+		t.Fatalf("the log head moved from %d to %d on a refused retraction: nothing was retracted, "+
+			"but something was written", before, after)
 	}
 }
 

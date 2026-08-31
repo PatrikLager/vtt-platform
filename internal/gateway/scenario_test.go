@@ -260,21 +260,19 @@ type participant struct {
 // requires every one of them to carry the identical (event_id, sequence)
 // pair, the given wantParticipant as participant_id, and issuer.role as
 // actor_role (spec §4: "every accepted command stamps actor_role AND ...
-// participant_id" — this pins both, for every command including
-// RetractEvents, not just participant_id). It returns the envelope read on
-// the connection named "dm", so callers can build the ordered "what DM
-// received live" record the final reconnect check needs.
+// participant_id" — this pins both, not just participant_id). It returns the
+// envelope read on the connection named "dm", so callers can build the ordered
+// "what DM received live" record the final reconnect check needs.
 //
-// wantResultSequence: for every command EXCEPT RetractEvents, the
-// CommandResult's Sequence must equal the broadcast Envelope's Sequence
+// The CommandResult's Sequence must equal the broadcast Envelope's Sequence
 // (TestSequenceInResultMatchesBroadcastEnvelope's contract, folded into
-// server_test.go's TestTwoClientsBothReceiveAcceptedCommandAsEvent). The one
-// documented exception is RetractEvents: server.go's handleRetraction
-// deliberately leaves CommandResult.Sequence unset (0) because
-// campaign.Undo does not return the marker's sequence — that sequence is
-// still visible on the broadcast Envelope itself, just not echoed back in
-// the result. Callers pass wantResultSequence=false only for that command.
-func issueAndVerify(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, wantParticipant string, wantResultSequence bool, all []participant) *vttv1.Envelope {
+// server_test.go's TestTwoClientsBothReceiveAcceptedCommandAsEvent), with no
+// exception. There USED to be one, and it had its own parameter: RetractEvents
+// answered a sequence of 0 because campaign.Undo did not return the marker's.
+// Retraction left the platform on 2026-08-31 and the exception left with it —
+// a parameter only one caller ever passed false is a parameter that no longer
+// says anything.
+func issueAndVerify(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, wantParticipant string, all []participant) *vttv1.Envelope {
 	t.Helper()
 	issuer.conn.sendCommand(t, cmd)
 	result := issuer.conn.readResult(t)
@@ -304,7 +302,7 @@ func issueAndVerify(t *testing.T, issuer participant, cmd *vttv1.ClientCommand, 
 	if dmEnv == nil {
 		t.Fatalf("%s: \"dm\" was not present in the participant list passed to issueAndVerify", cmd.GetRequestId())
 	}
-	if wantResultSequence && result.Sequence != first.Sequence {
+	if result.Sequence != first.Sequence {
 		t.Fatalf("%s: result.Sequence=%d, broadcast Sequence=%d, want equal", cmd.GetRequestId(), result.Sequence, first.Sequence)
 	}
 	return dmEnv
@@ -364,9 +362,9 @@ func drainEnvelopes(t *testing.T, conn *scenarioConn, n int) []*vttv1.Envelope {
 //  2. Player: moves act-lera's token OK (own participant_id); moves
 //     act-ursus's token → ok=false AND no broadcast to any client (a
 //     controllerless actor is DM/agent-only).
-//  3. Agent: moves act-ursus's token OK (own participant_id); retracts that
-//     move via RetractEvents → the EventsRetracted marker reaches all four
-//     clients.
+//  3. Agent: moves act-ursus's token OK (own participant_id) — a
+//     controllerless actor is the agent's to move where the player's move of
+//     the same token was refused a step earlier.
 //  4. Spectator: attempts StartSession → ok=false, no broadcast anywhere.
 //  5. DM: EndSession.
 //  6. All four clients disconnect. The player reconnects with after=0: its
@@ -409,7 +407,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env := issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-start-session",
 		Command:   &vttv1.ClientCommand_StartSession{StartSession: &vttv1.StartSession{Name: "Exit Scenario"}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionStarted); !ok {
 		t.Fatalf("dm-start-session: payload = %T, want SessionStarted", env.Payload)
 	}
@@ -420,7 +418,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "scn-exit", Name: "Exit Hall", GridWidth: 10, GridHeight: 10,
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SceneCreated); !ok {
 		t.Fatalf("dm-create-scene: payload = %T, want SceneCreated", env.Payload)
 	}
@@ -436,7 +434,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			Actor: &vttv1.Actor{ActorId: "act-ursus", Name: "Ursus",
 				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	aa, ok := env.Payload.(*vttv1.Envelope_ActorAdded)
 	if !ok {
 		t.Fatalf("dm-add-ursus: payload = %T, want ActorAdded", env.Payload)
@@ -455,7 +453,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			Actor: &vttv1.Actor{ActorId: "act-lera", Name: "Lera",
 				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	aa, ok = env.Payload.(*vttv1.Envelope_ActorAdded)
 	if !ok {
 		t.Fatalf("dm-add-lera: payload = %T, want ActorAdded", env.Payload)
@@ -471,7 +469,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			ActorId: "act-lera", ParticipantId: player.id,
 			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	g, ok := env.Payload.(*vttv1.Envelope_ActorControlGranted)
 	if !ok {
 		t.Fatalf("dm-grant-lera: payload = %T, want ActorControlGranted", env.Payload)
@@ -488,7 +486,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			TokenId: "tok-ursus", SceneId: "scn-exit", ActorId: "act-ursus",
 			Position: &vttv1.GridPosition{X: 0, Y: 0},
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenPlaced); !ok {
 		t.Fatalf("dm-place-ursus: payload = %T, want TokenPlaced", env.Payload)
 	}
@@ -500,7 +498,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 			TokenId: "tok-lera", SceneId: "scn-exit", ActorId: "act-lera",
 			Position: &vttv1.GridPosition{X: 1, Y: 1},
 		}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenPlaced); !ok {
 		t.Fatalf("dm-place-lera: payload = %T, want TokenPlaced", env.Payload)
 	}
@@ -513,7 +511,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 			TokenId: "tok-lera", To: &vttv1.GridPosition{X: 2, Y: 2},
 		}},
-	}, player.id, true, unfiltered)
+	}, player.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_TokenMoved); !ok {
 		t.Fatalf("player-move-lera: payload = %T, want TokenMoved", env.Payload)
 	}
@@ -526,45 +524,20 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		}},
 	}, all)
 
-	// --- Agent: moves ursus's token OK, then retracts that move ---
+	// --- Agent: moves ursus's token OK ---
 
 	env = issueAndVerify(t, agent, &vttv1.ClientCommand{
 		RequestId: "agent-move-ursus",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 			TokenId: "tok-ursus", To: &vttv1.GridPosition{X: 5, Y: 5},
 		}},
-	}, agent.id, true, unfiltered)
+	}, agent.id, unfiltered)
 	tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved)
 	if !ok {
 		t.Fatalf("agent-move-ursus: payload = %T, want TokenMoved", env.Payload)
 	}
 	if tm.TokenMoved.GetTokenId() != "tok-ursus" {
 		t.Fatalf("agent-move-ursus: TokenId = %q, want tok-ursus", tm.TokenMoved.GetTokenId())
-	}
-	dmLive = append(dmLive, env)
-	retractSeq := env.Sequence
-
-	// Unlike every other command, RetractEvents does not flow through
-	// gateway.ToEvent — campaign.Undo (internal/campaign/campaign.go)
-	// constructs the EventsRetracted marker itself (ToEvent deliberately
-	// never builds one; see ErrIsRetraction's doc comment). Attribution is
-	// still gateway-supplied: handleRetraction passes the issuing
-	// participant's role and id through to Undo's trailing params, so the
-	// marker carries the AGENT's participant_id and ActorRole here, same as
-	// every other command.
-	env = issueAndVerify(t, agent, &vttv1.ClientCommand{
-		RequestId: "agent-retract-move",
-		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-			FromSequence: retractSeq, ToSequence: retractSeq, Reason: "test retraction",
-		}},
-	}, agent.id, false, unfiltered)
-	er, ok := env.Payload.(*vttv1.Envelope_EventsRetracted)
-	if !ok {
-		t.Fatalf("agent-retract-move: payload = %T, want EventsRetracted", env.Payload)
-	}
-	if er.EventsRetracted.GetFromSequence() != retractSeq || er.EventsRetracted.GetToSequence() != retractSeq {
-		t.Fatalf("agent-retract-move: range = [%d,%d], want [%d,%d]",
-			er.EventsRetracted.GetFromSequence(), er.EventsRetracted.GetToSequence(), retractSeq, retractSeq)
 	}
 	dmLive = append(dmLive, env)
 
@@ -580,7 +553,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-end-session",
 		Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
-	}, dm.id, true, unfiltered)
+	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionEnded); !ok {
 		t.Fatalf("dm-end-session: payload = %T, want SessionEnded", env.Payload)
 	}

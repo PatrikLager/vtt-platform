@@ -1030,8 +1030,8 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // not need to log anything about what/where the spectator sees." The log is
 // the campaign's history, and where a watcher points their camera is not a
 // fact about the campaign; it is a view preference, like zoom. Logged, it
-// would replay forever, add story-panel noise, and — absurdly — become
-// RETRACTABLE, so a DM could undo somebody having looked at Asme.
+// would replay forever and add story-panel noise — and the log only goes
+// forward, so it would be there for good.
 //
 // The cost of that ruling is the perch not surviving a reconnect (spec
 // §3.1.1), because it lives on the connection like the catch-up point does.
@@ -1246,10 +1246,6 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	env, err := ToEvent(cmd, p)
 	if err != nil {
-		var rr *RetractionRange
-		if errors.As(err, &rr) {
-			return s.handleRetraction(requestID, rr, p)
-		}
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
@@ -1273,31 +1269,6 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
-}
-
-// handleRetraction persists rr via campaign.Undo, which owns constructing
-// the EventsRetracted marker itself (ToEvent deliberately never builds one
-// — see ErrIsRetraction's doc comment). A fresh marker event id is minted
-// here the same way ToEvent mints one for every other event. p is the
-// issuing participant: campaign has no identity concept of its own (see
-// Undo's doc comment), so the gateway — the one place that has both p and
-// the retraction — supplies actor_role/participant_id attribution the same
-// way ToEvent does for every other command (spec §4).
-func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *identity.Participant) *vttv1.CommandResult {
-	id, err := newEventID()
-	if err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-	}
-	seq, err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, string(p.Role), p.ID)
-	if err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-	}
-	// campaign.Undo now returns the marker's own sequence (P6 Task 4
-	// pre-step, controller decision — closes the P4 carry-forward), so the
-	// result carries it the same way Append's sequence does for every other
-	// command; it also remains visible on the broadcast Envelope frame
-	// itself, to every connection including this one.
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }
 

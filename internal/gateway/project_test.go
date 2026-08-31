@@ -1049,7 +1049,7 @@ func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
 	}
 }
 
-func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
+func TestASceneGoneFromTheWorldIsForgottenSILENTLY(t *testing.T) {
 	// The union walk above reaches a scene the projector REMEMBERS, and memory
 	// can outlive the world. engine.State.Scenes is a VALUE map, so a missing
 	// key reads as the zero Scene with an empty ID — and a SceneSeen naming ""
@@ -1058,17 +1058,22 @@ func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
 	// accumulated log on every event, so the throw would recur forever and
 	// freeze that viewer for the rest of the session.
 	//
-	// It is REACHABLE, not hypothetical. seat.receive rebuilds the world with
-	// campaign.FoldPrefix, which skips retracted ranges, so an undo covering a
-	// SceneCreated (together with what depends on it) removes that scene from
-	// the state while pr.seen still holds its id. Modelled here by projecting
-	// against a world that no longer has the scene, which is exactly what that
-	// re-fold hands this function.
+	// HOW REACHABLE IT IS HAS CHANGED, and saying so is the point of this
+	// paragraph. It was demonstrably reachable: seat.receive rebuilds the world
+	// with campaign.FoldPrefix, which skips retracted ranges, so an undo
+	// covering a SceneCreated removed that scene from the state while pr.seen
+	// still held its id. Retraction left the platform on 2026-08-31 and no
+	// operation removes a scene from the world today — which makes the guard
+	// this pins a guard against a state nothing currently produces.
+	// Whether it should therefore GO is a question about the forgetting loop
+	// itself, and that loop belongs to whoever finishes retraction's removal in
+	// campaign (Task 5); it is not answered by deleting the test that covers
+	// it. The input is constructed directly here either way.
 	//
 	// SILENTLY, and that is the second half. Naming the scene correctly would
-	// not help: the retraction reached this viewer too, so their own fold has
-	// no such scene either and a well-formed dark SceneSeen would throw just
-	// the same. There is nothing to report about a scene that no longer exists.
+	// not help. A viewer whose world lost a scene has no such scene in their
+	// own fold either, so a well-formed dark SceneSeen would throw just the
+	// same. There is nothing to report about a scene that no longer exists.
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
 	if lit := sceneSeenIn(firstPlace(pr, st), "s"); lit == nil {
@@ -1169,13 +1174,17 @@ func TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet(t *testing.T) {
 // actually has to mean, which is more than dropping its visible set.
 //
 // A scene id is CALLER-SUPPLIED (CreateScene.scene_id, passed straight through
-// convert.go), so re-creating one under the same id after an undo removed it is
-// ordinary, not exotic: the "scene %q already exists" check has nothing left to
-// collide with. When that happens the viewer's own fold has dropped the scene
-// too — EventsRetracted is forwarded to players — so everything the projection
-// then says about it lands on a scene they do not have. Both folds answer that
-// with a hard error, and client/src/session.ts re-folds its whole log on every
-// event, so the throw recurs forever.
+// convert.go), so re-creating one under the same id once the world has lost it
+// is ordinary, not exotic: the "scene %q already exists" check has nothing left
+// to collide with. When that happens the viewer's own fold has dropped the
+// scene too, so everything the projection then says about it lands on a scene
+// they do not have. Both folds answer that with a hard error, and
+// client/src/session.ts re-folds its whole log on every event, so the throw
+// recurs forever.
+//
+// The mechanism that USED to take the scene away was an undo — see
+// TestASceneGoneFromTheWorldIsForgottenSILENTLY, which records what changed
+// when retraction left, and why both tests build the vanished world by hand.
 //
 // THE ASSERTION IS THAT THE BATCH FOLDS, not that some particular envelope
 // appears. That is the only thing the viewer cares about and the only thing
@@ -1189,12 +1198,12 @@ func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
 		t.Fatal("the control fails: the projector must remember this room first")
 	}
 
-	// The world after an undo that took the scene and the tokens standing in it
-	// but left the actors — the shape a retraction has when the actors were
-	// created before the scene, which is the ordinary order. Isolating it that
-	// way keeps this test about the SCENE: pr.actors deliberately never forgets
-	// (see the Projector doc comment), so an undo reaching the actors as well is
-	// a separate gap one layer up, and not what this pins.
+	// A world that lost the scene and the tokens standing in it but kept the
+	// actors — the shape such a loss takes when the actors were created before
+	// the scene, which is the ordinary order. Isolating it that way keeps this test
+	// about the SCENE: pr.actors deliberately never forgets (see the Projector
+	// doc comment), so a world that lost the actors as well is a separate gap
+	// one layer up, and not what this pins.
 	gone := engine.NewState()
 	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
 	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
@@ -1207,8 +1216,8 @@ func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
 	// The same room again, which is what a re-created scene folds to.
 	out := pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "and rebuilt"}), twoRooms())
 
-	// A viewer who dropped the scene when they folded the retraction, and who
-	// still holds the actors it did not reach.
+	// A viewer whose own fold dropped the scene along with the world's, and who
+	// still holds the actors that went nowhere.
 	viewer := gone.Snapshot()
 	for _, e := range out {
 		if err := engine.Apply(viewer, e); err != nil {
@@ -1989,55 +1998,44 @@ func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 	}
 }
 
-func TestARetractionReachesThePlayerWithoutItsReason(t *testing.T) {
-	// TWO rulings in one payload, pulling opposite ways.
-	//
-	// The RANGE must reach every seat: a retraction erases history, and a
-	// player who never receives it keeps folding an event the table has agreed
-	// did not happen. Skipping a sequence they never received is a no-op, so
-	// forwarding the numbers is free.
-	//
-	// The REASON must not. `EventsRetracted.reason` is free text supplied by
-	// whoever called Undo — "mis-keyed, the archer is at 19,8" is an ordinary
-	// thing to type — which is the note ruling's argument under a different
-	// message name (spec §4.4: a note can say anything).
+// TestARetractionReachesNoProjectedSeat REPLACES the test that pinned the
+// opposite ruling (TestARetractionReachesThePlayerWithoutItsReason: the range
+// reaches every seat, the free-text reason is stripped out of a clone).
+//
+// That ruling was bought entirely by the RECIPIENT's fold: while that fold
+// SKIPPED retracted sequence numbers, a viewer who missed the marker went on
+// applying an event the table had agreed did not happen, so withholding it was
+// the dangerous direction and forwarding it cost only the reason. Neither
+// recipient fold does that now — client/src/fold.ts and internal/harness.Fold
+// are both single-pass — and retraction is leaving the platform entirely, so a
+// marker forwarded to a player buys that player nothing at all, while its
+// `reason` field stays exactly the free-text channel the NoteUpserted ruling
+// refuses. With the benefit gone the cost decides it, and the answer flips.
+//
+// The DM half is unchanged and is the control: the identity projection is
+// byte-for-byte what it is today (spec §3.1, exit criterion 8), so a payload
+// no longer offered to players still reaches the log's own reader untouched.
+func TestARetractionReachesNoProjectedSeat(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
 
 	in := envelope(8, &vttv1.EventsRetracted{FromSequence: 6, ToSequence: 6,
 		Reason: "mis-keyed: the archer is at 19,8"})
-	var got *vttv1.EventsRetracted
 	for _, e := range pr.Project(in, st) {
 		if r := e.GetEventsRetracted(); r != nil {
-			got = r
+			t.Fatalf("a retraction reached a player carrying %q; no seat is offered one, and "+
+				"its reason is free text the projection must never pass on", r.GetReason())
 		}
 	}
-	if got == nil {
-		t.Fatal("a retraction must reach every seat: withholding it leaves erased history standing")
-	}
-	if got.GetFromSequence() != 6 || got.GetToSequence() != 6 {
-		t.Errorf("the range is what makes a retraction work and must survive intact, got [%d,%d]",
-			got.GetFromSequence(), got.GetToSequence())
-	}
-	if got.GetReason() != "" {
-		t.Errorf("a retraction's free-text reason must not reach a player, got %q", got.GetReason())
-	}
-	// And the redaction is a COPY: editing the shared envelope in place would
-	// erase the reason from the DM's copy of history too.
-	if in.GetEventsRetracted().GetReason() == "" {
-		t.Error("the projection redacted the envelope it was handed instead of a copy of it")
-	}
 
-	// The DM's own stream keeps the reason, and by pointer: the identity
-	// projection is byte-for-byte what it is today (spec §3.1).
 	dm := gateway.NewProjector(gateway.Viewer{ParticipantID: "dm", Role: identity.RoleDM})
 	out := dm.Project(in, st)
 	if len(out) != 1 {
-		t.Fatalf("the DM's retraction must be the identity projection: one envelope, got %d", len(out))
+		t.Fatalf("the DM's stream is the log itself: one envelope, got %d", len(out))
 	}
 	if out[0] != in {
-		t.Fatal("the DM keeps the reason, in the very envelope they were sent, not a copy")
+		t.Fatal("the DM reads the very envelope they were sent, not a copy")
 	}
 }
 

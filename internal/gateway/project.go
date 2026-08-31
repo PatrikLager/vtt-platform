@@ -68,14 +68,15 @@ type Viewer struct {
 // "engine: scene %q already exists" / "actor %q already exists" / "token %q
 // already exists", and client/src/fold.ts mirrors it in its own words
 // (`duplicate scene` / `duplicate actor` / `duplicate token`), where a throw
-// freezes that viewer's state (Task 3's finding). Permanently in the sense that
-// matters: Session re-folds its whole APPEND-ONLY log on every event, so the
-// poisoned envelope throws again on every one that follows. The only escape is
-// a retraction covering that sequence — fold's pass 1 expands retracted ranges
-// and pass 2 skips them — and nothing the viewer themselves can do reaches it.
-// So the projection has to know what it has already introduced. TokenHidden is
-// the one exception, tolerant on both sides by explicit ruling, which is why
-// departures need no care here.
+// freezes that viewer's state (Task 3's finding). Permanently, and the word
+// got STRONGER on 2026-08-31: Session re-folds its whole APPEND-ONLY log on
+// every event, so the poisoned envelope throws again on every one that
+// follows, and there is now no escape at all. Until this arc there was one —
+// a retraction covering that sequence, which the fold skipped — and retraction
+// has left the platform, so a duplicate introduction is a viewer who never
+// recovers. So the projection has to know what it has already introduced.
+// TokenHidden is the one exception, tolerant on both sides by explicit ruling,
+// which is why departures need no care here.
 //
 // A CONSEQUENCE FOR WHOEVER WIRES THIS UP (Task 5): a Projector must be fed
 // the log from the beginning, discarding what precedes the client's resume
@@ -183,7 +184,7 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	}
 	out := pr.transitions(env, env.GetSequence(), now, st)
 	if v == forwarded {
-		out = append(out, redactedFor(env))
+		out = append(out, env)
 	}
 	return out
 }
@@ -194,18 +195,18 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 // A PERCH HAS NO CAUSING EVENT, so it has no number to inherit. Spec §4.2's
 // rule — a synthesized envelope carries the sequence of the event that caused
 // it — is right for every OTHER synthesized frame in this file and wrong here,
-// and the difference is not cosmetic. Retraction is a range over sequence
-// NUMBERS: campaign.retractedSet, harness.Fold and client/src/fold.ts all
-// expand an EventsRetracted's [from,to] and skip envelopes by number. A perch
-// stamped with the seat's last folded sequence was therefore DELETED by an undo
+// and the difference is not cosmetic: a number that names nothing is a number
+// something else can name. It was measured while undo still existed. A perch
+// stamped with the seat's last folded sequence fell inside the range of an undo
 // of that sequence — an event the watcher had never even received — which
 // emptied their board with no message and left the party's next move dangling
 // against a token that was no longer there ("moved unknown token").
 //
-// ZERO IS OUTSIDE EVERY RANGE THAT CAN EVER EXIST, on both sides of the wire,
-// and both refusals are explicit rather than incidental: campaign.Undo rejects
-// `from < 1` ("invalid retraction range") and client/src/undo.ts rejects the
-// same ("sequences start at 1"). So no retraction can name a perch frame.
+// THE UNDO THAT FOUND IT IS GONE (2026-08-31: the log only goes forward), so
+// that particular collision cannot recur. The rule it demonstrated is not
+// about undo: a live number invites any future feature that addresses ranges
+// of the log to address a frame no event caused. Zero is outside every such
+// range by construction, on both sides of the wire.
 //
 // It also cannot move a replay cursor: client/src/wire.ts advances only on
 // `env.sequence > lastSeq`, and seat.catchUp takes its head from projected
@@ -213,9 +214,9 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 // not run until catch-up has returned).
 //
 // The cost, stated so nobody has to rediscover it: a perch frame is not
-// addressable. It cannot be retracted, and a client cannot resume "just after"
-// one — on a reconnect the perch is gone anyway (spec §3.1.1) and the client
-// re-sends it, which is the same answer.
+// addressable. A client cannot resume "just after" one — on a reconnect the
+// perch is gone anyway (spec §3.1.1) and the client re-sends it, which is the
+// same answer.
 const perchSequence int64 = 0
 
 // reperch moves a spectator onto a new shoulder and returns the envelopes that
@@ -261,28 +262,6 @@ func (pr *Projector) reperch(actorID string, st *engine.State) []*vttv1.Envelope
 		return nil
 	}
 	return pr.transitions(nil, perchSequence, pr.look(st), st)
-}
-
-// redactedFor is the envelope a projected viewer actually receives for a
-// payload classify passed. For every payload but one it is env ITSELF, by
-// pointer and unchanged — see Project's doc comment on why nothing here may
-// write to a shared envelope.
-//
-// EventsRetracted is the exception, and the only payload this file both
-// forwards and edits. Its range must reach every seat (classify says why) and
-// its free-text reason must not, so the marker is CLONED and the text dropped;
-// the clone is what makes this a redaction rather than the in-place edit that
-// would rewrite the DM's copy. Envelope metadata — event id, actor role,
-// participant, timestamp, session — travels as it does on every other
-// forwarded envelope: it says who undid something, which is not a fact about
-// the world.
-func redactedFor(env *vttv1.Envelope) *vttv1.Envelope {
-	if env.GetEventsRetracted().GetReason() == "" {
-		return env // nothing to redact, so nothing to copy
-	}
-	out := proto.Clone(env).(*vttv1.Envelope)
-	out.GetEventsRetracted().Reason = ""
-	return out
 }
 
 // sightView is everything a single look at the world tells us about one
@@ -409,26 +388,17 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // they can see now.
 //
 // Every one of them carries seq — the sequence of the event that CAUSED the
-// change, not a number of its own (spec §4.2). Retraction is a range over
-// sequence NUMBERS: campaign.retractedSet, harness.Fold and client/src/fold.ts
-// all expand an EventsRetracted's inclusive [from,to] into a set and then SKIP
-// any envelope whose sequence is in it, by number and never by identity. So
-// retracting the event that revealed the goblin also drops the introduction it
-// caused, and the player forgets the sighting.
-//
-// MEASURED, not reasoned, and the measurement found a limit worth writing down
-// rather than a clean result. Folding one projected stream with and without a
-// retraction of the revealing event: the player does forget the goblin — and
-// if any LATER event about it was forwarded, their fold then fails on the
-// dangling reference ("moved unknown token") where the DM's identical
-// retraction folds cleanly, because the goblin's existence reached the DM at
-// its own sequence and reached the player at the revealing one. campaign.Undo
-// dry-runs the would-be fold before persisting, but it dry-runs the LOG, so a
-// retraction safe for every seat that receives the log can still be unsafe for
-// one that receives a projection of it. Not fixed here: the stamping is what
-// spec §4.2 specifies and what this task's tests pin, and a per-viewer
-// pre-flight is a gateway decision, not a projection one. Filed in the task
-// report; spec §4.3's keystone is where it is catchable.
+// change, not a number of its own (spec §4.2). A SHARED NUMBER IS A DELIBERATE
+// CONSEQUENCE, and it used to have a second one: while undo existed, a range
+// over sequence numbers dropped the introductions a retracted event had caused
+// along with the event itself, and a projected seat could be left folding a
+// dangling reference where the DM's identical undo folded cleanly — because
+// the goblin's existence reached the DM at its own sequence and the player at
+// the revealing one. That asymmetry left with undo (2026-08-31: the log only
+// goes forward): no command produces a ranged marker and no role may ask for
+// one, so stamping a derived envelope with its cause's number costs a seat
+// nothing. campaign.Undo can still append one; nothing reaches it, and Task 5
+// deletes it — the same wording classify's own arm uses, for the same reason.
 //
 // Stamping also means several envelopes legitimately share one sequence, and
 // before this task every envelope had a unique one. An introduction batch can
@@ -829,37 +799,28 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		return forwarded
 
 	case *vttv1.Envelope_EventsRetracted:
-		// The one payload whose WITHHOLDING is the dangerous direction. A
-		// retraction erases history; a viewer who never receives it keeps
-		// folding an event the table has agreed did not happen. Skipping
-		// sequence numbers a viewer never received is a no-op on their side,
-		// so the RANGE is free to forward.
+		// A DEAD ARM, kept only because the contract has not caught up yet.
+		// Retraction is leaving the platform (spec
+		// 2026-08-30-retraction-leaves): no command produces this payload and
+		// no role may ask for one. The oneof field still exists, and
+		// TestEveryEnvelopePayloadArmHasAnExplicitRuling walks the descriptor
+		// and demands a ruling for every arm the contract declares — so this
+		// arm stands until the field goes, and goes with it.
 		//
-		// THE REASON IS NOT. An earlier draft of this comment justified the
-		// arm with "it carries only sequence numbers", which is false:
-		// EventsRetracted.reason (contract field 3) is free text handed
-		// straight through campaign.Undo from whoever asked for the undo, and
-		// "undo, I put the archer on the wrong square" is the NoteUpserted
-		// ruling's own argument under a different message name. Forwarded with
-		// the reason redacted — see redactedFor — which keeps the dangerous
-		// direction safe without leaving a free-text channel open.
-		// FLAGGED FOR ADJUDICATION: costs a player nothing they can see today.
-		// NOTHING IN THE CLIENT EVER READS THE REASON — client/src/view/feed.ts
-		// calls the marker bookkeeping and DROPS it ("rendering it too would
-		// narrate the erasure"), and fold.ts and undo.ts read only its range.
-		//
-		// The MARKER, unlike its reason, is not invisible, and an earlier
-		// version of this comment said it was. client/src/view/spectator.ts's
-		// Events ticker walks the RAW log and falls through to describe()'s
-		// default arm (`return p.case ?? "event"`), so a retraction surfaces
-		// there as a bare "#N eventsRetracted" row. That is consistent with
-		// forwarding — the row names no world fact, and the seat is entitled to
-		// know history was erased — but it is why this ruling is about the
-		// reason field and not about the marker. Recorded because of HOW the
-		// wrong version was reached: it was checked by grepping every site that
-		// NAMES eventsRetracted, and the ticker renders it precisely by not
-		// naming it.
-		return forwarded
+		// WITHHELD, which is the reverse of the ruling it replaces. That one
+		// forwarded the range and cloned the marker to strip its free-text
+		// reason, because withholding was then the DANGEROUS direction: while
+		// the RECIPIENT's fold skipped retracted sequence numbers, a viewer
+		// who missed the marker went on applying an event the table had agreed
+		// did not happen. Neither recipient fold does that now —
+		// client/src/fold.ts and internal/harness.Fold are both single-pass —
+		// so the range buys a projected seat nothing, while `reason` is free
+		// text supplied by whoever typed it and is the NoteUpserted ruling's
+		// own argument under a different message name. With the benefit gone,
+		// the cost decides. (campaign.FoldPrefix, the server's own replay, is
+		// still two-pass until Task 5; it builds the WORLD a seat judges
+		// against, not the stream a seat folds.)
+		return withheld
 
 	case *vttv1.Envelope_NarrationAdded:
 		// RULED, not obvious, and the opposite of the note ruling below.

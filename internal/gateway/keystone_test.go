@@ -351,8 +351,9 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 // state. The left side is built the way a real seat builds it — one Projector
 // fed the log from the beginning, judging each event against campaign.FoldPrefix
 // of the log so far, which is what internal/gateway/seat.go's receive does — so
-// retraction, introductions and the projector's memory are all exercised rather
-// than stepped around.
+// introductions and the projector's memory are exercised rather than stepped
+// around. Retraction was on that list until 2026-08-31, when it left the
+// platform and the corpus stopped containing any.
 //
 // THE PREFIX-WISE PROPERTY HAS A WITNESS, and it is worth naming because most
 // faults do not need it: of the six injections in the task report, a
@@ -457,11 +458,13 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		}
 		projected = append(projected, out...)
 
-		// campaign.FoldPrefix is engine.Apply under the same two-pass retraction
-		// semantics internal/harness.Fold and client/src/fold.ts implement (see
-		// FoldPrefix's own doc comment: it exists so the gateway does not grow a
-		// second event-application loop). Folding the PROJECTION with it is the
-		// left-hand side of §4.3.
+		// campaign.FoldPrefix is engine.Apply behind the campaign's own replay
+		// semantics (see FoldPrefix's own doc comment: it exists so the gateway
+		// does not grow a second event-application loop). Folding the PROJECTION
+		// with it is the left-hand side of §4.3. It used to be named here as the
+		// twin of internal/harness.Fold and client/src/fold.ts, which mirrored
+		// its two retraction passes; both are single-pass since 2026-08-31 and
+		// FoldPrefix collapses to match when retraction leaves campaign.
 		got, err := campaign.FoldPrefix(projected)
 		if err != nil {
 			t.Fatalf("prefix %d (seq %d): folding this seat's PROJECTION failed — a stream the "+

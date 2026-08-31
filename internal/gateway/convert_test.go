@@ -218,11 +218,20 @@ func TestToEventEndSessionProducesSessionEnded(t *testing.T) {
 	}
 }
 
-// TestToEventRetractEventsReturnsSentinel covers the one command that does
-// NOT become an Envelope here: campaign.Undo owns marker construction, so
-// ToEvent returns nil plus an error wrapping ErrIsRetraction, carrying the
-// parsed range via errors.As.
-func TestToEventRetractEventsReturnsSentinel(t *testing.T) {
+// TestToEventKnowsNothingOfRetraction REPLACES the test that pinned the arm it
+// removes (TestToEventRetractEventsReturnsSentinel: nil envelope plus an error
+// wrapping ErrIsRetraction, carrying the parsed range out via errors.As, so
+// that server.go could hand it to campaign.Undo).
+//
+// There is no such caller now, and the sentinel and its range type are gone
+// with it. What is left is the DEFAULT: retract_events is a oneof arm ToEvent
+// has no case for, so it comes back as the unknown command it has become. That
+// is a statement about conversion only — Authorize refuses the command before
+// this function is ever reached (TestNoRoleMayRetract), which is where the
+// refusal a client sees comes from.
+//
+// It dies with the contract arm it names, in Task 7.
+func TestToEventKnowsNothingOfRetraction(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
 		RetractEvents: &vttv1.RetractEvents{FromSequence: 3, ToSequence: 5, Reason: "mistake"},
@@ -230,17 +239,10 @@ func TestToEventRetractEventsReturnsSentinel(t *testing.T) {
 
 	env, err := gateway.ToEvent(cmd, p)
 	if env != nil {
-		t.Fatalf("want nil envelope for a retraction command, got %v", env)
+		t.Fatalf("want no envelope for a retraction command, got %v", env)
 	}
-	if !errors.Is(err, gateway.ErrIsRetraction) {
-		t.Fatalf("want error wrapping ErrIsRetraction, got %v", err)
-	}
-	var rr *gateway.RetractionRange
-	if !errors.As(err, &rr) {
-		t.Fatalf("want error to unwrap to *RetractionRange, got %T", err)
-	}
-	if rr.FromSequence != 3 || rr.ToSequence != 5 || rr.Reason != "mistake" {
-		t.Fatalf("RetractionRange = %+v, want {From:3 To:5 Reason:mistake}", rr)
+	if !errors.Is(err, gateway.ErrUnknownCommand) {
+		t.Fatalf("want ErrUnknownCommand for a retraction command, got %v", err)
 	}
 }
 
@@ -456,7 +458,11 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
 		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
 			"same shape as load_adventure directly above",
-		"retract_events": "a retraction range, not a single event (handleRetraction)",
+		"retract_events": "retraction has left the platform (spec " +
+			"2026-08-30-retraction-leaves): there is no arm, no handler and no " +
+			"role that may issue it — Authorize refuses it before conversion is " +
+			"reached (TestNoRoleMayRetract). Transitional: the entry goes when " +
+			"the contract arm does, in Task 7",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",
@@ -468,9 +474,9 @@ func TestEveryClientCommandConverts(t *testing.T) {
 			"than useless (joining-a-table spec §2, §4)",
 		"set_viewpoint": "appends nothing, the same shape as set_join_door above: where a " +
 			"spectator points their camera is a view preference, not campaign history, so " +
-			"logging it would replay forever and make it retractable (visibility spec " +
-			"§3.1.1). serve answers it directly (handleSetViewpoint) and it never reaches " +
-			"ToEvent at all.",
+			"logging it would replay forever and — the log only going forward — stay there " +
+			"for good (visibility spec §3.1.1). serve answers it directly " +
+			"(handleSetViewpoint) and it never reaches ToEvent at all.",
 	}
 
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")

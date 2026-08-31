@@ -854,18 +854,31 @@ func TestHoppingWhileTheTableIsBusyKeepsOneOrder(t *testing.T) {
 	}
 }
 
-// TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone is the regression for
-// the second defect review found: perch frames BORROWED a live sequence.
+// TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt REPLACES
+// TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone, which drove the same
+// path with a retraction of the seat's own head.
 //
-// Retraction is a range over sequence NUMBERS — campaign.retractedSet,
-// harness.Fold and client/src/fold.ts all expand [from,to] and skip by number —
-// so an undo of the number a perch had borrowed deleted envelopes no event ever
-// caused. The watcher's board emptied with no message, and the party's next
-// move then dangled against a token they no longer had.
+// It was the regression for the second defect review found: perch frames
+// BORROWED a live sequence, and an undo naming that number deleted envelopes no
+// event had ever caused — the watcher's board emptied with no message, and the
+// party's next move then dangled against a token they no longer had. There is
+// no undo to name a number with any more (2026-08-31: the log only goes
+// forward), so the retraction is dropped and the REST of the sequence is kept:
+// a spectator perches, the table plays on, and their own stream — roster, perch
+// frames, live tail — must still fold whole.
 //
-// The DM here retracts an event THE WATCHER NEVER RECEIVED, which is what makes
-// the old behaviour indefensible rather than merely surprising.
-func TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone(t *testing.T) {
+// Kept rather than deleted because the perch/tail interleaving it walks is not
+// about retraction at all: a perched stream is folded here with live traffic
+// stacked on top of it, over a real socket, and that composition is what this
+// asserts.
+//
+// IT DOES NOT PIN perchSequence, and an earlier version of this comment implied
+// it did by calling that constant "what makes those two composable". The design
+// claim is sound and the test is indifferent to it — MEASURED, by review:
+// setting perchSequence to 7 leaves this test passing, and the only failure in
+// the package is TestAPerchCarriesNoSequenceAtAll, which is where that constant
+// is actually pinned. Background, not this test's reason to exist.
+func TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 
@@ -875,22 +888,10 @@ func TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone(t *testing.T) {
 
 	dmConn := f.dial(f.dmToken, 0)
 	drainEvents(t, dmConn, 300*time.Millisecond)
-	head := int64(len(f.log(t)))
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "undo-head",
-		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-			FromSequence: head, ToSequence: head, Reason: "wrong square",
-		}},
-	})
-	if r := readResult(t, dmConn); !r.Ok {
-		t.Fatalf("undo: %s", r.Error)
-	}
-	tail := drainEvents(t, watcher, 700*time.Millisecond)
 
-	// And the party moves, as it would a moment later. This is where the old
-	// behaviour failed loudly rather than quietly.
+	// The party moves, as it would a moment later.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "after-undo-move",
+		RequestId: "after-perch-move",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 5, Y: 6},
 		}},
@@ -898,7 +899,7 @@ func TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone(t *testing.T) {
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("move: %s", r.Error)
 	}
-	tail = append(tail, drainEvents(t, watcher, 700*time.Millisecond)...)
+	tail := drainEvents(t, watcher, 700*time.Millisecond)
 
 	stream := make([]*vttv1.Envelope, 0, len(roster)+len(perch)+len(tail))
 	stream = append(stream, roster...)
@@ -907,13 +908,13 @@ func TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone(t *testing.T) {
 
 	st, err := campaign.FoldPrefix(stream)
 	if err != nil {
-		t.Fatalf("the watcher's stream does not fold after an unrelated undo: %v", err)
+		t.Fatalf("the watcher's stream does not fold once the table plays on: %v", err)
 	}
 	if _, ok := st.Scenes["ambush"]; !ok {
-		t.Error("an undo of an event the watcher never received erased the room they were shown")
+		t.Error("the room the watcher was shown is gone from their own folded stream")
 	}
 	if _, ok := st.Tokens["tok-fighter"]; !ok {
-		t.Error("an undo of an event the watcher never received erased the shoulder they perched on")
+		t.Error("the shoulder they perched on is gone from their own folded stream")
 	}
 }
 
@@ -943,8 +944,8 @@ func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
 // to log anything about what/where the spectator sees."
 //
 // Where a watcher points their camera is not a fact about the campaign. Logged,
-// it would replay forever, put rows in the story panel, and become RETRACTABLE
-// — a DM could undo somebody having looked at Asme.
+// it would replay forever and put rows in the story panel — and the log only
+// goes forward, so it would be there for good.
 //
 // Two assertions, because "nothing was appended" and "nobody was told" are
 // different claims: the log's own length, and a DM sitting at the table who

@@ -399,13 +399,13 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 // session's id, or cleared to "" if none is open (spec §1.1).
 //
 // Returns the marker's own assigned sequence on success (P6 Task 4 pre-step,
-// controller decision: closes the P4 carry-forward "Undo may return it" —
-// see gateway.handleRetraction, which now threads this straight into
-// CommandResult.Sequence the same way Append's sequence does for every other
-// command; spec §3's EXCEPTION note is updated accordingly). The returned
-// sequence is 0 on every error path (poisoned, invalid range, rebuild
-// failure) — callers must check the error, not assume a zero sequence means
-// success.
+// controller decision: closes the P4 carry-forward "Undo may return it"; spec
+// §3's EXCEPTION note was updated accordingly). Its one caller,
+// gateway.handleRetraction, threaded that sequence into CommandResult.Sequence
+// and was DELETED on 2026-08-31 when retraction left the gateway, so nothing
+// outside tests calls this now. The returned sequence is 0 on every error path
+// (poisoned, invalid range, rebuild failure) — callers must check the error,
+// not assume a zero sequence means success.
 func (c *Campaign) Undo(from, to int64, reason string, eventID, actorRole, participantID string) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

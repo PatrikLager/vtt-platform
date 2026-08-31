@@ -12,43 +12,16 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// ErrIsRetraction signals that cmd was a RetractEvents command: ToEvent
-// deliberately does not build an Envelope for it, because campaign.Undo owns
-// constructing the EventsRetracted marker (spec §6 — the marker is derived
-// from a dry-run replay, not a plain conversion). Every error ToEvent
-// returns for a RetractEvents command is a *RetractionRange, which wraps
-// this sentinel via Unwrap so callers can branch with errors.Is and recover
-// the parsed range with errors.As.
-var ErrIsRetraction = errors.New("gateway: command is a retraction, not a plain event")
-
-// RetractionRange carries the parsed [FromSequence, ToSequence] range and
-// reason from a RetractEvents command, so the caller (Task 5) can pass it
-// straight to campaign.Undo.
-type RetractionRange struct {
-	FromSequence, ToSequence int64
-	Reason                   string
-}
-
-func (r *RetractionRange) Error() string { return ErrIsRetraction.Error() }
-func (r *RetractionRange) Unwrap() error { return ErrIsRetraction }
-
 // ErrUnknownCommand is returned by ToEvent for an unset or unrecognized
 // ClientCommand oneof.
 var ErrUnknownCommand = errors.New("gateway: unknown or empty command")
 
 // ToEvent converts an authorized ClientCommand into the past-tense Envelope
 // it becomes, stamping EventId (fresh per call), ParticipantId, ActorRole,
-// and OccurredAt. RetractEvents is the one exception: it returns a
-// *RetractionRange error instead of an Envelope (see ErrIsRetraction).
+// and OccurredAt. Not every command converts here; the ones that deliberately
+// do not are listed with their reasons in TestEveryClientCommandConverts,
+// which is the gate that keeps that list honest.
 func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope, error) {
-	if r, ok := cmd.GetCommand().(*vttv1.ClientCommand_RetractEvents); ok {
-		return nil, &RetractionRange{
-			FromSequence: r.RetractEvents.GetFromSequence(),
-			ToSequence:   r.RetractEvents.GetToSequence(),
-			Reason:       r.RetractEvents.GetReason(),
-		}
-	}
-
 	env := &vttv1.Envelope{
 		ParticipantId: p.ID,
 		ActorRole:     string(p.Role),

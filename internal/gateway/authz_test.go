@@ -68,6 +68,9 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 			EndSession: &vttv1.EndSession{},
 		}}
 	case "retract_events":
+		// No authzCases row any more — nobody may retract — but commandName
+		// still resolves the arm, so TestEveryClientCommandHasRoleCells needs
+		// a command to hand it for the round-trip half of its check.
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
 			RetractEvents: &vttv1.RetractEvents{FromSequence: 1, ToSequence: 1, Reason: "r"},
 		}}
@@ -233,15 +236,17 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 88-cell matrix (spec §4/§7, grown from 84 by
-// visibility Task 6's set_viewpoint row, from 80 by the
-// whole-branch-review C1 remediation's load_map row, from 72 by
-// maps-as-geometry Task 1's open_door/close_door rows, from 52 by
-// presence-and-actor-control Task 3's grant/revoke_actor_control rows, from 48 by
-// adventure-format Task 4's load_adventure row, which itself grew from 36 by
-// world-layer Task 3's add_narration/upsert_note/delete_note rows, and from
-// 28 by ruleset-interpreter Task 6's use_ability/remove_condition rows):
-// every command against every one of the four roles. move_token/player,
+// authzCases is the full 84-cell matrix (spec §4/§7): every command against
+// every one of the four roles. It reached 88 by growing from 84 with
+// visibility Task 6's set_viewpoint row, from 80 with the whole-branch-review
+// C1 remediation's load_map row, from 72 with maps-as-geometry Task 1's
+// open_door/close_door rows, from 52 with presence-and-actor-control Task 3's
+// grant/revoke_actor_control rows, from 48 with adventure-format Task 4's
+// load_adventure row, which itself grew from 36 with world-layer Task 3's
+// add_narration/upsert_note/delete_note rows, and from 28 with
+// ruleset-interpreter Task 6's use_ability/remove_condition rows — then SHRANK
+// for the first time on 2026-08-31, back to 84, when retract_events left with
+// retraction itself. move_token/player,
 // use_ability/player, remove_condition/player, open_door/player and
 // close_door/player are all TRUE here because the shared fixture in
 // TestAuthorizeTableAllCommandsAllRoles gives participant "p-1" ownership of
@@ -284,11 +289,6 @@ var authzCases = []authzCase{
 	{"end_session", identity.RoleAgent, true},
 	{"end_session", identity.RolePlayer, false},
 	{"end_session", identity.RoleSpectator, false},
-
-	{"retract_events", identity.RoleDM, true},
-	{"retract_events", identity.RoleAgent, true},
-	{"retract_events", identity.RolePlayer, false},
-	{"retract_events", identity.RoleSpectator, false},
 
 	{"use_ability", identity.RoleDM, true},
 	{"use_ability", identity.RoleAgent, true},
@@ -450,9 +450,43 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
+// TestNoRoleMayRetract is the inverted RED for the removal of retraction from
+// the gateway (spec 2026-08-30-retraction-leaves): it asserts an ABSENCE, so it
+// is written before the removal and must fail while the policy still carries a
+// retract_events row.
+//
+// Patrik, 2026-08-30: a retraction's purpose is to make something not have
+// happened, and it cannot do that — the person already read the log. So the
+// answer is not "the DM may and a player may not"; it is that NOBODY may, and
+// the shape of the assertion says so: all four roles identity defines, not the
+// two that used to be allowed. The list is hand-written, like every other role
+// list in this file, so a fifth role would have to be added here as well —
+// identity exposes no enumeration to walk.
+//
+// IT DIES WITH THE CONTRACT ARM IT NAMES: once RetractEvents is gone from
+// commands.proto (Task 7) this test stops compiling and goes with it. Until
+// then it is the whole statement that the policy refuses a command the wire
+// can still express.
+func TestNoRoleMayRetract(t *testing.T) {
+	st := ownershipFixture()
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
+		RetractEvents: &vttv1.RetractEvents{FromSequence: 1, ToSequence: 1, Reason: "r"},
+	}}
+	for _, role := range []identity.Role{
+		identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator,
+	} {
+		t.Run(string(role), func(t *testing.T) {
+			p := &identity.Participant{ID: "p-1", Role: role}
+			if err := gateway.Authorize(p, cmd, st); err == nil {
+				t.Fatalf("%s was allowed to retract; the log only goes forward, so no role may", role)
+			}
+		})
+	}
+}
+
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 88 {
-		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 84 {
+		t.Fatalf("authzCases has %d entries, want 84 (21 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -1058,11 +1092,35 @@ func TestASpectatorCannotPromoteItself(t *testing.T) {
 // impossible for anyone to issue, and the only symptom is a DM being told they
 // "may not issue \"\"".
 //
-// The 72-cell table beside this cannot catch it: its count is a literal, so a
+// The matrix beside this cannot catch it: its count is a literal, so a
 // command added without cells leaves the count untouched and every existing
 // case still passes. Reflection over the oneof is what makes forgetting
 // impossible rather than merely unlikely.
 func TestEveryClientCommandHasRoleCells(t *testing.T) {
+	// Commands DELIBERATELY left with no commandRoles row, each with its
+	// reason — the same shape as TestEveryClientCommandConverts' notConverted
+	// list, and the same rule: adding a name here is a decision, forgetting
+	// one is a failure.
+	//
+	// IT EXEMPTS ONE HALF OF THIS TEST, NOT BOTH. The round-trip through
+	// commandName runs first and runs for every command in the oneof, listed
+	// here or not, because the OTHER failure this test describes — a refusal
+	// that reads `may not issue ""` — is the one an exemption must never buy.
+	// A command nobody may issue still has to be NAMED when it is refused.
+	//
+	// A name in this list is by definition half the state the test exists to
+	// prevent — a command the contract advertises that nobody may issue — so
+	// it may only ever be a command on its way OUT, and it must not outlive
+	// the removal it belongs to.
+	noRoleCells := map[string]string{
+		"retract_events": "retraction is leaving the platform (spec " +
+			"2026-08-30-retraction-leaves): no seat may retract, and no seat may " +
+			"be given the row back. commandName still resolves it, so the refusal " +
+			"names the command — only the commandRoles half is exempt here. " +
+			"Transitional: the entry dies when commands.proto drops RetractEvents " +
+			"in Task 7, which is the earliest the command can stop existing at all.",
+	}
+
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")
 	if oneof == nil {
 		t.Fatal("vttv1.ClientCommand has no \"command\" oneof")
@@ -1071,10 +1129,18 @@ func TestEveryClientCommandHasRoleCells(t *testing.T) {
 		name := string(oneof.Fields().Get(i).Name())
 		t.Run(name, func(t *testing.T) {
 			// The name must round-trip through commandName, or authorization
-			// is deciding about a command it cannot identify.
+			// is deciding about a command it cannot identify. No exemption
+			// reaches this half — see noRoleCells above.
 			if got := gateway.CommandNameForTest(commandFor(t, name)); got != name {
 				t.Fatalf("commandName resolved %q to %q — an unlisted arm is denied for "+
 					"every role, so this command is advertised and unusable", name, got)
+			}
+			if why, skip := noRoleCells[name]; skip {
+				if gateway.HasRoleCellsForTest(name) {
+					t.Fatalf("%q is listed as having no role cells, and has some: %s", name, why)
+				}
+				t.Logf("no role cells by decision: %s", why)
+				return
 			}
 			if !gateway.HasRoleCellsForTest(name) {
 				t.Fatalf("%q has no row in commandRoles, so no role may issue it", name)

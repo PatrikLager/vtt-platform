@@ -16,13 +16,12 @@ import (
 // commandRoles is THE authorization policy (spec §4). Player MoveToken has an
 // additional ownership check in Authorize; everything not listed is denied.
 var commandRoles = map[string]map[identity.Role]bool{
-	"move_token":     {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"create_scene":   {identity.RoleDM: true, identity.RoleAgent: true},
-	"add_actor":      {identity.RoleDM: true, identity.RoleAgent: true},
-	"place_token":    {identity.RoleDM: true, identity.RoleAgent: true},
-	"start_session":  {identity.RoleDM: true, identity.RoleAgent: true},
-	"end_session":    {identity.RoleDM: true, identity.RoleAgent: true},
-	"retract_events": {identity.RoleDM: true, identity.RoleAgent: true},
+	"move_token":    {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"create_scene":  {identity.RoleDM: true, identity.RoleAgent: true},
+	"add_actor":     {identity.RoleDM: true, identity.RoleAgent: true},
+	"place_token":   {identity.RoleDM: true, identity.RoleAgent: true},
+	"start_session": {identity.RoleDM: true, identity.RoleAgent: true},
+	"end_session":   {identity.RoleDM: true, identity.RoleAgent: true},
 	// use_ability/remove_condition (ruleset-interpreter Task 6): dm/agent
 	// may target any actor; a player may only act as an actor THEY
 	// control — the additional ownership check below, on the command's own
@@ -313,6 +312,13 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "start_session"
 	case *vttv1.ClientCommand_EndSession:
 		return "end_session"
+	// retract_events has NO commandRoles row (retraction left the platform,
+	// 2026-08-31) and is refused for every role. The NAME still resolves, and
+	// deliberately: an unlisted arm answers "", so the refusal a DM reads
+	// becomes `may not issue ""` — the exact signature
+	// TestEveryClientCommandHasRoleCells' doc names as the bug that test
+	// exists to catch. Naming the command costs one line and dies with the
+	// oneof arm in Task 7, which the compiler will not let anyone forget.
 	case *vttv1.ClientCommand_RetractEvents:
 		return "retract_events"
 	case *vttv1.ClientCommand_UseAbility:

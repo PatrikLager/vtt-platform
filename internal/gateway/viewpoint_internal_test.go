@@ -43,14 +43,15 @@ func TestASeatPerchesOnlyAgainstAWorldItHasSeen(t *testing.T) {
 // folded sequence, which is what spec §4.2 says for a synthesized envelope —
 // correct for every frame an EVENT caused, and wrong here, because no event
 // caused this one. Borrowing a live number put perch frames inside a range that
-// `vtt undo` can name: retracting that sequence deleted the watcher's board
+// `vtt undo` could name: retracting that sequence deleted the watcher's board
 // with no message, and left the party's next move dangling against a token the
 // watcher no longer had. The test moved with the contract rather than the
 // contract with the test.
 //
-// Zero is unreachable by any retraction on either side of the wire — see
-// perchSequence, which names the two guards — so this assertion is the whole of
-// what protects a perched board from an unrelated undo.
+// THE UNDO IS GONE (2026-08-31: the log only goes forward) and the rule it
+// demonstrated is not, which is why this test outlives its motivating defect: a
+// frame no event caused must carry no number an addressable operation could
+// ever name. perchSequence argues it in full.
 func TestAPerchCarriesNoSequenceAtAll(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range perchFixtureLog() {
@@ -64,7 +65,7 @@ func TestAPerchCarriesNoSequenceAtAll(t *testing.T) {
 	for _, e := range out {
 		if e.GetSequence() != 0 {
 			t.Errorf("a perch frame must carry no sequence, got %d: %v — a live number is "+
-				"one an undo can name", e.GetSequence(), e.GetPayload())
+				"one something else can name", e.GetSequence(), e.GetPayload())
 		}
 	}
 }
