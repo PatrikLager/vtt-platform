@@ -52,7 +52,6 @@ var soakCommandRoles = map[string]map[string]bool{
 	"place_token":         {"dm": true, "agent": true},
 	"start_session":       {"dm": true, "agent": true},
 	"end_session":         {"dm": true, "agent": true},
-	"retract_events":      {"dm": true, "agent": true},
 }
 
 func soakCommandKind(cmd *vttv1.ClientCommand) string {
@@ -71,8 +70,6 @@ func soakCommandKind(cmd *vttv1.ClientCommand) string {
 		return "start_session"
 	case *vttv1.ClientCommand_EndSession:
 		return "end_session"
-	case *vttv1.ClientCommand_RetractEvents:
-		return "retract_events"
 	default:
 		return ""
 	}
@@ -83,9 +80,8 @@ func soakCommandKind(cmd *vttv1.ClientCommand) string {
 // number of commands from any of the four soak participants, decides
 // ok/denied via soakCommandRoles + a player-ownership check mirroring
 // gateway/authz.go's authorizeTokenOwnership, and folds accepted commands
-// into its own engine.State (retraction included, via harness.Fold — the
-// exported function under test elsewhere in this package, reused here
-// exactly as a real client-side rebuild would).
+// into its own engine.State directly via engine.Apply (toEnvelope converts
+// the command first) — the same fold any real server-side apply performs.
 type soakWorld struct {
 	mu      sync.Mutex
 	st      *engine.State
@@ -135,6 +131,44 @@ type soakWorld struct {
 	slowBroadcast time.Duration
 	bcWG          sync.WaitGroup
 
+	// pendingBroadcast/nextBroadcastOrdinal are the reorder buffer
+	// deliverInOrder uses to guarantee slowBroadcast still delivers in
+	// FIFO-of-delivery order. Once 2026-08-31-retraction-leaves
+	// task-4-brief.md removed RunSoak's per-action wait on the agent's own
+	// history — a wait that, per soak.go's former per-iteration comment,
+	// existed only to make planRetraction's eligibility snapshot
+	// deterministic, and nothing else read it — nothing paces the main loop
+	// against a slow fan-out anymore: several commands can now be accepted
+	// within the SAME virtual instant, so their independent slowBroadcast
+	// goroutines' timers can TIE, and nothing then guarantees they wake (and
+	// win w.mu) in the order they were scheduled. A real gateway never has
+	// this problem — one store append log, one ordered broadcaster — so the
+	// fix belongs here, in the fake's own delay simulation, not in
+	// production code.
+	//
+	// Keyed by a PRIVATE ordinal (nextDeliveryOrdinal), assigned only at the
+	// moment deliverEnvelope actually enqueues something for delayed
+	// delivery — NOT by env.Sequence, and this distinction is load-bearing
+	// (fix round 1, I3): w.seq is ALSO incremented by toEnvelope's own
+	// w.seq++ inside handle() even when the subsequent engine.Apply then
+	// rejects the envelope, and handle returns before broadcasting anything
+	// at all — that sequence number is consumed and never delivered by
+	// ANY path. (Pre-fix, maybeLeak's own w.seq++ was a second such path,
+	// broadcasting inline rather than through this buffer; fix round 1
+	// routed it through deliverEnvelope instead — see maybeLeak's own
+	// comment — so today it is not an example of a hole, it is the reason
+	// the buffer had to stop assuming env.Sequence was ever safe to key on
+	// in the first place.) Keying by env.Sequence made the buffer wait
+	// forever for a "next" sequence number some OTHER code path had already
+	// consumed and would never deliver — reproduced by combining
+	// w.slowBroadcast with w.leakOnDenial, `bcWG.Wait()` deadlocking every
+	// time. An ordinal assigned only when deliverEnvelope actually enqueues
+	// is dense by construction: every ordinal handed out is delivered
+	// exactly once, so nextBroadcastOrdinal can never wait on a hole.
+	pendingBroadcast     map[int64]*vttv1.Envelope
+	nextBroadcastOrdinal int64
+	nextDeliveryOrdinal  int64
+
 	// denyEverything makes the fake reject every command, so a run reaches
 	// its final checkpoint having accepted nothing and lastAcceptedSeq stays
 	// 0 — the one state that distinguishes runSoakCheckpoint's
@@ -149,6 +183,13 @@ func newSoakWorld(ids map[string]string) *soakWorld {
 			"dm": "dm", "player1": "player", "player2": "player", "agent": "agent",
 		},
 		ids: ids,
+		// nextBroadcastOrdinal/nextDeliveryOrdinal start at their zero value
+		// deliberately: ordinals are assigned independently of w.seq (see the
+		// pendingBroadcast field comment), so there is no campaign-freshness
+		// assumption to state here — unlike w.seq itself, which
+		// TestRunSoakErrorsOnPreExistingCatchUpEvents already sets to a
+		// nonzero value before a run.
+		pendingBroadcast: map[int64]*vttv1.Envelope{},
 	}
 }
 
@@ -209,8 +250,7 @@ func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
 // handle is the fake's ENTIRE server-side logic: log the dispatched
 // command, authorize it (denying with a "gateway: not authorized" message,
 // matching internal/gateway/authz.go's ErrUnauthorized text — RunSoak's own
-// deniedAttempt bucket checks for exactly that substring), then either fold
-// it (plain commands) or apply it as a retraction (RetractEvents).
+// deniedAttempt bucket checks for exactly that substring), then fold it.
 func (w *soakWorld) handle(name string, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -242,27 +282,12 @@ func (w *soakWorld) handle(name string, cmd *vttv1.ClientCommand) *vttv1.Command
 		}
 	}
 
-	if r, ok := cmd.GetCommand().(*vttv1.ClientCommand_RetractEvents); ok {
-		return w.applyRetraction(cmd.GetRequestId(), r.RetractEvents)
-	}
-
 	env := w.toEnvelope(name, cmd)
 	if err := engine.Apply(w.st, env); err != nil {
 		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: false, Error: "soakWorld: apply: " + err.Error()}
 	}
 	w.history = append(w.history, env)
-	if w.slowBroadcast > 0 {
-		w.bcWG.Add(1)
-		go func() {
-			defer w.bcWG.Done()
-			time.Sleep(w.slowBroadcast)
-			w.mu.Lock()
-			defer w.mu.Unlock()
-			w.broadcast(env)
-		}()
-	} else {
-		w.broadcast(env)
-	}
+	w.deliverEnvelope(env)
 	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: env.Sequence}
 }
 
@@ -323,39 +348,8 @@ func (w *soakWorld) toEnvelope(name string, cmd *vttv1.ClientCommand) *vttv1.Env
 	return env
 }
 
-// applyRetraction appends an EventsRetracted marker and rebuilds w.st via
-// harness.Fold(w.history) — the exact rebuild a real client-side observer
-// would do, dogfooding the package's own published derivation.
-func (w *soakWorld) applyRetraction(reqID string, r *vttv1.RetractEvents) *vttv1.CommandResult {
-	from, to := r.GetFromSequence(), r.GetToSequence()
-	for _, env := range w.history {
-		if env.Sequence < from || env.Sequence > to {
-			continue
-		}
-		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			return &vttv1.CommandResult{RequestId: reqID, Ok: false, Error: "soakWorld: cannot retract a retraction"}
-		}
-	}
-	w.seq++
-	marker := &vttv1.Envelope{
-		EventId: fmt.Sprintf("ev-%d", w.seq), Sequence: w.seq,
-		Payload: &vttv1.Envelope_EventsRetracted{EventsRetracted: &vttv1.EventsRetracted{
-			FromSequence: from, ToSequence: to, Reason: r.GetReason(),
-		}},
-	}
-	w.history = append(w.history, marker)
-
-	rebuilt, err := harness.Fold(w.history)
-	if err != nil {
-		return &vttv1.CommandResult{RequestId: reqID, Ok: false, Error: "soakWorld: rebuild after retraction: " + err.Error()}
-	}
-	w.st = rebuilt
-	w.broadcast(marker)
-	return &vttv1.CommandResult{RequestId: reqID, Ok: true, Sequence: marker.Sequence}
-}
-
 // maybeLeak consults leakOnDenial with this denial's 0-based ordinal and, if
-// it says so, broadcasts an envelope the fake never persisted — the exact
+// it says so, delivers an envelope the fake never persisted — the exact
 // server bug RunSoak's denial bookkeeping exists to catch. Called from BOTH
 // denial paths (role and token ownership); the generator reaches the ownership
 // one far more often. Caller holds w.mu.
@@ -384,7 +378,14 @@ func (w *soakWorld) maybeLeak() {
 		panic("soakWorld: leaked envelope must fold: " + err.Error())
 	}
 	w.history = append(w.history, env)
-	w.broadcast(env)
+	// deliverEnvelope, not a direct w.broadcast(env) (fix round 1, I3's
+	// secondary defect): a bare broadcast here jumped the queue ahead of
+	// whatever slowBroadcast still had buffered, delivering a leak BEFORE
+	// envelopes accepted earlier than it — exactly the ordering inversion
+	// deliverInOrder exists to remove. Routing it through the same gate
+	// keeps every envelope this fake ever hands to a participant, leaked or
+	// legitimate, on one consistent delivery order.
+	w.deliverEnvelope(env)
 
 	// Give the per-participant drain goroutines time to consume it before the
 	// NEXT action is planned. This is what makes the defect deterministic
@@ -393,7 +394,33 @@ func (w *soakWorld) maybeLeak() {
 	// that later snapshot cannot see it. Without this pause the test passes
 	// against the buggy code roughly whenever the drain happens to be slow,
 	// which would make it worthless as a regression pin.
+	//
+	// w.mu is released for this sleep and re-acquired after (caller's defer
+	// still balances correctly — Unlock/Lock is not goroutine-owned). Fix
+	// round 1, I3: with w.slowBroadcast active, deliverEnvelope just spawned
+	// a goroutine that will want w.mu itself once its delay elapses
+	// (deliverInOrder); testing/synctest does not treat a goroutine blocked
+	// on sync.Mutex.Lock as durable, only this sleep, so holding the lock
+	// across it stalls the WHOLE bubble forever — the sleep can only
+	// complete once every goroutine is durably blocked, and that goroutine
+	// can never reach durably-blocked while wanting a lock this one is
+	// sitting on.
+	//
+	// Releasing it here is safe (fix round 2 — the previous version of this
+	// paragraph argued liveness, not safety, and its safety half was false
+	// for exactly the configuration above: the drain goroutines DO reach
+	// w.mu, via deliverInOrder, once slowBroadcast is active): RunSoak
+	// dispatches SERIALLY, one conn.SendCommand per loop iteration, so no
+	// second handle() call can interleave during this window, and the
+	// per-participant drain goroutines soakHistories.start launches touch
+	// only h.mu, never w.mu. Neither maybeLeak nor the rest of handle reads
+	// pendingBroadcast, the ordinal counters, or any other shared state
+	// after this sleep — handle builds its CommandResult from locals — so
+	// there is nothing left for the lock to protect once w.history and the
+	// delivery enqueue above are already done.
+	w.mu.Unlock()
 	time.Sleep(100 * time.Millisecond)
+	w.mu.Lock()
 }
 
 func (w *soakWorld) broadcast(env *vttv1.Envelope) {
@@ -401,6 +428,60 @@ func (w *soakWorld) broadcast(env *vttv1.Envelope) {
 		// trySend, not a bare channel send: conns keeps every connection ever
 		// dialled, including the checkpoint's throwaway one after it closes.
 		c.trySend(env)
+	}
+}
+
+// deliverEnvelope is the single entry point EVERY envelope this fake ever
+// hands to a participant goes through, whichever of handle's accepted path
+// or maybeLeak's leaked path produced it — the two origins never race each
+// other out of order because neither ever calls broadcast directly. With
+// slowBroadcast unset it broadcasts inline, exactly as this fake always has.
+// With it set, it assigns env a fresh delivery ordinal and hands it to a
+// goroutine that waits out the delay before landing in deliverInOrder's
+// reorder buffer. Caller holds w.mu.
+func (w *soakWorld) deliverEnvelope(env *vttv1.Envelope) {
+	if w.slowBroadcast <= 0 {
+		w.broadcast(env)
+		return
+	}
+	w.bcWG.Add(1)
+	ordinal := w.nextDeliveryOrdinal
+	w.nextDeliveryOrdinal++
+	go func() {
+		time.Sleep(w.slowBroadcast)
+		w.deliverInOrder(ordinal, env)
+	}()
+}
+
+// deliverInOrder is deliverEnvelope's delayed goroutines' landing spot,
+// instead of calling broadcast directly: it buffers env under its assigned
+// ordinal until every earlier ordinal has already been flushed, then
+// broadcasts env and any consecutive run now ready behind it.
+// nextBroadcastOrdinal/ordinal are dense by construction — see the
+// pendingBroadcast field comment for why this is keyed by a private ordinal
+// rather than env.Sequence — so "every earlier ordinal" is exactly
+// nextBroadcastOrdinal's own count, not a gap-tolerant search.
+//
+// Without this, two delayed deliveries whose timers tie (reachable now that
+// nothing paces RunSoak's main loop against a slow fan-out — see the struct
+// field comment) can flush in EITHER order: a later envelope's broadcast can
+// reach a participant before an earlier one's. A client folding that stream
+// then sees, say, a TokenPlaced before its scene exists, and harness.Fold
+// correctly refuses it as corrupt — which is how this defect first surfaced,
+// as a checkpoint's Fold error rather than as a visibly wrong ordering.
+func (w *soakWorld) deliverInOrder(ordinal int64, env *vttv1.Envelope) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pendingBroadcast[ordinal] = env
+	for {
+		next, ok := w.pendingBroadcast[w.nextBroadcastOrdinal]
+		if !ok {
+			return
+		}
+		delete(w.pendingBroadcast, w.nextBroadcastOrdinal)
+		w.broadcast(next)
+		w.nextBroadcastOrdinal++
+		w.bcWG.Done()
 	}
 }
 
@@ -495,9 +576,11 @@ func TestRunSoakGeneratorDiffersForDifferentSeed(t *testing.T) {
 // --- Step 1: mix-ratio sanity -------------------------------------------------
 
 // TestRunSoakActionMixRatioSanity is task-5-brief.md's "mix-ratio sanity
-// over 1000 draws": Report.Counts, expressed as a fraction of Events, must
-// land close to the brief's pinned percentages (create scene 5%, add actor
-// 10%, place 15%, move-own 50%, session churn 5%, retraction 10%, deliberate
+// over 1000 draws", with retraction's freed 10% folded into move-own
+// (2026-08-31-retraction-leaves task-4-brief.md, pickBucket's own doc
+// comment carries the ruling): Report.Counts, expressed as a fraction of
+// Events, must land close to the pinned percentages (create scene 5%, add
+// actor 10%, place 15%, move-own 60%, session churn 5%, deliberate
 // authz-denied 5%). Tolerance is generous (±5 points) — this is a sanity
 // check on the mix, not a statistical test of the RNG.
 func TestRunSoakActionMixRatioSanity(t *testing.T) {
@@ -519,9 +602,8 @@ func TestRunSoakActionMixRatioSanity(t *testing.T) {
 			"createScene":   0.05,
 			"addActor":      0.10,
 			"placeToken":    0.15,
-			"moveOwn":       0.50,
+			"moveOwn":       0.60,
 			"sessionChurn":  0.05,
-			"retraction":    0.10,
 			"deniedAttempt": 0.05,
 		}
 		const tolerance = 0.05
