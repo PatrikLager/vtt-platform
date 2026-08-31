@@ -3,15 +3,23 @@
 //
 // # Why the whole stream is re-folded on every event
 //
-// Because retraction exists. An EventsRetracted marker invalidates events
-// that were already applied, and no incremental "apply this one event to the
-// previous state" scheme can walk that back — the retracted event's effects
-// are already baked in. internal/harness/fold.go has the same shape for the
-// same reason: two passes, collect retractions first, then apply.
+// Retraction used to be the answer: a marker invalidated history that had
+// already been applied, and no incremental "apply this one event to the
+// previous state" scheme could walk that back. Retraction has left the
+// platform (Patrik, 2026-08-30) and the re-fold stays, because the reason
+// underneath it did not go anywhere.
 //
-// The cost is re-folding a growing list. That is fine at table scale (a long
-// session is thousands of events, not millions) and the alternative is a
-// client whose undo silently disagrees with the server's.
+// fold's apply MUTATES the state it is handed. An incremental apply that
+// throws halfway has already half-changed the board, and ingest's catch —
+// which holds the LAST GOOD state rather than showing a plausible wrong one —
+// would have nothing good left to hold. Re-folding from an empty state is
+// what confines a failed fold's damage to a value nobody keeps. rollback
+// rebuilds for a second reason: it TRUNCATES the log, and a state that has
+// already been mutated forwards has no way to shrink except by being built
+// again.
+//
+// The cost is re-folding a growing list. That is fine at table scale: a long
+// session is thousands of events, not millions.
 
 import { Wire, type WireStatus, type PresenceEvent } from "./wire";
 import { fold } from "./fold";
@@ -183,8 +191,9 @@ export class Session {
    * Truncating a log is always safe to FOLD — what remains is a prefix of
    * something that folded a moment ago — so this deliberately does not report
    * an error path it cannot reach. It re-folds rather than trusting the
-   * previous state, because dropping a retraction marker legitimately restores
-   * what that marker had removed.
+   * previous state because there is nothing to trust: dropping envelopes off
+   * the end of the log cannot be expressed as an edit to a state those
+   * envelopes have already been applied to.
    */
   private rollback(throughSeq: bigint): void {
     const kept = this.log.filter((e) => e.sequence <= throughSeq);

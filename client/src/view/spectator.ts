@@ -425,9 +425,10 @@ function renderPerch(st: State, perch: PerchControl): HTMLElement {
  * THREE ANSWERS, because there are three states and collapsing any two of them
  * loses something a watcher needs. "" is perched on nobody, which is where
  * every connection starts. An id the roster does not hold is a shoulder this
- * client asked for and can no longer name — an undo covering the ActorAdded
- * reaches here — and showing "nobody" for it would say the board is blank
- * because they chose that, when it is blank because the character is gone.
+ * client asked for and can no longer name — a log that does not reach back to
+ * that actor's ActorAdded lands here — and showing "nobody" for it would say
+ * the board is blank because they chose that, when it is blank because the
+ * character is gone.
  */
 function label(a: { name: string } | undefined, id: string): string {
   if (id === "") return "nobody";

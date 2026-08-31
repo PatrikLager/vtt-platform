@@ -170,14 +170,6 @@ export function removeCondition(actorId: string, conditionId: string): ClientCom
   });
 }
 
-/** Retract an INCLUSIVE sequence range. Undoing one event passes it twice. */
-export function retractEvents(from: bigint, to: bigint, reason: string): ClientCommand {
-  return create(ClientCommandSchema, {
-    requestId: requestId(),
-    command: { case: "retractEvents", value: { fromSequence: from, toSequence: to, reason } },
-  });
-}
-
 /**
  * parseActorJSON turns a DM's pasted actor into an addActor command.
  *
@@ -371,9 +363,9 @@ export function loadMap(mapId: string): ClientCommand {
  * "un-perch". Same shape as an omitted move reason, opposite consequence.
  *
  * APPENDS NOTHING (commands.proto). Where a watcher points their camera is not
- * a fact about the campaign, so there is no event to wait for and no undo that
- * can name it — which is also why a perch does not survive a reconnect and the
- * client is what re-sends it. See app.ts's redial for what that costs.
+ * a fact about the campaign, so there is no event to wait for — which is also
+ * why a perch does not survive a reconnect and the client is what re-sends it.
+ * See app.ts's redial for what that costs.
  */
 export function setViewpoint(actorId: string): ClientCommand {
   return create(ClientCommandSchema, {

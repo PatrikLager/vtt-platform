@@ -1,5 +1,4 @@
-// The TypeScript fold — a mirror of internal/engine/apply.go's Apply, and of
-// internal/harness/fold.go's two-pass retraction handling.
+// The TypeScript fold — a mirror of internal/engine/apply.go's Apply.
 //
 // "Mirror" is load-bearing: parity includes REJECTING what Go rejects. A fold
 // that quietly tolerates a malformed event would diverge from the server's
@@ -41,26 +40,17 @@ import {
 /**
  * fold applies envelopes in order and returns the derived state.
  *
- * Two passes, matching internal/harness/fold.go: pass 1 collects every
- * sequence covered by an eventsRetracted marker's INCLUSIVE range; pass 2
- * applies everything not in that set, skipping the markers themselves — a
- * marker changes history's shape, not live state.
+ * ONE PASS, and there is no second one to add back: the log only goes forward
+ * (Patrik, 2026-08-30, and the spec 2026-08-30-retraction-leaves-design). This
+ * function used to look ahead first, for retraction markers that could cancel
+ * an earlier envelope; nothing can now, so every envelope in the stream is
+ * live and state is simply those envelopes applied in the order they were
+ * written. A fold that has to know the future before it can trust the past is
+ * the shape retraction forced, and it left with it.
  */
 export function fold(envelopes: Envelope[]): State {
-  const retracted = new Set<bigint>();
-  for (const env of envelopes) {
-    if (env.payload.case === "eventsRetracted") {
-      const r = env.payload.value;
-      for (let s = r.fromSequence; s <= r.toSequence; s++) retracted.add(s);
-    }
-  }
-
   const st = newState();
-  for (const env of envelopes) {
-    if (retracted.has(env.sequence)) continue;
-    if (env.payload.case === "eventsRetracted") continue;
-    apply(st, env);
-  }
+  for (const env of envelopes) apply(st, env);
   return st;
 }
 

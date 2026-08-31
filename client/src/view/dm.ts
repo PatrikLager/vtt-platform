@@ -1,26 +1,25 @@
 // The DM console (client spec §4): run the table.
 //
 // Every destructive or structural action lives here rather than in the player
-// panel, and the one irreversible-looking action — undo — is gated by both a
-// validity check and a confirmation, because a retraction that does nothing
-// still writes a marker into the log implying something changed.
+// panel. Exactly one of them asks first, and it is the one whose damage lands
+// OUTSIDE the room: rotating the join link strands every copy of the old one,
+// including the copies held by people who are not here to be told.
 //
 // Invite management is deliberately absent: it stays CLI (spec §4 non-goal).
 
 import type { State } from "../state";
 import type { Participant } from "../session";
 import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
-import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, createScene, placeToken, loadAdventure, loadMap,
-  upsertNote, deleteNote, removeCondition, retractEvents, parseActorJSON, addActor,
+  upsertNote, deleteNote, removeCondition, parseActorJSON, addActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
   rotateJoinLink,
   promoteParticipant,
 } from "../commands";
-import { lastUndoable, retractableRange } from "../undo";
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
@@ -180,7 +179,6 @@ function group(title: string, ...nodes: HTMLElement[]): HTMLElement {
 
 export interface DMDeps {
   st: State;
-  log: Envelope[];
   /**
    * Who is at the table, for the control panel's grant target.
    *
@@ -464,38 +462,6 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     }
   }
   if (condRow.length > 0) wrap.appendChild(group("Remove condition", ...condRow));
-
-  // --- undo ---
-  const last = lastUndoable(d.log);
-  const from = input("from", "undo-from");
-  const to = input("to", "undo-to");
-  from.className = "tiny";
-  to.className = "tiny";
-  const undoRow: HTMLElement[] = [];
-
-  undoRow.push(
-    button(last === null ? "Nothing to undo" : `Undo #${last}`, () => {
-      if (last === null) return d.notify("nothing to undo");
-      // Confirmation, because a retraction is visible to everyone at the
-      // table the moment it lands.
-      if (!d.confirm(`Retract event #${last}? Everyone at the table sees this.`)) return;
-      d.send(retractEvents(last, last, "undo"));
-    }, "retract-events"),
-  );
-  undoRow.push(from, to);
-  undoRow.push(
-    button("Undo range", () => {
-      const f = BigInt(Number(from.value) || 0);
-      const t = BigInt(Number(to.value) || 0);
-      // Validated BEFORE the dialog, so a pointless undo is never confirmed
-      // and never writes a marker implying something changed.
-      const why = retractableRange(d.log, f, t);
-      if (why !== null) return d.notify(why);
-      if (!d.confirm(`Retract events #${f}–#${t}? Everyone at the table sees this.`)) return;
-      d.send(retractEvents(f, t, "undo"));
-    }, "retract-events"),
-  );
-  wrap.appendChild(group("Undo", ...undoRow));
 
   // --- who controls what -------------------------------------------------
   //

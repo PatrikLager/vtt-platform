@@ -7,12 +7,9 @@ import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { create } from "@bufbuild/protobuf";
-import { EnvelopeSchema, TokenMovedSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 function harness(
   st: State = newState(),
-  log: Envelope[] = [],
   opts: {
     adventures?: { id: string; name: string }[];
     maps?: MapMeta[];
@@ -38,7 +35,6 @@ function harness(
   let toggles = 0;
   const node = renderDMConsole({
     st,
-    log,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     maps: opts.maps ?? [],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
@@ -142,77 +138,24 @@ test("malformed pasted JSON is reported, not sent", () => {
   expect(h.notices[0]).toMatch(/JSON/i);
 });
 
-// --- undo, the careful one --------------------------------------------------
+// --- the console cannot retract -------------------------------------------
 
-const moved = (seq: number) =>
-  create(EnvelopeSchema, {
-    sequence: BigInt(seq),
-    payload: { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 1, y: 1 } }) },
-  });
-
-test("undo asks for confirmation and does nothing when declined", () => {
-  // A retraction is visible to everyone at the table the moment it lands.
-  const h = harness(newState(), [moved(1)]);
-  h.setConfirm(false);
-  h.button("Undo #1")!.click();
-  expect(h.sent).toHaveLength(0);
-});
-
-test("undo sends the retraction when confirmed", () => {
-  const h = harness(newState(), [moved(1), moved(2)]);
-  h.button("Undo #2")!.click();
-  expect(h.sent).toHaveLength(1);
-  expect(h.sent[0]!.command.case).toBe("retractEvents");
-});
-
-test("an empty log offers nothing to undo and sends nothing", () => {
-  const h = harness(newState(), []);
-  h.button("Nothing to undo")!.click();
-  expect(h.sent).toHaveLength(0);
-});
-
-test("both the single-event and range Undo buttons carry their OWN data-action, not just one of the two", () => {
-  // The two buttons cover for each other under controlExistsFor
-  // (command-surface.test.ts): that invariant only asks "does A control for
-  // retractEvents exist ANYWHERE", so mutating either button's action string
-  // to "" still leaves the invariant satisfied by the other one, and
-  // button()'s own `if (action) b.dataset["action"] = action` silently drops
-  // the attribute for "" rather than setting it to the empty string — so
-  // the mutant is a REAL, observable difference (no attribute at all), not
-  // a value nothing reads. Asserted on each button BY LABEL, not by a single
-  // querySelector, so a mutation on either one is caught independently of
-  // the other.
-  const h = harness(newState(), [moved(1)]);
-  expect(h.button("Undo #1")!.dataset["action"]).toBe("retract-events");
-  expect(h.button("Undo range")!.dataset["action"]).toBe("retract-events");
-});
-
-test("an invalid range is refused BEFORE the confirmation dialog", () => {
-  // Confirming an undo that would do nothing still writes a marker implying
-  // something changed.
-  let confirmCalls = 0;
-  const st = newState();
-  const node = renderDMConsole({
-    participants: [],
-    joinLink: null,
-    roster: [],
-    origin: "https://table.example",
-    refreshSharing: () => {},
-    st, log: [moved(1)], adventures: [], maps: [],
-    guideFor: async () => null,
-    send: async () => {},
-    notify: () => {},
-    confirm: () => {
-      confirmCalls++;
-      return true;
-    },
-    doorsArmed: false,
-    toggleDoors: () => {},
-  });
-  (node.querySelector('[data-field="undo-from"]') as HTMLInputElement).value = "5";
-  (node.querySelector('[data-field="undo-to"]') as HTMLInputElement).value = "9";
-  Array.from(node.querySelectorAll("button")).find((b) => b.textContent === "Undo range")!.click();
-  expect(confirmCalls).toBe(0);
+test("no control in the DM console retracts anything", () => {
+  // The ABSENCE, read off the rendered DOM rather than off the source.
+  // Retraction left the platform (Patrik, 2026-08-30) and the console was
+  // where a human reached it: two buttons, two boxes and a confirmation.
+  // command-surface.test.ts asserts no BUILDER survives; this asserts no
+  // CONTROL does, which is the half a leftover button would keep alive.
+  const h = harness(newState());
+  const actions = Array.from(h.node.querySelectorAll("[data-action]"))
+    .map((n) => (n as HTMLElement).dataset["action"]!);
+  expect(actions.filter((a) => /retract/i.test(a))).toEqual([]);
+  const labels = Array.from(h.node.querySelectorAll("button, h3"))
+    .map((n) => n.textContent ?? "");
+  expect(labels.filter((t) => /undo|retract/i.test(t))).toEqual([]);
+  expect(Array.from(h.node.querySelectorAll("[data-field]"))
+    .map((n) => (n as HTMLElement).dataset["field"]!)
+    .filter((f) => /undo/i.test(f))).toEqual([]);
 });
 
 // --- conditions -------------------------------------------------------------
@@ -326,7 +269,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
     "actor-id", "actor-name", "actor-json",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
-    "note-key", "note-title", "note-text", "undo-from", "undo-to",
+    "note-key", "note-title", "note-text",
   ]) {
     expect(h.field(f)).not.toBeNull();
   }
@@ -344,7 +287,6 @@ test("each guard refuses with its own exact wording", () => {
     ["a token needs an id, a scene and an actor", () => { const h = harness(); h.action("place-token").click(); return h; }],
     ["a note needs a key and some text", () => { const h = harness(); h.button("Save").click(); return h; }],
     ["name the note to delete", () => { const h = harness(); h.button("Delete").click(); return h; }],
-    ["nothing to undo", () => { const h = harness(); h.button("Nothing to undo").click(); return h; }],
   ];
   const seen: string[] = [];
   for (const [want, run] of cases) {
@@ -497,12 +439,12 @@ test("a remembered kind selects THAT option, and only that one", () => {
     attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
-  const first = harness(st, [], { participants: parts });
+  const first = harness(st, { participants: parts });
   const sel = first.node.querySelector('.control-actor[data-actor="act-boar"] .grant-kind') as HTMLSelectElement;
   sel.value = "ACTOR_KIND_PARTY_MEMBER";
   sel.dispatchEvent(new Event("change"));
 
-  const again = harness(st, [], { participants: parts })
+  const again = harness(st, { participants: parts })
     .node.querySelector('.control-actor[data-actor="act-boar"] .grant-kind') as HTMLSelectElement;
   expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, true, false]);
   expect(again.options[again.selectedIndex]!.textContent).toBe("party member");
@@ -567,48 +509,6 @@ test("deleting a note trims its key", () => {
   expect(payloads(h)).toEqual([{ case: "deleteNote", value: expect.objectContaining({ key: "k" }) }]);
 });
 
-// --- undo: validate, then confirm, then send --------------------------------
-
-test("a retraction is NOT sent when the DM declines the confirmation", () => {
-  const h = harness(newState(), [moved(1)]);
-  h.setConfirm(false);
-  h.button("Undo #1").click();
-  expect(h.sent).toHaveLength(0);
-});
-
-test("the single-event undo retracts exactly that one sequence", () => {
-  const h = harness(newState(), [moved(1), moved(2)]);
-  h.button("Undo #2").click();
-  expect(payloads(h)).toEqual([
-    { case: "retractEvents", value: expect.objectContaining({ fromSequence: 2n, toSequence: 2n, reason: "undo" }) },
-  ]);
-});
-
-test("an invalid range is refused BEFORE the confirmation dialog opens", () => {
-  // Ordering is the point: validating after confirming would ask the DM to
-  // approve something that then does nothing, and a pointless marker is
-  // visible to the whole table.
-  // confirmCount is the assertion that matters. "Nothing was sent" cannot
-  // distinguish a validation refusal from a declined dialog, so a version
-  // that confirmed first and validated second would pass without it.
-  const h = harness(newState(), [moved(1)]);
-  h.setConfirm(true);
-  fill(h, { "undo-from": "5", "undo-to": "9" });
-  h.button("Undo range").click();
-  expect(h.confirmCount()).toBe(0);
-  expect(h.sent).toHaveLength(0);
-  expect(h.notices[0]).toContain("past the last event");
-});
-
-test("a valid range is sent with both ends and the undo reason", () => {
-  const h = harness(newState(), [moved(1), moved(2)]);
-  fill(h, { "undo-from": "1", "undo-to": "2" });
-  h.button("Undo range").click();
-  expect(payloads(h)).toEqual([
-    { case: "retractEvents", value: expect.objectContaining({ fromSequence: 1n, toSequence: 2n, reason: "undo" }) },
-  ]);
-});
-
 // --- adventures -------------------------------------------------------------
 
 test("the adventures section is absent when there are none", () => {
@@ -623,7 +523,7 @@ test("the adventures section is absent when there are none", () => {
 // and the missing-guide message were all free to be deleted.
 
 test("each adventure offers a Load button that sends its id", () => {
-  const h = harness(newState(), [], { adventures: [{ id: "adv-1", name: "Goblin Ambush" }] });
+  const h = harness(newState(), { adventures: [{ id: "adv-1", name: "Goblin Ambush" }] });
   h.button("Load Goblin Ambush").click();
   expect(payloads(h)).toEqual([
     { case: "loadAdventure", value: expect.objectContaining({ adventureId: "adv-1" }) },
@@ -633,13 +533,13 @@ test("each adventure offers a Load button that sends its id", () => {
 test("an adventure with no name is labelled by its id", () => {
   // `${a.name || a.id}` — the fallback exists so an unnamed module is still
   // clickable rather than rendering as "Load ".
-  const h = harness(newState(), [], { adventures: [{ id: "adv-7", name: "" }] });
+  const h = harness(newState(), { adventures: [{ id: "adv-7", name: "" }] });
   expect(h.button("Load adv-7")).toBeDefined();
 });
 
 test("every adventure in the list gets its own pair of buttons", () => {
   // Kills the emptied for-loop body and the seeded row array.
-  const h = harness(newState(), [], {
+  const h = harness(newState(), {
     adventures: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
   });
   expect(h.button("Load A")).toBeDefined();
@@ -649,12 +549,12 @@ test("every adventure in the list gets its own pair of buttons", () => {
 
 test("the adventures section is absent entirely when there are none", () => {
   // `d.adventures.length > 0` -> `>= 0` renders an empty "Adventures" group.
-  const h = harness(newState(), [], { adventures: [] });
+  const h = harness(newState(), { adventures: [] });
   expect(Array.from(h.node.querySelectorAll("h3")).some((n) => n.textContent === "Adventures")).toBe(false);
 });
 
 test("the guide button shows the guide it fetched", async () => {
-  const h = harness(newState(), [], { guide: "# The Cave" });
+  const h = harness(newState(), { guide: "# The Cave" });
   h.button("guide").click();
   await new Promise((r) => setTimeout(r, 0));
   expect(h.notices).toEqual(["# The Cave"]);
@@ -663,7 +563,7 @@ test("the guide button shows the guide it fetched", async () => {
 test("an adventure with no guide says so rather than showing nothing", async () => {
   // `g ?? "no guide for that adventure"` — a silent no-op reads as a broken
   // button.
-  const h = harness(newState(), [], { guide: null });
+  const h = harness(newState(), { guide: null });
   h.button("guide").click();
   await new Promise((r) => setTimeout(r, 0));
   expect(h.notices).toEqual(["no guide for that adventure"]);
@@ -672,7 +572,7 @@ test("an adventure with no guide says so rather than showing nothing", async () 
 // --- maps ---------------------------------------------------------------
 
 test("a DM loads a map by picking it, and the button says which one", () => {
-  const h = harness(newState(), [], {
+  const h = harness(newState(), {
     maps: [
       { id: "cellar", name: "The Cellar", gridWidth: 10, gridHeight: 9 },
       { id: "wood", name: "", gridWidth: 40, gridHeight: 40 },
@@ -688,7 +588,7 @@ test("a DM loads a map by picking it, and the button says which one", () => {
 });
 
 test("a map with no name is offered under its id rather than a blank button", () => {
-  const h = harness(newState(), [], {
+  const h = harness(newState(), {
     maps: [{ id: "wood", name: "", gridWidth: 40, gridHeight: 40 }],
   });
   const buttons = Array.from(h.node.querySelectorAll<HTMLButtonElement>('[data-action="load-map"]'));
@@ -696,7 +596,7 @@ test("a map with no name is offered under its id rather than a blank button", ()
 });
 
 test("no maps configured means no Maps group at all, not an empty one", () => {
-  const h = harness(newState(), [], { maps: [] });
+  const h = harness(newState(), { maps: [] });
   expect(h.node.querySelector('[data-action="load-map"]')).toBeNull();
   expect(h.node.textContent).not.toContain("Maps");
 });
@@ -863,33 +763,6 @@ test("a CLOSED session leaves the console offering Start, not End", () => {
   expect(h.button("End session")).toBeUndefined();
 });
 
-// --- destructive actions name what they will destroy -------------------------
-
-test("the single-undo confirmation names the sequence being retracted", () => {
-  // The DM's last defence before a retraction everyone at the table sees. An
-  // emptied prompt is a blank modal asking for consent to nothing.
-  const h = harness(newState(), [moved(1), moved(2)]);
-  h.button("Undo #2").click();
-  expect(h.confirmMessages()[0]).toBe("Retract event #2? Everyone at the table sees this.");
-});
-
-test("the range-undo confirmation names both ends", () => {
-  const h = harness(newState(), [moved(1), moved(2)]);
-  fill(h, { "undo-from": "1", "undo-to": "2" });
-  h.button("Undo range").click();
-  expect(h.confirmMessages()[0]).toBe("Retract events #1–#2? Everyone at the table sees this.");
-});
-
-test("an undo-from box left empty is read as 0 and refused", () => {
-  // `Number(from.value) || 0` feeding retractableRange, whose own guard
-  // rejects a zero sequence.
-  const h = harness(newState(), [moved(1)]);
-  fill(h, { "undo-to": "1" });
-  h.button("Undo range").click();
-  expect(h.sent).toHaveLength(0);
-  expect(h.notices[0]).toBe("sequences start at 1");
-});
-
 // --- conditions -------------------------------------------------------------
 
 test("the remove-condition group is absent when no actor has one", () => {
@@ -902,7 +775,7 @@ test("buttons carry the labels the DM clicks, not blanks", () => {
   // The submit buttons are found by data-action in these tests, so blanking
   // their visible LABEL was free. A blank button is unusable.
   const h = harness();
-  for (const label of ["Start session", "Create", "Add", "Add from JSON", "Place", "Save", "Delete", "Undo range"]) {
+  for (const label of ["Start session", "Create", "Add", "Add from JSON", "Place", "Save", "Delete"]) {
     expect(Array.from(h.node.querySelectorAll("button")).some((b) => b.textContent === label)).toBe(true);
   }
 });
@@ -916,10 +789,10 @@ test("every group carries a heading", () => {
   // unadjudicated survivor: nothing ever rendered the heading this test
   // could have caught it reading.
   const titles = Array.from(
-    harness(open, [], { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }] }).node.querySelectorAll("h3"),
+    harness(open, { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }] }).node.querySelectorAll("h3"),
   ).map((n) => n.textContent);
   for (const t of ["Session", "Create scene", "Add actor", "…or paste actor JSON",
-                   "Place token", "Adventures", "Maps", "Notes", "Remove condition", "Undo"]) {
+                   "Place token", "Adventures", "Maps", "Notes", "Remove condition"]) {
     expect(titles).toContain(t);
   }
   expect(titles.every((t) => t !== "")).toBe(true);
@@ -936,7 +809,7 @@ test("a group's row holds only its elements, with no stray text", () => {
   // survived a mutant exactly this comment already described, because
   // nothing here ever gave it a row to check. `maps: [...]` makes the loop
   // below walk that row too.
-  const h = harness(newState(), [], {
+  const h = harness(newState(), {
     adventures: [{ id: "a", name: "A" }],
     maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }],
   });
@@ -948,14 +821,6 @@ test("a group's row holds only its elements, with no stray text", () => {
       expect(node.nodeType).toBe(1);
     }
   }
-});
-
-test("the undo group holds exactly its button, two boxes and the range button", () => {
-  const h = harness(newState(), [moved(1)]);
-  const undo = Array.from(h.node.querySelectorAll(".dmgroup"))
-    .find((g) => g.querySelector("h3")?.textContent === "Undo")!;
-  const row = undo.querySelector(".row")!;
-  expect(row.children.length).toBe(4);
 });
 
 test("an input created without a class carries no class at all", () => {
@@ -1017,7 +882,7 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   // purpose.
   const h = harness();
   expect(h.node.className).toBe("dm");
-  for (const f of ["scene-w", "scene-h", "token-x", "token-y", "undo-from", "undo-to"]) {
+  for (const f of ["scene-w", "scene-h", "token-x", "token-y"]) {
     expect(h.field(f).className).toBe("tiny");
   }
   for (const f of ["session-name", "note-text"]) {
@@ -1031,13 +896,13 @@ test("every box carries a placeholder saying what belongs in it", () => {
   // Asserts PRESENCE, not wording. dm.ts:45 records that placeholders are
   // prose and get reworded, and that pinning the words makes a test break on
   // a copy edit — but an EMPTY placeholder is a usability defect, not a copy
-  // choice: the console is nineteen unlabelled boxes without them.
+  // choice: without them the console is a wall of unlabelled boxes.
   const h = harness();
   for (const f of [
     "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
     "actor-id", "actor-name",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
-    "note-key", "note-title", "note-text", "undo-from", "undo-to",
+    "note-key", "note-title", "note-text",
   ]) {
     expect(h.field(f).placeholder.length).toBeGreaterThan(0);
   }
@@ -1064,7 +929,7 @@ function tableWithActor(): State {
 }
 
 test("the DM can hand a character to another participant", () => {
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [
       { participantId: "p-ana", displayName: "Ana" },
       { participantId: "p-bo", displayName: "Bo" },
@@ -1095,7 +960,7 @@ test("the DM can hand a character to another participant", () => {
 // question belonged.
 
 test("the DM console makes the DM say what the actor is", () => {
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [{ participantId: "p-bo", displayName: "Bo" }],
   });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
@@ -1119,7 +984,7 @@ test("the DM console makes the DM say what the actor is", () => {
 });
 
 test("a grant with no kind chosen is refused here, not sent and bounced", () => {
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [{ participantId: "p-bo", displayName: "Bo" }],
   });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
@@ -1142,7 +1007,7 @@ test("the DM can hand a monster to a participant without promoting it", () => {
   // The agent's case, at the human console: somebody runs the goblin, and the
   // goblin stays a goblin. The two grants are byte-identical apart from this
   // field, which is why the field exists.
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [{ participantId: "p-bo", displayName: "Bo" }],
   });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
@@ -1157,7 +1022,7 @@ test("the DM can hand a monster to a participant without promoting it", () => {
 test("each current controller can be revoked individually", () => {
   const st = tableWithActor();
   st.Actors["act-warden"]!.controllerIds = ["p-ana", "p-bo"];
-  const h = harness(st, [], {
+  const h = harness(st, {
     participants: [
       { participantId: "p-ana", displayName: "Ana" },
       { participantId: "p-bo", displayName: "Bo" },
@@ -1190,7 +1055,7 @@ test("an unowned actor shows no revoke controls but can still be granted", () =>
   const st = tableWithActor();
   st.Actors["act-warden"]!.controllerId = "";
   st.Actors["act-warden"]!.controllerIds = [];
-  const h = harness(st, [], { participants: [{ participantId: "p-bo", displayName: "Bo" }] });
+  const h = harness(st, { participants: [{ participantId: "p-bo", displayName: "Bo" }] });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
   expect(row.querySelectorAll(".revoke")).toHaveLength(0);
   expect(row.querySelector(".grant")).not.toBeNull();
@@ -1198,7 +1063,7 @@ test("an unowned actor shows no revoke controls but can still be granted", () =>
 
 test("the current controllers are shown by DISPLAY NAME, not by id", () => {
   // A uuid tells the DM nothing about who is holding a character.
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [{ participantId: "p-ana", displayName: "Ana" }],
   });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
@@ -1215,7 +1080,7 @@ test("the current controllers are shown by DISPLAY NAME, not by id", () => {
 test("an actor with no name falls back to its id rather than rendering blank", () => {
   const st = tableWithActor();
   st.Actors["act-warden"]!.name = "";
-  const h = harness(st, [], { participants: [] });
+  const h = harness(st, { participants: [] });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
   expect(row.querySelector(".control-name")?.textContent).toBe("act-warden");
 });
@@ -1225,7 +1090,7 @@ test("a controller who is not connected is still shown, by id", () => {
   // so someone can hold a character while offline. Rendering only the
   // participants we can name would silently drop them from the list and make
   // the character look unowned.
-  const h = harness(tableWithActor(), [], { participants: [] });
+  const h = harness(tableWithActor(), { participants: [] });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
   // Same scoping, for the same reason.
   expect(row.querySelector(".held-who")?.textContent).toBe("p-ana");
@@ -1233,7 +1098,7 @@ test("a controller who is not connected is still shown, by id", () => {
 });
 
 test("granting with nobody selected sends nothing", () => {
-  const h = harness(tableWithActor(), [], { participants: [] });
+  const h = harness(tableWithActor(), { participants: [] });
   const row = h.node.querySelector('.control-actor[data-actor="act-warden"]') as HTMLElement;
   (row.querySelector(".grant") as HTMLButtonElement).click();
   expect(h.sent).toHaveLength(0);
@@ -1244,7 +1109,7 @@ test("the grant dropdown labels every participant, and leads with the blank", ()
   // o.value is asserted by the grant test; o.textContent was not, so the
   // dropdown could label every participant identically while still sending the
   // right id — the DM picks blind.
-  const h = harness(tableWithActor(), [], {
+  const h = harness(tableWithActor(), {
     participants: [
       { participantId: "p-ana", displayName: "Ana" },
       { participantId: "p-bo", displayName: "Bo" },
@@ -1268,12 +1133,12 @@ test("each actor remembers its OWN grant choice", () => {
     attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
-  const first = harness(st, [], { participants: parts });
+  const first = harness(st, { participants: parts });
   const warden = first.node.querySelector('.control-actor[data-actor="act-warden"] .grant-target') as HTMLSelectElement;
   warden.value = "p-bo";
   warden.dispatchEvent(new Event("change"));
 
-  const second = harness(st, [], { participants: parts });
+  const second = harness(st, { participants: parts });
   expect((second.node.querySelector('.control-actor[data-actor="act-warden"] .grant-target') as HTMLSelectElement).value).toBe("p-bo");
   expect((second.node.querySelector('.control-actor[data-actor="act-adder"] .grant-target') as HTMLSelectElement).value).toBe("");
 });
@@ -1297,12 +1162,12 @@ test("each actor remembers its OWN answer about what it is", () => {
     attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
-  const first = harness(st, [], { participants: parts });
+  const first = harness(st, { participants: parts });
   const warden = first.node.querySelector('.control-actor[data-actor="act-warden"] .grant-kind') as HTMLSelectElement;
   warden.value = "ACTOR_KIND_NON_PARTY";
   warden.dispatchEvent(new Event("change"));
 
-  const second = harness(st, [], { participants: parts });
+  const second = harness(st, { participants: parts });
   expect((second.node.querySelector('.control-actor[data-actor="act-warden"] .grant-kind') as HTMLSelectElement).value)
     .toBe("ACTOR_KIND_NON_PARTY");
   expect((second.node.querySelector('.control-actor[data-actor="act-adder"] .grant-kind') as HTMLSelectElement).value)
@@ -1322,7 +1187,7 @@ test("the control panel's order does not depend on insertion order", () => {
   });
   st.Actors["act-adder"] = mk("act-adder");
   st.Actors["act-warden"] = mk("act-warden");
-  const h = harness(st, [], { participants: [] });
+  const h = harness(st, { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
     .toEqual(["act-adder", "act-warden"]);
 });
@@ -1335,7 +1200,7 @@ test("the control panel lists actors in a stable order", () => {
     actorId: "act-adder", name: "Adder", moduleId: "",
     attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
-  const h = harness(st, [], { participants: [] });
+  const h = harness(st, { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
     .toEqual(["act-adder", "act-warden"]);
 });
@@ -1358,12 +1223,12 @@ test("the DM's choice of participant survives a re-render", () => {
   // this is the same mechanism for the select.
   const st = tableWithActor();
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
-  const first = harness(st, [], { participants: parts });
+  const first = harness(st, { participants: parts });
   const sel = first.node.querySelector(".grant-target") as HTMLSelectElement;
   sel.value = "p-bo";
   sel.dispatchEvent(new Event("change"));
 
-  const second = harness(st, [], { participants: parts });
+  const second = harness(st, { participants: parts });
   expect((second.node.querySelector(".grant-target") as HTMLSelectElement).value).toBe("p-bo");
 });
 
@@ -1375,12 +1240,12 @@ test("the DM's answer to what the actor is survives a re-render too", () => {
   // the next Grant click is refused for a choice they already made.
   const st = tableWithActor();
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
-  const first = harness(st, [], { participants: parts });
+  const first = harness(st, { participants: parts });
   const sel = first.node.querySelector(".grant-kind") as HTMLSelectElement;
   sel.value = "ACTOR_KIND_NON_PARTY";
   sel.dispatchEvent(new Event("change"));
 
-  const second = harness(st, [], { participants: parts });
+  const second = harness(st, { participants: parts });
   expect((second.node.querySelector(".grant-kind") as HTMLSelectElement).value).toBe(
     "ACTOR_KIND_NON_PARTY",
   );
@@ -1401,7 +1266,6 @@ function shareConsole(opts: {
   let refreshes = 0;
   const node = renderDMConsole({
     st: emptyState(),
-    log: [],
     adventures: [],
     maps: [],
     guideFor: async () => null,
@@ -1478,7 +1342,7 @@ test("rotating asks first, because it locks out a link already sent", () => {
   const sent: ClientCommand[] = [];
   let asked = 0;
   const node = renderDMConsole({
-    st: emptyState(), log: [], adventures: [], maps: [], guideFor: async () => null,
+    st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async (c) => void sent.push(c), notify: () => {},
@@ -1543,7 +1407,7 @@ test("ending a session is addressable, not just clickable by its label", () => {
   st.Sessions = [{ ID: "s1", Name: "Open Table", StartSeq: 1, EndSeq: 0 }];
   const sent: ClientCommand[] = [];
   const node = renderDMConsole({
-    st, log: [], adventures: [], maps: [], guideFor: async () => null,
+    st, adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
     refreshSharing: () => {}, send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
     doorsArmed: false, toggleDoors: () => {},
@@ -1559,7 +1423,7 @@ test("rotating goes through once the DM says yes", async () => {
   const sent: ClientCommand[] = [];
   let refreshes = 0;
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
+    st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
     send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
@@ -1647,7 +1511,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
   // "Are you sure?" gives them nothing to be sure ABOUT.
   let asked = "";
   const node = renderDMConsole({
-    st: newState(), log: [], adventures: [], maps: [], guideFor: async () => null,
+    st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async () => {}, notify: () => {},
@@ -1686,9 +1550,9 @@ test("the toggle's label says which state it is in, at render time", () => {
   // Two SEPARATE renders, not one harness clicked twice: renderDMConsole runs
   // once per harness() call (see harness()'s own comment), so this is what
   // actually exercises the `d.doorsArmed ? ... : ...` label's two arms.
-  expect(harness(newState(), [], { doorsArmed: false }).action("arm-doors").textContent)
+  expect(harness(newState(), { doorsArmed: false }).action("arm-doors").textContent)
     .toBe("Arm doors");
-  expect(harness(newState(), [], { doorsArmed: true }).action("arm-doors").textContent)
+  expect(harness(newState(), { doorsArmed: true }).action("arm-doors").textContent)
     .toContain("armed");
 });
 

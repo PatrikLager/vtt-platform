@@ -339,8 +339,9 @@ export class Wire {
    *     client is still holding, and a duplicate introduction is a fold throw,
    *     which freezes state for good (session.ts re-folds the whole log on
    *     every event);
-   *   - perch frames carry SEQUENCE 0, deliberately, so that no undo can ever
-   *     name one (see the server's perchSequence). One consequence lands here:
+   *   - perch frames carry SEQUENCE 0, deliberately: a perch has no causing
+   *     event, so it has no number to inherit (see the server's
+   *     perchSequence). One consequence lands here:
    *     `session.ts`'s rollback keeps everything at or below the cursor, and 0
    *     is below every cursor, so perch frames SURVIVE a rollback that drops
    *     ordinary ones.

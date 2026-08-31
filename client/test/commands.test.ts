@@ -94,7 +94,7 @@ test("request ids are unique across commands", () => {
 
 import {
   startSession, endSession, createScene, addActor, placeToken,
-  loadAdventure, deleteNote, removeCondition, retractEvents, parseActorJSON,
+  loadAdventure, deleteNote, removeCondition, parseActorJSON,
 } from "../src/commands";
 
 test("loadAdventure matches the committed fixture", () => {
@@ -125,17 +125,6 @@ test("a zero position is still sent as a position, not omitted", () => {
   // position object, or the server sees "no position" and rejects the place.
   const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 0, y: 0 })) as Record<string, any>;
   expect(pt["placeToken"]).toHaveProperty("position");
-});
-
-test("retractEvents sends an inclusive range as strings", () => {
-  const r = toJson(ClientCommandSchema, retractEvents(4n, 6n, "undo")) as Record<string, any>;
-  expect(r["retractEvents"]).toMatchObject({ fromSequence: "4", toSequence: "6", reason: "undo" });
-});
-
-test("retracting a single event uses the same sequence for both ends", () => {
-  const r = toJson(ClientCommandSchema, retractEvents(7n, 7n, "undo")) as Record<string, any>;
-  expect(r["retractEvents"]["fromSequence"]).toBe("7");
-  expect(r["retractEvents"]["toSequence"]).toBe("7");
 });
 
 test("removeCondition names the actor and the condition", () => {

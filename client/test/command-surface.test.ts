@@ -82,7 +82,23 @@ export const COMMAND_SURFACE: Record<
   // which of the two this row claims.
   addNarration: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
-  retractEvents: { surface: "dm-console", action: "retract-events" },
+  // NOT REMOVED FROM THIS TABLE YET, and the delay is the honest answer
+  // rather than a shortcut. Retraction left the client in this task — no
+  // builder, no control, no fold arm — but `retract_events` is still an arm of
+  // the ClientCommand oneof, and commandCases() reads that oneof from the
+  // generated descriptor. Deleting this row now would fail "every command the
+  // contract defines has a declared human surface" for a command that really
+  // does exist on the wire and really has no control. The row goes when the
+  // proto arm goes, and "the table declares nothing the contract does not
+  // define" is what will demand it that day.
+  retractEvents: {
+    surface: "not-user-issued",
+    why:
+      "Retraction left the platform (Patrik, 2026-08-30): a retraction's " +
+      "purpose is to make something not have happened, and it cannot, " +
+      "because the player already read the log. No client builds it and no " +
+      "control sends it; the proto arm is deleted in its own task.",
+  },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },
@@ -143,6 +159,15 @@ test("every command with a human surface has a builder in commands.ts", () => {
   expect(withoutBuilder).toEqual([]);
 });
 
+test("no command builder can retract, because the platform cannot", () => {
+  // Patrik, 2026-08-30: retraction leaves the platform. A retraction's purpose
+  // is to make something not have happened, and it cannot do that — the player
+  // read the log and knows what it said. This asserts the ABSENCE, so it is
+  // written before the removal and must fail now.
+  const retractors = Object.keys(commands).filter((k) => /retract/i.test(k));
+  expect(retractors).toEqual([]);
+});
+
 // --- the control-level half (Task 4) ----------------------------------------
 //
 // The table above can name a surface without a real control ever existing for
@@ -186,7 +211,6 @@ function dmFixture(open: boolean): HTMLElement {
   if (open) st.Sessions.push({ ID: "sess-1", Name: "Night", StartSeq: 1, EndSeq: 0 });
   return renderDMConsole({
     st,
-    log: [],
     adventures: [{ id: "adv-1", name: "Adventure" }],
     maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4 }],
     guideFor: async () => null,

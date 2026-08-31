@@ -330,9 +330,8 @@ function startSession(root: HTMLElement, token: string): Session {
    * THE FRAMES CANNOT LIE ABOUT IT. A perch's frames carry SEQUENCE ZERO and
    * nothing else does — every other synthesized envelope is stamped with the
    * sequence of the event that caused it, and real sequences start at 1
-   * (project.go's perchSequence; undo.ts refuses a range below 1). So a
-   * sequence-0 envelope in this log is proof a perch put it there, whatever
-   * came back about the command.
+   * (project.go's perchSequence). So a sequence-0 envelope in this log is
+   * proof a perch put it there, whatever came back about the command.
    *
    * BOTH WITNESSES, because neither contains the other. The frames alone would
    * miss a granted perch that has introduced nothing YET — that watcher takes
@@ -474,7 +473,6 @@ function startSession(root: HTMLElement, token: string): Session {
       console: isDM
         ? renderDMConsole({
             st: session.state,
-            log: [...session.events],
             participants: session.participants,
             adventures,
             maps,
