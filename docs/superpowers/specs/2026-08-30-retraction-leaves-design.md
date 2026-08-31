@@ -73,8 +73,10 @@ Total removal, code and contract and fixtures:
   retraction rendering; the DM console's Undo controls.
 - **Gateway:** the `retract_events` handler and its authorization row.
 - **MCP:** the tool, which removes it from the agent's surface.
-- **Fixtures:** the four scenarios under `scenarios/` that retract, and their
-  goldens.
+- **Fixtures:** the two scenario definitions that retract — `denials.json` and
+  `three-role-exit.json` — and their goldens. (An earlier draft said four; it
+  had counted `goldens/README.md` and a recorded golden stream, which are
+  artifacts rather than definitions.)
 
 Roughly fifty files carry the word today.
 
@@ -222,10 +224,18 @@ square short of its grid is refused, and the refusal names the missing square.
 
 ## 9. What could go wrong
 
-**The scenario churn is the bulk of the work, not the removal.** Four scenarios
-retract, eight create scenes without full terrain, and every golden they produce
-is regenerated. A regenerated golden that nobody reads is a test that stopped
-asserting; each one needs its diff understood, not just accepted.
+**The scenario churn is the bulk of the work, not the removal**, and it is worse
+than "regenerate". Two scenario definitions retract; eight create scenes without
+full terrain; there are eight golden directories, each holding a `state.json`
+HAND-DERIVED from the scenario and a `stream.json` RECORDED from the server.
+
+`cmd/vtt/scenario_goldens_test.go` refuses a shortcut in as many words: "THERE
+IS DELIBERATELY NO -update FLAG […] a regenerate-on-demand switch is exactly how
+a golden stops being a claim anyone checked." The two files' agreement is
+evidence precisely because neither was produced from the other. So every
+affected `state.json` is re-derived by hand from the edited scenario, and every
+`stream.json` re-recorded from the server, and the two are then checked to
+agree. That is the shape of the work, and it is most of this sub-project.
 
 **The `RELEASED` marker could be forgotten.** A gate that does nothing until
 someone remembers to switch it on is a gate nobody switches on. Mitigated by the
