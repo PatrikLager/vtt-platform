@@ -434,11 +434,12 @@ func parseSquareKey(key string) (x, y int32, ok bool) {
 // array it sits in — mirrored in Go by PackTile itself (format.go) being the
 // one exported type for both.
 type packJSON struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	CellPx  int32          `json:"cell_px"`
-	Tiles   []packTileJSON `json:"tiles"`
-	Objects []packTileJSON `json:"objects"`
+	FormatVersion int32          `json:"format_version"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	CellPx        int32          `json:"cell_px"`
+	Tiles         []packTileJSON `json:"tiles"`
+	Objects       []packTileJSON `json:"objects"`
 }
 
 type packTileJSON struct {
@@ -452,16 +453,29 @@ type packTileJSON struct {
 }
 
 // LoadPack reads and validates the pack manifest at dir/pack.json: strict
-// JSON decoding (decodeStrict, the same shape Load uses), then keys Tiles
-// and Objects by name so Resolve (resolve.go) gets an O(1) lookup per
-// square. LoadPack never reads a *Map — a pack is reusable across many maps
-// (spec §4.3's "load standalone" principle applied to art), so it takes only
-// a directory.
+// JSON decoding (decodeStrict, the same shape Load uses), then a
+// format_version check against PackFormatVersion (format.go) — refused,
+// two-step, exactly mirroring Load's own format_version check for maps, but
+// judged against PackFormatVersion rather than MapFormatVersion since a
+// pack moves independently — then keys Tiles and Objects by name so Resolve
+// (resolve.go) gets an O(1) lookup per square. LoadPack never reads a *Map —
+// a pack is reusable across many maps (spec §4.3's "load standalone"
+// principle applied to art), so it takes only a directory.
 func LoadPack(dir string) (*Pack, error) {
 	path := filepath.Join(dir, "pack.json")
 	var raw packJSON
 	if err := decodeStrict(path, &raw); err != nil {
 		return nil, err
+	}
+
+	if raw.FormatVersion == 0 {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"required: this server understands %d, and an undeclared format is not "+
+				"assumed to be any of them", PackFormatVersion))
+	}
+	if raw.FormatVersion != PackFormatVersion {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"declares %d; this server understands %d", raw.FormatVersion, PackFormatVersion))
 	}
 
 	tiles, err := packTileMap(path, "tiles", raw.Tiles)
@@ -474,11 +488,12 @@ func LoadPack(dir string) (*Pack, error) {
 	}
 
 	return &Pack{
-		ID:      raw.ID,
-		Name:    raw.Name,
-		CellPx:  raw.CellPx,
-		Tiles:   tiles,
-		Objects: objects,
+		FormatVersion: raw.FormatVersion,
+		ID:            raw.ID,
+		Name:          raw.Name,
+		CellPx:        raw.CellPx,
+		Tiles:         tiles,
+		Objects:       objects,
 	}, nil
 }
 

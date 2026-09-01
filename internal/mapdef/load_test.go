@@ -225,3 +225,78 @@ func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
 		t.Fatalf("FormatVersion = %d, want %d", m.FormatVersion, mapdef.MapFormatVersion)
 	}
 }
+
+// TestLoadPackRefusesAPackWithNoFormatVersion pins the PACK half of design
+// spec §7's rule (Load's own TestLoadRefusesAMapWithNoFormatVersion pins the
+// map half): a pack declares the format it is written in, and this server
+// refuses to guess when it doesn't. No implicit fallback — a missing
+// format_version is refused, never assumed to be 1, even though 1 is
+// currently the only pack format version that exists.
+func TestLoadPackRefusesAPackWithNoFormatVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pack.json"),
+		`{"id":"p","name":"P","cell_px":64,"tiles":[]}`)
+
+	_, err := mapdef.LoadPack(dir)
+	if err == nil {
+		t.Fatal("want a pack with no format_version refused: an undeclared format is " +
+			"undeclared, and this platform does not default one")
+	}
+	if !strings.Contains(err.Error(), "format_version") {
+		t.Fatalf("error = %q, want it to name format_version", err)
+	}
+}
+
+// TestLoadPackRefusesAFormatThisServerDoesNotUnderstand pins the other half:
+// a DECLARED pack format this server does not understand is refused by
+// name, not guessed at or silently accepted.
+//
+// "tiles":[] must be otherwise VALID or this test passes for the wrong
+// reason — exactly the defect Load's own first version test shipped with
+// (commit b567e7e: the fixture failed a DIFFERENT check first, so deleting
+// the version-check branch entirely left that test green).
+// TestLoadPackAcceptsTheVersionItUnderstands below loads this identical
+// shape successfully, which is what proves an empty tiles array is not the
+// reason this one fails. The assertion is on the WORDED phrases, not bare
+// digits, for the same reason Load's own test gives: t.TempDir()'s path
+// contains large random integers that would satisfy a bare "2"/"1"
+// substring check even with the version-mismatch branch deleted.
+func TestLoadPackRefusesAFormatThisServerDoesNotUnderstand(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pack.json"),
+		`{"format_version":2,"id":"p","name":"P","cell_px":64,"tiles":[]}`)
+
+	_, err := mapdef.LoadPack(dir)
+	if err == nil {
+		t.Fatal("want pack format 2 refused while this server understands only 1")
+	}
+	for _, want := range []string{"declares 2", "understands 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to contain %q", err, want)
+		}
+	}
+}
+
+// TestLoadPackAcceptsTheVersionItUnderstands pins the positive case: a pack
+// declaring format_version 1 (the version every other fixture in this
+// package now carries) loads, and LoadPack reports that version back on
+// Pack — and, load-bearingly for the two refusal tests above, that an empty
+// "tiles" array is otherwise a legal pack, so their fixtures fail for the
+// version reason and no other. This fixture's format_version is also
+// deliberately a HARDCODED 1 rather than an expression built from
+// mapdef.PackFormatVersion: that is what makes this test the one that reds
+// the instant PackFormatVersion drifts from 1 for any reason, including a
+// future edit that aliases it to MapFormatVersion.
+func TestLoadPackAcceptsTheVersionItUnderstands(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pack.json"),
+		`{"format_version":1,"id":"p","name":"P","cell_px":64,"tiles":[]}`)
+
+	p, err := mapdef.LoadPack(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if p.FormatVersion != mapdef.PackFormatVersion {
+		t.Fatalf("FormatVersion = %d, want %d", p.FormatVersion, mapdef.PackFormatVersion)
+	}
+}

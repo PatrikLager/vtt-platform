@@ -759,6 +759,7 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
 		           "kind":"floor", "material":"wood"}]

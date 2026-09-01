@@ -172,11 +172,12 @@ func writeStandardPack(out string, rng *rand.Rand) packOut {
 	}
 
 	manifest := packOut{
-		ID:      "std",
-		Name:    "Standard Vocabulary",
-		CellPx:  size,
-		Tiles:   tiles,
-		Objects: []packTileOut{},
+		FormatVersion: packFormatVersion,
+		ID:            "std",
+		Name:          "Standard Vocabulary",
+		CellPx:        size,
+		Tiles:         tiles,
+		Objects:       []packTileOut{},
 	}
 	writeManifest(out, manifest)
 	return manifest

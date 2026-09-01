@@ -72,6 +72,7 @@ func TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack(t *testing.
 	// A pack that does not define "wood-planks-split-3", the art the map
 	// below references.
 	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"some-other-tile","file":"x.png"}]
 	}`)
@@ -112,6 +113,7 @@ func TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack(t *testin
 	// A pack that defines the tile art the map overrides with, but NOT the
 	// object art the map's one object names.
 	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}],
 		"objects": [{"name":"boulder-mossy-2","file":"boulder_02.png"}]
@@ -152,6 +154,7 @@ func TestLoadMapsDirRefusesDuplicatePackIds(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep (duplicate)", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
 	}`)
@@ -219,6 +222,7 @@ func TestLoadMapsDirRefusesAnUnnamedPack(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"format_version": 1,
 		"name": "Nameless", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
 	}`)
@@ -261,6 +265,7 @@ func writeShrineMap(t *testing.T, dir, id string) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(sub, "tiles", "pack.json"), `{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
 		           "kind":"floor", "material":"wood"}]

@@ -39,6 +39,7 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sub, "tiles", "pack.json"), []byte(`{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png","kind":"floor","material":"wood"}]
 	}`), 0o644); err != nil {

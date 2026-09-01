@@ -79,12 +79,25 @@ type packTileOut struct {
 }
 
 type packOut struct {
-	ID      string        `json:"id"`
-	Name    string        `json:"name"`
-	CellPx  int           `json:"cell_px"`
-	Tiles   []packTileOut `json:"tiles"`
-	Objects []packTileOut `json:"objects"`
+	// FormatVersion mirrors internal/mapdef.PackFormatVersion — deliberately
+	// a bare literal (packFormatVersion below), not an import of that
+	// constant, for the same reason this whole type exists unimported: see
+	// the "pack.json's on-disk shape" section comment above packTileOut.
+	// LoadPack (internal/mapdef/load.go) refuses any pack.json omitting
+	// this field, so every pack this tool writes must carry it.
+	FormatVersion int32         `json:"format_version"`
+	ID            string        `json:"id"`
+	Name          string        `json:"name"`
+	CellPx        int           `json:"cell_px"`
+	Tiles         []packTileOut `json:"tiles"`
+	Objects       []packTileOut `json:"objects"`
 }
+
+// packFormatVersion mirrors internal/mapdef.PackFormatVersion's current
+// value (1) without importing that package (see the "pack.json's on-disk
+// shape" section comment above packTileOut for why packOut/packTileOut are
+// their own encoding-shaped types).
+const packFormatVersion int32 = 1
 
 func main() {
 	out := flag.String("out", "maps/cellar/tiles", "directory to write the cellar starter pack's pack.json and images into")
@@ -154,11 +167,12 @@ func generate(out, stdOut string) (packOut, packOut) {
 	}
 
 	manifest := packOut{
-		ID:      "cellar-basics",
-		Name:    "Cellar Basics",
-		CellPx:  size,
-		Tiles:   tiles,
-		Objects: objects,
+		FormatVersion: packFormatVersion,
+		ID:            "cellar-basics",
+		Name:          "Cellar Basics",
+		CellPx:        size,
+		Tiles:         tiles,
+		Objects:       objects,
 	}
 	writeManifest(out, manifest)
 
