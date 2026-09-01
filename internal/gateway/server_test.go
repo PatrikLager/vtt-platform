@@ -45,9 +45,10 @@ type gwFixture struct {
 	// the participants table.
 	ids *identity.DB
 
-	// path is the campaign file. A test that needs to break identity
-	// OPERATIONALLY (rather than revoke somebody, which is a credential fact)
-	// reaches the table through here.
+	// path is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); campaign.LogPath(path) is
+	// the file identity shares with the store. A test that needs to break
+	// identity OPERATIONALLY (rather than revoke somebody, which is a
+	// credential fact) reaches the table through here.
 	path string
 
 	// campaign is exposed so a test can assert on FOLDED STATE rather than on
@@ -105,7 +106,7 @@ func newGWFixture(t *testing.T) *gwFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +400,7 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1676,7 +1677,7 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 	// OPERATIONAL, not a credential fact — nobody was revoked, and the row is
 	// still there. Only the table it lives in has moved out from under the
 	// query, which is what an unhealthy database looks like from here.
-	raw, err := sql.Open("sqlite", f.path)
+	raw, err := sql.Open("sqlite", campaign.LogPath(f.path))
 	if err != nil {
 		t.Fatal(err)
 	}

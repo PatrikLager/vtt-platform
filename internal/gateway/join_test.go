@@ -28,9 +28,10 @@ type joinFixture struct {
 	srv *httptest.Server
 	ids *identity.DB
 
-	// path is the campaign file, so a test can count ROWS. The endpoint's
-	// refusal properties are about what it did NOT create, and a decoded
-	// reply cannot witness that — see post's comment for how that went wrong.
+	// path is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4), so a test can count ROWS via
+	// campaign.LogPath(path). The endpoint's refusal properties are about
+	// what it did NOT create, and a decoded reply cannot witness that — see
+	// post's comment for how that went wrong.
 	path string
 }
 
@@ -42,7 +43,7 @@ func newJoinFixture(t *testing.T) *joinFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func newJoinFixture(t *testing.T) *joinFixture {
 // count returns the number of rows in table, straight from the file.
 func (f *joinFixture) count(table string) int {
 	f.t.Helper()
-	raw, err := sql.Open("sqlite", f.path)
+	raw, err := sql.Open("sqlite", campaign.LogPath(f.path))
 	if err != nil {
 		f.t.Fatal(err)
 	}

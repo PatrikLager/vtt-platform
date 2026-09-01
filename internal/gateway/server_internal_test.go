@@ -116,7 +116,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,7 +672,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,7 +828,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -992,7 +992,7 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1340,7 +1340,7 @@ func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

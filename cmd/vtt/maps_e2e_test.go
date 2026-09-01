@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -88,7 +89,9 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatalf("healthz never became ready: %v", err)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); composeServer above
+	// has already created it.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}

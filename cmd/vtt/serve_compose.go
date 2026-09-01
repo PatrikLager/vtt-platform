@@ -27,11 +27,12 @@ import (
 // skipping validation.
 const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --ruleset (adventures load+validate against the served ruleset)"
 
-// composeServer opens the campaign and identity handles for campaignPath
-// and wires them into a gateway.Server's Handler on an *http.Server bound
-// to addr (not yet listening — the caller starts it, e.g. via
-// ListenAndServe or, for tests that need the assigned port, its own
-// net.Listener + Serve).
+// composeServer opens the campaign and identity handles for campaignPath —
+// a campaign DIRECTORY since Task 4 (2026-09-01-create-scene-leaves §3),
+// not a bare log file — and wires them into a gateway.Server's Handler on
+// an *http.Server bound to addr (not yet listening — the caller starts it,
+// e.g. via ListenAndServe or, for tests that need the assigned port, its
+// own net.Listener + Serve).
 //
 // The returned close func closes both handles (identity first, then
 // campaign). CAUTION: srv.Shutdown returning does NOT by itself guarantee
@@ -100,7 +101,13 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	// identity.Open opens its own SQLite handle on "the same campaign file
+	// the store uses" (internal/identity's package comment) — since Task 4
+	// (2026-09-01-create-scene-leaves §3) that file is campaign.LogPath's
+	// log.db INSIDE campaignPath, not campaignPath itself: campaignPath is
+	// now the campaign DIRECTORY, and campaign.Open above has already
+	// created it (MkdirAll) by the time this call runs.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		_ = c.Close() // best-effort; the compose error below is what matters
 		return nil, nil, fmt.Errorf("vtt serve: open identity: %w", err)

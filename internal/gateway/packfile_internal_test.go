@@ -67,7 +67,7 @@ func TestHandlePackFileRefusesTraversalEvenWithAPathValueSetDirectly(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestHandlePackFileRefusesSymlinkEscape(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

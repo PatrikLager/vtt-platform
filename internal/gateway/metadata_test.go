@@ -43,7 +43,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -733,7 +733,7 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1062,7 +1062,7 @@ func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

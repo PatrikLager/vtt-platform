@@ -97,7 +97,7 @@ func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,17 +9,20 @@ rationale.
 
 ## Running
 
-The `vtt` CLI (`cmd/vtt`) opens one campaign SQLite file per invocation:
+The `vtt` CLI (`cmd/vtt`) opens one campaign DIRECTORY per invocation — its
+log, and (once installed) its maps and packs — created on first use by
+whichever command touches it first; `invite`, `serve` and `revoke` can run
+against it in any order:
 
 ```sh
 # Mint an invite token for a new participant (DM-side, CLI-only).
-vtt invite --campaign campaign.db --name "Alice" --role player
+vtt invite --campaign campaign/ --name "Alice" --role player
 
 # Serve that campaign over the WebSocket/HTTP gateway.
-vtt serve --campaign campaign.db --addr :8080
+vtt serve --campaign campaign/ --addr :8080
 
 # Revoke a participant's token if it leaks or is no longer needed.
-vtt revoke --campaign campaign.db --id <participant-id>
+vtt revoke --campaign campaign/ --id <participant-id>
 ```
 
 Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
@@ -30,7 +33,7 @@ Three optional flags on `vtt serve` point at directories of content, each
 loaded and validated fully at boot — never at the table:
 
 ```sh
-vtt serve --campaign campaign.db --addr :8080 \
+vtt serve --campaign campaign/ --addr :8080 \
   --ruleset rulesets/dnd45e-minimal \
   --adventures-dir adventures \
   --maps-dir maps
@@ -99,8 +102,8 @@ treat it as a credential.
 
 Demo runbook:
 
-1. `vtt serve --campaign campaign.db --addr :8443`
-2. `vtt invite --campaign campaign.db --name "Claude" --role agent` — it prints the token once.
+1. `vtt serve --campaign campaign/ --addr :8443`
+2. `vtt invite --campaign campaign/ --name "Claude" --role agent` — it prints the token once.
 3. In that same shell, capture it without it ever landing in shell history:
    `read -s VTT_TOKEN && export VTT_TOKEN` (prompts silently, nothing echoed,
    nothing to scroll back through — or set `HISTIGNORE='export VTT_TOKEN=*'`

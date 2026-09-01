@@ -76,7 +76,7 @@ func newServeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&campaignPath, "campaign", "", "path to the campaign SQLite file (required)")
+	cmd.Flags().StringVar(&campaignPath, "campaign", "", "path to the campaign directory (required)")
 	cmd.Flags().StringVar(&addr, "addr", ":8080", "address to listen on")
 	cmd.Flags().StringVar(&rulesetDir, "ruleset", "", "path to a ruleset directory (optional; enables use_ability/remove_condition — omit to keep serving without one)")
 	cmd.Flags().StringVar(&adventuresDir, "adventures-dir", "", "path to a directory of adventure subdirectories (optional; enables load_adventure — requires --ruleset, every adventure is loaded and validated at boot)")

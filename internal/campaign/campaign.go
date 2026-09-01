@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -62,8 +64,47 @@ type Campaign struct {
 	poisoned bool
 }
 
-func Open(path string) (*Campaign, error) {
-	s, err := store.Open(path)
+// Open opens the campaign in dir. A campaign is a DIRECTORY — its log, its
+// maps and its packs — because a map belongs to the campaign that uses it
+// (spec 2026-09-01-create-scene-leaves-design.md §3), not to a server-wide
+// flag pointing at a shared store.
+//
+// A dir that already exists as a plain FILE is refused rather than adopted:
+// treating a bare log file as a campaign with no maps would be exactly the
+// implicit fallback this platform keeps ruling against (spec §3, "A bare
+// log file is refused, not adopted"). A dir that does not exist yet is
+// created — that is how a brand-new campaign starts; there is no separate
+// "create" step. os.Stat's error path (not found) falls through to
+// MkdirAll deliberately: that fall-through IS campaign creation, not a gap.
+func Open(dir string) (*Campaign, error) {
+	info, err := os.Stat(dir)
+	if err == nil && !info.IsDir() {
+		return nil, fmt.Errorf("campaign: %s is a file; a campaign is a "+
+			"directory holding log.db, maps/ and packs/ — put it in one", dir)
+	}
+	// A read-only mount must not lose improvisation entirely (spec §12):
+	// installing a map means writing a file into this directory, so a
+	// campaign that cannot even be created here needs to say so in
+	// campaign terms rather than surface os.MkdirAll's bare error
+	// unexplained. MkdirAll can fail for reasons that are NOT about
+	// writability (a dangling symlink at dir: "file exists"; a plain file
+	// as an ancestor: "not a directory"), so the wrap states the
+	// requirement — a campaign directory must exist and be writable — and
+	// leads straight into %w for the actual cause, rather than asserting
+	// that this specific failure was a permissions problem.
+	//
+	// 0o750, not 0o755: this directory holds identity.DB's participants and
+	// token hashes (campaign.LogPath's log.db, once identity.Open is
+	// pointed at it) alongside the campaign log, so it gets no more than
+	// owner+group access rather than the world-readable default a plain
+	// content directory would.
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("campaign: cannot make %s a usable campaign "+
+			"directory — a campaign directory must exist and be writable, "+
+			"since installing a map means putting a file in it: %w", dir, err)
+	}
+
+	s, err := store.Open(LogPath(dir))
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +115,15 @@ func Open(path string) (*Campaign, error) {
 	}
 	return c, nil
 }
+
+// LogPath names the log inside a campaign directory. Exported for callers
+// that need the log file itself rather than the campaign directory — that
+// is every caller of identity.Open, since it opens its own SQLite handle
+// on the same file (internal/identity's package comment: "the same
+// campaign file the store uses"), plus a handful of tests that reopen the
+// log directly via store.Open or a raw sql.Open("sqlite", ...) to inspect
+// it (e.g. row counts, schema) without going through either Open.
+func LogPath(dir string) string { return filepath.Join(dir, "log.db") }
 
 // rebuildLocked derives state from the full log: one pass through
 // foldEvents, applying every event the store returns in sequence order.

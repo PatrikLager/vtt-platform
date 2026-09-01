@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -115,7 +116,7 @@ type bootResult struct {
 }
 
 // bootSelfContained starts an in-process gateway server on a fresh temp
-// campaign file, mints one invite token per sc.Participants (name and role
+// campaign directory, mints one invite token per sc.Participants (name and role
 // taken straight from the scenario — an invite carries nothing else since
 // 2026-08-24, when the `controls` key that used to ride along with them was
 // deleted for granting nothing), and returns a bootResult ready for
@@ -125,7 +126,12 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vtt client run: boot temp dir: %w", err)
 	}
-	campaignPath := filepath.Join(dir, "campaign.db")
+	// dir IS the campaign directory (2026-09-01-create-scene-leaves Task 4)
+	// — it is already a fresh, dedicated temp directory for this one run,
+	// so campaign.Open needs no nested subdirectory (and no `.db`-suffixed
+	// name, which would now be misleading: campaign.Open creates a
+	// DIRECTORY here, not a file).
+	campaignPath := dir
 
 	rulesetDir := ""
 	if sc.Ruleset != "" {
@@ -179,18 +185,21 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, close: closeFn}, nil
 }
 
-// mintInvites opens its own identity.DB handle on campaignPath (a second,
-// short-lived handle alongside the one composeServer's gateway holds open —
-// the same pattern serve_e2e_test.go and internal/gateway's exit fixture
-// both use to mint invites against a server they didn't mint them through)
-// and mints one invite per participant, closing the handle before
-// returning either way. Returns BOTH the token (what a Dialer needs to
+// mintInvites opens its own identity.DB handle on campaign.LogPath(campaignPath)
+// (a second, short-lived handle alongside the one composeServer's gateway
+// holds open — the same pattern serve_e2e_test.go and internal/gateway's
+// exit fixture both use to mint invites against a server they didn't mint
+// them through) and mints one invite per participant, closing the handle
+// before returning either way. campaignPath is the campaign DIRECTORY
+// (2026-09-01-create-scene-leaves Task 4); by the time mintInvites runs,
+// composeServer has already created it, so the log identity shares with the
+// store already exists. Returns BOTH the token (what a Dialer needs to
 // connect) and the real, server-assigned participant id (P6 Task 4 fix
 // round — previously discarded via `token, _, err`; now every caller that
 // needs participant-id resolution, in-process or test-side, can reuse this
 // one function instead of hand-rolling its own minting loop).
 func mintInvites(campaignPath string, sc *harness.Scenario) (tokens, ids map[string]string, err error) {
-	idb, err := identity.Open(campaignPath)
+	idb, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt client run: open identity for minting: %w", err)
 	}

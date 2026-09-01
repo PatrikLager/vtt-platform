@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -280,7 +281,9 @@ func startLiveFixture(t *testing.T) liveFixture {
 		t.Fatalf("healthz never became ready: %v", err)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); composeServer above
+	// has already created it.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatalf("identity.Open: %v", err)
 	}

@@ -2,7 +2,9 @@ package campaign_test
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,7 +155,9 @@ func TestAppendValidationFailurePersistsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err := store.Open(path)
+	// path is now the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); the log itself lives at
+	// campaign.LogPath(path) inside it.
+	s, err := store.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,5 +236,101 @@ func TestSubscriberSeesAppendedEvents(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for subscriber to see appended event")
+	}
+}
+
+// writeFile writes content at path, creating no parent directories (the
+// caller's tempdir already exists). Mirrors cmd/vtt/maps_test.go's helper of
+// the same name and shape — that one lives in package main and cannot be
+// imported here.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOpenTakesACampaignDirectory pins the new contract (spec
+// 2026-09-01-create-scene-leaves-design.md §3): Open takes a DIRECTORY and
+// creates the log inside it, so the same directory can go on to hold maps/
+// and packs/ (Task 5+) without a second top-level path for the campaign.
+func TestOpenTakesACampaignDirectory(t *testing.T) {
+	dir := t.TempDir()
+	c, err := campaign.Open(dir)
+	if err != nil {
+		t.Fatalf("Open on a directory: %v", err)
+	}
+	defer c.Close()
+	if _, err := os.Stat(filepath.Join(dir, "log.db")); err != nil {
+		t.Fatalf("want log.db created inside the campaign directory: %v", err)
+	}
+}
+
+// TestOpenRefusesABareLogFile is the "no implicit fallback" half (spec §3,
+// "A bare log file is refused, not adopted"): treating a lone log file as a
+// campaign with no maps is the same reasoning that makes terrain mandatory
+// and gives the console's selects a blank first option.
+//
+// The assertion pins "put it in one" rather than the plan's own suggested
+// "directory" (docs/superpowers/plans/2026-09-01-create-scene-leaves.md,
+// Task 4 Step 1): os.MkdirAll's OWN fallback error for this exact fixture
+// (an existing regular file where a directory is wanted) is "mkdir <path>:
+// not a directory" — which also contains "directory" — so that substring
+// is satisfied by BOTH the deliberate refusal and by silently falling
+// through to MkdirAll and letting its bare OS error surface. Worse: this
+// package's OWN read-only-mount wrap (TestOpenOnAReadOnlyMountGivesAClearError)
+// also contains the word "directory", so even a platform that words ENOTDIR
+// differently would still satisfy a "directory"-only assertion by accident.
+// With the refusal branch deleted, that assertion stays GREEN on the wrong
+// error; "put it in one" goes RED, because only the deliberate message
+// contains it — reproducible directly: delete the `!info.IsDir()` branch
+// in Open and run this test.
+func TestOpenRefusesABareLogFile(t *testing.T) {
+	dir := t.TempDir()
+	lone := filepath.Join(dir, "old.db")
+	writeFile(t, lone, "")
+
+	_, err := campaign.Open(lone)
+	if err == nil {
+		t.Fatal("want a bare log file refused rather than adopted")
+	}
+	if !strings.Contains(err.Error(), "put it in one") {
+		t.Fatalf("error = %q, want it to say what to do", err.Error())
+	}
+}
+
+// TestOpenOnAReadOnlyMountGivesAClearError is the spec §12 hazard ("Nothing
+// can create a place if the campaign directory is read-only... worth a clear
+// error rather than a confusing one"): installing a map means writing a file
+// into the campaign directory, so an operator who cannot even open one loses
+// improvisation entirely and needs to be told why in campaign terms, not in
+// bare os.MkdirAll terms.
+//
+// The probe-then-skip pattern mirrors
+// internal/identity/identity_test.go's
+// TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying: running as a
+// user for whom permission bits are decorative (root, some CI sandboxes)
+// must skip rather than falsely pass or fail.
+func TestOpenOnAReadOnlyMountGivesAClearError(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "campaign")
+
+	if err := os.Chmod(parent, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	if f, err := os.CreateTemp(parent, "probe-*"); err == nil {
+		f.Close()
+		_ = os.Remove(f.Name())
+		t.Skip("running with rights that make a read-only directory writable")
+	}
+
+	_, err := campaign.Open(dir)
+	if err == nil {
+		t.Fatal("want campaign.Open on a read-only mount to fail rather than silently succeed")
+	}
+	if !strings.Contains(err.Error(), "writable") {
+		t.Fatalf("error = %q, want it to say the campaign directory must be writable", err.Error())
 	}
 }

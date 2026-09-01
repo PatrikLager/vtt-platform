@@ -116,7 +116,9 @@ func TestAppendBatchMidBatchValidationFailurePersistsNothing(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(path)
+	// path is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); the log lives at
+	// campaign.LogPath(path) inside it.
+	s, err := store.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

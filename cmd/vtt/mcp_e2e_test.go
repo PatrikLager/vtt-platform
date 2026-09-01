@@ -46,6 +46,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	mcppkg "github.com/PatrikLager/vtt-platform/internal/mcp"
@@ -333,7 +334,9 @@ func startMCPFixture(t *testing.T) mcpFixture {
 // returning.
 func mintInviteToken(t *testing.T, campaignPath string, role identity.Role, name string) string {
 	t.Helper()
-	ids, err := identity.Open(campaignPath)
+	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); composeServer has
+	// already created it by the time every caller of this helper runs.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatalf("identity.Open: %v", err)
 	}
