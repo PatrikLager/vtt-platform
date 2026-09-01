@@ -163,6 +163,37 @@ used to cover rather than asking what needs covering.
 play, when no authored map file exists. An LLM DM narrating a room into being
 needs it, and it stays.
 
+> **AMENDED 2026-09-01 — Patrik overruled the second sentence.** The completeness
+> rule below shipped and stands (`e110e9b`). The conclusion that `create_scene`
+> "stays" did not survive the whole-branch pass that landed with it. **The kernel
+> serves maps; it does not make them.** `create_scene` leaves the platform in
+> sub-project 15, and a future map editor's output arrives as `load_map`.
+>
+> The argument, recorded because it generalises past this command: `create_scene`
+> is a ONE-SHOT command and terrain authoring is ITERATIVE. A scene's tiles are
+> written once by `SceneCreated`, which refuses a second one under a live id
+> (`engine.Apply`: "scene %q already exists"), so nothing can revise them
+> afterwards — and with retraction gone, nothing can take the mistake back either.
+> That was survivable while a bare grid was legal; the completeness rule below
+> makes it acute, because now every square must be named correctly on the first
+> and only attempt. The moment terrain has any variety worth authoring, the author
+> needs to see it, change it, and see it again — which is an editing surface, and
+> an editing surface is a map editor, which is its own tool with its own file
+> output.
+>
+> The same conclusion had just arrived as a defect rather than as a principle.
+> `e110e9b` gave the DM console's new-scene form a `wall` option beside `floor`,
+> on the argument that "fill solid, then carve" is how a room gets built; nothing
+> carves, so a DM could build a room no player could ever stand in, five clicks
+> from a blank form, with `load_map` unable to repair it because the scene id is
+> taken and no command left that could take the mistake back. `fcf45cf` removed
+> the option and recorded the reasoning at `kindSelect`'s doc comment in
+> `client/src/view/dm.ts`, which is where the five-clicks observation is written
+> down.
+>
+> This does not weaken anything below. Until sub-project 15 removes it,
+> `create_scene` is live and its completeness rule is enforced.
+
 But a scene created with no terrain is a featureless grid: no walls, so
 `internal/sight` has nothing to occlude with and everyone sees everything. That
 is the hole maps-as-geometry was built to close — *a wall nobody declared is an
@@ -178,8 +209,32 @@ maps-as-geometry intended when it routed them through one construction site.
 A validation change in `create_scene_validate.go`, which already checks tile
 kinds against `mapdef`'s vocabulary. The contract does not move.
 
+*CORRECTED 2026-08-31 — the WIRE does not move; the contract's published
+DESCRIPTION of itself does.* No field number, type or name changed, so
+`check:breaking` had nothing to object to and `tiles` is still
+`map<string, TileRef> tiles = 5`. But both places that TELL a caller what the
+field means told the caller it was optional, which `e110e9b` made false. The MCP
+tool schema said "Optional; omit for a bare grid with no terrain"; the
+`CreateScene.tiles` doc comment in `contract/vtt/v1/commands.proto` said
+"Optional: omitted entirely, the scene is a bare grid with no terrain" — two
+wordings, one claim, both now replaced. In the schema `tiles` also joined the
+`required` array (`contract/gen/tools/tools.json`,
+`cmd/vtt/tools.json`, `contract/testdata/expected_tools.json`, all generated
+from `tools/toolgen`). An agent reads the schema, not the validator, so leaving
+those alone would have advertised a field as optional that the gateway refuses
+to omit.
+
 The eight scenarios that create scenes need terrain added and their goldens
 regenerated.
+
+*CORRECTED 2026-08-31 — eight scenarios, SEVEN golden directories.* Eight of the
+nine committed scenarios create a scene and all eight needed terrain
+(`denials`, `goblin-fight`, `session-zero`, `shared-control`, `smoke`,
+`story-table`, `three-role-exit`, `toy-brawl`), but `goblin-fight` has no golden
+directory, so seven sets of goldens were re-derived and re-recorded. The ninth
+scenario, `adventure-night`, has goldens and needed no terrain: it brings its
+place in through `load_adventure` rather than `create_scene`, and its golden
+directory is untouched across the whole arc.
 
 ---
 
@@ -198,6 +253,28 @@ line number fails *silently* — it still looks valid while pointing at the wron
 code, and a reader cannot tell without reconstructing history. A deleted anchor
 fails *loudly*: grep returns nothing. A wrong answer becomes no answer.
 
+*AMENDED 2026-08-31 — the rule that landed bans THREE shapes, not one.* The
+quoted draft above rules out a bare `file.go:123`; `CLAUDE.md` rule 8, landed by
+`ac307d5`, rules out two more that fail the same way — still looking valid while
+resolving to nothing:
+
+1. A bare `file.go:123`, as drafted.
+2. **A path into `.superpowers/`.** That tree is gitignored, so a
+   `task-N-brief.md`, `task-N-report.md` or `sdd/progress.md` citation resolves
+   only on the machine that wrote it; a fresh clone and CI have neither. A bare
+   `task-3-brief.md` does not even say which plan's — measured 2026-09-01, 63
+   such citations across 33 committed files, with four sibling plan directories
+   each holding a `task-3-brief.md`. `docs/superpowers/plans/` is tracked, so
+   naming a plan and a task within it is fine.
+3. **"this task" / "this same task".** It names a workflow run that ended, and
+   the next reader has no way to find out which one.
+
+The mutation-adjudication exception survives as drafted, with one addition: the
+coordinate is re-pointed in the adjudication entry when the file moves. Rule 8
+also states its own scope — it binds prose written from here on, and the sweep
+over existing citations is explicitly not part of its arrival, which is §2's
+non-goal restated where the rule lives.
+
 ---
 
 ## 8. Testing
@@ -206,6 +283,23 @@ fails *loudly*: grep returns nothing. A wrong answer becomes no answer.
 gate-level check that no `retract`/`Retract` identifier survives outside this
 spec and the ADR — a grep with a stated expected count of zero — so a
 half-finished removal reds rather than lingers.
+
+*CORRECTED 2026-08-31 — what shipped is not a grep, and could not have been.*
+`tools/check-no-retraction.py` (`ac307d5`, extended in `fcf45cf`) MASKS comments
+and string literals first and inspects only what is left, which is code
+positions; in `.json` it keeps object KEYS and blanks every value, because a key
+is the protobuf field name a scenario step or a golden stream is naming. An
+expected count of zero over raw text was never available: the word is still
+everywhere in this tree on purpose — dated change-records, this spec, the
+comments that stop the next reader re-deriving the ruling — measured at 305
+occurrences across 61 files after `.json` scanning began, and the only way to
+green a naive grep would be to exclude those 61 files, at which point the gate
+enforces nothing. An IDENTIFIER is what a reintroduction actually looks like,
+and there are 16 of those, all of them the enforcement machinery itself.
+`tools/check_no_retraction_test.py` pins the masking in both directions. The
+gate has one stated limit rather than a hidden one: inside a Python f-string the
+interpolated expression is masked with the literal, so an identifier used only
+there is invisible to it.
 
 **The single-pass folds keep their existing suites.** Both `campaign` and
 `fold.ts` have coverage that must stay green through the collapse; a fold that

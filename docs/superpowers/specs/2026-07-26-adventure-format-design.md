@@ -156,7 +156,10 @@ flees at half hp).
   rows (player/spectator load_adventure; unknown id; double-load
   collision rejection).
 - Undo: the adventure batch retracts as a range (existing machinery) —
-  tested.
+  tested. *(AMENDED 2026-08-30: removed with retraction itself — Patrik's ruling
+  of 2026-08-30, `2026-08-30-retraction-leaves-design.md`. A mis-loaded adventure
+  is not undone; it is corrected going forward, and the double-load collision
+  rule below is what stops the common mistake before it lands.)*
 
 ## 8. Testing (ADR-009 binding)
 
@@ -200,7 +203,10 @@ re-running the sentence against the thing it describes.
 Staged/chaptered reveals (the guide tells the DM when — the DM upserts);
 bestiary references; dm-only note visibility; assets/maps/images
 (sub-project 9-assets, later); adventure hot-reload or unload
-(retraction covers mistakes); multi-adventure simultaneous load
+(retraction covers mistakes — *2026-08-30: it does not, and cannot; retraction
+left the platform. Hot-reload and unload remain non-goals, now on the plainer
+ground that a loaded adventure is part of the world's history and taking it out
+would be the same claim retraction was refused for*); multi-adventure simultaneous load
 (sequential loads are legal if ids don't collide — that IS the
 multi-module story); authoring tools; adventure-declared ability grants
 (ability lists stay narrative discipline per the ruleset guide).

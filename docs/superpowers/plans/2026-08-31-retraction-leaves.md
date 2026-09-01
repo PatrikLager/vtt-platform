@@ -539,6 +539,16 @@ Add it to the non-negotiable rules, in that file's voice, with the reason attach
 
 State that converting the repo's existing bare citations is not part of this rule's arrival, and that a gate enforcing it (every citation resolves to exactly one anchor, no duplicates, no orphans) is available but unbuilt.
 
+*WHAT LANDED, 2026-09-01 (`ac307d5`), is wider than the draft above.* `CLAUDE.md`
+rule 8 bans THREE shapes, not one, all failing the same way — still looking valid
+while resolving to nothing: a bare `file.go:123`; a path into the gitignored
+`.superpowers/` tree, which resolves only on the machine that wrote it (measured
+2026-09-01: 63 such citations across 33 committed files, and four sibling plan
+directories each holding a `task-3-brief.md`); and "this task", which names a
+workflow run that ended. `docs/superpowers/plans/` is tracked, so naming a plan
+and a task within it stays legal. The mutation-coordinate exception landed as
+drafted, plus a requirement to re-point the coordinate when the file moves.
+
 - [ ] **Step 2: Prove the removal is complete WITH A GATE, not a search**
 
 The spec's exit criterion 1 says "proven by a gate rather than a search", and it
@@ -567,6 +577,30 @@ Write it, wire it into `Taskfile.yml` as its own `check:` task and into `check`
 itself, and run it. If it reports hits, each one is either a real leftover or a
 deliberate historical reference — decide which, out loud, for every hit, and
 narrow the gate rather than the truth.
+
+*WHAT LANDED, and why the sketch above could not have.* The instruction in the
+last sentence is what happened, and following it made the shell script
+untenable: the word is deliberately still everywhere in this tree — 305
+occurrences across 61 files in 14 directories, measured 2026-09-01 over the
+files the gate scans — as dated change-records saying what retraction used to do
+at each spot. A naive `grep -rin retract` reds on all of them, and the only way
+to green it is to exclude those 61 files, at which point the gate enforces
+nothing. So `tools/check-no-retraction.py` (`ac307d5`, extended in `fcf45cf`)
+MASKS comments and string literals and inspects only code positions; in `.json`
+it keeps object KEYS and blanks every value, because a key is the protobuf field
+name a scenario step or a golden stream is naming. Sixteen identifiers remain,
+all of them the enforcement machinery itself. The gate names the WORDS rather
+than the file wherever it can — `contract/events.test.ts`'s pattern constant and
+`client/test/command-surface.test.ts`'s result binding are exempted by
+identifier, so a retraction helper hidden elsewhere in either file is still
+caught. ONE entry is whole-file and says so: this gate's own boundary tests,
+whose fixtures ARE the thing being looked for. That is the blind spot, stated
+rather than hidden, and the reason the other two are not whole-file is that a
+file-level exclusion would have made the strongest enforcement site the one place
+nothing is watched.
+`tools/check_no_retraction_test.py` pins the masking in both directions, and one
+limit is stated rather than hidden: a Python f-string's interpolated expression
+is masked with its literal.
 
 - [ ] **Step 3: Run the whole gate, from cold**
 

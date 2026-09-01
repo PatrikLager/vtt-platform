@@ -128,6 +128,18 @@ glue that the P1 rule forbids harness from importing; corrected at build)
 executes every library scenario self-contained — the library runs inside
 `task check` on every commit.
 
+*CORRECTED 2026-08-31 — no scenario retracts.* Retraction left the platform in
+sub-project 13 (`2026-08-30-retraction-leaves-design.md`, Patrik's ruling of
+2026-08-30), and its steps left `three-role-exit.json` and `denials.json` with
+it; both files now contain zero occurrences of the word, and
+`tools/check-no-retraction.py` scans `scenarios/` so a step naming
+`retract_events` reds the gate rather than passing quietly. Everything else in
+this list is unchanged: `three-role-exit.json` still carries the denials and the
+reconnect-equality leg, which are what made it the exit scenario. §3's
+"published derivation algorithm" (`harness.Fold`) is also unchanged in role and
+changed in shape — it is single-pass since `92f1284`, because the pass that
+collected retracted sequences was the only reason it walked the log twice.
+
 ## 7. ADR-009 posture
 
 Runner built behavioral-RED (fixture scenarios with known outcomes against

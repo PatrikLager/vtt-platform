@@ -109,7 +109,9 @@ get_events_since.
 
 Adventure format (next sub-project); narration editing/deletion (the log
 is append-only — a correction is a new entry; Undo retracts like any
-event); rich text/markup semantics (text is opaque UTF-8 to the
+event — *2026-08-30: the first clause is now the whole rule. Undo left the
+platform (`2026-08-30-retraction-leaves-design.md`), so a correction being a new
+entry is not one option among two; it is the only one*); rich text/markup semantics (text is opaque UTF-8 to the
 platform); filtered/paginated story read tools (residue); note
 categories/hierarchies (keys are flat; a ruleset/adventure convention
 can namespace them); summarization (the DM's job, not the platform's);

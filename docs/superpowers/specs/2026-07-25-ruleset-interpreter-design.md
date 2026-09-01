@@ -118,6 +118,15 @@ all, notify all. Poison rules unchanged (post-persist failure poisons).
 Undo interaction: a batch is retractable as a range like any events (the
 existing range machinery already covers contiguous spans).
 
+*AMENDED 2026-08-30 — there is no undo interaction, because there is no undo.*
+Retraction left the platform on Patrik's ruling of 2026-08-30
+(`2026-08-30-retraction-leaves-design.md`); `campaign.Undo` and the range
+machinery went with it in `133e896`. `AppendBatch` itself is untouched and is
+now load-bearing for two more callers than it had — `load_map` and
+`remove_actor`, the latter emitting one `TokenRemoved` per token in id order
+followed by `ActorRemoved`, accepted or rejected atomically. Atomicity is what
+matters about a batch now; reversibility is not on offer for anything.
+
 ## 7. Wiring
 
 `vtt serve --ruleset <dir>` (optional; serving without one keeps today's

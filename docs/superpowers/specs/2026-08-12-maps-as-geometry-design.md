@@ -379,6 +379,11 @@ Door state folds like everything else, so replay reconstructs it and undo works
 on it for free. `open_door` and `close_door` appear as MCP tools automatically,
 the way `load_adventure` did.
 
+*CORRECTED 2026-08-30.* Replay still reconstructs door state for free; undo does
+not work on it, or on anything, having left the platform
+(`2026-08-30-retraction-leaves-design.md`). A door opened by mistake is closed by
+`close_door`, which is the append the log was built for.
+
 ## 6. Movement and doors
 
 **Doors are dynamic, and that follows from movement being enforced.** An

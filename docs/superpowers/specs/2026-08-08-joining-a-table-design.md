@@ -170,6 +170,15 @@ honest about what promotion IS but sidesteps `commandRoles` — and one
 authorization surface beats two. §5's matrix is where every "who may do what"
 answer already lives, and splitting it is how a cell goes missing.
 
+*CORRECTED 2026-08-31: `retract_events` is no longer one of its neighbours.*
+`5396338` removed the handler and the authorization row and left the allowlist
+entry standing, reworded and labelled transitional — "the entry goes when the
+contract arm does"; `59542e1` then took both, the entry and the contract arm, in
+one commit. `promote_participant`'s own entry is unaffected, and the allowlist
+has since grown `load_map`, `remove_actor`, `set_join_door`, `rotate_join_link`
+and `set_viewpoint`; `internal/gateway/convert_test.go`'s `notConverted` map,
+each entry carrying its stated reason, is the current list.
+
 **`promote_participant` may target ONLY `player` or `spectator`.** A shared
 join link mints spectators; letting promotion reach `dm` or `agent` would make
 that link a path to full authority in two steps, which is precisely what
