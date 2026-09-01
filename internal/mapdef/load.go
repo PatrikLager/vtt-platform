@@ -13,15 +13,16 @@ import (
 // match the spec's JSON examples exactly; Go-side validation and the
 // friendlier Map/Object/Placement shapes live in format.go and below.
 type mapJSON struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	GridWidth  int32             `json:"grid_width"`
-	GridHeight int32             `json:"grid_height"`
-	Pack       string            `json:"pack"`
-	Tiles      map[string]string `json:"tiles"`
-	Overrides  map[string]string `json:"overrides"`
-	Objects    []ObjectJSON      `json:"objects"`
-	Placements []placementJSON   `json:"placements"`
+	FormatVersion int32             `json:"format_version"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	GridWidth     int32             `json:"grid_width"`
+	GridHeight    int32             `json:"grid_height"`
+	Pack          string            `json:"pack"`
+	Tiles         map[string]string `json:"tiles"`
+	Overrides     map[string]string `json:"overrides"`
+	Objects       []ObjectJSON      `json:"objects"`
+	Placements    []placementJSON   `json:"placements"`
 }
 
 // ObjectJSON is the on-disk shape of one object entry (spec §4.1): an anchor
@@ -103,6 +104,16 @@ func Load(path string) (*Map, error) {
 		return nil, err
 	}
 
+	if raw.FormatVersion == 0 {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"required: this server understands %d, and an undeclared format is not "+
+				"assumed to be any of them", MapFormatVersion))
+	}
+	if raw.FormatVersion != MapFormatVersion {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
+	}
+
 	if raw.GridWidth < 1 {
 		return nil, fieldErr(path, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
 	}
@@ -148,15 +159,16 @@ func Load(path string) (*Map, error) {
 	}
 
 	return &Map{
-		ID:         raw.ID,
-		Name:       raw.Name,
-		GridW:      raw.GridWidth,
-		GridH:      raw.GridHeight,
-		Pack:       raw.Pack,
-		Tiles:      raw.Tiles,
-		Overrides:  raw.Overrides,
-		Objects:    objects,
-		Placements: placements,
+		FormatVersion: raw.FormatVersion,
+		ID:            raw.ID,
+		Name:          raw.Name,
+		GridW:         raw.GridWidth,
+		GridH:         raw.GridHeight,
+		Pack:          raw.Pack,
+		Tiles:         raw.Tiles,
+		Overrides:     raw.Overrides,
+		Objects:       objects,
+		Placements:    placements,
 	}, nil
 }
 

@@ -76,6 +76,7 @@ func TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack(t *testing.
 		"tiles": [{"name":"some-other-tile","file":"x.png"}]
 	}`)
 	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},
@@ -116,6 +117,7 @@ func TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack(t *testin
 		"objects": [{"name":"boulder-mossy-2","file":"boulder_02.png"}]
 	}`)
 	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},
@@ -154,6 +156,7 @@ func TestLoadMapsDirRefusesDuplicatePackIds(t *testing.T) {
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
 	}`)
 	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"format_version": 1,
 		"id": "shrine-b", "name": "Second Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},
@@ -185,9 +188,11 @@ func TestLoadMapsDirRefusesDuplicateMapIds(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(dir, "a", "map.json"), `{
+		"format_version": 1,
 		"id": "shrine", "name": "First", "grid_width": 1, "grid_height": 1
 	}`)
 	writeFile(t, filepath.Join(dir, "b", "map.json"), `{
+		"format_version": 1,
 		"id": "shrine", "name": "Second", "grid_width": 1, "grid_height": 1
 	}`)
 
@@ -218,6 +223,7 @@ func TestLoadMapsDirRefusesAnUnnamedPack(t *testing.T) {
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
 	}`)
 	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"format_version": 1,
 		"id": "shrine", "name": "Shrine",
 		"grid_width": 1, "grid_height": 1
 	}`)
@@ -260,6 +266,7 @@ func writeShrineMap(t *testing.T, dir, id string) {
 		           "kind":"floor", "material":"wood"}]
 	}`)
 	writeFile(t, filepath.Join(sub, "map.json"), `{
+		"format_version": 1,
 		"id": "`+id+`", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},

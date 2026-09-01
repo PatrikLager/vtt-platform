@@ -1,6 +1,7 @@
 package mapdef_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -142,5 +143,85 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 func TestLoadRejectsMissingFile(t *testing.T) {
 	if _, err := mapdef.Load("testdata/does-not-exist.json"); err == nil {
 		t.Fatal("want an error for a missing map file")
+	}
+}
+
+// writeFile writes body to path for a test, failing loudly on any write
+// error rather than leaving a subsequent Load call to explain a missing
+// file it never expected.
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// TestLoadRefusesAMapWithNoFormatVersion pins design spec §7's rule: a map
+// declares the format it is written in, and this server refuses to guess
+// when it doesn't. No implicit fallback — a missing format_version is
+// refused, never assumed to be 1, even though 1 is currently the only
+// version that exists.
+func TestLoadRefusesAMapWithNoFormatVersion(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "no-version.json")
+	writeFile(t, p, `{"id":"x","name":"X","grid_width":1,"grid_height":1,
+		"tiles":{"0,0":"floor"}}`)
+
+	_, err := mapdef.Load(p)
+	if err == nil {
+		t.Fatal("want a map with no format_version refused: an undeclared format is " +
+			"undeclared, and this platform does not default one")
+	}
+	if !strings.Contains(err.Error(), "format_version") {
+		t.Fatalf("error = %q, want it to name format_version", err)
+	}
+}
+
+// TestLoadRefusesAFormatThisServerDoesNotUnderstand pins the OTHER half of
+// the same rule: a DECLARED format this server does not understand is
+// refused by name, not guessed at or silently accepted.
+//
+// Two things this test must get right that a first draft got wrong: the
+// fixture's tile name must be one CheckTileNamesKnown actually accepts (see
+// the "stone" comment below), or Load fails for an unrelated reason before
+// ever reaching the version check; and the assertion must not be satisfiable
+// by t.TempDir()'s own path, which is large random digits — a bare
+// strings.Contains(err, "2") / "1" passes on path noise alone even with
+// Load's version-mismatch branch deleted entirely. Asserting on the worded
+// phrases below closes both gaps.
+func TestLoadRefusesAFormatThisServerDoesNotUnderstand(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "future.json")
+	// "stone" is a real name in standardTiles (standard.go): an invalid
+	// tile name here would make CheckTileNamesKnown fail FIRST, so err !=
+	// nil for the wrong reason and this test would falsely appear to
+	// discriminate on the format-version check it exists to pin.
+	writeFile(t, p, `{"format_version":2,"id":"x","name":"X","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"}}`)
+
+	_, err := mapdef.Load(p)
+	if err == nil {
+		t.Fatal("want format 2 refused while this server understands only 1")
+	}
+	// Assert on the WORDED phrases, not bare digits: t.TempDir()'s own path
+	// contains large random integers, so a bare "2"/"1" substring check
+	// would pass even with the version check deleted entirely.
+	for _, want := range []string{"declares 2", "understands 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to contain %q", err, want)
+		}
+	}
+}
+
+// TestLoadAcceptsTheVersionItUnderstands pins the positive case: a map
+// declaring format_version 1 (the version every other fixture in this
+// package now carries) loads, and Load reports that version back on Map.
+func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if m.FormatVersion != mapdef.MapFormatVersion {
+		t.Fatalf("FormatVersion = %d, want %d", m.FormatVersion, mapdef.MapFormatVersion)
 	}
 }

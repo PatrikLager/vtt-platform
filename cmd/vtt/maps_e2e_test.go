@@ -48,6 +48,7 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sub, "map.json"), []byte(`{
+		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},
