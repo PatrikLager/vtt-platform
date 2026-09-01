@@ -117,6 +117,25 @@ test("a scene whose fill is unanswered is not sent", () => {
   expect(h.notices[0]).toMatch(/made of/i);
 });
 
+test("the blank-fill notice is not silently emptied", () => {
+  // The message dm.ts sends here is two concatenated string literals, and
+  // the test just above this one only reads the FIRST one ("made of"). A
+  // mutant that blanks the SECOND ("nothing can edit a square afterwards
+  // and the id cannot be reused") left the sentence non-empty and still
+  // matching /made of/i, so it survived every existing assertion (measured
+  // 2026-09-01). The blank fill option exists so a DM who has not answered
+  // can SEE that they have not (dm.ts's own rule for the actor-kind box,
+  // made explicit here for the scene-fill box); a notify with no words is
+  // the control silently doing nothing, which is the exact failure the
+  // blank option was added to prevent. So the notice must say something,
+  // and it must say WHY the DM cannot leave the box for later.
+  const h = harness();
+  fill(h, { "scene-id": "s1", "scene-w": "4", "scene-h": "3" });
+  h.action("create-scene").click();
+  expect(h.notices[0]!.length).toBeGreaterThan(0);
+  expect(h.notices[0]).toContain("cannot be reused");
+});
+
 test("a scene larger than one command can carry is refused before it is sent", () => {
   // 40x40 = 1600 squares. The whole tile map rides in ONE websocket frame and
   // the gateway reads at most 32768 bytes, dropping a larger one inside
