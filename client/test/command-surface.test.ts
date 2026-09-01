@@ -27,6 +27,22 @@ type Surface =
   | "board"
   | "spectator"
   | "join-flow"
+  // CURRENTLY UNUSED, and kept deliberately — the same gravestone
+  // internal/gateway/authz_test.go carries where its `noRoleCells` exemption
+  // map stood. The variant arrived with this table (`a9bb0b0`); its only user
+  // was ever the `retractEvents` row, which Task 3 of
+  // docs/superpowers/plans/2026-08-31-retraction-leaves.md (`d3e2f28`) wrote
+  // when retract_events became the one command no seat could issue, and Task 7
+  // (`59542e1`) deleted along with the oneof arm itself. Every command in the
+  // oneof now has a human surface with no way out.
+  //
+  // THE MACHINERY STAYS because the hatch is what makes "every command has a
+  // surface" affordable to keep honest: the next command that genuinely nobody
+  // can issue must be declarable, and it must cost a written `why`. What does
+  // NOT stay is a guard that passes because its set is empty — see "a command
+  // nobody can issue must say why" below, which now asserts the variant is
+  // either used or provably unused rather than filtering an empty set and
+  // reporting green.
   | "not-user-issued";
 
 export const COMMAND_SURFACE: Record<
@@ -82,7 +98,6 @@ export const COMMAND_SURFACE: Record<
   // which of the two this row claims.
   addNarration: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
-  retractEvents: { surface: "dm-console", action: "retract-events" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },
@@ -106,6 +121,20 @@ export const COMMAND_SURFACE: Record<
   closeDoor: { surface: "board" },
   useAbility: { surface: "player-panel", action: "use-ability" },
   setViewpoint: { surface: "spectator" },
+  // removeToken (retraction-leaves Task 8, fix round 1): a Remove button
+  // beside Place token's own token-id input (view/dm.ts). This is a
+  // restoration, not a new capability — Task 3 of this same branch deleted
+  // the Undo group, and with it the only way a DM could take a token off the
+  // board at all; this row and its control are what put that back.
+  removeToken: { surface: "dm-console", action: "remove-token" },
+  // removeActor (retraction-leaves Task 9): a Remove button beside Add
+  // actor's own actor-id input (view/dm.ts), the same shape removeToken's
+  // control has one group down. It gets a control for the reason Task 8's
+  // review found for removeToken: this branch is the one that took the DM's
+  // corrections away, and a removal the agent can issue and the DM cannot
+  // reach is a capability the console loses on the branch that argues
+  // corrections happen by appending.
+  removeActor: { surface: "dm-console", action: "remove-actor" },
 };
 
 /** The oneof's case names, read from the generated descriptor. */
@@ -128,6 +157,38 @@ test("the table declares nothing the contract does not define", () => {
 });
 
 test("a command nobody can issue must say why, so the hatch costs something", () => {
+  // POSITIVE CONTROL FIRST, because this test filters a set that is empty
+  // today: no row has used "not-user-issued" since `59542e1` deleted
+  // retract_events from the oneof, so the assertion
+  // below passes on a vacuum and would pass just as happily if the `why`
+  // requirement were deleted outright. The rule is exercised against a
+  // synthetic row instead, which is the only way it can be exercised at all
+  // while the variant is unused.
+  //
+  // CHOSEN OVER "fail when the filtered set is empty", the other way to close
+  // this. That guard would force a permanently fake row into the SHIPPED table
+  // just to keep itself green — the stale artifact this file exists to avoid —
+  // and it would red on the good news that every command is reachable. A
+  // synthetic row inside the test costs nothing and tests the rule directly.
+  const hatched: Record<string, { surface: Surface; why?: string }> = {
+    ...COMMAND_SURFACE,
+    ghostCommand: { surface: "not-user-issued" },
+  };
+  const bareWithGhost = Object.entries(hatched)
+    .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
+    .map(([k]) => k);
+  expect(bareWithGhost).toEqual(["ghostCommand"]);
+  // ...and the same row WITH a reason is accepted, or the rule would be
+  // "no command may ever take the hatch", which is not what it says.
+  hatched["ghostCommand"] = { surface: "not-user-issued", why: "emitted by the server only" };
+  expect(
+    Object.entries(hatched)
+      .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
+      .map(([k]) => k),
+  ).toEqual([]);
+
+  // THE REAL TABLE. Empty today; loud the day a row takes the hatch without
+  // paying for it.
   const bare = Object.entries(COMMAND_SURFACE)
     .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
     .map(([k]) => k);
@@ -141,6 +202,16 @@ test("every command with a human surface has a builder in commands.ts", () => {
     .filter((c) => COMMAND_SURFACE[c]?.surface !== "not-user-issued")
     .filter((c) => typeof (commands as Record<string, unknown>)[c] !== "function");
   expect(withoutBuilder).toEqual([]);
+});
+
+test("no command builder can retract, because the platform cannot", () => {
+  // Patrik, 2026-08-30: retraction leaves the platform. A retraction's purpose
+  // is to make something not have happened, and it cannot do that — the player
+  // read the log and knows what it said. This asserts the ABSENCE, so it was
+  // written before the removal and failed until `59542e1` landed it; what it
+  // does now is keep a builder from coming back.
+  const retractors = Object.keys(commands).filter((k) => /retract/i.test(k));
+  expect(retractors).toEqual([]);
 });
 
 // --- the control-level half (Task 4) ----------------------------------------
@@ -186,7 +257,6 @@ function dmFixture(open: boolean): HTMLElement {
   if (open) st.Sessions.push({ ID: "sess-1", Name: "Night", StartSeq: 1, EndSeq: 0 });
   return renderDMConsole({
     st,
-    log: [],
     adventures: [{ id: "adv-1", name: "Adventure" }],
     maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4 }],
     guideFor: async () => null,

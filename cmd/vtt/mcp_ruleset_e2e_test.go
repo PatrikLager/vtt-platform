@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -96,6 +97,26 @@ func toolCommandResult(t *testing.T, res *mcpsdk.CallToolResult) map[string]any 
 	return m
 }
 
+// floorTilesJSON is the tiles argument create_scene now requires: every
+// square of a w x h grid, all floor. A scene that leaves one undeclared is
+// refused (internal/gateway's validateCreateSceneTerrain), and this fixture's
+// subject is the MCP tool path, not terrain — so the grid is unchanged from
+// what it always was and only the declaration is new.
+//
+// 25 squares, nowhere near the ~1200 an agent's create_scene can carry before
+// it exceeds the gateway's inbound frame limit — see
+// client/src/commands.ts's maxCreateSceneSquares, which derives that bound and
+// which the MCP tool's own `tiles` description repeats for the agent.
+func floorTilesJSON(w, h int) map[string]any {
+	tiles := make(map[string]any, w*h)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			tiles[fmt.Sprintf("%d,%d", x, y)] = map[string]any{"kind": "floor"}
+		}
+	}
+	return tiles
+}
+
 // setUpTavernBrawlActorsViaMCP drives the same setup a toy-brawl scenario
 // would (session/scene/two actors/two adjacent tokens) through MCP command
 // tools — every call MUST succeed (isError=false, ok=true), asserted
@@ -107,7 +128,8 @@ func setUpTavernBrawlActorsViaMCP(t *testing.T, cs *mcpsdk.ClientSession) {
 		args map[string]any
 	}{
 		{"start_session", map[string]any{"name": "mcp ruleset e2e"}},
-		{"create_scene", map[string]any{"sceneId": "tavern", "name": "Tavern", "gridWidth": 5, "gridHeight": 5}},
+		{"create_scene", map[string]any{"sceneId": "tavern", "name": "Tavern",
+			"gridWidth": 5, "gridHeight": 5, "tiles": floorTilesJSON(5, 5)}},
 		{"add_actor", map[string]any{"actor": map[string]any{
 			"actorId": "brawler", "name": "Brawler",
 			"kind":       "ACTOR_KIND_PARTY_MEMBER",

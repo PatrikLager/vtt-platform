@@ -68,14 +68,15 @@ type Viewer struct {
 // "engine: scene %q already exists" / "actor %q already exists" / "token %q
 // already exists", and client/src/fold.ts mirrors it in its own words
 // (`duplicate scene` / `duplicate actor` / `duplicate token`), where a throw
-// freezes that viewer's state (Task 3's finding). Permanently in the sense that
-// matters: Session re-folds its whole APPEND-ONLY log on every event, so the
-// poisoned envelope throws again on every one that follows. The only escape is
-// a retraction covering that sequence — fold's pass 1 expands retracted ranges
-// and pass 2 skips them — and nothing the viewer themselves can do reaches it.
-// So the projection has to know what it has already introduced. TokenHidden is
-// the one exception, tolerant on both sides by explicit ruling, which is why
-// departures need no care here.
+// freezes that viewer's state (Task 3's finding). Permanently, and the word
+// got STRONGER on 2026-08-31: Session re-folds its whole APPEND-ONLY log on
+// every event, so the poisoned envelope throws again on every one that
+// follows, and there is now no escape at all. Until this arc there was one —
+// a retraction covering that sequence, which the fold skipped — and retraction
+// has left the platform, so a duplicate introduction is a viewer who never
+// recovers. So the projection has to know what it has already introduced.
+// TokenHidden is the one exception, tolerant on both sides by explicit ruling,
+// which is why departures need no care here.
 //
 // A CONSEQUENCE FOR WHOEVER WIRES THIS UP (Task 5): a Projector must be fed
 // the log from the beginning, discarding what precedes the client's resume
@@ -89,8 +90,13 @@ type Viewer struct {
 type Projector struct {
 	viewer Viewer
 
-	// scenes, actors: introduced to this viewer, and never withdrawn. There
-	// is no un-introduce on the wire.
+	// scenes: introduced to this viewer, and never withdrawn — nothing removes
+	// a scene from the world.
+	// actors: introduced, and withdrawn only when the ACTOR leaves the world
+	// (ActorRemoved, retraction-leaves Task 9). There is still no un-introduce
+	// message: the seats that held the actor are forwarded the removal itself,
+	// and transitions forgets it here in the same step — see the loop that
+	// does, which explains why those two are one decision.
 	scenes map[string]bool
 	actors map[string]bool
 	// tokens: on this viewer's board RIGHT NOW. Grows on arrival, shrinks on
@@ -183,7 +189,7 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	}
 	out := pr.transitions(env, env.GetSequence(), now, st)
 	if v == forwarded {
-		out = append(out, redactedFor(env))
+		out = append(out, env)
 	}
 	return out
 }
@@ -194,18 +200,18 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 // A PERCH HAS NO CAUSING EVENT, so it has no number to inherit. Spec §4.2's
 // rule — a synthesized envelope carries the sequence of the event that caused
 // it — is right for every OTHER synthesized frame in this file and wrong here,
-// and the difference is not cosmetic. Retraction is a range over sequence
-// NUMBERS: campaign.retractedSet, harness.Fold and client/src/fold.ts all
-// expand an EventsRetracted's [from,to] and skip envelopes by number. A perch
-// stamped with the seat's last folded sequence was therefore DELETED by an undo
+// and the difference is not cosmetic: a number that names nothing is a number
+// something else can name. It was measured while undo still existed. A perch
+// stamped with the seat's last folded sequence fell inside the range of an undo
 // of that sequence — an event the watcher had never even received — which
 // emptied their board with no message and left the party's next move dangling
 // against a token that was no longer there ("moved unknown token").
 //
-// ZERO IS OUTSIDE EVERY RANGE THAT CAN EVER EXIST, on both sides of the wire,
-// and both refusals are explicit rather than incidental: campaign.Undo rejects
-// `from < 1` ("invalid retraction range") and client/src/undo.ts rejects the
-// same ("sequences start at 1"). So no retraction can name a perch frame.
+// THE UNDO THAT FOUND IT IS GONE (2026-08-31: the log only goes forward), so
+// that particular collision cannot recur. The rule it demonstrated is not
+// about undo: a live number invites any future feature that addresses ranges
+// of the log to address a frame no event caused. Zero is outside every such
+// range by construction, on both sides of the wire.
 //
 // It also cannot move a replay cursor: client/src/wire.ts advances only on
 // `env.sequence > lastSeq`, and seat.catchUp takes its head from projected
@@ -213,9 +219,9 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 // not run until catch-up has returned).
 //
 // The cost, stated so nobody has to rediscover it: a perch frame is not
-// addressable. It cannot be retracted, and a client cannot resume "just after"
-// one — on a reconnect the perch is gone anyway (spec §3.1.1) and the client
-// re-sends it, which is the same answer.
+// addressable. A client cannot resume "just after" one — on a reconnect the
+// perch is gone anyway (spec §3.1.1) and the client re-sends it, which is the
+// same answer.
 const perchSequence int64 = 0
 
 // reperch moves a spectator onto a new shoulder and returns the envelopes that
@@ -261,28 +267,6 @@ func (pr *Projector) reperch(actorID string, st *engine.State) []*vttv1.Envelope
 		return nil
 	}
 	return pr.transitions(nil, perchSequence, pr.look(st), st)
-}
-
-// redactedFor is the envelope a projected viewer actually receives for a
-// payload classify passed. For every payload but one it is env ITSELF, by
-// pointer and unchanged — see Project's doc comment on why nothing here may
-// write to a shared envelope.
-//
-// EventsRetracted is the exception, and the only payload this file both
-// forwards and edits. Its range must reach every seat (classify says why) and
-// its free-text reason must not, so the marker is CLONED and the text dropped;
-// the clone is what makes this a redaction rather than the in-place edit that
-// would rewrite the DM's copy. Envelope metadata — event id, actor role,
-// participant, timestamp, session — travels as it does on every other
-// forwarded envelope: it says who undid something, which is not a fact about
-// the world.
-func redactedFor(env *vttv1.Envelope) *vttv1.Envelope {
-	if env.GetEventsRetracted().GetReason() == "" {
-		return env // nothing to redact, so nothing to copy
-	}
-	out := proto.Clone(env).(*vttv1.Envelope)
-	out.GetEventsRetracted().Reason = ""
-	return out
 }
 
 // sightView is everything a single look at the world tells us about one
@@ -409,26 +393,16 @@ func (pr *Projector) eyes(st *engine.State) []string {
 // they can see now.
 //
 // Every one of them carries seq — the sequence of the event that CAUSED the
-// change, not a number of its own (spec §4.2). Retraction is a range over
-// sequence NUMBERS: campaign.retractedSet, harness.Fold and client/src/fold.ts
-// all expand an EventsRetracted's inclusive [from,to] into a set and then SKIP
-// any envelope whose sequence is in it, by number and never by identity. So
-// retracting the event that revealed the goblin also drops the introduction it
-// caused, and the player forgets the sighting.
-//
-// MEASURED, not reasoned, and the measurement found a limit worth writing down
-// rather than a clean result. Folding one projected stream with and without a
-// retraction of the revealing event: the player does forget the goblin — and
-// if any LATER event about it was forwarded, their fold then fails on the
-// dangling reference ("moved unknown token") where the DM's identical
-// retraction folds cleanly, because the goblin's existence reached the DM at
-// its own sequence and reached the player at the revealing one. campaign.Undo
-// dry-runs the would-be fold before persisting, but it dry-runs the LOG, so a
-// retraction safe for every seat that receives the log can still be unsafe for
-// one that receives a projection of it. Not fixed here: the stamping is what
-// spec §4.2 specifies and what this task's tests pin, and a per-viewer
-// pre-flight is a gateway decision, not a projection one. Filed in the task
-// report; spec §4.3's keystone is where it is catchable.
+// change, not a number of its own (spec §4.2). A SHARED NUMBER IS A DELIBERATE
+// CONSEQUENCE, and it used to have a second one: while undo existed, a range
+// over sequence numbers dropped the introductions a retracted event had caused
+// along with the event itself, and a projected seat could be left folding a
+// dangling reference where the DM's identical undo folded cleanly — because
+// the goblin's existence reached the DM at its own sequence and the player at
+// the revealing one. That asymmetry left with undo (2026-08-31: the log only
+// goes forward): no command produces a ranged marker, no role may ask for one,
+// and campaign.Undo — the last thing that could append one — is gone too, so
+// stamping a derived envelope with its cause's number costs a seat nothing.
 //
 // Stamping also means several envelopes legitimately share one sequence, and
 // before this task every envelope had a unique one. An introduction batch can
@@ -474,43 +448,63 @@ func (pr *Projector) eyes(st *engine.State) []string {
 func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
-	// MEMORY CAN OUTLIVE THE WORLD, and forgetting has to be total. An undo
-	// covering a SceneCreated removes that scene from the state seat.receive
-	// re-folds (campaign.FoldPrefix skips retracted ranges) while these maps
-	// still hold it. Two things then go wrong, and dropping only `seen` fixes
-	// neither. st.Scenes is a VALUE map, so anything reported about the scene
-	// names the ZERO Scene and puts an empty scene id on the wire. And a scene
-	// id is CALLER-SUPPLIED, so the same id can be created again — at which
-	// point `scenes` still says "introduced", no introduction is re-sent, and
-	// every envelope about it lands on a scene the viewer's own fold dropped
-	// when it folded the retraction. Measured before this loop existed: the
-	// returning scene produced a TokenPlaced and a SceneSeen, and BOTH were
-	// rejected ("token placed in unknown scene", "scene seen for unknown
-	// scene") — spec §8's "the strict fold throws, taking the whole client down
-	// rather than merely showing too much", which is permanent here because
-	// client/src/session.ts re-folds its whole log on every event.
+	// pr.scenes AND pr.seen CANNOT OUTLIVE THE WORLD, and until 2026-08-31 they
+	// could. A loop stood here that forgot any scene missing from st, because an
+	// undo covering a SceneCreated removed that scene from the state seat.receive
+	// re-folds while these maps still held it. st.Scenes is a VALUE map, so
+	// anything reported about a scene it had lost named the ZERO Scene and put an
+	// empty scene id on the wire — measured then: the returning scene produced a
+	// TokenPlaced and a SceneSeen and BOTH were rejected ("token placed in
+	// unknown scene", "scene seen for unknown scene"), which spec §8 calls the
+	// worst failure available because client/src/session.ts re-folds its whole log
+	// on every event and the throw therefore recurs forever.
 	//
-	// POSITION IS FOR READING, NOT FOR CORRECTNESS, and that was measured
-	// rather than assumed: moving this loop below the introduction loop leaves
-	// the whole gateway suite green. The two cannot both fire for one scene in
-	// a single call, because they read the SAME st — a scene is either in it,
-	// in which case nothing here forgets it, or absent, in which case look()
-	// gave it no squares and the introduction loop never reaches it. It sits
-	// first because "forget what is gone, then introduce what is new" is the
-	// order a reader needs, not because anything depends on it.
+	// THE LOOP LEFT WITH RETRACTION, on a premise checked rather than assumed:
+	// nothing removes a scene from engine.State. engine.Apply's SceneCreated arm
+	// only inserts, DoorOpened/DoorClosed/SceneSeen only update in place, and no
+	// code anywhere deletes from st.Scenes. seat.received only grows, so the scene
+	// set of the fold it drives is monotone and pr.scenes is a subset of st.Scenes
+	// at every call. What was left was not a cheap guard but a SILENT one: the
+	// only thing that could now trigger it is a caller feeding one Projector
+	// states from two different logs, and quietly forgetting is the wrong answer
+	// to that — unreachable defence in this codebase fails LOUD (campaign's poison
+	// contract, receive's FAIL CLOSED).
 	//
-	// `actors` is deliberately NOT touched. Actors are not scene-scoped and
-	// pr.actors never forgets by design (see the Projector doc comment). An undo
-	// that reaches the ActorAdded itself leaves that map stale in the same way
-	// this loop fixes for scenes, and no test here covers it — a separate gap,
-	// recorded rather than quietly widened into by this loop.
-	for _, id := range sortedSet(pr.scenes) {
-		if _, exists := st.Scenes[id]; exists {
-			continue
+	// SO WHY NOTHING RATHER THAN A LOUD GUARD, since that argument reaches only as
+	// far as "not this loop": because the gate decides it. This package is
+	// mutation-gated, so a guard here is a branch whose mutants must be killed by
+	// a test, and the only tests that could reach one are tests that build an
+	// impossible world by hand — three of them stood in project_test.go and went
+	// with the loop, which records which and what they said. A loud guard would
+	// buy the same unreachable branch back under a better name, and the reader
+	// after it would face this decision again with one more adjudication attached.
+	// The bare st.Scenes[id] in the SceneSeen walk below states the invariant
+	// instead, and says where it comes from.
+	//
+	// pr.actors WAS NEVER GUARDED BY IT, and the note that stood here said the
+	// day something removed an actor from the world, both maps would need an
+	// answer chosen deliberately. That day is retraction-leaves Task 9, and the
+	// answer is the forgetting loop this comment introduces: pr.actors FORGETS,
+	// pr.scenes still does not, because nothing removes a scene.
+
+	// AN ACTOR THE WORLD NO LONGER HAS IS FORGOTTEN HERE, and it has to be.
+	// classify forwards ActorRemoved to exactly the seats that hold the actor,
+	// so their own fold drops it — and engine.Apply accepts an ActorAdded for
+	// an id whose actor was removed, so the id can come back. A projector that
+	// still believed it had introduced that id would skip the introduction
+	// while the seat no longer has the actor, and the next token to arrive for
+	// it is "token placed for unknown actor" on that seat, forever. Forgetting
+	// and forwarding are therefore ONE decision: a seat that was not told
+	// (because it never held the actor) has nothing here to forget, so the two
+	// maps and the seat's fold stay in step either way.
+	//
+	// EMITS NOTHING, so it needs no sorted walk — deletion order cannot reach
+	// the wire. It runs AFTER classify (Project's own order), which is what
+	// lets classify still see that the seat held the actor.
+	for id := range pr.actors {
+		if _, ok := st.Actors[id]; !ok {
+			delete(pr.actors, id)
 		}
-		delete(pr.scenes, id)
-		delete(pr.seen, id)
-		delete(pr.doors, id)
 	}
 
 	for _, id := range sortedSceneIDs(now.squares) {
@@ -649,12 +643,13 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	// Walking the union keeps the scene in play for exactly one more step, and
 	// sameSet reports the difference between the last non-empty set and nothing.
 	for _, id := range sortedSceneIDsUnion(pr.seen, now.squares) {
-		// st.Scenes[id] IS PRESENT for every id this walk can produce, and the
-		// forgetting loop at the top of this function is what guarantees it:
-		// now.squares only holds scenes look() found in st, and pr.seen has just
-		// had every scene the world lost removed from it. A plain lookup rather
-		// than a guarded one, because a guard here would be a branch no test
-		// could reach.
+		// st.Scenes[id] IS PRESENT for every id this walk can produce, and since
+		// 2026-08-31 the world itself guarantees it rather than a forgetting
+		// loop above: now.squares only holds scenes look() found in st, pr.seen
+		// only ever gains a key for a scene that was in st when it was reported,
+		// and nothing removes a scene from st. A plain lookup rather than a
+		// guarded one, because a guard here would be a branch no test could
+		// reach.
 		sc := st.Scenes[id]
 		lit, inSight := now.squares[id]
 		if sameSet(pr.seen[id], lit) {
@@ -828,39 +823,6 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// world, and the client's session panel is built from them.
 		return forwarded
 
-	case *vttv1.Envelope_EventsRetracted:
-		// The one payload whose WITHHOLDING is the dangerous direction. A
-		// retraction erases history; a viewer who never receives it keeps
-		// folding an event the table has agreed did not happen. Skipping
-		// sequence numbers a viewer never received is a no-op on their side,
-		// so the RANGE is free to forward.
-		//
-		// THE REASON IS NOT. An earlier draft of this comment justified the
-		// arm with "it carries only sequence numbers", which is false:
-		// EventsRetracted.reason (contract field 3) is free text handed
-		// straight through campaign.Undo from whoever asked for the undo, and
-		// "undo, I put the archer on the wrong square" is the NoteUpserted
-		// ruling's own argument under a different message name. Forwarded with
-		// the reason redacted — see redactedFor — which keeps the dangerous
-		// direction safe without leaving a free-text channel open.
-		// FLAGGED FOR ADJUDICATION: costs a player nothing they can see today.
-		// NOTHING IN THE CLIENT EVER READS THE REASON — client/src/view/feed.ts
-		// calls the marker bookkeeping and DROPS it ("rendering it too would
-		// narrate the erasure"), and fold.ts and undo.ts read only its range.
-		//
-		// The MARKER, unlike its reason, is not invisible, and an earlier
-		// version of this comment said it was. client/src/view/spectator.ts's
-		// Events ticker walks the RAW log and falls through to describe()'s
-		// default arm (`return p.case ?? "event"`), so a retraction surfaces
-		// there as a bare "#N eventsRetracted" row. That is consistent with
-		// forwarding — the row names no world fact, and the seat is entitled to
-		// know history was erased — but it is why this ruling is about the
-		// reason field and not about the marker. Recorded because of HOW the
-		// wrong version was reached: it was checked by grepping every site that
-		// NAMES eventsRetracted, and the ticker renders it precisely by not
-		// naming it.
-		return forwarded
-
 	case *vttv1.Envelope_NarrationAdded:
 		// RULED, not obvious, and the opposite of the note ruling below.
 		// Narration is ADDRESSED: someone at the table wrote it to be heard,
@@ -902,6 +864,26 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// Same single-path reasoning as ActorAdded, plus the obvious one:
 		// this is the payload session zero leaked. A placement reaches a
 		// viewer only as an arrival synthesized from what they can see.
+		return withheld
+
+	case *vttv1.Envelope_TokenRemoved:
+		// retraction-leaves Task 8, and the SAME single-path reasoning as
+		// TokenPlaced directly above, run in the other direction. A token's
+		// departure from a viewer's board — whichever of three reasons
+		// causes it: it walked out of sight, its actor lost every eye that
+		// could see it, or (this arm) it was REMOVED from the world — is
+		// always told the same way: transitions' own "for _, id := range
+		// sortedSet(pr.tokens)" loop, which already emits TokenHidden the
+		// moment `now.tokens` stops containing an id `pr.tokens` still holds
+		// (this event's fold deletes the token from engine.State, so `now`
+		// no longer contains it). Forwarding the raw TokenRemoved here as
+		// well would be a SECOND path narrating the same disappearance, and
+		// for a viewer who never held the token in the first place,
+		// forwarding it would leak that a token existed and was removed
+		// off-screen — exactly the kind of leak withheld exists to prevent.
+		// A viewer who DID see it gets the TokenHidden that same loop
+		// already produces; nothing here is lost. Pinned end-to-end by
+		// TestARemovedTokenReachesAPlayerOnlyAsHidden (project_test.go).
 		return withheld
 
 	case *vttv1.Envelope_TokenHidden, *vttv1.Envelope_SceneSeen:
@@ -973,8 +955,8 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_ActorControlRevoked:
 		// A revoke can be the event that makes an actor an NPC. The viewer
-		// already holds it either way — pr.actors never forgets — so the
-		// grant/revoke pair stays coherent on their side.
+		// already holds it either way — pr.actors drops an id only when the
+		// WORLD does, and no revoke removes an actor — so the pair holds.
 		return passIf(knows(p.ActorControlRevoked.GetActorId()))
 
 	// --- forwarded only to a viewer who ALREADY HELD the actor -------------
@@ -1024,6 +1006,43 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_ConditionRemoved:
 		return passIf(pr.actors[p.ConditionRemoved.GetActorId()])
+
+	// --- forwarded only to a viewer who HELD the actor, and for a reason no
+	// other arm in this switch shares --------------------------------------
+
+	case *vttv1.Envelope_ActorRemoved:
+		// retraction-leaves Task 9, and the ONE arm whose forwarding is not a
+		// concession but the only way the fact can arrive at all.
+		//
+		// The Envelope_TokenRemoved arm withholds outright because a token's
+		// departure is ALREADY narrated: transitions synthesizes TokenHidden
+		// for anyone holding it. An ACTOR's departure has no such narration —
+		// pr.actors has no un-introduce message behind it, and inventing one
+		// would be a new payload for a fact this event already states. So a
+		// seat that holds the actor is told, in the log's own words, and its
+		// roster stops naming a character the world no longer has.
+		//
+		// WITHHELD FROM A SEAT THAT NEVER HELD IT, and that half is fatal
+		// rather than merely tidy. Their fold has no such actor, so the raw
+		// event fails with "engine: removed unknown actor" — and
+		// client/src/session.ts re-folds its whole log on every event, so that
+		// is a permanent freeze, the worst failure spec §8 names. It would
+		// also tell them an actor they never saw existed and was removed
+		// off-screen, the same leak withheld exists to prevent everywhere else
+		// in this switch.
+		//
+		// pr.actors AND now.actors would be the wrong test: a removed actor is
+		// gone from st, so now.actors never holds it, and knows() would answer
+		// on pr.actors alone anyway. Named directly so the rule reads as what
+		// it is — did this seat ever hold this actor.
+		//
+		// The seat's tokens for it are already gone by the time this arrives:
+		// remove_actor's batch removes them first, and each of those events
+		// produced the TokenHidden that took them off this board. Pinned by
+		// TestARemovedActorReachesOnlyTheSeatThatHeldIt, which asserts BOTH
+		// directions — an arm that returned a bare constant either way would
+		// pass an exhaustiveness gate and fail that test.
+		return passIf(pr.actors[p.ActorRemoved.GetActorId()])
 
 	default:
 		return unrecognised

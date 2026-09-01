@@ -1,5 +1,4 @@
-// The TypeScript fold — a mirror of internal/engine/apply.go's Apply, and of
-// internal/harness/fold.go's two-pass retraction handling.
+// The TypeScript fold — a mirror of internal/engine/apply.go's Apply.
 //
 // "Mirror" is load-bearing: parity includes REJECTING what Go rejects. A fold
 // that quietly tolerates a malformed event would diverge from the server's
@@ -41,26 +40,17 @@ import {
 /**
  * fold applies envelopes in order and returns the derived state.
  *
- * Two passes, matching internal/harness/fold.go: pass 1 collects every
- * sequence covered by an eventsRetracted marker's INCLUSIVE range; pass 2
- * applies everything not in that set, skipping the markers themselves — a
- * marker changes history's shape, not live state.
+ * ONE PASS, and there is no second one to add back: the log only goes forward
+ * (Patrik, 2026-08-30, and the spec 2026-08-30-retraction-leaves-design). This
+ * function used to look ahead first, for retraction markers that could cancel
+ * an earlier envelope; nothing can now, so every envelope in the stream is
+ * live and state is simply those envelopes applied in the order they were
+ * written. A fold that has to know the future before it can trust the past is
+ * the shape retraction forced, and it left with it.
  */
 export function fold(envelopes: Envelope[]): State {
-  const retracted = new Set<bigint>();
-  for (const env of envelopes) {
-    if (env.payload.case === "eventsRetracted") {
-      const r = env.payload.value;
-      for (let s = r.fromSequence; s <= r.toSequence; s++) retracted.add(s);
-    }
-  }
-
   const st = newState();
-  for (const env of envelopes) {
-    if (retracted.has(env.sequence)) continue;
-    if (env.payload.case === "eventsRetracted") continue;
-    apply(st, env);
-  }
+  for (const env of envelopes) apply(st, env);
   return st;
 }
 
@@ -221,6 +211,76 @@ function apply(st: State, env: Envelope): void {
       // `from` and `sceneId` are ignored entirely, exactly as Go does.
       tok.X = v.to.x;
       tok.Y = v.to.y;
+      return;
+    }
+    case "tokenRemoved": {
+      // Takes a piece off the board (retraction-leaves spec §5.1): "no
+      // longer part of the world going forward", never "this never
+      // happened".
+      //
+      // NOT tokenHidden (below) — but not because that arm stays away from
+      // this fold; it does not. tokenHidden reaches THIS SAME switch, on a
+      // player's own projected stream, every time a token leaves their
+      // sight — the arm right below folds it constantly. The difference is
+      // where the fact comes from: no COMMAND produces tokenHidden — the
+      // server's projection layer (internal/gateway/project.go) synthesizes
+      // it, so it can never appear in the actual campaign log — while
+      // tokenRemoved is a real, log-carrying event, produced by a real
+      // command (remove_token), that removes the piece for everyone, not
+      // just one viewer's sight of it.
+      //
+      // The message DELIBERATELY MATCHES tokenMoved's own unknown-token
+      // message above ("moved" -> "removed"), the same wording apply.go's
+      // two arms share.
+      const v = p.value;
+      if (!st.Tokens[v.tokenId]) throw new FoldError(`unknown token "${v.tokenId}" removed`);
+      delete st.Tokens[v.tokenId];
+      return;
+    }
+    case "actorRemoved": {
+      // Takes an actor out of the world (retraction-leaves spec §5.2), the
+      // same rule tokenRemoved states one level down: "no longer part of the
+      // world going forward", never "this never happened".
+      //
+      // IT REMOVES THE ACTOR AND NOTHING ELSE — in particular it does NOT
+      // remove that actor's tokens, and it must not. Taking them off the board
+      // is the COMMAND's job: remove_actor emits a tokenRemoved per token, in
+      // token-id order, ahead of this event, as one batch (the server's
+      // handleRemoveActor). Cascading here as well would put the same rule in
+      // two places and make the batch do the work twice.
+      //
+      // SO IT REFUSES INSTEAD, the strict mirror of internal/engine's
+      // ActorRemoved arm, down to the order of the two guards. Read that arm
+      // for why: an ActorRemoved that left a token standing would leave a
+      // world whose own introductions no longer fold, and this module is where
+      // that costs a viewer everything — Session.ingest re-folds the entire
+      // log on every event, so one throw here is permanent.
+      //
+      // A player's stream never reaches either guard: the server forwards this
+      // event only to a seat that HOLDS the actor (project.go's classify), and
+      // that seat's tokens for it were hidden by the batch's earlier events.
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`unknown actor "${v.actorId}" removed`);
+      // The first token in id order, so the message reads the same way twice —
+      // mirroring the Go arm, which sorts for the same reason.
+      const standing = Object.keys(st.Tokens)
+        .filter((id) => st.Tokens[id]!.ActorID === v.actorId)
+        .sort()[0];
+      if (standing !== undefined) {
+        throw new FoldError(
+          `actor "${v.actorId}" still has token "${standing}" on the board — ` +
+            `a token cannot outlive its actor`,
+        );
+      }
+      delete st.Actors[v.actorId];
+      // AND ITS CONDITIONS, which is a CONSEQUENCE of the actor leaving and
+      // not a second cascade — st.Conditions is keyed by actor id and holds
+      // facts ABOUT the actor, exactly as its controllerIds do. Mirrors Go's
+      // `delete(st.Conditions, ...)`; leaving them behind would make the first
+      // conditionApplied on a later actor with the same id a duplicate, which
+      // both folds refuse.
+      delete st.Conditions[v.actorId];
       return;
     }
     case "tokenHidden": {
@@ -557,13 +617,19 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       // AMENDED 2026-08-22, in step with Visible's comment below so the pair
       // cannot drift: the corpus now also carries PROJECTED halves under
       // scenarios/goldens/*/projections/*/, and those DO populate Explored
-      // wherever the scene declares terrain. Re-measured against the enlarged
-      // corpus — an unconditional `Explored: {}` fails all 8 log goldens AND
-      // BOTH projected seats in client/test/projection-parity.test.ts
-      // (session-zero/player and session-zero/spectator), because each holds
-      // the bare-canvas `camp`, which has a visible set and no terrain to
-      // remember. TEN corpus cases in total, which is why this omission is
-      // among the most heavily pinned things in either fold.
+      // wherever the scene declares terrain.
+      //
+      // RE-MEASURED 2026-09-01, and the number went DOWN: an unconditional
+      // `Explored: {}` now fails the 8 log goldens — plus the dedicated case
+      // in client/test/fold-unit.test.ts, which is not a corpus case and is
+      // not counted here. It used to fail both projected seats as well,
+      // because each held the
+      // bare-canvas `camp` — a visible set with no terrain to remember, so an
+      // empty Explored that had to stay absent. create_scene now refuses a
+      // scene that leaves a square undeclared, `camp` declares all nine of
+      // its own, and every projected scene's Explored is populated. EIGHT
+      // corpus cases, measured by injecting the fault and counting, not by
+      // decrementing the old figure.
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);

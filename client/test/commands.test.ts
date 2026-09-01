@@ -94,7 +94,7 @@ test("request ids are unique across commands", () => {
 
 import {
   startSession, endSession, createScene, addActor, placeToken,
-  loadAdventure, deleteNote, removeCondition, retractEvents, parseActorJSON,
+  loadAdventure, deleteNote, removeCondition, parseActorJSON,
 } from "../src/commands";
 
 test("loadAdventure matches the committed fixture", () => {
@@ -112,7 +112,7 @@ test("session start carries the name; end carries nothing", () => {
 });
 
 test("createScene and placeToken carry their geometry", () => {
-  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 10, 8)) as Record<string, any>;
+  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 10, 8, "floor")) as Record<string, any>;
   expect(sc["createScene"]).toMatchObject({ sceneId: "s1", name: "Hall", gridWidth: 10, gridHeight: 8 });
 
   const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 2, y: 3 })) as Record<string, any>;
@@ -120,22 +120,43 @@ test("createScene and placeToken carry their geometry", () => {
   expect(pt["placeToken"]["position"]).toMatchObject({ x: 2, y: 3 });
 });
 
+test("createScene declares EVERY square of the grid it names", () => {
+  // The server refuses a create_scene that leaves one square undeclared
+  // (spec 2026-08-30-retraction-leaves §6), so a builder that ships a partial
+  // map — or none — produces a command the DM can only ever be refused.
+  //
+  // COUNTED AND ENUMERATED, not matched. The two assertions above this one use
+  // toMatchObject, and dm-view.test.ts uses objectContaining; both are PARTIAL
+  // matchers and neither can notice a field that is missing entirely. That is
+  // structurally why this builder shipped no tiles at all with a green suite.
+  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 4, 3, "floor")) as Record<string, any>;
+  const tiles = sc["createScene"]["tiles"] as Record<string, { kind: string }>;
+
+  expect(Object.keys(tiles)).toHaveLength(4 * 3);
+  const want: string[] = [];
+  for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) want.push(`${x},${y}`);
+  expect(Object.keys(tiles).sort()).toEqual(want.sort());
+  for (const key of want) expect(tiles[key]).toEqual({ kind: "floor" });
+});
+
+test("createScene declares the kind it was ASKED for, not a default", () => {
+  // The builder must carry whichever kind it was given. A fan-out that
+  // hard-coded floor would pass the test above and still be wrong, because
+  // this builder is the WIRE shape: create_scene takes any mix of kinds, and
+  // a wall room is what an LLM DM or a map file produces. The DM console's own
+  // box no longer offers wall (view/dm.ts's fillSelect says why), which is a
+  // fact about that form and not about this function.
+  const wall = toJson(ClientCommandSchema, createScene("s1", "Keep", 2, 2, "wall")) as Record<string, any>;
+  for (const t of Object.values(wall["createScene"]["tiles"] as Record<string, { kind: string }>)) {
+    expect(t).toEqual({ kind: "wall" });
+  }
+});
+
 test("a zero position is still sent as a position, not omitted", () => {
   // protojson omits empty MESSAGES too. Placing at 0,0 must still carry a
   // position object, or the server sees "no position" and rejects the place.
   const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 0, y: 0 })) as Record<string, any>;
   expect(pt["placeToken"]).toHaveProperty("position");
-});
-
-test("retractEvents sends an inclusive range as strings", () => {
-  const r = toJson(ClientCommandSchema, retractEvents(4n, 6n, "undo")) as Record<string, any>;
-  expect(r["retractEvents"]).toMatchObject({ fromSequence: "4", toSequence: "6", reason: "undo" });
-});
-
-test("retracting a single event uses the same sequence for both ends", () => {
-  const r = toJson(ClientCommandSchema, retractEvents(7n, 7n, "undo")) as Record<string, any>;
-  expect(r["retractEvents"]["fromSequence"]).toBe("7");
-  expect(r["retractEvents"]["toSequence"]).toBe("7");
 });
 
 test("removeCondition names the actor and the condition", () => {
@@ -450,5 +471,30 @@ test("loadMap matches the client's own expected shape", () => {
   const cmd = loadMap("map-crypt");
   sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
     loadMap: { mapId: "map-crypt" },
+  });
+});
+
+// --- forward-only removals (retraction-leaves Tasks 8 and 9) -----------------
+
+import { removeToken, removeActor } from "../src/commands";
+
+test("removeActor matches the client's own expected shape", () => {
+  // Same idiom, one level up: a bare actorId is exactly the shape a builder
+  // wired to the wrong oneof case would still satisfy under toMatchObject,
+  // so the full object is compared.
+  const cmd = removeActor("act-goblin-2");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    removeActor: { actorId: "act-goblin-2" },
+  });
+});
+
+test("removeToken matches the client's own expected shape", () => {
+  // Same idiom as openDoor/closeDoor/loadMap directly above (this file's own
+  // comment on why the exact object, not a subset, is asserted): a bare
+  // tokenId is exactly the shape a builder wired to the wrong oneof case
+  // would still satisfy under toMatchObject, so the full object is compared.
+  const cmd = removeToken("tok-goblin-2");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    removeToken: { tokenId: "tok-goblin-2" },
   });
 });

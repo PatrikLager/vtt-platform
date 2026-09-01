@@ -5,6 +5,26 @@
 **Parent:** Platform spec §4.2 (`2026-07-23-llm-native-vtt-platform-design.md`); pillars P1–P4; ADR-003 (event-sourced state), ADR-007 (protobuf contract)
 **Consumes:** `vttv1.Envelope` from the completed contract pipeline (sub-project 1)
 
+> **AMENDED 2026-08-30 — UNDO WAS BUILT AS SPECIFIED AND HAS SINCE BEEN REMOVED.**
+> Patrik's ruling of 2026-08-30: a retraction exists to make something not have
+> happened, and it cannot — the person already read the log. Sub-project 13
+> (`2026-08-30-retraction-leaves-design.md`) took it out: `EventsRetracted` and
+> `RetractEvents` left the contract in `59542e1`, `campaign.Undo` and
+> `retractedSet` in `133e896`, and `campaign.foldEvents`/`FoldPrefix` collapsed to
+> a single pass because the pass that collected retracted ranges was the only
+> reason a second one existed. Nothing replaced it: the platform's answer to a
+> mistake is a further event that removes the thing going forward (`remove_token`,
+> `remove_actor`), which the log records as having happened.
+>
+> Everything else in this spec is live and unchanged — the store, the sequence
+> authority, the single fold, subscriptions, the poison contract. The passages
+> that are now history rather than design are §1's "truthful undo", §2's decisions
+> 1 and 2 and the "undo rebuild" clause of decision 4, §3's `Undo` line, §5's
+> `EventsRetracted` table row, **§6 in its entirety**, §7's `Undo` mention, §8's
+> `EventsRetracted` message and §9's undo/retraction tests. Each is marked where it
+> stands; none is deleted, because the decision that was made and the decision that
+> replaced it are both worth being able to read.
+
 ## 1. Purpose
 
 The event core is the platform's memory: an append-only SQLite log of
@@ -13,17 +33,37 @@ subscriptions, and truthful undo. Everything later (API gateway, rules
 interpreter, LLM context feed) reads and writes THROUGH this layer; only this
 layer touches the log.
 
+*AMENDED 2026-08-30: "and truthful undo" is no longer part of what this layer
+is.* `campaign.Undo` was deleted in `133e896`; see the banner above. The rest of
+the sentence is exactly what `internal/store`, `internal/engine` and
+`internal/campaign` do today, and the last clause — only this layer touches the
+log — is stronger than ever, since there is now one way in and none out.
+
 ## 2. Decisions (locked in brainstorming)
 
 1. **Undo = compensating marker events.** `EventsRetracted{from_sequence,
    to_sequence, reason}` is an ordinary appended event; the log is never
    truncated or mutated. Derivation skips retracted ranges. Retraction events
    themselves cannot be retracted (no nesting — documented and tested).
+
+   *SUPERSEDED 2026-08-30.* This decision was implemented exactly as written and
+   then reversed. "Derivation skips retracted ranges" is the sentence to watch:
+   it is what made every fold in the platform two-pass, in Go and in TypeScript
+   alike, and removing it is what collapsed all four of them to one pass
+   (`92f1284`, `d3e2f28`, `133e896`). The half of the decision that survives is
+   the half about the log: it is still never truncated and never mutated. What
+   was wrong was believing a marker could make a reader forget.
 2. **Contract grows a minimal lifecycle set** (additive, through the armed
    gates): `SceneCreated`, `ActorAdded`, `TokenPlaced`, `SessionStarted`,
    `SessionEnded`, `EventsRetracted` as new envelope oneof variants (tags
    12–17). No HP/condition/initiative events — those belong to the rules-module
    work that gives them meaning (sub-project 5).
+
+   *AMENDED 2026-08-30:* `EventsRetracted` and its oneof arm were deleted in
+   `59542e1`, with no `reserved` left behind — the platform is pre-release, so
+   ADR-007's additive-only rule does not yet bind; see its 2026-08-30 amendment
+   and the `contract/RELEASED` marker that turns it on. The other five variants
+   are unchanged.
 3. **Enforcement lands with the code:** semgrep game-vocabulary ban and
    go-arch-lint layer map join `task check` in this sub-project, guarding the
    first engine packages from their first commit.
@@ -32,6 +72,10 @@ layer touches the log.
    both full replay (campaign open, undo rebuild) and live append. Divergence
    between "replayed" and "live" state is structurally impossible; a property
    test enforces it besides.
+
+   *AMENDED 2026-08-30:* "undo rebuild" is gone as a caller. The decision itself
+   is untouched, is stronger for the removal — the fold no longer walks the log
+   twice — and is now CLAUDE.md rule 4.
 
 ## 3. Package architecture
 
@@ -49,6 +93,13 @@ internal/campaign   Composition root. Open(path) → replay log through apply �
                     notified. Undo(fromSeq, toSeq, reason) → append
                     EventsRetracted → rebuild projection. Close().
 ```
+
+*AMENDED 2026-08-30: the `Undo` line is gone (`133e896`).* What `campaign`
+composes today is `Open`, `Append`, `AppendBatch` — the atomic multi-event path
+`remove_actor` and `load_map` use — `State`, `Close`, and two subscribe entry
+points: `Subscribe`, and `SubscribeWithNoProgressTimeout`, which is the one the
+gateway actually calls. Plus the poison contract of §7. CLAUDE.md's Layout section carries the current one-line
+description.
 
 **Machine-enforced rules (new in this sub-project):**
 - go-arch-lint: `store` ⊄ `engine`, `engine` ⊄ `store`; only `campaign` may
@@ -92,12 +143,26 @@ State derived from lifecycle + movement events only:
 | TokenPlaced | adds token (id, sceneId, actorId, position) |
 | TokenMoved | updates token position (unknown token = apply error, see §7) |
 | AttackRolled | **no state change — deliberate.** It is testimony; rules-layer meaning arrives in sub-project 5 |
-| EventsRetracted | not applied in-line; triggers projection rebuild with retracted ranges filtered |
+| EventsRetracted | not applied in-line; triggers projection rebuild with retracted ranges filtered — **REMOVED 2026-08-30** (`59542e1`); no arm of `engine.Apply` filters by sequence any more |
 
 Readers receive deep copies or immutable views — never aliases into the live
 projection (single-writer rule holds at the type level).
 
 ## 6. Undo
+
+> **OBSOLETE IN FULL, 2026-08-30, and kept rather than deleted.** Everything in
+> this section was built and shipped, and all of it was removed by `133e896`:
+> `campaign.Undo`, the dry-run, the no-nesting and double-retraction rules, the
+> rebuild. It is kept because it is the most complete written record of what the
+> platform did for a year, and because the shape of the mistake is instructive —
+> read the dry-run paragraph in particular. It dry-ran THE LOG, which is exactly
+> the assumption that broke once a seat could receive a projection of the log
+> rather than the log (`2026-08-30-dm-hands-and-retraction-design.md` §5.1), and
+> that defect is what led to the ruling that removed the operation altogether.
+> Nothing here describes current behaviour. What replaced it is
+> `2026-08-30-retraction-leaves-design.md` §5: `remove_token` and `remove_actor`,
+> which take a thing out of the world going forward and never claim it was not
+> there.
 
 `Undo(from, to, reason, eventID, actorRole, participantID) (markerSeq, err)`
 validates the range (exists; contains no EventsRetracted event — the
@@ -130,6 +195,12 @@ history stays truthful, including the future LLM context feed.
   (replay heals). Accepted risk: a commit-stage store error is treated as
   not-persisted; in the marginal case where the commit was nonetheless durable,
   divergence is healed on reopen.
+
+  *AMENDED 2026-08-30: the poison contract is live and unchanged; two of its
+  named triggers moved.* `Undo` is no longer a poisoned entry point and
+  "post-marker rebuild error" is no longer a failure mode, because neither
+  exists; `AppendBatch`, added with the ruleset interpreter, is one.
+  `internal/campaign`'s own poison tests are the authority on the current list.
 - Malformed envelopes (no payload, unknown variant for this engine version)
   are rejected at Append. Unknown variants found in an EXISTING log during
   replay are skipped with a logged warning (forward compatibility: an older
@@ -142,7 +213,9 @@ New messages in `events.proto` + envelope oneof variants (tags 12–17):
 `ActorAdded{actor Actor}`, `TokenPlaced{token_id, scene_id, actor_id,
 position GridPosition}`, `SessionStarted{name}`, `SessionEnded{}`,
 `EventsRetracted{from_sequence, to_sequence, reason}` (int64 sequences —
-wire convention 1 applies). Carry-forward honored: the contract-evolving task
+wire convention 1 applies). *(2026-08-30: `EventsRetracted` was added as
+specified and deleted in `59542e1`. The other five messages are on the wire
+today.)* Carry-forward honored: the contract-evolving task
 runs `check:drift` post-commit (HEAD-relative semantic). No new toolgen
 manifest entries — these are event records, not LLM commands (commands arrive
 with the gateway, sub-project 3).
@@ -158,6 +231,15 @@ with the gateway, sub-project 3).
   session → create scene → add actors → place tokens → move → retract a move →
   end session → close → reopen → state deep-equals pre-close state. Green in
   `go test`, all gates green in `task check`.
+
+*AMENDED 2026-08-30 — the undo tests are gone; the properties they served are
+not.* The undo unit tests, and the retraction interleaving in the keystone
+property, left with `campaign.Undo` (`133e896`). `rebuild(log) == live
+projection` is still the keystone and is still property-tested
+(`TestRebuildEqualsLiveProperty`); it is simply generated from appends alone,
+since there is no operation left that makes a rebuild differ from a replay. The exit scenario is `scenarios/three-role-exit.json`
+in the committed library, with the retraction leg removed and every other leg —
+denials, no-broadcast, reconnect equality — intact.
 
 ## 10. Non-goals (YAGNI, deliberate)
 

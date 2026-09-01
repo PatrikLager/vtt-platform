@@ -560,7 +560,16 @@ written yet.
 retract those moves cleanly… retracting doesn't unshow what people already
 saw."* Correct on both counts — `retract_events` is inclusive-range and those
 sequences are now buried under later control changes, and disclosure is not a
-state you can roll back. Demoting Asme back to spectator does not un-see it,
+state you can roll back.
+
+*NOTED 2026-08-31, because this finding got there first.* The agent's second
+clause — "retracting doesn't unshow what people already saw" — is, word for
+word, the argument Patrik used on 2026-08-30 to remove retraction from the
+platform entirely (`2026-08-30-retraction-leaves-design.md` §1). There is no
+`retract_events` any more, so the first clause's mechanics are history; the
+observation that produced it is now a rule. Left as recorded: it is a dated
+session finding, and its value is that it was written down eighteen days before
+anyone acted on it. Demoting Asme back to spectator does not un-see it,
 and spectators watch everything anyway.
 
 **WHERE.** 2026-08-12, seq 12–23. `contract/vtt/v1/` (absence),

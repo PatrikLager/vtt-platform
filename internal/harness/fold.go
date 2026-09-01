@@ -8,42 +8,27 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
 
-// Fold derives client-side state from a sequence of received envelopes,
-// using the SAME two-pass retraction semantics as the server's own fold
-// (internal/campaign/campaign.go's foldEvents/rebuildLocked) — this is
-// deliberately not a second implementation of that algorithm: it is the
+// Fold derives client-side state from a sequence of received envelopes by
+// applying engine.Apply to each one, once, in order — this is deliberately
+// not a second implementation of the event-core's semantics: it is the
 // published derivation (docs/superpowers/specs/2026-07-24-simulation-
 // harness-design.md §3) that any client, this harness today and the future
 // TS client eventually, reconstructs identical state with, consuming only
 // contract types plus engine.Apply — never internal/campaign or
 // internal/store (the P1 boundary this whole package is bound by).
 //
-// Pass 1 collects every sequence covered by an EventsRetracted marker's
-// [FromSequence, ToSequence] range (inclusive) into a set. Pass 2 applies
-// engine.Apply to every envelope NOT in that set, in order, skipping (never
-// applying in-line) EventsRetracted markers themselves — a marker changes
-// history's SHAPE, not live state, by design; see engine.Apply's own doc
-// comment — and skipping (not failing on) any envelope whose payload
-// engine.Apply reports as engine.ErrUnknownVariant, the same forward-
-// compatibility behavior rebuildLocked gives the server's replay.
+// Single pass, since Task 4 of docs/superpowers/plans/
+// 2026-08-31-retraction-leaves.md (commit 92f1284): Fold no
+// longer collects a skip-set from an EventsRetracted marker, because there is
+// no code path left that skips by sequence at all. Task 7 of the same spec
+// then deleted the message itself, so there is no longer a payload any fold
+// could be asked to skip on. Any envelope whose payload engine.Apply reports
+// as engine.ErrUnknownVariant is skipped (not failed on) — the same
+// forward-compatibility behavior the server's own replay gives an event
+// variant it doesn't recognize yet.
 func Fold(events []*vttv1.Envelope) (*engine.State, error) {
-	retracted := map[int64]bool{}
-	for _, env := range events {
-		if r, ok := env.Payload.(*vttv1.Envelope_EventsRetracted); ok {
-			for seq := r.EventsRetracted.GetFromSequence(); seq <= r.EventsRetracted.GetToSequence(); seq++ {
-				retracted[seq] = true
-			}
-		}
-	}
-
 	st := engine.NewState()
 	for _, env := range events {
-		if retracted[env.Sequence] {
-			continue
-		}
-		if _, isMarker := env.Payload.(*vttv1.Envelope_EventsRetracted); isMarker {
-			continue
-		}
 		if err := engine.Apply(st, env); err != nil {
 			if errors.Is(err, engine.ErrUnknownVariant) {
 				continue

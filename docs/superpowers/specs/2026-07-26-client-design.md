@@ -79,6 +79,16 @@ notes editor (upsert/delete); remove condition (from a token's badge);
 undo (retract last event or a chosen recent range from the ticker, with
 confirmation). Invite management stays CLI (non-goal).
 
+*AMENDED 2026-08-30 — the undo controls were built and are gone.* Patrik's
+ruling of 2026-08-30 removed retraction from the platform; the DM console's Undo
+buttons, `client/src/undo.ts` and the feed's retraction rendering left in
+`d3e2f28` (sub-project 13, `2026-08-30-retraction-leaves-design.md`). The DM
+surface gained rather than shrank overall: door controls and a map picker
+(sub-project 12), and the two removal commands that replace undo —
+`remove_token` and `remove_actor`. `client/test/command-surface.test.ts` is the
+live answer to "which surface issues each command", and it fails when a
+`ClientCommand` arm has nowhere a human can reach it.
+
 ## 5. Serving
 
 `vtt serve` gains the static handler (embedded dist at `/`, wire at

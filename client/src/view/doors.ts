@@ -54,9 +54,9 @@ import { doorKey } from "../fold";
  * placed on unknown scene"). Two further premises carry it and are stated
  * because they are the ones that can break: nothing anywhere removes a scene
  * from st.Scenes, and session.ts holds the last good state when a fold
- * throws, so a retraction dropping a sceneCreated while keeping its
- * tokenPlaced never yields a state at all. A scene-hidden arm symmetric with
- * tokenHidden would falsify the first without touching st.Tokens.
+ * throws, so a TRUNCATED log holding a tokenPlaced whose sceneCreated sits
+ * below its cursor never yields a state at all. A scene-hidden arm symmetric
+ * with tokenHidden would falsify the first without touching st.Tokens.
  *
  * Note what this comment cannot claim: that callers only ever pass
  * fold-produced states. doors.test.ts hands this module several states fold()

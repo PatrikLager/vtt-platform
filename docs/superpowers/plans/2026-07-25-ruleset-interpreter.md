@@ -73,7 +73,7 @@ State gains `Conditions map[string][]ActorCondition` (`ActorCondition{ID, Source
 
 ### Task 3: AppendBatch (DATA-INTEGRITY CORE — opus review)
 
-**Files:** `internal/store/store.go` (+AppendBatch: one tx, contiguous seqs stamped, notify after commit in order, all-or-nothing; sequences reset on every failure path), `internal/campaign/campaign.go` (+AppendBatch: same lock as Append; session-stamp each; snapshot-fold the WHOLE batch (clone snapshot, apply sequentially — any failure rejects all); persist; live-apply all; notify all; poison on post-persist failure), tests incl.: atomicity kill-injection (throwaway: fail store mid-batch → ZERO events persisted, campaign usable), batch-then-undo (retract the batch's range — existing machinery), subscriber sees the batch contiguously, property/soak counts byte-identical (no callers yet).
+**Files:** `internal/store/store.go` (+AppendBatch: one tx, contiguous seqs stamped, notify after commit in order, all-or-nothing; sequences reset on every failure path), `internal/campaign/campaign.go` (+AppendBatch: same lock as Append; session-stamp each; snapshot-fold the WHOLE batch (clone snapshot, apply sequentially — any failure rejects all); persist; live-apply all; notify all; poison on post-persist failure), tests incl.: atomicity kill-injection (throwaway: fail store mid-batch → ZERO events persisted, campaign usable), batch-then-undo (retract the batch's range — existing machinery) *(CORRECTED 2026-08-30: gone with retraction itself; `AppendBatch`'s atomicity is what the batch guarantees now, and `remove_actor` is its newest caller)*, subscriber sees the batch contiguously, property/soak counts byte-identical (no callers yet).
 
 ### Task 4: internal/rules — format, loader, expressions
 

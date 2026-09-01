@@ -3,10 +3,12 @@ package gateway_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -43,6 +45,10 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
+	case *vttv1.TokenRemoved:
+		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.ActorRemoved:
+		env.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
 	case *vttv1.DoorOpened:
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: p}
 	case *vttv1.DoorClosed:
@@ -53,8 +59,6 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
 	case *vttv1.NoteDeleted:
 		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
-	case *vttv1.EventsRetracted:
-		env.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.ActorControlGranted:
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
 	case *vttv1.ActorControlRevoked:
@@ -1049,50 +1053,24 @@ func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
 	}
 }
 
-func TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY(t *testing.T) {
-	// The union walk above reaches a scene the projector REMEMBERS, and memory
-	// can outlive the world. engine.State.Scenes is a VALUE map, so a missing
-	// key reads as the zero Scene with an empty ID — and a SceneSeen naming ""
-	// is the worst envelope this file can send. Both folds reject it ("scene
-	// seen for unknown scene"), and client/src/session.ts re-folds its entire
-	// accumulated log on every event, so the throw would recur forever and
-	// freeze that viewer for the rest of the session.
-	//
-	// It is REACHABLE, not hypothetical. seat.receive rebuilds the world with
-	// campaign.FoldPrefix, which skips retracted ranges, so an undo covering a
-	// SceneCreated (together with what depends on it) removes that scene from
-	// the state while pr.seen still holds its id. Modelled here by projecting
-	// against a world that no longer has the scene, which is exactly what that
-	// re-fold hands this function.
-	//
-	// SILENTLY, and that is the second half. Naming the scene correctly would
-	// not help: the retraction reached this viewer too, so their own fold has
-	// no such scene either and a well-formed dark SceneSeen would throw just
-	// the same. There is nothing to report about a scene that no longer exists.
-	st := twoRooms()
-	pr := gateway.NewProjector(player())
-	if lit := sceneSeenIn(firstPlace(pr, st), "s"); lit == nil {
-		t.Fatal("the control fails: the projector must remember this room first")
-	}
-
-	gone := engine.NewState()
-	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
-	out := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
-
-	for _, e := range out {
-		if ss := e.GetSceneSeen(); ss != nil {
-			t.Errorf("a scene the world no longer has must produce no SceneSeen at all, got %v", ss)
-		}
-	}
-
-	// And it is forgotten, so nothing re-fires it once the world moves on.
-	again := pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "quiet"}), gone)
-	for _, e := range again {
-		if ss := e.GetSceneSeen(); ss != nil {
-			t.Errorf("the scene was already forgotten and must stay silent, got %v", ss)
-		}
-	}
-}
+// THREE TESTS STOOD HERE AND LEFT WITH THE FORGETTING LOOP on 2026-08-31,
+// recorded rather than silently dropped because deleting a test deletes
+// coverage nothing else names:
+// TestASceneGoneFromTheWorldIsForgottenSILENTLY (a vanished scene produces no
+// SceneSeen at all), TestASceneThatComesBackIsUsableAgain (a scene re-created
+// under the same id arrives foldable) and
+// TestASceneThatComesBackBringsItsOpenDoorsBack (its `doors` half). All three
+// built a world that had LOST a scene by hand, because the only thing that
+// could take one away was an undo covering its SceneCreated.
+//
+// What they covered is now unreachable rather than untested, and the spec says
+// so on principle rather than by omission: 2026-08-30-retraction-leaves §5.3,
+// "There is no delete_scene — a scene is not in the world, it IS the world".
+// No arm of engine.Apply deletes from st.Scenes, seat.received only grows, and
+// engine.Apply rejects a second SceneCreated under a live id ("scene %q already
+// exists", pinned by internal/engine/apply_test.go's "duplicate scene id"
+// case). The day the world can lose a scene, transitions needs its forgetting
+// loop back and these three are the tests to restore with it.
 
 // twoRoomsMissing is twoRooms with ONE square's terrain removed — a legal
 // scene, since tiles are optional per square (Patrik's ruling 2026-08-13) and
@@ -1165,125 +1143,20 @@ func TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet(t *testing.T) {
 	}
 }
 
-// TestASceneThatComesBackIsUsableAgain pins what forgetting a vanished scene
-// actually has to mean, which is more than dropping its visible set.
-//
-// A scene id is CALLER-SUPPLIED (CreateScene.scene_id, passed straight through
-// convert.go), so re-creating one under the same id after an undo removed it is
-// ordinary, not exotic: the "scene %q already exists" check has nothing left to
-// collide with. When that happens the viewer's own fold has dropped the scene
-// too — EventsRetracted is forwarded to players — so everything the projection
-// then says about it lands on a scene they do not have. Both folds answer that
-// with a hard error, and client/src/session.ts re-folds its whole log on every
-// event, so the throw recurs forever.
-//
-// THE ASSERTION IS THAT THE BATCH FOLDS, not that some particular envelope
-// appears. That is the only thing the viewer cares about and the only thing
-// that cannot be satisfied by a stub: measured before the fix, the returning
-// scene produced a TokenPlaced and a SceneSeen and BOTH were unfoldable —
-// "token placed in unknown scene" and "scene seen for unknown scene" — because
-// pr.scenes still marked the scene introduced, so no introduction was re-sent.
-func TestASceneThatComesBackIsUsableAgain(t *testing.T) {
-	pr := gateway.NewProjector(player())
-	if lit := sceneSeenIn(firstPlace(pr, twoRooms()), "s"); lit == nil {
-		t.Fatal("the control fails: the projector must remember this room first")
-	}
-
-	// The world after an undo that took the scene and the tokens standing in it
-	// but left the actors — the shape a retraction has when the actors were
-	// created before the scene, which is the ordinary order. Isolating it that
-	// way keeps this test about the SCENE: pr.actors deliberately never forgets
-	// (see the Projector doc comment), so an undo reaching the actors as well is
-	// a separate gap one layer up, and not what this pins.
-	gone := engine.NewState()
-	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
-	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
-	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
-	mustApply(gone, 5, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
-		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
-	pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
-
-	// The same room again, which is what a re-created scene folds to.
-	out := pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "and rebuilt"}), twoRooms())
-
-	// A viewer who dropped the scene when they folded the retraction, and who
-	// still holds the actors it did not reach.
-	viewer := gone.Snapshot()
-	for _, e := range out {
-		if err := engine.Apply(viewer, e); err != nil {
-			t.Fatalf("a returning scene must arrive foldable, got %v", err)
-		}
-	}
-	if _, ok := viewer.Scenes["s"]; !ok {
-		t.Fatal("the viewer must end up holding the scene they are standing in again")
-	}
-	if n := len(viewer.Scenes["s"].Visible); n != 8 {
-		t.Errorf("and told the whole of what they can see of it, got %d squares", n)
-	}
-}
-
-// TestASceneThatComesBackBringsItsOpenDoorsBack pins the `doors` half of the
-// forgetting loop, which the foldability test above cannot: dropping only
-// `delete(pr.doors, id)` leaves every other test in this package green.
-//
-// It is the same defect TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen
-// guards for a first introduction, reached the other way round. A door's open
-// state travels in neither the redacted SceneCreated nor SceneSeen, so
-// doorTransitions is the only thing that can correct it — and it only emits
-// when the world disagrees with what the viewer is BELIEVED to think. Leave
-// that belief behind after the scene vanishes and a returning scene whose door
-// is still open matches it exactly, so nothing is emitted and the viewer is
-// re-introduced to a room with a door their board draws shut. It never
-// self-corrects, and the re-introduction is what guarantees that rather than
-// merely failing to help: the redacted SceneCreated rebuilds OpenDoors EMPTY in
-// both folds (apply.go's and fold.ts's SceneCreated arms), and after that only
-// the two door arms ever write it — so a DoorOpened that is never sent is a
-// door that stays shut for the rest of the session.
-func TestASceneThatComesBackBringsItsOpenDoorsBack(t *testing.T) {
-	open := func() *engine.State {
-		st := twoRooms()
-		mustApply(st, 8, &vttv1.DoorOpened{SceneId: "s", At: &vttv1.GridPosition{X: 3, Y: 1}})
-		return st
-	}
-	pr := gateway.NewProjector(player())
-	var believed bool
-	for _, e := range firstPlace(pr, open()) {
-		if e.GetDoorOpened() != nil {
-			believed = true
-		}
-	}
-	if !believed {
-		t.Fatal("the control fails: the viewer must be told the door is open the first time")
-	}
-
-	gone := engine.NewState()
-	mustApply(gone, 1, &vttv1.SessionStarted{Name: "n"})
-	mustApply(gone, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
-	mustApply(gone, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin"}})
-	mustApply(gone, 5, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
-		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
-	pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the scene is undone"}), gone)
-
-	var again bool
-	for _, e := range pr.Project(envelope(10, &vttv1.NarrationAdded{Text: "and rebuilt"}), open()) {
-		if d := e.GetDoorOpened(); d != nil && d.GetSceneId() == "s" {
-			again = true
-		}
-	}
-	if !again {
-		t.Error("a scene the viewer is being introduced to again must arrive with its " +
-			"doors open, not left shut by a belief that outlived the scene")
-	}
-}
-
 // bareCanvas is a scene that declares NO terrain: 3x3, two tokens, nothing
-// underfoot. Legal, and not degenerate — mapdef.CheckEverySquarePresent is
-// all-or-nothing (zero tiles passes; one tile means all must be present) and it
-// guards both the map-file path and the CreateScene command path, so this is
-// the shape a caller gets by simply not sending tiles. A token is a FREE OBJECT
-// that needs no terrain to stand on (Patrik's ruling 2026-08-22).
+// underfoot. Legal, and not degenerate: a token is a FREE OBJECT that needs no
+// terrain to stand on (Patrik's ruling 2026-08-22), and engine.Apply folds a
+// SceneCreated carrying no tiles without complaint.
+//
+// HOW A CALLER STILL REACHES IT, corrected 2026-09-01: through a map FILE, and
+// no longer by "simply not sending tiles" to create_scene.
+// mapdef.CheckEverySquarePresent is all-or-nothing (zero tiles passes; one tile
+// means all must be present) and it guards the file path, which is what keeps a
+// file authored before the format had terrain loading. The create_scene COMMAND
+// now calls mapdef.RequireEverySquarePresent instead — the same walk without
+// that opt-out — so it refuses a scene leaving any square undeclared (spec
+// 2026-08-30-retraction-leaves §6). This comment used to say the check guarded
+// both doors. It guards one, and the other is shut.
 func bareCanvas() *engine.State {
 	st := engine.NewState()
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
@@ -1989,55 +1862,183 @@ func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 	}
 }
 
-func TestARetractionReachesThePlayerWithoutItsReason(t *testing.T) {
-	// TWO rulings in one payload, pulling opposite ways.
-	//
-	// The RANGE must reach every seat: a retraction erases history, and a
-	// player who never receives it keeps folding an event the table has agreed
-	// did not happen. Skipping a sequence they never received is a no-op, so
-	// forwarding the numbers is free.
-	//
-	// The REASON must not. `EventsRetracted.reason` is free text supplied by
-	// whoever called Undo — "mis-keyed, the archer is at 19,8" is an ordinary
-	// thing to type — which is the note ruling's argument under a different
-	// message name (spec §4.4: a note can say anything).
+// TestARemovedTokenReachesAPlayerOnlyAsHidden pins classify's TokenRemoved
+// ruling (withheld): the raw event must never reach a player directly. The
+// transitions loop already narrates a token's disappearance as TokenHidden
+// for anyone who held it, whatever the cause — walked out of sight, its
+// actor lost every eye, or (here) removal — and forwarding the raw event too
+// would be a SECOND narration of the same disappearance, reaching this fold
+// AFTER TokenHidden has already deleted the token: "engine: removed unknown
+// token" — which through session.ts's re-fold-the-whole-log-on-every-event
+// is the permanent client freeze spec §8 names as the worst failure
+// available. engine.Apply is the SAME fold the client mirrors, so what it
+// refuses here is what a real client would refuse too.
+func TestARemovedTokenReachesAPlayerOnlyAsHidden(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
-	firstPlace(pr, st)
+	intro := firstPlace(pr, st)
 
-	in := envelope(8, &vttv1.EventsRetracted{FromSequence: 6, ToSequence: 6,
-		Reason: "mis-keyed: the archer is at 19,8"})
-	var got *vttv1.EventsRetracted
-	for _, e := range pr.Project(in, st) {
-		if r := e.GetEventsRetracted(); r != nil {
-			got = r
+	mustApply(st, 8, &vttv1.TokenRemoved{TokenId: "t-hero"})
+	out := pr.Project(envelope(8, &vttv1.TokenRemoved{TokenId: "t-hero"}), st)
+
+	var hidden bool
+	for _, e := range out {
+		if e.GetTokenRemoved() != nil {
+			t.Fatal("a removed token must reach a player as TokenHidden, never the raw TokenRemoved")
+		}
+		if h := e.GetTokenHidden(); h != nil && h.GetTokenId() == "t-hero" {
+			hidden = true
 		}
 	}
-	if got == nil {
-		t.Fatal("a retraction must reach every seat: withholding it leaves erased history standing")
-	}
-	if got.GetFromSequence() != 6 || got.GetToSequence() != 6 {
-		t.Errorf("the range is what makes a retraction work and must survive intact, got [%d,%d]",
-			got.GetFromSequence(), got.GetToSequence())
-	}
-	if got.GetReason() != "" {
-		t.Errorf("a retraction's free-text reason must not reach a player, got %q", got.GetReason())
-	}
-	// And the redaction is a COPY: editing the shared envelope in place would
-	// erase the reason from the DM's copy of history too.
-	if in.GetEventsRetracted().GetReason() == "" {
-		t.Error("the projection redacted the envelope it was handed instead of a copy of it")
+	if !hidden {
+		t.Fatal("want a synthesized TokenHidden for the player's own removed token")
 	}
 
-	// The DM's own stream keeps the reason, and by pointer: the identity
-	// projection is byte-for-byte what it is today (spec §3.1).
-	dm := gateway.NewProjector(gateway.Viewer{ParticipantID: "dm", Role: identity.RoleDM})
-	out := dm.Project(in, st)
-	if len(out) != 1 {
-		t.Fatalf("the DM's retraction must be the identity projection: one envelope, got %d", len(out))
+	// Folded from an empty state through EVERYTHING this player has been
+	// sent so far, exactly as TestAProjectedStreamFoldsCleanly does — intro
+	// first (the scene/actor/token introductions firstPlace produced), then
+	// this event's own output, in the order a real client would receive them.
+	viewerState := engine.NewState()
+	for i, e := range append(append([]*vttv1.Envelope{}, intro...), out...) {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
 	}
-	if out[0] != in {
-		t.Fatal("the DM keeps the reason, in the very envelope they were sent, not a copy")
+}
+
+// removeActorBatch projects the batch remove_actor emits — one TokenRemoved
+// per token of the actor, in token-id order, then the ActorRemoved — through
+// pr, folding each event into st first, exactly as the pump does. It returns
+// everything the viewer was sent, in order.
+//
+// The order is the handler's (gateway handleRemoveActor); reproducing it here
+// rather than asserting against a hand-picked single event is what makes these
+// tests about the REAL sequence a seat receives.
+func removeActorBatch(pr *gateway.Projector, st *engine.State, seq int64,
+	actorID string, tokenIDs []string) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, id := range tokenIDs {
+		mustApply(st, seq, &vttv1.TokenRemoved{TokenId: id})
+		out = append(out, pr.Project(envelope(seq, &vttv1.TokenRemoved{TokenId: id}), st)...)
+		seq++
+	}
+	mustApply(st, seq, &vttv1.ActorRemoved{ActorId: actorID})
+	return append(out, pr.Project(envelope(seq, &vttv1.ActorRemoved{ActorId: actorID}), st)...)
+}
+
+// TestARemovedActorReachesOnlyTheSeatThatHeldIt pins classify's ActorRemoved
+// ruling, and it is written to fail in BOTH directions, because an
+// exhaustiveness gate only asks whether an arm exists and never what it
+// returns (the Task 8 lesson).
+//
+// FORWARDED TO A SEAT THAT HELD THE ACTOR. Unlike a token's departure, an
+// actor's has no synthesized narration: pr.actors "never withdraws" and there
+// is no un-introduce message. Withholding it would leave the seat holding a
+// character that is not in the world, in its roster, for the rest of the
+// session — and, since the id can be added again, would eventually leave that
+// seat unable to fold its own stream.
+//
+// WITHHELD FROM A SEAT THAT NEVER HELD IT, for two reasons, and the first is
+// fatal on its own: their fold has no such actor, so the raw event fails with
+// "engine: removed unknown actor" — through session.ts's
+// re-fold-the-whole-log-on-every-event, the permanent freeze spec §8 names as
+// the worst failure available. And it would tell a player an actor they never
+// saw existed and was removed off-screen, which is the leak withheld exists to
+// prevent.
+func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	intro := firstPlace(pr, st)
+
+	// The GOBLIN first: this player has never seen it (it stands behind a
+	// closed door) and its removal must reach them as nothing at all.
+	unseen := removeActorBatch(pr, st, 8, "goblin", []string{"t-gob"})
+	for _, e := range unseen {
+		if e.GetActorRemoved() != nil {
+			t.Fatal("an actor this seat never held must not be announced as removed — it would name a creature they never saw")
+		}
+	}
+
+	// Then their OWN character, which they hold: this one they must be told
+	// about, or their roster keeps a character the world no longer has.
+	held := removeActorBatch(pr, st, 10, "hero", []string{"t-hero"})
+	var told bool
+	for _, e := range held {
+		if ar := e.GetActorRemoved(); ar != nil && ar.GetActorId() == "hero" {
+			told = true
+		}
+	}
+	if !told {
+		t.Fatal("want the raw ActorRemoved forwarded to a seat that holds the actor")
+	}
+
+	// And everything this seat was sent, from the introductions onward, folds
+	// through the SAME Apply the client mirrors — in the order it arrived.
+	viewerState := engine.NewState()
+	var stream []*vttv1.Envelope
+	stream = append(stream, intro...)
+	stream = append(stream, unseen...)
+	stream = append(stream, held...)
+	for i, e := range stream {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+}
+
+// TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh is the deliberate
+// answer to the question transitions' own comment left open: "nothing removes
+// an actor from the world today either. The day something does, both maps need
+// an answer chosen deliberately."
+//
+// pr.actors FORGETS an actor the world no longer has. It has to. engine.Apply
+// accepts an ActorAdded for an id whose actor was removed (the duplicate check
+// reads the CURRENT world), so the id can come back — and a projector that
+// still believed it had introduced it would skip the introduction while the
+// seat's own fold, which applied the forwarded ActorRemoved, no longer has the
+// actor at all. The next token to arrive for it is then "token placed for
+// unknown actor" on that seat, forever.
+func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	stream := firstPlace(pr, st)
+
+	stream = append(stream, removeActorBatch(pr, st, 8, "hero", []string{"t-hero"})...)
+
+	// The same id, added again — a fresh party member, granted to the same
+	// player, with a token of its own.
+	steps := []struct {
+		seq     int64
+		payload proto.Message
+	}{
+		{10, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "hero", Name: "Hero II",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}},
+		{11, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
+		{12, &vttv1.TokenPlaced{TokenId: "t-hero-2", SceneId: "s", ActorId: "hero",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}}},
+	}
+	mark := len(stream)
+	for _, step := range steps {
+		mustApply(st, step.seq, step.payload)
+		stream = append(stream, pr.Project(envelope(step.seq, step.payload), st)...)
+	}
+
+	var reintroduced bool
+	for _, e := range stream[mark:] {
+		if aa := e.GetActorAdded(); aa != nil && aa.GetActor().GetActorId() == "hero" {
+			reintroduced = true
+		}
+	}
+	if !reintroduced {
+		t.Fatal("want the reused actor id introduced again — the seat's own fold no longer has it")
+	}
+
+	viewerState := engine.NewState()
+	for i, e := range stream {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
 	}
 }
 
@@ -2607,5 +2608,152 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 		if e.GetNoteDeleted() != nil {
 			t.Error("deleting a note names the note, and must not reach a player either")
 		}
+	}
+}
+
+// --- the removal batch, as bytes both folds have to accept -------------------
+
+// removalBatchFixture is the seat's whole stream for the mixed-visibility
+// removal batch, shared with the TypeScript side.
+//
+// contract/testdata is the ONE directory both languages already read
+// (contract/roundtrip_test.go and contract/events.test.ts split every fixture
+// in it), which is why this lives there rather than beside either test.
+const removalBatchFixture = "../../contract/testdata/removal_batch_projected_stream.json"
+
+// removalBatchWorld is twoRooms with the goblin holding TWO tokens on opposite
+// sides of the closed door: t-gob at 2,1 in the hero's own room, t-gob-far at
+// 5,1 behind it. The seat is the hero's player, so it is SHOWN the goblin (and
+// therefore "holds" it, in classify's sense) while never learning that
+// t-gob-far exists at all.
+//
+// It is not twoRooms() itself because twoRooms puts the goblin's only token
+// behind the door: every seat there sees all of the goblin or none of it, and
+// the mixed case is the one nothing in this suite reaches.
+func removalBatchWorld() *engine.State {
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "goblin", Name: "Goblin", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 1}})
+	mustApply(st, 7, &vttv1.TokenPlaced{TokenId: "t-gob-far", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	return st
+}
+
+// projectRemovalBatchSeat replays this world to the hero's player and returns
+// everything that seat receives: the introductions carried by the first event
+// it is projected, then the three-envelope batch remove_actor emits.
+func projectRemovalBatchSeat(st *engine.State) []*vttv1.Envelope {
+	pr := gateway.NewProjector(player())
+	stream := pr.Project(envelope(7, &vttv1.TokenPlaced{TokenId: "t-gob-far",
+		SceneId: "s", ActorId: "goblin",
+		Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
+	return append(stream, removeActorBatch(pr, st, 9, "goblin",
+		[]string{"t-gob", "t-gob-far"})...)
+}
+
+// TestARemovalBatchProjectsToTheBytesBothFoldsRead is the pin the whole arc was
+// missing, and it is a REACH problem rather than a behaviour one: neither
+// remove_token nor remove_actor, and neither TokenRemoved nor ActorRemoved,
+// appears in any golden, any scenario, any soak action or any cmd/vtt e2e — so
+// fold-parity, projection-parity and the golden corpus have exactly zero
+// coverage of them, in either language. Whole-branch review 2026-09-01
+// established by hand that the two folds agree here; this is what keeps that
+// true tomorrow.
+//
+// THE MULTI-TOKEN PATH, specifically. removeActorBatch is called three times
+// elsewhere in this file and every one passes a ONE-element token slice, so
+// nothing walked a batch that is partly withheld — which is the only
+// interesting case, because it is where the seat's stream stops being a
+// prefix of the DM's.
+//
+// WHAT THE SEAT MUST RECEIVE, and why each is what it is:
+//
+//   - t-gob's removal as a synthesized TokenHidden, never the raw TokenRemoved
+//     (TestARemovedTokenReachesAPlayerOnlyAsHidden owns that ruling);
+//   - t-gob-far's removal as NOTHING AT ALL — the seat was never told the token
+//     existed, and "engine: removed unknown token" through session.ts's
+//     re-fold-the-whole-log is the permanent freeze spec §8 names as the worst
+//     failure available;
+//   - the raw ActorRemoved, because this seat WAS shown the goblin.
+//
+// The fixture is what the TypeScript half folds (client/test/
+// removal-batch-parity.test.ts), so the two languages are not folding two
+// hand-written copies of a stream: they fold the same bytes, and this test is
+// what keeps those bytes equal to what the projector really emits.
+func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
+	stream := projectRemovalBatchSeat(removalBatchWorld())
+
+	raw, err := os.ReadFile(removalBatchFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawEnvelopes []json.RawMessage
+	if err := json.Unmarshal(raw, &rawEnvelopes); err != nil {
+		t.Fatal(err)
+	}
+	want := make([]*vttv1.Envelope, 0, len(rawEnvelopes))
+	for i, one := range rawEnvelopes {
+		env := &vttv1.Envelope{}
+		if err := protojson.Unmarshal(one, env); err != nil {
+			t.Fatalf("fixture envelope %d: %v", i, err)
+		}
+		want = append(want, env)
+	}
+
+	// COMPARED WITH proto.Equal RATHER THAN BYTES, deliberately: protojson's
+	// output spacing is randomised per binary (two regimes, chosen by a hash
+	// of the build), so a byte comparison of re-marshalled output would fail
+	// on some builds and pass on others. The fixture is still the authority on
+	// content — it is just read as messages.
+	if len(stream) != len(want) {
+		t.Fatalf("the seat received %d envelopes, the fixture holds %d", len(stream), len(want))
+	}
+	for i := range want {
+		if !proto.Equal(stream[i], want[i]) {
+			t.Errorf("envelope %d differs\n got: %v\nwant: %v", i, stream[i], want[i])
+		}
+	}
+
+	// THE MIXED HALF, asserted by name so a fixture regenerated from a world
+	// where BOTH tokens were visible could not quietly pass the comparison
+	// above. t-gob-far must appear nowhere in this seat's stream: not placed,
+	// not hidden, not removed.
+	for i, e := range stream {
+		if b, err := protojson.Marshal(e); err == nil && strings.Contains(string(b), "t-gob-far") {
+			t.Errorf("envelope %d names t-gob-far, a token this seat was never shown: %s", i, b)
+		}
+	}
+
+	// AND IT FOLDS, through the same engine.Apply the client mirrors.
+	viewerState := engine.NewState()
+	for i, e := range stream {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	if _, ok := viewerState.Actors["goblin"]; ok {
+		t.Error("the goblin must be gone from the seat's own fold after the batch")
+	}
+	if _, ok := viewerState.Actors["hero"]; !ok {
+		t.Error("the seat's own character must survive another actor's removal")
+	}
+	for _, id := range []string{"t-gob", "t-gob-far"} {
+		if _, ok := viewerState.Tokens[id]; ok {
+			t.Errorf("%s must not be on the seat's board after the batch", id)
+		}
+	}
+	if _, ok := viewerState.Tokens["t-hero"]; !ok {
+		t.Error("the seat's own token must survive another actor's removal")
 	}
 }

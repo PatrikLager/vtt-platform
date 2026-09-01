@@ -15,7 +15,6 @@ this gate existing, and closing it took two passes.
 
 | file | before | survivors worked | adjudicated equivalent |
 |---|---|---|---|
-| `client/src/undo.ts` | 78.75% | 17 → 0 | 2 |
 | `client/src/fold.ts` | 69.51% | 93 → 0 | 14 |
 | `client/src/view/dm.ts` | 40.71% | 166 → 0 | 1 (+1 disabled in source) |
 | `client/src/player.ts` | 75.76% | 22 → 0 | 15 |
@@ -36,6 +35,16 @@ this gate existing, and closing it took two passes.
 | `client/src/view/camera.ts` | 100% lines | 1 → 0 | 0 |
 | `client/src/join.ts` | — | 0 | 0 |
 | `client/src/view/join.ts` | — | 0 | 0 |
+
+`client/src/undo.ts` HAD A ROW HERE — 78.75% before, 17 survivors worked to 0,
+2 adjudicated equivalents — until `d3e2f28` deleted the file (sub-project 13,
+spec `2026-08-30-retraction-leaves`; `133e896` took `campaign.Undo` on the Go
+side the same day). Its two entries left `tools/ts-mutation-equivalents.txt`
+with it. The measurement is
+kept in this sentence because it is part of the record of how the backlog was
+worked; it is out of the table because the table says what is GATED TODAY, and
+a row for a file `stryker.conf.json` cannot mutate reads as a gate that is
+still watching something. (Removed from the table 2026-09-01.)
 
 `client/src/main.ts` is the only file with no row, and it is the only file
 excluded from `mutate`: it is the browser entry point, wiring rather than
@@ -225,9 +234,11 @@ originals instead of replacing them, so both shipped and the vacuous copies
 still passed. Also caught: a toast test that asserted nothing because it
 delivered an inbound EVENT rather than a command result, so the code under test
 never ran; a test claiming to cover two `[...session.events]` spreads while
-asserting only narration text, which only the feed renders (the DM console uses
-its log for `lastUndoable`/`retractableRange`, so blanking it kills undo and no
-prose changes); and an `expect(...).not.toThrow()` around a dispatched DOM
+asserting only narration text, which only the feed renders (the DM console read
+that same log for the Undo group's own bounds, so blanking the spread killed
+undo and changed no prose — both that group and the functions it called are
+gone with `d3e2f28`, and the shape is recorded here rather than the names);
+and an `expect(...).not.toThrow()` around a dispatched DOM
 event, which **cannot fail** — happy-dom reports listener exceptions inside its
 own dispatch rather than propagating them.
 
@@ -275,8 +286,10 @@ Not everything was message-blanking. Three behaviours had no test at all:
   is stapled onto the next unrelated event — the DM appearing to describe
   something they did not.
 * **The DM console's confirmation.** Nothing drove `window.confirm`. The
-  closure could have been `() => undefined` — always falsy, so every undo
-  silently cancels — with the whole suite green.
+  closure could have been `() => undefined` — always falsy, so every guarded
+  action silently cancels — with the whole suite green. It guarded undo when
+  this was measured; `DMDeps.confirm` outlived it and now guards the join-link
+  rotation, which is the same defect if it is left undriven.
 
 ## A trap this cost an hour
 
@@ -291,6 +304,10 @@ becomes false" is wrong: 39:9 is the LEFT OPERAND, `best === null`, and the
 mutated line still assigns via the right operand. Hand-applying the reading
 rather than the actual mutant produced a suite failure and very nearly a bug
 report against Stryker.
+
+(That file is gone — `d3e2f28` deleted it — so the coordinate cannot be
+re-read today. The trap is kept because it is about how to READ a Stryker
+report, not about undo.ts, and it cost an hour once.)
 
 **Use the start AND end columns to disambiguate.** `auth.ts:37` has mutants
 spanning 12-34 (the whole condition, all killed) and 12-22 (`t === null` alone,

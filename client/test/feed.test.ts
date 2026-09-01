@@ -5,7 +5,6 @@ import {
   SessionStartedSchema,
   TokenMovedSchema,
   NarrationAddedSchema,
-  EventsRetractedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed } from "../src/view/feed";
@@ -74,21 +73,6 @@ test("in-character speech keeps its speaker", () => {
   expect(feed[0]!.narrations[0]!.as).toBe("Goblin Cutter");
 });
 
-test("retracted events disappear from the feed, and so does narration anchored to them", () => {
-  // The feed must agree with the fold. A retracted move that still showed in
-  // the story would have a spectator watching a beat the DM took back.
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 9, y: 9 }),
-    said(3, "A misstep, undone.", [2, 2]),
-    env(4, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 2n, toSequence: 3n, reason: "undo" }),
-    }),
-  ]);
-  expect(feed.map((e) => Number(e.seq))).toEqual([1]);
-});
-
 test("narration anchored to a sequence that is not present still shows", () => {
   // A spectator who connected mid-session has a truncated log. Dropping the
   // narration because its anchor is below their cursor would silently hide
@@ -96,17 +80,6 @@ test("narration anchored to a sequence that is not present still shows", () => {
   const feed = buildFeed([said(9, "Earlier, a bargain was struck.", [2, 2])]);
   expect(feed).toHaveLength(1);
   expect(feed[0]!.narrations[0]!.text).toBe("Earlier, a bargain was struck.");
-});
-
-test("the retraction marker itself is never rendered", () => {
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    env(2, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 1n, toSequence: 1n, reason: "undo" }),
-    }),
-  ]);
-  expect(feed).toHaveLength(0);
 });
 
 // --- anchor boundaries, grouping rules, and what the feed refuses to show ----
@@ -166,18 +139,16 @@ test("a half-specified anchor is treated as unanchored, not as a range from zero
   expect(feed.find((e) => Number(e.seq) === 4)!.narrations[0]!.text).toBe("other half");
 });
 
-test("a narration anchored only to RETRACTED events stands alone rather than vanishing", () => {
-  // A spectator who joined mid-session has a truncated log, and so does anyone
-  // reading after an undo. Dropping the narration would hide story; it is
-  // shown at its own sequence instead.
+test("a narration whose whole anchor range is MISSING stands alone rather than vanishing", () => {
+  // Kept, with its mechanism swapped: the range used to be emptied by a
+  // retraction and is now emptied by a truncated log, which is the only way
+  // left to empty one. The assertions are unchanged, including the one the
+  // neighbouring "still shows" test does not make — that the standalone
+  // entry carries NO events. Drop that and a narration could silently be
+  // stapled to a beat it does not describe.
   const feed = buildFeed([
     moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
     said(3, "About the move.", [2, 2]),
-    env(4, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 2n, toSequence: 2n, reason: "undo" }),
-    }),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 3]);
   expect(feed.find((e) => Number(e.seq) === 3)!.narrations[0]!.text).toBe("About the move.");
@@ -203,22 +174,6 @@ test("overlapping anchors resolve last-writer-wins", () => {
   expect(all).toContain("second claim");
 });
 
-test("a retraction range is inclusive at both ends", () => {
-  // Same rule the fold uses. Off by one at either end leaves a retracted event
-  // on screen, which is the visible half of an undo that did not fully happen.
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
-    moved(3, { x: 3, y: 3 }),
-    moved(4, { x: 4, y: 4 }),
-    env(5, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 2n, toSequence: 3n, reason: "undo" }),
-    }),
-  ]);
-  expect(feed.map((e) => Number(e.seq))).toEqual([1, 4]);
-});
-
 test("entries are ordered ascending even when the log arrives shuffled", () => {
   // buildFeed reads a Map's values, whose order is insertion order — which is
   // the order events were seen, not sequence order. The sort is what makes the
@@ -231,19 +186,6 @@ test("entries are ordered ascending even when the log arrives shuffled", () => {
     moved(5, { x: 5, y: 5 }),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 3, 5, 7, 9]);
-});
-
-test("a fully retracted log yields no entries at all", () => {
-  // The filter drops entries with neither events nor narration. Without it a
-  // retracted beat leaves an empty row behind.
-  const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    env(2, {
-      case: "eventsRetracted",
-      value: create(EventsRetractedSchema, { fromSequence: 1n, toSequence: 1n, reason: "undo" }),
-    }),
-  ]);
-  expect(feed).toEqual([]);
 });
 
 test("an anchor whose range is empty does not capture the next event after it", () => {

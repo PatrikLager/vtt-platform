@@ -136,51 +136,92 @@ is the direction this arc exists to close.
 
 ### What `session-zero` deliberately does NOT do
 
-**It never retracts an event that CAUSED an introduction**, and that is an
+**It never retracted an event that CAUSED an introduction**, and that was an
 exclusion rather than an oversight — the two look identical in a diff a year
-from now, so it is written down here rather than only in a task report.
+from now, so it was written down here rather than only in a task report. It is
+kept as a CLOSED record: sub-project 13 removed retraction from the platform
+outright (spec `2026-08-30-retraction-leaves`), so there is no longer a command,
+a marker, or a scenario step that could reach the shape below.
 
-Synthesized envelopes carry the sequence of the event that caused them
-(visibility spec §4.2), so retracting the event that first revealed a scene
-deletes the viewer's own `SceneCreated` for it. `transitions` then still emits an
-empty `SceneSeen` for that scene at the retraction's sequence — its union walk
-keeps a scene in play for one more step — and the recipient's fold rejects it
-with `scene seen for unknown scene`. Both folds are strict and
-`client/src/session.ts` re-folds its whole log on every event, so that is a
-permanent freeze rather than one bad frame.
+**What the hazard was.** Synthesized envelopes carry the sequence of the event
+that caused them (visibility spec §4.2), so retracting the event that first
+revealed a scene deleted the viewer's own `SceneCreated` for it. `transitions`
+then still emitted an empty `SceneSeen` for that scene at the retraction's
+sequence — its union walk keeps a scene in play for one more step — and the
+recipient's fold rejected it with `scene seen for unknown scene`. Both folds are
+strict and `client/src/session.ts` re-folds its whole log on every event, so that
+was a permanent freeze rather than one bad frame. Putting it into a scenario
+would have left the gate red on a design decision that belonged to whoever made
+it, not to a corpus entry.
 
-The defect is pre-existing, and `internal/gateway/project.go`'s `transitions` doc
-comment is where it is recorded — as the DANGLING-REFERENCE form, a later
-forwarded event about a retracted introduction failing with `moved unknown
-token`. The prediction "spec §4.3's keystone is where it is catchable" sits
-there, verbatim, and is correct.
+The corpus's own three retraction steps went with the platform's: two in
+`denials` that were authorization probes, refused before they reached a log, and
+`three-role-exit`'s, which landed. That one retracted an ordinary MOVE and folded
+cleanly, which is exactly what made the point above legible — retraction itself
+was never the hazard here, only a retraction landing on an event that CAUSED an
+introduction was.
 
-**Do not read the forgetting-loop comment further down that function as the same
-thing.** It contains the string `scene seen for unknown scene` too, which makes it
-look like the nearer match, and it is not: its case is an undo covering the
-`SceneCreated` ITSELF, its cause is `pr.scenes`/`pr.seen` outliving `st.Scenes`
-rather than an introduction stamped at a retracted sequence, and it says
-"Measured before this loop existed" — the loop directly beneath it **fixed** that
-case. Shared error string, different defect, already closed.
-
-Putting the shape above into this scenario would leave the gate red, and the fix
-is a design decision (a per-viewer pre-flight in `campaign.Undo`, or a different
-sequence for a synthesized introduction) that belongs to whoever makes it, not to
-a corpus entry. `three-role-exit` DOES retract, and the keystone folds it cleanly,
-because what it retracts is a MOVE.
+**Two things this section used to cite are gone**, said plainly so that the next
+reader does not go hunting for them. It quoted a prediction from `transitions`'
+doc comment ("spec §4.3's keystone is where it is catchable"), which was
+rewritten when retraction left the gateway on 2026-08-31; and it warned readers
+off the forgetting loop further down that same function, which shared the `scene
+seen for unknown scene` string while answering a different case. That loop was
+deleted the same day, because nothing removes a scene from the world — spec
+`2026-08-30-retraction-leaves` §5.3: there is no `delete_scene`.
 
 ### Deriving a projected golden
 
 `Explored` is unioned from each `sceneSeen`'s **`tiles` keys**, never from its
-`visible` list. `session-zero` carries one scene of each kind side by side so
-that the difference is a fixture rather than a sentence:
+`visible` list.
 
 - `ambush` declares terrain on all 180 of its squares, so its `Explored` grows
   to exactly the 36 squares the player can see.
-- `camp` declares none. It is a bare canvas, which is a legal scene and not a
-  degenerate one (spec §6.2: "a token is a FREE OBJECT and needs no terrain to
-  exist"), and its `Explored` therefore stays EMPTY however much of it is
-  visible — there is no terrain there to remember.
+- `camp` declares all 9 of its own, so its `Explored` is all 9 — the whole room
+  is in sight from where the healer stands.
+
+**THESE TWO NO LONGER DISCRIMINATE THE MECHANISM THEY ARE CITED FOR.** In all
+three of the corpus's `sceneSeen` the tile keys, the visible list and the
+explored set are now the same set of squares, key for key — so a fold that built
+`Explored` from `visible` instead of from `tiles` would reproduce every one of
+these fixtures exactly. They still pin what the projection SENDS; they no longer
+witness where `Explored` comes from. That property is pinned by constructed
+tests instead, named at the end of this section.
+
+**The bare-canvas half of that contrast is gone from this corpus, and it left
+on purpose.** `camp` used to declare NO terrain, and it sat beside `ambush` so
+that the "`Explored` comes from tiles, not from `visible`" rule was a fixture
+rather than a sentence: its `Explored` stayed EMPTY however much of it was
+visible. On 2026-09-01 `create_scene` began refusing a scene that leaves a
+square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall nobody
+declared is an invisible barrier*), and every scene in this corpus that a
+scenario CREATES is created by `create_scene`, so no fixture here can be a bare
+canvas any more. (Corrected 2026-09-01: this said *every* scene.
+`scenarios/adventure-night.json` issues only `loadAdventure`, and its scene
+comes from a map file — the very exemption the next paragraph names. That
+exemption is why the sentence needs the qualifier and not why it fails: an
+adventure's map file is authored, not typed into a form, and nothing in this
+corpus reaches the bare-canvas shape either way.)
+
+The rule did not change and the shape is still reachable — a map FILE may still
+omit tiles, which is the exemption that keeps files authored before
+maps-as-geometry loading, and spec §6.2's "a token is a FREE OBJECT and needs no
+terrain to exist" still holds. What changed is where the rule is pinned: it is
+CONSTRUCTED rather than exhibited, in three tests, each of which builds a
+`sceneSeen` that lists visible squares and carries no tiles and asserts
+`Explored` stays empty:
+
+- `internal/engine`'s `TestVisibleComesFromItsOwnFieldNotFromTheTiles`
+- `client/test/visibility.test.ts`'s "a token on a bare canvas is drawn" —
+  **pre-existing**, and it means the fixture was never the only cover
+- `client/test/fold-unit.test.ts`'s "a sceneSeen with visible squares and no
+  terrain remembers nothing" — added 2026-09-01 as the assertion-for-assertion
+  mirror of the Go one, because the other TS case is a DRAWING test that
+  happens to assert the property on its way elsewhere.
+
+MEASURED, after an earlier draft of this paragraph claimed the wrong number:
+injecting `Explored` follows `Visible` into `client/src/fold.ts`'s `sceneSeen`
+arm reds **two** tests across `client/test`, the last two above.
 
 `session-zero`'s sight is a rule rather than a table, which is what makes 36
 squares hand-derivable: a solid wall fills column `x=3` for the full height of
@@ -196,12 +237,16 @@ entry in the fixture.
 
 ## Coverage
 
-Eight scenarios, covering fifteen of the contract's command types — **a
-subset, not all of them.** "All fifteen" stood here until 2026-08-25: it was
-true when fifteen WAS the whole contract, and stayed on the page as the
-contract grew past it, turning a corpus statistic into a false completeness
-claim. The door, map and viewpoint commands have no golden. Derive the
-current gap by diffing the scenarios' command keys against
+Eight scenarios, covering a subset of the contract's command types, **not
+all of them.** "All fifteen" stood here until 2026-08-25: it was true when
+fifteen WAS the whole contract, and stayed on the page as the contract grew
+past it, turning a corpus statistic into a false completeness claim. Door,
+map, viewpoint, join-link and participant-promotion commands are among those
+with no golden today — examples, not the complete list. `retract_events` was
+listed here beside them for the days between sub-project 13 deleting the
+corpus's last retraction step and the same sub-project deleting the command
+itself: it is not a gap now, because it is not a command. Derive the current
+gap by diffing the scenarios' command keys against
 `contract/gen/tools/tools.json` rather than trusting a list written here,
 which is how this sentence went wrong in the first place.
 
@@ -229,9 +274,14 @@ onto a shared one, and revokes the set's HEAD so the mirror has to slide. Idempo
 revoking the last controller back to unowned are all in the same stream.
 
 `adventure-night` and `toy-brawl` roll dice, and are here because their event
-streams are shape-STABLE: the same events in the same order every run, with
-only the roll values differing (measured across repeated captures at 208 = 208
-and 178 = 178 lines). The drift gate masks dice-decided fields — `results`,
+streams are shape-STABLE: **the same events in the same order every run, with
+only the roll values differing.** That invariant is the claim; a line count is
+not, and one used to stand here as if it were ("208 = 208 and 178 = 178",
+measured across repeated captures before 2026-08-25). It was falsified by an
+edit that had nothing to do with dice — `toy-brawl/stream.json` went 202 to 279
+lines on 2026-09-01 when its scene declared its terrain. Compare a fresh capture
+against the committed file, which is what the drift gate does; do not compare
+either against a number written here. The drift gate masks dice-decided fields — `results`,
 `total`, `outcomeSummary`, `delta`, `newValue`, `outcome` — on BOTH sides of
 its comparison, so everything else is still checked: event order, sequences,
 which events are emitted, and every non-dice field. The committed streams keep
@@ -245,8 +295,13 @@ that emits it.
 ### goblin-fight is deliberately absent
 
 Not for want of trying. Its stream differs in SHAPE between runs — **519 vs
-507 lines**, measured — because a miss emits fewer events than a hit, and no
-masking of values can make two different event sequences comparable. Including
+507 lines**, measured on the 2026-08-25 corpus — because a miss emits fewer
+events than a hit, and no masking of values can make two different event
+sequences comparable. (Those two figures are a dated observation and no longer
+the numbers a fresh run prints: on 2026-09-01 the scenario's grid went from
+32x32 to **31x3** so it could declare every square, which `create_scene` now
+requires, and its `sceneCreated` grew 93 tiles. Nothing about the shape
+instability changed — re-measure rather than trusting the pair.) Including
 it would mean either a permanently-red drift gate or an exemption that hides
 real drift.
 

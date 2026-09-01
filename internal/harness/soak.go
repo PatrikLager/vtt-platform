@@ -84,7 +84,7 @@ type SoakReport struct {
 	Checkpoints int
 	// Counts is a per-action-kind draw count (the mix-ratio bookkeeping):
 	// keys are this package's soakAction string values ("createScene",
-	// "addActor", "placeToken", "moveOwn", "sessionChurn", "retraction",
+	// "addActor", "placeToken", "moveOwn", "sessionChurn",
 	// "deniedAttempt").
 	Counts map[string]int
 	// Pass is true iff every checkpoint's fold-equality held AND no action
@@ -144,17 +144,23 @@ const (
 	actionPlaceToken    soakAction = "placeToken"
 	actionMoveOwn       soakAction = "moveOwn"
 	actionSessionChurn  soakAction = "sessionChurn"
-	actionRetraction    soakAction = "retraction"
 	actionDeniedAttempt soakAction = "deniedAttempt"
 )
 
 // pickBucket maps a uniform [0,1) draw to a mix bucket per task-5-brief.md's
-// action mix — create scene 5%, add actor 10%, place 15%, move-own 50%,
-// session churn 5%, retraction 10%, deliberate authz-denied 5% (summing to
-// 100%). A pure function of r: RunSoak's own same-seed-twice determinism
-// obligation depends on every draw consulting nothing but the rng stream and
-// the model state accumulated so far, never wall-clock or map-iteration
-// order.
+// action mix, with retraction's freed 10% folded into move-own
+// (Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md,
+// commit 92f1284, ADJUDICATED: giving it to
+// the bucket two tests key off by name — Counts[deniedAttempt] and
+// Denied == Counts[deniedAttempt], both in soak_test.go and
+// cmd/vtt/client_e2e_test.go — rather than letting the default arm absorb
+// it, which would have tripled the deliberate authz-denied share from 5% to
+// 15% and changed what the soak measures) — create scene 5%, add actor 10%,
+// place 15%, move-own 60%, session churn 5%, deliberate authz-denied 5%
+// (summing to 100%). A pure function of r: RunSoak's own same-seed-twice
+// determinism obligation depends on every draw consulting nothing but the
+// rng stream and the model state accumulated so far, never wall-clock or
+// map-iteration order.
 func pickBucket(r float64) soakAction {
 	switch {
 	case r < 0.05:
@@ -163,12 +169,10 @@ func pickBucket(r float64) soakAction {
 		return actionAddActor
 	case r < 0.30:
 		return actionPlaceToken
-	case r < 0.80:
+	case r < 0.90:
 		return actionMoveOwn
-	case r < 0.85:
-		return actionSessionChurn
 	case r < 0.95:
-		return actionRetraction
+		return actionSessionChurn
 	default:
 		return actionDeniedAttempt
 	}
@@ -266,25 +270,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	var pending []*deniedPending
 
 	for i := 0; i < cfg.Events; i++ {
-		// planRetraction's eligibility pool reads the agent's own observed
-		// history (wire-only knowledge — see its doc comment), but that
-		// history is appended by a background goroutine racing this loop
-		// (histories.start): without waiting for it to have caught up to
-		// the last CONFIRMED accepted sequence first, the exact set of
-		// envelopes visible here would depend on goroutine-scheduling
-		// timing rather than purely on prior actions' results — breaking
-		// RunSoak's same-seed-twice determinism obligation (nothing new can
-		// have been broadcast beyond lastAcceptedSeq yet, since this loop
-		// never issues two commands concurrently, so waiting for exactly
-		// that sequence yields a stable, deterministic snapshot).
-		if lastAcceptedSeq > 0 {
-			if !histories.waitFor(soakAgent, lastAcceptedSeq, observeTimeout) {
-				rep.Pass = false
-				fmt.Fprintf(report, "[action %d] FAIL: agent history never caught up to sequence %d within %s (planRetraction's eligibility snapshot may be stale)\n", i, lastAcceptedSeq, observeTimeout)
-			}
-		}
-		agentHistory := histories.snapshot(soakAgent)
-		step := model.planStep(rng, cfg.IDs, agentHistory)
+		step := model.planStep(rng, cfg.IDs)
 		step.cmd.RequestId = fmt.Sprintf("soak-%d", i)
 
 		conn, ok := conns[step.issuer]
@@ -696,9 +682,17 @@ func statesEqual(a, b *engine.State) bool {
 // that falls behind for 256 envelopes gets torn down with
 // ErrEventsOverflow). This serves three purposes at once: it is what keeps
 // every one of the four long-lived connections drained (never overflowing)
-// across a long run; it is the "own observed events" source
-// planRetraction's wire-only eligibility pool reads (agent's history); and
-// it is the checkpoint's "incremental" side (the observer's history).
+// across a long run; it is the checkpoint's "incremental" side (the
+// observer's history); and it is the evidence base for the denial-leak
+// accounting RunSoak's main loop runs around every denied/accepted step —
+// lengths and leakedBelow read a point-in-time snapshot for the "did
+// anything land below the witness sequence" proof, grewSince and settle
+// read it again for the trailing-denial and projected-seat cases, and
+// waitAllCaughtUp blocks on it directly — none of which has any source
+// other than this type (fix round 1: the omission of this third purpose
+// from this comment predates Task 4 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md (commit 92f1284)
+// and is fixed here, not merely re-derived down to two).
 type soakHistories struct {
 	mu   sync.Mutex
 	data map[string][]*vttv1.Envelope
@@ -857,8 +851,12 @@ func (h *soakHistories) waitAllCaughtUp(names []string, seq int64, timeout time.
 // closure that commits this step's bookkeeping into the model. RunSoak
 // calls apply ONLY after confirming the wire actually accepted the command
 // (result.Ok), so the model never assumes success ahead of the ground truth
-// the server returns (the same discipline internal/campaign/property_test.go's
-// doUndo uses for its own not-guaranteed-to-succeed action).
+// the server returns. internal/campaign/property_test.go's doUndo held the
+// same discipline for its own not-guaranteed-to-succeed action — it marked a
+// sequence retracted only after campaign.Undo returned success — and that is a
+// RECORD rather than a live cross-reference: the action and the method left
+// with retraction on 2026-08-31, and no sibling in that file replaces it
+// (doDeleteNote untracks its key BEFORE appending, which is the opposite).
 type soakStep struct {
 	issuer     string
 	cmd        *vttv1.ClientCommand
@@ -903,10 +901,6 @@ type soakModel struct {
 	// is what keeps a grant from ever being planned against an actor the
 	// server has not accepted yet.
 	pendingGrant *soakGrant
-
-	// retracted marks sequences already retracted, so planRetraction never
-	// offers the same one twice.
-	retracted map[int64]bool
 }
 
 // soakGrant is one owed grant: who issues it, over which actor, to which
@@ -927,7 +921,6 @@ func newSoakModel() *soakModel {
 		tokenActor:            map[string]string{},
 		tokenPos:              map[string][2]int32{},
 		playerControlledActor: map[string]bool{},
-		retracted:             map[int64]bool{},
 	}
 }
 
@@ -938,13 +931,10 @@ func (m *soakModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.act
 // (bucket-dependent) zero or more further rng draws to pick WHICH
 // scene/actor/token/participant — the same draw sequence, given the same
 // model state, on every call with the same seed (RunSoak's own determinism
-// obligation). agentHistory is a point-in-time snapshot of every envelope
-// the "agent" participant has ITSELF observed over the wire (planRetraction's
-// "own observed events, wire-only knowledge" requirement) — never the
-// model's a priori bookkeeping. When a bucket's precondition isn't met
-// (nothing to place on top of, no tokens to move, nothing eligible to
-// retract or deny), this falls back to addActor — always valid — the same
-// "guarantee forward progress" shape property_test.go's step() uses.
+// obligation). When a bucket's precondition isn't met (nothing to place on
+// top of, no tokens to move, nothing eligible to deny), this falls back to
+// addActor — always valid — the same "guarantee forward progress" shape
+// property_test.go's step() uses.
 //
 // ONE DRAW IS NOT ALWAYS ONE BUCKET, as of 2026-08-24. An owed grant is
 // issued FIRST and consumes no rng at all, so the bucket that would have been
@@ -953,7 +943,7 @@ func (m *soakModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.act
 // is the second half of one act rather than an action of its own — a bucket of
 // its own would have to be given a share of a mix that is tuned, and would
 // then fire on runs where no assignment is owed.
-func (m *soakModel) planStep(rng *rand.Rand, ids map[string]string, agentHistory []*vttv1.Envelope) soakStep {
+func (m *soakModel) planStep(rng *rand.Rand, ids map[string]string) soakStep {
 	if step, ok := m.planPendingGrant(); ok {
 		return step
 	}
@@ -972,10 +962,6 @@ func (m *soakModel) planStep(rng *rand.Rand, ids map[string]string, agentHistory
 		}
 	case actionSessionChurn:
 		return m.planSessionChurn(rng)
-	case actionRetraction:
-		if step, ok := m.planRetraction(rng, agentHistory); ok {
-			return step
-		}
 	case actionDeniedAttempt:
 		if step, ok := m.planDeniedAttempt(rng); ok {
 			return step
@@ -1009,8 +995,30 @@ func (m *soakModel) planCreateScene(rng *rand.Rand) soakStep {
 	m.sceneN++
 	id := fmt.Sprintf("soak-scn-%d", m.sceneN)
 	issuer := pickDMOrAgent(rng)
+	// EVERY square declared, because create_scene refuses a grid with an
+	// undeclared one (internal/gateway's validateCreateSceneTerrain, via
+	// mapdef.RequireEverySquarePresent). All floor: the soak's moveOwn draws
+	// a target anywhere in the grid and expects it to be reachable, so a wall
+	// here would turn a legitimate move into a denial the invariant does not
+	// account for.
+	//
+	// AND soakSceneGridSize IS NOW A WIRE-SIZE DECISION, which it was not
+	// before terrain became mandatory. 30x30 = 900 squares marshals to about
+	// 22.9 KB against internal/gateway's maxWSFrameBytes = 32768 — roughly 70%
+	// of the frame the gateway will read. Raising it is no longer free:
+	// past ~1200 squares the command exceeds that limit and is dropped inside
+	// conn.Read, which presents as a torn connection rather than a refusal,
+	// and the soak would fail in a way that looks like a keepalive bug. See
+	// client/src/commands.ts's maxCreateSceneSquares for the measured table.
+	tiles := make(map[string]*vttv1.TileRef, soakSceneGridSize*soakSceneGridSize)
+	for y := int32(0); y < soakSceneGridSize; y++ {
+		for x := int32(0); x < soakSceneGridSize; x++ {
+			tiles[fmt.Sprintf("%d,%d", x, y)] = &vttv1.TileRef{Kind: "floor"}
+		}
+	}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 		SceneId: id, Name: id, GridWidth: soakSceneGridSize, GridHeight: soakSceneGridSize,
+		Tiles: tiles,
 	}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionCreateScene, apply: func(int64) {
 		m.scenes = append(m.scenes, id)
@@ -1176,10 +1184,12 @@ func (m *soakModel) planMoveOwn(rng *rand.Rand) (soakStep, bool) {
 	// Task 6 a coordinate outside it is a real, gateway-enforced "outside
 	// the grid" refusal for a player-issued move (engine.State.Blocked).
 	// Drawing outside that range would make moveOwn an accidental second
-	// source of denial — this generator does not model terrain at all
-	// (no scene it builds ever sets Tiles), so bounds are the only way
-	// moveOwn could ever be blocked, and a well-formed client never sends a
-	// destination its own scene cannot contain.
+	// source of denial. Every square of every soak scene is FLOOR — since
+	// terrain became mandatory, planCreateScene above fills the whole grid,
+	// and it fills it with floor precisely so that terrain is never a reason
+	// a move is refused — so bounds are the only way moveOwn could ever be
+	// blocked, and a well-formed client never sends a destination its own
+	// scene cannot contain.
 	x, y := int32(rng.Intn(int(soakSceneGridSize))), int32(rng.Intn(int(soakSceneGridSize)))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
@@ -1197,36 +1207,6 @@ func (m *soakModel) planSessionChurn(rng *rand.Rand) soakStep {
 	}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionSessionChurn, apply: func(int64) { m.sessionOpen = false }}
-}
-
-// planRetraction picks a random SAFE TokenMoved sequence from the agent's
-// OWN observed wire history (agentHistory — never the model's a priori
-// bookkeeping, per the brief's "wire-only knowledge; P1" requirement) that
-// hasn't already been retracted. Every candidate is safe unconditionally:
-// retracting a single TokenMoved never orphans anything a later event
-// depends on (unlike, say, a SessionEnded a later SessionStarted needs) —
-// campaign.Undo's own dry-run viability check (internal/campaign/campaign.go)
-// backs this, so — unlike internal/campaign/property_test.go's doUndo, which
-// must tolerate rejection for its GENERIC any-non-marker-sequence
-// eligibility pool — this generator never needs to handle a retraction
-// rejection as anything but a framework-level surprise.
-func (m *soakModel) planRetraction(rng *rand.Rand, agentHistory []*vttv1.Envelope) (soakStep, bool) {
-	var candidates []int64
-	for _, env := range agentHistory {
-		if _, ok := env.Payload.(*vttv1.Envelope_TokenMoved); ok && !m.retracted[env.Sequence] {
-			candidates = append(candidates, env.Sequence)
-		}
-	}
-	if len(candidates) == 0 {
-		return soakStep{}, false
-	}
-	seq := candidates[rng.Intn(len(candidates))]
-	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-		FromSequence: seq, ToSequence: seq, Reason: "soak retraction",
-	}}}
-	return soakStep{issuer: soakAgent, cmd: cmd, kind: actionRetraction, apply: func(int64) {
-		m.retracted[seq] = true
-	}}, true
 }
 
 // planDeniedAttempt picks a random player and a token NOT controlled by

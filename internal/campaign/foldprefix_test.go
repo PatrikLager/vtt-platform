@@ -1,6 +1,7 @@
 package campaign_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,18 @@ func drainLog(t *testing.T, c *campaign.Campaign, want int) []*vttv1.Envelope {
 		}
 	}
 	return out
+}
+
+// seqLog stamps a hand-built slice with contiguous sequences 1..n, the way
+// the store would have. The fold reads env.Sequence for its error messages
+// and several arms write it into state (SessionStarted's StartSeq,
+// SessionEnded's EndSeq), so an unstamped slice is not the log this test
+// claims to be folding.
+func seqLog(envs ...*vttv1.Envelope) []*vttv1.Envelope {
+	for i, e := range envs {
+		e.Sequence = int64(i + 1)
+	}
+	return envs
 }
 
 // TestFoldPrefixIsTheStateThatPrefixProduced pins the contract the gateway's
@@ -88,42 +101,49 @@ func TestFoldPrefixIsTheStateThatPrefixProduced(t *testing.T) {
 	}
 }
 
-// TestFoldPrefixHonoursARetractionInsideThePrefix is the half a streaming
-// re-application of events cannot do, and the reason FoldPrefix exists at all
-// rather than "apply each envelope as it arrives".
+// TestFoldPrefixRefusesALogThatDoesNotReplay pins the fold's OTHER answer, and
+// the one a seat's safety rests on: an envelope that engine.Apply rejects for
+// any reason other than an unknown variant aborts the whole fold with an error
+// naming the sequence, and returns NO state.
 //
-// A retraction is retroactive: the marker lands at head and removes a range
-// that was folded long before it. Only a fold that sees the WHOLE prefix
-// before it applies anything can honour that, which is exactly the two-pass
-// shape foldEvents already has.
-func TestFoldPrefixHonoursARetractionInsideThePrefix(t *testing.T) {
-	c := openTemp(t)
-	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "n"}))
-	must(t, c, cenv(nextID(), &vttv1.SceneCreated{
-		SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10,
-	}))
-	must(t, c, cenv(nextID(), &vttv1.ActorAdded{
-		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero"},
-	}))
-	must(t, c, cenv(nextID(), &vttv1.TokenPlaced{
-		TokenId: "t1", SceneId: "scn", ActorId: "a1",
-		Position: &vttv1.GridPosition{X: 3, Y: 7},
-	}))
-	moved := must(t, c, cenv(nextID(), &vttv1.TokenMoved{
-		TokenId: "t1", SceneId: "scn",
-		From: &vttv1.GridPosition{X: 3, Y: 7},
-		To:   &vttv1.GridPosition{X: 5, Y: 8},
-	}))
-	if _, err := c.Undo(moved, moved, "misclick", nextID(), "dm", "p-dm"); err != nil {
-		t.Fatalf("undo the move: %v", err)
-	}
+// NO STATE IS THE LOAD-BEARING HALF. internal/gateway/seat.go's receive FAILS
+// CLOSED on this error — a fold that does not replay means the connection
+// cannot be told what it may see, so nothing is forwarded. A partial state
+// returned alongside the error would let a caller that checks only the state
+// judge a viewer against a world built from half a log.
+//
+// AFTER-THE-FACT, so each of its three load-bearing assertions was proven by a
+// separate injection into foldEvents' corrupt-log return (ADR-009 §3), run and
+// reverted 2026-08-31:
+//
+//   - replaced by `continue` — fails on "want an error folding a log whose
+//     second event moves a token nothing placed";
+//   - `return st, ...` instead of `return nil, ...` — fails on "want no state
+//     alongside the error", printing the half-built state;
+//   - the sequence dropped from the message — fails on "the error must name the
+//     sequence that failed", printing `campaign: corrupt log: engine: moved
+//     unknown token "ghost"`.
+//
+// It replaces the coverage TestUndoRejectsRetractionThatBreaksReplay gave this
+// branch: that test reached it through Undo's dry run, and went with Undo.
+func TestFoldPrefixRefusesALogThatDoesNotReplay(t *testing.T) {
+	log := seqLog(
+		cenv(nextID(), &vttv1.SessionStarted{Name: "n"}),
+		cenv(nextID(), &vttv1.TokenMoved{
+			TokenId: "ghost", SceneId: "scn",
+			From: &vttv1.GridPosition{X: 1, Y: 1},
+			To:   &vttv1.GridPosition{X: 2, Y: 2},
+		}),
+	)
 
-	log := drainLog(t, c, 6)
-	whole, err := campaign.FoldPrefix(log)
-	if err != nil {
-		t.Fatalf("FoldPrefix over a log with a retraction: %v", err)
+	st, err := campaign.FoldPrefix(log)
+	if err == nil {
+		t.Fatal("want an error folding a log whose second event moves a token nothing placed")
 	}
-	if tok := whole.Tokens["t1"]; tok.X != 3 || tok.Y != 7 {
-		t.Fatalf("a retracted move must not be folded: t1 at (%d,%d), want (3,7)", tok.X, tok.Y)
+	if st != nil {
+		t.Fatalf("want no state alongside the error, got %+v", st)
+	}
+	if !strings.Contains(err.Error(), "seq 2") {
+		t.Errorf("the error must name the sequence that failed, got %q", err.Error())
 	}
 }

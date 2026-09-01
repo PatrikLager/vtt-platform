@@ -25,10 +25,12 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
+	case *vttv1.TokenRemoved:
+		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.ActorRemoved:
+		e.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
 	case *vttv1.AttackRolled:
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.AbilityUsed:
 		e.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
 	case *vttv1.ResourceChanged:
@@ -118,6 +120,188 @@ func TestSceneActorTokenLifecycle(t *testing.T) {
 	}
 	if st.Sessions[0].EndSeq != 0 {
 		t.Fatalf("want open session (EndSeq 0), got EndSeq %d", st.Sessions[0].EndSeq)
+	}
+}
+
+// TestTokenRemoved pins the success path of the retraction-leaves Task 8
+// arm: removal means "no longer part of the world going forward" (spec
+// 2026-08-30-retraction-leaves-design §5.1), which for the fold means the
+// token is gone from st.Tokens after Apply returns nil — the same
+// forward-only shape TokenHidden's projection-only removal has, but here it
+// is a REAL event that reaches the log and every fold, not a per-viewer
+// projection.
+func TestTokenRemoved(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
+	})))
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{
+		TokenId:  "t1",
+		SceneId:  "scn",
+		ActorId:  "a1",
+		Position: &vttv1.GridPosition{X: 3, Y: 7},
+	})))
+
+	must(t, engine.Apply(st, env(5, &vttv1.TokenRemoved{TokenId: "t1"})))
+
+	if _, ok := st.Tokens["t1"]; ok {
+		t.Fatal("want token t1 gone from state after TokenRemoved")
+	}
+	// The scene and actor are UNTOUCHED: removing a token takes the piece off
+	// the board, nothing more.
+	if _, ok := st.Scenes["scn"]; !ok {
+		t.Fatal("want scene scn to survive a token removal")
+	}
+	if _, ok := st.Actors["a1"]; !ok {
+		t.Fatal("want actor a1 to survive a token removal")
+	}
+}
+
+// TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording pins the EXACT
+// error text for removing a token that does not exist, in the same words
+// TokenMoved's own unknown-token error already uses ("engine: moved unknown
+// token %q" -> "engine: removed unknown token %q") — Task 8 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md, whose own
+// requirement: "Removing a token that does not exist must fail... in the same
+// words the codebase already uses for an unknown token."
+func TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording(t *testing.T) {
+	st := seedScene(t)
+
+	err := engine.Apply(st, env(3, &vttv1.TokenRemoved{TokenId: "ghost"}))
+	if err == nil {
+		t.Fatal("want error removing an unknown token")
+	}
+	want := `engine: removed unknown token "ghost"`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// TestActorRemoved pins the success path of the retraction-leaves Task 9 arm:
+// an actor leaves the world going forward (spec §5.2), which for the fold
+// means it is gone from st.Actors after Apply returns nil.
+//
+// AND NOTHING ELSE GOES WITH IT. The arm removes ONE actor: the scene stays,
+// other actors stay, and — the half this test exists for — a token belonging
+// to a DIFFERENT actor is untouched. The cascade that takes this actor's own
+// tokens off the board is the COMMAND's (gateway handleRemoveActor emits a
+// TokenRemoved per token ahead of this event); duplicating it here would put
+// the rule in two places and make the batch do the work twice.
+func TestActorRemoved(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero"},
+	})))
+	must(t, engine.Apply(st, env(4, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin"},
+	})))
+	must(t, engine.Apply(st, env(5, &vttv1.TokenPlaced{
+		TokenId: "t2", SceneId: "scn", ActorId: "a2",
+		Position: &vttv1.GridPosition{X: 1, Y: 1},
+	})))
+
+	must(t, engine.Apply(st, env(6, &vttv1.ActorRemoved{ActorId: "a1"})))
+
+	if _, ok := st.Actors["a1"]; ok {
+		t.Fatal("want actor a1 gone from state after ActorRemoved")
+	}
+	if _, ok := st.Actors["a2"]; !ok {
+		t.Fatal("want actor a2 to survive another actor's removal")
+	}
+	if _, ok := st.Tokens["t2"]; !ok {
+		t.Fatal("want a2's token t2 to survive a1's removal — the arm removes one actor, nothing else")
+	}
+	if _, ok := st.Scenes["scn"]; !ok {
+		t.Fatal("want scene scn to survive an actor removal")
+	}
+}
+
+// TestActorRemovedTakesItsConditionsWithIt pins the ONE other thing keyed by
+// an actor id. st.Conditions is a sibling map for storage reasons only — a
+// condition is a fact ABOUT the actor, no different from its controller_ids
+// (a field on vttv1.Actor, which departs with the actor because it is part of
+// it), and no event addresses one independently of its actor.
+//
+// LEAVING THEM IS A FREEZE, not untidiness, and this test measures that rather
+// than asserting an empty map: engine.Apply accepts an ActorAdded for an id
+// whose actor was removed, so the id can come back — and a ghost condition
+// would make the FIRST ConditionApplied on the new actor a duplicate ("already
+// applied to actor"), which on a client is permanent.
+func TestActorRemovedTakesItsConditionsWithIt(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero"}})))
+	must(t, engine.Apply(st, env(4, &vttv1.ConditionApplied{ActorId: "a1", ConditionId: "prone"})))
+	must(t, engine.Apply(st, env(5, &vttv1.ActorRemoved{ActorId: "a1"})))
+
+	if got := st.Conditions["a1"]; len(got) != 0 {
+		t.Fatalf("want no conditions left for a removed actor, got %v", got)
+	}
+	// The measurement: the id comes back, and the same condition applies
+	// cleanly to the new actor.
+	must(t, engine.Apply(st, env(6, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero II"}})))
+	must(t, engine.Apply(st, env(7, &vttv1.ConditionApplied{ActorId: "a1", ConditionId: "prone"})))
+}
+
+// TestActorRemovedUnknownActorErrorMatchesTokenRemovedWording pins the EXACT
+// error text for removing an actor that does not exist, in the same words
+// TokenRemoved's own unknown-subject error already uses ("engine: removed
+// unknown token %q" -> "engine: removed unknown actor %q").
+func TestActorRemovedUnknownActorErrorMatchesTokenRemovedWording(t *testing.T) {
+	st := seedScene(t)
+
+	err := engine.Apply(st, env(3, &vttv1.ActorRemoved{ActorId: "nobody"}))
+	if err == nil {
+		t.Fatal("want error removing an unknown actor")
+	}
+	want := `engine: removed unknown actor "nobody"`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// TestActorRemovedRefusesWhileOneOfItsTokensStillStands is what makes
+// "accepted or rejected atomically" mean something for remove_actor.
+//
+// The gateway builds the batch from a SNAPSHOT of campaign state and
+// campaign.AppendBatch takes the lock afterwards, so a place_token that lands
+// in between would otherwise leave an ActorRemoved whose actor still has a
+// token — a world where the projection's own arrival loop synthesizes a
+// TokenPlaced naming an actor nobody can introduce, which both folds refuse
+// ("token placed for unknown actor") and which through session.ts's
+// re-fold-the-whole-log is the permanent freeze this arc exists to prevent.
+// Refusing HERE turns that race into a clean batch rejection, because
+// AppendBatch validates by folding.
+//
+// The first token in id order is named, so the message is deterministic
+// whatever order the map iterates.
+func TestActorRemovedRefusesWhileOneOfItsTokensStillStands(t *testing.T) {
+	st := seedScene(t)
+
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero"},
+	})))
+	for i, id := range []string{"t-z", "t-a"} {
+		must(t, engine.Apply(st, env(int64(4+i), &vttv1.TokenPlaced{
+			TokenId: id, SceneId: "scn", ActorId: "a1",
+			Position: &vttv1.GridPosition{X: int32(i), Y: 0},
+		})))
+	}
+
+	err := engine.Apply(st, env(6, &vttv1.ActorRemoved{ActorId: "a1"}))
+	if err == nil {
+		t.Fatal("want error removing an actor whose tokens are still on the board")
+	}
+	want := `engine: actor "a1" still has token "t-a" on the board — a token cannot outlive its actor`
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+	// VALIDATED BEFORE MUTATING, which is Apply's own promise: a refused
+	// event leaves the world exactly as it was.
+	if _, ok := st.Actors["a1"]; !ok {
+		t.Fatal("want actor a1 still present after the refusal")
 	}
 }
 
@@ -696,23 +880,6 @@ func TestNoteDeletedAccept(t *testing.T) {
 
 	if _, ok := st.Notes["town-hollowreach"]; ok {
 		t.Fatal("want note town-hollowreach absent after delete")
-	}
-}
-
-func TestEventsRetractedIsNoOpInline(t *testing.T) {
-	st := seedScene(t)
-	before := st.Snapshot()
-
-	err := engine.Apply(st, env(3, &vttv1.EventsRetracted{
-		FromSequence: 1, ToSequence: 2, Reason: "mistake",
-	}))
-	if err != nil {
-		t.Fatalf("want nil error, got %v", err)
-	}
-
-	after := st.Snapshot()
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("EventsRetracted must not mutate state in-line")
 	}
 }
 

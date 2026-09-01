@@ -3,7 +3,6 @@ package campaign_test
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -41,8 +40,6 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.AttackRolled:
 		e.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case *vttv1.ResourceChanged:
 		e.Payload = &vttv1.Envelope_ResourceChanged{ResourceChanged: p}
 	case *vttv1.ConditionApplied:
@@ -168,20 +165,6 @@ func TestAppendValidationFailurePersistsNothing(t *testing.T) {
 	}
 	if len(events) != 2 {
 		t.Fatalf("ReadAfter(0) after rejected append: got %d events, want 2 (failed append must persist nothing)", len(events))
-	}
-}
-
-func TestAppendRejectsEventsRetractedEnvelope(t *testing.T) {
-	c := openTemp(t)
-
-	_, err := c.Append(cenv(nextID(), &vttv1.EventsRetracted{
-		FromSequence: 1, ToSequence: 1, Reason: "x",
-	}))
-	if err == nil {
-		t.Fatal("want error appending an EventsRetracted envelope directly")
-	}
-	if !strings.Contains(err.Error(), "Undo") {
-		t.Fatalf("want error message to mention Undo, got %q", err.Error())
 	}
 }
 

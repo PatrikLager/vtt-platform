@@ -615,7 +615,7 @@ func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
 }
 
 // TestSoakSurvivesShortRunsAcrossSeeds pins `canPlaceToken`'s
-// `len(m.scenes) > 0 && len(m.actors) > 0` (soak.go:691).
+// `len(m.scenes) > 0 && len(m.actors) > 0` (soak.go).
 //
 // Mutated to `>= 0`, either half is always true and planPlaceToken runs with
 // an empty pool: `m.scenes[rng.Intn(len(m.scenes))]` calls rng.Intn(0), which
@@ -661,7 +661,7 @@ func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
 }
 
 // TestSoakIssuerChoiceIsPinnedForASeed pins `rng.Intn(2) == 0` in
-// pickDMOrAgent (soak.go:736).
+// pickDMOrAgent (soak.go).
 //
 // Mutated to `!=`, dm and agent simply swap. Every existing assertion
 // survives that: the same-seed determinism tests compare two runs that are
@@ -683,6 +683,17 @@ func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
 // not a changed coin flip. Measured over three runs before the golden was
 // moved; pickDMOrAgent itself is untouched, and the mutant this pins still
 // swaps every dm for an agent.
+//
+// RE-DERIVED AGAIN 2026-08-31, from "dm,dm,agent,agent,dm,dm", by
+// Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md
+// (commit 92f1284): removing the retraction
+// bucket and giving its freed 10% to move-own (pickBucket's own doc comment
+// carries the ruling) shifts which bucket every rng.Float64() draw in
+// [0.80, 0.95) lands in — draws at or above 0.95 still land in
+// deniedAttempt, unchanged — which cascades into how many further rng draws
+// each action consumes — so the ENTIRE subsequent draw sequence for seed 7
+// differs from here on, pickDMOrAgent itself untouched. Confirmed stable
+// across three runs.
 func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ids := soakTestIDs()
@@ -698,7 +709,7 @@ func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
 		}
 		issuers := w.dispatchIssuers
 		got := strings.Join(issuers[:6], ",")
-		const want = "dm,dm,agent,agent,dm,dm"
+		const want = "dm,agent,agent,dm,dm,dm"
 		if got != want {
 			t.Errorf("issuer sequence for seed 7 = %q, want %q — a seed must reproduce a run "+
 				"exactly, issuers included", got, want)
@@ -707,8 +718,8 @@ func TestSoakIssuerChoiceIsPinnedForASeed(t *testing.T) {
 }
 
 // TestSoakSlowBroadcastIsNotMistakenForALeak pins the
-// `if lastAcceptedSeq > 0 { waitAllCaughtUp(...) }` guard before a denial's
-// snapshot (soak.go:271).
+// `if lastAcceptedSeq > 0 { waitAllCaughtUp(...) }` guard RunSoak runs
+// before a denied step's "before" snapshot (soak.go).
 //
 // The guard's job, per its own comment, is to make sure every participant has
 // caught up to the last ACCEPTED sequence before the "before" snapshot is
@@ -748,8 +759,59 @@ func TestSoakSlowBroadcastIsNotMistakenForALeak(t *testing.T) {
 	})
 }
 
+// TestSoakSlowBroadcastWithALeakDoesNotDeadlock is the permanent regression
+// pin for fix round 1, I3: deliverInOrder's reorder buffer (added this task
+// to fix TestSoakSlowBroadcastIsNotMistakenForALeak's own sibling defect) used
+// to key its "next expected delivery" on env.Sequence, assuming sequences
+// reaching it were dense from 1. That assumption is false whenever
+// w.leakOnDenial is ALSO set: maybeLeak bumps w.seq and used to broadcast
+// inline, bypassing the buffer entirely, so the sequence it consumed was a
+// hole the buffer would wait on forever — the same hole toEnvelope's own
+// w.seq++ leaves behind whenever the subsequent engine.Apply then rejects
+// the envelope inside handle, which returns before broadcasting anything.
+// Combining w.slowBroadcast with w.leakOnDenial reproduced it every time:
+// `bcWG.Wait()` deadlocked the whole synctest bubble. The fix keys the
+// buffer by a private ordinal assigned only when something is actually
+// enqueued for delayed delivery (soakWorld's pendingBroadcast field
+// comment), which cannot have holes by construction, and routes maybeLeak's
+// own delivery through the identical gate (deliverEnvelope) rather than
+// broadcasting inline, so a leak can no longer jump the queue ahead of
+// whatever the buffer still has waiting either.
+//
+// Same seed/events/leak-ordinal shape as TestSoakSlowBroadcastIsNotMistaken
+// ALeak and TestSoakLoneDenialLeakDoesNotClaimARange, combined: this is
+// deliberately the intersection those two only ever covered separately.
+func TestSoakSlowBroadcastWithALeakDoesNotDeadlock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.slowBroadcast = 50 * time.Millisecond
+		w.leakOnDenial = func(ordinal int) bool { return ordinal == 0 }
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 22, Events: 60, CheckEvery: 1000, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		// The assertion IS reaching this line: pre-fix, bcWG.Wait() below
+		// never returns and synctest panics the whole bubble as deadlocked
+		// before any t.Fatal here would even run.
+		w.bcWG.Wait()
+
+		if w.leaked != 1 {
+			t.Fatalf("fixture broke: the fake leaked %d times, want exactly 1 — reseed via the "+
+				"probe rather than deleting this assertion", w.leaked)
+		}
+		if rep.Pass {
+			t.Fatalf("a denied action broadcast an envelope to every participant; the soak must "+
+				"fail even with slowBroadcast delaying delivery. Log:\n%s", log.String())
+		}
+	})
+}
+
 // TestSoakWithNoAcceptedActionsDoesNotWaitForSequenceZero pins
-// `waitForSeq > 0` in runSoakCheckpoint (soak.go:401).
+// `waitForSeq > 0` in runSoakCheckpoint (soak.go).
 //
 // I nearly adjudicated this one equivalent, on the argument that a soak
 // always accepts its first action so waitForSeq is never 0. That argument is

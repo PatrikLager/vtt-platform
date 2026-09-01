@@ -17,6 +17,13 @@ Three workstreams, one branch (`feat/hardening`):
    out-of-session table setup). `campaign.Undo` drops its now-redundant
    `sessionID` parameter (Go signature churn is fine; additive-only binds the
    CONTRACT, not internal signatures).
+
+   *AMENDED 2026-08-30: `campaign.Undo` was deleted entirely in `133e896`
+   (sub-project 13, `2026-08-30-retraction-leaves-design.md`), so its parameter
+   list is moot and there are no Undo markers to stamp. Everything else in this
+   workstream is live — `stampSessionID` is still the single authority, and its
+   rules for SessionStarted, for other events and for the no-open-session case
+   are unchanged.*
 2. **Teeth audit (retroactive ADR-009 rule 3):** machine mutation testing via
    gremlins (validated working: 11 runnable mutants in engine, 100% mutator
    coverage on dry-run) over the fast-suite packages `internal/{store,engine,
@@ -28,7 +35,8 @@ Three workstreams, one branch (`feat/hardening`):
    attribution, marker broadcast, malformed-frame isolation, result/sequence
    match).
 3. **Known-gap closure** (from the ledger): partial-overlap retraction range
-   test; non-empty `CommandResult.error` round-trip fixture (Go+TS);
+   test *(that test went with the operation in `133e896`; every other item in
+   this list is still in the tree)*; non-empty `CommandResult.error` round-trip fixture (Go+TS);
    toolgen `IsList` path exercised via `google.protobuf.ListValue`'s repeated
    field (no contract change needed); `store.Notify` seq-0 defensive guard +
    test; `vtt serve` composition path made testable (extract an internal

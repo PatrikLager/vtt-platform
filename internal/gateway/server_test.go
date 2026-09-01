@@ -482,6 +482,7 @@ func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 		RequestId: "r-1",
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "scn2", Name: "Dungeon", GridWidth: 5, GridHeight: 5,
+			Tiles: floorTilesForTest(5, 5),
 		}},
 	})
 
@@ -958,52 +959,6 @@ func TestSpectatorCommandDenied(t *testing.T) {
 	}
 	if result.Error == "" {
 		t.Fatal("want non-empty error")
-	}
-}
-
-// TestAgentRetractEventsBroadcastToAll covers the retraction path end to
-// end: an agent's RetractEvents command succeeds (ok=true) and the
-// EventsRetracted marker is broadcast to every connected client, this one
-// included.
-//
-// P6 Task 4 pre-step (ADR-009 binding, controller decision): the result's
-// Sequence must equal the broadcast marker Envelope's Sequence, closing the
-// P4 carry-forward ("RetractEvents' result carries no sequence" — spec §3
-// EXCEPTION note). Before campaign.Undo returned the marker's sequence,
-// result.Sequence was always left 0 here (handleRetraction's zero-value
-// CommandResult literal), so this assertion is genuine behavioral RED
-// against the pre-fix code — not a hypothetical.
-func TestAgentRetractEventsBroadcastToAll(t *testing.T) {
-	f := newGWFixture(t)
-	agentConn := f.dial(f.agentToken, gwSeedHead)
-	watcherConn := f.dial(f.spectatorToken, gwSeedHead)
-
-	sendCommand(t, agentConn, &vttv1.ClientCommand{
-		RequestId: "r-undo",
-		Command: &vttv1.ClientCommand_RetractEvents{RetractEvents: &vttv1.RetractEvents{
-			FromSequence: gwSeedHead, ToSequence: gwSeedHead, Reason: "test retraction",
-		}},
-	})
-	result := readResult(t, agentConn)
-	if !result.Ok {
-		t.Fatalf("want ok=true for agent retraction, got error %q", result.Error)
-	}
-
-	agentEvent := readEvent(t, agentConn)
-	watcherEvent := readEvent(t, watcherConn)
-	for name, env := range map[string]*vttv1.Envelope{"agent": agentEvent, "watcher": watcherEvent} {
-		if _, ok := env.Payload.(*vttv1.Envelope_EventsRetracted); !ok {
-			t.Fatalf("%s payload = %T, want EventsRetracted", name, env.Payload)
-		}
-	}
-	if agentEvent.Sequence != watcherEvent.Sequence {
-		t.Fatalf("marker sequence mismatch across connections: agent=%d watcher=%d", agentEvent.Sequence, watcherEvent.Sequence)
-	}
-	if result.Sequence == 0 {
-		t.Fatalf("result.Sequence = 0, want the marker's non-zero sequence (%d)", agentEvent.Sequence)
-	}
-	if result.Sequence != agentEvent.Sequence {
-		t.Fatalf("result.Sequence = %d, want it to equal the broadcast marker's sequence %d", result.Sequence, agentEvent.Sequence)
 	}
 }
 

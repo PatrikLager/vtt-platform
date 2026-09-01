@@ -128,7 +128,7 @@
             ],
             "type": "object"
           },
-          "description": "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+          "description": "Required, and it must name EVERY square of gridWidth x gridHeight — a scene one square short is refused. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal). For a plain open room, give every square {\"kind\": \"floor\"}. Keep gridWidth x gridHeight at or under 1200 squares: the whole tile map travels in one message, and a larger one exceeds the server's read limit and closes the connection instead of answering. Scenes with real terrain, and any place larger than that, are normally authored as a map file and brought in with load_map rather than built field by field here.",
           "type": "object"
         }
       },
@@ -136,7 +136,8 @@
         "sceneId",
         "name",
         "gridWidth",
-        "gridHeight"
+        "gridHeight",
+        "tiles"
       ],
       "type": "object"
     },
@@ -263,6 +264,36 @@
     "name": "place_token"
   },
   {
+    "description": "Take a token off the board, for good. This is NOT hiding it — the piece is no longer part of the world going forward, for everyone at the table. It does not erase that the token was ever there; the log keeps whatever place_token/move_token history it had before this. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "tokenId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId"
+      ],
+      "type": "object"
+    },
+    "name": "remove_token"
+  },
+  {
+    "description": "Take an actor out of the world, for good, along with every token it has on the board. This is NOT hiding it and NOT revoking control — the actor is no longer part of the world going forward, for everyone at the table, and there is no un-remove. It does not erase that the actor ever existed; the log keeps its add_actor and everything that happened to it. This ONE call also removes each of the actor's tokens, so do not call remove_token first. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "actorId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId"
+      ],
+      "type": "object"
+    },
+    "name": "remove_actor"
+  },
+  {
     "description": "Start a new play session.",
     "inputSchema": {
       "properties": {
@@ -285,29 +316,6 @@
       "type": "object"
     },
     "name": "end_session"
-  },
-  {
-    "description": "Retract a range of events from the record with a stated reason.",
-    "inputSchema": {
-      "properties": {
-        "fromSequence": {
-          "type": "integer"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "toSequence": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "fromSequence",
-        "toSequence",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "name": "retract_events"
   },
   {
     "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",

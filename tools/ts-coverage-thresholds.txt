@@ -31,7 +31,6 @@ client/src/main.ts              100.00
 client/src/metadata.ts          100.00
 client/src/player.ts            100.00
 client/src/session.ts            100.00
-client/src/undo.ts              100.00
 client/src/view/camera.ts          100.00
 client/src/view/canvas.ts          100.00
 client/src/view/dm.ts            100.00

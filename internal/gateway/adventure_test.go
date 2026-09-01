@@ -439,16 +439,19 @@ func TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) 
 // cellar-rats' is "cellar" — the two never collide) — so serving the
 // OTHER loaded adventure's content would fail both assertions.
 //
-// The batch is read from a SECOND, uninvolved connection (agentConn),
-// exactly like TestLoadAdventureProducesBatchFirstSequenceReachesAll
-// Participants above — not the commanding dmConn: readResult "skips any
-// Envelope frames that race ahead of it" (server_test.go's own doc
-// comment — the writer interleaves the pump and the command loop, so a
-// connection's own broadcast CAN legitimately arrive before its
-// CommandResult), so reading the batch back off the SAME connection that
-// issued the command risks readResult silently swallowing the very
-// AdventureLoaded envelope this test asserts on. A second connection never
-// sees the CommandResult frame at all, so readEvent on it is race-free.
+// The batch is read from a SECOND, uninvolved connection (agentConn), the
+// same choice TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants
+// makes — not the commanding dmConn, whose own queue holds earlier broadcasts
+// this test would then read positionally instead of the batch it asserts on.
+//
+// CORRECTED, fix round 1 of retraction-leaves Task 9: this comment used to
+// justify the second connection by quoting readResult as one that "skips any
+// Envelope frames that race ahead of it". That sentence left server_test.go
+// when the per-connection demultiplexer landed, and readResult's doc comment
+// now says the opposite — "Events that arrive first are queued, not discarded,
+// so a later readEvent still sees them". The choice of connection is still
+// right; only the reason was wrong. map_test.go carried the same borrowed
+// claim and is corrected too.
 func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *testing.T) {
 	cases := []struct {
 		requestID       string

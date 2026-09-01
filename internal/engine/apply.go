@@ -29,12 +29,12 @@ const (
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
-// return leaves st unchanged. AttackRolled, EventsRetracted, AbilityUsed,
-// NarrationAdded, and AdventureLoaded are deliberate no-ops here (spec §5;
-// world-layer spec §4 for NarrationAdded — the feed IS the log, read via
-// the existing event streams; adventure-format spec §3 for AdventureLoaded
-// — AbilityUsed's pattern, meaning arrives via the other events in the same
-// Compile batch, internal/adventure).
+// return leaves st unchanged. AttackRolled, AbilityUsed, NarrationAdded, and
+// AdventureLoaded are deliberate no-ops here (spec §5; world-layer spec §4 for
+// NarrationAdded — the feed IS the log, read via the existing event streams;
+// adventure-format spec §3 for AdventureLoaded — AbilityUsed's pattern,
+// meaning arrives via the other events in the same Compile batch,
+// internal/adventure).
 // Complexity: one switch over every event type. ADR-003 mandates a SINGLE
 // fold, so this is dispatch breadth, not tangled logic — splitting it into
 // per-event helpers would scatter the very thing ADR-003 exists to keep in
@@ -240,6 +240,96 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		st.Tokens[tm.TokenId] = tok
 		return nil
 
+	case *vttv1.Envelope_TokenRemoved:
+		// Takes a piece off the board (retraction-leaves spec §5.1): "no
+		// longer part of the world going forward", never "this never
+		// happened".
+		//
+		// NOT TokenHidden (that arm below). The narrow, true claim: no
+		// COMMAND produces TokenHidden, so it never reaches this switch FROM
+		// THE LOG — production Apply only ever folds real log events, which
+		// structurally excludes it. That arm's own comment explains why it
+		// stays TOLERANT of a re-sent hide rather than refusing one, which
+		// is a fact about the PROJECTED streams this same Apply also folds
+		// (TestAProjectedStreamFoldsCleanly and its siblings) — it IS
+		// reached there, just never from a real campaign log. TokenRemoved
+		// has no such exemption: it is a real, log-carrying event, and this
+		// arm deletes the token from every fold's state permanently, for
+		// everyone.
+		//
+		// The error wording DELIBERATELY MATCHES TokenMoved's own unknown-
+		// token error above ("moved" -> "removed"), per Task 8 of
+		// docs/superpowers/plans/2026-08-31-retraction-leaves.md: an unknown
+		// token must fail in the words the codebase already uses for one.
+		tr := p.TokenRemoved
+		if _, ok := st.Tokens[tr.TokenId]; !ok {
+			return fmt.Errorf("engine: removed unknown token %q", tr.TokenId)
+		}
+		delete(st.Tokens, tr.TokenId)
+		return nil
+
+	case *vttv1.Envelope_ActorRemoved:
+		// Takes an actor out of the world (retraction-leaves spec §5.2), the
+		// same rule TokenRemoved states one level down: "no longer part of
+		// the world going forward", never "this never happened". The log
+		// keeps every ActorAdded, grant and ability the actor ever had.
+		//
+		// IT REMOVES THE ACTOR AND NOTHING ELSE — in particular it does NOT
+		// remove that actor's tokens, and it must not. Taking them off the
+		// board is the COMMAND's job: remove_actor emits one TokenRemoved per
+		// token, in token-id order, ahead of this event, as one batch
+		// (internal/gateway's handleRemoveActor). Cascading here as well would
+		// put the same rule in two places and make the batch do the work
+		// twice.
+		//
+		// SO IT REFUSES INSTEAD, which is the other half of the same
+		// decision and is what makes that batch's atomicity mean something.
+		// Both folds reject a token whose actor they do not know
+		// (this switch's own Envelope_TokenPlaced arm, client/src/fold.ts's
+		// tokenPlaced arm),
+		// so an ActorRemoved that left a token standing would leave a world
+		// whose own introductions no longer fold — and through
+		// client/src/session.ts's re-fold-the-whole-log-on-every-event that is
+		// a permanent client freeze. The gateway builds its batch from a
+		// SNAPSHOT and campaign.AppendBatch takes the lock afterwards, so a
+		// place_token landing in between would otherwise append exactly that;
+		// AppendBatch validates by folding, so this refusal turns the race
+		// into a clean rejection of the whole batch. Pinned by
+		// TestActorRemovedRefusesWhileOneOfItsTokensStillStands and by
+		// TestAnOutOfOrderRemovalBatchIsRejectedWhole (internal/gateway).
+		//
+		// THE FIRST TOKEN IN ID ORDER is named, not whichever the map hands
+		// back first: Go randomises map iteration, and an error message that
+		// changes between runs cannot be asserted on and cannot be read twice
+		// the same way.
+		ar := p.ActorRemoved
+		if _, ok := st.Actors[ar.ActorId]; !ok {
+			return fmt.Errorf("engine: removed unknown actor %q", ar.ActorId)
+		}
+		standing := ""
+		for id, tok := range st.Tokens {
+			if tok.ActorID == ar.ActorId && (standing == "" || id < standing) {
+				standing = id
+			}
+		}
+		if standing != "" {
+			return fmt.Errorf("engine: actor %q still has token %q on the board — "+
+				"a token cannot outlive its actor", ar.ActorId, standing)
+		}
+		delete(st.Actors, ar.ActorId)
+		// AND ITS CONDITIONS, which is a CONSEQUENCE of the actor leaving and
+		// not a second cascade. st.Conditions is keyed by actor id and holds
+		// facts ABOUT the actor, exactly as vttv1.Actor.ControllerIds does —
+		// they live in a sibling map for storage reasons only, and no event
+		// addresses one independently of its actor. Leaving them behind is not
+		// untidiness but a freeze: this same arm lets the id come back (the
+		// ActorAdded duplicate check reads the CURRENT world), and a ghost
+		// condition makes the first ConditionApplied on the new actor a
+		// duplicate, which both folds refuse. Pinned by
+		// TestActorRemovedTakesItsConditionsWithIt.
+		delete(st.Conditions, ar.ActorId)
+		return nil
+
 	case *vttv1.Envelope_DoorOpened:
 		do := p.DoorOpened
 		sc, ok := st.Scenes[do.SceneId]
@@ -302,9 +392,6 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_AttackRolled:
 		return nil // testimony, not state — rules meaning arrives in sub-project 5
-
-	case *vttv1.Envelope_EventsRetracted:
-		return nil // handled by campaign rebuild, not in-line
 
 	case *vttv1.Envelope_AbilityUsed:
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)

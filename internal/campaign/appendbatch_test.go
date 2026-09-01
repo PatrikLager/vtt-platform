@@ -65,24 +65,6 @@ func TestAppendBatchRejectsEmptyBatch(t *testing.T) {
 	}
 }
 
-// TestAppendBatchRejectsEventsRetractedEnvelope mirrors Append's guard: an
-// EventsRetracted envelope anywhere in the batch is rejected — it must go
-// through Undo — and rejecting it persists nothing from the batch at all.
-func TestAppendBatchRejectsEventsRetractedEnvelope(t *testing.T) {
-	c := openTemp(t)
-	envs := []*vttv1.Envelope{
-		cenv(nextID(), &vttv1.SceneCreated{SceneId: "scn", Name: "S", GridWidth: 10, GridHeight: 10}),
-		cenv(nextID(), &vttv1.EventsRetracted{FromSequence: 1, ToSequence: 1, Reason: "x"}),
-	}
-	if _, err := c.AppendBatch(envs); err == nil {
-		t.Fatal("want error appending a batch containing an EventsRetracted envelope")
-	}
-	st := c.State()
-	if _, ok := st.Scenes["scn"]; ok {
-		t.Fatal("want scene NOT present: the whole batch must be rejected, including the valid SceneCreated before it")
-	}
-}
-
 // TestAppendBatchMidBatchValidationFailurePersistsNothing is the core
 // atomicity guarantee: the second event of a three-event batch is invalid
 // (TokenMoved for an unknown token). Nothing from the batch may persist —
@@ -173,8 +155,10 @@ func TestAppendBatchSubscriberSeesContiguousRunUnderConcurrentAppend(t *testing.
 	// silently eat into the live-event budget whenever the batch loses its
 	// race against the foreign Appends, making this test flaky (found by
 	// review: ~60% failure without -race, ~7% with -race, "want 3 batch
-	// deliveries, got 0"). Matches the same from-the-head pattern
-	// TestUndoRetractsWholeAppendBatchRange already uses.
+	// deliveries, got 0"). The undo tests subscribed from the head for the
+	// same reason until they left with retraction on 2026-08-31, so this is
+	// now the only test in the package that starts a subscription mid-log —
+	// the reason is written out here rather than cited to a sibling.
 	ch, unsubscribe, _, err := c.Subscribe(seedSeq, 64)
 	if err != nil {
 		t.Fatal(err)

@@ -310,37 +310,9 @@ func TestSessionStampOverwritesWrongIncomingID(t *testing.T) {
 	}
 }
 
-// TestSessionStampUndoMarkerCarriesOpenSessionID covers case (f): the
-// EventsRetracted marker Undo persists (and broadcasts) carries the open
-// session's id.
-//
-// Step 2 dropped Undo's sessionID parameter entirely (the marker's
-// session_id is now stamped by campaign, not caller-supplied) — this call
-// site uses the new 6-arg signature, having been mechanically updated
-// alongside every other Undo caller.
-func TestSessionStampUndoMarkerCarriesOpenSessionID(t *testing.T) {
-	c, moveSeq := seedMovedToken(t)
-	sid := c.State().Sessions[0].ID
-
-	ch, unsubscribe, _, err := c.Subscribe(moveSeq, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unsubscribe()
-
-	if _, err := c.Undo(moveSeq, moveSeq, "mistake", nextID(), "dm", "test-participant"); err != nil {
-		t.Fatal(err)
-	}
-
-	select {
-	case got := <-ch:
-		if _, ok := got.Payload.(*vttv1.Envelope_EventsRetracted); !ok {
-			t.Fatalf("want EventsRetracted payload, got %T", got.Payload)
-		}
-		if got.SessionId != sid {
-			t.Fatalf("undo marker session id = %q, want %q (the open session's id)", got.SessionId, sid)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for subscriber to receive retraction marker")
-	}
-}
+// CASE (f) IS GONE, NOT UNTESTED. It covered the one envelope campaign
+// generated itself rather than received — Undo's EventsRetracted marker,
+// which carried the open session's id like any other event. Retraction left
+// the platform on 2026-08-31 and campaign now stamps only envelopes its
+// callers hand it, so there is no sixth case left to cover; cases (a) to (e)
+// above are the whole matrix.

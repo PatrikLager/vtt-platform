@@ -470,10 +470,13 @@ test("the adventures list reaches the DM console", async () => {
   s?.close();
 });
 
-test("delivered events reach both the feed and the DM console's log", async () => {
-  // Two separate `[...session.events]` spreads feed those two views. An empty
-  // array in either place renders a plausible, silent, wrong page: a board
-  // with no story beside it.
+test("delivered events reach both the feed and the DM console", async () => {
+  // The spectator view is handed `[...session.events]` and the console is
+  // handed `session.state`; both come off the same Session, and either one
+  // arriving empty renders a plausible, silent, wrong page — a board with no
+  // story beside it, or a console that thinks the table has not started.
+  // (It used to be two `[...session.events]` spreads; the console stopped
+  // taking a log when retraction left, so the two halves now differ.)
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
     "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
@@ -491,11 +494,14 @@ test("delivered events reach both the feed and the DM console's log", async () =
   await settle();
   // The feed's half: narration text only the spectator view renders.
   expect(r.textContent).toContain("A hush falls.");
-  // The console's half, which needs its OWN assertion. The DM console does not
-  // render the log as prose — it uses it for lastUndoable and
-  // retractableRange, so an emptied `log` shows up as a dead undo affordance
-  // and nothing else. Asserting story text alone reached only the feed.
-  expect(byText(r, "Undo #2")).toBeDefined();
+  // The console's half, which needs its OWN assertion, because asserting story
+  // text alone reached only the feed. The console is handed no log at all now
+  // — retraction was the only thing that read one — so what is checked is the
+  // state it IS handed: sequence 1 opened a session, and the open-session arm
+  // offers "End session" where a console drawing from a stale or empty state
+  // would still be offering "Start session".
+  expect(byText(r, "End session")).toBeDefined();
+  expect(byText(r, "Start session")).toBeUndefined();
   s?.close();
 });
 
@@ -1267,19 +1273,25 @@ test("the DM's own console toggle arms doors, board-wide", async () => {
   s?.close();
 });
 
-test("undo asks for confirmation, and sends the retraction when granted", async () => {
-  // window.confirm is deliberate for a destructive action. Both halves are
-  // pinned: the dialog is consulted, and a granted one actually sends.
+test("rotating the join link asks for confirmation, and sends when granted", async () => {
+  // window.confirm is deliberate for a destructive action, and app.ts's
+  // `confirm: (m) => window.confirm(m)` is the wiring under test. Both halves
+  // are pinned: the dialog is consulted, and a granted one actually sends.
+  //
+  // This pair used to be pinned on Undo, the console's other confirming
+  // control. Retraction left the platform, so rotation is now the ONLY
+  // confirming control — the old secret is gone the moment it lands, and
+  // nothing else in this suite would notice if the console stopped asking.
   const realConfirm = window.confirm;
   try {
     let asked = "";
     window.confirm = ((m: string) => { asked = m; return true; }) as typeof window.confirm;
-    const { r, s, sock } = await dmTable({});
-    byText(r, "Undo #1")!.click();
+    const { r, s, sock } = await dmTable({ "/api/join-link": { open: false, secret: "s3cret" } });
+    byText(r, "New link")!.click();
     await settle();
-    expect(asked).toContain("Retract event #1");
+    expect(asked).toContain("Replace the link?");
     expect(sock.sent.length).toBe(1);
-    expect(JSON.parse(sock.sent[0]!)).toHaveProperty("retractEvents");
+    expect(JSON.parse(sock.sent[0]!)).toHaveProperty("rotateJoinLink");
     s?.close();
   } finally {
     window.confirm = realConfirm;
@@ -1290,8 +1302,8 @@ test("a declined confirmation sends nothing at all", async () => {
   const realConfirm = window.confirm;
   try {
     window.confirm = (() => false) as typeof window.confirm;
-    const { r, s, sock } = await dmTable({});
-    byText(r, "Undo #1")!.click();
+    const { r, s, sock } = await dmTable({ "/api/join-link": { open: false, secret: "s3cret" } });
+    byText(r, "New link")!.click();
     await settle();
     expect(sock.sent).toHaveLength(0);
     s?.close();

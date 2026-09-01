@@ -5,11 +5,14 @@ package mcp_test
 // headSequence; get_events_since paginates that same history with correct
 // `more`-flag boundary semantics and returns protojson envelopes (sequence
 // as a STRING inside each one — the convention divergence the tool's own
-// Description documents); a fold-with-retraction case (mirroring
-// internal/harness/fold_test.go's own parity case) proves get_state reflects
-// retraction, not just a naive apply-everything fold. NO TOOL COUNT HERE — the
-// one that used to sit at the end of this sentence said 9 while the server
-// served 28. The count is asserted below, against the live registry.
+// Description documents). A fold-across-an-EventsRetracted-marker case stood
+// beside those until 2026-08-31, mirroring internal/harness/fold_test.go's
+// own transitional one; both died with the message they had to construct
+// (2026-08-31-retraction-leaves Task 7), and what they proved — get_state
+// applies every envelope harness.Fold hands it — is now structural, because
+// no payload exists that any fold could skip by sequence. NO TOOL COUNT HERE
+// — the one that used to sit at the end of this sentence said 9 while the
+// server served 28. The count is asserted below, against the live registry.
 //
 // canned/seedEvents below are a parallel, not shared, implementation of
 // internal/harness/fold_test.go's foldEnv helper (unexported in package
@@ -49,8 +52,6 @@ func canned(seq int64, id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	}
 	return e
 }
@@ -223,34 +224,6 @@ func TestGetStateReturnsFoldedTokenPositionAndHeadSequence(t *testing.T) {
 	}
 }
 
-// TestGetStateReflectsFoldWithRetraction reuses the fold-parity shape of
-// internal/harness/fold_test.go's TestFoldParityAgainstIndependentEngine
-// ApplyReplay: retracting the TokenMoved must make get_state show tok-1 at
-// its PLACED position (2,2), not the moved-to one, proving get_state's fold
-// is retraction-aware rather than a naive full-history apply.
-func TestGetStateReflectsFoldWithRetraction(t *testing.T) {
-	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
-	cs, cleanup := startSession(t, fs.wsURL())
-	defer cleanup()
-
-	conn := fs.firstConn(t)
-	events := basicChain()
-	events = append(events, canned(6, "ev-retract", &vttv1.EventsRetracted{FromSequence: 5, ToSequence: 5, Reason: "undo the move"}))
-	seedEvents(t, conn, events...)
-
-	st := waitForHeadSequence(t, cs, 6)
-	tok, ok := st.Tokens["tok-1"]
-	if !ok {
-		t.Fatalf("get_state: Tokens[\"tok-1\"] missing: %+v", st)
-	}
-	if tok.X != 2 || tok.Y != 2 {
-		t.Fatalf("get_state: tok-1 position = (%d,%d), want (2,2) — the retracted move must not have applied", tok.X, tok.Y)
-	}
-	if st.HeadSequence != 6 {
-		t.Fatalf("get_state: headSequence = %d, want 6 (the retraction marker itself still advances it)", st.HeadSequence)
-	}
-}
-
 // TestListToolsReturnsEveryCommandAndReadTool covers the top-level contract:
 // get_state, get_events_since, get_ruleset_guide and get_adventure_guide land
 // in the SAME tool table as every generic command tool
@@ -323,7 +296,7 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 //
 // WHAT THIS ADDS OVER THE SIBLING, stated narrowly because the first draft of
 // this comment overstated it. A skipped registration already reddens the
-// sibling and tools_test.go — both pin the 22 current commands BY NAME — and
+// sibling and tools_test.go — both pin every command in the oneof BY NAME — and
 // buildDispatch rejects a tools.json/oneof disagreement at startup. So the
 // loop was not unguarded.
 //

@@ -157,6 +157,48 @@ test("moving a token with no destination is rejected", () => {
     'token "t1" moved with no destination');
 });
 
+// tokenRemoved (retraction-leaves Task 8, spec §5.1). Same idiom as
+// tokenMoved's own unknown-token case directly above, and the message
+// mirrors it word for word ("moved" -> "removed") per Task 8 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md, whose own
+// requirement that the two read as the same wording.
+test("removing an unknown token is rejected", () => {
+  rejects([...placeable, env(4, { tokenRemoved: { tokenId: "ghost" } })],
+    'unknown token "ghost" removed');
+});
+
+// actorRemoved (retraction-leaves Task 9, spec §5.2). Two guards, and the
+// second is the one that makes remove_actor's batch atomic: engine.Apply's
+// ActorRemoved arm refuses an actor whose tokens are still on the board, so
+// campaign.AppendBatch — which validates by folding — rejects a batch that
+// would leave a token whose actor nobody can introduce. This fold mirrors both
+// refusals, because "parity includes REJECTING what Go rejects".
+
+test("removing an unknown actor is rejected", () => {
+  rejects([...placeable, env(4, { actorRemoved: { actorId: "nope" } })],
+    'unknown actor "nope" removed');
+});
+
+// TWO TOKENS, PLACED IN REVERSE ID ORDER, because the arm names the FIRST
+// standing token IN ID ORDER and a one-token fixture cannot tell that apart
+// from naming whichever one the object happens to hand back first. The Go
+// twin, TestActorRemovedRefusesWhileOneOfItsTokensStillStands, uses the same
+// "t-z" then "t-a" pair for the same reason — there it defends against Go's
+// randomised map iteration, here against insertion order.
+//
+// Load-bearing, proved by removing the thing it pins rather than assumed:
+// with `.sort()` deleted from fold.ts's actorRemoved arm this test names
+// "t-z" and fails, while the whole 708-test suite stayed green against the
+// one-token fixture it replaces (measured 2026-09-01).
+test("removing an actor whose token is still on the board is rejected", () => {
+  rejects([
+    ...placeable,
+    env(4, { tokenPlaced: { tokenId: "t-z", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(5, { tokenPlaced: { tokenId: "t-a", sceneId: "s1", actorId: "a1", position: { x: 2, y: 1 } } }),
+    env(6, { actorRemoved: { actorId: "a1" } }),
+  ], 'actor "a1" still has token "t-a" on the board — a token cannot outlive its actor');
+});
+
 // --- sceneSeen (visibility spec §6) ------------------------------------------
 //
 // tokenHidden has no rejection case: hiding an absent token is deliberately a
@@ -304,29 +346,6 @@ test("a narration anchor pointing at its OWN sequence is rejected", () => {
 
 test("a narration anchor pointing at the immediately preceding event is ACCEPTED", () => {
   const st = fold([started, env(2, { narrationAdded: { text: "t", as: "DM", anchorFromSeq: "1", anchorToSeq: "1" } })]);
-  expect(st.Sessions).toHaveLength(1);
-});
-
-// --- retraction -------------------------------------------------------------
-
-test("a retraction marker removes its whole INCLUSIVE range and leaves no trace itself", () => {
-  const st = fold([
-    started, scene(2, "s1"), scene(3, "s2"),
-    env(4, { eventsRetracted: { fromSequence: "2", toSequence: "3", reason: "undo" } }),
-  ]);
-  expect(Object.keys(st.Scenes)).toHaveLength(0);
-  expect(st.Sessions).toHaveLength(1);
-});
-
-test("a retraction of a MALFORMED event stops it being rejected", () => {
-  // The two passes are ordered for this reason: a retracted event is never
-  // applied, so it cannot fail the fold. Applying first and retracting after
-  // would throw on a log the server considers valid.
-  const st = fold([
-    started,
-    env(2, { tokenMoved: { tokenId: "ghost", to: { x: 1, y: 1 } } }),
-    env(3, { eventsRetracted: { fromSequence: "2", toSequence: "2", reason: "undo" } }),
-  ]);
   expect(st.Sessions).toHaveLength(1);
 });
 

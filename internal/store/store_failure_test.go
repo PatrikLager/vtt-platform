@@ -19,10 +19,12 @@ import (
 // payload row, and a handle closed underneath a caller.
 //
 // The append-only log is the substrate every other guarantee rests on — the
-// fold, retraction, replay, and the rebuild==live property all assume the
-// store either returns honest events or an error. A corrupt row silently
-// yielding a zero-valued Envelope would be worse than any of them: it would
-// fold cleanly into a wrong state with nothing to notice.
+// fold, replay, and the rebuild==live property all assume the store either
+// returns honest events or an error. (Retraction stood in that list until
+// 2026-08-31, when it left the platform: spec 2026-08-30-retraction-leaves.)
+// A corrupt row silently yielding a zero-valued Envelope would be worse than
+// any of them: it would fold cleanly into a wrong state with nothing to
+// notice.
 //
 // The all-or-nothing rollback invariants are already pinned elsewhere
 // (TestAppendRejectsEmptyAndDuplicateEventID, and

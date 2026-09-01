@@ -27,8 +27,13 @@ message CreateScene {
   int32 grid_width = 3;
   int32 grid_height = 4;
   // Keys are "x,y", column then row; the separator is a comma because a dot
-  // reads as a decimal (maps-as-geometry spec §4.1). Optional: omitted
-  // entirely, the scene is a bare grid with no terrain.
+  // reads as a decimal (maps-as-geometry spec §4.1). REQUIRED, and it must
+  // name every square of grid_width x grid_height: the gateway refuses a
+  // create_scene that leaves one undeclared. A scene with no terrain is a
+  // featureless grid that internal/sight cannot occlude, and create_scene is
+  // the improvised path — nobody authored this command in advance, so there
+  // is no older shape to keep accepting. (A map FILE still may omit tiles;
+  // that exemption exists for files written before the format had terrain.)
   map<string, TileRef> tiles = 5;
   repeated SceneObject objects = 6;
 }
@@ -53,17 +58,48 @@ message PlaceToken {
   GridPosition position = 4;
 }
 
+// RemoveToken takes a piece off the board (retraction-leaves spec §5.1):
+// "no longer part of the world going forward", never "this never happened".
+//
+// NOT TokenHidden. TokenHidden (events.proto) is PROJECTION-ONLY — no command
+// produces it, it never reaches the log, and it means "you cannot see it": a
+// fact about one viewer's knowledge. RemoveToken is a real command that
+// appends a real event (TokenRemoved), and it means the piece is not on the
+// board anymore, for everyone, from here forward. It does not erase that the
+// token was ever there — the log still carries whatever TokenPlaced/
+// TokenMoved/etc. came before this event, unaltered; the log only goes
+// forward (2026-08-31).
+message RemoveToken {
+  string token_id = 1;
+}
+
+// RemoveActor takes an actor out of the world (retraction-leaves spec §5.2),
+// the same rule one level up from RemoveToken: "no longer part of the world
+// going forward", never "this never happened". The log keeps every
+// ActorAdded/TokenPlaced/AbilityUsed the actor ever had, unaltered.
+//
+// IT YIELDS A BATCH, not one event, and that is a CORRECTNESS requirement
+// rather than a convenience. Both folds refuse a token whose actor they do not
+// know (engine.Apply's TokenPlaced arm, client/src/fold.ts's tokenPlaced arm),
+// so an ActorRemoved that left this actor's tokens standing would leave a world
+// whose own introductions no longer fold — the permanent client freeze this arc
+// exists to make impossible. So the gateway emits one TokenRemoved per token of
+// this actor, in token-id order, and then the ActorRemoved, as ONE ordered batch
+// accepted or rejected atomically (LoadMap is the precedent — read its own
+// comment in this file).
+//
+// CONTROL GRANTS NEED NO EVENT OF THEIR OWN: controller_ids is a field ON the
+// actor (Actor, events.proto), so removing the actor removes them with it. That
+// is a consequence of the removal, not a second cascade.
+message RemoveActor {
+  string actor_id = 1;
+}
+
 message StartSession {
   string name = 1;
 }
 
 message EndSession {}
-
-message RetractEvents {
-  int64 from_sequence = 1;
-  int64 to_sequence = 2;
-  string reason = 3;
-}
 
 message UseAbility {
   string actor_id = 1;
@@ -111,11 +147,14 @@ message LoadMap { string map_id = 1; }
 // (internal/gateway/server.go's handleJoinDoor) says so outright in its own
 // doc comment. Where a spectator points their camera is not a fact about the
 // campaign: it is a view preference like zoom, so logging it would replay
-// forever, add story-panel noise, and make it RETRACTABLE, letting a DM
-// "undo" somebody having looked at Asme. A perch therefore lives on the
-// connection and the client re-sends it on reconnect. This message and the
-// oneof field are added here; Task 6 wires the handler that gives the
-// comment above a body.
+// forever, add story-panel noise, and — the log only going forward since
+// 2026-08-31 — stay in the record for good. That last clause used to read
+// "make it RETRACTABLE, letting a DM 'undo' somebody having looked at Asme",
+// which was true while retraction existed and stopped being true when
+// RetractEvents left this file: the cost is now PERMANENCE, not a DM's power
+// to unsee. A perch therefore lives on the connection and the client re-sends
+// it on reconnect. This message and the oneof field are added here; Task 6 of
+// the visibility arc wires the handler that gives the comment above a body.
 //
 // An empty actor_id un-perches.
 message SetViewpoint {
@@ -131,7 +170,6 @@ message ClientCommand {
     PlaceToken place_token = 13;
     StartSession start_session = 14;
     EndSession end_session = 15;
-    RetractEvents retract_events = 16;
     UseAbility use_ability = 17;
     RemoveCondition remove_condition = 18;
     AddNarration add_narration = 19;
@@ -149,6 +187,12 @@ message ClientCommand {
     // Brief did not pin a number for this arm; 31 is the next-free slot
     // after load_map = 30 (visibility Task 2 report).
     SetViewpoint set_viewpoint = 31;
+    // 32 is the next-free slot after set_viewpoint = 31 (retraction-leaves
+    // Task 8 report).
+    RemoveToken remove_token = 32;
+    // 33 is the next-free slot after remove_token = 32 (retraction-leaves
+    // Task 9 report).
+    RemoveActor remove_actor = 33;
   }
 }
 

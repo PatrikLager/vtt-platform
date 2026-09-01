@@ -396,19 +396,46 @@ message TokenPlaced {
   GridPosition position = 4;
 }
 
+// TokenRemoved takes a token off the board, for good, going forward
+// (retraction-leaves spec §5.1). Produced by RemoveToken (commands.proto).
+//
+// NOT TokenHidden. TokenHidden, below, is PROJECTION-ONLY — no command
+// produces it, so it can never reach the log — and it means "you cannot see
+// it", a fact about one viewer's knowledge of the world. TokenRemoved is a
+// REAL event that reaches every fold, and it means the piece is not part of
+// the world anymore: engine.Apply and client/src/fold.ts both delete it from
+// state, and it stays gone for every future reader. It does not erase that
+// the token ever existed — the log still carries whatever TokenPlaced/
+// TokenMoved/etc. it had before this event, unaltered; the log only goes
+// forward (2026-08-31), so removal is the platform's answer to "get rid of a
+// token" now that retraction is gone.
+message TokenRemoved {
+  string token_id = 1;
+}
+
+// ActorRemoved takes an actor out of the world, for good, going forward
+// (retraction-leaves spec §5.2). Produced by RemoveActor (commands.proto), and
+// never on its own: it is the LAST event of the batch that command emits, after
+// one TokenRemoved per token the actor had. Both folds refuse a token whose
+// actor is unknown, so an actor that departed ahead of its pieces would leave a
+// world whose introductions no longer fold.
+//
+// It does not erase that the actor ever existed — the log still carries its
+// ActorAdded and everything that happened to it, unaltered; the log only goes
+// forward (2026-08-31).
+//
+// NO SEPARATE EVENT FOR ITS CONTROL GRANTS: controller_ids lives on Actor, so
+// whoever held this actor stops holding it because the actor is gone, not
+// because anything revoked them.
+message ActorRemoved {
+  string actor_id = 1;
+}
+
 message SessionStarted {
   string name = 1;
 }
 
 message SessionEnded {}
-
-// Compensating undo marker (spec §6). Retraction events cannot themselves
-// be retracted. Sequences follow wire convention 1 (int64 → JSON string).
-message EventsRetracted {
-  int64 from_sequence = 1;
-  int64 to_sequence = 2;
-  string reason = 3;
-}
 
 message AbilityUsed {
   string actor_id = 1;
@@ -474,7 +501,6 @@ message Envelope {
     TokenPlaced token_placed = 14;
     SessionStarted session_started = 15;
     SessionEnded session_ended = 16;
-    EventsRetracted events_retracted = 17;
     AbilityUsed ability_used = 18;
     ResourceChanged resource_changed = 19;
     ConditionApplied condition_applied = 20;
@@ -495,5 +521,11 @@ message Envelope {
     // the actual next-free numbers instead (visibility Task 2 report).
     TokenHidden token_hidden = 30;
     SceneSeen scene_seen = 31;
+    // 32 is the next-free slot after scene_seen = 31 (retraction-leaves
+    // Task 8 report).
+    TokenRemoved token_removed = 32;
+    // 33 is the next-free slot after token_removed = 32 (retraction-leaves
+    // Task 9 report).
+    ActorRemoved actor_removed = 33;
   }
 }

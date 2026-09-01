@@ -6,16 +6,37 @@ import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant, and the gap is a MEASURED
 // list rather than an argument. Across all eight `scenarios/goldens/*/
-// stream.json` AND both projected streams under `projections/*/`, three of
-// fold.ts's twenty-one arms are never folded: **attackRolled, doorOpened and
-// doorClosed**. Said at the level of the EVENT VARIANT, which is the level that
-// matters for parity: `attackRolled` shares its arm BODY with `abilityUsed` and
-// `adventureLoaded`, both of which the corpus does fold, so that code path runs —
-// it is the variant that no corpus stream carries, and
-// client/test/fold-rejections.test.ts's "an event kind the fold does not know is
-// skipped, not fatal" is what folds one directly. Named rather than cited by line
-// for the reason this file states below: an offset into another file rots the
-// moment anything is inserted above it, and nothing pins it.
+// stream.json` AND both projected streams under `projections/*/`, five of
+// fold.ts's arms are never folded: **attackRolled, doorOpened, doorClosed,
+// tokenRemoved and actorRemoved**. (Measured 2026-09-01. It said FOUR of
+// TWENTY-TWO and omitted actorRemoved, which landed one task after
+// tokenRemoved; the arm total was 23 by then. No total is quoted now — the
+// claim needs none, and an arm count is the shape that rots by addition.)
+// Said at the level of the EVENT VARIANT, which
+// is the level that matters for parity: `attackRolled` shares its arm BODY
+// with `abilityUsed` and `adventureLoaded`, both of which the corpus does
+// fold, so that code path runs — it is the variant that no corpus stream
+// carries, and client/test/fold-rejections.test.ts's "an event kind the fold
+// does not know is skipped, not fatal" is what folds one directly. Named
+// rather than cited by line for the reason this file states below: an offset
+// into another file rots the moment anything is inserted above it, and
+// nothing pins it.
+//
+// tokenRemoved and actorRemoved are the two NEWEST, added by retraction-leaves
+// Tasks 8 and 9 respectively (2026-08-31) in that order — every corpus stream
+// predates both, so none can carry either. They get the same answer as the
+// door pair below rather than attackRolled's: exercised directly, not folded
+// incidentally. "tokenRemoved removes only that token" (this file) and
+// "removing an unknown token is rejected" (fold-rejections.test.ts) fold both
+// of tokenRemoved's arms — success and rejection — the same way the door tests
+// below fold doorOpened/doorClosed, and actorRemoved is covered the same way.
+//
+// SINCE 2026-09-01 THEY ARE ALSO FOLDED AS REAL PROJECTED BYTES, which is a
+// different claim from either: client/test/removal-batch-parity.test.ts folds
+// contract/testdata/removal_batch_projected_stream.json, the stream a seat
+// actually receives for a mixed-visibility remove_actor batch, and
+// internal/gateway recomputes those same bytes from the projector. That is the
+// nearest thing to corpus reach these two arms have.
 //
 // The door pair has its own note at the terrain section, which owns why it
 // matters. Not restated here — and the reason is worth one sentence, because this
@@ -52,12 +73,14 @@ import { FoldError } from "../src/state";
 // twice and tokenHidden once, and client/test/projection-parity.test.ts folds
 // both arms against a hand-derived state.
 //
-// So what the 41 hand-written cases below are for is the ARMS' EDGES. FOUR of
-// the five in this file's tokenHidden/sceneSeen section are reached by no stream
+// So what the hand-written cases below are for is the ARMS' EDGES. FIVE of
+// the six in this file's tokenHidden/sceneSeen section are reached by no stream
 // at all, recorded or derived: a re-sent hide (the corpus holds exactly one
 // tokenHidden), Explored unioning across messages (no single stream folds two
-// sceneSeen for one scene, and only one of the corpus's three carries `tiles` at
-// all — Explored unions from tile keys, never from `visible`), and BOTH
+// sceneSeen for one scene, and unioning is a within-stream operation), a
+// sceneSeen that is visible but carries NO terrain (since 2026-09-01 all three
+// of the corpus's sceneSeen carry `tiles`, because create_scene refuses a scene
+// with an undeclared square — that case used to be `camp`), and BOTH
 // object-merge cases (no sceneSeen anywhere carries objects, and no corpus
 // stream carries a scene object at all — which is also why the sceneCreated
 // object cases in the terrain section stand on nothing but themselves).
@@ -610,11 +633,16 @@ test("revoking control leaves a party member a party member", () => {
 //       bullet after stating it.)
 //   Explored's omission                — REACHED HARDEST OF ANYTHING HERE, and
 //       listing it as unreached was flatly wrong. Emitting `Explored: {}`
-//       unconditionally reds TEN corpus cases: all 8 fold-parity goldens and both
-//       projection-parity seats. This file says exactly that in the test named
-//       "Explored reaches the dump when populated, and is OMITTED (not {}) when
-//       empty" — the very case the parenthetical was describing — and
-//       client/src/fold.ts says it a third time. Only the summary was wrong.
+//       unconditionally reds every log golden in the corpus. This file says
+//       exactly that in the test named "Explored reaches the dump when
+//       populated, and is OMITTED (not {}) when empty" — the very case the
+//       parenthetical was describing — and client/src/fold.ts says it a third
+//       time, which is the ONE place the current measurement is written down.
+//       (It said TEN cases — the goldens plus both projection-parity seats —
+//       which stopped being true when create_scene made every projected
+//       scene's terrain complete and so its Explored non-empty. Three sites
+//       gave three numbers for one measurement; the number now lives with the
+//       code it describes and the other two state the invariant instead.)
 //
 // The lesson is the one this file keeps re-learning: a summary written from
 // memory of the cases below it drifts from them, and the cases were right all
@@ -793,9 +821,13 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
   // all 8 scenarios with an unexpected `"Explored": {}` in every Scene;
   // reverting to the conditional-omission form in fold.ts passes all 8 again.
   // (Re-measured 2026-08-22, when session-zero took the corpus from 7 to 8.
-  // The same injection also fails 2 of the PROJECTED cases in
-  // client/test/projection-parity.test.ts — the bare-canvas scene, which has
-  // a visible set and no terrain to remember.)
+  // Re-measured again 2026-09-01, when the same injection stopped failing the
+  // two PROJECTED cases: it used to catch the bare-canvas scene, a visible set
+  // with no terrain to remember, and create_scene no longer permits one — so
+  // every projected Explored is now populated and the injection is invisible
+  // there. The goldens plus this one case, which is not a corpus case —
+  // client/src/fold.ts's Explored comment owns the corpus figure, and it is
+  // not restated here.)
   const unseen = JSON.parse(foldToDumpJSON(sceneWithADoor()));
   expect("Explored" in unseen.Scenes["s1"]).toBe(false);
 
@@ -808,7 +840,7 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
 // --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
 //
 // Both arms are PROJECTION-ONLY (spec §5). HOW they nonetheless reach the corpus,
-// and WHICH of the four cases below it reaches, are both the HEADER's subject and
+// and WHICH of the cases below it reaches, are both the HEADER's subject and
 // neither is restated here.
 //
 // One fact, one place — the rule internal/gateway/keystone_test.go's own
@@ -901,6 +933,71 @@ test("hiding a token twice is not an error", () => {
   expect(twice.Tokens["t2"]).toBeDefined();
 });
 
+// tokenRemoved (retraction-leaves Task 8, spec §5.1: "takes a piece off the
+// board") is NOT tokenHidden, and the difference this test exists to pin is
+// that tokenRemoved is a REAL event with a real guard: unlike hiding (which
+// tolerates a repeat because the projection may legitimately re-send one),
+// removing an unknown token is an error (fold-rejections.test.ts's "removing
+// an unknown token is rejected") — this test is the success half, and it
+// mirrors "tokenHidden forgets only that token" above: only the named token
+// disappears, its neighbour is untouched.
+test("tokenRemoved removes only that token", () => {
+  const st = fold([...twoTokenScene(), env(6, { tokenRemoved: { tokenId: "t1" } })]);
+  expect(st.Tokens["t1"]).toBeUndefined();
+  expect(st.Tokens["t2"]).toBeDefined();
+});
+
+// actorRemoved (retraction-leaves Task 9, spec §5.2): the success half, the
+// mirror of "tokenRemoved removes only that token" one level up. The token has
+// to go FIRST — that is remove_actor's own batch order, and the fold refuses
+// the other order (fold-rejections.test.ts's "removing an actor whose token is
+// still on the board is rejected").
+//
+// AND NOTHING ELSE GOES WITH THE ACTOR. This arm does NOT cascade: the other
+// actor's token is still standing afterwards, and even the removed actor's
+// removal was the batch's doing, not this arm's.
+test("actorRemoved removes only that actor", () => {
+  const st = fold([
+    ...twoTokenScene(),
+    env(6, { tokenRemoved: { tokenId: "t1" } }),
+    env(7, { actorRemoved: { actorId: "a1" } }),
+  ]);
+  expect(st.Actors["a1"]).toBeUndefined();
+  expect(st.Actors["a2"]).toBeDefined();
+  expect(st.Tokens["t2"]).toBeDefined();
+});
+
+// A CONDITION IS PART OF THE ACTOR, so it leaves with it — the mirror of
+// internal/engine's TestActorRemovedTakesItsConditionsWithIt, which existed
+// while this one did not (fix round 1, I2). st.Conditions is a sibling map for
+// storage reasons only; nothing addresses a condition independently of its
+// actor.
+//
+// MEASURED, NOT ASSERTED EMPTY, because leaving them is a FREEZE rather than
+// untidiness: both folds accept an actorAdded for an id whose actor was
+// removed, so the id can come back, and a ghost condition makes the first
+// conditionApplied on the NEW actor a duplicate — which this fold refuses,
+// and Session.ingest re-folds the whole log on every event, so that throw is
+// permanent. It is reachable in production because the projector's actor
+// introduction re-emits st.Conditions[id] behind a re-introduction
+// (internal/gateway's transitions).
+test("actorRemoved takes its conditions with it, so the id can be used again", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 3, gridHeight: 3 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "a1" } } }),
+    env(4, { conditionApplied: { actorId: "a1", conditionId: "prone", source: "dm" } }),
+    env(5, { actorRemoved: { actorId: "a1" } }),
+    // The id comes back, and the SAME condition applies cleanly to the new
+    // actor. Without the arm's `delete st.Conditions[...]` this envelope
+    // throws `duplicate condition "prone" on actor "a1"`.
+    env(6, { actorAdded: { actor: { actorId: "a1", name: "a1 again" } } }),
+    env(7, { conditionApplied: { actorId: "a1", conditionId: "prone", source: "dm" } }),
+  ]);
+  expect(st.Conditions["a1"]).toHaveLength(1);
+  expect(st.Conditions["a1"]![0]!.AppliedSeq).toBe(7);
+});
+
 test("sceneSeen unions into Explored and never shrinks", () => {
   const st = fold([
     env(1, { sessionStarted: { name: "n" } }),
@@ -912,6 +1009,43 @@ test("sceneSeen unions into Explored and never shrinks", () => {
   expect(sc.Explored!["0,0"]).toBe(true); // seen first, still explored
   expect(sc.Explored!["1,1"]).toBe(true); // seen second
   expect(sc.Tiles!["1,1"]!.Kind).toBe("wall"); // a seen tile lands in Tiles too
+});
+
+// THE BARE CANVAS, and it lives here now because no corpus fixture can hold it
+// any more. Until 2026-09-01 this property was pinned by a FIXTURE:
+// session-zero's `camp` declared no terrain, so its projected Explored stayed
+// empty however much of it was in sight, and client/test/projection-parity
+// compared that against the committed state. create_scene now refuses a scene
+// that leaves a square undeclared, so every scene the corpus creates is fully
+// tiled and no projected seat has an empty Tiles left to exhibit. The SHAPE is
+// still reachable in the platform — a map FILE may still omit tiles, which is
+// the exemption that keeps files authored before the format had terrain
+// loading — so the rule has not changed, only the place it is pinned.
+//
+// Mirrors internal/engine/visibility_fold_test.go's
+// TestVisibleComesFromItsOwnFieldNotFromTheTiles, assertion for assertion.
+//
+// IT IS NOT THE ONLY TS COVER, and the first draft of this comment claimed it
+// was. client/test/visibility.test.ts's "a token on a bare canvas is drawn"
+// already folds a 9-visible / 0-tile sceneSeen and already asserts Explored
+// stays empty. MEASURED: making Explored follow Visible in fold.ts's sceneSeen
+// arm reds TWO tests across client/test — that one and this one — so the TS
+// fold was never free to make that change with nothing red. What this case adds
+// is being the assertion-for-assertion mirror of the Go test: the other is a
+// DRAWING test that happens to assert the property on its way to something
+// else, and a drawing test is not where a reader looks for the fold rule.
+test("a sceneSeen with visible squares and no terrain remembers nothing", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { sceneSeen: { sceneId: "s", visible: ["0,0", "0,1", "1,0", "1,1"] } }),
+  ]);
+  const sc = st.Scenes["s"]!;
+  expect(Object.keys(sc.Visible ?? {})).toHaveLength(4);
+  // Explored is unioned from the TILES keys, never from `visible`: no terrain
+  // arrived, so there is nothing to remember and nothing to draw.
+  expect(Object.keys(sc.Explored ?? {})).toHaveLength(0);
+  expect(Object.keys(sc.Tiles ?? {})).toHaveLength(0);
 });
 
 test("sceneSeen's objects REPLACE a repeated id in place and APPEND a new one", () => {

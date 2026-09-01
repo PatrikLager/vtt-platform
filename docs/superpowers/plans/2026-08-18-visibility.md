@@ -492,6 +492,13 @@ In `contract/vtt/v1/commands.proto`, add the message and the oneof arm:
 // connection and the client re-sends it on reconnect.
 //
 // An empty actor_id un-perches.
+//
+// (AMENDED 2026-08-31: the comment that shipped no longer says "RETRACTABLE".
+// Retraction left the platform — `2026-08-30-retraction-leaves-design.md` —
+// so the cost of logging a perch is now PERMANENCE, not a DM's power to unsee
+// it, which is a stronger version of the same objection. The shipped comment in
+// `contract/vtt/v1/commands.proto` records the change in place; the snippet here
+// is what was written at the time.)
 message SetViewpoint {
   string actor_id = 1;
 }
@@ -1098,6 +1105,9 @@ func TestPerchingAppendsNothingToTheLog(t *testing.T) {
 	// Same shape as handleJoinDoor, whose comment says "It appends NOTHING".
 	// Where a spectator looks is a view preference, not campaign history:
 	// logging it would replay forever and make it retractable.
+	// (AMENDED 2026-08-31: "and make it retractable" was replaced when
+	// retraction left the platform; the reason is now that it would stay in
+	// the record for good. The test itself is live and unchanged.)
 }
 ```
 

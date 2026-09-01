@@ -58,18 +58,33 @@ var manifest = []toolSpec{
 		name:        "create_scene",
 		description: "Create a new scene with a grid.",
 		descriptor:  (&vttv1.CreateScene{}).ProtoReflect().Descriptor(),
-		// tiles/objects are the same fabrication trap as add_actor's fix
-		// (final review Fix 2): neither is proto3 `optional`, so the
-		// derived required list would force a caller to invent terrain for
-		// every scene, even a bare grid — the only shape this tool
-		// created before maps-as-geometry (Task 1). Terrain is normally
-		// authored as a map file and loaded through the map/adventure
-		// path, not built field by field through this tool.
+		// objects stays out of the required list for add_actor's
+		// fabrication reason (final review Fix 2): it is not proto3
+		// `optional`, so the derived list would force a caller to invent
+		// scenery for every scene. tiles USED TO SIT BESIDE IT and no
+		// longer does — the gateway refuses a create_scene that leaves a
+		// square undeclared, so a caller who omits terrain gets a refusal,
+		// and a schema that told them to omit it would be advertising a
+		// command the server rejects. Terrain is still normally authored as
+		// a map file and loaded through the map/adventure path; this tool is
+		// the improvised path, and the price of improvising a room is saying
+		// what is in it.
+		//
+		// AND THE SIZE SENTENCE IS HERE FOR A REASON A SCHEMA CANNOT EXPRESS.
+		// The tile map rides in one websocket frame, and the gateway reads at
+		// most maxWSFrameBytes = 32768 (internal/gateway/server.go), dropping
+		// a larger frame inside conn.Read — BEFORE DecodeCommand, so no
+		// server-side validator can ever answer it and the agent meets a
+		// closed connection instead of a refusal. A JSON Schema has no way to
+		// say "gridWidth * gridHeight <= 1200", so the only lever on this path
+		// is the prose the model reads. The same bound and the same wording
+		// live in client/src/commands.ts's maxCreateSceneSquares, which is
+		// where it is derived and measured.
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.CreateScene": {
-				requiredOverride: []string{"sceneId", "name", "gridWidth", "gridHeight"},
+				requiredOverride: []string{"sceneId", "name", "gridWidth", "gridHeight", "tiles"},
 				fieldDocs: map[string]string{
-					"tiles":   "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+					"tiles":   "Required, and it must name EVERY square of gridWidth x gridHeight — a scene one square short is refused. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal). For a plain open room, give every square {\"kind\": \"floor\"}. Keep gridWidth x gridHeight at or under 1200 squares: the whole tile map travels in one message, and a larger one exceeds the server's read limit and closes the connection instead of answering. Scenes with real terrain, and any place larger than that, are normally authored as a map file and brought in with load_map rather than built field by field here.",
 					"objects": "Optional; omit unless placing scenery inline. Scenery is normally authored as part of a map file rather than built field by field here.",
 				},
 			},
@@ -117,6 +132,26 @@ var manifest = []toolSpec{
 		descriptor:  (&vttv1.PlaceToken{}).ProtoReflect().Descriptor(),
 	},
 	{
+		message:     "vtt.v1.RemoveToken",
+		name:        "remove_token",
+		description: "Take a token off the board, for good. This is NOT hiding it — the piece is no longer part of the world going forward, for everyone at the table. It does not erase that the token was ever there; the log keeps whatever place_token/move_token history it had before this. DM/agent only.",
+		descriptor:  (&vttv1.RemoveToken{}).ProtoReflect().Descriptor(),
+		// requiredOverride check (the fabrication-trap lesson — see
+		// add_actor/add_narration above): RemoveToken has exactly one field,
+		// token_id, and it is genuinely required — there is no way to remove
+		// "a" token without naming which one. No override needed.
+	},
+	{
+		message:     "vtt.v1.RemoveActor",
+		name:        "remove_actor",
+		description: "Take an actor out of the world, for good, along with every token it has on the board. This is NOT hiding it and NOT revoking control — the actor is no longer part of the world going forward, for everyone at the table, and there is no un-remove. It does not erase that the actor ever existed; the log keeps its add_actor and everything that happened to it. This ONE call also removes each of the actor's tokens, so do not call remove_token first. DM/agent only.",
+		descriptor:  (&vttv1.RemoveActor{}).ProtoReflect().Descriptor(),
+		// No requiredOverride, for the same reason RemoveToken above needs
+		// none: RemoveActor has exactly one field, actor_id, and it is
+		// genuinely required — there is no way to remove "an" actor without
+		// naming which one.
+	},
+	{
 		message:     "vtt.v1.StartSession",
 		name:        "start_session",
 		description: "Start a new play session.",
@@ -127,12 +162,6 @@ var manifest = []toolSpec{
 		name:        "end_session",
 		description: "End the current play session.",
 		descriptor:  (&vttv1.EndSession{}).ProtoReflect().Descriptor(),
-	},
-	{
-		message:     "vtt.v1.RetractEvents",
-		name:        "retract_events",
-		description: "Retract a range of events from the record with a stated reason.",
-		descriptor:  (&vttv1.RetractEvents{}).ProtoReflect().Descriptor(),
 	},
 	{
 		message:     "vtt.v1.UseAbility",

@@ -27,9 +27,66 @@
       "Name": "Night Camp",
       "GridWidth": 3,
       "GridHeight": 3,
-      "Tiles": {},
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "0,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "1,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,1": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        },
+        "2,2": {
+          "Kind": "floor",
+          "Material": "",
+          "Art": ""
+        }
+      },
       "Objects": [],
       "OpenDoors": {},
+      "Explored": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true
+      },
       "Visible": {
         "0,0": true,
         "0,1": true,

@@ -64,6 +64,17 @@ LLM's MCP tools all drive a live table through the same wire API.
   `RetractEvents`. Each is validated, role-gated, converted to its event,
   appended synchronously; result carries the sequence (RetractEvents
   included, as of a P6 pre-step; was a carry-forward).
+
+  *AMENDED 2026-08-30 — `RetractEvents` is not a command any more.* Patrik's
+  ruling of 2026-08-30 removed retraction from the platform; the message and its
+  `ClientCommand` arm left the contract in `59542e1` and the handler left the
+  gateway in `5396338` (sub-project 13,
+  `2026-08-30-retraction-leaves-design.md`). It was also the one command that did
+  NOT convert to its event the way this bullet describes — `ToEvent` returned a
+  sentinel and `campaign.Undo` built the marker — so its removal makes the
+  "mirror the lifecycle 1:1" claim truer than it was. The command surface has
+  grown well past v1 since; `internal/gateway`'s `commandRoles` table and
+  `TestEveryClientCommandConverts` are the live enumeration.
 - Catch-up: client sends `after_sequence` at connect; server streams history
   then live (store.Subscribe semantics, buffer 256 — a named constant;
   overflow = WebSocket close, client reconnects and catches up).
@@ -146,8 +157,27 @@ gateway function:
 | MoveToken | ✓ | ✓ | only own-controlled actors' tokens | — |
 | CreateScene/AddActor/PlaceToken | ✓ | ✓ | — | — |
 | StartSession/EndSession | ✓ | ✓ | — | — |
-| RetractEvents | ✓ | ✓ | — | — |
+| ~~RetractEvents~~ **(removed 2026-08-30 — see below)** | ✓ | ✓ | — | — |
 | (receive event stream) | ✓ | ✓ | ✓ | ✓ |
+
+*AMENDED 2026-08-30.* The `RetractEvents` row above is history: no role may
+retract, because there is no `retract_events` to authorize. The handler and its
+authorization entry left in `5396338`; the message left the contract in
+`59542e1` (sub-project 13, `2026-08-30-retraction-leaves-design.md`).
+
+Flagged in the row itself rather than only in a note, because this table is the
+design of `internal/gateway`'s `commandRoles`, and later specs lean on that
+single table being the only place a "who may do what" answer lives —
+`2026-08-08-joining-a-table-design.md` §3.1a routes promotion through a
+`ClientCommand` for exactly that reason, "one authorization surface beats two",
+and §5 there grows the same matrix rather than starting another. A stale row
+here is therefore a stale answer in more places than this document.
+
+The rows are also no longer the whole table: the command surface grew well past
+v1 with the ruleset, adventure, map, presence, join and removal arcs.
+`commandRoles` is the live enumeration, and its table-driven test asserts every
+command × role cell literally rather than deriving expectations from the map
+under test.
 
 Invite management (`vtt invite`/`vtt revoke`) is CLI-only, DM-side — the
 agent can never alter who is at the table.
@@ -161,7 +191,13 @@ this is what makes the agent auditable.
 - Campaign DB gains a `participants` table (managed by `internal/identity`):
   id, display_name, role, token_hash, revoked.
 - **Deliberately NOT event-sourced:** identity is infrastructure, not game
-  history — revocation must not be undoable via game-log mechanics.
+  history — revocation must not be undoable via game-log mechanics. *(2026-08-30:
+  the decision stands and its stated reason no longer bites — nothing in the log
+  is undoable now that retraction is gone. The live reason is the one
+  `2026-08-08-joining-a-table-design.md` §3.1 gives: a role is an UPDATE to
+  `participants.role`, in the same table the token lives in, one source of
+  truth. `internal/gateway/convert_test.go`'s `notConverted` entry for
+  `promote_participant` says the same thing where the code can see it.)*
 - `vtt invite --campaign f.db --name Lera --role player` prints the
   one-time-shown token; `vtt revoke` flips the flag.
 
@@ -237,7 +273,10 @@ later concern). Recorded as ADR-008.
   over live WebSockets — including a player denied moving another's token,
   a spectator denied everything, and the agent performing a retraction —
   ending with state equality across all three clients' views after
-  reconnect+catch-up.
+  reconnect+catch-up. *(2026-08-30: the retraction leg is gone from
+  `scenarios/three-role-exit.json` — the agent has no such command — and every
+  other leg, including the state-equality ending, still runs on every
+  `task check`.)*
 
 ## 11. Non-goals (YAGNI)
 
@@ -250,7 +289,10 @@ now). No browser client (sub-project 7). No password auth, no accounts.
 
 - WebSocket library choice: RESOLVED — `github.com/coder/websocket` v1.8.15.
 - Whether `RetractEvents` needs a player-visible confirmation flow — a UX
-  question for sub-project 7; the API just executes.
+  question for sub-project 7; the API just executes. *(CLOSED 2026-08-30, by
+  removal rather than by answer: there is no `RetractEvents`. The question's
+  premise — that a player might need telling their history had changed under
+  them — is the objection that ended the operation.)*
 - `Envelope.session_id` stamping: RESOLVED (Patrik, 2026-07-24) — the
   CAMPAIGN stamps it under its lock at Append from the currently-open
   session (single authority, no race window, same pattern as sequence

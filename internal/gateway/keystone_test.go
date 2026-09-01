@@ -351,8 +351,9 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 // state. The left side is built the way a real seat builds it — one Projector
 // fed the log from the beginning, judging each event against campaign.FoldPrefix
 // of the log so far, which is what internal/gateway/seat.go's receive does — so
-// retraction, introductions and the projector's memory are all exercised rather
-// than stepped around.
+// introductions and the projector's memory are exercised rather than stepped
+// around. Retraction was on that list until 2026-08-31, when it left the
+// platform and the corpus stopped containing any.
 //
 // THE PREFIX-WISE PROPERTY HAS A WITNESS, and it is worth naming because most
 // faults do not need it: of the six injections in the task report, a
@@ -391,9 +392,18 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //   - It does NOT bound Explored from below, and that is correct rather than a
 //     gap: a visible square carrying no terrain is deliberately never
 //     remembered, because there is nothing there to remember. On a bare-canvas
-//     scene Explored stays empty however much is visible — which is why the
-//     corpus carries one of each (scenarios/goldens/session-zero has a tiled
-//     scene and a terrain-free one side by side).
+//     scene Explored stays empty however much is visible. The corpus USED to
+//     carry one of each — session-zero's `camp` declared no terrain — and since
+//     2026-09-01 it cannot: create_scene refuses a scene that leaves a square
+//     undeclared, so every corpus scene is fully tiled. The bare canvas is
+//     still reachable through a map FILE, which may still omit tiles, and the
+//     rule is pinned directly rather than exhibited, in three places that never
+//     depended on the fixture: internal/engine's
+//     TestVisibleComesFromItsOwnFieldNotFromTheTiles, client/test's
+//     visibility.test.ts "a token on a bare canvas is drawn", and (added with
+//     this change, as the assertion-for-assertion mirror of the Go one)
+//     fold-unit.test.ts's "a sceneSeen with visible squares and no terrain
+//     remembers nothing".
 //
 // TWO FIELDS ARE COMPARED AS BOUNDS RATHER THAN EQUALITIES, and for the same
 // path-dependence reason rather than for convenience:
@@ -457,11 +467,14 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		}
 		projected = append(projected, out...)
 
-		// campaign.FoldPrefix is engine.Apply under the same two-pass retraction
-		// semantics internal/harness.Fold and client/src/fold.ts implement (see
-		// FoldPrefix's own doc comment: it exists so the gateway does not grow a
-		// second event-application loop). Folding the PROJECTION with it is the
-		// left-hand side of §4.3.
+		// campaign.FoldPrefix is engine.Apply behind the campaign's own replay
+		// semantics (see FoldPrefix's own doc comment: it exists so the gateway
+		// does not grow a second event-application loop). Folding the PROJECTION
+		// with it is the left-hand side of §4.3. It was named here as the twin
+		// of internal/harness.Fold and client/src/fold.ts, which mirrored its
+		// two retraction passes; all three are single-pass as of 2026-08-31, so
+		// the three folds are once again the same loop written three times —
+		// apply what you are handed, in order.
 		got, err := campaign.FoldPrefix(projected)
 		if err != nil {
 			t.Fatalf("prefix %d (seq %d): folding this seat's PROJECTION failed — a stream the "+

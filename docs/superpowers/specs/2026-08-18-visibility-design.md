@@ -125,6 +125,14 @@ retractable, so a DM could "undo" somebody having looked at Asme. It is a
 connection setting, like the catch-up point. The only cost is that a perch does
 not survive a reconnect, and the client re-sends it on connect.
 
+*AMENDED 2026-08-31.* The conclusion stands and the "retractable" clause no
+longer does. Retraction left the platform in sub-project 13
+(`2026-08-30-retraction-leaves-design.md`), so a logged perch could not be
+"undone" by anybody — it would simply sit in the log for good, which is a
+sharper version of the same objection rather than a weaker one. That is the
+reason `set_viewpoint` now gives for itself in `convert_test.go`'s
+`notConverted` allowlist: "the log only going forward — stay there for good".
+
 **An unassigned PLAYER does not perch.** They see nothing until the DM grants a
 character (§3.1). Perching is the spectator's affordance; a player's answer to
 an empty board is to be given a character, which is the onboarding flow working
@@ -291,7 +299,11 @@ player's replay filters identically and the gaps are invisible to them.
 - `SceneSeen` carrying the tiles and objects currently visible.
 - `SceneCreated` with grid dimensions but **empty tiles and objects** — legal
   since the tiles-optional ruling (2026-08-13), so a redacted scene needs no new
-  shape.
+  shape. (*Still true after 2026-08-31, and worth saying why:* `e110e9b` made
+  `tiles` mandatory on the `create_scene` COMMAND — see §6.2's correction — but
+  this is a synthesized EVENT, built by `internal/gateway`'s projector and folded
+  by `engine.Apply`, which validates nothing it replays. The redaction never
+  travelled the command path and is unaffected.)
 
 **Two different things, and they must not be confused.**
 
@@ -322,19 +334,42 @@ the adventure, and the players are not supposed to have read ahead.
 **A player who leaves a scene keeps it**, dimmed, under §3.2's terrain memory:
 they were there, and that is knowledge they legitimately hold.
 
-**Synthesized events carry the sequence of the event that caused the visibility
-change.** Retraction is a range over sequence NUMBERS — `EventsRetracted`
-expands `[from,to]` into a set, and both the fold and `client/src/undo.ts` skip
-by number, not by identity. Stamping a synthesized introduction with its causing
-sequence keeps the two coherent: retract the goblin's move and the player
-correctly forgets the sighting. The residual divergence (the goblin should
-return to where it stood; the player merely forgets it) **fails closed**, which
-is the direction every error in this arc must run.
+**AMENDED 2026-08-31 — the two paragraphs below were the argument for a
+capability that has since left the platform, and they are kept because the
+stamping decision they justify is still in force.** Retraction was removed in
+sub-project 13 (`2026-08-30-retraction-leaves-design.md`) on Patrik's ruling of
+2026-08-30: `EventsRetracted` and `RetractEvents` left the contract in
+`59542e1`, `campaign.Undo` in `133e896`, `client/src/undo.ts` in `d3e2f28`, and
+both folds are single-pass because the pass that collected retracted ranges was
+the only reason a second one existed. Nothing skips by sequence number any
+more, so no `retract_events` authorization row exists to be DM/agent-only and
+no client computes undo targets from anything.
 
-`retract_events` is DM/agent only (`internal/gateway/authz.go`), and the DM
-receives the identity projection, so `lastUndoable` only ever runs over a
-complete log. The dangerous case — a client computing undo targets from a
-stream that is not the log — cannot arise.
+What survives the removal is the stamping rule itself: a synthesized
+introduction still carries the sequence of the event that caused the visibility
+change. Its reason is now the plainer one — the introduction has a cause, and
+that cause has a number — rather than coherence with a deletion mechanism. The
+hazard the second paragraph reasoned about is closed by construction instead of
+by an authorization row, and sub-project 14 turns the same observation into a
+rule of its own: a derived, per-viewer artifact must not borrow a log
+identifier (`2026-08-30-per-character-logs-design.md` §1, and `perchSequence`,
+which chose sequence 0 rather than a borrowed number for exactly this reason).
+
+*Superseded, kept verbatim:*
+
+> **Synthesized events carry the sequence of the event that caused the visibility
+> change.** Retraction is a range over sequence NUMBERS — `EventsRetracted`
+> expands `[from,to]` into a set, and both the fold and `client/src/undo.ts` skip
+> by number, not by identity. Stamping a synthesized introduction with its causing
+> sequence keeps the two coherent: retract the goblin's move and the player
+> correctly forgets the sighting. The residual divergence (the goblin should
+> return to where it stood; the player merely forgets it) **fails closed**, which
+> is the direction every error in this arc must run.
+>
+> `retract_events` is DM/agent only (`internal/gateway/authz.go`), and the DM
+> receives the identity projection, so `lastUndoable` only ever runs over a
+> complete log. The dangerous case — a client computing undo targets from a
+> stream that is not the log — cannot arise.
 
 ### 4.3 The keystone invariant
 
@@ -672,6 +707,21 @@ data at all, token position is unbounded pixels, `Zone.putToken` performs no
 bounds or terrain validation, and sight is blocked by separate `Area` geometry
 independent of any board image. Nothing there gates a token's existence,
 position or rendering on map data.
+
+*CORRECTED 2026-08-31 — the first framing's CONCLUSION holds, and the mechanism
+named for it has moved.* A partial tile map still cannot arrive, but
+`CheckEverySquarePresent` no longer guards both doors. `create_scene` stopped
+calling it in `e110e9b` and calls `mapdef.RequireEverySquarePresent` instead —
+the same walk WITHOUT the zero-tiles opt-out — so an improvised room that leaves
+any square undeclared is refused outright (`internal/gateway`'s
+`validateCreateSceneTerrain`; spec `2026-08-30-retraction-leaves-design.md` §6).
+`CheckEverySquarePresent` keeps the all-or-nothing shape and now guards the
+AUTHORED-FILE paths only, never the command path: `internal/mapdef`'s `Load` and
+`internal/adventure`'s loader are its two live callers. The exemption exists so a
+file written before the format had terrain keeps loading (Patrik's tiles-optional
+ruling, 2026-08-13, which survives for authored files and only for them). The
+bare canvas the second framing rules in is therefore still reachable — through an
+authored file, and no longer by omitting `tiles` from a `create_scene`.
 
 **The actual defect was a disagreement, not an edge case.** `sight.VisibleFrom`
 walks the GRID, not the tile map, so a scene with no tiles still has every

@@ -123,15 +123,81 @@ export function endSession(): ClientCommand {
   });
 }
 
+/**
+ * The most squares one create_scene may declare.
+ *
+ * The command carries its whole tile map in ONE websocket frame, and the
+ * gateway reads at most `maxWSFrameBytes` = 32768 (internal/gateway/server.go).
+ * Past that the frame is dropped inside conn.Read, before DecodeCommand ever
+ * runs — so no server-side validator can produce a message about it, and what
+ * the DM meets instead is a closed socket, a Reconnect button, and a toast
+ * saying the connection died. Every other command in flight on that socket
+ * dies with it. THE ONLY PLACE A READABLE MESSAGE CAN COME FROM IS HERE, which
+ * is the same lesson mapdef.MaxWireTiles records for the map-file path:
+ * "Refusing at compile turns a mystery at the table into a message at load."
+ *
+ * NOT mapdef.MaxWireTiles (3600). That constant was sized against the CLIENT's
+ * 200 KiB read limit, an order up from the gateway's inbound 32 KiB, so it
+ * would let a 37x37 room straight through into the teardown above.
+ *
+ * DERIVED WITH HEADROOM FOR BOTH SENDERS AND BOTH PROTOJSON REGIMES. This
+ * client writes `JSON.stringify(toJson(...))`, which is compact and the same
+ * in every build; the MCP DM's commands are marshalled by Go protojson, which
+ * randomises whether it writes a space after each comma, seeded from a hash of
+ * the binary (contract/vtt/v1/events.proto carries the full warning). So the
+ * same command has two honest sizes, and the cap has to clear the larger.
+ *
+ * MEASURED here, with a deliberately generous 64-character scene id and
+ * 128-character name, taking the spaced worst case as compact + one byte per
+ * comma:
+ *
+ *     squares   compact    spaced (worst)   under 32768
+ *      1200     29 628 B      32 032 B      both
+ *      1225     30 253 B      32 707 B      both, by 61 B
+ *      1296     32 008 B      34 604 B      compact only
+ *      1369     33 813 B      36 555 B      neither
+ *
+ * 1200 is the largest round number that clears the spaced worst case with real
+ * margin. 1225 technically fits and 1296 does not, which is why the cap is not
+ * simply "the biggest that fits today".
+ */
+export const maxCreateSceneSquares = 1200;
+
+/**
+ * create_scene, with the terrain the server now requires.
+ *
+ * `kind` is the tile every square is declared as, and the fan-out from one
+ * answer to gridWidth x gridHeight entries happens HERE rather than at the
+ * call site: the console's job is to read what the DM meant, this function's
+ * job is the wire shape. docs/map-format.md §11 puts the fan-out in exactly
+ * this layer — organising a room "belongs in an editor — something that reads
+ * author intent and produces a map in this format".
+ *
+ * There is no default and there must not be one. The server refuses a scene
+ * that leaves a square undeclared, and a builder that quietly filled in floor
+ * would answer the DM's question for them — the same defect the Add-actor
+ * form's blank kind box exists to prevent, in this file's sibling: "a
+ * pre-filled answer is indistinguishable from a DM who never looked."
+ *
+ * Callers must check `maxCreateSceneSquares` first. This builder does not,
+ * because a builder has no way to tell the DM anything.
+ */
 export function createScene(
   sceneId: string,
   name: string,
   gridWidth: number,
   gridHeight: number,
+  kind: "floor" | "wall",
 ): ClientCommand {
+  const tiles: Record<string, { kind: string }> = {};
+  for (let y = 0; y < gridHeight; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      tiles[`${x},${y}`] = { kind };
+    }
+  }
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "createScene", value: { sceneId, name, gridWidth, gridHeight } },
+    command: { case: "createScene", value: { sceneId, name, gridWidth, gridHeight, tiles } },
   });
 }
 
@@ -146,6 +212,44 @@ export function placeToken(
     // `position` is always set, even at 0,0: protojson omits empty MESSAGES
     // as well as empty scalars, and a place with no position is rejected.
     command: { case: "placeToken", value: { tokenId, sceneId, actorId, position } },
+  });
+}
+
+/**
+ * Take a token off the board, for good (retraction-leaves spec §5.1: "takes
+ * a piece off the board"). NOT the same thing as a token going out of sight —
+ * that is a viewer-side TokenHidden the server projects; this appends a real
+ * TokenRemoved that removes the piece for everyone, permanently. DM/agent
+ * only (see internal/gateway/authz.go's commandRoles "remove_token" row).
+ */
+export function removeToken(tokenId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeToken", value: { tokenId } },
+  });
+}
+
+/**
+ * Take an actor out of the world, for good (retraction-leaves spec §5.2),
+ * along with every token it has on the board.
+ *
+ * ONE COMMAND, A WHOLE BATCH. The server answers this with an ordered batch —
+ * a TokenRemoved per token of the actor, in token-id order, then the
+ * ActorRemoved — appended or rejected as one (internal/gateway's
+ * handleRemoveActor). It is not a convenience: both folds refuse a token whose
+ * actor is unknown, so an ActorRemoved on its own would leave a world whose own
+ * INTRODUCTIONS no longer fold — the server would synthesize a tokenPlaced
+ * naming an actor no path can introduce, and this module's fold would throw on
+ * it for the rest of the session.
+ *
+ * NOT revokeActorControl. That hands a character back and is reversible; this
+ * removes it from the world for everyone, and nothing un-removes it. DM/agent
+ * only (see internal/gateway/authz.go's commandRoles "remove_actor" row).
+ */
+export function removeActor(actorId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeActor", value: { actorId } },
   });
 }
 
@@ -167,14 +271,6 @@ export function removeCondition(actorId: string, conditionId: string): ClientCom
   return create(ClientCommandSchema, {
     requestId: requestId(),
     command: { case: "removeCondition", value: { actorId, conditionId } },
-  });
-}
-
-/** Retract an INCLUSIVE sequence range. Undoing one event passes it twice. */
-export function retractEvents(from: bigint, to: bigint, reason: string): ClientCommand {
-  return create(ClientCommandSchema, {
-    requestId: requestId(),
-    command: { case: "retractEvents", value: { fromSequence: from, toSequence: to, reason } },
   });
 }
 
@@ -371,9 +467,9 @@ export function loadMap(mapId: string): ClientCommand {
  * "un-perch". Same shape as an omitted move reason, opposite consequence.
  *
  * APPENDS NOTHING (commands.proto). Where a watcher points their camera is not
- * a fact about the campaign, so there is no event to wait for and no undo that
- * can name it — which is also why a perch does not survive a reconnect and the
- * client is what re-sends it. See app.ts's redial for what that costs.
+ * a fact about the campaign, so there is no event to wait for — which is also
+ * why a perch does not survive a reconnect and the client is what re-sends it.
+ * See app.ts's redial for what that costs.
  */
 export function setViewpoint(actorId: string): ClientCommand {
   return create(ClientCommandSchema, {

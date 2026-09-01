@@ -4,6 +4,40 @@
 undo can freeze a player permanently. Both are gaps the last two arcs recorded
 on their way out rather than defects anyone discovered later.
 
+> **AMENDED 2026-08-31 — HALF OF THIS SPEC WAS BUILT AND HALF WAS CANCELLED.**
+> §§3–4 (the parity invariant, the door control, the map picker) shipped and are
+> live. **§5 reached the wire and was then taken back off it.** Sub-project 12
+> was cut short at Task 4 by Patrik's ruling of 2026-08-30 — retractions are not
+> allowed in the platform, because they exist to make something not have happened
+> and cannot (the person already read the log).
+>
+> Exactly how far §5 got, because "cancelled" is too coarse and the distinction is
+> checkable: **§5.4's contract arm WAS built, reviewed and committed**, as
+> `f7ef033` ("A seat that cannot fold what it is sent must be told to start
+> over"), on top of `27b2be7`, the last sub-project 12 commit that merged. It adds
+> `Restart restart = 6;` to `ServerFrame` plus generated Go and TS, a
+> `contract/roundtrip_test.go` case, a `contract/events.test.ts` case and the
+> fixture `contract/testdata/server_frame_restart.json`. It was then **reset away
+> on the ruling and never merged**, so `f7ef033` is a dangling commit — reachable
+> by hash, not an ancestor of anything. The sub-project 12 ledger records both
+> halves: "Task 5: complete (27b2be7..f7ef033…)" and, under ARC ENDED AT TASK 4,
+> "f7ef033 (the Restart contract arm) was reset away and Task 6's ~1000
+> uncommitted lines discarded." **§§5.5 onward — the gateway sending the frame and
+> the client obeying it — were never committed at all.**
+>
+> So: **`ServerFrame` in merged history has carried the same five arms
+> throughout**, `result` through `presence_changed`, and it carries them today.
+> That is the claim worth holding on to, and it is the one to state, because the
+> stronger-sounding "the frame was never built" is false and a `git log -S` over
+> merged history cannot tell you so — an unreferenced commit is not reachable
+> from any ref, so the search that would refute it structurally cannot.
+>
+> The replacement is `2026-08-30-retraction-leaves-design.md`, which removed
+> retraction from the contract, both folds, the campaign, the gateway, the
+> harness, the MCP surface and the client. §5 is kept because the DEFECT it
+> analyses is real and its analysis is the reason the ruling landed the way it
+> did — not because the mechanism it proposes is in the tree.
+
 ---
 
 ## 1. Why this, and why now
@@ -56,6 +90,9 @@ the laptop is the primary target.
 **Changing what a retraction means.** Retraction stays a range over sequence
 numbers, retracted for every seat. Only the delivery of one to a projected seat
 changes.
+
+*OVERTAKEN 2026-08-30.* Retraction did not change meaning; it left. See the
+amendment at the head of this document and §5's.
 
 **A per-viewer pre-flight on undo.** Considered and rejected in §5.2.
 
@@ -161,6 +198,22 @@ therefore reports the failure as one message rather than implying a partial load
 
 ## 5. A projected seat survives a retraction
 
+> **OBSOLETE IN FULL, 2026-08-30, and kept rather than deleted.** Patrik's ruling
+> arrived mid-build and removed the operation the whole section is about. Of the
+> mechanism described here, §5.4's contract arm was committed as `f7ef033` and
+> then reset away unmerged (see the amendment at the head of this document);
+> §§5.5 onward were never committed. Nothing from this section is in the tree.
+>
+> The freeze it describes is now unreachable by construction: with no
+> `EventsRetracted` on the wire (`59542e1`), no `campaign.Undo` (`133e896`) and
+> no `client/src/undo.ts` (`d3e2f28`), there is no event that can remove an
+> introduction a later event depends on. The section survives because
+> `2026-08-30-retraction-leaves-design.md` §1 cites this chain as the evidence
+> for the ruling — an unachievable goal, a stamping decision to serve it, a
+> derived per-viewer artifact made deletable, a dangling reference, a frozen
+> client — and a reader who cannot see the analysis cannot check the argument.
+> Read §5 as a diagnosis that was accepted and a treatment that was not.
+
 ### 5.1 The defect
 
 A goblin is revealed to a player at sequence 41 — their own move brought it into
@@ -182,6 +235,17 @@ for one that receives a projection of it.
 `TestASceneRetractedOutOfTheWorldIsForgottenSILENTLY` is the clean case. It does
 not cover a retraction whose range removes an introduction while a later event
 about the introduced thing survives.
+
+*CORRECTED 2026-08-31 — that test is gone twice over.* It was renamed to
+`TestASceneGoneFromTheWorldIsForgottenSILENTLY` in `5396338`, when no role could
+retract any longer and the name's premise stopped being true, and then deleted
+outright in `133e896` along with the projector's forgetting loop and two
+siblings (`TestASceneThatComesBackIsUsableAgain`,
+`TestASceneThatComesBackBringsItsOpenDoorsBack`). All three built a world that
+had LOST a scene, which only an undo covering a `SceneCreated` could produce.
+`internal/gateway/project_test.go` records the removal in place, under
+"THREE TESTS STOOD HERE AND LEFT WITH THE FORGETTING LOOP", so the coverage is
+named as unreachable rather than dropped by omission.
 
 ### 5.2 Why not a per-viewer pre-flight
 
@@ -271,6 +335,16 @@ folds cleanly, reports no error and shows no goblin.
 batch reconnect, `project_test.go`'s retraction suite, and the visibility
 keystone at every prefix.
 
+*OBSOLETE 2026-08-31, both paragraphs.* The keystone case was never written —
+the arc stopped at Task 4 (§5's banner). `project_test.go`'s retraction suite is
+gone with the operation it tested. What replaced this section's testing burden
+is in `2026-08-30-retraction-leaves-design.md` §8: a gate
+(`tools/check-no-retraction.py`) proving no retraction identifier survives, and
+per-command coverage for `remove_token` and `remove_actor` — including that
+`remove_actor`'s batch is atomic and that the log still folds with the actor
+gone. `session.test.ts`'s torn-batch reconnect and the visibility keystone did
+keep passing unchanged, which is the one claim here that held.
+
 ---
 
 ## 8. What could go wrong
@@ -316,3 +390,9 @@ which now points at a presence function; the append is at `:215`.
 6. `task check` green, both mutation gates included.
 7. A cold reader given only this spec and `docs/map-format.md` can open a door
    from the browser without asking how.
+
+*STATUS 2026-08-31.* Criteria 1–4 and 7 were met and merged (`46c3d56`).
+**Criterion 5 was withdrawn, not failed**: the sequence it describes cannot be
+constructed any more, because no command produces a retraction. Criterion 6 was
+met for what shipped. The successor criteria are
+`2026-08-30-retraction-leaves-design.md` §10.

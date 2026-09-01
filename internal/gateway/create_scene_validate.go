@@ -49,11 +49,25 @@ var validTileKinds = func() map[string]bool {
 //     three is the string terrain.go tests for.
 //   - tile keys parse as "x,y" and lie inside the declared grid
 //     (mapdef.CheckTilesInsideGrid).
-//   - completeness: once tiles is non-empty at all, every grid square must
-//     have an entry (mapdef.CheckEverySquarePresent) — tiles itself stays
-//     OPTIONAL (Patrik's ruling, 2026-08-13): both functions already treat a
-//     nil/empty tiles map as "no terrain declared, nothing to check", so no
-//     special case is needed here either.
+//   - completeness: every grid square must have an entry
+//     (mapdef.RequireEverySquarePresent), so terrain is mandatory for any
+//     scene that HAS squares. It is not universally mandatory, and the gap is
+//     worth knowing rather than glossing: the walk iterates y < h then x < w,
+//     so on a degenerate grid — 0x0, 5x0, or either dimension negative — the
+//     loops never run and an empty tiles map passes. Nothing in this package
+//     or in mapdef validates grid DIMENSIONS at all, which predates this rule
+//     and is not fixed by it; recorded here so the next reader does not take
+//     the sentence above as a guarantee it cannot make. A map FILE keeps the
+//     opt-out — tiles is optional in the file
+//     format (Patrik's ruling, 2026-08-13), because a file authored before
+//     maps-as-geometry must keep loading — and mapdef.CheckEverySquarePresent
+//     is that same walk with that exemption attached. create_scene has no
+//     such legacy: nobody has authored a create_scene command in advance, it
+//     is the IMPROVISED path by which a place comes into existence during
+//     play, and a scene created with no terrain is a featureless grid on
+//     which internal/sight has nothing to occlude with, so everyone sees
+//     everything. An improvised room does not get to opt out of the rule
+//     maps-as-geometry exists to enforce.
 //   - objects lie inside the grid, full footprint not just anchor, and are
 //     at least 1x1 (mapdef.CheckObjectFootprints).
 //
@@ -73,7 +87,7 @@ var validTileKinds = func() map[string]bool {
 // and would put platform code in the business of deciding which
 // ruleset-flavour words are legitimate — exactly what rule 5 forbids.
 //
-// mapdef.CheckEverySquarePresent and mapdef.CheckTilesInsideGrid both take a
+// mapdef.RequireEverySquarePresent and mapdef.CheckTilesInsideGrid both take a
 // map[string]string (the map-file shape) and read only their KEYS, never
 // their values (see each function's own doc comment: presence and range
 // checks, nothing else) — so tileKeys below re-keys cmd's
@@ -92,7 +106,7 @@ func validateCreateSceneTerrain(cmd *vttv1.CreateScene) error {
 	for k := range tiles {
 		tileKeys[k] = k
 	}
-	if err := mapdef.CheckEverySquarePresent(tileKeys, w, h, errf); err != nil {
+	if err := mapdef.RequireEverySquarePresent(tileKeys, w, h, errf); err != nil {
 		return err
 	}
 	if err := mapdef.CheckTilesInsideGrid(tileKeys, w, h, errf); err != nil {

@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
@@ -1030,8 +1032,8 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // not need to log anything about what/where the spectator sees." The log is
 // the campaign's history, and where a watcher points their camera is not a
 // fact about the campaign; it is a view preference, like zoom. Logged, it
-// would replay forever, add story-panel noise, and — absurdly — become
-// RETRACTABLE, so a DM could undo somebody having looked at Asme.
+// would replay forever and add story-panel noise — and the log only goes
+// forward, so it would be there for good.
 //
 // The cost of that ruling is the perch not surviving a reconnect (spec
 // §3.1.1), because it lives on the connection like the catch-up point does.
@@ -1216,10 +1218,14 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// use_ability/load_adventure/load_map do not become a single Envelope via
-	// ToEvent (they each produce a whole ordered batch instead — ruleset.go/
-	// adventure.go/map.go); every other command, including remove_condition,
-	// still flows through the plain ToEvent -> campaign.Append path below.
+	// use_ability/load_adventure/load_map/remove_actor do not become a single
+	// Envelope via ToEvent (they each produce a whole ordered batch instead —
+	// ruleset.go/adventure.go/map.go and handleRemoveActor in this file);
+	// every other command, including remove_condition
+	// and remove_token (retraction-leaves Task 8 — no board-position seam
+	// needed here, since it is DM/agent only and engine.Apply's own
+	// unknown-token guard is the entire validation story), still flows
+	// through the plain ToEvent -> campaign.Append path below.
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
@@ -1228,6 +1234,12 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 	if lm, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadMap); ok {
 		return s.handleLoadMap(requestID, lm.LoadMap, p)
+	}
+	// remove_actor is the fourth batch command and the only one in this arc:
+	// it emits a TokenRemoved per token of the actor and then the
+	// ActorRemoved, as ONE ordered batch (handleRemoveActor, in this file).
+	if ra, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveActor); ok {
+		return s.handleRemoveActor(requestID, ra.RemoveActor, st, p)
 	}
 	// promote_participant produces NO EVENT AT ALL, unlike the two above which
 	// produce a batch. A role lives in participants.role beside the token —
@@ -1246,10 +1258,6 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	env, err := ToEvent(cmd, p)
 	if err != nil {
-		var rr *RetractionRange
-		if errors.As(err, &rr) {
-			return s.handleRetraction(requestID, rr, p)
-		}
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
@@ -1273,31 +1281,6 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
-}
-
-// handleRetraction persists rr via campaign.Undo, which owns constructing
-// the EventsRetracted marker itself (ToEvent deliberately never builds one
-// — see ErrIsRetraction's doc comment). A fresh marker event id is minted
-// here the same way ToEvent mints one for every other event. p is the
-// issuing participant: campaign has no identity concept of its own (see
-// Undo's doc comment), so the gateway — the one place that has both p and
-// the retraction — supplies actor_role/participant_id attribution the same
-// way ToEvent does for every other command (spec §4).
-func (s *Server) handleRetraction(requestID string, rr *RetractionRange, p *identity.Participant) *vttv1.CommandResult {
-	id, err := newEventID()
-	if err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-	}
-	seq, err := s.campaign.Undo(rr.FromSequence, rr.ToSequence, rr.Reason, id, string(p.Role), p.ID)
-	if err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-	}
-	// campaign.Undo now returns the marker's own sequence (P6 Task 4
-	// pre-step, controller decision — closes the P4 carry-forward), so the
-	// result carries it the same way Append's sequence does for every other
-	// command; it also remains visible on the broadcast Envelope frame
-	// itself, to every connection including this one.
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }
 
@@ -1441,6 +1424,80 @@ func (s *Server) announcePromotion(participantID string) {
 		}
 		return b
 	})
+}
+
+// handleRemoveActor takes an actor out of the world AND the pieces it had on
+// the board, as one ordered batch (retraction-leaves spec §5.2, Task 9).
+//
+// THE CASCADE IS CORRECTNESS, NOT CONVENIENCE, and it is the whole reason this
+// command is not a plain ToEvent conversion. engine.Apply's TokenPlaced arm
+// and client/src/fold.ts's tokenPlaced arm both refuse a token whose actor
+// they do not know, in almost the same words — so an ActorRemoved that left
+// this actor's tokens standing would leave a world whose own introductions no
+// longer fold, and through client/src/session.ts's
+// re-fold-the-whole-log-on-every-event that is a permanent client freeze. The
+// batch is therefore one TokenRemoved per token of this actor, in token-id
+// order, and then the ActorRemoved, last.
+//
+// ONE campaign.AppendBatch, which is what makes it atomic: the batch is
+// validated by folding the whole of it before any of it is persisted, so a
+// rejection anywhere appends nothing. handleLoadMap (map.go) is the precedent
+// for the shape, down to this function's own stamping loop.
+//
+// SORTED BY TOKEN ID, not by map iteration order. Go randomises the latter, and
+// the log is permanent: two identical tables would otherwise record the same
+// removal in different orders, and no test could assert either.
+//
+// NOTHING IS CHECKED HERE. An unknown actor id produces a one-event batch that
+// campaign.AppendBatch rejects with the fold's own "removed unknown actor"
+// wording — the same division of labour remove_token has, where engine.Apply
+// owns the unknown-subject rejection and this layer owns the shape. And the
+// snapshot this reads can go stale between here and the append, which the fold
+// also owns: its ActorRemoved arm refuses an actor whose tokens still stand, so
+// a place_token that lands in between costs a clean rejection rather than an
+// orphaned token.
+//
+// CONTROL GRANTS NEED NO EVENT: controller_ids is a field on the Actor, so
+// whoever held this actor stops holding it because the actor is gone.
+func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
+	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
+	var tokenIDs []string
+	for id, tok := range st.Tokens {
+		if tok.ActorID == cmd.GetActorId() {
+			tokenIDs = append(tokenIDs, id)
+		}
+	}
+	sort.Strings(tokenIDs)
+
+	envs := make([]*vttv1.Envelope, 0, len(tokenIDs)+1)
+	for _, id := range tokenIDs {
+		envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_TokenRemoved{
+			TokenRemoved: &vttv1.TokenRemoved{TokenId: id}}})
+	}
+	envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_ActorRemoved{
+		ActorRemoved: &vttv1.ActorRemoved{ActorId: cmd.GetActorId()}}})
+
+	// Stamped here rather than by ToEvent, which this command does not use —
+	// the same loop handleLoadMap runs over the envelopes mapdef.Compile
+	// returns, and for the same reason: a batch has no single envelope for
+	// ToEvent to build.
+	now := timestamppb.Now()
+	for _, env := range envs {
+		id, err := newEventID()
+		if err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+		env.EventId = id
+		env.ParticipantId = p.ID
+		env.ActorRole = string(p.Role)
+		env.OccurredAt = now
+	}
+
+	firstSeq, err := s.campaign.AppendBatch(envs)
+	if err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
 
 // handleJoinDoor opens or closes the shared join link (joining-a-table §2).

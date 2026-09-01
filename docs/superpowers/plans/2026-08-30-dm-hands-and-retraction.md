@@ -10,6 +10,31 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-30-dm-hands-and-retraction-design.md`
 
+> **AMENDED 2026-08-30 — RETRACTION LEFT THE PLATFORM, SO EVERY UNDO/RETRACTION
+> STEP BELOW DESCRIBES MACHINERY THAT NO LONGER EXISTS.** Patrik's ruling of
+> 2026-08-30: a retraction exists to make something not have happened, and it
+> cannot — the person already read the log. Sub-project 13
+> (`docs/superpowers/specs/2026-08-30-retraction-leaves-design.md`) removed it in
+> full: `RetractEvents` and `EventsRetracted` left the contract in `59542e1`,
+> `campaign.Undo` and `retractedSet` in `133e896`, the gateway handler and its
+> authorization row in `5396338`, `client/src/undo.ts` and `fold.ts`'s second
+> pass in `d3e2f28`, and the harness's matching two-pass in `92f1284`.
+> **This plan was CUT SHORT at Task 4** (merge commit `46c3d56`). Tasks 5-9 were
+> building the `Restart` frame when the ruling landed, and none of it merged —
+> `ServerFrame` in merged history has the same five arms it had before this branch
+> opened. Task 5 got furthest and is worth naming precisely: it was completed,
+> reviewed and committed as `f7ef033`, adding `Restart restart = 6;` with its
+> generated code and round-trip fixtures on top of `27b2be7`, then reset away on
+> the ruling. `f7ef033` is a dangling commit — reachable by hash, an ancestor of
+> nothing — so a `git log -S` over merged history will not find it, which is worth
+> knowing before concluding from one that something was never built. Tasks 6-9 were
+> never committed, so the Architecture paragraph's second half, describing a gateway
+> that sends a restart instead of the marker, was never true of any commit. Tasks
+> 1-4 — the surface table, the door control, the map picker — did ship and are live.
+> This plan is left as the record of what was built at the time; it is not a
+> description of the tree. `tools/check-no-retraction.py` is the gate that keeps
+> it from coming back.
+
 ## Global Constraints
 
 - **Airtight TDD (ADR-009).** Tests first, RED before the solution exists, behavioral RED over compile-failure RED wherever a stub can compile. After-the-fact tests need fault-injection proof per load-bearing assertion.

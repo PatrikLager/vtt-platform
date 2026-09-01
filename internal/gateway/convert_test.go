@@ -1,7 +1,6 @@
 package gateway_test
 
 import (
-	"errors"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -184,6 +183,31 @@ func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 	}
 }
 
+// TestToEventRemoveTokenProducesTokenRemoved is PlaceToken's own test
+// (TestToEventPlaceTokenProducesTokenPlaced, above) mirrored for removal
+// (retraction-leaves Task 8): a plain single-Envelope conversion, the same
+// shape as OpenDoor/CloseDoor/RemoveCondition — no adjacency or ownership
+// check here, since Authorize (a DM/agent-only row) has already decided this
+// participant may issue it by the time ToEvent runs.
+func TestToEventRemoveTokenProducesTokenRemoved(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveToken{
+		RemoveToken: &vttv1.RemoveToken{TokenId: "t1"},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := env.Payload.(*vttv1.Envelope_TokenRemoved)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_TokenRemoved", env.Payload)
+	}
+	if tr.TokenRemoved.TokenId != "t1" {
+		t.Fatalf("TokenId = %q, want %q", tr.TokenRemoved.TokenId, "t1")
+	}
+}
+
 func TestToEventStartSessionProducesSessionStarted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{
@@ -215,32 +239,6 @@ func TestToEventEndSessionProducesSessionEnded(t *testing.T) {
 	}
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionEnded); !ok {
 		t.Fatalf("payload = %T, want *Envelope_SessionEnded", env.Payload)
-	}
-}
-
-// TestToEventRetractEventsReturnsSentinel covers the one command that does
-// NOT become an Envelope here: campaign.Undo owns marker construction, so
-// ToEvent returns nil plus an error wrapping ErrIsRetraction, carrying the
-// parsed range via errors.As.
-func TestToEventRetractEventsReturnsSentinel(t *testing.T) {
-	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
-	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RetractEvents{
-		RetractEvents: &vttv1.RetractEvents{FromSequence: 3, ToSequence: 5, Reason: "mistake"},
-	}}
-
-	env, err := gateway.ToEvent(cmd, p)
-	if env != nil {
-		t.Fatalf("want nil envelope for a retraction command, got %v", env)
-	}
-	if !errors.Is(err, gateway.ErrIsRetraction) {
-		t.Fatalf("want error wrapping ErrIsRetraction, got %v", err)
-	}
-	var rr *gateway.RetractionRange
-	if !errors.As(err, &rr) {
-		t.Fatalf("want error to unwrap to *RetractionRange, got %T", err)
-	}
-	if rr.FromSequence != 3 || rr.ToSequence != 5 || rr.Reason != "mistake" {
-		t.Fatalf("RetractionRange = %+v, want {From:3 To:5 Reason:mistake}", rr)
 	}
 }
 
@@ -456,7 +454,12 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"load_adventure": "expands to a batch of events, handled before ToEvent (adventure.go)",
 		"load_map": "expands to a batch of events, handled before ToEvent (map.go) — the " +
 			"same shape as load_adventure directly above",
-		"retract_events": "a retraction range, not a single event (handleRetraction)",
+		"remove_actor": "expands to a batch of events — one TokenRemoved per token of " +
+			"the actor, then the ActorRemoved — handled before ToEvent (handleRemoveActor " +
+			"in server.go). Both folds refuse a token whose actor is unknown, so an " +
+			"ActorRemoved on its own would leave a world whose own INTRODUCTIONS no " +
+			"longer fold: the projection synthesizes a TokenPlaced naming an actor no " +
+			"path can introduce, and the seat that receives it never folds again",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",
@@ -468,9 +471,9 @@ func TestEveryClientCommandConverts(t *testing.T) {
 			"than useless (joining-a-table spec §2, §4)",
 		"set_viewpoint": "appends nothing, the same shape as set_join_door above: where a " +
 			"spectator points their camera is a view preference, not campaign history, so " +
-			"logging it would replay forever and make it retractable (visibility spec " +
-			"§3.1.1). serve answers it directly (handleSetViewpoint) and it never reaches " +
-			"ToEvent at all.",
+			"logging it would replay forever and — the log only going forward — stay there " +
+			"for good (visibility spec §3.1.1). serve answers it directly " +
+			"(handleSetViewpoint) and it never reaches ToEvent at all.",
 	}
 
 	oneof := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Oneofs().ByName("command")

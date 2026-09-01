@@ -8,6 +8,27 @@
 
 **Tech Stack:** Go 1.26; `github.com/coder/websocket` (maintained; pinned exact at implementation, version recorded); `github.com/spf13/cobra` (pinned exact; viper deferred until a config file exists — noted in ADR-008); existing pinned contract pipeline.
 
+> **AMENDED 2026-08-30 — RETRACTION LEFT THE PLATFORM, SO EVERY UNDO/RETRACTION
+> STEP BELOW DESCRIBES MACHINERY THAT NO LONGER EXISTS.** Patrik's ruling of
+> 2026-08-30: a retraction exists to make something not have happened, and it
+> cannot — the person already read the log. Sub-project 13
+> (`docs/superpowers/specs/2026-08-30-retraction-leaves-design.md`) removed it in
+> full: `RetractEvents` and `EventsRetracted` left the contract in `59542e1`,
+> `campaign.Undo` and `retractedSet` in `133e896`, the gateway handler and its
+> authorization row in `5396338`, `client/src/undo.ts` and `fold.ts`'s second
+> pass in `d3e2f28`, and the harness's matching two-pass in `92f1284`.
+> Affected here: Task 1's `RetractEvents` message, its `ClientCommand` arm and its
+> `retract_events` toolgen manifest entry; Task 2's `Undo`-after-rebuild `Notify`
+> call site; Task 4's `retract_events` row of `commandRoles` and `ToEvent`'s
+> `ErrIsRetraction` sentinel; Task 5's `c.Undo` branch in the inbound path and its
+> "agent RetractEvents → marker broadcast to all" test; and Task 7's retraction
+> leg of the three-client exit scenario. The authorization table
+> itself, the identity layer, the codec, the fan-out and the CLI shell are live
+> and have grown since.
+> This plan is left as the record of what was built at the time; it is not a
+> description of the tree. `tools/check-no-retraction.py` is the gate that keeps
+> it from coming back.
+
 ## Global Constraints
 
 - Repo `/Users/patriklager/dev/vtt-platform`; branch `feat/api-gateway` from `main`.

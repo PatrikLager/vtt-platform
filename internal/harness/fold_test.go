@@ -23,8 +23,6 @@ func foldEnv(seq int64, id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
 	case *vttv1.TokenMoved:
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
-	case *vttv1.EventsRetracted:
-		e.Payload = &vttv1.Envelope_EventsRetracted{EventsRetracted: p}
 	case nil:
 		// Deliberately left with a nil Payload — engine.Apply's type switch
 		// falls to its default case for this (engine.ErrUnknownVariant),
@@ -35,18 +33,16 @@ func foldEnv(seq int64, id string, payload any) *vttv1.Envelope {
 }
 
 // TestFoldParityAgainstIndependentEngineApplyReplay is the ADR-009
-// after-the-fact parity test (task-2-brief.md Step 2): it feeds Fold the
-// same envelope sequence used to independently build an "expected" state by
-// hand-driving engine.Apply directly (skipping only the retracted sequence
-// and the marker itself) — the event-core's own documented semantics, not
-// Fold's implementation — and requires Fold's derived state to match it
-// exactly. The sequence includes: a SessionStarted/SceneCreated/ActorAdded/
-// TokenPlaced/TokenMoved chain, an EventsRetracted marker retracting ONLY
-// the TokenMoved (so the token must revert to its PLACED position, not the
-// moved one — the "token reverts" case task-2-brief.md names explicitly),
-// and a trailing envelope with a nil Payload standing in for a future/
-// unknown event variant, proving Fold skips ErrUnknownVariant rather than
-// failing the whole fold.
+// after-the-fact parity test: it feeds Fold the same envelope sequence used
+// to independently build an "expected" state by hand-driving engine.Apply
+// directly — the event-core's own documented semantics, not Fold's
+// implementation — and requires Fold's derived state to match it exactly.
+// The sequence is a SessionStarted/SceneCreated/ActorAdded/TokenPlaced/
+// TokenMoved chain, EVERY one of which Fold must apply, in order (single
+// pass, 2026-08-31-retraction-leaves — no code path skips by sequence, and
+// since Task 7 there is no marker payload left to skip on), plus a trailing
+// envelope with a nil Payload standing in for a future/unknown event variant,
+// proving Fold skips ErrUnknownVariant rather than failing the whole fold.
 func TestFoldParityAgainstIndependentEngineApplyReplay(t *testing.T) {
 	events := []*vttv1.Envelope{
 		foldEnv(1, "ev-session", &vttv1.SessionStarted{Name: "s1"}),
@@ -58,8 +54,7 @@ func TestFoldParityAgainstIndependentEngineApplyReplay(t *testing.T) {
 		foldEnv(5, "ev-move", &vttv1.TokenMoved{
 			TokenId: "tok-1", SceneId: "scn-1", From: &vttv1.GridPosition{X: 2, Y: 2}, To: &vttv1.GridPosition{X: 9, Y: 9},
 		}),
-		foldEnv(6, "ev-retract", &vttv1.EventsRetracted{FromSequence: 5, ToSequence: 5, Reason: "undo the move"}),
-		foldEnv(7, "ev-unknown", nil),
+		foldEnv(6, "ev-unknown", nil),
 	}
 
 	got, err := harness.Fold(events)
@@ -67,11 +62,10 @@ func TestFoldParityAgainstIndependentEngineApplyReplay(t *testing.T) {
 		t.Fatalf("Fold: %v", err)
 	}
 
-	// Independent expectation: hand-drive engine.Apply over exactly the
-	// events that should survive (everything except sequence 5, the
-	// EventsRetracted marker itself, and the unknown-variant envelope).
+	// Independent expectation: hand-drive engine.Apply over every event Fold
+	// must apply (everything except the trailing unknown-variant envelope).
 	want := engine.NewState()
-	for _, i := range []int{0, 1, 2, 3} { // ev-session, ev-scene, ev-actor, ev-place — NOT ev-move (index 4)
+	for _, i := range []int{0, 1, 2, 3, 4} { // ev-session, ev-scene, ev-actor, ev-place, ev-move
 		if err := engine.Apply(want, events[i]); err != nil {
 			t.Fatalf("independent replay: engine.Apply(events[%d]): %v", i, err)
 		}
@@ -90,11 +84,10 @@ func TestFoldParityAgainstIndependentEngineApplyReplay(t *testing.T) {
 	if !ok {
 		t.Fatal(`Tokens["tok-1"] missing, want present`)
 	}
-	// The load-bearing assertion: the token must be at its PLACED position
-	// (2,2), not the moved-to position (9,9) — proving the retracted
-	// TokenMoved was never applied.
-	if tok.X != 2 || tok.Y != 2 {
-		t.Fatalf("Tokens[\"tok-1\"] = (%d,%d), want (2,2) — the retracted move must not have applied", tok.X, tok.Y)
+	// The load-bearing assertion: the token is at its MOVED-TO position
+	// (9,9) — Fold applied the TokenMoved, like every other event.
+	if tok.X != 9 || tok.Y != 9 {
+		t.Fatalf("Tokens[\"tok-1\"] = (%d,%d), want (9,9)", tok.X, tok.Y)
 	}
 	if tok.X != want.Tokens["tok-1"].X || tok.Y != want.Tokens["tok-1"].Y {
 		t.Fatalf("Fold's token position (%d,%d) diverges from the independent engine.Apply replay's (%d,%d)",
@@ -105,29 +98,6 @@ func TestFoldParityAgainstIndependentEngineApplyReplay(t *testing.T) {
 	}
 	if len(got.Scenes) != len(want.Scenes) || len(got.Actors) != len(want.Actors) {
 		t.Fatalf("Scenes/Actors counts = (%d,%d), want (%d,%d)", len(got.Scenes), len(got.Actors), len(want.Scenes), len(want.Actors))
-	}
-}
-
-// TestFoldSkipsFullyRetractedRangeIncludingMultipleEvents covers a
-// [from,to] range spanning more than one sequence, distinct from the
-// single-sequence case above.
-func TestFoldSkipsFullyRetractedRangeIncludingMultipleEvents(t *testing.T) {
-	events := []*vttv1.Envelope{
-		foldEnv(1, "ev-session", &vttv1.SessionStarted{Name: "s1"}),
-		foldEnv(2, "ev-scene", &vttv1.SceneCreated{SceneId: "scn-1", Name: "Hall", GridWidth: 10, GridHeight: 10}),
-		foldEnv(3, "ev-actor-a", &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "act-a", Name: "A"}}),
-		foldEnv(4, "ev-actor-b", &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "act-b", Name: "B"}}),
-		foldEnv(5, "ev-retract", &vttv1.EventsRetracted{FromSequence: 3, ToSequence: 4, Reason: "undo both adds"}),
-	}
-	got, err := harness.Fold(events)
-	if err != nil {
-		t.Fatalf("Fold: %v", err)
-	}
-	if len(got.Actors) != 0 {
-		t.Fatalf("Actors = %+v, want empty (both ActorAdded events retracted)", got.Actors)
-	}
-	if len(got.Scenes) != 1 {
-		t.Fatalf("Scenes = %+v, want exactly 1 (SceneCreated was never retracted)", got.Scenes)
 	}
 }
 

@@ -7,7 +7,8 @@ import {
   ActorAddedSchema, TokenPlacedSchema, TokenMovedSchema, NarrationAddedSchema,
   NoteUpsertedSchema, NoteDeletedSchema, ConditionAppliedSchema,
   ConditionRemovedSchema, ResourceChangedSchema, AbilityUsedSchema,
-  AttackRolledSchema, AdventureLoadedSchema, EventsRetractedSchema,
+  AttackRolledSchema, AdventureLoadedSchema, SceneSeenSchema,
+  TokenRemovedSchema, ActorRemovedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera } from "../src/view/spectator";
@@ -127,15 +128,27 @@ test("in-character speech is marked with its speaker; table talk is not", () => 
   expect(root.querySelectorAll(".narration")).toHaveLength(1);
 });
 
-test("describe renders a real label for every event kind, not the fallback", () => {
+test("describe renders a real label for every event kind it handles, not the fallback", () => {
   // The previous version of this test asserted only `label.length > 0` and
   // `label !== "event"` over six kinds. describe()'s default branch is
   // `return p.case ?? "event"`, and every case name is a non-empty string
   // that is not "event" — so DELETING THE ENTIRE SWITCH left all six
   // assertions passing. It proved that protobuf sets `payload.case`.
   //
-  // So: exact strings, and every kind describe() handles. The fallback is
-  // separately caught by asserting no label equals its own case name.
+  // So: exact strings. The fallback is separately caught by asserting no label
+  // equals its own case name.
+  //
+  // THIS LIST IS PARTIAL, and the title used to say "every event kind", which
+  // was the reason nothing went red when the two removal arms shipped with no
+  // label at all: the list is hand-maintained and describe()'s switch is not,
+  // so an unlabelled arm is invisible here rather than failing. As of
+  // 2026-09-01 the cases below cover the ones with a label; doorOpened,
+  // doorClosed, tokenHidden, sceneSeen and the actor-control grants still fall
+  // through to the case name and are NOT covered. Closing that gap means
+  // driving the list off the Envelope descriptor's payload oneof rather than
+  // adding rows, and it is deliberately not done here — this round added the
+  // two arms this arc introduced and said so, rather than leaving a title
+  // that promises exhaustiveness the list cannot deliver.
   const cases: [Envelope, string][] = [
     [env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
       "session started — S"],
@@ -165,6 +178,14 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "roll 17"],
     [env(14, { case: "adventureLoaded", value: create(AdventureLoadedSchema, { adventureId: "adv" }) }),
       "adventure adv loaded"],
+    // The forward-only removals (retraction-leaves spec §5). A player's feed
+    // showed the raw "tokenRemoved"/"actorRemoved" until 2026-09-01, which is
+    // the default branch — so these two rows are also what pins that the arms
+    // exist at all.
+    [env(15, { case: "tokenRemoved", value: create(TokenRemovedSchema, { tokenId: "t" }) }),
+      "t taken off the board"],
+    [env(16, { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a" }) }),
+      "actor a left"],
   ];
 
   for (const [e, want] of cases) {
@@ -180,8 +201,15 @@ test("describe renders a real label for every event kind, not the fallback", () 
 
 test("an event kind describe() does not handle degrades to its case name", () => {
   // Pins the fallback itself, so the test above cannot be satisfied BY it.
-  const e = env(99, { case: "eventsRetracted", value: create(EventsRetractedSchema, { fromSequence: 1n, toSequence: 2n, reason: "r" }) });
-  expect(describeEvent(e)).toBe("eventsRetracted");
+  //
+  // SceneSeen is the subject because it is PROJECTION-ONLY bookkeeping (its
+  // own comment in events.proto says so): a viewer's remembered terrain, not a
+  // beat in the story, so nothing will ever give it a describe() case and this
+  // pin will not be broken by someone narrating it. It replaces
+  // eventsRetracted, which held this spot until the message left the contract
+  // on 2026-08-31 (spec 2026-08-30-retraction-leaves).
+  const e = env(99, { case: "sceneSeen", value: create(SceneSeenSchema, { sceneId: "s1" }) });
+  expect(describeEvent(e)).toBe("sceneSeen");
 });
 
 // --- player panel -----------------------------------------------------------

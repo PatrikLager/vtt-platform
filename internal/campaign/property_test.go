@@ -5,13 +5,11 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
-	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
 
 const (
@@ -49,12 +47,17 @@ const (
 // VTT_PROPERTY_SEEDS=1 judged by neither guard, which is the first thing anyone
 // types to check the harness works.
 //
-// A named seed skips the PER-KIND coverage check only. Somebody reproducing a
-// walk the sweep pointed at does not need to be told it is narrow — 15% of
-// walks legitimately never move a token — and the check can only ever speak on
-// a reproduce that PASSED, since a real failure aborts before it. The undo
-// check is NOT skipped: its measured miss rate over 500 walks is 0, so it
-// cannot false-positive, and retraction is the property this test exists for.
+// A named seed skips the PER-KIND coverage check. Somebody reproducing a walk
+// the sweep pointed at does not need to be told it is narrow — 15% of walks
+// legitimately never move a token — and the check can only ever speak on a
+// reproduce that PASSED, since a real failure aborts before it.
+//
+// IT USED TO SKIP ONE OF TWO. A second guard, assertUndoExercised, ran in
+// every mode and reded a walk that never retracted, because retraction was
+// what a rebuild-equals-live property was really testing. Retraction left the
+// platform on 2026-08-31 (spec 2026-08-30-retraction-leaves) and the guard
+// left with the action; what this test now exercises is a log that only grows,
+// which is the only kind there is.
 func propertySeeds(t *testing.T) (seeds []int64, guardEachWalk, guardEnsemble bool) {
 	t.Helper()
 	if v := os.Getenv("VTT_PROPERTY_SEED"); v != "" {
@@ -83,20 +86,16 @@ func propertySeeds(t *testing.T) (seeds []int64, guardEachWalk, guardEnsemble bo
 
 // propModel tracks just enough campaign shape to generate only valid
 // forward actions: which scenes/actors/tokens exist (so place/move never
-// reference something that isn't there), which non-marker sequences remain
-// eligible for undo, and whether a session is currently open.
+// reference something that isn't there), which sequences have been appended
+// (so a narration can anchor to a real one), and whether a session is
+// currently open.
 //
-// Undo targets ANY non-marker, un-retracted single sequence — not just
-// TokenMoved. This exercises campaign.Undo's own dry-run viability check:
-// Undo now folds the would-be-retracted log before persisting the marker,
-// so a retraction that would corrupt replay (e.g. retracting a
-// SessionEnded while a later SessionStarted exists, which would replay as
-// "session already open") is rejected instead of bricking the file.
-// doUndo therefore does not treat a rejection as a test failure: it counts
-// it as undoRejected, leaves the model's retracted set untouched, and the
-// run continues. The every-50-events close/reopen checkpoint in
-// TestRebuildEqualsLiveProperty doubles as a corruption detector — a
-// bricked file fails to reopen there.
+// EVERY ACTION IT GENERATES IS FORWARD, and since 2026-08-31 that is not a
+// property of the model but of the platform: it drew an undo until then, and
+// tracked a retracted set to keep from offering the same sequence twice. The
+// every-50-events close/reopen checkpoint in TestRebuildEqualsLiveProperty
+// still doubles as a corruption detector — a file that will not reopen fails
+// there.
 type propModel struct {
 	scenes []string
 	actors []string
@@ -105,8 +104,7 @@ type propModel struct {
 	tokenScene map[string]string
 	tokenPos   map[string][2]int32
 
-	allSeqs   []int64
-	retracted map[int64]bool
+	allSeqs []int64
 
 	sessionOpen bool
 
@@ -118,8 +116,8 @@ type propModel struct {
 	// tracked key on success. Deliberately NOT unioned into allSeqs — see
 	// doAddNarration/doUpsertNote/doDeleteNote's doc comments: narration/
 	// note events are exercised as their own action kind, not folded into
-	// the undo-eligible pool, keeping this task's addition minimal and
-	// independently verifiable against the pre-existing action mix.
+	// the pool a narration anchors into, keeping this task's addition minimal
+	// and independently verifiable against the pre-existing action mix.
 	noteKeys []string
 }
 
@@ -127,24 +125,11 @@ func newPropModel() *propModel {
 	return &propModel{
 		tokenScene: map[string]string{},
 		tokenPos:   map[string][2]int32{},
-		retracted:  map[int64]bool{},
 	}
 }
 
 func (m *propModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.actors) > 0 }
 func (m *propModel) canMoveToken() bool  { return len(m.tokenIDs) > 0 }
-
-func (m *propModel) eligibleUndoSeqs() []int64 {
-	out := make([]int64, 0, len(m.allSeqs))
-	for _, seq := range m.allSeqs {
-		if !m.retracted[seq] {
-			out = append(out, seq)
-		}
-	}
-	return out
-}
-
-func (m *propModel) canUndo() bool { return len(m.eligibleUndoSeqs()) > 0 }
 
 // propMust appends env and fails the test with the failing action index and
 // seed on error (spec requirement: failures must be reproducible from the
@@ -198,13 +183,13 @@ func (m *propModel) doPlaceToken(t *testing.T, c *campaign.Campaign, rng *rand.R
 	m.allSeqs = append(m.allSeqs, seq)
 }
 
-// doMoveToken uses the model's last known position as From. That tracked
-// position can go stale relative to live state after an undo retracts an
-// earlier move on the same token (the model doesn't unwind on retraction),
-// but engine.Apply never validates From against current position — only
-// that the token exists and To is set — so a stale From cannot turn this
-// into an invalid action; it only means From/To are not always contiguous,
-// which doesn't matter for what this test verifies.
+// doMoveToken uses the model's last known position as From. Nothing can make
+// that tracked position stale now that every action is forward — it could
+// until 2026-08-31, when an undo could retract an earlier move the model had
+// already recorded — and it would not matter if something did: engine.Apply
+// never validates From against current position, only that the token exists
+// and To is set. A stale From cannot turn this into an invalid action; it
+// only means From/To are not always contiguous.
 func (m *propModel) doMoveToken(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int) {
 	t.Helper()
 	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]
@@ -217,82 +202,6 @@ func (m *propModel) doMoveToken(t *testing.T, c *campaign.Campaign, rng *rand.Ra
 	}), idx, "moveToken")
 	m.tokenPos[id] = to
 	m.allSeqs = append(m.allSeqs, seq)
-}
-
-// doUndo picks a random eligible (non-marker, un-retracted) sequence and
-// attempts to retract it alone. Unlike the other actions, a rejection here
-// is not a test failure: campaign.Undo is now expected to reject ranges
-// that would corrupt replay (e.g. a SessionEnded a later SessionStarted
-// depends on), so doUndo counts the rejection as undoRejected, leaves the
-// model's retracted set untouched, and lets the run continue.
-//
-// A successful retraction is counted as undo and marks the sequence
-// retracted so it isn't offered again. Because eligibility is no longer
-// restricted to TokenMoved, a successful retraction can remove a scene,
-// actor, token, or session boundary from live state (campaign.Undo's own
-// dry-run guarantees nothing still in the log depended on it, or the
-// retraction would have been rejected). The model's bookkeeping for future
-// action generation is resynced from live state afterward so it never
-// offers a follow-up action — e.g. placing a token on a just-retracted
-// actor — that only looks valid because the model forgot the retraction
-// happened.
-func (m *propModel) doUndo(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
-	t.Helper()
-	eligible := m.eligibleUndoSeqs()
-	seq := eligible[rng.Intn(len(eligible))]
-	if _, err := c.Undo(seq, seq, "property-test undo", nextID(), "dm", "test-participant"); err != nil {
-		counts["undoRejected"]++
-		return
-	}
-	m.retracted[seq] = true
-	counts["undo"]++
-	m.resyncFromState(c.State())
-}
-
-// resyncFromState rebuilds the model's scene/actor/token/session bookkeeping
-// from live campaign state. Called after a successful Undo (see doUndo)
-// since a retraction can make the model's tracked entities stale.
-//
-// Go map iteration order is randomized per run, so each rebuilt slice is
-// sorted before use: downstream generation (doPlaceToken, doMoveToken, …)
-// indexes into these slices with rng.Intn, and an unsorted, iteration-order
-// slice would let the same rng draw sequence pick a different entity from
-// run to run — silently breaking the seed-1 run's reproducibility even
-// though every individual action stays valid.
-func (m *propModel) resyncFromState(st *engine.State) {
-	m.scenes = m.scenes[:0]
-	for id := range st.Scenes {
-		m.scenes = append(m.scenes, id)
-	}
-	sort.Strings(m.scenes)
-
-	m.actors = m.actors[:0]
-	for id := range st.Actors {
-		m.actors = append(m.actors, id)
-	}
-	sort.Strings(m.actors)
-
-	m.tokenIDs = m.tokenIDs[:0]
-	for id, tok := range st.Tokens {
-		m.tokenIDs = append(m.tokenIDs, id)
-		m.tokenScene[id] = tok.SceneID
-		m.tokenPos[id] = [2]int32{tok.X, tok.Y}
-	}
-	sort.Strings(m.tokenIDs)
-	for id := range m.tokenScene {
-		if _, ok := st.Tokens[id]; !ok {
-			delete(m.tokenScene, id)
-			delete(m.tokenPos, id)
-		}
-	}
-
-	m.sessionOpen = false
-	for _, s := range st.Sessions {
-		if s.EndSeq == 0 {
-			m.sessionOpen = true
-			break
-		}
-	}
 }
 
 func (m *propModel) doStartSession(t *testing.T, c *campaign.Campaign, idx int) {
@@ -313,10 +222,11 @@ func (m *propModel) doEndSession(t *testing.T, c *campaign.Campaign, idx int) {
 // unanchored draws (world-layer Task 3, spec §4): roughly half of every
 // draw with at least two prior sequences on record attempts an anchor
 // pointing at two ALREADY-RECORDED sequences (never a future one —
-// respecting the spec's backward-only anchor rule) drawn from allSeqs, the
-// same pool doUndo already treats as "real, addressable history". Both
-// anchored and unanchored draws are expected to succeed unconditionally —
-// this exercises both code paths.
+// respecting the spec's backward-only anchor rule) drawn from allSeqs, which
+// is every sequence this walk has appended and is now the only thing that pool
+// is for — doUndo drew its retraction targets from it until retraction left on
+// 2026-08-31. Both anchored and unanchored draws are expected to succeed
+// unconditionally — this exercises both code paths.
 //
 // FORMERLY a known bug here (P11 Task 3's original report): campaign.Append
 // used to validate the caller's envelope directly while its Sequence was
@@ -372,9 +282,8 @@ func (m *propModel) doUpsertNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 // doDeleteNote appends a NoteDeleted event (world-layer Task 3): about 30%
 // of draws (or any draw with no tracked key at all) target an absent key
 // deliberately — deleteNote's own rejection posture (matches condition
-// removal, spec §3) — counted as deleteNoteRejected, not a test failure,
-// exactly like doUndo counts undoRejected. The rest delete a real tracked
-// key and untrack it.
+// removal, spec §3) — counted as deleteNoteRejected, not a test failure. The
+// rest delete a real tracked key and untrack it.
 func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
 	t.Helper()
 	absent := len(m.noteKeys) == 0 || rng.Float64() < 0.30
@@ -401,25 +310,31 @@ func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.R
 	counts["deleteNote"]++
 }
 
-// step picks one random VALID action given the current model and applies
-// it, per the action mix (re-baselined this task, world-layer Task 3 —
-// deliberately NOT the same mix as before; see the report for old->new
-// pinned counts, both the wiring pass and the anchor-fix follow-up pass):
-// create scene ~5%, add actor ~10%, place token ~13% (when scene+actor
-// exist), move token ~40% (when tokens exist), undo ~8% (when an eligible
-// non-marker, un-retracted sequence exists — see doUndo for why a rejected
-// undo is not a test failure), add narration ~9% (mix of anchored/
-// unanchored, both expected to succeed — see doAddNarration's doc comment
-// for the anchor-validation fix that made anchored draws reliably
-// succeed), upsert note ~8%, delete note ~5% (absent-key rejections
-// counted, not failures — same posture as undo), start/end session for
-// the remainder (start if none open; end if one's open, gated further to
-// rand<0.15 so sessions stay open across most of the run). Any bucket
-// whose precondition
-// isn't met falls through to the next check using the same draw, and the
-// session bucket's own "session open, but the 0.15 gate didn't fire" branch
-// falls back to addActor — always valid — so every iteration guarantees
-// forward progress toward the requested event count.
+// step picks one random VALID action given the current model and applies it.
+// The bands are the thresholds below, on one uniform draw, in order: create
+// scene [0, 0.05), add actor [0.05, 0.15), place token [0.15, 0.28) when a
+// scene and an actor exist, move token [0.28, 0.68) when a token exists, add
+// narration [0.68, 0.84) (mix of anchored and unanchored, both expected to
+// succeed — see doAddNarration's doc comment for the anchor-validation fix
+// that made anchored draws reliably succeed), upsert note [0.84, 0.90),
+// delete note [0.90, 0.94) (absent-key rejections counted, not failures), and
+// the remainder start/end session (start if none open; end if one is open,
+// gated further to rand<0.15 so sessions stay open across most of the run).
+//
+// A BAND IS NOT A SHARE, and this comment carried percentages until 2026-08-31
+// that read as though it were. Any bucket whose precondition is not met falls
+// through to the next check on the SAME draw, so early in a walk — before a
+// scene and an actor exist — the place and move bands land on narration
+// instead. The session bucket's own "session open, but the 0.15 gate didn't
+// fire" branch falls back to addActor, always valid, so every iteration
+// guarantees forward progress toward the requested event count. Each walk logs
+// the counts it actually drew; read those rather than the bands.
+//
+// NARRATION ABSORBED UNDO'S BAND on 2026-08-31 rather than the thresholds
+// being redrawn. Undo held [0.68, 0.76); removing the arm hands that draw to
+// the next bucket down and leaves every other band exactly where it was.
+// Redrawing them instead would have changed every walk this file has ever run,
+// for no reason connected to retraction leaving.
 func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
 	t.Helper()
 	r := rng.Float64()
@@ -436,8 +351,6 @@ func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx
 	case r < 0.68 && m.canMoveToken():
 		m.doMoveToken(t, c, rng, idx)
 		counts["moveToken"]++
-	case r < 0.76 && m.canUndo():
-		m.doUndo(t, c, rng, idx, counts)
 	case r < 0.84:
 		m.doAddNarration(t, c, rng, idx, counts)
 	case r < 0.90:
@@ -460,11 +373,11 @@ func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx
 }
 
 // TestRebuildEqualsLiveProperty is the keystone property (spec §9): for a
-// long, varied, valid event history — including undo — the state rebuilt
-// from a full log replay always equals the live, incrementally-folded
-// projection. It's checked by closing and reopening the campaign every 50
-// events (single-writer: the SQLite file must be closed before it can be
-// reopened) and comparing State() before and after.
+// long, varied, valid event history the state rebuilt from a full log replay
+// always equals the live, incrementally-folded projection. It's checked by
+// closing and reopening the campaign every 50 events (single-writer: the
+// SQLite file must be closed before it can be reopened) and comparing State()
+// before and after.
 func TestRebuildEqualsLiveProperty(t *testing.T) {
 	seeds, guardEachWalk, guardEnsemble := propertySeeds(t)
 
@@ -475,7 +388,6 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 			for k, v := range counts {
 				total[k] += v
 			}
-			assertUndoExercised(t, "this walk", counts)
 			if guardEachWalk {
 				assertKindCoverage(t, "this walk", counts)
 			}
@@ -498,8 +410,8 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 //
 // THE SCOPE IS THE WHOLE POINT, AND IT CHANGED 2026-08-27 when the seed stopped
 // being a constant. Per WALK is right for the default single-seed run — one
-// fixed walk that quietly stopped exercising undo would otherwise pass forever,
-// which is what this guard was added to prevent.
+// fixed walk that quietly stopped exercising an action kind would otherwise
+// pass forever, which is what this guard was added to prevent.
 //
 // Per walk is WRONG for a sweep, and not marginally. placeToken needs a scene
 // AND an actor to exist first; endSession needs a session already open; so a
@@ -532,22 +444,6 @@ func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 	// doDeleteNote's doc comment — but a zero count there is not itself a
 	// failure (a different seed/mix could legitimately avoid drawing it);
 	// the actual counts are logged either way.
-}
-
-// assertUndoExercised runs in EVERY mode, unlike the per-kind check.
-//
-// It is the one guard that cannot false-positive: over 500 seeds undo was drawn
-// in every single walk, minimum 13 times, so a zero here means the generator
-// stopped drawing it rather than that this walk was narrow. It is also the
-// guard that matters most — retraction is what a rebuild-equals-live property
-// is really testing, and a run that never retracted proves nothing about it
-// however green it looks.
-func assertUndoExercised(t *testing.T, scope string, counts map[string]int) {
-	t.Helper()
-	if counts["undo"] == 0 {
-		t.Fatalf("property test (%s): undo was never exercised — %s proves nothing about retraction",
-			t.Name(), scope)
-	}
 }
 
 // runPropertyWalk is one seed's walk: propertyEventCount model-driven actions

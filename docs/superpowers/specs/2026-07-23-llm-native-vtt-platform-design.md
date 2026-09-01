@@ -56,6 +56,18 @@ reason this platform exists.
 - **P3 — Event-sourced state.** The append-only game log is the source of truth; current
   state is derived. This yields undo, session replay, spectator catch-up, auditability
   ("why is my HP 12?"), and a perfect LLM context feed.
+
+  *AMENDED 2026-08-30 — undo is not one of the things P3 yields, and the pillar
+  is unchanged otherwise.* Patrik's ruling: a retraction exists to make something
+  not have happened, and it cannot — the person already read the log. `campaign.Undo`
+  was deleted in `133e896` and `EventsRetracted` left the contract in `59542e1`
+  (sub-project 13, `2026-08-30-retraction-leaves-design.md`). Nothing replaced it and
+  nothing may: the platform's answer to a mistake is a further event that removes the
+  thing going forward (`remove_token`, `remove_actor`), which the log records as having
+  happened. Session replay, spectator catch-up, auditability and the LLM feed still
+  fall out of the log exactly as stated, and it is the same append-only property that
+  makes undo impossible and the other four free. ADR-003 carries the same correction
+  where the decision itself lives.
 - **P4 — Engine ↔ ruleset boundary.** The engine knows actors, scenes, turns, effects,
   dice — never healing surges. The boundary is proven by a deliberately tiny second "toy"
   ruleset that must pass the same conformance suite as 4.5e without any engine change.
@@ -165,7 +177,8 @@ Each sub-project gets its own design → plan → implement → review cycle:
 1. **Contract & codegen pipeline** — schema format decision, generators (Go/TS/LLM tools),
    versioning discipline. Everything depends on this.
 2. **Event core** — append-only store, subscriptions, state derivation, replay/undo,
-   campaign persistence.
+   campaign persistence. *(The undo half was built and then removed in sub-project 13
+   — see P3's amendment. The rest shipped.)*
 3. **API gateway & permissions** — WebSocket/HTTP surface, session auth, four roles
    (agent role designed on day one).
 4. **Simulation harness** — built alongside 2–3: scripted headless players driving the
@@ -205,7 +218,10 @@ the real API (harness as both DM-agent and players); the toy ruleset passes conf
   collision management, per-version ecosystem breakage); no headless API; imperative rules
   spread across sheet classes; mutable state with no history.
 - From **RPTool old system** (adopt): the ChangeLog/undo instinct (generalized by P3);
-  the feature checklist above.
+  the feature checklist above. *(2026-08-30: the CHANGELOG half was adopted and is the
+  log itself; the UNDO half was tried and ruled out — see P3's amendment. "undo" in the
+  macro-doc checklist above is therefore a RPTool feature this platform deliberately
+  does not carry forward, not an outstanding item.)*
 - From **RPTool old system** (avoid): per-power copy-paste macros, positional CSV state,
   overloaded properties, honor-system conventions.
 - From **rule-framework** (adopt): declarative templates/conditions, test-first discipline,

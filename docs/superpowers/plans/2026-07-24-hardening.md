@@ -8,6 +8,26 @@
 
 **Tech Stack:** existing; plus `gremlins` (installed at `$(go env GOPATH)/bin/gremlins`, validated on this repo).
 
+> **AMENDED 2026-08-30 — RETRACTION LEFT THE PLATFORM, SO EVERY UNDO/RETRACTION
+> STEP BELOW DESCRIBES MACHINERY THAT NO LONGER EXISTS.** Patrik's ruling of
+> 2026-08-30: a retraction exists to make something not have happened, and it
+> cannot — the person already read the log. Sub-project 13
+> (`docs/superpowers/specs/2026-08-30-retraction-leaves-design.md`) removed it in
+> full: `RetractEvents` and `EventsRetracted` left the contract in `59542e1`,
+> `campaign.Undo` and `retractedSet` in `133e896`, the gateway handler and its
+> authorization row in `5396338`, `client/src/undo.ts` and `fold.ts`'s second
+> pass in `d3e2f28`, and the harness's matching two-pass in `92f1284`.
+> Affected here: Task 1's `Undo` signature churn and its "(f) Undo marker carries
+> the open session's id" case; Task 2's item (a), the partial-overlap retraction
+> test, and `internal/campaign/undo_test.go` with it; and Task 3's Step 3
+> hand-injection item (8), "marker broadcast suppressed". Session-id stamping, the mutation audit and every other known-gap
+> item are live. The mutation audit's own report
+> (`docs/superpowers/reports/2026-07-24-mutation-audit.md`) is a dated measurement
+> and is left exactly as recorded.
+> This plan is left as the record of what was built at the time; it is not a
+> description of the tree. `tools/check-no-retraction.py` is the gate that keeps
+> it from coming back.
+
 ## Global Constraints
 
 - Branch `feat/hardening` from `main`. Review-before-commit flow; controller stages post-report and commits with `CLAUDE_REVIEW_DONE=1`.

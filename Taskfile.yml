@@ -43,6 +43,7 @@ tasks:
       - task: check:breaking
       - task: check:invariants
       - task: check:doc-owner
+      - task: check:no-retraction
       - task: check:arch
       # BEFORE the mutation gates: ~53s against their minutes, so a race
       # failing here saves the long wait. NOT claimed to be first-cheapest
@@ -198,10 +199,18 @@ tasks:
   check:fast:
     desc: >
       Tier 1 only, plus vet and lint -- the pre-commit / inner-loop gate.
-      NOT a substitute for `task check`, which is the merge gate. The full
-      list of what this SKIPS, so nobody has to diff the two by hand:
-      test:cross, test:external, check:coverage, check:mutation, check:drift,
-      check:breaking, check:arch and check:invariants.
+      NOT a substitute for `task check`, which is the merge gate. WHAT THIS
+      SKIPS is every step of `check:` above except the two it repeats (go vet
+      and lint), plus tiers 2-4 of the suite. Enumerated 2026-09-01, so nobody
+      has to diff the two by hand: test:cross, test:external, check:coverage,
+      check:ts-coverage, client:typecheck, check:drift, check:breaking,
+      check:invariants, check:doc-owner, check:no-retraction, check:arch,
+      check:race, check:mutation and check:ts-mutation. The list read
+      "test:cross, test:external, check:coverage, check:mutation, check:drift,
+      check:breaking, check:arch and check:invariants" until 2026-09-01 and
+      omitted six, check:no-retraction among them -- which `ac307d5` had added
+      to `check:` in the same commit. The invariant is the first sentence; the
+      names are the convenience, and they are what rots.
     cmds:
       - go vet ./...
       - task: lint
@@ -797,6 +806,35 @@ tasks:
       - python3 tools/check_doc_owner_test.py -q
       - python3 tools/check-doc-owner.py .
 
+  check:no-retraction:
+    desc: >
+      Fail when a retraction IDENTIFIER survives anywhere in the tree. The
+      spec's exit criterion 1 asks for a gate rather than a search, and it
+      means it: a grep somebody ran once proves nothing about tomorrow.
+
+      NOT a `grep -rin retract`. Every occurrence still here is a deliberate
+      dated change-record saying what retraction used to do at that spot —
+      which is why the next reader does not re-derive it from first
+      principles. Measured 2026-09-01 over the files this gate scans: 268
+      occurrences across 60 files in 14 directories. A naive grep reds on
+      all 268 and goes green only by excluding those 60 files, at which
+      point it enforces nothing. This one masks comments and string
+      literals first and looks at code positions only, which is what a
+      reintroduction actually looks like — there were 14 of those, all of
+      them enforcement.
+
+      Its half of the job is a reintroduced HELPER — a Go function, a
+      TypeScript export, a proto field name, a tool script — across .go,
+      .proto, .py and every JS/TS spelling (.ts/.tsx/.mts/.cts/.js/.jsx/
+      .mjs/.cjs). contract/events.test.ts owns the other half and is the
+      stronger check for the wire: it reads the GENERATED DESCRIPTORS, so a
+      message deleted from the .proto but left in committed generated code
+      is caught there and would look clean here. Neither substitutes for
+      the other.
+    cmds:
+      - python3 tools/check_no_retraction_test.py -q
+      - python3 tools/check-no-retraction.py .
+
   check:invariants:
     desc: >
       Every semgrep ADR guard in .semgrep/. Pointed at the DIRECTORY, not at
@@ -857,36 +895,50 @@ tasks:
   check:breaking:
     desc: Fail on breaking changes to contract/ vs main
     cmds:
-      - |
-        # Resolve main as a LOCAL branch first, then origin/main.
-        #
-        # The fallback is not belt-and-braces, it is the only thing that makes
-        # this gate run on a pull request at all. actions/checkout creates a
-        # local branch only for the ref it checks out: on a push to main that
-        # IS main, but on a PR it is the PR branch, and main exists solely as
-        # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
-        # failed with "no local 'main' ref" on the repo's FIRST pull request,
-        # having passed every previous run — every one of which was a push to
-        # main, where the ref it wanted happened to exist.
-        #
-        # Read that the other way round: until that first PR, the contract
-        # breaking-change gate had never once executed in the situation it was
-        # built for. A breaking change would have been caught only after it
-        # landed on main.
-        REF=""
-        if git rev-parse --verify -q main >/dev/null; then
-          REF=main
-        elif git rev-parse --verify -q origin/main >/dev/null; then
-          REF=origin/main
-        else
-          echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
-          exit 1
-        fi
-        if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
-          cd contract && go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
-        else
-          echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
-        fi
+      # silent: true suppresses only Task's own pre-run echo of this command's
+      # source (which would otherwise print the literal string "pre-release"
+      # from the else-branch below regardless of which branch actually runs,
+      # defeating anything that greps this task's real output for that word).
+      # The echo/buf-breaking output the script itself produces is untouched.
+      - cmd: |
+          # Resolve main as a LOCAL branch first, then origin/main.
+          #
+          # The fallback is not belt-and-braces, it is the only thing that makes
+          # this gate run on a pull request at all. actions/checkout creates a
+          # local branch only for the ref it checks out: on a push to main that
+          # IS main, but on a PR it is the PR branch, and main exists solely as
+          # refs/remotes/origin/main even with fetch-depth: 0. So this gate hard-
+          # failed with "no local 'main' ref" on the repo's FIRST pull request,
+          # having passed every previous run — every one of which was a push to
+          # main, where the ref it wanted happened to exist.
+          #
+          # Read that the other way round: until that first PR, the contract
+          # breaking-change gate had never once executed in the situation it was
+          # built for. A breaking change would have been caught only after it
+          # landed on main.
+          REF=""
+          if git rev-parse --verify -q main >/dev/null; then
+            REF=main
+          elif git rev-parse --verify -q origin/main >/dev/null; then
+            REF=origin/main
+          else
+            echo "check:breaking: no 'main' or 'origin/main' ref — fetch main before running this gate" >&2
+            exit 1
+          fi
+          if git ls-tree -d "$REF:contract" >/dev/null 2>&1; then
+            cd contract
+            if [ -f RELEASED ]; then
+              go tool buf breaking --against "../.git#ref=$REF,subdir=contract"
+            else
+              echo "check:breaking: pre-release (contract/RELEASED absent) — REPORTING, not enforcing."
+              echo "  ADR-007's additive-only rule binds from the first release others can run."
+              echo "  Anything buf objects to below is real and will fail once that file exists."
+              go tool buf breaking --against "../.git#ref=$REF,subdir=contract" || true
+            fi
+          else
+            echo "check:breaking: contract/ not on $REF yet; gate activates after first merge"
+          fi
+        silent: true
 
   generate:contract:
     dir: contract

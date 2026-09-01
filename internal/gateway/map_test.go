@@ -278,14 +278,20 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 	}
 
 	// Read the batch from the SECOND, uninvolved connection — not dmConn,
-	// which just read its own CommandResult: readResult "skips any Envelope
-	// frames that race ahead of it" (server_test.go's own doc comment), so
-	// reading the batch back off the SAME connection that issued the
-	// command risks silently swallowing the very SceneCreated this test
-	// asserts on. A second connection never sees the CommandResult frame at
-	// all, so readEvent on it is race-free — the identical reasoning
-	// adventure_test.go's own multi-adventure test gives for the same
-	// choice.
+	// which has its own seed broadcast queued ahead of the batch, so reading
+	// positionally off it would assert against the seed AddActor rather than
+	// against the load_map batch. agentConn was drained of that one frame
+	// above and holds nothing else.
+	//
+	// CORRECTED, fix round 1 of retraction-leaves Task 9: this comment used
+	// to justify the second connection by quoting readResult as one that
+	// "skips any Envelope frames that race ahead of it". That sentence left
+	// server_test.go when the per-connection demultiplexer landed, and
+	// readResult's doc comment now says the opposite — "Events that arrive
+	// first are queued, not discarded, so a later readEvent still sees them".
+	// The choice of connection is still right; only the reason was wrong.
+	// adventure_test.go's multi-adventure test carried the same borrowed
+	// claim and is corrected too.
 	sceneEnv := readEvent(t, agentConn)
 	if got := mapPayloadKind(sceneEnv); got != "sceneCreated" {
 		t.Fatalf("first batch envelope kind = %q, want sceneCreated", got)
