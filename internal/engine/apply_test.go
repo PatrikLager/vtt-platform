@@ -161,7 +161,8 @@ func TestTokenRemoved(t *testing.T) {
 // TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording pins the EXACT
 // error text for removing a token that does not exist, in the same words
 // TokenMoved's own unknown-token error already uses ("engine: moved unknown
-// token %q" -> "engine: removed unknown token %q") — task-8-brief.md's own
+// token %q" -> "engine: removed unknown token %q") — Task 8 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md, whose own
 // requirement: "Removing a token that does not exist must fail... in the same
 // words the codebase already uses for an unknown token."
 func TestTokenRemovedUnknownTokenErrorMatchesTokenMovedWording(t *testing.T) {

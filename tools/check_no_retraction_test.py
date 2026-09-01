@@ -227,6 +227,86 @@ message MoveToken { int64 x = 1; }
             shutil.rmtree(root)
 
 
+class JSONKeysAreCodePositions(unittest.TestCase):
+    """The spec's exit criterion 1 names `scenarios/`, and .json went unread.
+
+    Until 2026-09-01 `.json` was not in SOURCE_SUFFIXES at all, so a
+    `retract_events` step in a scenario file reported clean. In JSON the object
+    KEY is the code position — it is the protobuf field name a step, a golden
+    stream or a tool manifest is naming — and every value is data.
+    """
+
+    def test_a_retraction_command_in_a_scenario_step_is_caught(self):
+        root = tree(**{"scenarios/smoke.json": (
+            '{\n'
+            '  "steps": [\n'
+            '    {"by": "dm", "command": {"retract_events": {"fromSequence": 3}}}\n'
+            '  ]\n'
+            '}\n')})
+        try:
+            code, _, err = run(root)
+            self.assertEqual(code, 1)
+            self.assertIn("smoke.json:3", err)
+            self.assertIn("retract_events", err)
+        finally:
+            shutil.rmtree(root)
+
+    def test_a_retraction_key_in_a_golden_stream_is_caught(self):
+        """Not only command positions.
+
+        protojson's unknown-field strictness refuses a bad COMMAND in a file
+        something actually loads. A retraction arm in a recorded golden stream
+        is refused by nothing else, which is the half this gate has to hold.
+        """
+        root = tree(**{"scenarios/goldens/g/stream.json": (
+            '[\n'
+            '  {"sequence": 1, "eventsRetracted": {"fromSequence": 2}}\n'
+            ']\n')})
+        try:
+            code, _, err = run(root)
+            self.assertEqual(code, 1)
+            self.assertIn("eventsRetracted", err)
+        finally:
+            shutil.rmtree(root)
+
+    def test_json_values_are_data_and_not_hits(self):
+        """A note, a narration or a scenario name may say what retraction was.
+
+        This is the .json half of the whole gate's premise: the word survives in
+        prose on purpose. A value-scanning version of this would red on a
+        recorded narration and be switched off with an exclusion within a week.
+        """
+        root = tree(**{
+            "scenarios/story.json": (
+                '{\n'
+                '  "name": "retraction, and why it left",\n'
+                '  "steps": [\n'
+                '    {"command": {"addNarration": {"text": "The DM retracts nothing."}}}\n'
+                '  ]\n'
+                '}\n'),
+            "internal/a/a.go": "package a\n"})
+        try:
+            code, _, err = run(root)
+            self.assertEqual(code, 0, err)
+        finally:
+            shutil.rmtree(root)
+
+    def test_a_json_file_that_does_not_parse_is_still_scanned(self):
+        """The masker is a tokenizer, deliberately, not json.loads.
+
+        A half-written or truncated fixture makes a parser raise, and the file
+        would then go unchecked — silently, which is exactly what the
+        unreadable-file guard above exists to refuse.
+        """
+        root = tree(**{"scenarios/broken.json": '{"steps": [{"retract_events": {'})
+        try:
+            code, _, err = run(root)
+            self.assertEqual(code, 1)
+            self.assertIn("retract_events", err)
+        finally:
+            shutil.rmtree(root)
+
+
 class ScopeAndExemptions(unittest.TestCase):
     def test_generated_output_is_out_of_scope(self):
         """contract/gen is regenerated, not written; check:drift owns it."""

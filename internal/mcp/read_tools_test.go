@@ -296,7 +296,7 @@ func TestListToolsReturnsEveryCommandAndReadTool(t *testing.T) {
 //
 // WHAT THIS ADDS OVER THE SIBLING, stated narrowly because the first draft of
 // this comment overstated it. A skipped registration already reddens the
-// sibling and tools_test.go — both pin the 22 current commands BY NAME — and
+// sibling and tools_test.go — both pin every command in the oneof BY NAME — and
 // buildDispatch rejects a tools.json/oneof disagreement at startup. So the
 // loop was not unguarded.
 //

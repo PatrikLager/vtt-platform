@@ -685,7 +685,8 @@ func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
 // swaps every dm for an agent.
 //
 // RE-DERIVED AGAIN 2026-08-31, from "dm,dm,agent,agent,dm,dm", by
-// 2026-08-31-retraction-leaves task-4-brief.md: removing the retraction
+// Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md
+// (commit 92f1284): removing the retraction
 // bucket and giving its freed 10% to move-own (pickBucket's own doc comment
 // carries the ruling) shifts which bucket every rng.Float64() draw in
 // [0.80, 0.95) lands in — draws at or above 0.95 still land in

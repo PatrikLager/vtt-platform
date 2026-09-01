@@ -149,7 +149,8 @@ const (
 
 // pickBucket maps a uniform [0,1) draw to a mix bucket per task-5-brief.md's
 // action mix, with retraction's freed 10% folded into move-own
-// (2026-08-31-retraction-leaves task-4-brief.md, ADJUDICATED: giving it to
+// (Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md,
+// commit 92f1284, ADJUDICATED: giving it to
 // the bucket two tests key off by name — Counts[deniedAttempt] and
 // Denied == Counts[deniedAttempt], both in soak_test.go and
 // cmd/vtt/client_e2e_test.go — rather than letting the default arm absorb
@@ -689,7 +690,8 @@ func statesEqual(a, b *engine.State) bool {
 // read it again for the trailing-denial and projected-seat cases, and
 // waitAllCaughtUp blocks on it directly — none of which has any source
 // other than this type (fix round 1: the omission of this third purpose
-// from this comment predates 2026-08-31-retraction-leaves task-4-brief.md
+// from this comment predates Task 4 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md (commit 92f1284)
 // and is fixed here, not merely re-derived down to two).
 type soakHistories struct {
 	mu   sync.Mutex
@@ -1182,10 +1184,12 @@ func (m *soakModel) planMoveOwn(rng *rand.Rand) (soakStep, bool) {
 	// Task 6 a coordinate outside it is a real, gateway-enforced "outside
 	// the grid" refusal for a player-issued move (engine.State.Blocked).
 	// Drawing outside that range would make moveOwn an accidental second
-	// source of denial — this generator does not model terrain at all
-	// (no scene it builds ever sets Tiles), so bounds are the only way
-	// moveOwn could ever be blocked, and a well-formed client never sends a
-	// destination its own scene cannot contain.
+	// source of denial. Every square of every soak scene is FLOOR — since
+	// terrain became mandatory, planCreateScene above fills the whole grid,
+	// and it fills it with floor precisely so that terrain is never a reason
+	// a move is refused — so bounds are the only way moveOwn could ever be
+	// blocked, and a well-formed client never sends a destination its own
+	// scene cannot contain.
 	x, y := int32(rng.Intn(int(soakSceneGridSize))), int32(rng.Intn(int(soakSceneGridSize)))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},

@@ -27,10 +27,15 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    pre-push runs tiers 2-3 and the contract gates in ~40s. CI runs
    `task check` whole. An unhooked clone is not obvious from the inside —
    if hooks have never fired for you, check `.git/hooks/pre-commit` exists.
-3. **Contract evolution is additive only** (ADR-007; `check:breaking`
-   enforces). Generated code is committed; regenerate via
-   `task generate:contract`. Commands are imperative (`CreateScene`), events
-   past-tense (`SceneCreated`).
+3. **Contract evolution is additive only** (ADR-007). Generated code is
+   committed; regenerate via `task generate:contract`. Commands are imperative
+   (`CreateScene`), events past-tense (`SceneCreated`).
+   `check:breaking` does NOT enforce this yet, and an agent who believes it
+   does will make a breaking change believing it is guarded. Pre-release it
+   REPORTS a breaking change and exits 0 (`6c0eb9a`, and ADR-007's own
+   amendment block): the switch is `contract/RELEASED`, and the day that file
+   exists the same task fails the gate instead. Until then the rule binds
+   because it is the rule, not because a gate stops you.
 4. **One fold.** `engine.Apply` (via `campaign.foldEvents`) is the only
    code that changes game state. Never add a second event-application loop.
 5. **No game-system vocabulary in platform code** (pillar P2/P4; semgrep
@@ -70,7 +75,10 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
 ## Layout
 
 `contract/` wire constitution (protobuf, vtt.v1) · `internal/store` append-only
-log · `internal/engine` state + fold · `internal/campaign` composition, undo,
-poison contract · `internal/identity` invites/roles · `internal/gateway` WS
-API + authz · `cmd/vtt` CLI · `tools/toolgen` MCP tool definitions ·
-`contract-spike/` frozen ADR-007 evidence (read-only).
+log · `internal/engine` state + fold · `internal/campaign` composition, atomic
+batch append, poison contract · `internal/identity` invites/roles ·
+`internal/gateway` WS API + authz · `cmd/vtt` CLI · `tools/toolgen` MCP tool
+definitions · `contract-spike/` frozen ADR-007 evidence (read-only).
+`internal/campaign` said "undo" here until 2026-09-01; `campaign.Undo` was
+deleted by `133e896` and nothing replaced it, because the log only goes
+forward.

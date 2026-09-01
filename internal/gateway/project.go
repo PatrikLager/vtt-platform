@@ -955,8 +955,8 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	case *vttv1.Envelope_ActorControlRevoked:
 		// A revoke can be the event that makes an actor an NPC. The viewer
-		// already holds it either way — pr.actors never forgets — so the
-		// grant/revoke pair stays coherent on their side.
+		// already holds it either way — pr.actors drops an id only when the
+		// WORLD does, and no revoke removes an actor — so the pair holds.
 		return passIf(knows(p.ActorControlRevoked.GetActorId()))
 
 	// --- forwarded only to a viewer who ALREADY HELD the actor -------------

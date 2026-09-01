@@ -40,16 +40,19 @@ func roundTrip(t *testing.T, fixture string, msg proto.Message) {
 func TestTokenMovedRoundTrip(t *testing.T) { roundTrip(t, "token_moved.json", &vttv1.TokenMoved{}) }
 
 // TestRemoveTokenCommandRoundTrip is retraction-leaves Task 8's own fixture:
-// remove_token is the newest ClientCommand oneof arm, and this pins its wire
-// shape exactly as move_token_request.json pins MoveTokenRequest's — a bare
-// token_id, nothing else.
+// remove_token arrived as a ClientCommand oneof arm in that task, and this
+// pins its wire shape exactly as move_token_request.json pins
+// MoveTokenRequest's — a bare token_id, nothing else. (It read "the newest
+// arm" until 2026-09-01, one task before remove_actor below made that false;
+// two comments eight lines apart then claimed the same superlative.)
 func TestRemoveTokenCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "remove_token_command.json", &vttv1.ClientCommand{})
 }
 
 // TestRemoveActorCommandRoundTrip is retraction-leaves Task 9's own fixture:
-// remove_actor is the newest ClientCommand oneof arm, and this pins its wire
-// shape — a bare actor_id, nothing else. The BATCH it produces is not visible
+// remove_actor arrived as a ClientCommand oneof arm one task after
+// remove_token above, and this pins its wire shape — a bare actor_id, nothing
+// else. The BATCH it produces is not visible
 // here and is not meant to be: the wire carries a command, and the events it
 // becomes are the gateway's (internal/gateway's handleRemoveActor).
 func TestRemoveActorCommandRoundTrip(t *testing.T) {

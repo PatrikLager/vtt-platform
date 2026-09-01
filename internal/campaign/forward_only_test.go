@@ -20,15 +20,64 @@ import (
 // UndoRange — and re-adding it under a new name is exactly the way a removed
 // concept comes back (Patrik, 2026-08-30: a retraction's purpose is to make
 // something not have happened, and it cannot do that).
+//
+// IT ASSERTS AN ABSENCE, SO IT NEEDS A POSITIVE CONTROL, and this is the same
+// shape contract/events.test.ts's checkControl carries on the TypeScript side
+// of this branch. Without one the test passes on an EMPTY CORPUS: changing
+// reflect.TypeOf(&campaign.Campaign{}) to reflect.TypeOf(campaign.Campaign{})
+// collapses the method set from six to zero — a value type has none of the
+// pointer-receiver methods — and every assertion below still holds, vacuously,
+// forever. Found in whole-branch review 2026-09-01; measured by making exactly
+// that edit and watching the suite stay green.
+//
+// So the corpus is required to be real, and the matcher is required to match
+// something it must catch. Neither is a claim about how many methods Campaign
+// has: a floor, not a count, so adding or removing an ordinary method does not
+// rot this (the "state the invariant, not the count" rule).
 func TestCampaignOffersNoWayToUnmakeHistory(t *testing.T) {
 	typ := reflect.TypeOf(&campaign.Campaign{})
+
+	// THE CORPUS IS REAL. Append is named because it is the method this whole
+	// invariant is about — the only way anything reaches the log — so a corpus
+	// that has lost it is one that can no longer prove anything about going
+	// forward, whatever its size.
+	if n := typ.NumMethod(); n < 2 {
+		t.Fatalf("the method set collapsed to %d: this test filters what it walks, so an empty corpus passes it vacuously", n)
+	}
+	if _, ok := typ.MethodByName("Append"); !ok {
+		t.Fatal("Campaign.Append is not in the walked method set — the corpus is not the one this test means to walk")
+	}
+
+	// THE MATCHER CATCHES WHAT IT EXISTS TO CATCH. `unmakes` is applied to the
+	// two names the removal was about, and to one it must leave alone, so a
+	// predicate loosened to always-false (or tightened to always-true) fails
+	// here rather than passing silently over a clean method set.
+	for _, name := range []string{"Undo", "UndoRange", "RetractEvents", "retract"} {
+		if !unmakes(name) {
+			t.Errorf("the matcher does not catch %q, so it would not catch a real reintroduction", name)
+		}
+	}
+	for _, name := range []string{"Append", "AppendBatch", "State", "Subscribe", "Close"} {
+		if unmakes(name) {
+			t.Errorf("the matcher catches %q, which is an ordinary method: it would red on a clean campaign", name)
+		}
+	}
+
 	for i := range typ.NumMethod() {
 		name := typ.Method(i).Name
-		lower := strings.ToLower(name)
-		if strings.Contains(lower, "undo") || strings.Contains(lower, "retract") {
+		if unmakes(name) {
 			t.Errorf("Campaign.%s exists; the log only goes forward, so nothing on Campaign may unmake an event", name)
 		}
 	}
+}
+
+// unmakes reports whether a method name claims to take an event back. Split
+// out of the loop above so the positive control can drive the SAME predicate
+// the walk uses — a control against a re-typed copy of the condition would
+// pass while the walk's own condition was broken.
+func unmakes(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "undo") || strings.Contains(lower, "retract")
 }
 
 // TestOpenRefusesALogThatDoesNotReplay is rebuildLocked's half of the same

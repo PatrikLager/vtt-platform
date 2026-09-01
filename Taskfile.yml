@@ -199,10 +199,18 @@ tasks:
   check:fast:
     desc: >
       Tier 1 only, plus vet and lint -- the pre-commit / inner-loop gate.
-      NOT a substitute for `task check`, which is the merge gate. The full
-      list of what this SKIPS, so nobody has to diff the two by hand:
-      test:cross, test:external, check:coverage, check:mutation, check:drift,
-      check:breaking, check:arch and check:invariants.
+      NOT a substitute for `task check`, which is the merge gate. WHAT THIS
+      SKIPS is every step of `check:` above except the two it repeats (go vet
+      and lint), plus tiers 2-4 of the suite. Enumerated 2026-09-01, so nobody
+      has to diff the two by hand: test:cross, test:external, check:coverage,
+      check:ts-coverage, client:typecheck, check:drift, check:breaking,
+      check:invariants, check:doc-owner, check:no-retraction, check:arch,
+      check:race, check:mutation and check:ts-mutation. The list read
+      "test:cross, test:external, check:coverage, check:mutation, check:drift,
+      check:breaking, check:arch and check:invariants" until 2026-09-01 and
+      omitted six, check:no-retraction among them -- which `ac307d5` had added
+      to `check:` in the same commit. The invariant is the first sentence; the
+      names are the convenience, and they are what rots.
     cmds:
       - go vet ./...
       - task: lint

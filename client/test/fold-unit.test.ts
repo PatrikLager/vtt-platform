@@ -6,9 +6,13 @@ import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant, and the gap is a MEASURED
 // list rather than an argument. Across all eight `scenarios/goldens/*/
-// stream.json` AND both projected streams under `projections/*/`, four of
-// fold.ts's twenty-two arms are never folded: **attackRolled, doorOpened,
-// doorClosed and tokenRemoved**. Said at the level of the EVENT VARIANT, which
+// stream.json` AND both projected streams under `projections/*/`, five of
+// fold.ts's arms are never folded: **attackRolled, doorOpened, doorClosed,
+// tokenRemoved and actorRemoved**. (Measured 2026-09-01. It said FOUR of
+// TWENTY-TWO and omitted actorRemoved, which landed one task after
+// tokenRemoved; the arm total was 23 by then. No total is quoted now — the
+// claim needs none, and an arm count is the shape that rots by addition.)
+// Said at the level of the EVENT VARIANT, which
 // is the level that matters for parity: `attackRolled` shares its arm BODY
 // with `abilityUsed` and `adventureLoaded`, both of which the corpus does
 // fold, so that code path runs — it is the variant that no corpus stream
@@ -18,13 +22,21 @@ import { FoldError } from "../src/state";
 // into another file rots the moment anything is inserted above it, and
 // nothing pins it.
 //
-// tokenRemoved is the newest of the four, added by retraction-leaves Task 8
-// (2026-08-31) — every corpus stream predates it, so none can carry it. It
-// gets the same answer as the door pair below rather than attackRolled's:
-// exercised directly, not folded incidentally. "tokenRemoved removes only
-// that token" (this file) and "removing an unknown token is rejected"
-// (fold-rejections.test.ts) fold both its arms — success and rejection — the
-// same way the door tests below fold doorOpened/doorClosed.
+// tokenRemoved and actorRemoved are the two NEWEST, added by retraction-leaves
+// Tasks 8 and 9 respectively (2026-08-31) in that order — every corpus stream
+// predates both, so none can carry either. They get the same answer as the
+// door pair below rather than attackRolled's: exercised directly, not folded
+// incidentally. "tokenRemoved removes only that token" (this file) and
+// "removing an unknown token is rejected" (fold-rejections.test.ts) fold both
+// of tokenRemoved's arms — success and rejection — the same way the door tests
+// below fold doorOpened/doorClosed, and actorRemoved is covered the same way.
+//
+// SINCE 2026-09-01 THEY ARE ALSO FOLDED AS REAL PROJECTED BYTES, which is a
+// different claim from either: client/test/removal-batch-parity.test.ts folds
+// contract/testdata/removal_batch_projected_stream.json, the stream a seat
+// actually receives for a mixed-visibility remove_actor batch, and
+// internal/gateway recomputes those same bytes from the projector. That is the
+// nearest thing to corpus reach these two arms have.
 //
 // The door pair has its own note at the terrain section, which owns why it
 // matters. Not restated here — and the reason is worth one sentence, because this
@@ -621,11 +633,16 @@ test("revoking control leaves a party member a party member", () => {
 //       bullet after stating it.)
 //   Explored's omission                — REACHED HARDEST OF ANYTHING HERE, and
 //       listing it as unreached was flatly wrong. Emitting `Explored: {}`
-//       unconditionally reds TEN corpus cases: all 8 fold-parity goldens and both
-//       projection-parity seats. This file says exactly that in the test named
-//       "Explored reaches the dump when populated, and is OMITTED (not {}) when
-//       empty" — the very case the parenthetical was describing — and
-//       client/src/fold.ts says it a third time. Only the summary was wrong.
+//       unconditionally reds every log golden in the corpus. This file says
+//       exactly that in the test named "Explored reaches the dump when
+//       populated, and is OMITTED (not {}) when empty" — the very case the
+//       parenthetical was describing — and client/src/fold.ts says it a third
+//       time, which is the ONE place the current measurement is written down.
+//       (It said TEN cases — the goldens plus both projection-parity seats —
+//       which stopped being true when create_scene made every projected
+//       scene's terrain complete and so its Explored non-empty. Three sites
+//       gave three numbers for one measurement; the number now lives with the
+//       code it describes and the other two state the invariant instead.)
 //
 // The lesson is the one this file keeps re-learning: a summary written from
 // memory of the cases below it drifts from them, and the cases were right all
@@ -808,8 +825,9 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
   // two PROJECTED cases: it used to catch the bare-canvas scene, a visible set
   // with no terrain to remember, and create_scene no longer permits one — so
   // every projected Explored is now populated and the injection is invisible
-  // there. NINE failures in all, counted by running it: the eight goldens and
-  // this test.)
+  // there. The goldens plus this one case, which is not a corpus case —
+  // client/src/fold.ts's Explored comment owns the corpus figure, and it is
+  // not restated here.)
   const unseen = JSON.parse(foldToDumpJSON(sceneWithADoor()));
   expect("Explored" in unseen.Scenes["s1"]).toBe(false);
 

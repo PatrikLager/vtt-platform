@@ -3,10 +3,12 @@ package gateway_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -2606,5 +2608,152 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 		if e.GetNoteDeleted() != nil {
 			t.Error("deleting a note names the note, and must not reach a player either")
 		}
+	}
+}
+
+// --- the removal batch, as bytes both folds have to accept -------------------
+
+// removalBatchFixture is the seat's whole stream for the mixed-visibility
+// removal batch, shared with the TypeScript side.
+//
+// contract/testdata is the ONE directory both languages already read
+// (contract/roundtrip_test.go and contract/events.test.ts split every fixture
+// in it), which is why this lives there rather than beside either test.
+const removalBatchFixture = "../../contract/testdata/removal_batch_projected_stream.json"
+
+// removalBatchWorld is twoRooms with the goblin holding TWO tokens on opposite
+// sides of the closed door: t-gob at 2,1 in the hero's own room, t-gob-far at
+// 5,1 behind it. The seat is the hero's player, so it is SHOWN the goblin (and
+// therefore "holds" it, in classify's sense) while never learning that
+// t-gob-far exists at all.
+//
+// It is not twoRooms() itself because twoRooms puts the goblin's only token
+// behind the door: every seat there sees all of the goblin or none of it, and
+// the mixed case is the one nothing in this suite reaches.
+func removalBatchWorld() *engine.State {
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "goblin", Name: "Goblin", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 1}})
+	mustApply(st, 7, &vttv1.TokenPlaced{TokenId: "t-gob-far", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	return st
+}
+
+// projectRemovalBatchSeat replays this world to the hero's player and returns
+// everything that seat receives: the introductions carried by the first event
+// it is projected, then the three-envelope batch remove_actor emits.
+func projectRemovalBatchSeat(st *engine.State) []*vttv1.Envelope {
+	pr := gateway.NewProjector(player())
+	stream := pr.Project(envelope(7, &vttv1.TokenPlaced{TokenId: "t-gob-far",
+		SceneId: "s", ActorId: "goblin",
+		Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
+	return append(stream, removeActorBatch(pr, st, 9, "goblin",
+		[]string{"t-gob", "t-gob-far"})...)
+}
+
+// TestARemovalBatchProjectsToTheBytesBothFoldsRead is the pin the whole arc was
+// missing, and it is a REACH problem rather than a behaviour one: neither
+// remove_token nor remove_actor, and neither TokenRemoved nor ActorRemoved,
+// appears in any golden, any scenario, any soak action or any cmd/vtt e2e — so
+// fold-parity, projection-parity and the golden corpus have exactly zero
+// coverage of them, in either language. Whole-branch review 2026-09-01
+// established by hand that the two folds agree here; this is what keeps that
+// true tomorrow.
+//
+// THE MULTI-TOKEN PATH, specifically. removeActorBatch is called three times
+// elsewhere in this file and every one passes a ONE-element token slice, so
+// nothing walked a batch that is partly withheld — which is the only
+// interesting case, because it is where the seat's stream stops being a
+// prefix of the DM's.
+//
+// WHAT THE SEAT MUST RECEIVE, and why each is what it is:
+//
+//   - t-gob's removal as a synthesized TokenHidden, never the raw TokenRemoved
+//     (TestARemovedTokenReachesAPlayerOnlyAsHidden owns that ruling);
+//   - t-gob-far's removal as NOTHING AT ALL — the seat was never told the token
+//     existed, and "engine: removed unknown token" through session.ts's
+//     re-fold-the-whole-log is the permanent freeze spec §8 names as the worst
+//     failure available;
+//   - the raw ActorRemoved, because this seat WAS shown the goblin.
+//
+// The fixture is what the TypeScript half folds (client/test/
+// removal-batch-parity.test.ts), so the two languages are not folding two
+// hand-written copies of a stream: they fold the same bytes, and this test is
+// what keeps those bytes equal to what the projector really emits.
+func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
+	stream := projectRemovalBatchSeat(removalBatchWorld())
+
+	raw, err := os.ReadFile(removalBatchFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawEnvelopes []json.RawMessage
+	if err := json.Unmarshal(raw, &rawEnvelopes); err != nil {
+		t.Fatal(err)
+	}
+	want := make([]*vttv1.Envelope, 0, len(rawEnvelopes))
+	for i, one := range rawEnvelopes {
+		env := &vttv1.Envelope{}
+		if err := protojson.Unmarshal(one, env); err != nil {
+			t.Fatalf("fixture envelope %d: %v", i, err)
+		}
+		want = append(want, env)
+	}
+
+	// COMPARED WITH proto.Equal RATHER THAN BYTES, deliberately: protojson's
+	// output spacing is randomised per binary (two regimes, chosen by a hash
+	// of the build), so a byte comparison of re-marshalled output would fail
+	// on some builds and pass on others. The fixture is still the authority on
+	// content — it is just read as messages.
+	if len(stream) != len(want) {
+		t.Fatalf("the seat received %d envelopes, the fixture holds %d", len(stream), len(want))
+	}
+	for i := range want {
+		if !proto.Equal(stream[i], want[i]) {
+			t.Errorf("envelope %d differs\n got: %v\nwant: %v", i, stream[i], want[i])
+		}
+	}
+
+	// THE MIXED HALF, asserted by name so a fixture regenerated from a world
+	// where BOTH tokens were visible could not quietly pass the comparison
+	// above. t-gob-far must appear nowhere in this seat's stream: not placed,
+	// not hidden, not removed.
+	for i, e := range stream {
+		if b, err := protojson.Marshal(e); err == nil && strings.Contains(string(b), "t-gob-far") {
+			t.Errorf("envelope %d names t-gob-far, a token this seat was never shown: %s", i, b)
+		}
+	}
+
+	// AND IT FOLDS, through the same engine.Apply the client mirrors.
+	viewerState := engine.NewState()
+	for i, e := range stream {
+		if err := engine.Apply(viewerState, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	if _, ok := viewerState.Actors["goblin"]; ok {
+		t.Error("the goblin must be gone from the seat's own fold after the batch")
+	}
+	if _, ok := viewerState.Actors["hero"]; !ok {
+		t.Error("the seat's own character must survive another actor's removal")
+	}
+	for _, id := range []string{"t-gob", "t-gob-far"} {
+		if _, ok := viewerState.Tokens[id]; ok {
+			t.Errorf("%s must not be on the seat's board after the batch", id)
+		}
+	}
+	if _, ok := viewerState.Tokens["t-hero"]; !ok {
+		t.Error("the seat's own token must survive another actor's removal")
 	}
 }

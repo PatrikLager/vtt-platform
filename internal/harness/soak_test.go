@@ -134,7 +134,8 @@ type soakWorld struct {
 	// pendingBroadcast/nextBroadcastOrdinal are the reorder buffer
 	// deliverInOrder uses to guarantee slowBroadcast still delivers in
 	// FIFO-of-delivery order. Once 2026-08-31-retraction-leaves
-	// task-4-brief.md removed RunSoak's per-action wait on the agent's own
+	// Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md
+	// (commit 92f1284) removed RunSoak's per-action wait on the agent's own
 	// history — a wait that, per soak.go's former per-iteration comment,
 	// existed only to make planRetraction's eligibility snapshot
 	// deterministic, and nothing else read it — nothing paces the main loop
@@ -577,7 +578,8 @@ func TestRunSoakGeneratorDiffersForDifferentSeed(t *testing.T) {
 
 // TestRunSoakActionMixRatioSanity is task-5-brief.md's "mix-ratio sanity
 // over 1000 draws", with retraction's freed 10% folded into move-own
-// (2026-08-31-retraction-leaves task-4-brief.md, pickBucket's own doc
+// (Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md,
+// pickBucket's own doc
 // comment carries the ruling): Report.Counts, expressed as a fraction of
 // Events, must land close to the pinned percentages (create scene 5%, add
 // actor 10%, place 15%, move-own 60%, session churn 5%, deliberate

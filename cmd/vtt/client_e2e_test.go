@@ -167,7 +167,8 @@ func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) 
 // (.superpowers/sdd/p6-task-5-report.md's transcript): Events=500,
 // Accepted=480, Denied=20, Checkpoints=5.
 //
-// RE-BASELINED 2026-08-31-retraction-leaves task-4-brief.md — deliberately
+// RE-BASELINED by Task 4 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md (commit 92f1284) — deliberately
 // NOT the same mix as before: internal/harness/soak.go's pickBucket folded
 // retraction's freed 10% into move-own rather than deniedAttempt, but a
 // mix-ratio shift still cascades into which further rng draws each action
@@ -176,7 +177,7 @@ func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) 
 // TestSoakIssuerChoiceIsPinnedForASeed golden did. Old Accepted=480,
 // Denied=20 -> new Accepted=478, Denied=22 (Events and Checkpoints
 // unchanged); see the report for the re-run that produced these
-// (task-4-report.md, this task).
+// (measured on that task's own run; commit 92f1284).
 func TestClientSoakSelfContainedSeed1Events500PassesWithPinnedCounts(t *testing.T) {
 	out, err := runCLI(t, "client", "soak", "--seed", "1", "--events", "500", "--json")
 	if err != nil {

@@ -27,6 +27,22 @@ type Surface =
   | "board"
   | "spectator"
   | "join-flow"
+  // CURRENTLY UNUSED, and kept deliberately — the same gravestone
+  // internal/gateway/authz_test.go carries where its `noRoleCells` exemption
+  // map stood. The variant arrived with this table (`a9bb0b0`); its only user
+  // was ever the `retractEvents` row, which Task 3 of
+  // docs/superpowers/plans/2026-08-31-retraction-leaves.md (`d3e2f28`) wrote
+  // when retract_events became the one command no seat could issue, and Task 7
+  // (`59542e1`) deleted along with the oneof arm itself. Every command in the
+  // oneof now has a human surface with no way out.
+  //
+  // THE MACHINERY STAYS because the hatch is what makes "every command has a
+  // surface" affordable to keep honest: the next command that genuinely nobody
+  // can issue must be declarable, and it must cost a written `why`. What does
+  // NOT stay is a guard that passes because its set is empty — see "a command
+  // nobody can issue must say why" below, which now asserts the variant is
+  // either used or provably unused rather than filtering an empty set and
+  // reporting green.
   | "not-user-issued";
 
 export const COMMAND_SURFACE: Record<
@@ -141,6 +157,38 @@ test("the table declares nothing the contract does not define", () => {
 });
 
 test("a command nobody can issue must say why, so the hatch costs something", () => {
+  // POSITIVE CONTROL FIRST, because this test filters a set that is empty
+  // today: no row has used "not-user-issued" since `59542e1` deleted
+  // retract_events from the oneof, so the assertion
+  // below passes on a vacuum and would pass just as happily if the `why`
+  // requirement were deleted outright. The rule is exercised against a
+  // synthetic row instead, which is the only way it can be exercised at all
+  // while the variant is unused.
+  //
+  // CHOSEN OVER "fail when the filtered set is empty", the other way to close
+  // this. That guard would force a permanently fake row into the SHIPPED table
+  // just to keep itself green — the stale artifact this file exists to avoid —
+  // and it would red on the good news that every command is reachable. A
+  // synthetic row inside the test costs nothing and tests the rule directly.
+  const hatched: Record<string, { surface: Surface; why?: string }> = {
+    ...COMMAND_SURFACE,
+    ghostCommand: { surface: "not-user-issued" },
+  };
+  const bareWithGhost = Object.entries(hatched)
+    .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
+    .map(([k]) => k);
+  expect(bareWithGhost).toEqual(["ghostCommand"]);
+  // ...and the same row WITH a reason is accepted, or the rule would be
+  // "no command may ever take the hatch", which is not what it says.
+  hatched["ghostCommand"] = { surface: "not-user-issued", why: "emitted by the server only" };
+  expect(
+    Object.entries(hatched)
+      .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
+      .map(([k]) => k),
+  ).toEqual([]);
+
+  // THE REAL TABLE. Empty today; loud the day a row takes the hatch without
+  // paying for it.
   const bare = Object.entries(COMMAND_SURFACE)
     .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
     .map(([k]) => k);
@@ -159,8 +207,9 @@ test("every command with a human surface has a builder in commands.ts", () => {
 test("no command builder can retract, because the platform cannot", () => {
   // Patrik, 2026-08-30: retraction leaves the platform. A retraction's purpose
   // is to make something not have happened, and it cannot do that — the player
-  // read the log and knows what it said. This asserts the ABSENCE, so it is
-  // written before the removal and must fail now.
+  // read the log and knows what it said. This asserts the ABSENCE, so it was
+  // written before the removal and failed until `59542e1` landed it; what it
+  // does now is keep a builder from coming back.
   const retractors = Object.keys(commands).filter((k) => /retract/i.test(k));
   expect(retractors).toEqual([]);
 });

@@ -140,9 +140,12 @@ test("createScene declares EVERY square of the grid it names", () => {
 });
 
 test("createScene declares the kind it was ASKED for, not a default", () => {
-  // Two answers, and the builder must carry whichever it was given. A fan-out
-  // that hard-coded floor would pass the test above and silently overrule a DM
-  // who chose wall.
+  // The builder must carry whichever kind it was given. A fan-out that
+  // hard-coded floor would pass the test above and still be wrong, because
+  // this builder is the WIRE shape: create_scene takes any mix of kinds, and
+  // a wall room is what an LLM DM or a map file produces. The DM console's own
+  // box no longer offers wall (view/dm.ts's fillSelect says why), which is a
+  // fact about that form and not about this function.
   const wall = toJson(ClientCommandSchema, createScene("s1", "Keep", 2, 2, "wall")) as Record<string, any>;
   for (const t of Object.values(wall["createScene"]["tiles"] as Record<string, { kind: string }>)) {
     expect(t).toEqual({ kind: "wall" });
@@ -471,7 +474,7 @@ test("loadMap matches the client's own expected shape", () => {
   });
 });
 
-// --- token removal (retraction-leaves Task 8) --------------------------------
+// --- forward-only removals (retraction-leaves Tasks 8 and 9) -----------------
 
 import { removeToken, removeActor } from "../src/commands";
 

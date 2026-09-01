@@ -258,9 +258,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		// everyone.
 		//
 		// The error wording DELIBERATELY MATCHES TokenMoved's own unknown-
-		// token error above ("moved" -> "removed"), per task-8-brief.md:
-		// removing a token that does not exist must fail in the same words
-		// the codebase already uses for an unknown token.
+		// token error above ("moved" -> "removed"), per Task 8 of
+		// docs/superpowers/plans/2026-08-31-retraction-leaves.md: an unknown
+		// token must fail in the words the codebase already uses for one.
 		tr := p.TokenRemoved
 		if _, ok := st.Tokens[tr.TokenId]; !ok {
 			return fmt.Errorf("engine: removed unknown token %q", tr.TokenId)

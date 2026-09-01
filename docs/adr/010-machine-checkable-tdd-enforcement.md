@@ -162,7 +162,11 @@ tests *assert* anything. A suite with no assertions reaches 100% coverage.
    Every other package is gated. The list was ONCE the five that happened to
    have been measured while this gate was written, which silently dropped
    `internal/campaign` — a package the older `audit:mutation` task did cover,
-   and which owns the fold driver, undo, and the poison contract. Gating it
+   and which owns the fold driver, the atomic batch append, and the poison
+   contract. (It owned `Undo` too when this was written; `133e896` deleted it
+   on 2026-08-31 and nothing replaced it. Corrected 2026-09-01 — the reason
+   this package is gated is unchanged, but a justification naming a method
+   that no longer exists reads as a stale gate.) Gating it
    found three real survivors in `c.head`'s batch arithmetic within a minute.
    A gate scoped to what its author touched is not a gate.
 

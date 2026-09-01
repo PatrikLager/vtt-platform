@@ -17,7 +17,8 @@ import (
 // contract types plus engine.Apply — never internal/campaign or
 // internal/store (the P1 boundary this whole package is bound by).
 //
-// Single pass, since 2026-08-31-retraction-leaves task-4-brief.md: Fold no
+// Single pass, since Task 4 of docs/superpowers/plans/
+// 2026-08-31-retraction-leaves.md (commit 92f1284): Fold no
 // longer collects a skip-set from an EventsRetracted marker, because there is
 // no code path left that skips by sequence at all. Task 7 of the same spec
 // then deleted the message itself, so there is no longer a payload any fold

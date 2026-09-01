@@ -149,28 +149,51 @@ test("a scene larger than one command can carry is refused before it is sent", (
   expect(h.notices[0]).toContain("Author it as a map file and use Load map.");
 });
 
+test("the fill box offers the blank and floor, and nothing that would brick a room", () => {
+  // THE RULING THIS PINS (2026-09-01, whole-branch review). The box carried a
+  // `wall` option for one day. A scene's terrain is fixed for the life of the
+  // scene — apply.go writes Scenes only from SceneCreated, no command edits a
+  // square afterwards, and the id cannot be reused — so an all-wall room is one
+  // no player can ever enter, permanently, from five clicks. The option set IS
+  // the guard, so it is asserted exactly rather than by absence of "wall":
+  // asserting only `not.toContain("wall")` would pass a box that had gained
+  // `door`, or `rubble`, or anything else equally unrecoverable.
+  const sel = harness().node.querySelector(".scene-fill") as HTMLSelectElement;
+  expect(Array.from(sel.options).map((o) => o.value)).toEqual(["", "floor"]);
+});
+
 test("the scene fill the DM chose is the one that reaches the wire", () => {
-  // TWO real answers, so the console must carry whichever was given. A fan-out
-  // hard-coded to floor would satisfy every other test in this file and
-  // silently overrule a DM who chose wall — "fill solid, then carve" is a real
-  // way to build a room, which is why the box offers two and not one.
-  //
-  // BOTH ANSWERS ARE WALKED, not just the interesting-looking one. With only
-  // "wall" here, tileKindFromWireName's `case "floor"` arm could fall through
-  // to wall, or return "", and every test in this file stayed green — two
-  // mutants survived on exactly that gap (measured 2026-09-01). The other
-  // floor test, "a scene at the cap is still sent", counts the command
-  // without reading it, so it cannot cover this either.
-  for (const answer of ["floor", "wall"] as const) {
-    const h = harness();
-    fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
-    (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = answer;
-    h.action("create-scene").click();
-    const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
-    expect(sent.case).toBe("createScene");
-    expect(Object.keys(sent.value.tiles)).toHaveLength(4);
-    for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe(answer);
-  }
+  // The console must carry the answer it was GIVEN rather than one it assumes,
+  // and with one option left that is still two claims, not one: the fan-out
+  // reaches every square, and it carries `floor` because that is what
+  // tileKindFromWireName returned — not because createScene defaults to it
+  // (it has no default; see commands.ts).
+  const h = harness();
+  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
+  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
+  h.action("create-scene").click();
+  const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
+  expect(sent.case).toBe("createScene");
+  expect(Object.keys(sent.value.tiles)).toHaveLength(4);
+  for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe("floor");
+});
+
+test("a fill answer the box does not offer is refused, not sent", () => {
+  // The negative half of the option-set assertion above, driven through the
+  // Create handler rather than read off the DOM. Setting a <select> to a value
+  // with no matching <option> leaves it "" (HTML spec), so this is also the
+  // "never answered" path — and tileKindFromWireName must refuse it. With only
+  // the happy path walked, that function's `default: return null` arm could
+  // return "floor" and every other test in this file stayed green.
+  const h = harness();
+  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
+  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "wall";
+  h.action("create-scene").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices[0]).toMatch(/what the room is made of/i);
+  // AND WHY IT CANNOT BE FIXED LATER, which is the whole reason the box is
+  // asked at all. Unasserted, the sentence that carries it is free to blank.
+  expect(h.notices[0]).toContain("fixed once the scene exists");
 });
 
 test("the scene fill survives a re-render, like every other half-typed answer", () => {
@@ -179,12 +202,12 @@ test("the scene fill survives a re-render, like every other half-typed answer", 
   // must not lose the answer they already gave.
   const first = harness();
   const sel = first.node.querySelector(".scene-fill") as HTMLSelectElement;
-  sel.value = "wall";
+  sel.value = "floor";
   sel.dispatchEvent(new Event("change"));
 
   const again = harness().node.querySelector(".scene-fill") as HTMLSelectElement;
-  expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, false, true]);
-  expect(again.options[again.selectedIndex]!.textContent).toBe("wall");
+  expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, true]);
+  expect(again.options[again.selectedIndex]!.textContent).toBe("floor");
 });
 
 test("a scene at the cap is still sent, so the guard is a boundary and not a wall", () => {

@@ -159,7 +159,8 @@ test("moving a token with no destination is rejected", () => {
 
 // tokenRemoved (retraction-leaves Task 8, spec §5.1). Same idiom as
 // tokenMoved's own unknown-token case directly above, and the message
-// mirrors it word for word ("moved" -> "removed") per task-8-brief.md's own
+// mirrors it word for word ("moved" -> "removed") per Task 8 of
+// docs/superpowers/plans/2026-08-31-retraction-leaves.md, whose own
 // requirement that the two read as the same wording.
 test("removing an unknown token is rejected", () => {
   rejects([...placeable, env(4, { tokenRemoved: { tokenId: "ghost" } })],

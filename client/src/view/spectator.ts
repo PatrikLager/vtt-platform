@@ -77,6 +77,17 @@ export function describe(e: Envelope): string {
       return `${p.value.tokenId} placed at ${p.value.position?.x ?? 0},${p.value.position?.y ?? 0}`;
     case "tokenMoved":
       return `${p.value.tokenId} moved to ${p.value.to?.x ?? 0},${p.value.to?.y ?? 0}`;
+    // The two forward-only removals (retraction-leaves spec §5). They arrive
+    // here as ordinary feed entries because a removal IS something that
+    // happened — the counterparts above (actorAdded, tokenPlaced) are labelled
+    // and the inverses were not, so a player watched "tokenRemoved" and
+    // "actorRemoved" go past in developer vocabulary. TokenRemoved carries a
+    // bare token_id and ActorRemoved a bare actor_id (events.proto), so
+    // neither can name anything the fold has already deleted.
+    case "tokenRemoved":
+      return `${p.value.tokenId} taken off the board`;
+    case "actorRemoved":
+      return `actor ${p.value.actorId} left`;
     case "conditionApplied":
       return `${p.value.actorId} gained ${p.value.conditionId}`;
     case "conditionRemoved":

@@ -194,8 +194,14 @@ that the "`Explored` comes from tiles, not from `visible`" rule was a fixture
 rather than a sentence: its `Explored` stayed EMPTY however much of it was
 visible. On 2026-09-01 `create_scene` began refusing a scene that leaves a
 square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall nobody
-declared is an invisible barrier*), and every scene in this corpus is created by
-`create_scene`, so no fixture here can be a bare canvas any more.
+declared is an invisible barrier*), and every scene in this corpus that a
+scenario CREATES is created by `create_scene`, so no fixture here can be a bare
+canvas any more. (Corrected 2026-09-01: this said *every* scene.
+`scenarios/adventure-night.json` issues only `loadAdventure`, and its scene
+comes from a map file — the very exemption the next paragraph names. That
+exemption is why the sentence needs the qualifier and not why it fails: an
+adventure's map file is authored, not typed into a form, and nothing in this
+corpus reaches the bare-canvas shape either way.)
 
 The rule did not change and the shape is still reachable — a map FILE may still
 omit tiles, which is the exemption that keeps files authored before

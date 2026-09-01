@@ -12,14 +12,14 @@ about tomorrow.
 WHY THIS IS NOT A `grep -rin retract`. The word is still all over this tree
 and every occurrence is deliberate — dated change-records saying what
 retraction used to do at that spot and why the shape changed, which are the
-reason the next reader does not re-derive it from first principles. Measured
-2026-09-01 over the files this script scans: 268 occurrences across 60 files
-in 14 directories (internal 106, tools 78, client 43, contract 38, cmd 3). A
-naive grep reds on all 268, and the only way to green it is to exclude those
-60 files, at which point the gate enforces nothing. So this gate MASKS
-comments and string literals first and looks only at what is left: code
-positions. An identifier is what a reintroduction actually looks like, and
-there were 14 of those, all of them enforcement (see EXEMPT).
+reason the next reader does not re-derive it from first principles. Re-measured
+2026-09-01, after this file began scanning .json, over the files it scans: 305
+occurrences across 61 files in 14 directories (internal 111, tools 103, client
+50, contract 38, cmd 3). A naive grep reds on every one of them, and the only
+way to green it is to exclude those 61 files, at which point the gate enforces
+nothing. So this gate MASKS comments and string literals first and looks only at
+what is left: code positions. An identifier is what a reintroduction actually
+looks like, and there are 16 of those, all of them enforcement (see EXEMPT).
 
 WHAT THIS COVERS, AND WHAT contract/events.test.ts COVERS. They are different
 halves and neither substitutes for the other:
@@ -43,10 +43,26 @@ pointing semgrep at a directory. Skipped: generated output (contract/gen,
 cmd/vtt/tools.json's siblings), vendored and built trees (node_modules,
 webdist, .stryker-tmp), and the untracked scratch dirs.
 
-NOT SCANNED, deliberately: .json. Every occurrence there would be inside a
-string, so masking leaves nothing to match; scenario files and cmd/vtt/
-tools.json name commands that cannot exist without a contract message, and
-events.test.ts refuses those structurally.
+.json IS SCANNED, and only its OBJECT KEYS are. This was the gate's one hole
+against the spec's own exit criterion 1, which names `scenarios/`: until
+2026-09-01 no `.json` was read at all, so a `"retract_events"` step in
+`scenarios/smoke.json` reported clean. In JSON a key is the code position —
+it is the protobuf field name a scenario step, a golden stream or
+`cmd/vtt/tools.json` is naming — while every VALUE is data, so `_mask_json`
+keeps key text and blanks the rest. Note keys, narration text and a scenario
+name saying what retraction used to do are therefore all safe, and a
+`retract_events` COMMAND anywhere in the corpus is not.
+
+What the earlier note claimed instead, corrected rather than deleted because
+the compensating control is real and is easy to overstate: it said scenario
+files "name commands that cannot exist without a contract message, and
+events.test.ts refuses those structurally". events.test.ts reads the
+DESCRIPTORS and never opens a fixture. The control that actually bites is
+protojson's unknown-field strictness — cmd/vtt unmarshals each step's command
+into a ClientCommand and a field the oneof does not have is an error — and it
+covers COMMAND POSITIONS ONLY, in files something actually loads. A retraction
+key in a golden stream, in a probe, or in a fixture no test opens is refused by
+nothing but this gate.
 
 KNOWN LIMIT, stated rather than hidden: inside a Python f-string the
 interpolated expression is masked along with the literal, so an identifier
@@ -81,6 +97,7 @@ SOURCE_SUFFIXES = {
     ".go": "c", ".proto": "c", ".py": "py",
     ".ts": "ts", ".tsx": "ts", ".mts": "ts", ".cts": "ts",
     ".js": "ts", ".jsx": "ts", ".mjs": "ts", ".cjs": "ts",
+    ".json": "json",
 }
 
 # Skipped at ANY depth: vendored trees, and dotted directories (the same rule
@@ -297,9 +314,54 @@ def _mask_py(src):
     return "".join(out)
 
 
+def _mask_json(src):
+    """Keep OBJECT KEY text, blank everything else, offsets preserved.
+
+    A key is a string literal whose next non-whitespace character is `:`. That
+    is the whole rule, and it is deliberately syntactic rather than a parse:
+    an unparseable or half-written fixture still gets scanned, where json.loads
+    would raise and the file would go unchecked — the same failure mode the
+    unreadable-file guard above exists to refuse.
+
+    Escapes inside a key are left as their raw characters. WORD only ever
+    matches identifier runs, so a backslash-u escape contributes the word
+    after the backslash rather than the letter it stands for, and a key
+    spelled that way would slip past. Nothing in this tree spells a field name
+    in escapes, and a fixture that did would be doing it on purpose.
+    """
+    out = [" " if c != "\n" else "\n" for c in src]
+    n = len(src)
+    i = 0
+    while i < n:
+        if src[i] != '"':
+            i += 1
+            continue
+        j = i + 1
+        while j < n:
+            if src[j] == "\\":
+                j += 2
+                continue
+            if src[j] == '"':
+                break
+            j += 1
+        if j >= n:
+            break
+        k = j + 1
+        while k < n and src[k].isspace():
+            k += 1
+        if k < n and src[k] == ":":
+            for m in range(i + 1, j):
+                if src[m] != "\n":
+                    out[m] = src[m]
+        i = j + 1
+    return "".join(out)
+
+
 def mask(src, kind):
     if kind == "py":
         return _mask_py(src)
+    if kind == "json":
+        return _mask_json(src)
     if kind == "ts":
         return _mask_c_like(src, backtick="template", regex=True)
     return _mask_c_like(src, backtick="raw", regex=False)
