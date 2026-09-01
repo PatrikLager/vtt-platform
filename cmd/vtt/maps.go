@@ -1,11 +1,12 @@
 // maps.go is the shared boot-time maps-directory loader (maps-as-geometry
 // Task 7; layout changed by Task 3 of the create_scene-leaves plan, 2026-
-// 09-01, "the kernel serves maps, it does not make them"): `vtt serve
-// --maps-dir` (composeServer) walks a directory and calls mapdef.Load/
-// mapdef.LoadPack — factored here the same way adventures.go factors
-// loadAdventuresDir, and sharing its "fail loud at boot" posture
-// (adventure-format §7, applied to maps by maps-as-geometry design spec
-// §4.4).
+// 09-01, "the kernel serves maps, it does not make them"): composeServer
+// (serve_compose.go) walks the campaign directory itself and calls
+// mapdef.Load/mapdef.LoadPack — there is no --maps-dir flag any more as of
+// Task 5 of that same plan, maps belong to the campaign that uses them —
+// factored here the same way adventures.go factors loadAdventuresDir, and
+// sharing its "fail loud at boot" posture (adventure-format §7, applied to
+// maps by maps-as-geometry design spec §4.4).
 //
 // SINCE TASK 3, maps and packs are two SEPARATE trees under dir, not one
 // map-per-subdirectory: every "<dir>/maps/<id>.json" is one standalone map,
@@ -198,11 +199,14 @@ func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*map
 		maps[m.ID] = m
 	}
 
-	// Zero maps loaded from an EXISTING dir is a boot error, not a quiet
-	// success — the same F4 reasoning loadAdventuresDir already applies:
-	// without this, a typo'd or never-synced --maps-dir boots cleanly with
-	// nothing configured, inconsistent with a NONEXISTENT dir (which already
-	// fails loud via os.ReadDir's own error above).
+	// Zero maps loaded from an EXISTING maps/ dir is a boot error, not a
+	// quiet success — the same F4 reasoning loadAdventuresDir already
+	// applies: without this, an empty-but-present maps/ (e.g. a manually
+	// mkdir'd directory nothing was ever copied into) boots cleanly with
+	// nothing configured, inconsistent with a NONEXISTENT maps/ (which
+	// composeServer's own caller-side guard, and — for any other caller —
+	// os.ReadDir's error above, already handle as "nothing installed yet"
+	// rather than a boot error; see 2026-09-01-create-scene-leaves Task 5).
 	if len(maps) == 0 {
 		return nil, nil, nil, fmt.Errorf("maps dir %s contains no maps", dir)
 	}

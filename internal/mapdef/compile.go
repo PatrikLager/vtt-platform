@@ -26,8 +26,9 @@ import (
 // and the read limit stop agreeing. Overriding a square costs exactly
 // len(name) + 9 bytes compact and +10 spaced — the `,"art":""` scaffolding
 // plus the name. Shipped TILE names run 7 to 11 characters: the only shipped
-// map that declares a pack is maps/cellar.json, and cellar-basics names
-// earth-1, masonry-1, flagstone-1 and cellar-door. (client/public/std-pack is
+// map that declares a pack is campaigns/example/maps/cellar.json, and
+// cellar-basics names earth-1, masonry-1, flagstone-1 and cellar-door.
+// (client/public/std-pack is
 // a client-side rendering manifest, never loaded through LoadPack, and that
 // pack's object names ride in SceneObject.art, not TileRef.art — counting
 // either widens the range spuriously.) So overriding all 3600 tiles lands

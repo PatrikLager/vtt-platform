@@ -219,7 +219,7 @@ func TestServeBootsAMixedAdventuresDirServingOnlyThisTable(t *testing.T) {
 	// under the amended binding no longer fails — so it BOOTED and blocked
 	// the suite on :8080 until it was killed.
 	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir,
-		filepath.Join(root, "adventures"), "")
+		filepath.Join(root, "adventures"))
 	if err != nil {
 		t.Fatalf("composeServer against the real mixed adventures/ = %v; "+
 			"a library holding one adventure for another table must still boot", err)
@@ -505,7 +505,7 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 		); err != nil {
 			t.Fatalf("invite (first): %v", err)
 		}
-		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", "")
+		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 		if err != nil {
 			t.Fatalf("serve after invite: %v", err)
 		}
@@ -516,7 +516,7 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 
 	t.Run("serve then invite", func(t *testing.T) {
 		campaignPath := filepath.Join(t.TempDir(), "campaign")
-		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", "")
+		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 		if err != nil {
 			t.Fatalf("serve (first): %v", err)
 		}

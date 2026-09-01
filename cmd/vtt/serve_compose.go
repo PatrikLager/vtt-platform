@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -82,20 +84,26 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // rulesetDir) is caught by adventure.Load itself (its own ruleset-id-match
 // check) and surfaces as this same boot error.
 //
-// mapsDir is OPTIONAL (maps-as-geometry Task 7, design spec §4.4): ""
-// keeps every pre-Task-7 behavior exactly as it was — a nil/empty
+// Maps come from the campaign directory itself (2026-09-01-create-scene-
+// leaves Task 5 — "the kernel serves maps, it does not make them"): there
+// is no mapsDir parameter and no --maps-dir flag any more, because a map
+// belongs to the campaign that uses it (design spec §3), not to a
+// server-wide operator flag pointing at a shared store. campaignPath/maps
+// ABSENT is not a declaration of anything — a brand-new campaign starts
+// with nothing installed (design spec §4, "Install, then load"), and
+// treating that as a boot failure would stop `vtt client run`'s
+// self-contained throwaway campaign (harness_boot.go) from ever starting —
+// so it is treated exactly like the old mapsDir=="" case: a nil/empty
 // gateway.Server.maps, GET /api/maps answering 200 with an empty list and
-// GET /api/packs/{pack}/{file} always 404ing. Unlike adventuresDir, a
-// non-empty mapsDir needs no rulesetDir — a standalone map carries no
-// ruleset reference (mapdef.Map has none; only adventure.Adventure does).
-// Every mapsDir/maps/*.json and mapsDir/packs/*/pack.json is loaded and
-// validated via loadMapsDir (maps.go; layout changed by Task 3 of the
-// 2026-09-01 create_scene-leaves plan — maps are flat files, packs are a
-// sibling tree) — fail loud here, at boot, on any single map's failure or
-// an override that does not resolve against its pack (the same "fail
-// loud, never at the table" posture as adventuresDir above), closing both
-// handles before returning.
-func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string) (*http.Server, func() error, error) {
+// GET /api/packs/{pack}/{file} always 404ing. campaignPath/maps PRESENT
+// (even placed there by nothing more than an empty mkdir) is loaded and
+// validated in full via loadMapsDir (maps.go; layout changed by Task 3 of
+// the 2026-09-01 create_scene-leaves plan — maps are flat files, packs are
+// a sibling tree) — fail loud here, at boot, on any single map's failure,
+// an override that does not resolve against its pack, or an existing-but-
+// empty maps/ (the same "fail loud, never at the table" posture as
+// adventuresDir above), closing both handles before returning.
+func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
@@ -149,12 +157,18 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
 	}
 
-	if mapsDir != "" {
-		maps, packs, packFS, err := loadMapsDir(mapsDir)
+	// campaignPath/maps ABSENT means nothing has been installed yet (see
+	// this function's own doc comment above) — skip loading entirely,
+	// exactly like the old mapsDir=="" case. Any OTHER Stat failure
+	// (permissions, a plain file sitting where maps/ should be) falls
+	// through to loadMapsDir so ITS error surfaces, rather than being
+	// silently swallowed here as "no maps".
+	if _, statErr := os.Stat(filepath.Join(campaignPath, "maps")); statErr == nil || !os.IsNotExist(statErr) {
+		maps, packs, packFS, err := loadMapsDir(campaignPath)
 		if err != nil {
 			_ = ids.Close() // best-effort; the compose error below is what matters
 			_ = c.Close()   // best-effort; the compose error below is what matters
-			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", mapsDir, err)
+			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", campaignPath, err)
 		}
 		gw = gw.WithMaps(maps, packs).WithPackFiles(packFS)
 	}

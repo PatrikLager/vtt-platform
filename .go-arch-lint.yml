@@ -229,9 +229,10 @@ deps:
   # NOT import adventure — its Config carries only the already-loaded guide
   # strings (map[adventure_id]guide.md content), so the P1 wire-client
   # boundary is untouched here too.
-  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7 wiring): `vtt
-  # serve --maps-dir` walks the maps directory and calls mapdef.Load/
-  # mapdef.LoadPack/mapdef.Compile per subdirectory directly (cmd composes,
-  # same shape as rules/adventure above) — see cmd/vtt/maps.go's
+  # mapdef added maps-as-geometry Task 7 (design spec §4.4/§7 wiring):
+  # composeServer walks the campaign directory's own maps/ and packs/
+  # (2026-09-01-create-scene-leaves Task 5 — no --maps-dir flag any more)
+  # and calls mapdef.Load/mapdef.LoadPack/mapdef.Compile directly (cmd
+  # composes, same shape as rules/adventure above) — see cmd/vtt/maps.go's
   # loadMapsDir.
   cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef] }

@@ -1053,8 +1053,9 @@ func TestMapsListedForEveryRole(t *testing.T) {
 
 // TestMapsEmptyCollectionWithNothingLoaded mirrors
 // TestMetadataEmptyCollectionsWithNothingLoaded's "empty is not an error"
-// posture (spec §5): a server booted without --maps-dir answers 200 with an
-// empty list, not a 404 or a 500.
+// posture (spec §5): a server booted for a campaign whose maps/ is absent,
+// or which has no maps installed yet (2026-09-01-create-scene-leaves Task
+// 5), answers 200 with an empty list, not a 404 or a 500.
 func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)

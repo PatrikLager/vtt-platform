@@ -29,27 +29,33 @@ Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
 
 ## Content directories: rulesets, adventures, maps
 
-Three optional flags on `vtt serve` point at directories of content, each
+Two optional flags on `vtt serve` point at directories of content, each
 loaded and validated fully at boot — never at the table:
 
 ```sh
 vtt serve --campaign campaign/ --addr :8080 \
   --ruleset rulesets/dnd45e-minimal \
-  --adventures-dir adventures \
-  --maps-dir maps
+  --adventures-dir adventures
 ```
 
-`--maps-dir` serves every subdirectory of `maps/` as a standalone map (one
-`map.json` plus an optional `tiles/pack.json` and its images, e.g.
-`maps/cellar/`) over `GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
+Maps are not a flag: they belong to the campaign itself. Every flat file in
+`<campaign>/maps/` (one `<id>.json` per map, named by its own id) plus every
+pack directory in the sibling `<campaign>/packs/` is loaded and served over
+`GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
 [`docs/map-format.md`](docs/map-format.md) for the format itself, including a
 complete worked example and every standard tile name. A map loads
 independently of any adventure (design spec
 `docs/superpowers/specs/2026-08-12-maps-as-geometry-design.md` §4.3): drop a
-directory in, restart, and it is servable. `maps/cellar` is the platform's
-own demo map — a small room with real cover (pillars, crates, an interior
-wall and a door), generated art included (`tools/genmappack`, see that
-package's own doc comment for how to re-run it).
+file into the campaign's `maps/`, restart, and it is servable.
+[`campaigns/example/`](campaigns/example/) is the platform's own demo
+campaign — one map, `cellar.json`, a small room with real cover (pillars,
+crates, an interior wall and a door), generated art included
+(`tools/genmappack`, see that package's own doc comment for how to re-run
+it). `vtt serve --campaign` writes a log and identity state into whatever
+directory it opens (`campaign.Open`'s own doc comment), so copy it rather
+than pointing `--campaign` at the checked-in directory directly:
+`cp -r campaigns/example my-campaign && vtt serve --campaign my-campaign`
+to see a served map without authoring one first.
 
 ## Simulation harness: scenarios and soak
 

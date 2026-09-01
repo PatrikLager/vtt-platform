@@ -213,10 +213,12 @@ type Server struct {
 	static fs.FS
 
 	// maps is OPTIONAL server config (maps-as-geometry Task 7, spec §4.3/
-	// §4.4): nil/empty is today's behavior for a server with no
-	// --maps-dir — GET /api/maps answers 200 with an empty list, the same
-	// "empty is not an error" posture handleAdventures already gives (spec
-	// §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
+	// §4.4): nil/empty is today's behavior for a campaign whose maps/ is
+	// absent, or which has no maps installed yet (2026-09-01-create-scene-
+	// leaves Task 5 — maps come from the campaign directory itself, not a
+	// --maps-dir flag) — GET /api/maps answers 200 with an empty list, the
+	// same "empty is not an error" posture handleAdventures already gives
+	// (spec §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
 	// its own doc comment for why), keyed by each map's own declared id
 	// (Map.ID), not any directory name — cmd/vtt's loadMapsDir refuses a
 	// collision there before either map ever reaches here.
@@ -232,8 +234,8 @@ type Server struct {
 
 	// packFS is OPTIONAL server config, boot time only, set via
 	// WithPackFiles: one fs.FS PER PACK, each rooted AT that pack's own
-	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over an
-	// operator-installed --maps-dir — NOT os.DirFS; see WithPackFiles' own
+	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over a
+	// campaign's own packs/ tree — NOT os.DirFS; see WithPackFiles' own
 	// doc comment for why that distinction is load-bearing, not stylistic).
 	// GET /api/packs/{pack}/{file} (metadata.go's handlePackFile) serves
 	// straight out of the matching entry. A SEPARATE field from packs

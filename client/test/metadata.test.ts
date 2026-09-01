@@ -112,7 +112,7 @@ test("maps decode with their pack reference, when they have one", async () => {
   }
 });
 
-test("no --maps-dir configured is an empty list, not a crash and not a placeholder", async () => {
+test("no maps installed is an empty list, not a crash and not a placeholder", async () => {
   const api = fakeAPI({});
   try {
     const maps = await fetchMaps(api.base, "t");

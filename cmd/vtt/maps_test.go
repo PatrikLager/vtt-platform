@@ -3,10 +3,12 @@ package main
 // maps_test.go covers loadMapsDir/LoadMapsDir (maps.go, maps-as-geometry
 // Task 7; layout changed by Task 3 of the 2026-09-01 create_scene-leaves
 // plan — "the kernel serves maps, it does not make them"): the boot-time
-// walker `vtt serve --maps-dir` (composeServer) uses to load and validate
-// every standalone map before the server ever accepts a connection — the
-// same fail-loud-at-boot posture loadAdventuresDir already gives
-// adventures (adventure-format §7, maps-as-geometry design spec §4.4).
+// walker composeServer uses (over the campaign directory itself as of that
+// plan's Task 5 — there is no --maps-dir flag any more) to load and
+// validate every standalone map before the server ever accepts a
+// connection — the same fail-loud-at-boot posture loadAdventuresDir
+// already gives adventures (adventure-format §7, maps-as-geometry design
+// spec §4.4).
 //
 // SINCE TASK 3: a map is a flat file, <dir>/maps/<id>.json, named by its
 // own id — not a directory. A pack is a directory, <dir>/packs/<name>/
@@ -259,10 +261,14 @@ func TestLoadMapsDirRefusesAnUnnamedPack(t *testing.T) {
 }
 
 // TestLoadMapsDirEmptyDirIsBootError mirrors loadAdventuresDir's own F4 fix
-// (adventures_test.go's TestLoadAdventuresDirEmptyDirIsBootError): a typo'd
-// or never-synced --maps-dir booting cleanly with zero maps configured is a
-// quiet failure, not a loud one — inconsistent with a NONEXISTENT dir, which
-// already fails loud via os.ReadDir's own error.
+// (adventures_test.go's TestLoadAdventuresDirEmptyDirIsBootError): a maps/
+// that exists but was never populated (an empty mkdir, or a sync that
+// dropped its files but not itself) booting cleanly with zero maps
+// configured is a quiet failure, not a loud one — inconsistent with a
+// NONEXISTENT dir, which already fails loud via os.ReadDir's own error
+// (and which composeServer's own caller-side guard treats as "nothing
+// installed yet", not this function's concern — 2026-09-01-create-
+// scene-leaves Task 5).
 func TestLoadMapsDirEmptyDirIsBootError(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := LoadMapsDir(dir); err == nil {

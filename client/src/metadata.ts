@@ -56,8 +56,8 @@ export interface PackRef {
 }
 
 /** One entry from GET /api/maps (metadata.go's mapMetaJSON): a standalone
- *  map --maps-dir has loaded and validated at boot. pack is absent for a
- *  map that names none (mapdef.Map.Pack "" is legal). */
+ *  map the campaign's own maps/ has loaded and validated at boot. pack is
+ *  absent for a map that names none (mapdef.Map.Pack "" is legal). */
 export interface MapMeta {
   id: string;
   name: string;
@@ -108,13 +108,13 @@ export async function fetchAdventures(base: string, token: string): Promise<Adve
 }
 
 /**
- * fetchMaps lists every standalone map --maps-dir has loaded (GET
+ * fetchMaps lists every standalone map the campaign has loaded (GET
  * /api/maps). The wire carries no pack reference on a live Scene —
  * SceneCreated resolves art names into facts at compile time and stops
  * there (design spec §5) — so this list is the only way a client learns
  * which pack goes with which map at all; pack-assets.ts's own header
- * comment explains what it does with the answer. A 404 (no --maps-dir
- * configured) degrades to an empty list, matching fetchAdventures' own
+ * comment explains what it does with the answer. A 404 (no maps
+ * installed) degrades to an empty list, matching fetchAdventures' own
  * posture, rather than surfacing as an error the DM console has no route
  * naming maps to explain.
  */

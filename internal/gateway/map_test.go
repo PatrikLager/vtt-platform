@@ -10,9 +10,12 @@ package gateway_test
 // exists to close: mapdef.Compile's only production caller discarded its
 // result as a boot-time dry run, so maps/cellar could be validated, listed,
 // and have its art served, but never loaded). Built against the REAL
-// committed maps/cellar.json map and its packs/cellar-basics pack (Task 3
-// of the 2026-09-01 create_scene-leaves plan split what used to be one
-// maps/cellar directory into these two) — internal/mapdef's own tests
+// committed campaigns/example/maps/cellar.json map and its
+// campaigns/example/packs/cellar-basics pack (Task 3 of the 2026-09-01
+// create_scene-leaves plan split what used to be one maps/cellar directory
+// into these two; Task 5 of the same plan moved both under
+// campaigns/example/, once maps stopped being server-wide --maps-dir
+// content and became a campaign's own) — internal/mapdef's own tests
 // already cover Load/Compile's correctness in isolation; this file proves
 // the WIRING, not the loader. Mirrors adventure_test.go's own shape;
 // load_adventure/handleLoadAdventure is this handler's direct template.
@@ -36,35 +39,38 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// cellarMapPath and cellarPackDir resolve the committed maps/cellar.json
-// map and its packs/cellar-basics pack, relative to this test file's own
-// package directory — the same "../../<path>" convention adventure_test.go's
-// goblinAmbushDir establishes. Two functions, not one, because Task 3 (the
-// 2026-09-01 create_scene-leaves plan) split what used to be one
-// maps/cellar directory into a flat file and a sibling pack tree.
+// cellarMapPath and cellarPackDir resolve the committed
+// campaigns/example/maps/cellar.json map and its
+// campaigns/example/packs/cellar-basics pack, relative to this test file's
+// own package directory — the same "../../<path>" convention
+// adventure_test.go's goblinAmbushDir establishes. Two functions, not one,
+// because Task 3 (the 2026-09-01 create_scene-leaves plan) split what used
+// to be one maps/cellar directory into a flat file and a sibling pack
+// tree; Task 5 of the same plan then moved both under campaigns/example/.
 func cellarMapPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "maps", "cellar.json")
+	return filepath.Join("..", "..", "campaigns", "example", "maps", "cellar.json")
 }
 
 func cellarPackDir(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "packs", "cellar-basics")
+	return filepath.Join("..", "..", "campaigns", "example", "packs", "cellar-basics")
 }
 
-// loadCellarMap loads the real committed maps/cellar.json and its
-// packs/cellar-basics pack, failing the test loudly if either does not
-// load — a broken fixture here would silently turn every test in this file
-// into a no-op, which is worse than a compile error.
+// loadCellarMap loads the real committed campaigns/example/maps/cellar.json
+// and its campaigns/example/packs/cellar-basics pack, failing the test
+// loudly if either does not load — a broken fixture here would silently
+// turn every test in this file into a no-op, which is worse than a compile
+// error.
 func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 	t.Helper()
 	m, err := mapdef.Load(cellarMapPath(t))
 	if err != nil {
-		t.Fatalf("mapdef.Load(maps/cellar.json): %v", err)
+		t.Fatalf("mapdef.Load(campaigns/example/maps/cellar.json): %v", err)
 	}
 	pack, err := mapdef.LoadPack(cellarPackDir(t))
 	if err != nil {
-		t.Fatalf("mapdef.LoadPack(packs/cellar-basics): %v", err)
+		t.Fatalf("mapdef.LoadPack(campaigns/example/packs/cellar-basics): %v", err)
 	}
 	return m, pack
 }
@@ -174,11 +180,13 @@ func loadMapCmdFor(id string) *vttv1.ClientCommand {
 
 // --- tests -----------------------------------------------------------------
 
-// TestLoadMapNoMapsConfiguredCleanError covers a server started with no
-// --maps-dir: a load_map command gets a clean ok=false CommandResult naming
-// "no maps available" — never a connection drop, crash, or protocol error.
-// The connection stays usable afterward. Mirrors
-// TestLoadAdventureNoAdventuresConfiguredCleanError exactly.
+// TestLoadMapNoMapsConfiguredCleanError covers a server for a campaign
+// whose maps/ is absent, or which has no maps installed yet
+// (2026-09-01-create-scene-leaves Task 5): a load_map command gets a
+// clean ok=false CommandResult naming "no maps available" — never a
+// connection drop, crash, or protocol error. The connection stays usable
+// afterward. Mirrors TestLoadAdventureNoAdventuresConfiguredCleanError
+// exactly.
 func TestLoadMapNoMapsConfiguredCleanError(t *testing.T) {
 	f := newMapFixture(t, false) // withMaps=false
 	conn := f.dial(f.dmToken, 0)

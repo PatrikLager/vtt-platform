@@ -12,8 +12,10 @@ import (
 
 // errNoMapsAvailable is handleLoadMap's clean, ok=false error when s has no
 // maps configured — errNoAdventuresAvailable's exact sibling (adventure.go),
-// for the same reason: serving without --maps-dir keeps load_map rejected
-// with a clean "no maps available" rather than a connection drop or crash.
+// for the same reason: a campaign whose maps/ is absent, or which has no
+// maps installed yet (2026-09-01-create-scene-leaves Task 5), keeps
+// load_map rejected with a clean "no maps available" rather than a
+// connection drop or crash.
 const errNoMapsAvailable = "gateway: no maps available"
 
 // handleLoadMap runs the authorized-load_map pipeline (whole-branch-review
