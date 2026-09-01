@@ -178,12 +178,24 @@ test("removing an unknown actor is rejected", () => {
     'unknown actor "nope" removed');
 });
 
+// TWO TOKENS, PLACED IN REVERSE ID ORDER, because the arm names the FIRST
+// standing token IN ID ORDER and a one-token fixture cannot tell that apart
+// from naming whichever one the object happens to hand back first. The Go
+// twin, TestActorRemovedRefusesWhileOneOfItsTokensStillStands, uses the same
+// "t-z" then "t-a" pair for the same reason — there it defends against Go's
+// randomised map iteration, here against insertion order.
+//
+// Load-bearing, proved by removing the thing it pins rather than assumed:
+// with `.sort()` deleted from fold.ts's actorRemoved arm this test names
+// "t-z" and fails, while the whole 708-test suite stayed green against the
+// one-token fixture it replaces (measured 2026-09-01).
 test("removing an actor whose token is still on the board is rejected", () => {
   rejects([
     ...placeable,
-    env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
-    env(5, { actorRemoved: { actorId: "a1" } }),
-  ], 'actor "a1" still has token "t1" on the board — a token cannot outlive its actor');
+    env(4, { tokenPlaced: { tokenId: "t-z", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(5, { tokenPlaced: { tokenId: "t-a", sceneId: "s1", actorId: "a1", position: { x: 2, y: 1 } } }),
+    env(6, { actorRemoved: { actorId: "a1" } }),
+  ], 'actor "a1" still has token "t-a" on the board — a token cannot outlive its actor');
 });
 
 // --- sceneSeen (visibility spec §6) ------------------------------------------

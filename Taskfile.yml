@@ -43,6 +43,7 @@ tasks:
       - task: check:breaking
       - task: check:invariants
       - task: check:doc-owner
+      - task: check:no-retraction
       - task: check:arch
       # BEFORE the mutation gates: ~53s against their minutes, so a race
       # failing here saves the long wait. NOT claimed to be first-cheapest
@@ -796,6 +797,35 @@ tasks:
     cmds:
       - python3 tools/check_doc_owner_test.py -q
       - python3 tools/check-doc-owner.py .
+
+  check:no-retraction:
+    desc: >
+      Fail when a retraction IDENTIFIER survives anywhere in the tree. The
+      spec's exit criterion 1 asks for a gate rather than a search, and it
+      means it: a grep somebody ran once proves nothing about tomorrow.
+
+      NOT a `grep -rin retract`. Every occurrence still here is a deliberate
+      dated change-record saying what retraction used to do at that spot —
+      which is why the next reader does not re-derive it from first
+      principles. Measured 2026-09-01 over the files this gate scans: 268
+      occurrences across 60 files in 14 directories. A naive grep reds on
+      all 268 and goes green only by excluding those 60 files, at which
+      point it enforces nothing. This one masks comments and string
+      literals first and looks at code positions only, which is what a
+      reintroduction actually looks like — there were 14 of those, all of
+      them enforcement.
+
+      Its half of the job is a reintroduced HELPER — a Go function, a
+      TypeScript export, a proto field name, a tool script — across .go,
+      .proto, .py and every JS/TS spelling (.ts/.tsx/.mts/.cts/.js/.jsx/
+      .mjs/.cjs). contract/events.test.ts owns the other half and is the
+      stronger check for the wire: it reads the GENERATED DESCRIPTORS, so a
+      message deleted from the .proto but left in committed generated code
+      is caught there and would look clean here. Neither substitutes for
+      the other.
+    cmds:
+      - python3 tools/check_no_retraction_test.py -q
+      - python3 tools/check-no-retraction.py .
 
   check:invariants:
     desc: >

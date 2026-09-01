@@ -142,6 +142,11 @@ test("a scene larger than one command can carry is refused before it is sent", (
   // guess how much smaller.
   expect(h.notices[0]).toContain("1200");
   expect(h.notices[0]).toContain("1600");
+  // AND WHAT TO DO INSTEAD. The numbers say how much too big; only this
+  // sentence points at the way through, and it is the console's single
+  // mention of the map-file path. Unasserted, blanking it was free —
+  // measured as a surviving StringLiteral mutant on 2026-09-01.
+  expect(h.notices[0]).toContain("Author it as a map file and use Load map.");
 });
 
 test("the scene fill the DM chose is the one that reaches the wire", () => {
@@ -149,14 +154,23 @@ test("the scene fill the DM chose is the one that reaches the wire", () => {
   // hard-coded to floor would satisfy every other test in this file and
   // silently overrule a DM who chose wall — "fill solid, then carve" is a real
   // way to build a room, which is why the box offers two and not one.
-  const h = harness();
-  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
-  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "wall";
-  h.action("create-scene").click();
-  const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
-  expect(sent.case).toBe("createScene");
-  expect(Object.keys(sent.value.tiles)).toHaveLength(4);
-  for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe("wall");
+  //
+  // BOTH ANSWERS ARE WALKED, not just the interesting-looking one. With only
+  // "wall" here, tileKindFromWireName's `case "floor"` arm could fall through
+  // to wall, or return "", and every test in this file stayed green — two
+  // mutants survived on exactly that gap (measured 2026-09-01). The other
+  // floor test, "a scene at the cap is still sent", counts the command
+  // without reading it, so it cannot cover this either.
+  for (const answer of ["floor", "wall"] as const) {
+    const h = harness();
+    fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
+    (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = answer;
+    h.action("create-scene").click();
+    const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
+    expect(sent.case).toBe("createScene");
+    expect(Object.keys(sent.value.tiles)).toHaveLength(4);
+    for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe(answer);
+  }
 });
 
 test("the scene fill survives a re-render, like every other half-typed answer", () => {
@@ -584,6 +598,13 @@ test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", ()
 test("removing a token sends its trimmed id and clears the field", () => {
   const h = harness();
   fill(h, { "token-id": " t1 " });
+  // THROUGH THE EVENT, the way "placing a token clears exactly the token
+  // fields" does it further down. `fill` assigns the DOM value only, and
+  // dm.ts's draft buffer is written by the `input` handler — so without this
+  // line the draft was never populated and the "clears the field" half of
+  // this test passed whether or not anything was cleared. That vacuum is how
+  // this handler's clearDraft call survived mutation (measured 2026-09-01).
+  h.field("token-id").dispatchEvent(new Event("input"));
   h.action("remove-token").click();
   const [p] = payloads(h);
   expect(p!.case).toBe("removeToken");
@@ -605,6 +626,8 @@ test("removing a token sends its trimmed id and clears the field", () => {
 test("removing an actor sends its trimmed id and clears the field", () => {
   const h = harness();
   fill(h, { "actor-id": " a1 " });
+  // Through the event, for the reason the token twin above states.
+  h.field("actor-id").dispatchEvent(new Event("input"));
   h.action("remove-actor").click();
   const [p] = payloads(h);
   expect(p!.case).toBe("removeActor");
@@ -757,6 +780,25 @@ test("a whitespace-only id is refused everywhere one is required", () => {
   fill(note, { "note-key": "   " });
   note.button("Delete").click();
   expect(note.sent).toHaveLength(0);
+
+  // The two Remove controls, which share their id boxes with Add and Place.
+  // Without the trim, "   " is truthy and the removal goes out naming a blank
+  // id — a command the server answers with an error the DM never asked for,
+  // for a control that had already decided to refuse. Both trims survived
+  // mutation until this walked them (measured 2026-09-01). The wording is
+  // asserted for this test's own stated reason: "nothing was sent" cannot say
+  // which guard refused.
+  const removeActor = harness();
+  fill(removeActor, { "actor-id": "   " });
+  removeActor.action("remove-actor").click();
+  expect(removeActor.sent).toHaveLength(0);
+  expect(removeActor.notices).toEqual(["name the actor to remove"]);
+
+  const removeToken = harness();
+  fill(removeToken, { "token-id": "   " });
+  removeToken.action("remove-token").click();
+  expect(removeToken.sent).toHaveLength(0);
+  expect(removeToken.notices).toEqual(["name the token to remove"]);
 });
 
 test("a token's y coordinate is carried through, not just its x", () => {
@@ -895,10 +937,19 @@ test("the remove-condition group is absent when no actor has one", () => {
 test("buttons carry the labels the DM clicks, not blanks", () => {
   // The submit buttons are found by data-action in these tests, so blanking
   // their visible LABEL was free. A blank button is unusable.
+  //
+  // THE NAMED LIST BELOW IS NOT THE GUARD, and treating it as one is what let
+  // both Remove buttons be blanked with this test green (measured 2026-09-01):
+  // a list exempts every control added after it was written, and updating it
+  // is the edit nobody makes. The list pins the labels a DM is told to look
+  // for; the loop after it is the rule.
   const h = harness();
-  for (const label of ["Start session", "Create", "Add", "Add from JSON", "Place", "Save", "Delete"]) {
+  for (const label of ["Start session", "Create", "Add", "Add from JSON", "Place", "Save", "Delete", "Remove"]) {
     expect(Array.from(h.node.querySelectorAll("button")).some((b) => b.textContent === label)).toBe(true);
   }
+  const buttons = Array.from(h.node.querySelectorAll("button"));
+  expect(buttons.length).toBeGreaterThan(7);
+  for (const b of buttons) expect((b.textContent ?? "").trim()).not.toBe("");
 });
 
 test("every group carries a heading", () => {
