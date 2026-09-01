@@ -173,15 +173,49 @@ deleted the same day, because nothing removes a scene from the world — spec
 ### Deriving a projected golden
 
 `Explored` is unioned from each `sceneSeen`'s **`tiles` keys**, never from its
-`visible` list. `session-zero` carries one scene of each kind side by side so
-that the difference is a fixture rather than a sentence:
+`visible` list.
 
 - `ambush` declares terrain on all 180 of its squares, so its `Explored` grows
   to exactly the 36 squares the player can see.
-- `camp` declares none. It is a bare canvas, which is a legal scene and not a
-  degenerate one (spec §6.2: "a token is a FREE OBJECT and needs no terrain to
-  exist"), and its `Explored` therefore stays EMPTY however much of it is
-  visible — there is no terrain there to remember.
+- `camp` declares all 9 of its own, so its `Explored` is all 9 — the whole room
+  is in sight from where the healer stands.
+
+**THESE TWO NO LONGER DISCRIMINATE THE MECHANISM THEY ARE CITED FOR.** In all
+three of the corpus's `sceneSeen` the tile keys, the visible list and the
+explored set are now the same set of squares, key for key — so a fold that built
+`Explored` from `visible` instead of from `tiles` would reproduce every one of
+these fixtures exactly. They still pin what the projection SENDS; they no longer
+witness where `Explored` comes from. That property is pinned by constructed
+tests instead, named at the end of this section.
+
+**The bare-canvas half of that contrast is gone from this corpus, and it left
+on purpose.** `camp` used to declare NO terrain, and it sat beside `ambush` so
+that the "`Explored` comes from tiles, not from `visible`" rule was a fixture
+rather than a sentence: its `Explored` stayed EMPTY however much of it was
+visible. On 2026-09-01 `create_scene` began refusing a scene that leaves a
+square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall nobody
+declared is an invisible barrier*), and every scene in this corpus is created by
+`create_scene`, so no fixture here can be a bare canvas any more.
+
+The rule did not change and the shape is still reachable — a map FILE may still
+omit tiles, which is the exemption that keeps files authored before
+maps-as-geometry loading, and spec §6.2's "a token is a FREE OBJECT and needs no
+terrain to exist" still holds. What changed is where the rule is pinned: it is
+CONSTRUCTED rather than exhibited, in three tests, each of which builds a
+`sceneSeen` that lists visible squares and carries no tiles and asserts
+`Explored` stays empty:
+
+- `internal/engine`'s `TestVisibleComesFromItsOwnFieldNotFromTheTiles`
+- `client/test/visibility.test.ts`'s "a token on a bare canvas is drawn" —
+  **pre-existing**, and it means the fixture was never the only cover
+- `client/test/fold-unit.test.ts`'s "a sceneSeen with visible squares and no
+  terrain remembers nothing" — added 2026-09-01 as the assertion-for-assertion
+  mirror of the Go one, because the other TS case is a DRAWING test that
+  happens to assert the property on its way elsewhere.
+
+MEASURED, after an earlier draft of this paragraph claimed the wrong number:
+injecting `Explored` follows `Visible` into `client/src/fold.ts`'s `sceneSeen`
+arm reds **two** tests across `client/test`, the last two above.
 
 `session-zero`'s sight is a rule rather than a table, which is what makes 36
 squares hand-derivable: a solid wall fills column `x=3` for the full height of
@@ -234,9 +268,14 @@ onto a shared one, and revokes the set's HEAD so the mirror has to slide. Idempo
 revoking the last controller back to unowned are all in the same stream.
 
 `adventure-night` and `toy-brawl` roll dice, and are here because their event
-streams are shape-STABLE: the same events in the same order every run, with
-only the roll values differing (measured across repeated captures at 208 = 208
-and 178 = 178 lines). The drift gate masks dice-decided fields — `results`,
+streams are shape-STABLE: **the same events in the same order every run, with
+only the roll values differing.** That invariant is the claim; a line count is
+not, and one used to stand here as if it were ("208 = 208 and 178 = 178",
+measured across repeated captures before 2026-08-25). It was falsified by an
+edit that had nothing to do with dice — `toy-brawl/stream.json` went 202 to 279
+lines on 2026-09-01 when its scene declared its terrain. Compare a fresh capture
+against the committed file, which is what the drift gate does; do not compare
+either against a number written here. The drift gate masks dice-decided fields — `results`,
 `total`, `outcomeSummary`, `delta`, `newValue`, `outcome` — on BOTH sides of
 its comparison, so everything else is still checked: event order, sequences,
 which events are emitted, and every non-dice field. The committed streams keep
@@ -250,8 +289,13 @@ that emits it.
 ### goblin-fight is deliberately absent
 
 Not for want of trying. Its stream differs in SHAPE between runs — **519 vs
-507 lines**, measured — because a miss emits fewer events than a hit, and no
-masking of values can make two different event sequences comparable. Including
+507 lines**, measured on the 2026-08-25 corpus — because a miss emits fewer
+events than a hit, and no masking of values can make two different event
+sequences comparable. (Those two figures are a dated observation and no longer
+the numbers a fresh run prints: on 2026-09-01 the scenario's grid went from
+32x32 to **31x3** so it could declare every square, which `create_scene` now
+requires, and its `sceneCreated` grew 93 tiles. Nothing about the shape
+instability changed — re-measure rather than trusting the pair.) Including
 it would mean either a permanently-red drift gate or an exemption that hides
 real drift.
 

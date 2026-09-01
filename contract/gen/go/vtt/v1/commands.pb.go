@@ -266,8 +266,13 @@ type CreateScene struct {
 	GridWidth  int32                  `protobuf:"varint,3,opt,name=grid_width,json=gridWidth,proto3" json:"grid_width,omitempty"`
 	GridHeight int32                  `protobuf:"varint,4,opt,name=grid_height,json=gridHeight,proto3" json:"grid_height,omitempty"`
 	// Keys are "x,y", column then row; the separator is a comma because a dot
-	// reads as a decimal (maps-as-geometry spec §4.1). Optional: omitted
-	// entirely, the scene is a bare grid with no terrain.
+	// reads as a decimal (maps-as-geometry spec §4.1). REQUIRED, and it must
+	// name every square of grid_width x grid_height: the gateway refuses a
+	// create_scene that leaves one undeclared. A scene with no terrain is a
+	// featureless grid that internal/sight cannot occlude, and create_scene is
+	// the improvised path — nobody authored this command in advance, so there
+	// is no older shape to keep accepting. (A map FILE still may omit tiles;
+	// that exemption exists for files written before the format had terrain.)
 	Tiles         map[string]*TileRef `protobuf:"bytes,5,rep,name=tiles,proto3" json:"tiles,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Objects       []*SceneObject      `protobuf:"bytes,6,rep,name=objects,proto3" json:"objects,omitempty"`
 	unknownFields protoimpl.UnknownFields

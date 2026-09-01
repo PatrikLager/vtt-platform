@@ -269,11 +269,20 @@ test("a token on remembered-but-unseen ground produces NO disc at all", () => {
 
 test("a token on a bare canvas is drawn: sight does not need terrain", () => {
   // THE DEFECT THIS ROUND CLOSED, on the client side. A scene may declare no
-  // terrain at all — mapdef.CheckEverySquarePresent is all-or-nothing and zero
-  // tiles passes it, on both the map-file and CreateScene paths — and a token
-  // is a FREE OBJECT that needs no ground under it (Patrik's ruling
-  // 2026-08-22). The server computes sight over the GRID, finds every square of
-  // a bare canvas visible, and sends the tokens.
+  // terrain at all, and a token is a FREE OBJECT that needs no ground under it
+  // (Patrik's ruling 2026-08-22). The server computes sight over the GRID,
+  // finds every square of a bare canvas visible, and sends the tokens.
+  //
+  // WHICH DOOR STILL ADMITS ONE, corrected 2026-09-01: the map-file path, and
+  // only that one. mapdef.CheckEverySquarePresent is all-or-nothing and zero
+  // tiles passes it, which keeps a file authored before the format had terrain
+  // loading. The create_scene COMMAND no longer takes that door —
+  // internal/gateway's validateCreateSceneTerrain calls
+  // mapdef.RequireEverySquarePresent, the same walk WITHOUT the opt-out, so an
+  // improvised room that leaves a square undeclared is refused (spec
+  // 2026-08-30-retraction-leaves §6). This sentence used to say "on both the
+  // map-file and CreateScene paths"; the shape below is still reachable, but
+  // only through a file.
   //
   // It used to reach here and be thrown away: Visible was built from sceneSeen's
   // TILE KEYS, so a message with no tiles produced an empty set and this board

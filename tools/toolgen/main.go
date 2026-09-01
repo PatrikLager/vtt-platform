@@ -58,18 +58,33 @@ var manifest = []toolSpec{
 		name:        "create_scene",
 		description: "Create a new scene with a grid.",
 		descriptor:  (&vttv1.CreateScene{}).ProtoReflect().Descriptor(),
-		// tiles/objects are the same fabrication trap as add_actor's fix
-		// (final review Fix 2): neither is proto3 `optional`, so the
-		// derived required list would force a caller to invent terrain for
-		// every scene, even a bare grid — the only shape this tool
-		// created before maps-as-geometry (Task 1). Terrain is normally
-		// authored as a map file and loaded through the map/adventure
-		// path, not built field by field through this tool.
+		// objects stays out of the required list for add_actor's
+		// fabrication reason (final review Fix 2): it is not proto3
+		// `optional`, so the derived list would force a caller to invent
+		// scenery for every scene. tiles USED TO SIT BESIDE IT and no
+		// longer does — the gateway refuses a create_scene that leaves a
+		// square undeclared, so a caller who omits terrain gets a refusal,
+		// and a schema that told them to omit it would be advertising a
+		// command the server rejects. Terrain is still normally authored as
+		// a map file and loaded through the map/adventure path; this tool is
+		// the improvised path, and the price of improvising a room is saying
+		// what is in it.
+		//
+		// AND THE SIZE SENTENCE IS HERE FOR A REASON A SCHEMA CANNOT EXPRESS.
+		// The tile map rides in one websocket frame, and the gateway reads at
+		// most maxWSFrameBytes = 32768 (internal/gateway/server.go), dropping
+		// a larger frame inside conn.Read — BEFORE DecodeCommand, so no
+		// server-side validator can ever answer it and the agent meets a
+		// closed connection instead of a refusal. A JSON Schema has no way to
+		// say "gridWidth * gridHeight <= 1200", so the only lever on this path
+		// is the prose the model reads. The same bound and the same wording
+		// live in client/src/commands.ts's maxCreateSceneSquares, which is
+		// where it is derived and measured.
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.CreateScene": {
-				requiredOverride: []string{"sceneId", "name", "gridWidth", "gridHeight"},
+				requiredOverride: []string{"sceneId", "name", "gridWidth", "gridHeight", "tiles"},
 				fieldDocs: map[string]string{
-					"tiles":   "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+					"tiles":   "Required, and it must name EVERY square of gridWidth x gridHeight — a scene one square short is refused. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal). For a plain open room, give every square {\"kind\": \"floor\"}. Keep gridWidth x gridHeight at or under 1200 squares: the whole tile map travels in one message, and a larger one exceeds the server's read limit and closes the connection instead of answering. Scenes with real terrain, and any place larger than that, are normally authored as a map file and brought in with load_map rather than built field by field here.",
 					"objects": "Optional; omit unless placing scenery inline. Scenery is normally authored as part of a map file rather than built field by field here.",
 				},
 			},

@@ -139,22 +139,32 @@ test("some projected scene actually has a visible set", () => {
   expect(scenes.filter((sc) => size(sc.Visible) > 0).length).toBeGreaterThan(0);
 });
 
-test("a bare-canvas scene is visible and remembers nothing", () => {
-  // Spec §6.2 and §4.3's subset argument, pinned as a fixture rather than left
-  // as prose. Explored is unioned from each sceneSeen's TILES keys, not from its
-  // `visible` list, so a scene that declares no terrain has nothing to remember
-  // however much of it is in sight. A reader who later "fixes" Explored to
-  // follow Visible breaks this, and breaks it here where the reason is written
-  // down — not somewhere the failure reads like an accident.
-  const bare = scenes.filter((sc) => size(sc.Tiles) === 0 && size(sc.Visible) > 0);
-  expect(bare.length).toBeGreaterThan(0);
-  for (const sc of bare) expect(sc.Explored).toBeUndefined();
-});
+// THE BARE-CANVAS HALF OF THIS PAIR HAS MOVED, and saying where matters more
+// than the line it replaced. It asserted that a projected scene with an empty
+// Tiles and a non-empty Visible carries NO Explored — Explored is unioned from
+// each sceneSeen's TILES keys, never from its `visible` list — and it was
+// satisfied by session-zero's `camp`, the one corpus scene that declared no
+// terrain. On 2026-09-01 create_scene began refusing a scene that leaves a
+// square undeclared, so `camp` gained its nine tiles and NO corpus fixture can
+// exhibit an untiled scene any more. The rule itself is unchanged and the shape
+// is still reachable (a map FILE may still omit tiles), so the case was not
+// dropped: it is now constructed rather than exhibited, in
+// client/test/fold-unit.test.ts's "a sceneSeen with visible squares and no
+// terrain remembers nothing", mirroring internal/engine's
+// TestVisibleComesFromItsOwnFieldNotFromTheTiles.
+//
+// AND THIS TEST WAS NEVER THE ONLY COVER, which is worth saying because the
+// first version of this note claimed it was. client/test/visibility.test.ts's
+// "a token on a bare canvas is drawn" already folds a 9-visible / 0-tile
+// sceneSeen and already asserts Explored is empty. MEASURED: making Explored
+// follow Visible in fold.ts reds two tests across client/test, and this file
+// was never one of them. So nothing was at risk in the gap — the constructed
+// case was added to put the rule where a reader looks for it, not to plug a
+// hole.
 
 test("a tiled scene remembers exactly the terrain it was sent", () => {
-  // The other half of the pair, and the reason the corpus carries one scene of
-  // each kind side by side: where terrain IS declared, Explored is the tile keys
-  // of every sceneSeen so far, so it must not be empty while Visible is not.
+  // Where terrain IS declared, Explored is the tile keys of every sceneSeen so
+  // far, so it must not be empty while Visible is not.
   const tiled = scenes.filter((sc) => size(sc.Tiles) > 0);
   expect(tiled.length).toBeGreaterThan(0);
   for (const sc of tiled) expect(size(sc.Explored)).toBe(size(sc.Tiles));

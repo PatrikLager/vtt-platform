@@ -482,6 +482,7 @@ func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 		RequestId: "r-1",
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "scn2", Name: "Dungeon", GridWidth: 5, GridHeight: 5,
+			Tiles: floorTilesForTest(5, 5),
 		}},
 	})
 

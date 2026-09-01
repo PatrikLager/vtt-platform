@@ -99,8 +99,13 @@ export type CreateScene = Message<"vtt.v1.CreateScene"> & {
 
   /**
    * Keys are "x,y", column then row; the separator is a comma because a dot
-   * reads as a decimal (maps-as-geometry spec §4.1). Optional: omitted
-   * entirely, the scene is a bare grid with no terrain.
+   * reads as a decimal (maps-as-geometry spec §4.1). REQUIRED, and it must
+   * name every square of grid_width x grid_height: the gateway refuses a
+   * create_scene that leaves one undeclared. A scene with no terrain is a
+   * featureless grid that internal/sight cannot occlude, and create_scene is
+   * the improvised path — nobody authored this command in advance, so there
+   * is no older shape to keep accepting. (A map FILE still may omit tiles;
+   * that exemption exists for files written before the format had terrain.)
    *
    * @generated from field: map<string, vtt.v1.TileRef> tiles = 5;
    */

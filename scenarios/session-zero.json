@@ -20,7 +20,11 @@
         "0,8": {"kind": "floor"}, "1,8": {"kind": "floor"}, "2,8": {"kind": "floor"}, "3,8": {"kind": "wall"}, "4,8": {"kind": "floor"}, "5,8": {"kind": "floor"}, "6,8": {"kind": "floor"}, "7,8": {"kind": "floor"}, "8,8": {"kind": "floor"}, "9,8": {"kind": "floor"}, "10,8": {"kind": "floor"}, "11,8": {"kind": "floor"}, "12,8": {"kind": "floor"}, "13,8": {"kind": "floor"}, "14,8": {"kind": "floor"}, "15,8": {"kind": "floor"}, "16,8": {"kind": "floor"}, "17,8": {"kind": "floor"}, "18,8": {"kind": "floor"}, "19,8": {"kind": "floor"}
       }}}, "expect": {"ok": true}},
 
-    {"by": "dm", "command": {"createScene": {"sceneId": "camp", "name": "Night Camp", "gridWidth": 3, "gridHeight": 3}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"createScene": {"sceneId": "camp", "name": "Night Camp", "gridWidth": 3, "gridHeight": 3, "tiles": {
+        "0,0": {"kind": "floor"}, "1,0": {"kind": "floor"}, "2,0": {"kind": "floor"},
+        "0,1": {"kind": "floor"}, "1,1": {"kind": "floor"}, "2,1": {"kind": "floor"},
+        "0,2": {"kind": "floor"}, "1,2": {"kind": "floor"}, "2,2": {"kind": "floor"}
+      }}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-fighter", "name": "Asme", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},

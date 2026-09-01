@@ -311,7 +311,18 @@ const liveModeScenario = `{
 	"participants": [{"name": "dm", "role": "dm"}],
 	"steps": [
 		{"by": "dm", "command": {"startSession": {"name": "s1"}}, "expect": {"ok": true}},
-		{"by": "dm", "command": {"createScene": {"sceneId": "scene-1", "name": "Scene One", "gridWidth": 10, "gridHeight": 10}}, "expect": {"ok": true}},
+		{"by": "dm", "command": {"createScene": {"sceneId": "scene-1", "name": "Scene One", "gridWidth": 10, "gridHeight": 10, "tiles": {
+			"0,0": {"kind": "floor"}, "1,0": {"kind": "floor"}, "2,0": {"kind": "floor"}, "3,0": {"kind": "floor"}, "4,0": {"kind": "floor"}, "5,0": {"kind": "floor"}, "6,0": {"kind": "floor"}, "7,0": {"kind": "floor"}, "8,0": {"kind": "floor"}, "9,0": {"kind": "floor"},
+			"0,1": {"kind": "floor"}, "1,1": {"kind": "floor"}, "2,1": {"kind": "floor"}, "3,1": {"kind": "floor"}, "4,1": {"kind": "floor"}, "5,1": {"kind": "floor"}, "6,1": {"kind": "floor"}, "7,1": {"kind": "floor"}, "8,1": {"kind": "floor"}, "9,1": {"kind": "floor"},
+			"0,2": {"kind": "floor"}, "1,2": {"kind": "floor"}, "2,2": {"kind": "floor"}, "3,2": {"kind": "floor"}, "4,2": {"kind": "floor"}, "5,2": {"kind": "floor"}, "6,2": {"kind": "floor"}, "7,2": {"kind": "floor"}, "8,2": {"kind": "floor"}, "9,2": {"kind": "floor"},
+			"0,3": {"kind": "floor"}, "1,3": {"kind": "floor"}, "2,3": {"kind": "floor"}, "3,3": {"kind": "floor"}, "4,3": {"kind": "floor"}, "5,3": {"kind": "floor"}, "6,3": {"kind": "floor"}, "7,3": {"kind": "floor"}, "8,3": {"kind": "floor"}, "9,3": {"kind": "floor"},
+			"0,4": {"kind": "floor"}, "1,4": {"kind": "floor"}, "2,4": {"kind": "floor"}, "3,4": {"kind": "floor"}, "4,4": {"kind": "floor"}, "5,4": {"kind": "floor"}, "6,4": {"kind": "floor"}, "7,4": {"kind": "floor"}, "8,4": {"kind": "floor"}, "9,4": {"kind": "floor"},
+			"0,5": {"kind": "floor"}, "1,5": {"kind": "floor"}, "2,5": {"kind": "floor"}, "3,5": {"kind": "floor"}, "4,5": {"kind": "floor"}, "5,5": {"kind": "floor"}, "6,5": {"kind": "floor"}, "7,5": {"kind": "floor"}, "8,5": {"kind": "floor"}, "9,5": {"kind": "floor"},
+			"0,6": {"kind": "floor"}, "1,6": {"kind": "floor"}, "2,6": {"kind": "floor"}, "3,6": {"kind": "floor"}, "4,6": {"kind": "floor"}, "5,6": {"kind": "floor"}, "6,6": {"kind": "floor"}, "7,6": {"kind": "floor"}, "8,6": {"kind": "floor"}, "9,6": {"kind": "floor"},
+			"0,7": {"kind": "floor"}, "1,7": {"kind": "floor"}, "2,7": {"kind": "floor"}, "3,7": {"kind": "floor"}, "4,7": {"kind": "floor"}, "5,7": {"kind": "floor"}, "6,7": {"kind": "floor"}, "7,7": {"kind": "floor"}, "8,7": {"kind": "floor"}, "9,7": {"kind": "floor"},
+			"0,8": {"kind": "floor"}, "1,8": {"kind": "floor"}, "2,8": {"kind": "floor"}, "3,8": {"kind": "floor"}, "4,8": {"kind": "floor"}, "5,8": {"kind": "floor"}, "6,8": {"kind": "floor"}, "7,8": {"kind": "floor"}, "8,8": {"kind": "floor"}, "9,8": {"kind": "floor"},
+			"0,9": {"kind": "floor"}, "1,9": {"kind": "floor"}, "2,9": {"kind": "floor"}, "3,9": {"kind": "floor"}, "4,9": {"kind": "floor"}, "5,9": {"kind": "floor"}, "6,9": {"kind": "floor"}, "7,9": {"kind": "floor"}, "8,9": {"kind": "floor"}, "9,9": {"kind": "floor"}
+		}}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"placeToken": {"tokenId": "tok-1", "sceneId": "scene-1", "actorId": "act-1", "position": {"x": 3, "y": 4}}}, "expect": {"ok": true}}
 	],

@@ -315,12 +315,21 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// clean runner, never saw it. A scaffolding timeout tight enough to trip on
 	// a slow disk reports a logic failure that is not there, and it blocked a
 	// push for work in another language entirely.
+	// THE 1x1 GRID IS LOAD-BEARING FOR SIZE, not just for brevity. create_scene
+	// now carries a tile per square (retraction-leaves Task 10), and this
+	// fixture's whole point is an OVERSIZED broadcast — bigSceneName is what
+	// makes it oversized, and the frame the server READS is bounded by
+	// maxWSFrameBytes = 32768. MEASURED: this command marshals to 28 797 bytes,
+	// leaving 3 971 (3.88 KiB) of margin; a wider grid would spend it on tiles
+	// and eventually make the DRIVER's own writes unreadable, which would look
+	// like the wedge this test is trying to observe on the victim.
 	const driverWriteBackstop = 30 * time.Second
 	for i := 0; i < commandCount; i++ {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 				SceneId: "scn-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
+				Tiles: floorGrid(1, 1),
 			}},
 		}
 		raw, err := protojson.Marshal(cmd)
@@ -401,7 +410,8 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	freshConn := dial(driverToken, 1<<30, nil)
 	defer freshConn.CloseNow()
 	cmd := &vttv1.ClientCommand{RequestId: "fresh", Command: &vttv1.ClientCommand_CreateScene{
-		CreateScene: &vttv1.CreateScene{SceneId: "scn-fresh", Name: "s", GridWidth: 1, GridHeight: 1},
+		CreateScene: &vttv1.CreateScene{SceneId: "scn-fresh", Name: "s", GridWidth: 1, GridHeight: 1,
+			Tiles: floorGrid(1, 1)},
 	}}
 	raw, err := protojson.Marshal(cmd)
 	if err != nil {
@@ -620,6 +630,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
+				Tiles: floorGrid(1, 1),
 			}},
 		}
 		raw, merr := protojson.Marshal(cmd)
@@ -771,6 +782,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
+				Tiles: floorGrid(1, 1),
 			}},
 		}
 		raw, merr := protojson.Marshal(cmd)
@@ -894,6 +906,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 		RequestId: "marker",
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "marker-scene", Name: "Marker", GridWidth: 1, GridHeight: 1,
+			Tiles: floorGrid(1, 1),
 		}},
 	})
 	if err != nil {

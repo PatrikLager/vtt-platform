@@ -617,13 +617,19 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       // AMENDED 2026-08-22, in step with Visible's comment below so the pair
       // cannot drift: the corpus now also carries PROJECTED halves under
       // scenarios/goldens/*/projections/*/, and those DO populate Explored
-      // wherever the scene declares terrain. Re-measured against the enlarged
-      // corpus — an unconditional `Explored: {}` fails all 8 log goldens AND
-      // BOTH projected seats in client/test/projection-parity.test.ts
-      // (session-zero/player and session-zero/spectator), because each holds
-      // the bare-canvas `camp`, which has a visible set and no terrain to
-      // remember. TEN corpus cases in total, which is why this omission is
-      // among the most heavily pinned things in either fold.
+      // wherever the scene declares terrain.
+      //
+      // RE-MEASURED 2026-09-01, and the number went DOWN: an unconditional
+      // `Explored: {}` now fails the 8 log goldens — plus the dedicated case
+      // in client/test/fold-unit.test.ts, which is not a corpus case and is
+      // not counted here. It used to fail both projected seats as well,
+      // because each held the
+      // bare-canvas `camp` — a visible set with no terrain to remember, so an
+      // empty Explored that had to stay absent. create_scene now refuses a
+      // scene that leaves a square undeclared, `camp` declares all nine of
+      // its own, and every projected scene's Explored is populated. EIGHT
+      // corpus cases, measured by injecting the fault and counting, not by
+      // decrementing the old figure.
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);

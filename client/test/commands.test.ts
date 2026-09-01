@@ -112,12 +112,41 @@ test("session start carries the name; end carries nothing", () => {
 });
 
 test("createScene and placeToken carry their geometry", () => {
-  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 10, 8)) as Record<string, any>;
+  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 10, 8, "floor")) as Record<string, any>;
   expect(sc["createScene"]).toMatchObject({ sceneId: "s1", name: "Hall", gridWidth: 10, gridHeight: 8 });
 
   const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 2, y: 3 })) as Record<string, any>;
   expect(pt["placeToken"]).toMatchObject({ tokenId: "t1", sceneId: "s1", actorId: "a1" });
   expect(pt["placeToken"]["position"]).toMatchObject({ x: 2, y: 3 });
+});
+
+test("createScene declares EVERY square of the grid it names", () => {
+  // The server refuses a create_scene that leaves one square undeclared
+  // (spec 2026-08-30-retraction-leaves §6), so a builder that ships a partial
+  // map — or none — produces a command the DM can only ever be refused.
+  //
+  // COUNTED AND ENUMERATED, not matched. The two assertions above this one use
+  // toMatchObject, and dm-view.test.ts uses objectContaining; both are PARTIAL
+  // matchers and neither can notice a field that is missing entirely. That is
+  // structurally why this builder shipped no tiles at all with a green suite.
+  const sc = toJson(ClientCommandSchema, createScene("s1", "Hall", 4, 3, "floor")) as Record<string, any>;
+  const tiles = sc["createScene"]["tiles"] as Record<string, { kind: string }>;
+
+  expect(Object.keys(tiles)).toHaveLength(4 * 3);
+  const want: string[] = [];
+  for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) want.push(`${x},${y}`);
+  expect(Object.keys(tiles).sort()).toEqual(want.sort());
+  for (const key of want) expect(tiles[key]).toEqual({ kind: "floor" });
+});
+
+test("createScene declares the kind it was ASKED for, not a default", () => {
+  // Two answers, and the builder must carry whichever it was given. A fan-out
+  // that hard-coded floor would pass the test above and silently overrule a DM
+  // who chose wall.
+  const wall = toJson(ClientCommandSchema, createScene("s1", "Keep", 2, 2, "wall")) as Record<string, any>;
+  for (const t of Object.values(wall["createScene"]["tiles"] as Record<string, { kind: string }>)) {
+    expect(t).toEqual({ kind: "wall" });
+  }
 });
 
 test("a zero position is still sent as a position, not omitted", () => {

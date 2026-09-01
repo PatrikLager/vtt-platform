@@ -100,6 +100,89 @@ test("a scene with no id or a zero dimension is refused", () => {
   expect(h2.notices[0]).toMatch(/width and height/i);
 });
 
+test("a scene whose fill is unanswered is not sent", () => {
+  // THE THIRD STATE, on the scene form now that create_scene refuses a scene
+  // leaving a square undeclared (spec 2026-08-30-retraction-leaves §6). A
+  // console that filled in floor for a DM who never touched the box would be
+  // answering for them — dm.ts's own rule, written on the Add-actor form: "a
+  // pre-filled answer is indistinguishable from a DM who never looked."
+  //
+  // NOTHING SENT is the assertion, not "the select exists". A test that only
+  // looked for the control could be satisfied by a box the Create button
+  // ignores.
+  const h = harness();
+  fill(h, { "scene-id": "s1", "scene-w": "4", "scene-h": "3" });
+  h.action("create-scene").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices[0]).toMatch(/made of/i);
+});
+
+test("a scene larger than one command can carry is refused before it is sent", () => {
+  // 40x40 = 1600 squares. The whole tile map rides in ONE websocket frame and
+  // the gateway reads at most 32768 bytes, dropping a larger one inside
+  // conn.Read — before DecodeCommand, so no server validator can ever answer
+  // it. Measured against a live gateway: 37x37 closes the socket with
+  // StatusMessageTooBig, and the DM meets a Reconnect button and a toast about
+  // the connection rather than a word about the room. Every other command in
+  // flight on that socket dies with it.
+  //
+  // So this refusal is not defence in depth. It is the ONLY place a readable
+  // message can come from, which is the lesson mapdef.MaxWireTiles already
+  // records for the map-file path.
+  // The fill box is deliberately NOT answered here, and that is a second
+  // claim rather than a shortcut: the size refusal must come FIRST. If it
+  // ran after the fill check the DM would be sent to fix the wrong box, and
+  // the wording assertion below is what notices.
+  const h = harness();
+  fill(h, { "scene-id": "s1", "scene-w": "40", "scene-h": "40" });
+  h.action("create-scene").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices[0]).toMatch(/will not fit in one command/i);
+  // The message must name BOTH numbers: a DM told only "too large" has to
+  // guess how much smaller.
+  expect(h.notices[0]).toContain("1200");
+  expect(h.notices[0]).toContain("1600");
+});
+
+test("the scene fill the DM chose is the one that reaches the wire", () => {
+  // TWO real answers, so the console must carry whichever was given. A fan-out
+  // hard-coded to floor would satisfy every other test in this file and
+  // silently overrule a DM who chose wall — "fill solid, then carve" is a real
+  // way to build a room, which is why the box offers two and not one.
+  const h = harness();
+  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
+  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "wall";
+  h.action("create-scene").click();
+  const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
+  expect(sent.case).toBe("createScene");
+  expect(Object.keys(sent.value.tiles)).toHaveLength(4);
+  for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe("wall");
+});
+
+test("the scene fill survives a re-render, like every other half-typed answer", () => {
+  // Same property the Add-actor kind box has, and for the same reason: the
+  // console rebuilds on every arriving event, and a DM part-way through a form
+  // must not lose the answer they already gave.
+  const first = harness();
+  const sel = first.node.querySelector(".scene-fill") as HTMLSelectElement;
+  sel.value = "wall";
+  sel.dispatchEvent(new Event("change"));
+
+  const again = harness().node.querySelector(".scene-fill") as HTMLSelectElement;
+  expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, false, true]);
+  expect(again.options[again.selectedIndex]!.textContent).toBe("wall");
+});
+
+test("a scene at the cap is still sent, so the guard is a boundary and not a wall", () => {
+  // 40x30 = 1200 squares, exactly the cap. Without this, tightening the
+  // comparison to >= would refuse a legal room with every test still green.
+  const h = harness();
+  fill(h, { "scene-id": "s1", "scene-w": "40", "scene-h": "30" });
+  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
+  h.action("create-scene").click();
+  expect(h.sent).toHaveLength(1);
+});
+
 test("an actor with no id is refused", () => {
   const h = harness();
   h.action("add-actor").click();
@@ -327,6 +410,7 @@ test("a scene's id and name are TRIMMED, and its dimensions become numbers", () 
   // form still works and the server stores " s1 " as a distinct scene id.
   const h = harness();
   fill(h, { "scene-id": "  s1  ", "scene-name": "  The Hall  ", "scene-w": " 6 ", "scene-h": " 4 " });
+  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
   h.button("Create").click();
   expect(payloads(h)).toEqual([
     { case: "createScene", value: expect.objectContaining({ sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) },

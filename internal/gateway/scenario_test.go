@@ -417,6 +417,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 		RequestId: "dm-create-scene",
 		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 			SceneId: "scn-exit", Name: "Exit Hall", GridWidth: 10, GridHeight: 10,
+			Tiles: floorTilesForTest(10, 10),
 		}},
 	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SceneCreated); !ok {

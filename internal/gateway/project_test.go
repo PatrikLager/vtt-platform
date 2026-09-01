@@ -1142,11 +1142,19 @@ func TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet(t *testing.T) {
 }
 
 // bareCanvas is a scene that declares NO terrain: 3x3, two tokens, nothing
-// underfoot. Legal, and not degenerate — mapdef.CheckEverySquarePresent is
-// all-or-nothing (zero tiles passes; one tile means all must be present) and it
-// guards both the map-file path and the CreateScene command path, so this is
-// the shape a caller gets by simply not sending tiles. A token is a FREE OBJECT
-// that needs no terrain to stand on (Patrik's ruling 2026-08-22).
+// underfoot. Legal, and not degenerate: a token is a FREE OBJECT that needs no
+// terrain to stand on (Patrik's ruling 2026-08-22), and engine.Apply folds a
+// SceneCreated carrying no tiles without complaint.
+//
+// HOW A CALLER STILL REACHES IT, corrected 2026-09-01: through a map FILE, and
+// no longer by "simply not sending tiles" to create_scene.
+// mapdef.CheckEverySquarePresent is all-or-nothing (zero tiles passes; one tile
+// means all must be present) and it guards the file path, which is what keeps a
+// file authored before the format had terrain loading. The create_scene COMMAND
+// now calls mapdef.RequireEverySquarePresent instead — the same walk without
+// that opt-out — so it refuses a scene leaving any square undeclared (spec
+// 2026-08-30-retraction-leaves §6). This comment used to say the check guarded
+// both doors. It guards one, and the other is shut.
 func bareCanvas() *engine.State {
 	st := engine.NewState()
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})

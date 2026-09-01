@@ -181,15 +181,40 @@ func squareKey(x, y int32) string {
 // is still an error, with the exact same message this function has always
 // produced.
 //
-// It walks the GRID, not the tiles map, because completeness is a property
-// of what is MISSING — a map iteration only ever sees what is present.
-// Callers run this before CheckTileNamesKnown so a file that is both
-// incomplete and has an invalid name reports the more fundamental defect (a
-// square with no answer at all) first.
+// The walk itself is RequireEverySquarePresent below; this function is that
+// walk plus the file format's opt-out, and the opt-out is the only
+// difference between them. Callers run this before CheckTileNamesKnown so a
+// file that is both incomplete and has an invalid name reports the more
+// fundamental defect (a square with no answer at all) first.
 func CheckEverySquarePresent(tiles map[string]string, w, h int32, errf FieldErrFunc) error {
 	if len(tiles) == 0 {
 		return nil
 	}
+	return RequireEverySquarePresent(tiles, w, h, errf)
+}
+
+// RequireEverySquarePresent is the completeness walk itself, WITHOUT the
+// opt-out above: every square of w x h must be named, and a tiles map that
+// names none of them is short of all of them rather than exempt. It is
+// exported for the one caller that has no legacy to protect —
+// internal/gateway's create_scene, the IMPROVISED path by which a place comes
+// into existence mid-session. Nobody has authored a create_scene command in
+// advance, so there is no existing file to keep loading, and a scene that
+// declares no terrain is a featureless grid: internal/sight has nothing to
+// occlude with and everyone sees everything, which is the failure
+// maps-as-geometry exists to prevent.
+//
+// The split is a split of the RULE from its exemption, not a fork of the
+// rule: one walk, one message, two callers that differ only in whether an
+// empty tiles map is a legitimate claim. Reimplementing the walk in the
+// gateway would have put the "every square names its own tile" invariant in
+// two places, which is the drift spec §4.1's own wording warns against.
+//
+// It walks the GRID, not the tiles map, because completeness is a property
+// of what is MISSING — a map iteration only ever sees what is present. It
+// names the FIRST missing square rather than counting them, because a
+// caller's next act is to go and declare that square.
+func RequireEverySquarePresent(tiles map[string]string, w, h int32, errf FieldErrFunc) error {
 	for y := int32(0); y < h; y++ {
 		for x := int32(0); x < w; x++ {
 			key := squareKey(x, y)

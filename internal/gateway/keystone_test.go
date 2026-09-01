@@ -392,9 +392,18 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //   - It does NOT bound Explored from below, and that is correct rather than a
 //     gap: a visible square carrying no terrain is deliberately never
 //     remembered, because there is nothing there to remember. On a bare-canvas
-//     scene Explored stays empty however much is visible — which is why the
-//     corpus carries one of each (scenarios/goldens/session-zero has a tiled
-//     scene and a terrain-free one side by side).
+//     scene Explored stays empty however much is visible. The corpus USED to
+//     carry one of each — session-zero's `camp` declared no terrain — and since
+//     2026-09-01 it cannot: create_scene refuses a scene that leaves a square
+//     undeclared, so every corpus scene is fully tiled. The bare canvas is
+//     still reachable through a map FILE, which may still omit tiles, and the
+//     rule is pinned directly rather than exhibited, in three places that never
+//     depended on the fixture: internal/engine's
+//     TestVisibleComesFromItsOwnFieldNotFromTheTiles, client/test's
+//     visibility.test.ts "a token on a bare canvas is drawn", and (added with
+//     this change, as the assertion-for-assertion mirror of the Go one)
+//     fold-unit.test.ts's "a sceneSeen with visible squares and no terrain
+//     remembers nothing".
 //
 // TWO FIELDS ARE COMPARED AS BOUNDS RATHER THAN EQUALITIES, and for the same
 // path-dependence reason rather than for convenience:

@@ -993,8 +993,30 @@ func (m *soakModel) planCreateScene(rng *rand.Rand) soakStep {
 	m.sceneN++
 	id := fmt.Sprintf("soak-scn-%d", m.sceneN)
 	issuer := pickDMOrAgent(rng)
+	// EVERY square declared, because create_scene refuses a grid with an
+	// undeclared one (internal/gateway's validateCreateSceneTerrain, via
+	// mapdef.RequireEverySquarePresent). All floor: the soak's moveOwn draws
+	// a target anywhere in the grid and expects it to be reachable, so a wall
+	// here would turn a legitimate move into a denial the invariant does not
+	// account for.
+	//
+	// AND soakSceneGridSize IS NOW A WIRE-SIZE DECISION, which it was not
+	// before terrain became mandatory. 30x30 = 900 squares marshals to about
+	// 22.9 KB against internal/gateway's maxWSFrameBytes = 32768 — roughly 70%
+	// of the frame the gateway will read. Raising it is no longer free:
+	// past ~1200 squares the command exceeds that limit and is dropped inside
+	// conn.Read, which presents as a torn connection rather than a refusal,
+	// and the soak would fail in a way that looks like a keepalive bug. See
+	// client/src/commands.ts's maxCreateSceneSquares for the measured table.
+	tiles := make(map[string]*vttv1.TileRef, soakSceneGridSize*soakSceneGridSize)
+	for y := int32(0); y < soakSceneGridSize; y++ {
+		for x := int32(0); x < soakSceneGridSize; x++ {
+			tiles[fmt.Sprintf("%d,%d", x, y)] = &vttv1.TileRef{Kind: "floor"}
+		}
+	}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
 		SceneId: id, Name: id, GridWidth: soakSceneGridSize, GridHeight: soakSceneGridSize,
+		Tiles: tiles,
 	}}}
 	return soakStep{issuer: issuer, cmd: cmd, kind: actionCreateScene, apply: func(int64) {
 		m.scenes = append(m.scenes, id)

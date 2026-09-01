@@ -28,11 +28,12 @@ import (
 // square seq 20 put tok-fighter on.
 //
 // EVERY square is tiled, all 1024 of them, and that is not thoroughness — it
-// is create_scene's rule. A scene may declare no tiles at all (the tiles-
-// optional ruling, 2026-08-13), but a scene that declares SOME is required to
-// name them all: validateCreateSceneTerrain answers a partial map with
-// `tiles["0,0"] — no tile named for this square`. Well inside
-// mapdef.MaxWireTiles (3600).
+// is create_scene's rule. A scene may not leave a single square undeclared:
+// validateCreateSceneTerrain answers a partial map, an empty one included,
+// with `tiles["0,0"] — no tile named for this square`. (The tiles-optional
+// ruling of 2026-08-13 survives for a map FILE, which must keep loading if it
+// was authored before the format had terrain; a create_scene command has no
+// such past.) Well inside mapdef.MaxWireTiles (3600).
 //
 // Seeded as DM COMMANDS over the wire rather than appended to the campaign
 // directly, exactly as seedCellar does: the same Append path the rest of the
@@ -134,6 +135,22 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 // and this package's tests are an EXTERNAL package by design.
 func gridKeyForTest(x, y int32) string {
 	return strconv.Itoa(int(x)) + "," + strconv.Itoa(int(y))
+}
+
+// floorTilesForTest declares every square of a w x h grid as floor. Since
+// create_scene refuses a grid with an undeclared square, a fixture whose
+// subject is something OTHER than terrain still has to name all of it, and
+// spelling that out inline would bury what each of those tests is actually
+// about. All floor, so sight and movement behave exactly as they did when
+// these fixtures carried no terrain at all.
+func floorTilesForTest(w, h int32) map[string]*vttv1.TileRef {
+	tiles := make(map[string]*vttv1.TileRef, w*h)
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < w; x++ {
+			tiles[gridKeyForTest(x, y)] = &vttv1.TileRef{Kind: "floor"}
+		}
+	}
+	return tiles
 }
 
 // drainEvents collects every Envelope this connection is given until it has

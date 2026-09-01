@@ -61,12 +61,14 @@ import { FoldError } from "../src/state";
 // twice and tokenHidden once, and client/test/projection-parity.test.ts folds
 // both arms against a hand-derived state.
 //
-// So what the hand-written cases below are for is the ARMS' EDGES. FOUR of
-// the five in this file's tokenHidden/sceneSeen section are reached by no stream
+// So what the hand-written cases below are for is the ARMS' EDGES. FIVE of
+// the six in this file's tokenHidden/sceneSeen section are reached by no stream
 // at all, recorded or derived: a re-sent hide (the corpus holds exactly one
 // tokenHidden), Explored unioning across messages (no single stream folds two
-// sceneSeen for one scene, and only one of the corpus's three carries `tiles` at
-// all — Explored unions from tile keys, never from `visible`), and BOTH
+// sceneSeen for one scene, and unioning is a within-stream operation), a
+// sceneSeen that is visible but carries NO terrain (since 2026-09-01 all three
+// of the corpus's sceneSeen carry `tiles`, because create_scene refuses a scene
+// with an undeclared square — that case used to be `camp`), and BOTH
 // object-merge cases (no sceneSeen anywhere carries objects, and no corpus
 // stream carries a scene object at all — which is also why the sceneCreated
 // object cases in the terrain section stand on nothing but themselves).
@@ -802,9 +804,12 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
   // all 8 scenarios with an unexpected `"Explored": {}` in every Scene;
   // reverting to the conditional-omission form in fold.ts passes all 8 again.
   // (Re-measured 2026-08-22, when session-zero took the corpus from 7 to 8.
-  // The same injection also fails 2 of the PROJECTED cases in
-  // client/test/projection-parity.test.ts — the bare-canvas scene, which has
-  // a visible set and no terrain to remember.)
+  // Re-measured again 2026-09-01, when the same injection stopped failing the
+  // two PROJECTED cases: it used to catch the bare-canvas scene, a visible set
+  // with no terrain to remember, and create_scene no longer permits one — so
+  // every projected Explored is now populated and the injection is invisible
+  // there. NINE failures in all, counted by running it: the eight goldens and
+  // this test.)
   const unseen = JSON.parse(foldToDumpJSON(sceneWithADoor()));
   expect("Explored" in unseen.Scenes["s1"]).toBe(false);
 
@@ -817,7 +822,7 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
 // --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
 //
 // Both arms are PROJECTION-ONLY (spec §5). HOW they nonetheless reach the corpus,
-// and WHICH of the four cases below it reaches, are both the HEADER's subject and
+// and WHICH of the cases below it reaches, are both the HEADER's subject and
 // neither is restated here.
 //
 // One fact, one place — the rule internal/gateway/keystone_test.go's own
@@ -986,6 +991,43 @@ test("sceneSeen unions into Explored and never shrinks", () => {
   expect(sc.Explored!["0,0"]).toBe(true); // seen first, still explored
   expect(sc.Explored!["1,1"]).toBe(true); // seen second
   expect(sc.Tiles!["1,1"]!.Kind).toBe("wall"); // a seen tile lands in Tiles too
+});
+
+// THE BARE CANVAS, and it lives here now because no corpus fixture can hold it
+// any more. Until 2026-09-01 this property was pinned by a FIXTURE:
+// session-zero's `camp` declared no terrain, so its projected Explored stayed
+// empty however much of it was in sight, and client/test/projection-parity
+// compared that against the committed state. create_scene now refuses a scene
+// that leaves a square undeclared, so every scene the corpus creates is fully
+// tiled and no projected seat has an empty Tiles left to exhibit. The SHAPE is
+// still reachable in the platform — a map FILE may still omit tiles, which is
+// the exemption that keeps files authored before the format had terrain
+// loading — so the rule has not changed, only the place it is pinned.
+//
+// Mirrors internal/engine/visibility_fold_test.go's
+// TestVisibleComesFromItsOwnFieldNotFromTheTiles, assertion for assertion.
+//
+// IT IS NOT THE ONLY TS COVER, and the first draft of this comment claimed it
+// was. client/test/visibility.test.ts's "a token on a bare canvas is drawn"
+// already folds a 9-visible / 0-tile sceneSeen and already asserts Explored
+// stays empty. MEASURED: making Explored follow Visible in fold.ts's sceneSeen
+// arm reds TWO tests across client/test — that one and this one — so the TS
+// fold was never free to make that change with nothing red. What this case adds
+// is being the assertion-for-assertion mirror of the Go test: the other is a
+// DRAWING test that happens to assert the property on its way to something
+// else, and a drawing test is not where a reader looks for the fold rule.
+test("a sceneSeen with visible squares and no terrain remembers nothing", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n" } }),
+    env(2, { sceneCreated: { sceneId: "s", name: "S", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { sceneSeen: { sceneId: "s", visible: ["0,0", "0,1", "1,0", "1,1"] } }),
+  ]);
+  const sc = st.Scenes["s"]!;
+  expect(Object.keys(sc.Visible ?? {})).toHaveLength(4);
+  // Explored is unioned from the TILES keys, never from `visible`: no terrain
+  // arrived, so there is nothing to remember and nothing to draw.
+  expect(Object.keys(sc.Explored ?? {})).toHaveLength(0);
+  expect(Object.keys(sc.Tiles ?? {})).toHaveLength(0);
 });
 
 test("sceneSeen's objects REPLACE a repeated id in place and APPEND a new one", () => {

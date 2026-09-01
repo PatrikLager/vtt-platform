@@ -75,6 +75,43 @@ func TestAOneBySquareGridIsTheSmallestLegalMap(t *testing.T) {
 	}
 }
 
+// TestRequireEverySquarePresentHasNoOptOut pins the ONE property the split
+// between the two completeness functions exists to create, in the package that
+// owns them.
+//
+// CheckEverySquarePresent returns nil on an empty tiles map — the file format's
+// opt-out, so a map authored before the format had terrain keeps loading
+// (Patrik's ruling, 2026-08-13). RequireEverySquarePresent is the same walk
+// WITHOUT it, for internal/gateway's create_scene, which has no such past.
+//
+// WITHOUT THIS TEST THE SPLIT IS UNGUARDED HERE. Every other test in this
+// package reaches the walk through the lenient wrapper, so re-adding
+// `if len(tiles) == 0 { return nil }` to the strict function leaves mapdef's
+// own suite entirely green — and check:mutation runs per package, so that
+// mutant would survive with the only evidence against it living one package
+// away.
+func TestRequireEverySquarePresentHasNoOptOut(t *testing.T) {
+	// The pair on the SAME input, which is the whole claim: one exempts an
+	// empty map, the other counts it as short of every square.
+	if err := mapdef.CheckEverySquarePresent(map[string]string{}, 2, 2, errf); err != nil {
+		t.Fatalf("the file path's opt-out is gone: an empty tiles map was refused: %v", err)
+	}
+	err := mapdef.RequireEverySquarePresent(map[string]string{}, 2, 2, errf)
+	if err == nil {
+		t.Fatal("a tiles map declaring nothing was accepted by the strict walk — " +
+			"an undeclared square is undeclared whether it is one of four or four of four")
+	}
+	if !strings.Contains(err.Error(), `tiles["0,0"]`) {
+		t.Fatalf("the refusal does not name a missing square: %v", err)
+	}
+
+	// And the strict walk still ACCEPTS a complete map, so "refuses everything"
+	// cannot pass for "has no opt-out".
+	if err := mapdef.RequireEverySquarePresent(fullTiles(2, 2), 2, 2, errf); err != nil {
+		t.Fatalf("a complete 2x2 was refused by the strict walk: %v", err)
+	}
+}
+
 func TestTheLastSquareInsideTheGridIsAcceptedAndTheFirstOutsideIsNot(t *testing.T) {
 	// Kills `x >= w` -> `x > w` (and the y twin) at both call sites: with the
 	// mutation, a square at exactly x==w is accepted — one column beyond the

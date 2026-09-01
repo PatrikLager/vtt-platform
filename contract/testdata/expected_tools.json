@@ -128,7 +128,7 @@
             ],
             "type": "object"
           },
-          "description": "Optional; omit for a bare grid with no terrain. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal) and must cover every square. Scenes with terrain are normally authored as a map file rather than built field by field here.",
+          "description": "Required, and it must name EVERY square of gridWidth x gridHeight — a scene one square short is refused. Keys are \"x,y\" (column,row; comma because a dot reads as a decimal). For a plain open room, give every square {\"kind\": \"floor\"}. Keep gridWidth x gridHeight at or under 1200 squares: the whole tile map travels in one message, and a larger one exceeds the server's read limit and closes the connection instead of answering. Scenes with real terrain, and any place larger than that, are normally authored as a map file and brought in with load_map rather than built field by field here.",
           "type": "object"
         }
       },
@@ -136,7 +136,8 @@
         "sceneId",
         "name",
         "gridWidth",
-        "gridHeight"
+        "gridHeight",
+        "tiles"
       ],
       "type": "object"
     },

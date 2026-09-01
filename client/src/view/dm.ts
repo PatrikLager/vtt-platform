@@ -13,7 +13,7 @@ import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
-  startSession, endSession, createScene, placeToken, removeToken, loadAdventure, loadMap,
+  startSession, endSession, createScene, maxCreateSceneSquares, placeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
@@ -252,6 +252,67 @@ export interface DMDeps {
   toggleDoors: () => void;
 }
 
+/**
+ * The tile a new scene is made of, back from the <select> that asks it.
+ *
+ * Returns null for "nothing chosen", for actorKindFromWireName's reason above
+ * and not a weaker one: create_scene now refuses a scene that leaves a square
+ * undeclared (spec 2026-08-30-retraction-leaves §6), and a console that quietly
+ * filled in floor would be answering for a DM who never looked — the exact
+ * defect the Add-actor form's blank kind box exists to prevent.
+ *
+ * Fanning the one answer out to every square is legitimate and belongs here:
+ * docs/map-format.md §11 says that organising "belongs in an editor — something
+ * that READS AUTHOR INTENT and produces a map in this format". This console is
+ * that editor. What a silent all-floor fill would fail is those three words.
+ */
+function tileKindFromWireName(name: string): "floor" | "wall" | null {
+  switch (name) {
+    case "floor":
+      return "floor";
+    case "wall":
+      return "wall";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The <select> that asks what a new room is made of.
+ *
+ * TWO REAL OPTIONS, not one. A single "floor" option would be a rubber stamp —
+ * a box whose only answer is the one a default would have given — while
+ * floor/wall is a question with two real answers: "fill solid, then carve" is
+ * how a room gets built as much as "open floor, then wall it in" is.
+ *
+ * NO `door`, deliberately. A room every square of which is a door is nonsense,
+ * and offering it would make the box look like a tile palette rather than the
+ * one question this form can honestly ask. Doors are placed, not poured.
+ *
+ * Built the same way kindSelect is, down to declaring the selection ON THE
+ * OPTION rather than by assigning `sel.value` afterwards — see that function
+ * for the long version of why the other form is untestable by construction.
+ */
+function fillSelect(cls: string, field: string): HTMLSelectElement {
+  const sel = document.createElement("select");
+  sel.className = cls;
+  for (const [value, label] of [
+    ["", "what is it made of?"],
+    ["floor", "floor"],
+    ["wall", "wall"],
+  ] as const) {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+    o.selected = value === draft[field];
+  }
+  sel.addEventListener("change", () => {
+    draft[field] = sel.value;
+  });
+  return sel;
+}
+
 export function renderDMConsole(d: DMDeps): HTMLElement {
   const wrap = el("section", "dm");
   wrap.appendChild(el("h2", undefined, "DM console"));
@@ -284,17 +345,36 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   const h = input("h", "scene-h");
   w.className = "tiny";
   h.className = "tiny";
+  // WHAT IT IS MADE OF is asked, never assumed — see fillSelect above.
+  const sceneFill = fillSelect("scene-fill", "scene-fill");
   wrap.appendChild(
     group(
       "Create scene",
-      sceneId, sceneName, w, h,
+      sceneId, sceneName, w, h, sceneFill,
       button("Create", () => {
         const gw = Number(w.value) || 0;
         const gh = Number(h.value) || 0;
         if (sceneId.value.trim() === "" || gw <= 0 || gh <= 0) {
           return d.notify("scene needs an id and a positive width and height");
         }
-        d.send(createScene(sceneId.value.trim(), sceneName.value.trim(), gw, gh));
+        // REFUSED HERE OR NOWHERE. The whole tile map rides in one websocket
+        // frame and the gateway reads at most 32768 bytes, dropping a larger
+        // one inside conn.Read — before any validator runs, so the server
+        // CANNOT answer this with a message. What the DM would meet instead is
+        // a closed socket and a toast about the connection, plus the death of
+        // every other command in flight on it. See maxCreateSceneSquares.
+        if (gw * gh > maxCreateSceneSquares) {
+          return d.notify(
+            `a room this large will not fit in one command — ${maxCreateSceneSquares} squares ` +
+            `is the most create_scene can carry, and this is ${gw * gh}. ` +
+            `Author it as a map file and use Load map.`,
+          );
+        }
+        const fill = tileKindFromWireName(sceneFill.value);
+        if (fill === null) {
+          return d.notify("Say what the room is made of: floor to carve into, or wall to carve out of.");
+        }
+        d.send(createScene(sceneId.value.trim(), sceneName.value.trim(), gw, gh, fill));
       }, "create-scene"),
     ),
   );
