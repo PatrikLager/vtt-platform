@@ -2,16 +2,17 @@
 // C2, 2026-08-16) — a picture for every one of the eleven natures
 // internal/mapdef/standard.go declares, so a square with NO art override
 // still draws something. Before this file, the only pack genmappack
-// produced was maps/cellar's own starter pack, which happens to override
-// 100% of its squares — the reason C2 went unnoticed for as long as it did.
+// produced was packs/cellar-basics (maps/cellar.json's own starter pack),
+// which happens to override 100% of its squares — the reason C2 went
+// unnoticed for as long as it did.
 //
-// A SEPARATE pack from maps/cellar's, deliberately: the starter pack is
-// authored CONTENT (an example of what a pack author writes, per main.go's
-// own header comment), while this one is PLATFORM vocabulary — the same
-// eleven names mapdef.StandardTile resolves, with exactly one picture (two
-// for the door) apiece. Mixing the two would make maps/cellar's pack.json
-// stop being the honest "here is what an author writes" example it is meant
-// to be.
+// A SEPARATE pack from packs/cellar-basics, deliberately: the starter pack
+// is authored CONTENT (an example of what a pack author writes, per
+// main.go's own header comment), while this one is PLATFORM vocabulary —
+// the same eleven names mapdef.StandardTile resolves, with exactly one
+// picture (two for the door) apiece. Mixing the two would make
+// packs/cellar-basics' pack.json stop being the honest "here is what an
+// author writes" example it is meant to be.
 //
 // WHERE THIS SHIPS (Patrik's ruling): the client's own bundle, not the
 // authenticated GET /api/packs/{pack}/{file} route. That route exists for
@@ -75,7 +76,7 @@ type standardEntry struct {
 // wire a content-generation tool to engine internals for no reason a change
 // to either side should have to consider).
 //
-// Reuses four of maps/cellar's own drawing functions where the NATURE is
+// Reuses four of packs/cellar-basics' own drawing functions where the NATURE is
 // literally the same texture family (wall/stone, floor/stone, floor/earth,
 // door/wood) — a stone wall is a stone wall whether it is the standard
 // baseline or cellar-basics' own masonry-1. The remaining seven natures have

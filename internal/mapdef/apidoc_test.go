@@ -9,10 +9,10 @@ package mapdef_test
 //     LLM that reads it authors maps referencing tiles it cannot see are
 //     real, or never learns about ones that are — and nothing else in this
 //     suite would notice, because the doc is prose, not code.
-//  2. maps/cellar — the fixture the NEXT arc (line of sight) depends on —
-//     actually loads AND actually has cover. goblin-ambush's failure (spec
-//     §1.3) was a 32x32 field with nothing to hide behind; a map with no
-//     blocking object would repeat it silently.
+//  2. maps/cellar.json — the fixture the NEXT arc (line of sight) depends
+//     on — actually loads AND actually has cover. goblin-ambush's failure
+//     (spec §1.3) was a 32x32 field with nothing to hide behind; a map with
+//     no blocking object would repeat it silently.
 
 import (
 	"os"
@@ -36,7 +36,7 @@ func TestEveryStandardTileIsDocumented(t *testing.T) {
 }
 
 func TestTheDemoMapLoadsAndHasCover(t *testing.T) {
-	m, err := mapdef.Load("../../maps/cellar/map.json")
+	m, err := mapdef.Load("../../maps/cellar.json")
 	if err != nil {
 		t.Fatalf("the demo map does not load: %v", err)
 	}

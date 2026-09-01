@@ -1,11 +1,29 @@
 // maps.go is the shared boot-time maps-directory loader (maps-as-geometry
-// Task 7): `vtt serve --maps-dir` (composeServer) walks a directory of
-// standalone maps and calls mapdef.Load/mapdef.LoadPack per subdirectory —
-// factored here the same way adventures.go factors loadAdventuresDir, and
-// deliberately mirroring its shape: same symlink-following os.Stat walk,
-// same duplicate-id boot error, same "fail loud at boot" posture
+// Task 7; layout changed by Task 3 of the create_scene-leaves plan, 2026-
+// 09-01, "the kernel serves maps, it does not make them"): `vtt serve
+// --maps-dir` (composeServer) walks a directory and calls mapdef.Load/
+// mapdef.LoadPack — factored here the same way adventures.go factors
+// loadAdventuresDir, and sharing its "fail loud at boot" posture
 // (adventure-format §7, applied to maps by maps-as-geometry design spec
 // §4.4).
+//
+// SINCE TASK 3, maps and packs are two SEPARATE trees under dir, not one
+// map-per-subdirectory: every "<dir>/maps/<id>.json" is one standalone map,
+// named by its own filename (see the ID-mismatch refusal below — this is
+// the whole point of Task 3, not an incidental rule: mapdef.Compile takes a
+// SceneCreated's id from the map's own ID field, so if the filename alone
+// governed identity, renaming a file and reloading it would silently mint
+// a SECOND scene for the same place while the original stayed in the
+// world); every "<dir>/packs/<name>/pack.json" is one pack, keyed by its
+// OWN declared id (packs/<name>'s directory name need not match — only the
+// pack.json "id" field does, exactly as before Task 3). The two trees are
+// independent: a map names the pack it wants via its own "pack" field, and
+// this loader resolves that reference by ID lookup (packs[m.Pack]) — the
+// SAME lookup handleLoadMap makes at request time (internal/gateway/
+// map.go's own "s.packs[m.Pack]... may legally be nil/absent for a map
+// with no overrides" comment), so the boot-time dry run below fails on
+// exactly the references handleLoadMap would fail on later, and cannot
+// drift from it.
 package main
 
 import (
@@ -13,23 +31,21 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// loadMapsDir is the full walk: every map.json plus its own optional
-// tiles/pack.json (maps-as-geometry design spec §4.2 — "Beside a standalone
-// map: maps/<id>/tiles/pack.json", the exact sibling convention
-// internal/adventure/load.go's loadEmbeddedPack already applies to
-// adventures/<id>/tiles/pack.json), an fs.FS rooted at each pack's own
-// directory for raw byte serving, plus a boot-time dry run of
-// mapdef.Compile per map (discarding the result) so an overrides entry that
-// does not resolve against its own pack fails HERE rather than only once
-// something eventually calls Compile for real — mirroring loadScenes'
-// identical dry-run of mapdef.BuildSceneCreated for adventure-embedded
-// scenes (internal/adventure/load.go), and reusing Compile itself rather
-// than inventing a second validation path, per Task 4's "one construction
-// site" discipline.
+// loadMapsDir is the full walk: every packs/<name>/pack.json first (so a
+// map's pack lookup below always sees the complete pack set), then every
+// maps/<id>.json plus a boot-time dry run of mapdef.Compile per map
+// (discarding the result) so an overrides entry that does not resolve
+// against its pack fails HERE rather than only once something eventually
+// calls Compile for real — mirroring loadScenes' identical dry-run of
+// mapdef.BuildSceneCreated for adventure-embedded scenes
+// (internal/adventure/load.go), and reusing Compile itself rather than
+// inventing a second validation path, per Task 4's "one construction site"
+// discipline.
 //
 // Each pack's fs.FS comes from os.OpenRoot(packDir).FS(), NOT os.DirFS —
 // this was fixed after review found the difference load-bearing.
@@ -52,90 +68,134 @@ import (
 // be parsed.
 //
 // Maps and packs are addressed by two DIFFERENT keys, both the thing's own
-// declared id rather than any directory name (mirroring loadAdventuresDir's
-// own dirOf tracking, since nothing requires either id to match its
-// directory): maps by Map.ID (gateway.Server.WithMaps' first argument,
-// GET /api/maps), packs by Pack.ID (WithMaps' second argument and
-// WithPackFiles' fs.FS map, GET /api/packs/{pack}/{file}). A duplicate id in
-// EITHER namespace is a boot error naming both directories — for maps this
-// is the same footgun loadAdventuresDir already guards against for
-// adventure ids; for packs it is sharper, because packFS is keyed globally
-// across every map in dir and a silent collision would let one map's pack
-// directory shadow another's images at the SAME route.
+// declared id rather than any directory or file name (mirroring
+// loadAdventuresDir's own dirOf tracking): maps by Map.ID (gateway.Server.
+// WithMaps' first argument, GET /api/maps), packs by Pack.ID (WithMaps'
+// second argument and WithPackFiles' fs.FS map, GET /api/packs/{pack}/
+// {file}). For PACKS a directory-name collision remains possible (two
+// packs/ subdirectories may declare the same id) and is a boot error
+// naming both directories — the same footgun loadAdventuresDir already
+// guards against for adventure ids, sharper here because packFS is keyed
+// globally and a silent collision would let one pack directory shadow
+// another's images at the SAME route. For MAPS, since Task 3, a duplicate
+// id is no longer reachable through this walk at all: the filename-is-the-
+// id refusal below means a map's key is always exactly its own filename
+// (minus ".json"), and a filesystem cannot hold two entries of the same
+// name in one directory — the collision loadAdventuresDir's map-id check
+// guards against for adventures cannot arise here by construction, so
+// nothing analogous is checked (or tested) for maps.
 //
 // composeServer calls loadMapsDir directly (not the exported LoadMapsDir
 // below) so it does not have to re-derive packs from a second filesystem
 // walk.
 func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*mapdef.Pack, packFS map[string]fs.FS, err error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("read maps dir: %w", err)
-	}
-	maps = make(map[string]*mapdef.Map, len(entries))
-	packs = make(map[string]*mapdef.Pack, len(entries))
-	packFS = make(map[string]fs.FS, len(entries))
-	mapDirOf := make(map[string]string, len(entries))
-	packDirOf := make(map[string]string, len(entries))
+	packsDir := filepath.Join(dir, "packs")
+	mapsDir := filepath.Join(dir, "maps")
 
-	for _, e := range entries {
-		sub := filepath.Join(dir, e.Name())
-		info, statErr := os.Stat(sub) // follows symlinks, matching loadAdventuresDir
+	packs = make(map[string]*mapdef.Pack)
+	packFS = make(map[string]fs.FS)
+	packDirOf := make(map[string]string)
+
+	// packsDir is OPTIONAL: a maps dir whose every map uses only the
+	// standard vocabulary (no overrides at all) legitimately has no packs/
+	// tree — mirroring the pre-Task-3 loader's own tolerance of a map with
+	// no beside-it tiles/pack.json. Any OTHER read failure (permissions,
+	// not-a-directory) still fails loud.
+	packEntries, statErr := os.ReadDir(packsDir)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return nil, nil, nil, fmt.Errorf("read packs dir: %w", statErr)
+	}
+	for _, e := range packEntries {
+		packDir := filepath.Join(packsDir, e.Name())
+		info, statErr := os.Stat(packDir) // follows symlinks, matching loadAdventuresDir
 		if statErr != nil {
-			return nil, nil, nil, fmt.Errorf("stat %s: %w", sub, statErr)
+			return nil, nil, nil, fmt.Errorf("stat %s: %w", packDir, statErr)
 		}
 		if !info.IsDir() {
 			continue
 		}
 
-		m, loadErr := mapdef.Load(filepath.Join(sub, "map.json"))
+		pack, loadErr := mapdef.LoadPack(packDir)
+		if loadErr != nil {
+			return nil, nil, nil, loadErr
+		}
+		if pack.ID == "" {
+			return nil, nil, nil, fmt.Errorf(
+				"packs dir %s: %s: pack id must not be empty (GET /api/packs/{pack}/... has nothing to address it by)",
+				packsDir, filepath.Join(packDir, "pack.json"))
+		}
+		if prior, dup := packDirOf[pack.ID]; dup {
+			return nil, nil, nil, fmt.Errorf(
+				"packs dir %s: pack id %q declared by both %s and %s", packsDir, pack.ID, prior, packDir)
+		}
+		// os.OpenRoot, not os.DirFS: see this function's own doc comment
+		// for why plain DirFS is not a symlink-safe boundary. Root.FS()
+		// (go1.24+) gives an fs.FS whose Open refuses a symlink that
+		// resolves outside packDir, not merely a literal ".." in the name.
+		root, rootErr := os.OpenRoot(packDir)
+		if rootErr != nil {
+			return nil, nil, nil, fmt.Errorf("packs dir %s: open pack dir %s: %w", packsDir, packDir, rootErr)
+		}
+		packs[pack.ID] = pack
+		packFS[pack.ID] = root.FS()
+		packDirOf[pack.ID] = packDir
+	}
+
+	mapEntries, err := os.ReadDir(mapsDir)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read maps dir: %w", err)
+	}
+	maps = make(map[string]*mapdef.Map, len(mapEntries))
+
+	for _, e := range mapEntries {
+		mapPath := filepath.Join(mapsDir, e.Name())
+		info, statErr := os.Stat(mapPath) // follows symlinks, matching loadAdventuresDir
+		if statErr != nil {
+			return nil, nil, nil, fmt.Errorf("stat %s: %w", mapPath, statErr)
+		}
+		if info.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".json")
+
+		m, loadErr := mapdef.Load(mapPath)
 		if loadErr != nil {
 			return nil, nil, nil, loadErr
 		}
 
-		packDir := filepath.Join(sub, "tiles")
-		var pack *mapdef.Pack
-		if _, statErr := os.Stat(filepath.Join(packDir, "pack.json")); statErr == nil {
-			pack, err = mapdef.LoadPack(packDir)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			if pack.ID == "" {
-				return nil, nil, nil, fmt.Errorf(
-					"maps dir %s: %s: pack id must not be empty (GET /api/packs/{pack}/... has nothing to address it by)",
-					dir, filepath.Join(packDir, "pack.json"))
-			}
-			if prior, dup := packDirOf[pack.ID]; dup {
-				return nil, nil, nil, fmt.Errorf(
-					"maps dir %s: pack id %q declared by both %s and %s", dir, pack.ID, prior, packDir)
-			}
-			// os.OpenRoot, not os.DirFS: see this function's own doc comment
-			// for why plain DirFS is not a symlink-safe boundary. Root.FS()
-			// (go1.24+) gives an fs.FS whose Open refuses a symlink that
-			// resolves outside packDir, not merely a literal ".." in the name.
-			root, rootErr := os.OpenRoot(packDir)
-			if rootErr != nil {
-				return nil, nil, nil, fmt.Errorf("maps dir %s: open pack dir %s: %w", dir, packDir, rootErr)
-			}
-			packs[pack.ID] = pack
-			packFS[pack.ID] = root.FS()
-			packDirOf[pack.ID] = packDir
-		} else if !os.IsNotExist(statErr) {
-			return nil, nil, nil, fmt.Errorf("stat %s: %w", filepath.Join(packDir, "pack.json"), statErr)
+		// THE FILENAME IS THE ID (Task 3's own reason for existing — see
+		// this function's package-level doc comment above): mapdef.Compile
+		// takes a scene's id from m.ID, never from the file it was loaded
+		// from, so a filename that disagrees with the map's own declared id
+		// would let a rename silently mint a second scene for the same
+		// place while the original stayed in the world. Refused here,
+		// loudly, naming BOTH the filename and the id it disagrees with, so
+		// the mismatch is loud instead of silent.
+		if m.ID != id {
+			return nil, nil, nil, fmt.Errorf(
+				"maps/%s.json declares id %q: a map's filename is its id, and a "+
+					"disagreement would put a second scene in the world for the same "+
+					"place — mapdef.Compile takes the scene id from the map's ID",
+				id, m.ID)
 		}
+
+		// pack lookup by the map's OWN declared id, not by directory
+		// co-location (packs are a sibling tree since Task 3) — packs[""]
+		// is a legal, deliberate no-op lookup for a map that declares no
+		// Pack, exactly mirroring internal/gateway/map.go's handleLoadMap,
+		// so this dry run fails on precisely the references that handler
+		// would fail on at request time.
+		pack := packs[m.Pack]
 
 		// Dry run: proves every override actually resolves (kind/material
 		// from the standard vocabulary, art from pack) before this map is
 		// ever considered bootable — see this function's own doc comment
 		// for why Compile, not a bespoke check.
 		if _, _, compileErr := mapdef.Compile(m, pack); compileErr != nil {
-			return nil, nil, nil, fmt.Errorf("maps dir %s: map %q (%s): %w", dir, m.ID, sub, compileErr)
+			return nil, nil, nil, fmt.Errorf("maps dir %s: map %q (%s): %w", mapsDir, m.ID, mapPath, compileErr)
 		}
 
-		if prior, dup := mapDirOf[m.ID]; dup {
-			return nil, nil, nil, fmt.Errorf("maps dir %s: map id %q declared by both %s and %s", dir, m.ID, prior, sub)
-		}
 		maps[m.ID] = m
-		mapDirOf[m.ID] = sub
 	}
 
 	// Zero maps loaded from an EXISTING dir is a boot error, not a quiet

@@ -33,22 +33,30 @@ import (
 func TestServeMapsDirEndToEnd(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
+	// Task 3 layout (2026-09-01 create_scene-leaves plan): maps are flat
+	// files under mapsDir/maps/, named by their own id; packs are
+	// directories under the sibling mapsDir/packs/, keyed by pack.json's
+	// own declared id rather than by directory name.
 	mapsDir := t.TempDir()
-	sub := filepath.Join(mapsDir, "shrine")
-	if err := os.MkdirAll(filepath.Join(sub, "tiles"), 0o755); err != nil {
+	packDir := filepath.Join(mapsDir, "packs", "mossy-keep")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "tiles", "pack.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
 		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png","kind":"floor","material":"wood"}]
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "tiles", "planks_03.png"), []byte("stand-in image bytes"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(packDir, "planks_03.png"), []byte("stand-in image bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "map.json"), []byte(`{
+	mapsSubDir := filepath.Join(mapsDir, "maps")
+	if err := os.MkdirAll(mapsSubDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mapsSubDir, "shrine.json"), []byte(`{
 		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
@@ -150,7 +158,13 @@ func TestComposeServerFailsLoudlyOnABrokenMap(t *testing.T) {
 		t.Fatal("composeServer succeeded with a broken map in --maps-dir; " +
 			"the table would find out instead of us")
 	}
-	if !strings.Contains(err.Error(), "broken") {
-		t.Errorf("error should name the offending map, got: %v", err)
+	// "broken.json", not the weaker "broken": composeServer's own wrap
+	// ("vtt serve: load maps %s: %w", mapsDir, err) embeds mapsDir itself
+	// ("testdata/maps-with-one-broken") in EVERY error this call can ever
+	// return, so a bare "broken" substring would pass even if the cause had
+	// nothing to do with the broken map. The full filename can only appear
+	// because the inner error actually named that file.
+	if !strings.Contains(err.Error(), "broken.json") {
+		t.Errorf("error should name the offending file broken.json, got: %v", err)
 	}
 }

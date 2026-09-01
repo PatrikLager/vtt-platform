@@ -1,6 +1,6 @@
-// Command genmappack generates TWO packs: maps/cellar/tiles, the starter
-// pack Task 10 of the maps-as-geometry arc ships as maps/cellar's own art
-// (design spec §4.2, §1.5's "a pack manifest, with no other help"), and
+// Command genmappack generates TWO packs: packs/cellar-basics, the starter
+// pack Task 10 of the maps-as-geometry arc ships as maps/cellar.json's own
+// art (design spec §4.2, §1.5's "a pack manifest, with no other help"), and
 // (added for review finding C2, 2026-08-16) client/public/std-pack, a
 // baseline picture for every one of internal/mapdef/standard.go's eleven
 // standard natures — see std_pack.go's own header comment for why a square
@@ -26,7 +26,7 @@
 // good art, only to be UNAMBIGUOUS art — a wall reads as a wall, a crate
 // reads as a crate, at 64px in a browser tile.
 //
-// Run: go run ./tools/genmappack [-out maps/cellar/tiles] [-std-out client/public/std-pack]
+// Run: go run ./tools/genmappack [-out packs/cellar-basics] [-std-out client/public/std-pack]
 // Both packs are (re)written on every run — there is no flag to write only one.
 package main
 
@@ -100,7 +100,7 @@ type packOut struct {
 const packFormatVersion int32 = 1
 
 func main() {
-	out := flag.String("out", "maps/cellar/tiles", "directory to write the cellar starter pack's pack.json and images into")
+	out := flag.String("out", "packs/cellar-basics", "directory to write the cellar starter pack's pack.json and images into")
 	stdOut := flag.String("std-out", "client/public/std-pack",
 		"directory to write the standard-vocabulary baseline pack's pack.json and images into "+
 			"(see std_pack.go's header comment for why this ships from the client bundle, not a "+
@@ -511,7 +511,7 @@ func drawBarrel(img *image.RGBA, rng *rand.Rand) {
 
 // drawBrazier: a squat bowl on a tripod stem, with a lit coal glow — the one
 // glyph that is deliberately decorative (Task 10 brief lists it as a
-// prop, and maps/cellar's own brazier-1 carries blocks_sight/blocks_move
+// prop, and maps/cellar.json's own brazier-1 carries blocks_sight/blocks_move
 // both false).
 func drawBrazier(img *image.RGBA, rng *rand.Rand) {
 	stem := color.RGBA{0x33, 0x33, 0x36, 0xff}

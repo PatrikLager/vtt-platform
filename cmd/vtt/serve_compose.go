@@ -87,11 +87,13 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // GET /api/packs/{pack}/{file} always 404ing. Unlike adventuresDir, a
 // non-empty mapsDir needs no rulesetDir — a standalone map carries no
 // ruleset reference (mapdef.Map has none; only adventure.Adventure does).
-// Every immediate subdirectory of mapsDir is loaded and validated via
-// loadMapsDir (maps.go) — fail loud here, at boot, on any single map's
-// failure or an override that does not resolve against its own pack (the
-// same "fail loud, never at the table" posture as adventuresDir above),
-// closing both handles before returning.
+// Every mapsDir/maps/*.json and mapsDir/packs/*/pack.json is loaded and
+// validated via loadMapsDir (maps.go; layout changed by Task 3 of the
+// 2026-09-01 create_scene-leaves plan — maps are flat files, packs are a
+// sibling tree) — fail loud here, at boot, on any single map's failure or
+// an override that does not resolve against its pack (the same "fail
+// loud, never at the table" posture as adventuresDir above), closing both
+// handles before returning.
 func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {

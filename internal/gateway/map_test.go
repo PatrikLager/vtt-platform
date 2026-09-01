@@ -10,9 +10,11 @@ package gateway_test
 // exists to close: mapdef.Compile's only production caller discarded its
 // result as a boot-time dry run, so maps/cellar could be validated, listed,
 // and have its art served, but never loaded). Built against the REAL
-// committed maps/cellar directory — internal/mapdef's own tests already
-// cover Load/Compile's correctness in isolation; this file proves the
-// WIRING, not the loader. Mirrors adventure_test.go's own shape;
+// committed maps/cellar.json map and its packs/cellar-basics pack (Task 3
+// of the 2026-09-01 create_scene-leaves plan split what used to be one
+// maps/cellar directory into these two) — internal/mapdef's own tests
+// already cover Load/Compile's correctness in isolation; this file proves
+// the WIRING, not the loader. Mirrors adventure_test.go's own shape;
 // load_adventure/handleLoadAdventure is this handler's direct template.
 
 import (
@@ -34,28 +36,35 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// cellarMapDir resolves the committed maps/cellar directory relative to this
-// test file's own package directory — the same "../../<dir>" convention
-// adventure_test.go's goblinAmbushDir establishes.
-func cellarMapDir(t *testing.T) string {
+// cellarMapPath and cellarPackDir resolve the committed maps/cellar.json
+// map and its packs/cellar-basics pack, relative to this test file's own
+// package directory — the same "../../<path>" convention adventure_test.go's
+// goblinAmbushDir establishes. Two functions, not one, because Task 3 (the
+// 2026-09-01 create_scene-leaves plan) split what used to be one
+// maps/cellar directory into a flat file and a sibling pack tree.
+func cellarMapPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join("..", "..", "maps", "cellar")
+	return filepath.Join("..", "..", "maps", "cellar.json")
 }
 
-// loadCellarMap loads the real committed maps/cellar/map.json and its
-// tiles/pack.json, failing the test loudly if either does not load — a
-// broken fixture here would silently turn every test in this file into a
-// no-op, which is worse than a compile error.
+func cellarPackDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("..", "..", "packs", "cellar-basics")
+}
+
+// loadCellarMap loads the real committed maps/cellar.json and its
+// packs/cellar-basics pack, failing the test loudly if either does not
+// load — a broken fixture here would silently turn every test in this file
+// into a no-op, which is worse than a compile error.
 func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 	t.Helper()
-	dir := cellarMapDir(t)
-	m, err := mapdef.Load(filepath.Join(dir, "map.json"))
+	m, err := mapdef.Load(cellarMapPath(t))
 	if err != nil {
-		t.Fatalf("mapdef.Load(maps/cellar): %v", err)
+		t.Fatalf("mapdef.Load(maps/cellar.json): %v", err)
 	}
-	pack, err := mapdef.LoadPack(filepath.Join(dir, "tiles"))
+	pack, err := mapdef.LoadPack(cellarPackDir(t))
 	if err != nil {
-		t.Fatalf("mapdef.LoadPack(maps/cellar/tiles): %v", err)
+		t.Fatalf("mapdef.LoadPack(packs/cellar-basics): %v", err)
 	}
 	return m, pack
 }
