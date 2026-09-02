@@ -21,22 +21,6 @@ message MoveTokenResponse {
 }
 
 // Commands are imperative; the events they become are past-tense.
-message CreateScene {
-  string scene_id = 1;
-  string name = 2;
-  int32 grid_width = 3;
-  int32 grid_height = 4;
-  // Keys are "x,y", column then row; the separator is a comma because a dot
-  // reads as a decimal (maps-as-geometry spec §4.1). REQUIRED, and it must
-  // name every square of grid_width x grid_height: the gateway refuses a
-  // create_scene that leaves one undeclared. A scene with no terrain is a
-  // featureless grid that internal/sight cannot occlude, and create_scene is
-  // the improvised path — nobody authored this command in advance, so there
-  // is no older shape to keep accepting. (A map FILE still may omit tiles;
-  // that exemption exists for files written before the format had terrain.)
-  map<string, TileRef> tiles = 5;
-  repeated SceneObject objects = 6;
-}
 
 // A door is one nature, not two (spec §3.3): the tile stays "door" whether
 // it is open or closed, and these commands change only the folded state —
@@ -165,7 +149,6 @@ message ClientCommand {
   string request_id = 1;
   oneof command {
     MoveTokenRequest move_token = 10;
-    CreateScene create_scene = 11;
     AddActor add_actor = 12;
     PlaceToken place_token = 13;
     StartSession start_session = 14;
@@ -263,7 +246,7 @@ message GrantActorControl {
   // forgotten field drops a character out of its own party's roster.
   //
   // The refusal is internal/gateway's validateGrantActorControl, called from
-  // handleCommand beside create_scene's terrain check and BEFORE ToEvent —
+  // handleCommand beside add_actor's own kind check and BEFORE ToEvent —
   // not inside ToEvent itself, which structurally cannot host it: that
   // function's own completeness gate requires every command to convert from
   // an EMPTY payload, because grant_actor_control once shipped advertised

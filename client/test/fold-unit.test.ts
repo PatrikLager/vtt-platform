@@ -1030,10 +1030,14 @@ test("sceneSeen unions into Explored and never shrinks", () => {
 //
 // CORRECTED 2026-09-02: "no corpus fixture CAN hold it any more" was the wrong
 // word, and it contradicted this comment's own next sentence — which named a
-// map FILE as the exemption at the same time as a map file became the ONLY way
+// map FILE as the exemption at the same time as a FILE became the only way
 // a corpus scene is made. No scenario issues create_scene now
-// (2026-09-01-create-scene-leaves Task 7); every corpus scene comes from
-// scenarios/maps/, and mapdef exempts a file declaring no tiles. MEASURED
+// (2026-09-01-create-scene-leaves Task 7); every corpus scene comes from a
+// FILE — eight of the nine from scenarios/maps/ through load_map, and
+// adventure-night's from adventures/goblin-ambush/scenes/ravine.json through
+// load_adventure — and mapdef exempts a file declaring no tiles, on BOTH
+// paths (internal/mapdef/load.go and internal/adventure/load.go call the same
+// CheckEverySquarePresent). MEASURED
 // 2026-09-02: strip the "tiles" key from scenarios/maps/scn-smoke.json and
 // smoke.json still loads it ok=true. So the corpus CAN hold one again; it does
 // not, because every committed map declares its whole grid by choice. The rule

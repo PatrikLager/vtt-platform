@@ -247,7 +247,7 @@ func (f *adventureFixture) dial(token string, after int64) *websocket.Conn {
 	// maps-as-geometry Task 4: SceneCreated now carries one TileRef per grid
 	// square, so loading a real adventure (goblin-ambush's scene alone is
 	// ~1024 squares) can exceed coder/websocket's default 32KB read cap —
-	// see server_internal_test.go's bigSceneName fixture
+	// see server_internal_test.go's bigPaddingName fixture
 	// (TestAWedgedConnectionIsTornDownAndOthersKeepServing), the precedent
 	// this 200KiB matches exactly.
 	conn.SetReadLimit(200 * 1024)

@@ -1215,31 +1215,13 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// create_scene's terrain gets the SAME seam and the SAME reasoning as the
-	// movement check just above, applied to a different command (whole-
-	// branch-review finding C5): checked HERE, not in engine.Apply, because
-	// Apply is the fold and by the time an event reaches it the scene is
-	// already history — history is not the place to say no.
-	//
-	// UNLIKE the movement check, this does NOT gate on p.Role. "Hard for
-	// players, free for DM" (spec §6) is a rule about MOVEMENT freedom: an
-	// author is allowed to stage a creature inside a wall. It is not a rule
-	// about FORMAT validity — a tile kind of "banana" is never a legitimate
-	// thing for anyone to author, DM or agent included, because the engine
-	// (terrain.go) understands exactly three kinds and nothing reads a
-	// fourth. So every actor who may issue create_scene is held to the same
-	// closed vocabulary Authorize already decided they may use the command
-	// at all.
-	if cs, ok := cmd.GetCommand().(*vttv1.ClientCommand_CreateScene); ok {
-		if err := validateCreateSceneTerrain(cs.CreateScene); err != nil {
-			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-		}
-	}
-
 	// grant_actor_control's kind gets the SAME seam and the SAME reasoning as
-	// create_scene's terrain directly above, and for the third time the same
-	// argument: engine.Apply is the fold, and by the time an event reaches it
-	// the grant is already history — history is not the place to say no.
+	// the movement check above, and for the second time the same argument:
+	// engine.Apply is the fold, and by the time an event reaches it the grant
+	// is already history — history is not the place to say no. (This paragraph
+	// named create_scene's terrain check as the seam directly above it until
+	// 2026-09-02, when create_scene left the platform; add_actor's own check
+	// below still makes three call sites of the pattern, not two.)
 	//
 	// It is HERE rather than in Authorize because it is not a rule about who:
 	// the DM and the agent are both entitled to hand a character over, and
@@ -1255,7 +1237,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// add_actor gets the SAME seam and, for the fourth time, the same argument:
+	// add_actor gets the SAME seam and, for the third time, the same argument:
 	// engine.Apply is the fold, and by the time an ActorAdded reaches it the
 	// actor is already history.
 	//

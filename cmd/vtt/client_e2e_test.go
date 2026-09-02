@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -179,6 +180,16 @@ func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) 
 // Denied=20 -> new Accepted=478, Denied=22 (Events and Checkpoints
 // unchanged); see the report for the re-run that produced these
 // (measured on that task's own run; commit 92f1284).
+//
+// UNCHANGED BY create_scene LEAVING (2026-09-02), and that is a result rather
+// than an omission. Task 8 of docs/superpowers/plans/
+// 2026-09-01-create-scene-leaves.md turned pickBucket's first band from
+// createScene into loadMap, and the numbers above did not move — which is the
+// evidence that the swap preserved the DRAW SEQUENCE and not merely the
+// percentages: planLoadMap consumes exactly one pickDMOrAgent draw, the same
+// as the planCreateScene it replaced, so every later action's own draws land
+// where they did. Had it consumed a different number, this test would have
+// re-baselined the way commit 92f1284 did.
 func TestClientSoakSelfContainedSeed1Events500PassesWithPinnedCounts(t *testing.T) {
 	out, err := runCLI(t, "client", "soak", "--seed", "1", "--events", "500", "--json")
 	if err != nil {
@@ -261,6 +272,18 @@ func startLiveFixture(t *testing.T) liveFixture {
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
+	// The scenario below LOADS its scene rather than creating one, since
+	// create_scene left the platform (Patrik's ruling, 2026-09-01), so the
+	// campaign has to hold the map first. Installed AFTER composeServer built
+	// the server, on purpose: this is live mode, an operator's own campaign,
+	// and a map that was not on disk when the server was composed is exactly
+	// what internal/gateway's mapByID probe was added for
+	// (2026-09-01-create-scene-leaves Task 6). It is written after `go
+	// srv.Serve(ln)` and before waitForHealthz, so it RACES the accept loop
+	// rather than provably following it — "installed after composeServer" is
+	// the part that is guaranteed and the part the probe answers to; "while
+	// the server is already serving" is not, and an earlier version of this
+	// comment claimed it.
 	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
@@ -276,6 +299,12 @@ func startLiveFixture(t *testing.T) liveFixture {
 		}
 	})
 	go func() { _ = srv.Serve(ln) }()
+
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(mapsDir, 0o750); err != nil {
+		t.Fatalf("create maps dir: %v", err)
+	}
+	writeFile(t, filepath.Join(mapsDir, liveModeSceneID+".json"), liveModeSceneMap)
 
 	if err := waitForHealthz("http://"+ln.Addr().String(), 3*time.Second); err != nil {
 		t.Fatalf("healthz never became ready: %v", err)
@@ -304,7 +333,31 @@ func startLiveFixture(t *testing.T) liveFixture {
 	}
 }
 
-// liveModeScenario is a four-command dm scenario (start session, create a
+// liveModeSceneID is the map startLiveFixture installs and liveModeScenario
+// loads; it is the filename's stem as well as the scene's own id, because
+// mapdef.LoadInstalled refuses a disagreement between the two
+// (2026-09-01-create-scene-leaves Task 3).
+const liveModeSceneID = "scene-1"
+
+// liveModeSceneMap is that map: a 10x10 room of plain floor, every square
+// declared. It carries the terrain the scenario step used to inline as a
+// hundred TileRefs on a create_scene — the same room, authored where a room is
+// authored now.
+var liveModeSceneMap = func() string {
+	var tiles strings.Builder
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			if tiles.Len() > 0 {
+				tiles.WriteString(",")
+			}
+			fmt.Fprintf(&tiles, `"%d,%d":"stone"`, x, y)
+		}
+	}
+	return fmt.Sprintf(`{"format_version":1,"id":%q,"name":"Scene One",
+		"grid_width":10,"grid_height":10,"tiles":{%s}}`, liveModeSceneID, tiles.String())
+}()
+
+// liveModeScenario is a four-command dm scenario (start session, load the
 // scene, add an actor, place that actor's token at (3, 4)) — deliberately
 // the same shape events tail and state dump assert against below, so all
 // three commands in this task run against ONE shared live instance and ONE
@@ -315,18 +368,7 @@ const liveModeScenario = `{
 	"participants": [{"name": "dm", "role": "dm"}],
 	"steps": [
 		{"by": "dm", "command": {"startSession": {"name": "s1"}}, "expect": {"ok": true}},
-		{"by": "dm", "command": {"createScene": {"sceneId": "scene-1", "name": "Scene One", "gridWidth": 10, "gridHeight": 10, "tiles": {
-			"0,0": {"kind": "floor"}, "1,0": {"kind": "floor"}, "2,0": {"kind": "floor"}, "3,0": {"kind": "floor"}, "4,0": {"kind": "floor"}, "5,0": {"kind": "floor"}, "6,0": {"kind": "floor"}, "7,0": {"kind": "floor"}, "8,0": {"kind": "floor"}, "9,0": {"kind": "floor"},
-			"0,1": {"kind": "floor"}, "1,1": {"kind": "floor"}, "2,1": {"kind": "floor"}, "3,1": {"kind": "floor"}, "4,1": {"kind": "floor"}, "5,1": {"kind": "floor"}, "6,1": {"kind": "floor"}, "7,1": {"kind": "floor"}, "8,1": {"kind": "floor"}, "9,1": {"kind": "floor"},
-			"0,2": {"kind": "floor"}, "1,2": {"kind": "floor"}, "2,2": {"kind": "floor"}, "3,2": {"kind": "floor"}, "4,2": {"kind": "floor"}, "5,2": {"kind": "floor"}, "6,2": {"kind": "floor"}, "7,2": {"kind": "floor"}, "8,2": {"kind": "floor"}, "9,2": {"kind": "floor"},
-			"0,3": {"kind": "floor"}, "1,3": {"kind": "floor"}, "2,3": {"kind": "floor"}, "3,3": {"kind": "floor"}, "4,3": {"kind": "floor"}, "5,3": {"kind": "floor"}, "6,3": {"kind": "floor"}, "7,3": {"kind": "floor"}, "8,3": {"kind": "floor"}, "9,3": {"kind": "floor"},
-			"0,4": {"kind": "floor"}, "1,4": {"kind": "floor"}, "2,4": {"kind": "floor"}, "3,4": {"kind": "floor"}, "4,4": {"kind": "floor"}, "5,4": {"kind": "floor"}, "6,4": {"kind": "floor"}, "7,4": {"kind": "floor"}, "8,4": {"kind": "floor"}, "9,4": {"kind": "floor"},
-			"0,5": {"kind": "floor"}, "1,5": {"kind": "floor"}, "2,5": {"kind": "floor"}, "3,5": {"kind": "floor"}, "4,5": {"kind": "floor"}, "5,5": {"kind": "floor"}, "6,5": {"kind": "floor"}, "7,5": {"kind": "floor"}, "8,5": {"kind": "floor"}, "9,5": {"kind": "floor"},
-			"0,6": {"kind": "floor"}, "1,6": {"kind": "floor"}, "2,6": {"kind": "floor"}, "3,6": {"kind": "floor"}, "4,6": {"kind": "floor"}, "5,6": {"kind": "floor"}, "6,6": {"kind": "floor"}, "7,6": {"kind": "floor"}, "8,6": {"kind": "floor"}, "9,6": {"kind": "floor"},
-			"0,7": {"kind": "floor"}, "1,7": {"kind": "floor"}, "2,7": {"kind": "floor"}, "3,7": {"kind": "floor"}, "4,7": {"kind": "floor"}, "5,7": {"kind": "floor"}, "6,7": {"kind": "floor"}, "7,7": {"kind": "floor"}, "8,7": {"kind": "floor"}, "9,7": {"kind": "floor"},
-			"0,8": {"kind": "floor"}, "1,8": {"kind": "floor"}, "2,8": {"kind": "floor"}, "3,8": {"kind": "floor"}, "4,8": {"kind": "floor"}, "5,8": {"kind": "floor"}, "6,8": {"kind": "floor"}, "7,8": {"kind": "floor"}, "8,8": {"kind": "floor"}, "9,8": {"kind": "floor"},
-			"0,9": {"kind": "floor"}, "1,9": {"kind": "floor"}, "2,9": {"kind": "floor"}, "3,9": {"kind": "floor"}, "4,9": {"kind": "floor"}, "5,9": {"kind": "floor"}, "6,9": {"kind": "floor"}, "7,9": {"kind": "floor"}, "8,9": {"kind": "floor"}, "9,9": {"kind": "floor"}
-		}}}, "expect": {"ok": true}},
+		{"by": "dm", "command": {"loadMap": {"mapId": "scene-1"}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-1", "name": "Actor One", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
 		{"by": "dm", "command": {"placeToken": {"tokenId": "tok-1", "sceneId": "scene-1", "actorId": "act-1", "position": {"x": 3, "y": 4}}}, "expect": {"ok": true}}
 	],
@@ -464,7 +506,7 @@ type dumpStateShape struct {
 // server and asserts the printed JSON places tok-1 at (3, 4) — the
 // position liveModeScenario's PlaceToken step set — and that headSequence
 // equals 4, the known last sequence of the parent test's four-command
-// history (startSession, createScene, addActor, placeToken).
+// history (startSession, loadMap, addActor, placeToken).
 func testStateDumpAgainstFixture(t *testing.T, fx liveFixture) {
 	t.Helper()
 	out, err := runCLI(t, "state", "dump", "--server", fx.wsURL, "--token", fx.dmToken)

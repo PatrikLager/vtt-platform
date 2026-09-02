@@ -36,8 +36,8 @@ func TestToolsMatchGolden(t *testing.T) {
 // LLM silently loses a capability. Two registries are checked: legacy
 // "Request"-suffixed messages (pre-ClientCommand convention), and every
 // message that appears as a ClientCommand oneof variant — the latter IS the
-// command registry now that commands are imperative-named (CreateScene, not
-// CreateSceneRequest) and dispatched through ClientCommand's oneof.
+// command registry now that commands are imperative-named (RemoveToken, not
+// RemoveTokenRequest) and dispatched through ClientCommand's oneof.
 func TestManifestCoversAllCommandMessages(t *testing.T) {
 	msgs := vttv1.File_vtt_v1_commands_proto.Messages()
 	for i := 0; i < msgs.Len(); i++ {

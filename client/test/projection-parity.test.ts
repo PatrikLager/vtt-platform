@@ -150,10 +150,13 @@ test("some projected scene actually has a visible set", () => {
 // CORRECTED 2026-09-02. This used to go on to say "NO corpus fixture can
 // exhibit an untiled scene any more", and then — in the same breath — name a
 // map FILE as the exemption. Those two halves stopped being compatible the
-// moment a map file became the ONLY way a corpus scene is made: no scenario
+// moment a FILE became the only way a corpus scene is made: no scenario
 // issues create_scene now (2026-09-01-create-scene-leaves Task 7), every scene
-// comes from scenarios/maps/, and mapdef exempts a file that declares no tiles
-// at all. MEASURED 2026-09-02: strip the "tiles" key from
+// comes from a file — eight of the nine from scenarios/maps/ through load_map,
+// adventure-night's from adventures/goblin-ambush/scenes/ravine.json through
+// load_adventure — and mapdef exempts a file that declares no tiles at all, on
+// BOTH paths (internal/mapdef/load.go and internal/adventure/load.go call the
+// same CheckEverySquarePresent). MEASURED 2026-09-02: strip the "tiles" key from
 // scenarios/maps/scn-smoke.json and smoke.json still loads it ok=true. So an
 // untiled corpus fixture is reachable again and simply is not written — every
 // committed map declares its whole grid by choice.

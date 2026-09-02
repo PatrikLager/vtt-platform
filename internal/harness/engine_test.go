@@ -306,7 +306,7 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"loadMap":{"mapId":"scn-1"}}`), Expect: &harness.Expect{OK: true}},
 				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 			},
 		}
@@ -352,7 +352,7 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"loadMap":{"mapId":"scn-1"}}`), Expect: &harness.Expect{OK: true}},
 				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 			},
 		}
@@ -494,7 +494,7 @@ func TestRunScenarioErrorsOnPreExistingCatchUpEvents(t *testing.T) {
 		sc := &harness.Scenario{
 			Participants: []harness.Participant{{Name: "dm"}},
 			Steps: []harness.Step{
-				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"loadMap":{"mapId":"scn-1"}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
 		rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
@@ -516,7 +516,7 @@ func TestRunScenarioErrorsOnPreExistingCatchUpEvents(t *testing.T) {
 // --- probes: pass / fail per kind -------------------------------------------
 
 // runMiniScenario drives a single "dm" participant through StartSession,
-// CreateScene, AddActor, and PlaceToken (tok-1 at act-1 in scn-1, (3,4)),
+// LoadMap, AddActor, and PlaceToken (tok-1 at act-1 in scn-1, (3,4)),
 // then evaluates probes against the resulting state — the shared fixture
 // every probe subtest below builds on.
 func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
@@ -553,7 +553,7 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 		Participants: []harness.Participant{{Name: "dm"}},
 		Steps: []harness.Step{
 			{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-			{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+			{By: "dm", Command: rawCmd(t, `{"loadMap":{"mapId":"scn-1"}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"addActor":{"actor":{"actorId":"act-1","name":"Ursus"}}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"placeToken":{"tokenId":"tok-1","sceneId":"scn-1","actorId":"act-1","position":{"x":3,"y":4}}}`), Expect: &harness.Expect{OK: true}},
 			{By: "dm", Command: rawCmd(t, `{"useAbility":{"actorId":"act-1","abilityId":"daze","targetIds":["act-1"]}}`), Expect: &harness.Expect{OK: true}},
@@ -862,7 +862,7 @@ func TestRunScenarioReconnectCatchUpNamesADeadStreamNotATimeout(t *testing.T) {
 			Participants: []harness.Participant{{Name: "dm"}, {Name: "player"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: rawCmd(t, `{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`), Expect: &harness.Expect{OK: true}},
+				{By: "dm", Command: rawCmd(t, `{"loadMap":{"mapId":"scn-1"}}`), Expect: &harness.Expect{OK: true}},
 				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 			},
 		}
@@ -972,5 +972,124 @@ func TestRunScenarioMarksEveryTrailingDenialUnprovableNotJustTheFirst(t *testing
 				t.Fatalf("Steps[%d].Detail = %q, want it to say the claim is unprovable", i, sr.Detail)
 			}
 		}
+	})
+}
+
+// --- a batch-producing command: load_map with a placement -------------------
+
+// loadMapBatchWorld scripts the one dm connection both subtests of
+// TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch share, in the
+// order they issue commands: add_actor produces ONE envelope, load_map
+// produces the TWO that mapdef.Compile emits for a map declaring a single
+// placement (the SceneCreated, then its TokenPlaced), and start_session
+// produces one more. The load_map result reports only the batch's FIRST
+// sequence, which is campaign.AppendBatch's contract and the whole reason
+// observeBatchOnAll exists.
+//
+// The geometry and ids are campaigns/example/maps/cellar.json's own — the
+// map in this repository that actually declares a placement.
+func loadMapBatchWorld() map[string]*fakeConn {
+	dm := newFakeConn("dm")
+	world := map[string]*fakeConn{"dm": dm}
+	call := 0
+	dm.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+		call++
+		switch call {
+		case 1:
+			broadcast(world, &vttv1.Envelope{EventId: "e1", Sequence: 1,
+				Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+					Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter"}}}}, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 1}, nil
+		case 2:
+			broadcast(world, &vttv1.Envelope{EventId: "e2", Sequence: 2,
+				Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+					SceneId: "cellar", Name: "The Sunken Cellar", GridWidth: 10, GridHeight: 9}}}, "dm")
+			broadcast(world, &vttv1.Envelope{EventId: "e3", Sequence: 3,
+				Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+					TokenId: "tok-fighter", SceneId: "cellar", ActorId: "act-fighter",
+					Position: &vttv1.GridPosition{X: 2, Y: 1}}}}, "dm")
+			// The batch's FIRST sequence, never its length.
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 2}, nil
+		case 3:
+			broadcast(world, &vttv1.Envelope{EventId: "e4", Sequence: 4,
+				Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s1"}}}, "dm")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 4}, nil
+		}
+		return nil, fmt.Errorf("loadMapBatchWorld: no scripted result for call %d", call)
+	}
+	return world
+}
+
+// TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch pins load_map into
+// isBatchCommand's set. A map FILE may declare placements, and one load_map
+// then produces 1 + len(m.Placements) envelopes (mapdef.Compile) which
+// internal/gateway/map.go appends as a single campaign.AppendBatch — so its
+// CommandResult names the batch's first sequence and nothing at all about its
+// length. Routed to observeOnAll instead, the step reads the SceneCreated,
+// leaves every TokenPlaced sitting in the queue, and the run is desynchronised
+// from that point on.
+//
+// NOTHING IN THE CORPUS WOULD SHOW THIS: all ten scenarios/maps/*.json declare
+// no placements, so every committed loadMap step happens to be the
+// one-envelope case. campaigns/example/maps/cellar.json declares one, and so
+// may any map an operator installs into their own campaign.
+//
+// TWO SUBTESTS, because each one PASSES in the world where the other fails.
+// Stop the scenario at the load_map and the unread TokenPlaced is simply
+// absent from the fold; put a step after it and that step reads the stale
+// envelope, so the fold is complete and an innocent command carries the
+// failure instead.
+func TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch(t *testing.T) {
+	const (
+		addActorJSON = `{"addActor":{"actor":{"actorId":"act-fighter","name":"Fighter","kind":"ACTOR_KIND_PARTY_MEMBER"}}}`
+		loadMapJSON  = `{"loadMap":{"mapId":"cellar"}}`
+	)
+
+	t.Run("the placement the map declared reaches the fold", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			world := loadMapBatchWorld()
+			sc := &harness.Scenario{
+				Participants: []harness.Participant{{Name: "dm"}},
+				Steps: []harness.Step{
+					{By: "dm", Command: rawCmd(t, addActorJSON), Expect: &harness.Expect{OK: true}},
+					{By: "dm", Command: rawCmd(t, loadMapJSON), Expect: &harness.Expect{OK: true}},
+				},
+				Probes: []harness.Probe{{TokenAt: &harness.TokenAtProbe{TokenId: "tok-fighter", X: 2, Y: 1}}},
+			}
+			rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+			if err != nil {
+				t.Fatalf("RunScenario: %v", err)
+			}
+			if !rep.Pass {
+				t.Fatalf("Report.Pass = false, want true; steps = %+v probes = %+v", rep.Steps, rep.Probes)
+			}
+			if len(rep.Probes) != 1 || !rep.Probes[0].Pass {
+				t.Fatalf("tokenAt probe = %+v, want Pass=true: the TokenPlaced in the load_map's "+
+					"batch was never observed, so it never reached the fold", rep.Probes)
+			}
+		})
+	})
+
+	t.Run("the step after a load_map matches its own sequence", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			world := loadMapBatchWorld()
+			sc := &harness.Scenario{
+				Participants: []harness.Participant{{Name: "dm"}},
+				Steps: []harness.Step{
+					{By: "dm", Command: rawCmd(t, addActorJSON), Expect: &harness.Expect{OK: true}},
+					{By: "dm", Command: rawCmd(t, loadMapJSON), Expect: &harness.Expect{OK: true}},
+					{By: "dm", Command: rawCmd(t, `{"startSession":{"name":"s1"}}`), Expect: &harness.Expect{OK: true}},
+				},
+			}
+			rep, err := harness.RunScenario(context.Background(), sc, fixedDialer(world), nil, io.Discard)
+			if err != nil {
+				t.Fatalf("RunScenario: %v", err)
+			}
+			if !rep.Pass || !rep.Steps[2].Pass {
+				t.Fatalf("Steps[2] = %+v, want Pass=true: an unobserved envelope from the "+
+					"load_map batch is read by the NEXT step, which then fails on the wrong "+
+					"sequence and blames a command that did nothing wrong", rep.Steps[2])
+			}
+		})
 	})
 }

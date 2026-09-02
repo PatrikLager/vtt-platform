@@ -2,8 +2,9 @@
 // (task-3-brief.md): it composes a real gateway server (composeServer,
 // serve_compose.go) on a throwaway temp campaign, mints one invite token
 // per scenario participant directly via identity, and hands back only
-// PLAIN STRINGS (a ws:// URL and a name→token map) — never the
-// *http.Server, *campaign.Campaign, or *identity.DB it built them from.
+// PLAIN STRINGS (a ws:// URL, a name→token map, a name→id map and the
+// campaign directory) — never the *http.Server, *campaign.Campaign, or
+// *identity.DB it built them from.
 // That boundary is deliberate and load-bearing: internal/harness's own
 // package comment (client.go) documents the P1 rule that the harness core
 // may act only through the wire, the same way a live `--server`/`--tokens`
@@ -202,6 +203,20 @@ func findRepoRoot() (string, error) {
 type bootResult struct {
 	WSURL  string
 	Tokens map[string]string // participant name -> invite token
+	// CampaignDir is the throwaway campaign directory this boot created, so
+	// a caller in THIS package can install content into it the way an
+	// operator would — client_soak.go's installSoakMaps writes the soak's
+	// map pool there after the server is already serving.
+	//
+	// A PATH, and that keeps the boundary this file's own package comment
+	// draws: what must never cross it is the *http.Server, *campaign.Campaign
+	// or *identity.DB, because internal/harness may act only through the wire
+	// (client.go's package comment). A directory name is what a live
+	// `--server` operator has too — they installed their maps by putting
+	// files somewhere — and it never reaches the harness: cmd/vtt is the
+	// layer that owns the filesystem (ADR-008), and it is the only reader
+	// of this field.
+	CampaignDir string
 	// IDs is participant name -> the real, server-assigned
 	// identity.Participant.ID behind that invite (P6 Task 4 fix round) —
 	// harness.RunScenario's ids parameter, resolving a scenario's
@@ -300,7 +315,7 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		removeErr := os.RemoveAll(dir)
 		return firstNonNil(shutdownErr, composeErr, removeErr)
 	}
-	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, close: closeFn}, nil
+	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, CampaignDir: campaignPath, close: closeFn}, nil
 }
 
 // mintInvites opens its own identity.DB handle on campaign.LogPath(campaignPath)

@@ -273,16 +273,19 @@ test("a token on a bare canvas is drawn: sight does not need terrain", () => {
   // (Patrik's ruling 2026-08-22). The server computes sight over the GRID,
   // finds every square of a bare canvas visible, and sends the tokens.
   //
-  // WHICH DOOR STILL ADMITS ONE, corrected 2026-09-01: the map-file path, and
-  // only that one. mapdef.CheckEverySquarePresent is all-or-nothing and zero
-  // tiles passes it, which keeps a file authored before the format had terrain
-  // loading. The create_scene COMMAND no longer takes that door —
-  // internal/gateway's validateCreateSceneTerrain calls
-  // mapdef.RequireEverySquarePresent, the same walk WITHOUT the opt-out, so an
-  // improvised room that leaves a square undeclared is refused (spec
-  // 2026-08-30-retraction-leaves §6). This sentence used to say "on both the
-  // map-file and CreateScene paths"; the shape below is still reachable, but
-  // only through a file.
+  // WHICH DOOR STILL ADMITS ONE, corrected again 2026-09-02: a FILE, through
+  // either of the two commands that load one — load_map for a standalone map,
+  // load_adventure for a scene embedded in an adventure. Both run
+  // mapdef.CheckEverySquarePresent, which is all-or-nothing: zero tiles passes
+  // it, which keeps a file authored before the format had terrain loading.
+  // (Three earlier versions of this sentence are worth the space, because
+  // each correction was itself wrong. It said "on both the map-file
+  // and CreateScene paths"; then, on 2026-09-01, that the create_scene COMMAND
+  // no longer took the door because validateCreateSceneTerrain ran the strict
+  // walk — both gone, create_scene left the platform on 2026-09-02 and took
+  // that validator with it. The third, written the same day, called the
+  // map-file path "the only path there is", which narrowed straight past
+  // load_adventure.)
   //
   // It used to reach here and be thrown away: Visible was built from sceneSeen's
   // TILE KEYS, so a message with no tiles produced an empty set and this board

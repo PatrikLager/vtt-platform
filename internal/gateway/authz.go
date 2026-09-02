@@ -27,7 +27,6 @@ import (
 // additional ownership check in Authorize; everything not listed is denied.
 var commandRoles = map[string]map[identity.Role]bool{
 	"move_token":   {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"create_scene": {identity.RoleDM: true, identity.RoleAgent: true},
 	"add_actor":    {identity.RoleDM: true, identity.RoleAgent: true},
 	"place_token":  {identity.RoleDM: true, identity.RoleAgent: true},
 	// remove_token (retraction-leaves Task 8, spec §5.1: "takes a piece off
@@ -68,7 +67,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"delete_note":   {identity.RoleDM: true, identity.RoleAgent: true},
 	// load_adventure (adventure-format Task 4, spec §7): "the DM calls
 	// load_adventure when the table is ready" — dm/agent only, same shape
-	// as create_scene/add_actor/place_token, no additional ownership check
+	// as add_actor/place_token, no additional ownership check
 	// (an adventure load is not scoped to any actor a participant
 	// controls).
 	"load_adventure": {identity.RoleDM: true, identity.RoleAgent: true},
@@ -328,8 +327,6 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "rotate_join_link"
 	case *vttv1.ClientCommand_MoveToken:
 		return "move_token"
-	case *vttv1.ClientCommand_CreateScene:
-		return "create_scene"
 	case *vttv1.ClientCommand_AddActor:
 		return "add_actor"
 	case *vttv1.ClientCommand_PlaceToken:

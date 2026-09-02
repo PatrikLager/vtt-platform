@@ -33,23 +33,6 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			TokenId: c.MoveToken.GetTokenId(),
 			To:      c.MoveToken.GetTo(),
 		}}
-	case *vttv1.ClientCommand_CreateScene:
-		// Tiles/Objects carried through (maps-as-geometry Task 1 added both
-		// fields to CreateScene; tools/toolgen advertises them to MCP as
-		// part of create_scene's contract). Dropping them here would be the
-		// same class of defect Task 1 already fixed once for OpenDoor/
-		// CloseDoor — worse, in fact: this failure mode is SILENT, not an
-		// error, so an agent calling create_scene with terrain would see
-		// ok=true and only discover the loss later, reading back a scene
-		// with no tiles at all.
-		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-			SceneId:    c.CreateScene.GetSceneId(),
-			Name:       c.CreateScene.GetName(),
-			GridWidth:  c.CreateScene.GetGridWidth(),
-			GridHeight: c.CreateScene.GetGridHeight(),
-			Tiles:      c.CreateScene.GetTiles(),
-			Objects:    c.CreateScene.GetObjects(),
-		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
 			Actor: c.AddActor.GetActor(),
@@ -122,8 +105,8 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		// may issue it.
 		//
 		// Kind is carried THROUGH, and dropping it would be silent in the
-		// worst way — the same failure mode CreateScene's arm above records
-		// for Tiles/Objects, but with a security consequence rather than a
+		// worst way — an accepted command answering ok=true and quietly doing
+		// something else, with a security consequence here rather than a
 		// cosmetic one: an accepted grant, written kindless, DEMOTES the
 		// character it was meant to hand over. Since §5.1's migration rule was
 		// deleted (2026-08-24) an absent kind is not a party member, so the
@@ -135,7 +118,7 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		//
 		// Whether the caller stated a kind AT ALL is not decided here.
 		// handleCommand refuses that before conversion is reached, beside
-		// create_scene's terrain check — see validateGrantActorControl for why
+		// add_actor's own kind check — see validateGrantActorControl for why
 		// that seam and not this one.
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
 			ActorId:       c.GrantActorControl.GetActorId(),

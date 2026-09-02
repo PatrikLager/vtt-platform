@@ -82,14 +82,26 @@ func TestAOneBySquareGridIsTheSmallestLegalMap(t *testing.T) {
 // CheckEverySquarePresent returns nil on an empty tiles map — the file format's
 // opt-out, so a map authored before the format had terrain keeps loading
 // (Patrik's ruling, 2026-08-13). RequireEverySquarePresent is the same walk
-// WITHOUT it, for internal/gateway's create_scene, which has no such past.
+// WITHOUT it. It was written for internal/gateway's create_scene, which had no
+// such past; that command left the platform on 2026-09-02 and the strict walk
+// now has one caller, the lenient wrapper itself — see its own doc comment for
+// why the split outlives the caller.
 //
-// WITHOUT THIS TEST THE SPLIT IS UNGUARDED HERE. Every other test in this
-// package reaches the walk through the lenient wrapper, so re-adding
-// `if len(tiles) == 0 { return nil }` to the strict function leaves mapdef's
-// own suite entirely green — and check:mutation runs per package, so that
-// mutant would survive with the only evidence against it living one package
-// away.
+// THIS TEST PINS AN INTERNAL, AND SAYING SO IS THE POINT. Since create_scene
+// left, the difference between the two functions is unobservable from outside
+// this package: the wrapper returns before reaching the strict walk on an
+// empty map, so no input to mapdef.Load can distinguish a strict walk that
+// re-acquired `if len(tiles) == 0 { return nil }` from one that did not. That
+// puts this test in tension with CLAUDE.md rule 1's "tests pin boundary
+// behavior, never internals" — deliberately, because the split is what keeps
+// the file format's exemption a named line beside the rule instead of an early
+// return buried inside it, and nothing else would notice it dissolving.
+//
+// IT IS NOT LOAD-BEARING FOR THE BEHAVIOUR A USER CAN SEE. That is
+// load_test.go's "missing-square" case, which drives a genuinely partial file
+// (8 of a 3x3's 9 squares) through mapdef.Load. Deleting this test would cost
+// the internal guard and no boundary coverage — which is the honest reason to
+// keep it, rather than a claim that some mutant would otherwise escape.
 func TestRequireEverySquarePresentHasNoOptOut(t *testing.T) {
 	// The pair on the SAME input, which is the whole claim: one exempts an
 	// empty map, the other counts it as short of every square.

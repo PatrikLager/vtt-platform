@@ -30,7 +30,6 @@ import (
 // point.
 var theCommandTools = []string{
 	"move_token",
-	"create_scene",
 	"add_actor",
 	"place_token",
 	"remove_token",

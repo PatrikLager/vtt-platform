@@ -46,10 +46,6 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		// Names "p-1", which is who the table test runs as — so the player
 		// row exercises the SELF case, the only one a player may issue.
 		return revokeActorControlCmd("p-1")
-	case "create_scene":
-		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{
-			CreateScene: &vttv1.CreateScene{SceneId: "s1", Name: "Cave"},
-		}}
 	case "add_actor":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{
 			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a2", Name: "Goblin",
@@ -266,10 +262,12 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 92-cell matrix (spec §4/§7): every command against
-// every one of the four roles. It reached 92 with retraction-leaves Task 9's
-// remove_actor row, from an 88 that had itself been reached twice — see the
-// end of this chain. 88 came first from 84 with
+// authzCases is the full 88-cell matrix (spec §4/§7): every command against
+// every one of the four roles. It came DOWN to 88 on 2026-09-02, from 92, when
+// create_scene left the platform (Patrik's ruling, 2026-09-01) — the third
+// arrival at 88 and the second by subtraction. It reached 92 with
+// retraction-leaves Task 9's remove_actor row, from an 88 that had itself been
+// reached twice — see the end of this chain. 88 came first from 84 with
 // visibility Task 6's set_viewpoint row, from 80 with the whole-branch-review
 // C1 remediation's load_map row, from 72 with maps-as-geometry Task 1's
 // open_door/close_door rows, from 52 with presence-and-actor-control Task 3's
@@ -291,18 +289,13 @@ type authzCase struct {
 // DM's" is a role-only gate, unlike move_token/use_ability/remove_condition's
 // per-actor ownership) — a plain role lookup is the entire story for these
 // three rows. load_adventure is dm/agent only (spec §7: "the DM calls
-// load_adventure when the table is ready") — same shape as create_scene/
-// add_actor/place_token, no ownership check, no player row.
+// load_adventure when the table is ready") — same shape as add_actor/
+// place_token, no ownership check, no player row.
 var authzCases = []authzCase{
 	{"move_token", identity.RoleDM, true},
 	{"move_token", identity.RoleAgent, true},
 	{"move_token", identity.RolePlayer, true},
 	{"move_token", identity.RoleSpectator, false},
-
-	{"create_scene", identity.RoleDM, true},
-	{"create_scene", identity.RoleAgent, true},
-	{"create_scene", identity.RolePlayer, false},
-	{"create_scene", identity.RoleSpectator, false},
 
 	{"add_actor", identity.RoleDM, true},
 	{"add_actor", identity.RoleAgent, true},
@@ -524,8 +517,8 @@ func ownershipFixture() *engine.State {
 }
 
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 92 {
-		t.Fatalf("authzCases has %d entries, want 92 (23 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 88 {
+		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

@@ -215,20 +215,36 @@ func CheckEverySquarePresent(tiles map[string]string, w, h int32, errf FieldErrF
 
 // RequireEverySquarePresent is the completeness walk itself, WITHOUT the
 // opt-out above: every square of w x h must be named, and a tiles map that
-// names none of them is short of all of them rather than exempt. It is
-// exported for the one caller that has no legacy to protect —
-// internal/gateway's create_scene, the IMPROVISED path by which a place comes
-// into existence mid-session. Nobody has authored a create_scene command in
-// advance, so there is no existing file to keep loading, and a scene that
-// declares no terrain is a featureless grid: internal/sight has nothing to
-// occlude with and everyone sees everything, which is the failure
-// maps-as-geometry exists to prevent.
+// names none of them is short of all of them rather than exempt.
+//
+// IT HAS ONE CALLER AND IT IS CheckEverySquarePresent, one function up. It
+// was exported from 2026-09-01 for internal/gateway's create_scene — the
+// IMPROVISED path by which a place came into existence mid-session, which had
+// no authored files to keep loading and so no claim on the opt-out — and that
+// command left the platform on 2026-09-02 (Patrik's ruling, 2026-09-01: the
+// kernel serves maps, it does not make them).
+//
+// SO IT SITS AT NO BOUNDARY AT ALL NOW, and that is worth stating plainly
+// rather than dressing up. Its one caller has already returned on an empty
+// tiles map before reaching here, so re-adding `if len(tiles) == 0 { return
+// nil }` to this function would be behaviour-preserving for the entire
+// program: no input to Load can tell the two apart.
+// TestRequireEverySquarePresentHasNoOptOut therefore pins an INTERNAL, which
+// sits awkwardly against CLAUDE.md rule 1 ("tests pin boundary behavior, never
+// internals"), and that is the real cost of the split — not a mutant that
+// would otherwise escape.
+//
+// KEPT EXPORTED ANYWAY, for a reason about tests rather than about callers:
+// every test file in this package is `package mapdef_test`, so unexporting
+// this would mean introducing the package's only internal test file to keep
+// one guard. That is a worse trade for a symbol already confined to
+// internal/. The BOUNDARY coverage is independent of all of it and does not
+// move: load_test.go's "missing-square" fixture drives a genuinely partial map
+// file — 8 of a 3x3's 9 squares — through mapdef.Load and gets the refusal.
 //
 // The split is a split of the RULE from its exemption, not a fork of the
-// rule: one walk, one message, two callers that differ only in whether an
-// empty tiles map is a legitimate claim. Reimplementing the walk in the
-// gateway would have put the "every square names its own tile" invariant in
-// two places, which is the drift spec §4.1's own wording warns against.
+// rule: one walk, one message, and the only difference is whether an empty
+// tiles map is a legitimate claim.
 //
 // It walks the GRID, not the tiles map, because completeness is a property
 // of what is MISSING — a map iteration only ever sees what is present. It

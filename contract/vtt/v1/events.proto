@@ -294,8 +294,11 @@ message SceneCreated {
   // 223.9 / 234.4. SHIPPED TILE NAMES RUN 7 TO 11 CHARACTERS, and that range
   // needs its definition attached or it drifts: it means the names in a pack
   // that mapdef.LoadPack actually loads and Resolve consults. Exactly one
-  // shipped map declares one — maps/cellar/map.json names cellar-basics, whose
+  // shipped map declares one — campaigns/example/maps/cellar.json names
+  // cellar-basics (campaigns/example/packs/cellar-basics/pack.json), whose
   // four TILE names are earth-1, masonry-1, flagstone-1 and cellar-door.
+  // That path was maps/cellar/map.json until 2026-09-02, when Task 5 of
+  // 2026-09-01-create-scene-leaves dissolved the per-map directory.
   // client/public/std-pack is NOT in that set: it is a client-side rendering
   // manifest served as static files, never a mapdef.Pack. Nor are that pack's
   // OBJECT names, which travel in SceneObject.art rather than TileRef.art.

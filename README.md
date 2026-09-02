@@ -108,6 +108,11 @@ treat it as a credential.
 
 Demo runbook:
 
+0. Put a map in the campaign, because the platform will not make one for you:
+   `mkdir -p campaign/maps && cp scenarios/maps/scn-tavern.json campaign/maps/`.
+   A campaign is a DIRECTORY that owns its maps, and installing one is a
+   filesystem act outside the platform — the server finds it whether it was
+   there at boot or appeared afterwards.
 1. `vtt serve --campaign campaign/ --addr :8443`
 2. `vtt invite --campaign campaign/ --name "Claude" --role agent` — it prints the token once.
 3. In that same shell, capture it without it ever landing in shell history:
@@ -116,7 +121,10 @@ Demo runbook:
    first if you'd rather type it directly).
 4. Open Claude Code from that SAME shell (so the subprocess inherits
    `VTT_TOKEN`) with this repo's `.mcp.json` in scope.
-5. Suggested opening prompt: "Check get_state, then start a session, create a scene, and place a token on it."
+5. Suggested opening prompt: "Check get_state, then start a session, load the
+   `scn-tavern` map, add an actor, and place a token on it." (`load_map`, not
+   `create_scene`: that command left the platform on 2026-09-02 — the kernel
+   serves maps, it does not make them.)
 
 ## Security note: invite tokens and the connection URL
 

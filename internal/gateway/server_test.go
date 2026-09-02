@@ -194,7 +194,7 @@ func (f *gwFixture) dial(token string, after int64) *websocket.Conn {
 	f.t.Cleanup(func() { conn.CloseNow() })
 	// maps-as-geometry Task 4: SceneCreated now carries one TileRef per grid
 	// square, so a real scene's broadcast can exceed coder/websocket's
-	// default 32KB read cap — see server_internal_test.go's bigSceneName
+	// default 32KB read cap — see server_internal_test.go's bigPaddingName
 	// fixture (TestAWedgedConnectionIsTornDownAndOthersKeepServing), the
 	// precedent this 200KiB matches exactly.
 	conn.SetReadLimit(200 * 1024)
@@ -473,17 +473,25 @@ func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 	dmConn := f.dial(f.dmToken, gwSeedHead)
 	// The AGENT watches, not the spectator. Fan-out is what this test is
 	// about, and since the visibility projection landed a spectator with no
-	// perch has no eyes, so a SceneCreated for a room they are not standing in
-	// is correctly withheld from them (spec §4.2, exit criterion 6). The agent
-	// receives the log unchanged (exit criterion 8), which is what "a second
-	// client also receives the broadcast" needs to mean here.
+	// perch has no eyes, so an event about a place or a creature they are not
+	// standing beside is correctly withheld from them (spec §4.2, exit
+	// criterion 6). The agent receives the log unchanged (exit criterion 8),
+	// which is what "a second client also receives the broadcast" needs to
+	// mean here.
+	//
+	// ADD_ACTOR CARRIES THIS, and it carried create_scene until 2026-09-02:
+	// the fan-out property is about ANY accepted command becoming an Envelope
+	// on every eligible connection, and create_scene was simply the first
+	// command written. It left the platform that day (Patrik's ruling,
+	// 2026-09-01) and add_actor is the same shape — one command, one event,
+	// DM/agent only.
 	watcherConn := f.dial(f.agentToken, gwSeedHead)
 
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "r-1",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-			SceneId: "scn2", Name: "Dungeon", GridWidth: 5, GridHeight: 5,
-			Tiles: floorTilesForTest(5, 5),
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "a2", Name: "Ursus",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 
@@ -495,12 +503,12 @@ func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 	dmEvent := readEvent(t, dmConn)
 	watcherEvent := readEvent(t, watcherConn)
 	for name, env := range map[string]*vttv1.Envelope{"dm": dmEvent, "watcher": watcherEvent} {
-		sc, ok := env.Payload.(*vttv1.Envelope_SceneCreated)
+		aa, ok := env.Payload.(*vttv1.Envelope_ActorAdded)
 		if !ok {
-			t.Fatalf("%s payload = %T, want SceneCreated", name, env.Payload)
+			t.Fatalf("%s payload = %T, want ActorAdded", name, env.Payload)
 		}
-		if sc.SceneCreated.SceneId != "scn2" {
-			t.Fatalf("%s scene id = %q, want scn2", name, sc.SceneCreated.SceneId)
+		if aa.ActorAdded.GetActor().GetActorId() != "a2" {
+			t.Fatalf("%s actor id = %q, want a2", name, aa.ActorAdded.GetActor().GetActorId())
 		}
 	}
 
@@ -613,12 +621,19 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 // door", "walking into the wall at (0,0) is blocked", and "walking onto the
 // boulder at (1,1) is blocked" all from the same starting position. Returns
 // the sequence fresh connections should dial after.
+// THE SCENE IS APPENDED, NOT COMMANDED, and that changed on 2026-09-02: this
+// helper built the cellar with a create_scene over the wire until the kernel
+// stopped making maps (Patrik's ruling, 2026-09-01). What every caller of this
+// helper asserts is what the STATE then permits — a wall blocks, a door is too
+// far to work, a boulder cannot be stood on — so the seam that matters is
+// engine.Apply, which a direct append reaches identically. newGWFixture's own
+// scn1 has always been seeded this way, one function up; the alternative,
+// installing a cellar map file and issuing load_map, would wire a maps
+// directory into this fixture to prove something map_test.go already proves.
 func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, gwSeedHead)
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "seed-cellar",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+	mustAppend(t, f.campaign, "seed-cellar", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{
 			SceneId: "cellar", Name: "Cellar", GridWidth: 3, GridHeight: 3,
 			Tiles: map[string]*vttv1.TileRef{
 				"0,0": {Kind: "wall"}, "1,0": {Kind: "wall"}, "2,0": {Kind: "wall"},
@@ -631,12 +646,8 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 					Width: 1, Height: 1, BlocksMove: true,
 				},
 			},
-		}},
-	})
-	r1 := readResult(t, dmConn)
-	if !r1.Ok {
-		t.Fatalf("seed CreateScene cellar: %s", r1.Error)
-	}
+		}})
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
@@ -670,122 +681,6 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 		t.Fatalf("seed PlaceToken tok-fighter: %s", r3.Error)
 	}
 	return r3.Sequence
-}
-
-// --- C5 remediation: create_scene terrain validation --------------------
-//
-// Whole-branch-review finding C5: create_scene was a THIRD terrain entry
-// point (load_map's mapdef.Load and the movement check's Blocked() above
-// being the other two) with NO validation at all — a tile kind of "Wall",
-// "wall " or "banana" reached engine state unexamined, and terrain.go's
-// exact-match switch let a player stand on all three. These tests exercise
-// the fix over the real wire, at the CommandResult a caller — including the
-// LLM DM issuing create_scene as an advertised MCP tool — actually reads.
-// The exhaustive matrix of what is/is not accepted lives at the unit level
-// (create_scene_validate_test.go); these prove the wiring reaches
-// handleCommand and produces a clean ok=false, never a dropped connection or
-// a silent fix, mirroring TestAPlayerCannotWalkOntoBlockingSceneryAndThe
-// RefusalNamesIt's own division of labour for the movement check above.
-
-// TestCreateSceneRefusesUnknownTileKind drives the reviewer's own three
-// empirical proof cases, unmodified: a bad capitalization, trailing
-// whitespace, and an invented kind — exactly the three strings the
-// whole-branch review demonstrated standing on as WALKABLE terrain.
-func TestCreateSceneRefusesUnknownTileKind(t *testing.T) {
-	cases := []string{"Wall", "wall ", "banana"}
-	for _, kind := range cases {
-		t.Run(kind, func(t *testing.T) {
-			f := newGWFixture(t)
-			dmConn := f.dial(f.dmToken, gwSeedHead)
-
-			sendCommand(t, dmConn, &vttv1.ClientCommand{
-				RequestId: "r-bad-kind",
-				Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-					SceneId: "bad-kind-scene", Name: "Broken", GridWidth: 1, GridHeight: 1,
-					Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: kind}},
-				}},
-			})
-			res := readResult(t, dmConn)
-			if res.Ok {
-				t.Fatalf("kind %q was accepted — the closed spatial vocabulary is not enforced on create_scene", kind)
-			}
-			if !strings.Contains(res.Error, "kind") {
-				t.Fatalf("refusal does not name the problem: %q", res.Error)
-			}
-
-			// Never became history: no broadcast on this connection.
-			assertNoFrameWithin(t, dmConn, 200*time.Millisecond)
-
-			// The connection stays open — a refusal, not a dropped socket — and
-			// can still issue a command it IS authorized for.
-			sendCommand(t, dmConn, &vttv1.ClientCommand{
-				RequestId: "r-followup",
-				Command:   &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}},
-			})
-			if follow := readResult(t, dmConn); !follow.Ok {
-				t.Fatalf("connection did not survive the refusal: %q", follow.Error)
-			}
-		})
-	}
-}
-
-// TestCreateSceneRefusesOutOfGridTileKey is the reviewer's fourth proof
-// case: "scene stored 5 tile entries on a 3x3 grid (out-of-grid key
-// retained: true)". Every in-grid square is declared here (so completeness
-// alone cannot explain the refusal) plus one stray key outside the declared
-// grid, isolating the bounds check.
-func TestCreateSceneRefusesOutOfGridTileKey(t *testing.T) {
-	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, gwSeedHead)
-
-	tiles := map[string]*vttv1.TileRef{}
-	for y := int32(0); y < 3; y++ {
-		for x := int32(0); x < 3; x++ {
-			tiles[fmt.Sprintf("%d,%d", x, y)] = &vttv1.TileRef{Kind: "floor"}
-		}
-	}
-	tiles["5,5"] = &vttv1.TileRef{Kind: "floor"}
-
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "r-out-of-grid",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-			SceneId: "out-of-grid-scene", Name: "Broken", GridWidth: 3, GridHeight: 3,
-			Tiles: tiles,
-		}},
-	})
-	res := readResult(t, dmConn)
-	if res.Ok {
-		t.Fatal("a tile key outside the declared grid was accepted, and retained (whole-branch-review C5)")
-	}
-	if !strings.Contains(res.Error, "5,5") {
-		t.Fatalf("refusal does not name the offending square: %q", res.Error)
-	}
-}
-
-// TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind pins the
-// deliberate other half of the C5 fix: kind is a closed spatial set, but
-// material is NOT — TileRef.material's own doc comment calls it "OPAQUE...
-// never the platform's", and design spec §3.3 states plainly that this is
-// what keeps CLAUDE.md rule 5 satisfied (no game-system vocabulary in
-// platform code). A regression that started rejecting unrecognized
-// materials would be enforcing a rule the file format never had (a map
-// file's material is never author-supplied at all — it is always DERIVED
-// from a standard tile name) and would put the platform in the business of
-// deciding which ruleset-flavour words are legitimate.
-func TestCreateSceneAcceptsACustomMaterialAlongsideAValidKind(t *testing.T) {
-	f := newGWFixture(t)
-	dmConn := f.dial(f.dmToken, gwSeedHead)
-
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "r-custom-material",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-			SceneId: "custom-material-scene", Name: "Homebrew", GridWidth: 1, GridHeight: 1,
-			Tiles: map[string]*vttv1.TileRef{"0,0": {Kind: "wall", Material: "obsidian-blend"}},
-		}},
-	})
-	if res := readResult(t, dmConn); !res.Ok {
-		t.Fatalf("a custom material alongside a validly-kinded tile was refused: %q", res.Error)
-	}
 }
 
 // TestAPlayerCannotWalkIntoAWallButTheDMCan is Task 6's movement half (spec

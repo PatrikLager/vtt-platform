@@ -402,8 +402,10 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     more than the fact. This used to read "it cannot: create_scene refuses a
 //     scene that leaves a square undeclared, so every corpus scene is fully
 //     tiled". That was true for one day. No scenario issues create_scene any
-//     more (2026-09-01-create-scene-leaves Task 7) — every corpus scene now
-//     comes from a map FILE, and mapdef.CheckEverySquarePresent exempts a file
+//     more (2026-09-01-create-scene-leaves Task 7), and since Task 8 of that
+//     plan nothing can: the command is gone from the contract. Every corpus
+//     scene now comes from a map FILE, and mapdef.CheckEverySquarePresent
+//     exempts a file
 //     that declares NO tiles, so an untiled corpus fixture is REACHABLE again.
 //     MEASURED 2026-09-02: strip the "tiles" key from
 //     scenarios/maps/scn-smoke.json and smoke.json still loads it ok=true.

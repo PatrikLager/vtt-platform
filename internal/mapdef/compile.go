@@ -93,16 +93,42 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 // TestBothLoadPathsEmitIdenticalSceneEvents (internal/adventure/compile_test.go)
 // pins it.
 //
-// CORRECTED 2026-08-18. This comment used to claim BuildSceneCreated was "the
-// ONE construction site for a SceneCreated event", and the plan said the same
-// ("there is literally one construction site"). Both were false:
-// internal/gateway/convert.go also builds a SceneCreated, from a CreateScene
-// COMMAND. That is not drift to be stamped out — the two have different
-// inputs. convert.go receives Tiles as TileRefs the caller already resolved
-// and carries them through; this function receives tile NAMES from a file and
-// resolves them against a pack and the standard vocabulary. Only the
-// resolution is shared, and only the file paths share it. Forcing the command
-// path through here would mean inventing names for refs that arrive resolved.
+// IT IS NOT THE ONLY PLACE A SceneCreated IS BUILT, and this comment has now
+// claimed otherwise twice. Grep and see for yourself — the whole tree, not the
+// file you are editing:
+//
+//	grep -rn 'vttv1\.SceneCreated{' --include='*.go' . | grep -v _test.go | grep -v /gen/
+//
+// Two live sites answer, and they have different inputs, which is why neither
+// can be folded into the other:
+//
+//   - HERE. A map FILE's tile names, resolved against a pack and the standard
+//     vocabulary into TileRefs, plus its objects. The full room.
+//   - internal/gateway/project.go's per-viewer scene introduction. A REDACTED
+//     outline — id, name, grid width and height, and deliberately NO tiles and
+//     NO objects at all (visibility spec §4.2: "of course there is a board, but
+//     you do not know what is in the black area before you enter the black
+//     area"). Its squares arrive later, one at a time, through SceneSeen. It
+//     landed 2026-08-20 (83c9c8f) and has been a second construction site ever
+//     since.
+//
+// The count was two on 2026-08-18 as well, when a "there is literally one
+// construction site" claim was CORRECTED here — but the site named then was
+// internal/gateway/convert.go, building one from a create_scene COMMAND whose
+// Tiles arrived already resolved. That command left the platform on 2026-09-02
+// (Patrik's ruling, 2026-09-01), its conversion arm went with it, and the
+// correction's own list went stale rather than its conclusion: the tally never
+// dropped to one, because project.go had joined it in between.
+//
+// ADDING A FIELD TO SceneCreated MEANS TOUCHING BOTH, or deciding in writing
+// that the projected seat is not supposed to have it. Update only this one and
+// every DM sees the field while every projected seat gets the zero value, and
+// nothing in this package would say so: TestBothLoadPathsEmitIdenticalSceneEvents
+// holds the map path against the adventure path, and BOTH of those come through
+// this function, so it cannot see the redacted builder at all. The corpus's
+// reach is narrow too — scenarios/goldens/session-zero is the only scenario
+// carrying projections/*/state.json, so its player and spectator are the only
+// projected seats anything folds.
 //
 // p may be nil when m carries no overrides (Resolve only needs one
 // when an override is present); a nil Pack alongside a non-empty override

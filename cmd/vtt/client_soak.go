@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/PatrikLager/vtt-platform/internal/harness"
+	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
 // errSoakFailed is `vtt client soak`'s exit-1 signal: at least one action or
@@ -88,6 +91,60 @@ func newClientSoakCmd() *cobra.Command {
 	return cmd
 }
 
+// installSoakMaps stocks a campaign with the soak's map pool: one file per
+// harness.SoakMapIDs() entry, under campaignPath/maps, each a
+// harness.SoakMapGridSize square of plain floor.
+//
+// IT IS THE INSTALL HALF OF "INSTALL, THEN LOAD" (2026-09-01-create-scene-
+// leaves design spec §4), performed here because there is nowhere else it can
+// be performed: internal/harness may act only through the wire (client.go's
+// package comment) and the wire has no way to make a place since create_scene
+// left the platform (Patrik's ruling, 2026-09-01). So the generator loads maps
+// and the operator — which in self-contained mode is this function — installs
+// them. A live `--server` soak needs the same ids installed in the operator's
+// own campaign; without them each load_map comes back "unknown map <id>" and
+// the report names it.
+//
+// AFTER THE SERVER IS ALREADY SERVING, not before it boots, and that is the
+// point rather than an accident: it is the very capability this sub-project
+// added (design spec §5, internal/gateway's mapByID probe — "a map installed
+// during play is found without a restart"), so the soak exercises it on every
+// run instead of only asserting it in one test.
+//
+// EVERY SQUARE IS "stone", which is a FLOOR in mapdef's standard vocabulary
+// (standard.go) rather than a literal tile kind. All floor because the soak's
+// moveOwn draws a destination anywhere in the grid and expects it to be
+// reachable: a wall would turn a legitimate move into a denial outside the
+// deliberate deniedAttempt bucket, which is the one thing RunSoak's invariant
+// cannot absorb.
+func installSoakMaps(campaignPath string) error {
+	dir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("vtt client soak: create %s: %w", dir, err)
+	}
+	n := harness.SoakMapGridSize
+	var tiles strings.Builder
+	for y := int32(0); y < n; y++ {
+		for x := int32(0); x < n; x++ {
+			if tiles.Len() > 0 {
+				tiles.WriteString(",")
+			}
+			fmt.Fprintf(&tiles, `"%d,%d":"stone"`, x, y)
+		}
+	}
+	for _, id := range harness.SoakMapIDs() {
+		body := fmt.Sprintf(
+			`{"format_version":%d,"id":%q,"name":%q,"grid_width":%d,"grid_height":%d,"tiles":{%s}}`,
+			mapdef.MapFormatVersion, id, id, n, n, tiles.String())
+		// The FILENAME IS THE ID, because mapdef.LoadInstalled refuses a
+		// disagreement between the two (2026-09-01-create-scene-leaves Task 3).
+		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(body), 0o600); err != nil {
+			return fmt.Errorf("vtt client soak: install map %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // buildSoakDialer picks self-contained or live mode from which flags were
 // given — client_run.go's buildDialer, adapted for soak's FIXED participant
 // roster (harness.SoakParticipants(), rather than a *harness.Scenario's own
@@ -104,6 +161,12 @@ func buildSoakDialer(serverURL, tokensPath string) (harness.Dialer, map[string]s
 		sc := &harness.Scenario{Participants: harness.SoakParticipants()}
 		boot, err := bootSelfContained(sc)
 		if err != nil {
+			return nil, nil, nil, err
+		}
+		if err := installSoakMaps(boot.CampaignDir); err != nil {
+			if cErr := boot.close(); cErr != nil {
+				return nil, nil, nil, fmt.Errorf("%w (and teardown: %w)", err, cErr)
+			}
 			return nil, nil, nil, err
 		}
 		return dialerFor(boot.WSURL, boot.Tokens), boot.IDs, boot.close, nil

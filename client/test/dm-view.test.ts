@@ -85,160 +85,6 @@ test("starting a session without a name is refused before anything is sent", () 
   expect(h.notices[0]).toMatch(/name/i);
 });
 
-test("a scene with no id or a zero dimension is refused", () => {
-  const h = harness();
-  h.field("scene-id").value = "";
-  h.button("Create")!.click();
-  expect(h.sent).toHaveLength(0);
-
-  const h2 = harness();
-  h2.field("scene-id").value = "s1";
-  h2.field("scene-w").value = "0";
-  h2.field("scene-h").value = "5";
-  h2.button("Create")!.click();
-  expect(h2.sent).toHaveLength(0);
-  expect(h2.notices[0]).toMatch(/width and height/i);
-});
-
-test("a scene whose fill is unanswered is not sent", () => {
-  // THE THIRD STATE, on the scene form now that create_scene refuses a scene
-  // leaving a square undeclared (spec 2026-08-30-retraction-leaves §6). A
-  // console that filled in floor for a DM who never touched the box would be
-  // answering for them — dm.ts's own rule, written on the Add-actor form: "a
-  // pre-filled answer is indistinguishable from a DM who never looked."
-  //
-  // NOTHING SENT is the assertion, not "the select exists". A test that only
-  // looked for the control could be satisfied by a box the Create button
-  // ignores.
-  const h = harness();
-  fill(h, { "scene-id": "s1", "scene-w": "4", "scene-h": "3" });
-  h.action("create-scene").click();
-  expect(h.sent).toHaveLength(0);
-  expect(h.notices[0]).toMatch(/made of/i);
-});
-
-test("the blank-fill notice is not silently emptied", () => {
-  // The message dm.ts sends here is two concatenated string literals, and
-  // the test just above this one only reads the FIRST one ("made of"). A
-  // mutant that blanks the SECOND ("nothing can edit a square afterwards
-  // and the id cannot be reused") left the sentence non-empty and still
-  // matching /made of/i, so it survived every existing assertion (measured
-  // 2026-09-01). The blank fill option exists so a DM who has not answered
-  // can SEE that they have not (dm.ts's own rule for the actor-kind box,
-  // made explicit here for the scene-fill box); a notify with no words is
-  // the control silently doing nothing, which is the exact failure the
-  // blank option was added to prevent. So the notice must say something,
-  // and it must say WHY the DM cannot leave the box for later.
-  const h = harness();
-  fill(h, { "scene-id": "s1", "scene-w": "4", "scene-h": "3" });
-  h.action("create-scene").click();
-  expect(h.notices[0]!.length).toBeGreaterThan(0);
-  expect(h.notices[0]).toContain("cannot be reused");
-});
-
-test("a scene larger than one command can carry is refused before it is sent", () => {
-  // 40x40 = 1600 squares. The whole tile map rides in ONE websocket frame and
-  // the gateway reads at most 32768 bytes, dropping a larger one inside
-  // conn.Read — before DecodeCommand, so no server validator can ever answer
-  // it. Measured against a live gateway: 37x37 closes the socket with
-  // StatusMessageTooBig, and the DM meets a Reconnect button and a toast about
-  // the connection rather than a word about the room. Every other command in
-  // flight on that socket dies with it.
-  //
-  // So this refusal is not defence in depth. It is the ONLY place a readable
-  // message can come from, which is the lesson mapdef.MaxWireTiles already
-  // records for the map-file path.
-  // The fill box is deliberately NOT answered here, and that is a second
-  // claim rather than a shortcut: the size refusal must come FIRST. If it
-  // ran after the fill check the DM would be sent to fix the wrong box, and
-  // the wording assertion below is what notices.
-  const h = harness();
-  fill(h, { "scene-id": "s1", "scene-w": "40", "scene-h": "40" });
-  h.action("create-scene").click();
-  expect(h.sent).toHaveLength(0);
-  expect(h.notices[0]).toMatch(/will not fit in one command/i);
-  // The message must name BOTH numbers: a DM told only "too large" has to
-  // guess how much smaller.
-  expect(h.notices[0]).toContain("1200");
-  expect(h.notices[0]).toContain("1600");
-  // AND WHAT TO DO INSTEAD. The numbers say how much too big; only this
-  // sentence points at the way through, and it is the console's single
-  // mention of the map-file path. Unasserted, blanking it was free —
-  // measured as a surviving StringLiteral mutant on 2026-09-01.
-  expect(h.notices[0]).toContain("Author it as a map file and use Load map.");
-});
-
-test("the fill box offers the blank and floor, and nothing that would brick a room", () => {
-  // THE RULING THIS PINS (2026-09-01, whole-branch review). The box carried a
-  // `wall` option for one day. A scene's terrain is fixed for the life of the
-  // scene — apply.go writes Scenes only from SceneCreated, no command edits a
-  // square afterwards, and the id cannot be reused — so an all-wall room is one
-  // no player can ever enter, permanently, from five clicks. The option set IS
-  // the guard, so it is asserted exactly rather than by absence of "wall":
-  // asserting only `not.toContain("wall")` would pass a box that had gained
-  // `door`, or `rubble`, or anything else equally unrecoverable.
-  const sel = harness().node.querySelector(".scene-fill") as HTMLSelectElement;
-  expect(Array.from(sel.options).map((o) => o.value)).toEqual(["", "floor"]);
-});
-
-test("the scene fill the DM chose is the one that reaches the wire", () => {
-  // The console must carry the answer it was GIVEN rather than one it assumes,
-  // and with one option left that is still two claims, not one: the fan-out
-  // reaches every square, and it carries `floor` because that is what
-  // tileKindFromWireName returned — not because createScene defaults to it
-  // (it has no default; see commands.ts).
-  const h = harness();
-  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
-  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
-  h.action("create-scene").click();
-  const sent = h.sent[0]!.command as { case: string; value: { tiles: Record<string, { kind: string }> } };
-  expect(sent.case).toBe("createScene");
-  expect(Object.keys(sent.value.tiles)).toHaveLength(4);
-  for (const t of Object.values(sent.value.tiles)) expect(t.kind).toBe("floor");
-});
-
-test("a fill answer the box does not offer is refused, not sent", () => {
-  // The negative half of the option-set assertion above, driven through the
-  // Create handler rather than read off the DOM. Setting a <select> to a value
-  // with no matching <option> leaves it "" (HTML spec), so this is also the
-  // "never answered" path — and tileKindFromWireName must refuse it. With only
-  // the happy path walked, that function's `default: return null` arm could
-  // return "floor" and every other test in this file stayed green.
-  const h = harness();
-  fill(h, { "scene-id": "keep", "scene-w": "2", "scene-h": "2" });
-  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "wall";
-  h.action("create-scene").click();
-  expect(h.sent).toHaveLength(0);
-  expect(h.notices[0]).toMatch(/what the room is made of/i);
-  // AND WHY IT CANNOT BE FIXED LATER, which is the whole reason the box is
-  // asked at all. Unasserted, the sentence that carries it is free to blank.
-  expect(h.notices[0]).toContain("fixed once the scene exists");
-});
-
-test("the scene fill survives a re-render, like every other half-typed answer", () => {
-  // Same property the Add-actor kind box has, and for the same reason: the
-  // console rebuilds on every arriving event, and a DM part-way through a form
-  // must not lose the answer they already gave.
-  const first = harness();
-  const sel = first.node.querySelector(".scene-fill") as HTMLSelectElement;
-  sel.value = "floor";
-  sel.dispatchEvent(new Event("change"));
-
-  const again = harness().node.querySelector(".scene-fill") as HTMLSelectElement;
-  expect(Array.from(again.options).map((o) => o.selected)).toEqual([false, true]);
-  expect(again.options[again.selectedIndex]!.textContent).toBe("floor");
-});
-
-test("a scene at the cap is still sent, so the guard is a boundary and not a wall", () => {
-  // 40x30 = 1200 squares, exactly the cap. Without this, tightening the
-  // comparison to >= would refuse a legal room with every test still green.
-  const h = harness();
-  fill(h, { "scene-id": "s1", "scene-w": "40", "scene-h": "30" });
-  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
-  h.action("create-scene").click();
-  expect(h.sent).toHaveLength(1);
-});
-
 test("an actor with no id is refused", () => {
   const h = harness();
   h.action("add-actor").click();
@@ -333,12 +179,12 @@ test("an open session offers End, a closed one offers Start", () => {
 
 test("text survives a re-render, so an incoming event cannot eat what the DM is typing", () => {
   const first = harness();
-  first.field("scene-id").value = "cave";
-  first.field("scene-id").dispatchEvent(new Event("input"));
+  first.field("token-scene").value = "cave";
+  first.field("token-scene").dispatchEvent(new Event("input"));
 
   // A second render is what an arriving event causes.
   const second = harness();
-  expect(second.field("scene-id").value).toBe("cave");
+  expect(second.field("token-scene").value).toBe("cave");
 });
 
 test("a submitted session name is not restored on the next render", () => {
@@ -405,7 +251,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
   // the next re-render. Nothing pinned the names.
   const h = harness();
   for (const f of [
-    "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
+    "session-name",
     "actor-id", "actor-name", "actor-json",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text",
@@ -421,7 +267,6 @@ test("each guard refuses with its own exact wording", () => {
   // tell which box to fix.
   const cases: [string, () => ReturnType<typeof harness>][] = [
     ["a session needs a name", () => { const h = harness(); h.action("start-session").click(); return h; }],
-    ["scene needs an id and a positive width and height", () => { const h = harness(); h.button("Create").click(); return h; }],
     ["an actor needs an id", () => { const h = harness(); h.action("add-actor").click(); return h; }],
     ["a token needs an id, a scene and an actor", () => { const h = harness(); h.action("place-token").click(); return h; }],
     ["name the token to remove", () => { const h = harness(); h.action("remove-token").click(); return h; }],
@@ -439,16 +284,6 @@ test("each guard refuses with its own exact wording", () => {
   expect(new Set(seen).size).toBe(seen.length);
 });
 
-test("a scene is refused for a zero or negative dimension, on either axis", () => {
-  for (const [w, hgt] of [["0", "5"], ["5", "0"], ["-1", "5"], ["5", "-1"], ["abc", "5"]]) {
-    const h = harness();
-    fill(h, { "scene-id": "s1", "scene-w": w!, "scene-h": hgt! });
-    h.button("Create").click();
-    expect(h.sent).toHaveLength(0);
-    expect(h.notices).toEqual(["scene needs an id and a positive width and height"]);
-  }
-});
-
 test("a note is refused when either the key or the text is missing", () => {
   for (const [key, text] of [["", "t"], ["k", ""], ["  ", "t"], ["k", "  "]]) {
     const h = harness();
@@ -460,18 +295,6 @@ test("a note is refused when either the key or the text is missing", () => {
 });
 
 // --- input normalisation reaches the command --------------------------------
-
-test("a scene's id and name are TRIMMED, and its dimensions become numbers", () => {
-  // Removing a .trim() is invisible unless the sent payload is inspected: the
-  // form still works and the server stores " s1 " as a distinct scene id.
-  const h = harness();
-  fill(h, { "scene-id": "  s1  ", "scene-name": "  The Hall  ", "scene-w": " 6 ", "scene-h": " 4 " });
-  (h.node.querySelector(".scene-fill") as HTMLSelectElement).value = "floor";
-  h.button("Create").click();
-  expect(payloads(h)).toEqual([
-    { case: "createScene", value: expect.objectContaining({ sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) },
-  ]);
-});
 
 test("an actor's fields are trimmed", () => {
   const h = harness();
@@ -792,11 +615,6 @@ test("no maps configured means no Maps group at all, not an empty one", () => {
 test("a whitespace-only id is refused everywhere one is required", () => {
   // Kills the `.trim()` removals in the GUARDS specifically: without trim,
   // "   " is truthy and the command goes out with a blank id.
-  const scene = harness();
-  fill(scene, { "scene-id": "   ", "scene-w": "5", "scene-h": "5" });
-  scene.button("Create").click();
-  expect(scene.sent).toHaveLength(0);
-
   // THE KIND IS ANSWERED HERE, and that is what makes this arm discriminate.
   // Add actor asks two questions and refuses on the first that fails; with the
   // kind left blank the SECOND guard answers, nothing is sent either way, and
@@ -894,8 +712,8 @@ test("pasted JSON that parses is sent as an addActor command", () => {
 
 test("adding an actor clears exactly the actor fields", () => {
   const h = harness();
-  fill(h, { "actor-id": "a1", "actor-name": "Lera", "scene-id": "keep-me" });
-  for (const f of ["actor-id", "actor-name", "scene-id"]) {
+  fill(h, { "actor-id": "a1", "actor-name": "Lera", "token-scene": "keep-me" });
+  for (const f of ["actor-id", "actor-name", "token-scene"]) {
     h.field(f).dispatchEvent(new Event("input"));
   }
   const kind = h.node.querySelector(".actor-kind") as HTMLSelectElement;
@@ -911,7 +729,7 @@ test("adding an actor clears exactly the actor fields", () => {
   // would silently inherit the last one's standing.
   expect((next.node.querySelector(".actor-kind") as HTMLSelectElement).value).toBe("");
   // A field belonging to another form must survive.
-  expect(next.field("scene-id").value).toBe("keep-me");
+  expect(next.field("token-scene").value).toBe("keep-me");
 });
 
 test("placing a token clears exactly the token fields", () => {
@@ -986,7 +804,7 @@ test("buttons carry the labels the DM clicks, not blanks", () => {
   // is the edit nobody makes. The list pins the labels a DM is told to look
   // for; the loop after it is the rule.
   const h = harness();
-  for (const label of ["Start session", "Create", "Add", "Add from JSON", "Place", "Save", "Delete", "Remove"]) {
+  for (const label of ["Start session", "Add", "Add from JSON", "Place", "Save", "Delete", "Remove"]) {
     expect(Array.from(h.node.querySelectorAll("button")).some((b) => b.textContent === label)).toBe(true);
   }
   const buttons = Array.from(h.node.querySelectorAll("button"));
@@ -1005,7 +823,7 @@ test("every group carries a heading", () => {
   const titles = Array.from(
     harness(open, { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }] }).node.querySelectorAll("h3"),
   ).map((n) => n.textContent);
-  for (const t of ["Session", "Create scene", "Add actor", "…or paste actor JSON",
+  for (const t of ["Session", "Add actor", "…or paste actor JSON",
                    "Place token", "Adventures", "Maps", "Notes", "Remove condition"]) {
     expect(titles).toContain(t);
   }
@@ -1040,7 +858,7 @@ test("a group's row holds only its elements, with no stray text", () => {
 test("an input created without a class carries no class at all", () => {
   // `cls = ""` -> a truthy default puts a bogus class on every unstyled box.
   const h = harness();
-  expect(h.field("scene-id").className).toBe("");
+  expect(h.field("actor-id").className).toBe("");
   expect(h.field("session-name").className).toBe("wide");
 });
 
@@ -1048,10 +866,12 @@ test("a button created without an action carries no data-action", () => {
   // `if (action) b.dataset["action"] = action` -> true stamps
   // data-action="undefined" on every plain button, which these tests select by.
   //
-  // "guide" (not "Create"): Create now carries "create-scene" (Task 4 filled
-  // in every submit button the control-level invariant in
-  // command-surface.test.ts needed one for). "guide" fetches an adventure's
-  // text; it is not a ClientCommand at all, so it never needed one. It is
+  // "guide" (not one of the submit buttons): every submit button carries a
+  // data-action, because the control-level invariant in
+  // command-surface.test.ts needs one for each command. "guide" fetches an
+  // adventure's text; it is not a ClientCommand at all, so it never needed
+  // one. (This sentence used to name "Create", the Create-scene button, which
+  // left the console on 2026-09-02 with create_scene itself.) It is
   // NOT the only bare button left in the default fixture -- "Add from JSON"
   // is built without a third argument too, since the structured "Add"
   // button above it already gives addActor a reachable "add-actor" control
@@ -1096,7 +916,7 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   // purpose.
   const h = harness();
   expect(h.node.className).toBe("dm");
-  for (const f of ["scene-w", "scene-h", "token-x", "token-y"]) {
+  for (const f of ["token-x", "token-y"]) {
     expect(h.field(f).className).toBe("tiny");
   }
   for (const f of ["session-name", "note-text"]) {
@@ -1113,7 +933,7 @@ test("every box carries a placeholder saying what belongs in it", () => {
   // choice: without them the console is a wall of unlabelled boxes.
   const h = harness();
   for (const f of [
-    "session-name", "scene-id", "scene-name", "scene-w", "scene-h",
+    "session-name",
     "actor-id", "actor-name",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text",

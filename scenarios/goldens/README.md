@@ -23,10 +23,11 @@ scene arrives from a file: eight of the nine scenarios get theirs from a map
 under `scenarios/maps/`, loaded by a `load_map` step, and `adventure-night`
 gets its one from the adventure it loads. (Seven of those eight have a golden
 here; `goblin-fight` is the one that does not, for the reason at the bottom of
-this file.) `create_scene` is leaving the platform
+this file.) `create_scene` LEFT the platform on 2026-09-02
 (`docs/superpowers/specs/2026-09-01-create-scene-leaves-design.md` — the kernel
 serves maps, it does not make them), and this corpus was converted first so that
-it could.
+it could: the sentence above used to say "is leaving", and the conversion is
+what made the removal possible rather than the other way round.
 
 `scenarios/maps/<id>.json` is one standalone map in the `mapdef` format, and the
 FILENAME IS THE ID — which is also the scene id every later step in the scenario
@@ -232,8 +233,9 @@ leaves a square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall
 nobody declared is an invisible barrier*) and `camp` had to declare its nine.
 
 **CORRECTED 2026-09-02: that reason has expired, and the constraint with it.**
-No scenario issues `create_scene` any more — sub-project 15 takes the command
-off the platform, and its Task 7 converted this corpus first. Every scene here
+No scenario issues `create_scene` any more, and since the same day none can —
+sub-project 15 took the command off the platform, its Task 7 having converted
+this corpus first. Every scene here
 now arrives from a map FILE, and a map file MAY legally omit tiles, so the
 bare-canvas shape is REACHABLE in this corpus again. It is simply not written:
 every map under `scenarios/maps/` declares its whole grid. Which changes nothing

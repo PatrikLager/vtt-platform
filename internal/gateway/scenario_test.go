@@ -2,10 +2,12 @@ package gateway_test
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +44,37 @@ type exitFixture struct {
 	// not be asserted to equal it.
 	observerToken string
 }
+
+// exitSceneID is the one place this scenario plays in, and the id is the
+// filename under maps/ as well as the scene's own — mapdef.LoadInstalled
+// refuses a disagreement (2026-09-01-create-scene-leaves Task 3).
+const exitSceneID = "scn-exit"
+
+// exitHallMap is that place: a 10x10 room, every square declared "stone" (a
+// real name in mapdef's standard vocabulary, resolving to kind "floor"), no
+// walls and no placements. All floor so sight and movement behave exactly as
+// they did while this scenario built its room with a create_scene, which it
+// did until 2026-09-02 — the scenario is about roles and fan-out, and any
+// terrain that occluded anything would change what it measures.
+var exitHallMap = `{"format_version":1,"id":"` + exitSceneID + `","name":"Exit Hall",
+	"grid_width":10,"grid_height":10,"tiles":{` + exitHallTiles + `}}`
+
+// exitHallTiles is exitHallMap's terrain, all 100 squares, built once at
+// package init rather than written out: a map file must name every square it
+// claims (mapdef.CheckEverySquarePresent), and a hundred literal entries here
+// would bury what the fixture is for.
+var exitHallTiles = func() string {
+	var b strings.Builder
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			if b.Len() > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, "%q:%q", strconv.Itoa(x)+","+strconv.Itoa(y), "stone")
+		}
+	}
+	return b.String()
+}()
 
 func newExitFixture(t *testing.T) *exitFixture {
 	t.Helper()
@@ -83,7 +116,19 @@ func newExitFixture(t *testing.T) *exitFixture {
 		t.Fatal(err)
 	}
 
-	srv := gateway.New(c, ids)
+	// THE SCENE ARRIVES AS A MAP, installed before the server starts, because
+	// since 2026-09-02 a place comes into existence only from a FILE — through
+	// load_map for a standalone map, or load_adventure for a scene embedded in
+	// an adventure (Patrik's ruling, 2026-09-01: the kernel serves maps, it
+	// does not make them). load_map, of those two, because this scenario is
+	// about roles and fan-out and wants a bare room rather than an adventure's
+	// actors and notes. Step 1 of the scenario below used to be a create_scene.
+	// Installed into the campaign's own maps/ and reached through WithMapsDir —
+	// the same wiring cmd/vtt's composeServer gives a real server.
+	mapsDir := filepath.Join(path, "maps")
+	installMap(t, mapsDir, exitSceneID, exitHallMap)
+
+	srv := gateway.New(c, ids).WithMapsDir(mapsDir)
 	httpSrv := httptest.NewServer(srv.Handler())
 	t.Cleanup(httpSrv.Close)
 
@@ -356,7 +401,7 @@ func drainEnvelopes(t *testing.T, conn *scenarioConn, n int) []*vttv1.Envelope {
 // a spectator) drive a full session over a real in-process server, covering
 // every step the task brief enumerates:
 //
-//  1. DM: StartSession, CreateScene, AddActor×2 (act-ursus controllerless,
+//  1. DM: StartSession, LoadMap, AddActor×2 (act-ursus controllerless,
 //     act-lera controlled by the player), PlaceToken×2 — each broadcast to
 //     all four clients with the DM's participant_id.
 //  2. Player: moves act-lera's token OK (own participant_id); moves
@@ -402,7 +447,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	// check compares against.
 	var dmLive []*vttv1.Envelope
 
-	// --- DM: StartSession, CreateScene, AddActor×2, PlaceToken×2 ---
+	// --- DM: StartSession, LoadMap, AddActor×2, PlaceToken×2 ---
 
 	env := issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-start-session",
@@ -413,15 +458,16 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	}
 	dmLive = append(dmLive, env)
 
+	// ONE ENVELOPE, because exitHallMap declares no placements: mapdef.Compile
+	// emits exactly one SceneCreated plus one TokenPlaced per placement, and
+	// this map has none — the two tokens are placed by their own steps below,
+	// which is what this scenario is about.
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
-		RequestId: "dm-create-scene",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-			SceneId: "scn-exit", Name: "Exit Hall", GridWidth: 10, GridHeight: 10,
-			Tiles: floorTilesForTest(10, 10),
-		}},
+		RequestId: "dm-load-map",
+		Command: &vttv1.ClientCommand_LoadMap{LoadMap: &vttv1.LoadMap{MapId: exitSceneID}},
 	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SceneCreated); !ok {
-		t.Fatalf("dm-create-scene: payload = %T, want SceneCreated", env.Payload)
+		t.Fatalf("dm-load-map: payload = %T, want SceneCreated", env.Payload)
 	}
 	dmLive = append(dmLive, env)
 

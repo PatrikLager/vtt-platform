@@ -39,9 +39,11 @@ import (
 // teach the reader that the caller lacked permission, when what they lacked
 // was a field — the same "a refusal that misdescribes the rule teaches the
 // wrong one" argument MayPerch's own refusal string was corrected under.
-// It sits beside validateCreateSceneTerrain in handleCommand instead, which
-// is the same seam for the same reason: format validity, checked before
-// anything is written, for every role.
+// It sits beside validateAddActor in handleCommand instead, which is the same
+// seam for the same reason: format validity, checked before anything is
+// written, for every role. (That sentence named validateCreateSceneTerrain
+// until 2026-09-02, when create_scene left the platform and took the first
+// user of this seam with it.)
 //
 // The check is UNSPECIFIED-only rather than an allowlist of the two values
 // that exist today. ActorKind's own doc comment says a third value is
