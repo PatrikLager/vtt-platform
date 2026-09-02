@@ -44,6 +44,7 @@ tasks:
       - task: check:invariants
       - task: check:doc-owner
       - task: check:no-retraction
+      - task: check:no-create-scene
       - task: check:arch
       # BEFORE the mutation gates: ~53s against their minutes, so a race
       # failing here saves the long wait. NOT claimed to be first-cheapest
@@ -204,8 +205,9 @@ tasks:
       and lint), plus tiers 2-4 of the suite. Enumerated 2026-09-01, so nobody
       has to diff the two by hand: test:cross, test:external, check:coverage,
       check:ts-coverage, client:typecheck, check:drift, check:breaking,
-      check:invariants, check:doc-owner, check:no-retraction, check:arch,
-      check:race, check:mutation and check:ts-mutation. The list read
+      check:invariants, check:doc-owner, check:no-retraction,
+      check:no-create-scene, check:arch, check:race, check:mutation and
+      check:ts-mutation. The list read
       "test:cross, test:external, check:coverage, check:mutation, check:drift,
       check:breaking, check:arch and check:invariants" until 2026-09-01 and
       omitted six, check:no-retraction among them -- which `ac307d5` had added
@@ -834,6 +836,44 @@ tasks:
     cmds:
       - python3 tools/check_no_retraction_test.py -q
       - python3 tools/check-no-retraction.py .
+
+  check:no-create-scene:
+    desc: >
+      Fail when a create_scene COMMAND identifier survives anywhere in the
+      tree. create_scene left on 2026-09-01 (Patrik): the kernel serves maps,
+      it does not make them, and a one-shot command that emits a whole scene
+      can never edit what it emitted. The removal is only worth as much as
+      what keeps it removed, and a grep somebody ran once proves nothing about
+      tomorrow.
+
+      THE EVENT STAYS. SceneCreated is alive — mapdef.Compile emits it,
+      load_adventure emits it, engine.Apply folds it — so the needle is the
+      joined identifier `createscene` and nothing looser. `SceneCreated`
+      normalises to `scenecreated` and is not a hit. TheEventIsNotTheCommand
+      in the self-test is that boundary.
+
+      NOT a `grep -rin create_scene`. Measured 2026-09-02 over the tree this
+      gate arrived into: 111 occurrences across 42 files, and ZERO of them are
+      code positions — every one is a comment, a string literal or the plan
+      directory `2026-09-01-create-scene-leaves` inside a citation. A naive
+      grep reds on all 111 and goes green only by excluding those 42 files, at
+      which point it enforces nothing. This one masks comments and string
+      literals first and looks at code positions only, across .go, .proto, .py,
+      every JS/TS spelling and .json object KEYS. That 111/42 is a DATED
+      OBSERVATION, not the current shape — the raw count rose the moment this
+      gate arrived, since this desc, the gate and its self-test must all write
+      the identifier down to enforce its absence. Zero code positions is the
+      invariant; the count is not.
+
+      client/test/command-surface.test.ts owns the other half and is the
+      stronger check for the wire: it reads the GENERATED TS DESCRIPTOR, so an
+      oneof arm deleted from the .proto but left in committed generated code is
+      caught there and would look clean here. Neither substitutes for the
+      other. Unlike retraction, there is no third leg in
+      contract/events.test.ts.
+    cmds:
+      - python3 tools/check_no_create_scene_test.py -q
+      - python3 tools/check-no-create-scene.py .
 
   check:invariants:
     desc: >

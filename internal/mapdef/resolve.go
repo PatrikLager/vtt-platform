@@ -38,8 +38,17 @@ func Resolve(m *Map, p *Pack, square string) (Resolved, []string, error) {
 	// p.Tiles panic: a nil-pointer crash mid-resolve is a worse failure mode
 	// than a fenced error naming the actual problem.
 	if p == nil {
+		// "needs a pack to resolve", not "no pack was given": the second
+		// describes THIS CALL and is read as a claim about the world, and
+		// the two part company on the on-demand path, where the map's pack
+		// can be installed and valid and simply not loaded yet
+		// (2026-09-01-create-scene-leaves Task 6, fix round 1 — a DM told
+		// "no pack was given" goes and checks a pack field that is
+		// correct). What is true in every context is that this art has
+		// nowhere to resolve from; WHY there is no pack is the caller's to
+		// say, and LoadInstalled says it.
 		return Resolved{}, nil, fmt.Errorf(
-			"mapdef: square %s names art %q but no pack was given to resolve it", square, art)
+			"mapdef: square %s names art %q, which needs a pack to resolve", square, art)
 	}
 	// The two resolution levels are the map's OWN pack, then standard (spec
 	// §4.2) — not any pack the caller happens to hand in. Without this check
@@ -103,7 +112,9 @@ func ResolveObjectArt(idx int, o Object, p *Pack) error {
 	// caller can reach here with p == nil for an object that legitimately
 	// needs one. Refuse rather than let p.Objects panic.
 	if p == nil {
-		return fmt.Errorf("mapdef: objects[%d] names art %q but no pack was given to resolve it", idx, o.Art)
+		// Same wording rule as Resolve's own nil-pack arm above, and for
+		// the same reason — see its comment.
+		return fmt.Errorf("mapdef: objects[%d] names art %q, which needs a pack to resolve", idx, o.Art)
 	}
 	if _, ok := p.Objects[o.Art]; !ok {
 		return fmt.Errorf("mapdef: objects[%d] names art %q, which pack %q does not define", idx, o.Art, p.ID)

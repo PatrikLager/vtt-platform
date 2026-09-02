@@ -610,10 +610,26 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 // sequence) rather than a single Envelope via campaign.Append — the set of
 // commands runCommandStep must route to observeBatchOnAll instead of
 // observeOnAll. Grows as new batch-producing commands are added (use_ability
-// — ruleset-interpreter Task 6; load_adventure — adventure-format Task 4).
+// — ruleset-interpreter Task 6; load_adventure — adventure-format Task 4;
+// load_map — 2026-09-01-create-scene-leaves Task 8, fix round 1).
+//
+// load_map WAS MISSING HERE AND THE CORPUS COULD NOT SHOW IT. mapdef.Compile
+// emits 1 + len(m.Placements) envelopes and internal/gateway/map.go appends
+// them as one batch, so a map declaring placements has always belonged in this
+// set — but all ten scenarios/maps/*.json declare none, which makes every
+// committed loadMap step the one-envelope case that observeOnAll happens to
+// handle correctly. campaigns/example/maps/cellar.json declares one, and so
+// may any map an operator installs.
+//
+// The set is deliberately NOT derived from anything: there is no wire-visible
+// mark on a batch-producing command, so this list and internal/gateway's
+// dispatch are two hand-kept halves of one fact. The load_map half is driven
+// through both failure modes a missing arm produces by
+// TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch (engine_test.go).
 func isBatchCommand(cmd *vttv1.ClientCommand) bool {
 	switch cmd.GetCommand().(type) {
-	case *vttv1.ClientCommand_UseAbility, *vttv1.ClientCommand_LoadAdventure:
+	case *vttv1.ClientCommand_UseAbility, *vttv1.ClientCommand_LoadAdventure,
+		*vttv1.ClientCommand_LoadMap:
 		return true
 	default:
 		return false

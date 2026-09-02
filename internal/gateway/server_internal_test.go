@@ -31,7 +31,7 @@ import (
 // un-read writes before a conn.Write ever actually blocks (verified
 // empirically while writing this test), which is far too slow/flaky a
 // precondition to build a deterministic regression test on. Pinning both
-// ends small, AND sending oversized broadcast payloads (see bigSceneName
+// ends small, AND sending oversized broadcast payloads (see bigPaddingName
 // below) so a handful of them exceed tcpBufSize outright, makes a stalled
 // real peer force genuine TCP backpressure within a few writes instead.
 const tcpBufSize = 8192
@@ -76,16 +76,32 @@ func tinyRecvBufClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{DialContext: dialer.DialContext}}
 }
 
-// bigSceneName is deliberately much larger than tcpBufSize (28KB vs 8KB):
+// bigPaddingName is deliberately much larger than tcpBufSize (28KB vs 8KB):
 // a broadcast Envelope carrying it cannot possibly be absorbed by the
 // pinned send/recv buffers in one shot, so a peer that isn't reading forces
 // the writer to genuinely stall after only a few such events — not merely
 // slow down. Kept comfortably under coder/websocket's default 32KB
 // per-message READ limit (which is what the server itself enforces on
-// INCOMING ClientCommand frames, including this Name flowing straight
-// through as a command field — CreateScene's Name is copied 1:1 into the
-// broadcast SceneCreated) so the command carrying it is still accepted.
-var bigSceneName = strings.Repeat("x", 28*1024)
+// INCOMING ClientCommand frames, including this string flowing straight
+// through as a command field — AddActor's Actor.Name is copied 1:1 into the
+// broadcast ActorAdded) so the command carrying it is still accepted.
+//
+// NAMED FOR ITS JOB, not for the field it lands in, because it lands in two:
+// an Actor.Name on the three command-driven fixtures, and a SceneCreated.Name
+// on the one that seeds oversized events straight onto the campaign
+// (TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced) — four uses, which is
+// what HEAD had too. (An earlier draft of this very sentence said "four
+// command-driven", making five: the same off-by-one that made the rename wrong
+// in the first place, re-committed in the comment written to explain it. Count
+// the USES; a grep also answers the declaration and every prose reference,
+// including this one.) It was bigSceneName
+// while every site rode on create_scene; that command left the platform on
+// 2026-09-02 (Patrik's ruling, 2026-09-01) and the command sites moved to
+// add_actor — the same shape for this purpose: DM/agent-only, one command to
+// one event, always accepted for a fresh id with no session or scene
+// precondition to trip over, and carrying an unbounded string straight
+// through to the broadcast.
+var bigPaddingName = strings.Repeat("x", 28*1024)
 
 // TestAWedgedConnectionIsTornDownAndOthersKeepServing succeeds
 // TestOverflowForcesSocketClosedAndOthersKeepServing, which asserted the same
@@ -116,7 +132,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +210,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 
 	// The victim's side, on the same campaign. buffer 0 removes every slot the
 	// writer could hide behind, and the budget is two orders of magnitude
-	// below a stall this test GUARANTEES structurally: bigSceneName (28KB)
+	// below a stall this test GUARANTEES structurally: bigPaddingName (28KB)
 	// cannot fit the pinned 8KB socket buffers, so a peer that never reads
 	// forces the write to park. The threshold is not standing in for the
 	// condition — the condition is arranged, and 5ms only has to be shorter
@@ -236,7 +252,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 		return dialTo(httpSrv.URL, token, after, client)
 	}
 
-	// Every connection that might legitimately RECEIVE bigSceneName-sized
+	// Every connection that might legitimately RECEIVE bigPaddingName-sized
 	// broadcasts needs its read limit raised above coder/websocket's
 	// default 32KB cap (driverConn subscribes to its own broadcasts too).
 	const readLimit = 200 * 1024
@@ -286,7 +302,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// victimConn: deliberately never read here until after the drive loop
 	// below — it is the stalled subscriber this test wedges.
 
-	// Burst oversized broadcast events (see bigSceneName) — no interleaved
+	// Burst oversized broadcast events (see bigPaddingName) — no interleaved
 	// read wait on driverConn (that's the background goroutine's job
 	// above) — so the victim (buffer=2, SO_RCVBUF pinned tiny, never
 	// reading) falls far behind within a handful of commands. A small pacing
@@ -315,21 +331,23 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// clean runner, never saw it. A scaffolding timeout tight enough to trip on
 	// a slow disk reports a logic failure that is not there, and it blocked a
 	// push for work in another language entirely.
-	// THE 1x1 GRID IS LOAD-BEARING FOR SIZE, not just for brevity. create_scene
-	// now carries a tile per square (retraction-leaves Task 10), and this
-	// fixture's whole point is an OVERSIZED broadcast — bigSceneName is what
-	// makes it oversized, and the frame the server READS is bounded by
-	// maxWSFrameBytes = 32768. MEASURED: this command marshals to 28 797 bytes,
-	// leaving 3 971 (3.88 KiB) of margin; a wider grid would spend it on tiles
-	// and eventually make the DRIVER's own writes unreadable, which would look
-	// like the wedge this test is trying to observe on the victim.
+	// THE PAYLOAD IS DELIBERATELY MINIMAL BESIDE THE NAME. This fixture's
+	// whole point is an OVERSIZED broadcast — bigPaddingName is what makes it
+	// oversized — and the frame the server READS is bounded by
+	// maxWSFrameBytes = 32768, so everything else in the command is margin
+	// against that limit. Anything added here is spent out of that margin and
+	// would eventually make the DRIVER's own writes unreadable, which would
+	// look like the wedge this test is trying to observe on the victim. A
+	// number is not written here on purpose: the previous version of this
+	// comment carried a measured byte count for a command shape that no
+	// longer exists.
 	const driverWriteBackstop = 30 * time.Second
 	for i := 0; i < commandCount; i++ {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
-			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-				SceneId: "scn-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
-				Tiles: floorGrid(1, 1),
+			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+				Actor: &vttv1.Actor{ActorId: "act-" + strconv.Itoa(i), Name: bigPaddingName,
+					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
 		raw, err := protojson.Marshal(cmd)
@@ -402,16 +420,16 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 
 	// Final proof the server itself is still fine: a brand new connection
 	// can still connect and issue a successful command. driverToken (DM
-	// role) + CreateScene with a fresh id is used: always succeeds
+	// role) + AddActor with a fresh id is used: always succeeds
 	// regardless of prior state (no open-session precondition to trip over,
 	// unlike EndSession). Dialed with a huge `after` cursor to skip
 	// catch-up entirely (this connection only cares about ITS OWN
 	// CommandResult, not replaying the whole burst).
 	freshConn := dial(driverToken, 1<<30, nil)
 	defer freshConn.CloseNow()
-	cmd := &vttv1.ClientCommand{RequestId: "fresh", Command: &vttv1.ClientCommand_CreateScene{
-		CreateScene: &vttv1.CreateScene{SceneId: "scn-fresh", Name: "s", GridWidth: 1, GridHeight: 1,
-			Tiles: floorGrid(1, 1)},
+	cmd := &vttv1.ClientCommand{RequestId: "fresh", Command: &vttv1.ClientCommand_AddActor{
+		AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "act-fresh", Name: "s",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
 	}}
 	raw, err := protojson.Marshal(cmd)
 	if err != nil {
@@ -476,7 +494,7 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +564,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,9 +646,9 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	for i := range 40 {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
-			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
-				Tiles: floorGrid(1, 1),
+			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), Name: bigPaddingName,
+					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
 		raw, merr := protojson.Marshal(cmd)
@@ -672,7 +690,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,9 +798,9 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	for i := range 40 {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
-			Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-				SceneId: "deaf-" + strconv.Itoa(i), Name: bigSceneName, GridWidth: 1, GridHeight: 1,
-				Tiles: floorGrid(1, 1),
+			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), Name: bigPaddingName,
+					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
 		raw, merr := protojson.Marshal(cmd)
@@ -828,7 +846,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -904,9 +922,9 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 	// The marker: a command whose event must reach the watcher.
 	raw, err := protojson.Marshal(&vttv1.ClientCommand{
 		RequestId: "marker",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-			SceneId: "marker-scene", Name: "Marker", GridWidth: 1, GridHeight: 1,
-			Tiles: floorGrid(1, 1),
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "marker-actor", Name: "Marker",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		}},
 	})
 	if err != nil {
@@ -940,7 +958,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 			t.Fatalf("a second device produced a spurious PresenceChanged{%v} — the participant "+
 				"never left, so the table must hear nothing", pc.GetState())
 		}
-		if ev := f.GetEvent(); ev != nil && ev.GetSceneCreated().GetSceneId() == "marker-scene" {
+		if ev := f.GetEvent(); ev != nil && ev.GetActorAdded().GetActor().GetActorId() == "marker-actor" {
 			break
 		}
 	}
@@ -992,7 +1010,7 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1064,7 +1082,7 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 		if _, err := c.Append(&vttv1.Envelope{
 			EventId: fmt.Sprintf("seed-%d", i),
 			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-				SceneId: fmt.Sprintf("scn-%d", i), Name: bigSceneName, GridWidth: 4, GridHeight: 4,
+				SceneId: fmt.Sprintf("scn-%d", i), Name: bigPaddingName, GridWidth: 4, GridHeight: 4,
 			}},
 		}); err != nil {
 			t.Fatal(err)
@@ -1340,7 +1358,7 @@ func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

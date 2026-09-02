@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -27,11 +29,12 @@ import (
 // skipping validation.
 const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --ruleset (adventures load+validate against the served ruleset)"
 
-// composeServer opens the campaign and identity handles for campaignPath
-// and wires them into a gateway.Server's Handler on an *http.Server bound
-// to addr (not yet listening — the caller starts it, e.g. via
-// ListenAndServe or, for tests that need the assigned port, its own
-// net.Listener + Serve).
+// composeServer opens the campaign and identity handles for campaignPath —
+// a campaign DIRECTORY since Task 4 (2026-09-01-create-scene-leaves §3),
+// not a bare log file — and wires them into a gateway.Server's Handler on
+// an *http.Server bound to addr (not yet listening — the caller starts it,
+// e.g. via ListenAndServe or, for tests that need the assigned port, its
+// own net.Listener + Serve).
 //
 // The returned close func closes both handles (identity first, then
 // campaign). CAUTION: srv.Shutdown returning does NOT by itself guarantee
@@ -81,24 +84,47 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // rulesetDir) is caught by adventure.Load itself (its own ruleset-id-match
 // check) and surfaces as this same boot error.
 //
-// mapsDir is OPTIONAL (maps-as-geometry Task 7, design spec §4.4): ""
-// keeps every pre-Task-7 behavior exactly as it was — a nil/empty
+// Maps come from the campaign directory itself (2026-09-01-create-scene-
+// leaves Task 5 — "the kernel serves maps, it does not make them"): there
+// is no mapsDir parameter and no --maps-dir flag any more, because a map
+// belongs to the campaign that uses it (design spec §3), not to a
+// server-wide operator flag pointing at a shared store. campaignPath/maps
+// ABSENT is not a declaration of anything — a brand-new campaign starts
+// with nothing installed (design spec §4, "Install, then load"), and
+// treating that as a boot failure would stop `vtt client run`'s
+// self-contained throwaway campaign (harness_boot.go) from ever starting —
+// so it is treated exactly like the old mapsDir=="" case: a nil/empty
 // gateway.Server.maps, GET /api/maps answering 200 with an empty list and
-// GET /api/packs/{pack}/{file} always 404ing. Unlike adventuresDir, a
-// non-empty mapsDir needs no rulesetDir — a standalone map carries no
-// ruleset reference (mapdef.Map has none; only adventure.Adventure does).
-// Every immediate subdirectory of mapsDir is loaded and validated via
-// loadMapsDir (maps.go) — fail loud here, at boot, on any single map's
-// failure or an override that does not resolve against its own pack (the
-// same "fail loud, never at the table" posture as adventuresDir above),
-// closing both handles before returning.
-func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string) (*http.Server, func() error, error) {
+// GET /api/packs/{pack}/{file} always 404ing. campaignPath/maps PRESENT
+// (even placed there by nothing more than an empty mkdir) is loaded and
+// validated in full via loadMapsDir (maps.go; layout changed by Task 3 of
+// the 2026-09-01 create_scene-leaves plan — maps are flat files, packs are
+// a sibling tree) — fail loud here, at boot, on any single map's failure,
+// an override that does not resolve against its pack, or an existing-but-
+// empty maps/ (the same "fail loud, never at the table" posture as
+// adventuresDir above), closing both handles before returning.
+//
+// The maps DIRECTORY is then handed to the server unconditionally
+// (WithMapsDir), present or not, which is what makes install-then-load work
+// during a session rather than only across restarts (Task 6 of the same
+// plan, design spec §5): on a load_map miss the server probes
+// campaignPath/maps/<id>.json through the same mapdef.LoadInstalled this
+// boot walk uses. Boot preloading is unchanged — an operator still learns
+// about a broken map before anyone connects — and what is added is only the
+// map that was not there yet.
+func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	// identity.Open opens its own SQLite handle on "the same campaign file
+	// the store uses" (internal/identity's package comment) — since Task 4
+	// (2026-09-01-create-scene-leaves §3) that file is campaign.LogPath's
+	// log.db INSIDE campaignPath, not campaignPath itself: campaignPath is
+	// now the campaign DIRECTORY, and campaign.Open above has already
+	// created it (MkdirAll) by the time this call runs.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		_ = c.Close() // best-effort; the compose error below is what matters
 		return nil, nil, fmt.Errorf("vtt serve: open identity: %w", err)
@@ -140,15 +166,30 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir, mapsDir string
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
 	}
 
-	if mapsDir != "" {
-		maps, packs, packFS, err := loadMapsDir(mapsDir)
+	// campaignPath/maps ABSENT means nothing has been installed yet (see
+	// this function's own doc comment above) — skip loading entirely,
+	// exactly like the old mapsDir=="" case. Any OTHER Stat failure
+	// (permissions, a plain file sitting where maps/ should be) falls
+	// through to loadMapsDir so ITS error surfaces, rather than being
+	// silently swallowed here as "no maps".
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if _, statErr := os.Stat(mapsDir); statErr == nil || !os.IsNotExist(statErr) {
+		maps, packs, packFS, err := loadMapsDir(campaignPath)
 		if err != nil {
 			_ = ids.Close() // best-effort; the compose error below is what matters
 			_ = c.Close()   // best-effort; the compose error below is what matters
-			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", mapsDir, err)
+			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", campaignPath, err)
 		}
 		gw = gw.WithMaps(maps, packs).WithPackFiles(packFS)
 	}
+	// UNCONDITIONALLY, outside the boot-load guard above: the maps
+	// directory is wired whether or not it exists yet, because the case
+	// this sub-project exists for is precisely the one where it does not
+	// (2026-09-01-create-scene-leaves design spec §4 — a brand-new campaign
+	// starts with nothing installed, and the DM authors a place mid-
+	// session). Inside the guard, a campaign that booted with no maps/
+	// could never find one afterwards, which is the whole feature.
+	gw = gw.WithMapsDir(mapsDir)
 
 	// The embedded client, when this binary was built with one. API-only is
 	// a valid configuration (the harness boots servers this way), so a

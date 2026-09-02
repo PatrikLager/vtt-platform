@@ -249,14 +249,33 @@ narrates turn order and calls `use_ability` for whichever token acts next:
 ## Reference statblocks
 
 Each JSON block below is the EXACT `actor` argument to pass to `add_actor`
-— copy it verbatim, wire field for wire field. `add_actor`'s wire schema is
-`actorId`/`name`/`controllerId`/`attributes`/`resources` (plus the opaque
-`moduleId`/`moduleData` pair this slice doesn't use) — there is NO `x`/`y`
-field and NO `abilities` field, and the MCP layer rejects unknown fields
-outright (`mcp: invalid arguments for add_actor: ...`). Positioning is a
-SEPARATE call, `place_token`, made AFTER `add_actor` — see "Combat setup
-sequence" below. Each statblock's "Ability lists" note explains why
-abilities aren't part of the payload either.
+— copy it verbatim, wire field for wire field, INCLUDING `kind`.
+
+`add_actor`'s wire schema is `actorId`/`kind`/`name`/`attributes`/
+`resources` (plus the opaque `moduleId`/`moduleData` pair this slice
+doesn't use). Two of those fields are not optional in the way the rest are:
+
+- **`actorId` and `kind` are REQUIRED.** `kind` is `ACTOR_KIND_PARTY_MEMBER`
+  for a player's character and `ACTOR_KIND_NON_PARTY` for every monster, NPC
+  and creature the party must DISCOVER by seeing it. There is no default;
+  omitting it is refused outright, because an unstated kind cannot be told
+  from a deliberate one. It decides whether the whole party is told the
+  actor exists, so getting it wrong on a monster spoils the ambush.
+- **`controllerId` and `controllerIds` exist on the wire but you must NOT
+  set them.** A request that does is REFUSED whatever else it contains.
+  Control is conferred afterwards by `grant_actor_control` — add first, then
+  grant, two calls, always.
+
+There is NO `x`/`y` field and NO `abilities` field, and the MCP layer
+rejects unknown fields outright (`mcp: invalid arguments for add_actor:
+...`). Positioning is a SEPARATE call, `place_token`, made AFTER
+`add_actor` — see "Combat setup sequence" below. Each statblock's "Ability
+lists" note explains why abilities aren't part of the payload either.
+
+(The statblocks below carried no `kind` from 2026-07-26, when they were
+written (`298f677`), until 2026-09-02. `kind` became mandatory at `8f130c8`
+on 2026-08-24, so every `add_actor` in this runbook was refused for the nine
+days between those two dates.)
 
 Remember the max_hp duplication rule above — `max_hp` (attribute) always
 equals `hp`'s `max` (resource). Per format v2 convention, `ac`/`fort`/
@@ -268,6 +287,7 @@ equals `hp`'s `max` (resource). Per format v2 convention, `ac`/`fort`/
 ```json
 {
   "actorId": "act-cutter",
+  "kind": "ACTOR_KIND_NON_PARTY",
   "name": "Goblin Cutter",
   "attributes": {"str": 1, "dex": 3, "con": 1, "max_hp": 8,
                  "ac": 15, "fort": 12, "ref": 14, "will": 11},
@@ -287,6 +307,7 @@ checks or rejects.
 ```json
 {
   "actorId": "act-archer",
+  "kind": "ACTOR_KIND_NON_PARTY",
   "name": "Goblin Archer",
   "attributes": {"str": 0, "dex": 4, "con": 1, "max_hp": 6,
                  "ac": 14, "fort": 11, "ref": 15, "will": 11},
@@ -303,6 +324,7 @@ this actor specifically; it is narration, not a platform rule.
 ```json
 {
   "actorId": "act-fighter",
+  "kind": "ACTOR_KIND_PARTY_MEMBER",
   "name": "Human Fighter",
   "attributes": {"str": 4, "dex": 2, "con": 3, "max_hp": 28,
                  "ac": 17, "fort": 15, "ref": 13, "will": 12},
@@ -328,7 +350,16 @@ token anywhere fails outright (`rules: resolve: actor "..." has no token
 placed (cannot determine range)`). The wire order that gets every
 combatant to a usable state, every time:
 
-1. `create_scene` — once, for the encounter map.
+1. `load_map` — once, for the encounter map. You do not build a place; you
+   bring one in. A map is a FILE the campaign already holds under its
+   `maps/`, named by its own id. Every scene comes from a FILE now, by one
+   of exactly TWO commands in your tool list: `load_map` brings in a
+   standalone map, and `load_adventure` brings in a whole adventure
+   including its own scenes. This sequence uses `load_map`, because it wants
+   a room and nothing else. (`create_scene` left the platform on 2026-09-02:
+   authoring terrain is iterative work and a one-shot command could not
+   edit what it made.) If `load_map` answers "unknown map", the file is not
+   installed yet — that is an act outside the platform, not another call.
 2. `add_actor` — once per combatant, using the statblocks above verbatim.
 3. `place_token` — once per combatant, in that scene, at a starting
    position. Positioning happens HERE, not in `add_actor` (which has no
@@ -354,13 +385,18 @@ guessed shape is a wasted round trip, not a warning. Required fields are
 exactly what the schema marks required, not inferred from what "feels"
 required.
 
-### create_scene
+### load_map
 
-`sceneId`/`name`/`gridWidth`/`gridHeight` — all four required:
+`mapId` — the only field, and it is the map file's own id:
 
 ```json
-{"sceneId": "scn-goblin-fight", "name": "Forest Trail", "gridWidth": 32, "gridHeight": 32}
+{"mapId": "scn-goblin-fight"}
 ```
+
+The scene it creates takes that same id, so `place_token`'s `sceneId` below
+is the id you loaded. This repository ships `scn-goblin-fight` (a 31x3
+forest trail) under `scenarios/maps/`; a campaign started elsewhere needs
+its own map file installed under `<campaign>/maps/<id>.json` first.
 
 ### add_actor
 
@@ -454,15 +490,22 @@ effects — the same order "A worked example" above walks through.
 
 To run this ruleset live:
 
-1. Start a fresh campaign server pointed at this ruleset:
+1. Start a fresh campaign server pointed at this ruleset, and give the
+   campaign the encounter map the setup sequence loads. A campaign is a
+   DIRECTORY that owns its maps, and installing one is a filesystem act
+   outside the platform — the server finds it whether it was there at boot
+   or appeared afterwards:
    ```
+   mkdir -p <fresh>/maps
+   cp scenarios/maps/scn-goblin-fight.json <fresh>/maps/
    vtt serve --campaign <fresh> --addr :8443 --ruleset rulesets/dnd45e-minimal
    ```
-2. Invite the DMing agent — `--campaign` must be the exact SAME file
-   `serve` just opened in step 1; `--name` is any label for this
-   participant:
+2. Invite the DMing agent — `--campaign` must be the exact SAME directory
+   `serve` opened in step 1 (`<fresh>` above), because that is where the
+   invite is written and where `serve` will look for it; `--name` is any
+   label for this participant:
    ```
-   vtt invite --campaign <same file as serve> --name claude-dm --role agent
+   vtt invite --campaign <fresh> --name claude-dm --role agent
    ```
    This prints the token exactly once — capture it now, it cannot be
    recovered later:
@@ -501,7 +544,7 @@ To run this ruleset live:
    `VTT_TOKEN`) with this repo's `.mcp.json` in scope.
 6. Suggested opening prompt for the DMing agent:
    > Read the ruleset guide with `get_ruleset_guide`. Then follow the
-   > "Combat setup sequence" it describes: `create_scene`, then
+   > "Combat setup sequence" it describes: `load_map`, then
    > `add_actor` for the fighter and two goblins from the reference
    > statblocks, then `place_token` for all three — positioned so the
    > goblins start within the fighter's melee/shortbow range, not out at

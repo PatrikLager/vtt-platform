@@ -381,6 +381,7 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     and SceneSeen exists only in projections. So folding a real log leaves it
 //     empty on every scene while folding that log's projection leaves it
 //     populated, and no final-state oracle can close that gap.
+//
 //   - sceneSeenFor only ever builds `tiles` from the squares it has just
 //     decided are visible, so per message `tiles ⊆ visible`. That SUBSET
 //     relation — not an identity, and an earlier draft of the spec's amendment
@@ -389,16 +390,31 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     Explored from ABOVE, and a wrongly remembered square must first have
 //     leaked as a currently-visible one at some prefix, where this test catches
 //     it.
+//
 //   - It does NOT bound Explored from below, and that is correct rather than a
 //     gap: a visible square carrying no terrain is deliberately never
 //     remembered, because there is nothing there to remember. On a bare-canvas
 //     scene Explored stays empty however much is visible. The corpus USED to
-//     carry one of each — session-zero's `camp` declared no terrain — and since
-//     2026-09-01 it cannot: create_scene refuses a scene that leaves a square
-//     undeclared, so every corpus scene is fully tiled. The bare canvas is
-//     still reachable through a map FILE, which may still omit tiles, and the
-//     rule is pinned directly rather than exhibited, in three places that never
-//     depended on the fixture: internal/engine's
+//     carry one of each — session-zero's `camp` declared no terrain — and no
+//     longer does.
+//
+//     WHY IT NO LONGER DOES CHANGED ON 2026-09-02, and the difference matters
+//     more than the fact. This used to read "it cannot: create_scene refuses a
+//     scene that leaves a square undeclared, so every corpus scene is fully
+//     tiled". That was true for one day. No scenario issues create_scene any
+//     more (2026-09-01-create-scene-leaves Task 7), and since Task 8 of that
+//     plan nothing can: the command is gone from the contract. Every corpus
+//     scene now comes from a map FILE, and mapdef.CheckEverySquarePresent
+//     exempts a file
+//     that declares NO tiles, so an untiled corpus fixture is REACHABLE again.
+//     MEASURED 2026-09-02: strip the "tiles" key from
+//     scenarios/maps/scn-smoke.json and smoke.json still loads it ok=true.
+//     What is true is only that nobody has written one: every map under
+//     scenarios/maps/ declares its whole grid, by choice rather than by
+//     refusal. So the rule is pinned directly rather than exhibited, in three
+//     places that never depended on the fixture — and that placement is now
+//     the MORE necessary for the fixture being nothing but a convention:
+//     internal/engine's
 //     TestVisibleComesFromItsOwnFieldNotFromTheTiles, client/test's
 //     visibility.test.ts "a token on a bare canvas is drawn", and (added with
 //     this change, as the assertion-for-assertion mirror of the Go one)

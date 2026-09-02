@@ -1148,15 +1148,24 @@ func TestAVisibleSquareWithNoTerrainIsAbsentFromTheVisibleSet(t *testing.T) {
 // terrain to stand on (Patrik's ruling 2026-08-22), and engine.Apply folds a
 // SceneCreated carrying no tiles without complaint.
 //
-// HOW A CALLER STILL REACHES IT, corrected 2026-09-01: through a map FILE, and
-// no longer by "simply not sending tiles" to create_scene.
-// mapdef.CheckEverySquarePresent is all-or-nothing (zero tiles passes; one tile
-// means all must be present) and it guards the file path, which is what keeps a
-// file authored before the format had terrain loading. The create_scene COMMAND
-// now calls mapdef.RequireEverySquarePresent instead — the same walk without
-// that opt-out — so it refuses a scene leaving any square undeclared (spec
-// 2026-08-30-retraction-leaves §6). This comment used to say the check guarded
-// both doors. It guards one, and the other is shut.
+// HOW A CALLER STILL REACHES IT, corrected 2026-09-02: through a FILE, which
+// since create_scene left the platform (Patrik's ruling, 2026-09-01) is the
+// only way a scene comes into existence at all — by one of exactly TWO
+// commands, load_map for a standalone map and load_adventure for a scene
+// embedded in an adventure. BOTH doors are open here, and they run the same
+// check: mapdef.CheckEverySquarePresent, called from internal/mapdef/load.go
+// and from internal/adventure/load.go. It is all-or-nothing — zero tiles
+// passes, one tile means all must be present. That opt-out is what keeps a
+// file authored before the format had terrain loading, and it is what makes
+// this fixture reachable.
+//
+// (Three earlier versions of this paragraph are worth the lines, because each
+// correction was itself wrong. The first said the every-square check guarded
+// both the file and the command; that was false. The second, on 2026-09-01,
+// said the command called mapdef.RequireEverySquarePresent — the same walk
+// without the opt-out — and that was true until the command itself was
+// deleted. The third, on 2026-09-02, said load_map was "the only way a scene
+// comes into existence", which narrowed straight past load_adventure.)
 func bareCanvas() *engine.State {
 	st := engine.NewState()
 	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})

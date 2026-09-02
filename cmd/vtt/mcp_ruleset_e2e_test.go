@@ -34,7 +34,7 @@ func startMCPFixtureWithRuleset(t *testing.T, rulesetDir string) mcpFixture {
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, "", "")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}
@@ -53,6 +53,16 @@ func startMCPFixtureWithRuleset(t *testing.T, rulesetDir string) mcpFixture {
 	if err := waitForHealthz("http://"+ln.Addr().String(), 3*time.Second); err != nil {
 		t.Fatalf("healthz never became ready: %v", err)
 	}
+
+	// The tavern the setup below plays in, installed while the server is
+	// already serving — an agent LOADS a place since create_scene left the
+	// platform (Patrik's ruling, 2026-09-01), and internal/gateway's mapByID
+	// probe finds a map that appeared after boot.
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(mapsDir, 0o750); err != nil {
+		t.Fatalf("create maps dir: %v", err)
+	}
+	writeFile(t, filepath.Join(mapsDir, tavernSceneID+".json"), tavernMap)
 
 	agentToken := mintInviteToken(t, campaignPath, identity.RoleAgent, "agent")
 	return mcpFixture{
@@ -97,25 +107,31 @@ func toolCommandResult(t *testing.T, res *mcpsdk.CallToolResult) map[string]any 
 	return m
 }
 
-// floorTilesJSON is the tiles argument create_scene now requires: every
-// square of a w x h grid, all floor. A scene that leaves one undeclared is
-// refused (internal/gateway's validateCreateSceneTerrain), and this fixture's
-// subject is the MCP tool path, not terrain — so the grid is unchanged from
-// what it always was and only the declaration is new.
+// tavernSceneID and tavernMap are the place this fixture plays in: a 5x5 room
+// of plain floor, every square declared. The id is the file's stem as well as
+// the scene's own, because mapdef.LoadInstalled refuses a disagreement
+// (2026-09-01-create-scene-leaves Task 3).
 //
-// 25 squares, nowhere near the ~1200 an agent's create_scene can carry before
-// it exceeds the gateway's inbound frame limit — see
-// client/src/commands.ts's maxCreateSceneSquares, which derives that bound and
-// which the MCP tool's own `tiles` description repeats for the agent.
-func floorTilesJSON(w, h int) map[string]any {
-	tiles := make(map[string]any, w*h)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			tiles[fmt.Sprintf("%d,%d", x, y)] = map[string]any{"kind": "floor"}
+// IT WAS A create_scene ARGUMENT UNTIL 2026-09-02 — a floorTilesJSON(5, 5)
+// helper built the same 25 squares as an inline tiles map on the MCP tool
+// call. This fixture's subject is the MCP tool path, not terrain, so the room
+// is unchanged; what changed is that a room is authored in a file now, and the
+// agent's tool call names it.
+const tavernSceneID = "tavern"
+
+var tavernMap = func() string {
+	var tiles strings.Builder
+	for y := 0; y < 5; y++ {
+		for x := 0; x < 5; x++ {
+			if tiles.Len() > 0 {
+				tiles.WriteString(",")
+			}
+			fmt.Fprintf(&tiles, `"%d,%d":"stone"`, x, y)
 		}
 	}
-	return tiles
-}
+	return fmt.Sprintf(`{"format_version":1,"id":%q,"name":"Tavern",
+		"grid_width":5,"grid_height":5,"tiles":{%s}}`, tavernSceneID, tiles.String())
+}()
 
 // setUpTavernBrawlActorsViaMCP drives the same setup a toy-brawl scenario
 // would (session/scene/two actors/two adjacent tokens) through MCP command
@@ -128,8 +144,7 @@ func setUpTavernBrawlActorsViaMCP(t *testing.T, cs *mcpsdk.ClientSession) {
 		args map[string]any
 	}{
 		{"start_session", map[string]any{"name": "mcp ruleset e2e"}},
-		{"create_scene", map[string]any{"sceneId": "tavern", "name": "Tavern",
-			"gridWidth": 5, "gridHeight": 5, "tiles": floorTilesJSON(5, 5)}},
+		{"load_map", map[string]any{"mapId": tavernSceneID}},
 		{"add_actor", map[string]any{"actor": map[string]any{
 			"actorId": "brawler", "name": "Brawler",
 			"kind":       "ACTOR_KIND_PARTY_MEMBER",

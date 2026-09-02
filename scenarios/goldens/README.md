@@ -16,6 +16,42 @@ without looking at it.
 A scenario may also carry a `projections/` subdirectory — one seat per
 directory inside it. See **Projected seats** below.
 
+## Where a scene comes from
+
+Nowhere in this corpus does a scenario CREATE a scene. Since 2026-09-02 every
+scene arrives from a file: eight of the nine scenarios get theirs from a map
+under `scenarios/maps/`, loaded by a `load_map` step, and `adventure-night`
+gets its one from the adventure it loads. (Seven of those eight have a golden
+here; `goblin-fight` is the one that does not, for the reason at the bottom of
+this file.) `create_scene` LEFT the platform on 2026-09-02
+(`docs/superpowers/specs/2026-09-01-create-scene-leaves-design.md` — the kernel
+serves maps, it does not make them), and this corpus was converted first so that
+it could: the sentence above used to say "is leaving", and the conversion is
+what made the removal possible rather than the other way round.
+
+`scenarios/maps/<id>.json` is one standalone map in the `mapdef` format, and the
+FILENAME IS THE ID — which is also the scene id every later step in the scenario
+references, so the three cannot drift apart. The runner installs the directory a
+scenario names (its `maps` key) into that scenario's throwaway campaign before
+the server boots (`cmd/vtt`'s `installMaps`), because a map belongs to the
+campaign that uses it and there is no server-wide maps flag to point at one.
+
+**Two consequences worth knowing before reading a `sceneCreated` here.** A map
+declares its terrain by standard tile NAME (`stone`, `wood`, `earth`,
+`stone-wall`), and a name carries a `material` as well as a `kind` — so every
+tile in these fixtures has one, where the `create_scene` command that used to
+build them could only ever say `kind`. And every map in the corpus is
+pack-free: `material` is `mapdef`'s, `art` is empty everywhere, and no scenario
+needs custom art to prove anything.
+
+`cmd/vtt.TestEveryMapTheCorpusNamesIsInstalledAndUsed` holds that directory to
+the library in both directions — every id a `load_map` names has a file, and
+every file is named. The first half is not decoration: `Authorize` runs before
+any map lookup, so `denials.json`'s two REFUSED `load_map` steps pass with
+"not authorized" whether or not the map they name exists. Measured on
+2026-09-02: misspell that id and the scenario stays green; only that gate goes
+red.
+
 ## What no fixture here may contain
 
 `internal/harness.TestTheCorpusNeverConfersControlAtCreationNorGrantsInSilence`
@@ -192,16 +228,21 @@ tests instead, named at the end of this section.
 on purpose.** `camp` used to declare NO terrain, and it sat beside `ambush` so
 that the "`Explored` comes from tiles, not from `visible`" rule was a fixture
 rather than a sentence: its `Explored` stayed EMPTY however much of it was
-visible. On 2026-09-01 `create_scene` began refusing a scene that leaves a
-square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall nobody
-declared is an invisible barrier*), and every scene in this corpus that a
-scenario CREATES is created by `create_scene`, so no fixture here can be a bare
-canvas any more. (Corrected 2026-09-01: this said *every* scene.
-`scenarios/adventure-night.json` issues only `loadAdventure`, and its scene
-comes from a map file — the very exemption the next paragraph names. That
-exemption is why the sentence needs the qualifier and not why it fails: an
-adventure's map file is authored, not typed into a form, and nothing in this
-corpus reaches the bare-canvas shape either way.)
+visible. It went on 2026-09-01, when `create_scene` began refusing a scene that
+leaves a square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall
+nobody declared is an invisible barrier*) and `camp` had to declare its nine.
+
+**CORRECTED 2026-09-02: that reason has expired, and the constraint with it.**
+No scenario issues `create_scene` any more, and since the same day none can —
+sub-project 15 took the command off the platform, its Task 7 having converted
+this corpus first. Every scene here
+now arrives from a map FILE, and a map file MAY legally omit tiles, so the
+bare-canvas shape is REACHABLE in this corpus again. It is simply not written:
+every map under `scenarios/maps/` declares its whole grid. Which changes nothing
+about where the rule is pinned — that had already moved to the constructed tests
+below, and it is worth noticing the move survived both the constraint arriving
+and the constraint leaving. A fixture whose premise can expire twice inside two
+days was the wrong place for it.
 
 The rule did not change and the shape is still reachable — a map FILE may still
 omit tiles, which is the exemption that keeps files authored before
@@ -241,8 +282,11 @@ Eight scenarios, covering a subset of the contract's command types, **not
 all of them.** "All fifteen" stood here until 2026-08-25: it was true when
 fifteen WAS the whole contract, and stayed on the page as the contract grew
 past it, turning a corpus statistic into a false completeness claim. Door,
-map, viewpoint, join-link and participant-promotion commands are among those
-with no golden today — examples, not the complete list. `retract_events` was
+viewpoint, join-link and participant-promotion commands are among those
+with no golden today — examples, not the complete list. (`map` stood in that
+list until 2026-09-02. `load_map` is now in seven of the eight goldens, because
+every scene a scenario puts in the world arrives that way; `adventure-night` is
+the eighth and gets its scene through `load_adventure` instead.) `retract_events` was
 listed here beside them for the days between sub-project 13 deleting the
 corpus's last retraction step and the same sub-project deleting the command
 itself: it is not a gap now, because it is not a command. Derive the current
@@ -279,7 +323,9 @@ only the roll values differing.** That invariant is the claim; a line count is
 not, and one used to stand here as if it were ("208 = 208 and 178 = 178",
 measured across repeated captures before 2026-08-25). It was falsified by an
 edit that had nothing to do with dice — `toy-brawl/stream.json` went 202 to 279
-lines on 2026-09-01 when its scene declared its terrain. Compare a fresh capture
+lines on 2026-09-01 when its scene declared its terrain, and 279 to 304 on
+2026-09-02 when that terrain arrived from a map file and every tile gained the
+`material` its tile name carries. Compare a fresh capture
 against the committed file, which is what the drift gate does; do not compare
 either against a number written here. The drift gate masks dice-decided fields — `results`,
 `total`, `outcomeSummary`, `delta`, `newValue`, `outcome` — on BOTH sides of
@@ -299,8 +345,10 @@ Not for want of trying. Its stream differs in SHAPE between runs — **519 vs
 events than a hit, and no masking of values can make two different event
 sequences comparable. (Those two figures are a dated observation and no longer
 the numbers a fresh run prints: on 2026-09-01 the scenario's grid went from
-32x32 to **31x3** so it could declare every square, which `create_scene` now
-requires, and its `sceneCreated` grew 93 tiles. Nothing about the shape
+32x32 to **31x3** so it could declare every square, which `create_scene` then
+required, and its `sceneCreated` grew 93 tiles. The grid is unchanged since; the
+declaration moved. As of 2026-09-02 it lives in
+`scenarios/maps/scn-goblin-fight.json` and the scenario loads it. Nothing about the shape
 instability changed — re-measure rather than trusting the pair.) Including
 it would mean either a permanently-red drift gate or an exemption that hides
 real drift.

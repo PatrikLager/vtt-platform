@@ -2,21 +2,26 @@
 // C2, 2026-08-16) — a picture for every one of the eleven natures
 // internal/mapdef/standard.go declares, so a square with NO art override
 // still draws something. Before this file, the only pack genmappack
-// produced was maps/cellar's own starter pack, which happens to override
-// 100% of its squares — the reason C2 went unnoticed for as long as it did.
+// produced was campaigns/example/packs/cellar-basics (campaigns/example/
+// maps/cellar.json's own starter pack — moved under campaigns/example/ by
+// Task 5 of the 2026-09-01-create-scene-leaves plan), which happens to
+// override 100% of its squares — the reason C2 went unnoticed for as long
+// as it did.
 //
-// A SEPARATE pack from maps/cellar's, deliberately: the starter pack is
-// authored CONTENT (an example of what a pack author writes, per main.go's
-// own header comment), while this one is PLATFORM vocabulary — the same
-// eleven names mapdef.StandardTile resolves, with exactly one picture (two
-// for the door) apiece. Mixing the two would make maps/cellar's pack.json
-// stop being the honest "here is what an author writes" example it is meant
-// to be.
+// A SEPARATE pack from cellar-basics, deliberately: the starter pack
+// is authored CONTENT (an example of what a pack author writes, per
+// main.go's own header comment), while this one is PLATFORM vocabulary —
+// the same eleven names mapdef.StandardTile resolves, with exactly one
+// picture (two for the door) apiece. Mixing the two would make
+// cellar-basics' pack.json stop being the honest "here is what an
+// author writes" example it is meant to be.
 //
 // WHERE THIS SHIPS (Patrik's ruling): the client's own bundle, not the
 // authenticated GET /api/packs/{pack}/{file} route. That route exists for
-// OPERATOR-INSTALLED content (--maps-dir, spec §4.2's trust framing: "same
-// trust as guide.md, but more likely third-party") and its whole security
+// OPERATOR-INSTALLED content (a campaign's own packs/ tree, since 2026-09-
+// 01-create-scene-leaves Task 5 — before that, --maps-dir; spec §4.2's
+// trust framing: "same trust as guide.md, but more likely third-party")
+// and its whole security
 // posture — packFileContentTypes' closed allowlist, os.OpenRoot's
 // symlink-safety, the Bearer-auth gate — is built for exactly that: content
 // this binary did not itself produce. The standard pack is the opposite: it
@@ -27,10 +32,11 @@
 // keeps first-party platform art on the same footing as the program itself
 // (server.go's own WithStatic doc comment: "the browser must load the app
 // before it has anywhere to type a token... What is public here is the
-// PROGRAM"). It also means std art is available even when the server has no
-// --maps-dir/--adventures-dir configured at all, and even before a token
-// exists — unlike a WithMaps/WithPackFiles pack, which loadMapsDir only
-// ever wires in when mapsDir != "" (cmd/vtt/serve_compose.go).
+// PROGRAM"). It also means std art is available even when the campaign has
+// no maps/packs or --adventures-dir configured at all, and even before a
+// token exists — unlike a WithMaps/WithPackFiles pack, which composeServer
+// only wires in when the campaign directory's own maps/ exists
+// (cmd/vtt/serve_compose.go).
 //
 // client/public/std-pack (this file's own -std-out default) is Vite's
 // convention for "copy verbatim into the build output" (client/vite.config.ts
@@ -75,7 +81,7 @@ type standardEntry struct {
 // wire a content-generation tool to engine internals for no reason a change
 // to either side should have to consider).
 //
-// Reuses four of maps/cellar's own drawing functions where the NATURE is
+// Reuses four of cellar-basics' own drawing functions where the NATURE is
 // literally the same texture family (wall/stone, floor/stone, floor/earth,
 // door/wood) — a stone wall is a stone wall whether it is the standard
 // baseline or cellar-basics' own masonry-1. The remaining seven natures have
@@ -172,11 +178,12 @@ func writeStandardPack(out string, rng *rand.Rand) packOut {
 	}
 
 	manifest := packOut{
-		ID:      "std",
-		Name:    "Standard Vocabulary",
-		CellPx:  size,
-		Tiles:   tiles,
-		Objects: []packTileOut{},
+		FormatVersion: packFormatVersion,
+		ID:            "std",
+		Name:          "Standard Vocabulary",
+		CellPx:        size,
+		Tiles:         tiles,
+		Objects:       []packTileOut{},
 	}
 	writeManifest(out, manifest)
 	return manifest

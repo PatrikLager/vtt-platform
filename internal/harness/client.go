@@ -51,9 +51,9 @@ const eventBuffer = 256
 // envelope north of 40KB, well past the default — a Dial that left the
 // library default in place would silently and permanently desync the moment
 // any scene of real size loaded, exactly the failure mode
-// internal/gateway/server_internal_test.go's own bigSceneName fixture named
+// internal/gateway/server_internal_test.go's own bigPaddingName fixture named
 // and worked around locally (its comment: "Every connection that might
-// legitimately RECEIVE bigSceneName-sized broadcasts needs its read limit
+// legitimately RECEIVE bigPaddingName-sized broadcasts needs its read limit
 // raised above coder/websocket's default 32KB cap"). 200KiB matches that
 // existing precedent rather than inventing a second number for the same
 // problem; it is not derived from any hard ceiling elsewhere in the wire

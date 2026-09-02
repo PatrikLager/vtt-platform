@@ -83,7 +83,6 @@ export const COMMAND_SURFACE: Record<
 > = {
   startSession: { surface: "dm-console", action: "start-session" },
   endSession: { surface: "dm-console", action: "end-session" },
-  createScene: { surface: "dm-console", action: "create-scene" },
   placeToken: { surface: "dm-console", action: "place-token" },
   addActor: { surface: "dm-console", action: "add-actor" },
   loadAdventure: { surface: "dm-console", action: "load-adventure" },
@@ -193,6 +192,15 @@ test("a command nobody can issue must say why, so the hatch costs something", ()
     .filter(([, v]) => v.surface === "not-user-issued" && !v.why?.trim())
     .map(([k]) => k);
   expect(bare).toEqual([]);
+});
+
+test("no command builder can create a scene, because the kernel does not make maps", () => {
+  // Patrik, 2026-09-01: the kernel serves maps, it does not make them. A
+  // create_scene is a ONE-SHOT command doing ITERATIVE work, so every mistake
+  // is permanent — terrain authoring wants an editor, which is its own tool
+  // and not an event-sourced kernel's job. This asserts the ABSENCE, so it is
+  // written before the removal and must fail now.
+  expect(Object.keys(commands).filter((k) => /createScene/i.test(k))).toEqual([]);
 });
 
 test("every command with a human surface has a builder in commands.ts", () => {

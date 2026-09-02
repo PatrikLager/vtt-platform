@@ -43,7 +43,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -733,7 +733,7 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 	}
 	t.Cleanup(func() { c.Close() })
 
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,6 +759,7 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
 		           "kind":"floor", "material":"wood"}]
@@ -1052,8 +1053,9 @@ func TestMapsListedForEveryRole(t *testing.T) {
 
 // TestMapsEmptyCollectionWithNothingLoaded mirrors
 // TestMetadataEmptyCollectionsWithNothingLoaded's "empty is not an error"
-// posture (spec §5): a server booted without --maps-dir answers 200 with an
-// empty list, not a 404 or a 500.
+// posture (spec §5): a server booted for a campaign whose maps/ is absent,
+// or which has no maps installed yet (2026-09-01-create-scene-leaves Task
+// 5), answers 200 with an empty list, not a 404 or a 500.
 func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -1061,7 +1063,7 @@ func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	ids, err := identity.Open(path)
+	ids, err := identity.Open(campaign.LogPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,7 +60,7 @@ test("a spectator sees the table and no controls", async ({ page }) => {
   await page.screenshot(shot("01-spectator"));
 });
 
-test("a DM starts a session, creates a scene and loads an adventure", async ({ page }) => {
+test("a DM starts a session and loads an adventure", async ({ page }) => {
   await openAs(page, "dm");
   await expect(page.locator(".dm")).toBeVisible();
   await page.screenshot(shot("02-dm-console"));

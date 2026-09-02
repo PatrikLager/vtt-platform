@@ -51,7 +51,9 @@ import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
  * checks all go through its sameShape helper, four fixture tests among them.
  * What is true is narrower — an ad-hoc shape check there reaches for
  * toMatchObject, on toJson output or on the raw value with no round-trip at
- * all, as its "createScene and placeToken carry their geometry" test does).
+ * all, as its "placeToken carries its geometry" test does — a test that
+ * carried createScene too, and lost that half on 2026-09-02 when the command
+ * left the platform).
  * The precise citation: this repo's own
  * openDoor/closeDoor/loadMap wire-shape tests from Task 1 —
  * "openDoor matches the client's own expected shape, scene and square in

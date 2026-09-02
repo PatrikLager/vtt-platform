@@ -41,9 +41,12 @@ import (
 // deliberately, not imported (harness test files may not depend on
 // internal/gateway).
 var soakCommandRoles = map[string]map[string]bool{
-	"move_token":   {"dm": true, "agent": true, "player": true},
-	"create_scene": {"dm": true, "agent": true},
-	"add_actor":    {"dm": true, "agent": true},
+	"move_token": {"dm": true, "agent": true, "player": true},
+	// load_map replaced create_scene in the generator's first mix band on
+	// 2026-09-02 (soak.go's pickBucket says why). Same role set: it was
+	// dm/agent then and it is dm/agent now (internal/gateway/authz.go).
+	"load_map":  {"dm": true, "agent": true},
+	"add_actor": {"dm": true, "agent": true},
 	// The soak's addActor lifecycle is TWO commands as of 2026-08-24: create
 	// the actor, then grant it. Without this row the grant lands in the
 	// unknown-command arm below and comes back denied, which would fail the
@@ -58,8 +61,8 @@ func soakCommandKind(cmd *vttv1.ClientCommand) string {
 	switch cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_MoveToken:
 		return "move_token"
-	case *vttv1.ClientCommand_CreateScene:
-		return "create_scene"
+	case *vttv1.ClientCommand_LoadMap:
+		return "load_map"
 	case *vttv1.ClientCommand_AddActor:
 		return "add_actor"
 	case *vttv1.ClientCommand_GrantActorControl:
@@ -320,10 +323,21 @@ func (w *soakWorld) toEnvelope(name string, cmd *vttv1.ClientCommand) *vttv1.Env
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
 			TokenId: c.MoveToken.GetTokenId(), To: c.MoveToken.GetTo(),
 		}}
-	case *vttv1.ClientCommand_CreateScene:
+	case *vttv1.ClientCommand_LoadMap:
+		// The real server reads the map off disk and compiles it
+		// (internal/gateway's handleLoadMap -> mapdef.Compile); the scene it
+		// creates takes the MAP's own id, which is the one fact this fake has
+		// to reproduce for the generator's model to stay in step.
+		//
+		// NO TILES, exactly as the create_scene arm this replaced carried
+		// none: nothing this fake decides — role, token ownership, the fold it
+		// runs — ever consults terrain, and a real batch's 900 TileRefs per
+		// load would be carried through every history snapshot and every
+		// state comparison for no signal at all. The pool's maps are all floor
+		// (cmd/vtt's installSoakMaps), so there is no terrain here to model.
 		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-			SceneId: c.CreateScene.GetSceneId(), Name: c.CreateScene.GetName(),
-			GridWidth: c.CreateScene.GetGridWidth(), GridHeight: c.CreateScene.GetGridHeight(),
+			SceneId: c.LoadMap.GetMapId(), Name: c.LoadMap.GetMapId(),
+			GridWidth: harness.SoakMapGridSize, GridHeight: harness.SoakMapGridSize,
 		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: c.AddActor.GetActor()}}
@@ -581,10 +595,13 @@ func TestRunSoakGeneratorDiffersForDifferentSeed(t *testing.T) {
 // (Task 4 of docs/superpowers/plans/2026-08-31-retraction-leaves.md,
 // pickBucket's own doc
 // comment carries the ruling): Report.Counts, expressed as a fraction of
-// Events, must land close to the pinned percentages (create scene 5%, add
+// Events, must land close to the pinned percentages (load map 5%, add
 // actor 10%, place 15%, move-own 60%, session churn 5%, deliberate
-// authz-denied 5%). Tolerance is generous (±5 points) — this is a sanity
-// check on the mix, not a statistical test of the RNG.
+// authz-denied 5%). The first band was CREATE SCENE until 2026-09-02, when
+// create_scene left the platform and load_map took the band unchanged —
+// pickBucket's own doc carries that history. Tolerance is generous (±5
+// points) — this is a sanity check on the mix, not a statistical test of the
+// RNG.
 func TestRunSoakActionMixRatioSanity(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const events = 1000
@@ -600,8 +617,18 @@ func TestRunSoakActionMixRatioSanity(t *testing.T) {
 			t.Fatalf("Report.Pass = false, want true: counts=%+v", rep.Counts)
 		}
 
+		// THE POOL MUST NOT HAVE RUN DRY, or the loadMap fraction below is a
+		// truncation rather than a ratio and the assertion means nothing. The
+		// band is 5% of 1000 draws, well inside soak.go's soakMapPoolSize —
+		// this is what makes shrinking that constant red HERE instead of
+		// quietly moving the share it measures into addActor.
+		if pool := len(harness.SoakMapIDs()); rep.Counts["loadMap"] >= pool {
+			t.Fatalf("Counts[loadMap] = %d with a pool of %d: the pool ran dry, so the "+
+				"ratios below measure a truncation and not the mix", rep.Counts["loadMap"], pool)
+		}
+
 		want := map[string]float64{
-			"createScene":   0.05,
+			"loadMap":       0.05,
 			"addActor":      0.10,
 			"placeToken":    0.15,
 			"moveOwn":       0.60,
@@ -623,6 +650,140 @@ func TestRunSoakActionMixRatioSanity(t *testing.T) {
 		}
 		if sum != events {
 			t.Fatalf("sum of Counts = %d, want %d (every action must land in exactly one bucket): counts=%+v", sum, events, rep.Counts)
+		}
+	})
+}
+
+// TestRunSoakLoadsMapsFromTheInstalledPool pins what replaced create_scene in
+// the generator's first mix band (soak.go's pickBucket, 2026-09-02): a scene
+// arrives by LOADING a map the campaign already holds, and it names one of the
+// ids cmd/vtt installed. Three claims, because the weak version of this test —
+// "Counts[loadMap] > 0" alone — would pass on a generator that issued a
+// load_map for a map nobody installed, which is the mistake this pool exists
+// to prevent:
+//
+//  1. the band fires at all;
+//  2. every map id it names comes from SoakMapIDs(), and each is drawn AT MOST
+//     ONCE, because a second load of the same id is a duplicate scene the fold
+//     refuses (internal/engine's SceneCreated arm) and would come back denied
+//     outside the deliberate deniedAttempt bucket;
+//  3. the run passes, which is where claim 2's consequence would actually
+//     show up.
+func TestRunSoakLoadsMapsFromTheInstalledPool(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const events = 500
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 9, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: counts=%+v", rep.Counts)
+		}
+		if rep.Counts["loadMap"] == 0 {
+			t.Fatalf("no load_map was ever issued in %d events: counts=%+v", events, rep.Counts)
+		}
+
+		installed := map[string]bool{}
+		for _, id := range harness.SoakMapIDs() {
+			installed[id] = true
+		}
+		seen := map[string]bool{}
+		loaded := 0
+		for _, line := range w.dispatchLog {
+			var cmd vttv1.ClientCommand
+			if err := protojson.Unmarshal([]byte(line), &cmd); err != nil {
+				t.Fatalf("decode dispatched command: %v", err)
+			}
+			lm := cmd.GetLoadMap()
+			if lm == nil {
+				continue
+			}
+			loaded++
+			if !installed[lm.GetMapId()] {
+				t.Fatalf("load_map named %q, which is not in the installed pool", lm.GetMapId())
+			}
+			if seen[lm.GetMapId()] {
+				t.Fatalf("map %q was loaded twice; a scene id can only be created once", lm.GetMapId())
+			}
+			seen[lm.GetMapId()] = true
+		}
+		if loaded != rep.Counts["loadMap"] {
+			t.Fatalf("dispatched %d load_map commands, Counts says %d", loaded, rep.Counts["loadMap"])
+		}
+	})
+}
+
+// TestRunSoakSpendsTheMapBandOnActorsOnceThePoolIsSpent pins planStep's
+// load-map fall-through — the branch that runs when the pool has no map left.
+//
+// A map can be loaded exactly ONCE: its id becomes the scene's id and
+// engine.Apply refuses a duplicate, so planLoadMap takes from the front of
+// mapPool and never puts anything back. Past soakMapPoolSize draws of the 5%
+// band the model therefore has nothing to load, and the band spends the rest
+// of the run on addActor exactly as placeToken/moveOwn/deniedAttempt do when
+// their own preconditions fail.
+//
+// THE TWO RUNS THAT ALREADY MEASURE THIS GENERATOR CANNOT REACH IT.
+// TestRunSoakActionMixRatioSanity issues 1000 actions and cmd/vtt's pinned
+// keystone 500, against a pool whose 5% band needs roughly 20x its size to
+// exhaust — and line coverage says nothing, because canLoadMap() IS called on
+// every one of those draws and only ever answers true. internal/harness is
+// also outside check:mutation, so no gate reaches this branch either.
+//
+// The events count is DERIVED from the pool rather than pinned, so that
+// changing soakMapPoolSize moves this test with it instead of leaving it
+// grazing an edge it no longer reaches.
+//
+// The assertions are invariants, not counts:
+//
+//  1. Counts[loadMap] equals the pool exactly — never more. More would mean a
+//     map was drawn twice, which is the failure this branch exists to prevent.
+//  2. The run still PASSES, and Denied still equals Counts[deniedAttempt].
+//     That is where a re-load would actually surface: engine.Apply refuses the
+//     duplicate scene id, RunSoak counts it as a denial outside the deliberate
+//     bucket, and the soak's own invariant breaks.
+//
+// THE TWO HALVES OF 2 ARE NOT INDEPENDENT, and calling them two assertions
+// would overstate what this test detects. RunSoak increments rep.Denied in
+// exactly two places: the deliberate wantDenied arm, which increments
+// Counts[deniedAttempt] on the line above it, and the unexpected-denial arm,
+// which sets rep.Pass = false beside it. So Denied != Counts[deniedAttempt]
+// implies Pass == false, always — the Denied comparison buys a far better
+// failure message and no detection power the Pass check lacks. Only 1 and the
+// Pass half are separately reachable; a fault injection that violates one half
+// of 2 violates both.
+func TestRunSoakSpendsTheMapBandOnActorsOnceThePoolIsSpent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		pool := len(harness.SoakMapIDs())
+		// 30x the pool against a 5% band: the pool is spent around 20x, so
+		// the fall-through runs for hundreds of draws rather than being
+		// grazed in the final few.
+		events := pool * 30
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 11, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, io.Discard)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if rep.Counts["loadMap"] != pool {
+			t.Fatalf("Counts[loadMap] = %d over %d events, want exactly the pool size %d: "+
+				"fewer means this run never exhausted the pool and proves nothing about the "+
+				"fall-through; more means a map was loaded twice: counts=%+v",
+				rep.Counts["loadMap"], events, pool, rep.Counts)
+		}
+		if !rep.Pass {
+			t.Fatalf("Report.Pass = false, want true: counts=%+v", rep.Counts)
+		}
+		if rep.Denied != rep.Counts["deniedAttempt"] {
+			t.Fatalf("Denied = %d, Counts[deniedAttempt] = %d, want equal: the spent map band "+
+				"must degrade into addActor, never into a denial nothing asked for",
+				rep.Denied, rep.Counts["deniedAttempt"])
 		}
 	})
 }

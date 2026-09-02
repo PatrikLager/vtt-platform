@@ -9,44 +9,53 @@ rationale.
 
 ## Running
 
-The `vtt` CLI (`cmd/vtt`) opens one campaign SQLite file per invocation:
+The `vtt` CLI (`cmd/vtt`) opens one campaign DIRECTORY per invocation — its
+log, and (once installed) its maps and packs — created on first use by
+whichever command touches it first; `invite`, `serve` and `revoke` can run
+against it in any order:
 
 ```sh
 # Mint an invite token for a new participant (DM-side, CLI-only).
-vtt invite --campaign campaign.db --name "Alice" --role player
+vtt invite --campaign campaign/ --name "Alice" --role player
 
 # Serve that campaign over the WebSocket/HTTP gateway.
-vtt serve --campaign campaign.db --addr :8080
+vtt serve --campaign campaign/ --addr :8080
 
 # Revoke a participant's token if it leaks or is no longer needed.
-vtt revoke --campaign campaign.db --id <participant-id>
+vtt revoke --campaign campaign/ --id <participant-id>
 ```
 
 Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
 
 ## Content directories: rulesets, adventures, maps
 
-Three optional flags on `vtt serve` point at directories of content, each
+Two optional flags on `vtt serve` point at directories of content, each
 loaded and validated fully at boot — never at the table:
 
 ```sh
-vtt serve --campaign campaign.db --addr :8080 \
+vtt serve --campaign campaign/ --addr :8080 \
   --ruleset rulesets/dnd45e-minimal \
-  --adventures-dir adventures \
-  --maps-dir maps
+  --adventures-dir adventures
 ```
 
-`--maps-dir` serves every subdirectory of `maps/` as a standalone map (one
-`map.json` plus an optional `tiles/pack.json` and its images, e.g.
-`maps/cellar/`) over `GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
+Maps are not a flag: they belong to the campaign itself. Every flat file in
+`<campaign>/maps/` (one `<id>.json` per map, named by its own id) plus every
+pack directory in the sibling `<campaign>/packs/` is loaded and served over
+`GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
 [`docs/map-format.md`](docs/map-format.md) for the format itself, including a
 complete worked example and every standard tile name. A map loads
 independently of any adventure (design spec
 `docs/superpowers/specs/2026-08-12-maps-as-geometry-design.md` §4.3): drop a
-directory in, restart, and it is servable. `maps/cellar` is the platform's
-own demo map — a small room with real cover (pillars, crates, an interior
-wall and a door), generated art included (`tools/genmappack`, see that
-package's own doc comment for how to re-run it).
+file into the campaign's `maps/`, restart, and it is servable.
+[`campaigns/example/`](campaigns/example/) is the platform's own demo
+campaign — one map, `cellar.json`, a small room with real cover (pillars,
+crates, an interior wall and a door), generated art included
+(`tools/genmappack`, see that package's own doc comment for how to re-run
+it). `vtt serve --campaign` writes a log and identity state into whatever
+directory it opens (`campaign.Open`'s own doc comment), so copy it rather
+than pointing `--campaign` at the checked-in directory directly:
+`cp -r campaigns/example my-campaign && vtt serve --campaign my-campaign`
+to see a served map without authoring one first.
 
 ## Simulation harness: scenarios and soak
 
@@ -99,15 +108,23 @@ treat it as a credential.
 
 Demo runbook:
 
-1. `vtt serve --campaign campaign.db --addr :8443`
-2. `vtt invite --campaign campaign.db --name "Claude" --role agent` — it prints the token once.
+0. Put a map in the campaign, because the platform will not make one for you:
+   `mkdir -p campaign/maps && cp scenarios/maps/scn-tavern.json campaign/maps/`.
+   A campaign is a DIRECTORY that owns its maps, and installing one is a
+   filesystem act outside the platform — the server finds it whether it was
+   there at boot or appeared afterwards.
+1. `vtt serve --campaign campaign/ --addr :8443`
+2. `vtt invite --campaign campaign/ --name "Claude" --role agent` — it prints the token once.
 3. In that same shell, capture it without it ever landing in shell history:
    `read -s VTT_TOKEN && export VTT_TOKEN` (prompts silently, nothing echoed,
    nothing to scroll back through — or set `HISTIGNORE='export VTT_TOKEN=*'`
    first if you'd rather type it directly).
 4. Open Claude Code from that SAME shell (so the subprocess inherits
    `VTT_TOKEN`) with this repo's `.mcp.json` in scope.
-5. Suggested opening prompt: "Check get_state, then start a session, create a scene, and place a token on it."
+5. Suggested opening prompt: "Check get_state, then start a session, load the
+   `scn-tavern` map, add an actor, and place a token on it." (`load_map`, not
+   `create_scene`: that command left the platform on 2026-09-02 — the kernel
+   serves maps, it does not make them.)
 
 ## Security note: invite tokens and the connection URL
 

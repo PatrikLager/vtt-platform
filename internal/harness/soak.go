@@ -83,7 +83,7 @@ type SoakReport struct {
 	// action.
 	Checkpoints int
 	// Counts is a per-action-kind draw count (the mix-ratio bookkeeping):
-	// keys are this package's soakAction string values ("createScene",
+	// keys are this package's soakAction string values ("loadMap",
 	// "addActor", "placeToken", "moveOwn", "sessionChurn",
 	// "deniedAttempt").
 	Counts map[string]int
@@ -139,7 +139,7 @@ var soakPlayerNames = []string{soakPlayer1, soakPlayer2}
 type soakAction string
 
 const (
-	actionCreateScene   soakAction = "createScene"
+	actionLoadMap       soakAction = "loadMap"
 	actionAddActor      soakAction = "addActor"
 	actionPlaceToken    soakAction = "placeToken"
 	actionMoveOwn       soakAction = "moveOwn"
@@ -155,16 +155,30 @@ const (
 // Denied == Counts[deniedAttempt], both in soak_test.go and
 // cmd/vtt/client_e2e_test.go — rather than letting the default arm absorb
 // it, which would have tripled the deliberate authz-denied share from 5% to
-// 15% and changed what the soak measures) — create scene 5%, add actor 10%,
+// 15% and changed what the soak measures) — load map 5%, add actor 10%,
 // place 15%, move-own 60%, session churn 5%, deliberate authz-denied 5%
 // (summing to 100%). A pure function of r: RunSoak's own same-seed-twice
 // determinism obligation depends on every draw consulting nothing but the
 // rng stream and the model state accumulated so far, never wall-clock or
 // map-iteration order.
+//
+// THE FIRST BAND WAS create scene UNTIL 2026-09-02, when create_scene left
+// the platform (Patrik's ruling, 2026-09-01: the kernel serves maps, it does
+// not make them). It became load map rather than being redistributed: a scene
+// now arrives only from a FILE, by one of exactly two commands — load_map for
+// a standalone map and load_adventure for an adventure's own scenes — and
+// load_map is the one of those two a soak can drive, because a pool of
+// interchangeable maps costs no rng draw to choose between while a pool of
+// adventures would bring actors, notes and narration with it. So the band is
+// exercising the path this generator makes load-bearing, and it already
+// existed for scene-arrival.
+// The percentages did not move and neither did the rng draw sequence: a
+// loadMap step consumes one pickDMOrAgent draw, the same as the createScene
+// step it replaced.
 func pickBucket(r float64) soakAction {
 	switch {
 	case r < 0.05:
-		return actionCreateScene
+		return actionLoadMap
 	case r < 0.15:
 		return actionAddActor
 	case r < 0.30:
@@ -884,7 +898,14 @@ type soakModel struct {
 
 	sessionOpen bool
 
-	sceneN, actorN, tokenN int
+	actorN, tokenN int
+
+	// mapPool is what is LEFT of SoakMapIDs(): planLoadMap takes from the
+	// front and never puts anything back, because a map can be loaded exactly
+	// once (its id becomes the scene's id, and engine.Apply refuses a
+	// duplicate). An empty pool is a precondition failure like any other, not
+	// an error — see planStep.
+	mapPool []string
 
 	// playerControlledActor records that a player's addActor assignment has
 	// already been ATTEMPTED (see planAddActor) — keyed regardless of
@@ -917,6 +938,7 @@ type soakGrant struct {
 
 func newSoakModel() *soakModel {
 	return &soakModel{
+		mapPool:               SoakMapIDs(),
 		actorController:       map[string]string{},
 		tokenActor:            map[string]string{},
 		tokenPos:              map[string][2]int32{},
@@ -925,6 +947,8 @@ func newSoakModel() *soakModel {
 }
 
 func (m *soakModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.actors) > 0 }
+
+func (m *soakModel) canLoadMap() bool { return len(m.mapPool) > 0 }
 
 // planStep decides the action for one draw: it consumes exactly one
 // rng.Float64() call to pick the mix bucket (pickBucket), then
@@ -948,8 +972,16 @@ func (m *soakModel) planStep(rng *rand.Rand, ids map[string]string) soakStep {
 		return step
 	}
 	switch pickBucket(rng.Float64()) {
-	case actionCreateScene:
-		return m.planCreateScene(rng)
+	case actionLoadMap:
+		// FALLS THROUGH WHEN THE POOL IS SPENT, exactly as placeToken/moveOwn/
+		// deniedAttempt fall through when their own preconditions are not met:
+		// a map can be loaded once and only once (its id becomes the scene's,
+		// and engine.Apply refuses a scene id the campaign already has), so a
+		// soak long enough to draw this band more than len(SoakMapIDs()) times
+		// runs out of places and spends the rest of that band on addActor.
+		if m.canLoadMap() {
+			return m.planLoadMap(rng)
+		}
 	case actionAddActor:
 		return m.planAddActor(rng, ids)
 	case actionPlaceToken:
@@ -979,7 +1011,7 @@ func pickDMOrAgent(rng *rand.Rand) string {
 	return soakAgent
 }
 
-// soakSceneGridSize is every soak-generated scene's GridWidth/GridHeight.
+// SoakMapGridSize is the square grid every map in the soak's pool declares.
 // planMoveOwn's random destinations (maps-as-geometry Task 6) must draw from
 // exactly this range: engine.State.Blocked now enforces grid bounds for a
 // PLAYER's own move (spec §6, "hard for players, free for DM" — the check
@@ -987,40 +1019,77 @@ func pickDMOrAgent(rng *rand.Rand) string {
 // legitimately reach would make moveOwn an unintended second source of
 // denial, alongside the deliberate deniedAttempt bucket RunSoak's invariant
 // already accounts for (SoakReport.Pass's doc comment). One named constant,
-// shared by the scene's own declared size and the range moveOwn draws from,
-// so the two cannot drift apart the way two independent literals could.
-const soakSceneGridSize int32 = 30
+// shared by the pool map's own declared size and the range moveOwn draws
+// from, so the two cannot drift apart the way two independent literals could.
+//
+// EXPORTED because the pool's maps are FILES now, and this package does not
+// write files: internal/harness acts only through the wire (client.go's
+// package comment), so cmd/vtt installs the pool into the soak's campaign and
+// needs the geometry to write. See SoakMapIDs.
+//
+// IT WAS A WIRE-SIZE DECISION UNTIL 2026-09-02 AND IS NOT ONE ANY MORE. While
+// the soak built its scenes with create_scene, 30x30 = 900 squares marshalled
+// to about 22.9 KB against internal/gateway's maxWSFrameBytes = 32768, and
+// raising it past ~1200 squares would have torn the connection instead of
+// producing a refusal. A load_map command carries an ID: the terrain is read
+// off disk by the server and never crosses the inbound frame at all, so that
+// ceiling is gone. What remains is mapdef.MaxWireTiles (3600), which bounds
+// the OUTBOUND SceneCreated, and 900 is well inside it.
+const SoakMapGridSize int32 = 30
 
-func (m *soakModel) planCreateScene(rng *rand.Rand) soakStep {
-	m.sceneN++
-	id := fmt.Sprintf("soak-scn-%d", m.sceneN)
-	issuer := pickDMOrAgent(rng)
-	// EVERY square declared, because create_scene refuses a grid with an
-	// undeclared one (internal/gateway's validateCreateSceneTerrain, via
-	// mapdef.RequireEverySquarePresent). All floor: the soak's moveOwn draws
-	// a target anywhere in the grid and expects it to be reachable, so a wall
-	// here would turn a legitimate move into a denial the invariant does not
-	// account for.
-	//
-	// AND soakSceneGridSize IS NOW A WIRE-SIZE DECISION, which it was not
-	// before terrain became mandatory. 30x30 = 900 squares marshals to about
-	// 22.9 KB against internal/gateway's maxWSFrameBytes = 32768 — roughly 70%
-	// of the frame the gateway will read. Raising it is no longer free:
-	// past ~1200 squares the command exceeds that limit and is dropped inside
-	// conn.Read, which presents as a torn connection rather than a refusal,
-	// and the soak would fail in a way that looks like a keepalive bug. See
-	// client/src/commands.ts's maxCreateSceneSquares for the measured table.
-	tiles := make(map[string]*vttv1.TileRef, soakSceneGridSize*soakSceneGridSize)
-	for y := int32(0); y < soakSceneGridSize; y++ {
-		for x := int32(0); x < soakSceneGridSize; x++ {
-			tiles[fmt.Sprintf("%d,%d", x, y)] = &vttv1.TileRef{Kind: "floor"}
-		}
+// soakMapPoolSize is how many maps the soak's campaign is stocked with.
+//
+// SIZED SO THE MIX BUCKET DOES NOT RUN DRY on any soak this repository runs.
+// The load-map band is 5% of draws, so 96 maps covers a run of roughly 1900
+// actions; the two runs that MEASURE the mix are soak_test.go's
+// TestRunSoakActionMixRatioSanity (1000 events) and cmd/vtt's
+// TestClientSoakSelfContainedSeed1Events500PassesWithPinnedCounts (500), and
+// both are far inside it. That the pool did not run dry is asserted rather
+// than assumed by the mix test itself, so shrinking this number reds there
+// instead of quietly distorting the ratio it reports.
+//
+// A longer run than that is still valid: the band degrades into addActor
+// (planStep's fall-through) rather than into a denial, which would break
+// RunSoak's own "nothing outside the deliberate bucket comes back denied"
+// invariant.
+const soakMapPoolSize = 96
+
+// SoakMapIDs is the soak's map pool: the id of every map that must be
+// installed in the campaign a soak runs against, in the order the generator
+// draws them. Exported for the reason SoakParticipants is — the list lives in
+// exactly one place, and cmd/vtt's boot glue (client_soak.go) writes a file
+// per id into the campaign before the run starts, which is the INSTALL half of
+// this platform's "install, then load" (2026-09-01-create-scene-leaves design
+// spec §4). A live `--server` soak therefore needs these maps installed in the
+// operator's own campaign, at SoakMapGridSize square and all floor: without
+// them every load_map comes back ok=false and the report names the missing id,
+// and with a SMALLER map the moveOwn bucket starts drawing destinations
+// outside the grid, which the gateway refuses for a player-issued move and
+// RunSoak counts as a denial nothing asked for.
+//
+// Every map is identical but for its id, and the generator draws them in
+// order rather than at random for exactly that reason: choosing between
+// interchangeable things would spend an rng draw and buy nothing.
+func SoakMapIDs() []string {
+	ids := make([]string, 0, soakMapPoolSize)
+	for i := 1; i <= soakMapPoolSize; i++ {
+		ids = append(ids, fmt.Sprintf("soak-map-%d", i))
 	}
-	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
-		SceneId: id, Name: id, GridWidth: soakSceneGridSize, GridHeight: soakSceneGridSize,
-		Tiles: tiles,
+	return ids
+}
+
+// planLoadMap brings the next unloaded map in the pool into play. The scene it
+// creates takes the map's own id (mapdef.Compile), which is why the model can
+// record the scene before the server has answered — the same way every other
+// plan* records what its command will produce.
+func (m *soakModel) planLoadMap(rng *rand.Rand) soakStep {
+	id := m.mapPool[0]
+	m.mapPool = m.mapPool[1:]
+	issuer := pickDMOrAgent(rng)
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadMap{LoadMap: &vttv1.LoadMap{
+		MapId: id,
 	}}}
-	return soakStep{issuer: issuer, cmd: cmd, kind: actionCreateScene, apply: func(int64) {
+	return soakStep{issuer: issuer, cmd: cmd, kind: actionLoadMap, apply: func(int64) {
 		m.scenes = append(m.scenes, id)
 	}}
 }
@@ -1176,21 +1245,20 @@ func (m *soakModel) planMoveOwn(rng *rand.Rand) (soakStep, bool) {
 	}
 	choice := options[rng.Intn(len(options))]
 	tok := choice.tokens[rng.Intn(len(choice.tokens))]
-	// #nosec G115 -- rng.Intn(int(soakSceneGridSize)) is bounded to
-	// 0..soakSceneGridSize-1; int32 cannot overflow.
+	// #nosec G115 -- rng.Intn(int(SoakMapGridSize)) is bounded to
+	// 0..SoakMapGridSize-1; int32 cannot overflow.
 	//
 	// Bounded to the scene's OWN size, not an arbitrary wider range: every
-	// soak scene is soakSceneGridSize square (planCreateScene), and since
-	// Task 6 a coordinate outside it is a real, gateway-enforced "outside
-	// the grid" refusal for a player-issued move (engine.State.Blocked).
-	// Drawing outside that range would make moveOwn an accidental second
-	// source of denial. Every square of every soak scene is FLOOR — since
-	// terrain became mandatory, planCreateScene above fills the whole grid,
-	// and it fills it with floor precisely so that terrain is never a reason
-	// a move is refused — so bounds are the only way moveOwn could ever be
-	// blocked, and a well-formed client never sends a destination its own
-	// scene cannot contain.
-	x, y := int32(rng.Intn(int(soakSceneGridSize))), int32(rng.Intn(int(soakSceneGridSize)))
+	// soak scene comes from a pool map that is SoakMapGridSize square, and
+	// since Task 6 a coordinate outside it is a real, gateway-enforced
+	// "outside the grid" refusal for a player-issued move
+	// (engine.State.Blocked). Drawing outside that range would make moveOwn an
+	// accidental second source of denial. Every square of every pool map is
+	// FLOOR, chosen precisely so that terrain is never a reason a move is
+	// refused — so bounds are the only way moveOwn could ever be blocked, and
+	// a well-formed client never sends a destination its own scene cannot
+	// contain.
+	x, y := int32(rng.Intn(int(SoakMapGridSize))), int32(rng.Intn(int(SoakMapGridSize)))
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: &vttv1.GridPosition{X: x, Y: y},
 	}}}

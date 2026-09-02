@@ -144,13 +144,22 @@ func propMust(t *testing.T, c *campaign.Campaign, env *vttv1.Envelope, idx int, 
 	return seq
 }
 
-func (m *propModel) doCreateScene(t *testing.T, c *campaign.Campaign, idx int) {
+// doSceneCreated appends one SceneCreated straight to the log.
+//
+// NAMED FOR THE EVENT, unlike doAddActor/doPlaceToken beside it, and the
+// inconsistency is deliberate: it was doCreateScene until 2026-09-02, when
+// create_scene left the platform (Patrik's ruling, 2026-09-01) and there was
+// no longer a command of that name for the label to mean. This model appends
+// EVENTS — it never issues a command at all, which is why the rename costs
+// nothing here — and SceneCreated is what it appends. Its siblings keep their
+// command-shaped names because those commands still exist.
+func (m *propModel) doSceneCreated(t *testing.T, c *campaign.Campaign, idx int) {
 	t.Helper()
 	m.sceneN++
 	id := fmt.Sprintf("prop-scn-%d", m.sceneN)
 	seq := propMust(t, c, cenv(nextID(), &vttv1.SceneCreated{
 		SceneId: id, Name: id, GridWidth: 20, GridHeight: 20,
-	}), idx, "createScene")
+	}), idx, "sceneCreated")
 	m.scenes = append(m.scenes, id)
 	m.allSeqs = append(m.allSeqs, seq)
 }
@@ -340,8 +349,8 @@ func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx
 	r := rng.Float64()
 	switch {
 	case r < 0.05:
-		m.doCreateScene(t, c, idx)
-		counts["createScene"]++
+		m.doSceneCreated(t, c, idx)
+		counts["sceneCreated"]++
 	case r < 0.15:
 		m.doAddActor(t, c, idx)
 		counts["addActor"]++
@@ -432,7 +441,7 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 	t.Helper()
 	for _, kind := range []string{
-		"createScene", "addActor", "placeToken", "moveToken", "startSession", "endSession",
+		"sceneCreated", "addActor", "placeToken", "moveToken", "startSession", "endSession",
 		"addNarration", "upsertNote", "deleteNote",
 	} {
 		if counts[kind] == 0 {

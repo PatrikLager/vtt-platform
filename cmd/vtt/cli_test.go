@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -55,7 +56,7 @@ func TestInviteThenRevoke(t *testing.T) {
 	id := extractField(t, out, "participant id: ")
 	token := extractField(t, out, "token (shown once — store it now, it cannot be recovered): ")
 
-	ids, err := identity.Open(campaignPath)
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func TestServeBootsAMixedAdventuresDirServingOnlyThisTable(t *testing.T) {
 	// under the amended binding no longer fails — so it BOOTED and blocked
 	// the suite on :8080 until it was killed.
 	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir,
-		filepath.Join(root, "adventures"), "")
+		filepath.Join(root, "adventures"))
 	if err != nil {
 		t.Fatalf("composeServer against the real mixed adventures/ = %v; "+
 			"a library holding one adventure for another table must still boot", err)
@@ -361,7 +362,7 @@ func TestJoinLinkOpenShareCloseRotate(t *testing.T) {
 // happened to print.
 func secretFrom(t *testing.T, campaignPath string) string {
 	t.Helper()
-	ids, err := identity.Open(campaignPath)
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +393,7 @@ func TestJoinLinkOpenTakesAnAdmissionBudget(t *testing.T) {
 			"when somebody is refused", out)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +425,7 @@ func TestJoinLinkOpenWithNoBudgetAdmitsSomebody(t *testing.T) {
 	if _, err := runCLI(t, "join-link", "open", "--campaign", campaignPath); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	ids, err := identity.Open(campaignPath)
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +462,7 @@ func TestJoinLinkShowReportsWhatIsLeftOfTheBudget(t *testing.T) {
 		t.Fatalf("door reads %q — the budget leaked into the field a caller parses", door)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,4 +483,50 @@ func TestJoinLinkShowReportsWhatIsLeftOfTheBudget(t *testing.T) {
 		t.Fatalf("after one joiner, admissions reads %q, want \"1 of 2 left\" — the count "+
 			"does not move, so the DM cannot tell a live door from a spent one", got)
 	}
+}
+
+// TestCampaignDirectoryWorksInEitherCLIOrdering pins the two orderings
+// README.md documents — invite then serve (its own first code block), and
+// serve then invite (its Claude Code demo runbook) — against the SAME
+// campaign path either command creates first.
+//
+// Fix round 1 found both broken by this task's own change: `vtt invite`
+// still opened `--campaign` as a raw SQLite file directly, so invite-first
+// left a bare file that composeServer's campaign.Open then refused ("is a
+// file; a campaign is a directory..."), while serve-first created a real
+// campaign DIRECTORY that invite's old identity.Open(campaignPath) then
+// tried to open AS a SQLite file and failed ("unable to open database
+// file"). Both READMEs's own worked examples were dead at this point.
+func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
+	t.Run("invite then serve", func(t *testing.T) {
+		campaignPath := filepath.Join(t.TempDir(), "campaign")
+		if _, err := runCLI(t, "invite",
+			"--campaign", campaignPath, "--name", "Alice", "--role", "player",
+		); err != nil {
+			t.Fatalf("invite (first): %v", err)
+		}
+		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+		if err != nil {
+			t.Fatalf("serve after invite: %v", err)
+		}
+		if err := closeFn(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("serve then invite", func(t *testing.T) {
+		campaignPath := filepath.Join(t.TempDir(), "campaign")
+		_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+		if err != nil {
+			t.Fatalf("serve (first): %v", err)
+		}
+		if err := closeFn(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runCLI(t, "invite",
+			"--campaign", campaignPath, "--name", "Bob", "--role", "player",
+		); err != nil {
+			t.Fatalf("invite after serve: %v", err)
+		}
+	})
 }

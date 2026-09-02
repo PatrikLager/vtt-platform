@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -29,7 +30,7 @@ import (
 func TestServeComposeEndToEnd(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", "")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)
 	}
@@ -56,7 +57,9 @@ func TestServeComposeEndToEnd(t *testing.T) {
 
 	// --- mint an invite via identity directly, not through the server ---
 
-	ids, err := identity.Open(campaignPath)
+	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); composeServer above
+	// has already created it.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatalf("identity.Open: %v", err)
 	}
@@ -257,7 +260,7 @@ func TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 	rulesetDir := filepath.Join("..", "..", "rulesets", "dnd45e-minimal")
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, advRoot, "")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, advRoot)
 	if err == nil {
 		if closeFn != nil {
 			_ = closeFn()
@@ -290,7 +293,7 @@ func TestComposeServerLoadsAdventureGuidesAtBoot(t *testing.T) {
 	srv, closeFn, err := composeServer(
 		campaignPath, "127.0.0.1:0",
 		filepath.Join("..", "..", "rulesets", "dnd45e-minimal"),
-		advRoot, "",
+		advRoot,
 	)
 	if err != nil {
 		t.Fatalf("composeServer with the committed adventures dir: %v", err)

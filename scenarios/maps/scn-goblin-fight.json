@@ -1,0 +1,12 @@
+{
+  "format_version": 1,
+  "id": "scn-goblin-fight",
+  "name": "Forest Trail",
+  "grid_width": 31,
+  "grid_height": 3,
+  "tiles": {
+    "0,0": "earth", "1,0": "earth", "2,0": "earth", "3,0": "earth", "4,0": "earth", "5,0": "earth", "6,0": "earth", "7,0": "earth", "8,0": "earth", "9,0": "earth", "10,0": "earth", "11,0": "earth", "12,0": "earth", "13,0": "earth", "14,0": "earth", "15,0": "earth", "16,0": "earth", "17,0": "earth", "18,0": "earth", "19,0": "earth", "20,0": "earth", "21,0": "earth", "22,0": "earth", "23,0": "earth", "24,0": "earth", "25,0": "earth", "26,0": "earth", "27,0": "earth", "28,0": "earth", "29,0": "earth", "30,0": "earth",
+    "0,1": "earth", "1,1": "earth", "2,1": "earth", "3,1": "earth", "4,1": "earth", "5,1": "earth", "6,1": "earth", "7,1": "earth", "8,1": "earth", "9,1": "earth", "10,1": "earth", "11,1": "earth", "12,1": "earth", "13,1": "earth", "14,1": "earth", "15,1": "earth", "16,1": "earth", "17,1": "earth", "18,1": "earth", "19,1": "earth", "20,1": "earth", "21,1": "earth", "22,1": "earth", "23,1": "earth", "24,1": "earth", "25,1": "earth", "26,1": "earth", "27,1": "earth", "28,1": "earth", "29,1": "earth", "30,1": "earth",
+    "0,2": "earth", "1,2": "earth", "2,2": "earth", "3,2": "earth", "4,2": "earth", "5,2": "earth", "6,2": "earth", "7,2": "earth", "8,2": "earth", "9,2": "earth", "10,2": "earth", "11,2": "earth", "12,2": "earth", "13,2": "earth", "14,2": "earth", "15,2": "earth", "16,2": "earth", "17,2": "earth", "18,2": "earth", "19,2": "earth", "20,2": "earth", "21,2": "earth", "22,2": "earth", "23,2": "earth", "24,2": "earth", "25,2": "earth", "26,2": "earth", "27,2": "earth", "28,2": "earth", "29,2": "earth", "30,2": "earth"
+  }
+}

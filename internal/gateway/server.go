@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -203,8 +204,12 @@ type Server struct {
 
 	// adventureGuides is the markdown served by /api/adventures/{id}/guide,
 	// keyed by adventure id. Set via WithAdventureGuides, boot time only.
-	// Held separately from adventures because the gateway does no file I/O:
-	// cmd/vtt reads the guides and hands them over (ADR-008).
+	// Held separately from adventures because cmd/vtt owns the filesystem
+	// (ADR-008): it reads the guides and hands them over, so an unreadable
+	// one fails loudly at boot rather than becoming a 500 mid-session. The
+	// rule has one deliberate exception since 2026-09-01-create-scene-leaves
+	// Task 6 — mapsDir below — and a guide is not it; see mapByID (map.go)
+	// and WithAdventureGuides (metadata.go) for the whole reasoning.
 	adventureGuides map[string]string
 
 	// static is the built web client, served at / when non-nil. Optional:
@@ -213,13 +218,21 @@ type Server struct {
 	static fs.FS
 
 	// maps is OPTIONAL server config (maps-as-geometry Task 7, spec §4.3/
-	// §4.4): nil/empty is today's behavior for a server with no
-	// --maps-dir — GET /api/maps answers 200 with an empty list, the same
-	// "empty is not an error" posture handleAdventures already gives (spec
-	// §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
-	// its own doc comment for why), keyed by each map's own declared id
-	// (Map.ID), not any directory name — cmd/vtt's loadMapsDir refuses a
-	// collision there before either map ever reaches here.
+	// §4.4): nil/empty is today's behavior for a campaign whose maps/ is
+	// absent, or which has no maps installed yet (2026-09-01-create-scene-
+	// leaves Task 5 — maps come from the campaign directory itself, not a
+	// --maps-dir flag) — GET /api/maps answers 200 with an empty list, the
+	// same "empty is not an error" posture handleAdventures already gives
+	// (spec §5). Keyed by each map's own declared id (Map.ID), not any
+	// directory name — cmd/vtt's loadMapsDir refuses a collision there
+	// before either map ever reaches here.
+	//
+	// NO LONGER BOOT TIME ONLY as of 2026-09-01-create-scene-leaves Task 6:
+	// WithMaps still fills it before the server serves anything, but a map
+	// installed into the campaign's maps/ during a session joins it on its
+	// first successful load_map (map.go's mapByID). Every access ONCE THE
+	// SERVER IS SERVING therefore goes through mapsMu below; WithMaps'
+	// own write does not, and its doc comment says why.
 	maps map[string]*mapdef.Map
 
 	// packs mirrors maps' own keying but for packs (Pack.ID, set together
@@ -232,8 +245,8 @@ type Server struct {
 
 	// packFS is OPTIONAL server config, boot time only, set via
 	// WithPackFiles: one fs.FS PER PACK, each rooted AT that pack's own
-	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over an
-	// operator-installed --maps-dir — NOT os.DirFS; see WithPackFiles' own
+	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over a
+	// campaign's own packs/ tree — NOT os.DirFS; see WithPackFiles' own
 	// doc comment for why that distinction is load-bearing, not stylistic).
 	// GET /api/packs/{pack}/{file} (metadata.go's handlePackFile) serves
 	// straight out of the matching entry. A SEPARATE field from packs
@@ -244,6 +257,18 @@ type Server struct {
 	// here, at the layer that actually owns the filesystem boundary
 	// (ADR-008).
 	packFS map[string]fs.FS
+
+	// mapsDir is the campaign's own maps/ directory, set via WithMapsDir:
+	// where map.go's mapByID looks when the set above does not hold an id
+	// (2026-09-01-create-scene-leaves design spec §5). Empty means this
+	// server cannot look anything up on disk, which is every pre-Task-6
+	// behaviour unchanged — see mapByID's own doc comment.
+	mapsDir string
+
+	// mapsMu guards maps, and only maps. packs and packFS stay boot-time
+	// only, so they are read without it (see mapByID and handleMaps, which
+	// both say so where they do it).
+	mapsMu sync.RWMutex
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -303,16 +328,47 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 
 // WithMaps configures s to answer GET /api/maps from m/packs, keyed by each
 // map's/pack's own declared id (maps-as-geometry Task 7). Both are expected
-// already fully loaded and validated (cmd/vtt's loadMapsDir: mapdef.Load,
-// mapdef.LoadPack, and a boot-time dry-run mapdef.Compile per map — fail
-// loud at boot, spec §4.4); this method does no I/O and no validation of
-// its own, mirroring WithAdventures. Returns s for call-site chaining;
-// mutates s in place, so it is not safe to call concurrently with s already
-// serving traffic. Pack file BYTES are a separate concern — see
-// WithPackFiles.
+// already fully loaded and validated (cmd/vtt's loadMapsDir, via
+// mapdef.LoadInstalled and mapdef.LoadPack — fail loud at boot, spec §4.4);
+// this method does no I/O and no validation of its own, mirroring
+// WithAdventures. Returns s for call-site chaining; mutates s in place
+// WITHOUT taking mapsMu, so it is not safe to call concurrently with s
+// already serving traffic — the map set gains entries during a session
+// (WithMapsDir below), but never through this method. Pack file BYTES are a
+// separate concern — see WithPackFiles.
 func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pack) *Server {
 	s.maps = m
 	s.packs = packs
+	return s
+}
+
+// WithMapsDir tells s where this campaign keeps its maps, so that a map
+// installed while the server is running is loadable without a restart
+// (2026-09-01-create-scene-leaves design spec §4/§5, and the sub-project's
+// own reason to exist: create_scene left the platform, and what replaces
+// improvisation is authoring a map outside the platform, writing it into
+// the campaign's maps/, and loading it). dir is the campaign's maps/
+// directory itself; it need not exist — a brand-new campaign has no maps
+// directory at all, and one that appears later is found on the next lookup,
+// because the probe reads the directory as it is at the moment it is asked
+// rather than holding any state about it.
+//
+// A PATH rather than an fs.FS, unlike WithPackFiles: the point of the probe
+// is that it runs mapdef.LoadInstalled, the SAME function cmd/vtt's boot
+// walk runs (design spec §12 — a map that boots cleanly must not be refused
+// on reload), and that function works in ordinary paths because the boot
+// walk does. An fs.FS here would have needed a second, bytes-shaped entry
+// into mapdef and a second error vocabulary, which is the divergence itself
+// wearing the costume of a safety measure. The escape an fs.FS would have
+// closed is closed instead where the untrusted id enters:
+// mapdef.LoadInstalled refuses any id that is not one plain filename,
+// before it joins anything.
+//
+// Boot time only as a CONFIGURATION call, like every other With* method:
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic.
+func (s *Server) WithMapsDir(dir string) *Server {
+	s.mapsDir = dir
 	return s
 }
 
@@ -1159,31 +1215,13 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// create_scene's terrain gets the SAME seam and the SAME reasoning as the
-	// movement check just above, applied to a different command (whole-
-	// branch-review finding C5): checked HERE, not in engine.Apply, because
-	// Apply is the fold and by the time an event reaches it the scene is
-	// already history — history is not the place to say no.
-	//
-	// UNLIKE the movement check, this does NOT gate on p.Role. "Hard for
-	// players, free for DM" (spec §6) is a rule about MOVEMENT freedom: an
-	// author is allowed to stage a creature inside a wall. It is not a rule
-	// about FORMAT validity — a tile kind of "banana" is never a legitimate
-	// thing for anyone to author, DM or agent included, because the engine
-	// (terrain.go) understands exactly three kinds and nothing reads a
-	// fourth. So every actor who may issue create_scene is held to the same
-	// closed vocabulary Authorize already decided they may use the command
-	// at all.
-	if cs, ok := cmd.GetCommand().(*vttv1.ClientCommand_CreateScene); ok {
-		if err := validateCreateSceneTerrain(cs.CreateScene); err != nil {
-			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-		}
-	}
-
 	// grant_actor_control's kind gets the SAME seam and the SAME reasoning as
-	// create_scene's terrain directly above, and for the third time the same
-	// argument: engine.Apply is the fold, and by the time an event reaches it
-	// the grant is already history — history is not the place to say no.
+	// the movement check above, and for the second time the same argument:
+	// engine.Apply is the fold, and by the time an event reaches it the grant
+	// is already history — history is not the place to say no. (This paragraph
+	// named create_scene's terrain check as the seam directly above it until
+	// 2026-09-02, when create_scene left the platform; add_actor's own check
+	// below still makes three call sites of the pattern, not two.)
 	//
 	// It is HERE rather than in Authorize because it is not a rule about who:
 	// the DM and the agent are both entitled to hand a character over, and
@@ -1199,7 +1237,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// add_actor gets the SAME seam and, for the fourth time, the same argument:
+	// add_actor gets the SAME seam and, for the third time, the same argument:
 	// engine.Apply is the fold, and by the time an ActorAdded reaches it the
 	// actor is already history.
 	//

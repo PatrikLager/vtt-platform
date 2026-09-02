@@ -369,7 +369,7 @@ func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 				{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
 					Expect: &harness.Expect{DeniedContaining: "not authorized"}},
 				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
-				{By: "dm", Command: []byte(`{"createScene":{"sceneId":"scn-1","name":"Hall","gridWidth":10,"gridHeight":10}}`),
+				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-1"}}`),
 					Expect: &harness.Expect{OK: true}},
 			},
 		}

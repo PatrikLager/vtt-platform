@@ -2,8 +2,9 @@
 // (task-3-brief.md): it composes a real gateway server (composeServer,
 // serve_compose.go) on a throwaway temp campaign, mints one invite token
 // per scenario participant directly via identity, and hands back only
-// PLAIN STRINGS (a ws:// URL and a name→token map) — never the
-// *http.Server, *campaign.Campaign, or *identity.DB it built them from.
+// PLAIN STRINGS (a ws:// URL, a name→token map, a name→id map and the
+// campaign directory) — never the *http.Server, *campaign.Campaign, or
+// *identity.DB it built them from.
 // That boundary is deliberate and load-bearing: internal/harness's own
 // package comment (client.go) documents the P1 rule that the harness core
 // may act only through the wire, the same way a live `--server`/`--tokens`
@@ -17,7 +18,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -69,6 +72,107 @@ func resolveAdventuresDir(rel string) (string, error) {
 	return dir, nil
 }
 
+// resolveMapsDir resolves a scenario's relative Maps dir path (e.g.
+// "scenarios/maps") to an absolute directory relative to the REPOSITORY
+// ROOT, exactly as resolveAdventuresDir above resolves its own — same
+// findRepoRoot walk, same "rel is already the directory" rule, same
+// fail-loud stat. What differs is what the caller then DOES with it: an
+// adventures directory is handed to composeServer, which reads it where it
+// lies; a maps directory is COPIED INTO the campaign by installMaps below,
+// because --maps-dir no longer exists and a map belongs to the campaign
+// that uses it (2026-09-01-create-scene-leaves Task 5).
+func resolveMapsDir(rel string) (string, error) {
+	root, err := findRepoRoot()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, rel)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("maps dir %q not found (looked for a directory at %s)", rel, dir)
+	}
+	return dir, nil
+}
+
+// installMaps copies every *.json in srcDir into campaignPath/maps, which is
+// where composeServer looks and where internal/gateway's mapByID probes on a
+// lookup miss (2026-09-01-create-scene-leaves Tasks 5 and 6). It is the
+// scenario runner performing the INSTALL half of "install, then load"
+// (design spec §4) on the scenario's behalf: a scenario file names maps by
+// id, and an id only means something once the file is in the campaign.
+//
+// COPIED, NOT SYMLINKED, and the reason is the model rather than tidiness: a
+// map belongs to the campaign that uses it (design spec §3), and a link is
+// not ownership. A campaign whose maps/ pointed at this repository's own
+// committed corpus would be one write away from editing the corpus, and
+// bootSelfContained's closeFn deletes the campaign directory afterwards —
+// os.RemoveAll would unlink the symlink rather than its target, but a
+// throwaway directory that a teardown deletes is the wrong place to keep a
+// door into tracked files. A copy is also what an operator does, and these
+// files are small.
+//
+// It creates campaignPath/maps even when srcDir holds no .json at all, which
+// composeServer then treats as a boot ERROR ("maps dir ... contains no
+// maps"). That is deliberate: a scenario that declares a maps directory has
+// said it needs maps, and an empty one is a mistake to report rather than a
+// campaign to start.
+//
+// NON-RECURSIVE, matching the flat maps/ layout Task 3 established (one
+// standalone map per file, named by its own id). A packs/ tree is NOT
+// installed, because no scenario map declares a pack — the corpus uses only
+// the standard tile vocabulary, for which mapdef needs none. A corpus map
+// that named a pack and resolved anything against it — a tile override, or an
+// object's art — would fail loudly at boot (mapdef.ErrPackNotLoaded, surfaced
+// through composeServer's own boot load, since mapdef.LoadInstalled dry-runs
+// Compile). One that named a pack and resolved nothing against it would load
+// unchanged, because Compile never consults the pack in that case. Neither is
+// silent breakage, so packs are left out until a scenario genuinely needs art.
+func installMaps(srcDir, campaignPath string) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read maps dir %s: %w", srcDir, err)
+	}
+	dstDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(dstDir, 0o750); err != nil {
+		return fmt.Errorf("create %s: %w", dstDir, err)
+	}
+
+	// BOTH ends go through os.Root (go1.24+; this repo is on go1.26) rather
+	// than filepath.Join of a directory entry's own name — the same primitive
+	// and the same reasoning maps.go already applies to a pack directory:
+	// "Methods on Root will follow symbolic links, but symbolic links may not
+	// reference a location outside the root" (go doc os.Root). A name that is
+	// not a single path element, or an entry that is a symlink pointing out of
+	// the corpus, cannot make either half of this copy touch a file outside
+	// the two directories named here. That is worth having even though srcDir
+	// is this repository's own committed corpus: what makes it safe today is a
+	// fact about the corpus, and Root makes it a fact about the code.
+	src, err := os.OpenRoot(srcDir)
+	if err != nil {
+		return fmt.Errorf("open maps dir %s: %w", srcDir, err)
+	}
+	defer src.Close()
+	dst, err := os.OpenRoot(dstDir)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", dstDir, err)
+	}
+	defer dst.Close()
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := src.ReadFile(e.Name())
+		if err != nil {
+			return fmt.Errorf("read map %s/%s: %w", srcDir, e.Name(), err)
+		}
+		if err := dst.WriteFile(e.Name(), data, 0o600); err != nil {
+			return fmt.Errorf("install map %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
+
 // findRepoRoot walks upward from the current working directory until it
 // finds a directory containing go.mod, returning that directory. Returns
 // an error if it reaches the filesystem root without finding one.
@@ -99,6 +203,20 @@ func findRepoRoot() (string, error) {
 type bootResult struct {
 	WSURL  string
 	Tokens map[string]string // participant name -> invite token
+	// CampaignDir is the throwaway campaign directory this boot created, so
+	// a caller in THIS package can install content into it the way an
+	// operator would — client_soak.go's installSoakMaps writes the soak's
+	// map pool there after the server is already serving.
+	//
+	// A PATH, and that keeps the boundary this file's own package comment
+	// draws: what must never cross it is the *http.Server, *campaign.Campaign
+	// or *identity.DB, because internal/harness may act only through the wire
+	// (client.go's package comment). A directory name is what a live
+	// `--server` operator has too — they installed their maps by putting
+	// files somewhere — and it never reaches the harness: cmd/vtt is the
+	// layer that owns the filesystem (ADR-008), and it is the only reader
+	// of this field.
+	CampaignDir string
 	// IDs is participant name -> the real, server-assigned
 	// identity.Participant.ID behind that invite (P6 Task 4 fix round) —
 	// harness.RunScenario's ids parameter, resolving a scenario's
@@ -115,7 +233,7 @@ type bootResult struct {
 }
 
 // bootSelfContained starts an in-process gateway server on a fresh temp
-// campaign file, mints one invite token per sc.Participants (name and role
+// campaign directory, mints one invite token per sc.Participants (name and role
 // taken straight from the scenario — an invite carries nothing else since
 // 2026-08-24, when the `controls` key that used to ride along with them was
 // deleted for granting nothing), and returns a bootResult ready for
@@ -125,7 +243,12 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vtt client run: boot temp dir: %w", err)
 	}
-	campaignPath := filepath.Join(dir, "campaign.db")
+	// dir IS the campaign directory (2026-09-01-create-scene-leaves Task 4)
+	// — it is already a fresh, dedicated temp directory for this one run,
+	// so campaign.Open needs no nested subdirectory (and no `.db`-suffixed
+	// name, which would now be misleading: campaign.Open creates a
+	// DIRECTORY here, not a file).
+	campaignPath := dir
 
 	rulesetDir := ""
 	if sc.Ruleset != "" {
@@ -145,7 +268,23 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		}
 	}
 
-	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir, "")
+	// BEFORE composeServer, so the maps this scenario names are preloaded and
+	// validated at boot exactly as an operator's own installed maps are —
+	// rather than relying on mapByID's on-demand probe, which would leave a
+	// broken corpus map undetected until the step that loads it.
+	if sc.Maps != "" {
+		mapsDir, err := resolveMapsDir(sc.Maps)
+		if err != nil {
+			_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
+			return nil, fmt.Errorf("vtt client run: resolve scenario maps dir %q: %w", sc.Maps, err)
+		}
+		if err := installMaps(mapsDir, campaignPath); err != nil {
+			_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
+			return nil, fmt.Errorf("vtt client run: install scenario maps: %w", err)
+		}
+	}
+
+	srv, closeCompose, err := composeServer(campaignPath, "127.0.0.1:0", rulesetDir, adventuresDir)
 	if err != nil {
 		_ = os.RemoveAll(dir) // best-effort temp cleanup; the returned error is what matters
 		return nil, fmt.Errorf("vtt client run: boot server: %w", err)
@@ -176,21 +315,24 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 		removeErr := os.RemoveAll(dir)
 		return firstNonNil(shutdownErr, composeErr, removeErr)
 	}
-	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, close: closeFn}, nil
+	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, CampaignDir: campaignPath, close: closeFn}, nil
 }
 
-// mintInvites opens its own identity.DB handle on campaignPath (a second,
-// short-lived handle alongside the one composeServer's gateway holds open —
-// the same pattern serve_e2e_test.go and internal/gateway's exit fixture
-// both use to mint invites against a server they didn't mint them through)
-// and mints one invite per participant, closing the handle before
-// returning either way. Returns BOTH the token (what a Dialer needs to
+// mintInvites opens its own identity.DB handle on campaign.LogPath(campaignPath)
+// (a second, short-lived handle alongside the one composeServer's gateway
+// holds open — the same pattern serve_e2e_test.go and internal/gateway's
+// exit fixture both use to mint invites against a server they didn't mint
+// them through) and mints one invite per participant, closing the handle
+// before returning either way. campaignPath is the campaign DIRECTORY
+// (2026-09-01-create-scene-leaves Task 4); by the time mintInvites runs,
+// composeServer has already created it, so the log identity shares with the
+// store already exists. Returns BOTH the token (what a Dialer needs to
 // connect) and the real, server-assigned participant id (P6 Task 4 fix
 // round — previously discarded via `token, _, err`; now every caller that
 // needs participant-id resolution, in-process or test-side, can reuse this
 // one function instead of hand-rolling its own minting loop).
 func mintInvites(campaignPath string, sc *harness.Scenario) (tokens, ids map[string]string, err error) {
-	idb, err := identity.Open(campaignPath)
+	idb, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt client run: open identity for minting: %w", err)
 	}

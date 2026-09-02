@@ -28,19 +28,19 @@ import (
 // square seq 20 put tok-fighter on.
 //
 // EVERY square is tiled, all 1024 of them, and that is not thoroughness — it
-// is create_scene's rule. A scene may not leave a single square undeclared:
-// validateCreateSceneTerrain answers a partial map, an empty one included,
-// with `tiles["0,0"] — no tile named for this square`. (The tiles-optional
-// ruling of 2026-08-13 survives for a map FILE, which must keep loading if it
-// was authored before the format had terrain; a create_scene command has no
-// such past.) Well inside mapdef.MaxWireTiles (3600).
+// is what makes the sight tests mean anything: internal/sight occludes on
+// terrain, so a scene with squares nobody declared would answer questions
+// about a room that is half missing. Well inside mapdef.MaxWireTiles (3600).
+// (This paragraph cited validateCreateSceneTerrain's every-square refusal as
+// the reason until 2026-09-02, when create_scene left the platform. The rule
+// itself did not leave with it: mapdef.CheckEverySquarePresent holds every map
+// FILE that declares any terrain to the same completeness.)
 //
-// Seeded as DM COMMANDS over the wire rather than appended to the campaign
-// directly, exactly as seedCellar does: the same Append path the rest of the
-// suite uses, and one DB handle.
+// THE SCENE IS APPENDED, NOT COMMANDED, exactly as seedCellar does since the
+// same day: what this fixture owes its callers is a STATE, and engine.Apply is
+// the seam a direct append reaches identically.
 func (f *gwFixture) seedAmbush(t *testing.T) {
 	t.Helper()
-	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	tiles := map[string]*vttv1.TileRef{}
 	for y := int32(0); y < 32; y++ {
@@ -52,9 +52,8 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 			tiles[gridKeyForTest(x, y)] = &vttv1.TileRef{Kind: kind}
 		}
 	}
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "seed-ambush-scene",
-		Command: &vttv1.ClientCommand_CreateScene{CreateScene: &vttv1.CreateScene{
+	mustAppend(t, f.campaign, "seed-ambush-scene", &vttv1.Envelope_SceneCreated{
+		SceneCreated: &vttv1.SceneCreated{
 			SceneId: "ambush", Name: "Ambush Corridor", GridWidth: 32, GridHeight: 32,
 			Tiles: tiles,
 			Objects: []*vttv1.SceneObject{
@@ -67,16 +66,15 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 					Width: 1, Height: 1, BlocksMove: true,
 				},
 			},
-		}},
-	})
-	if r := readResult(t, dmConn); !r.Ok {
-		t.Fatalf("seed CreateScene ambush: %s", r.Error)
-	}
+		}})
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	// TWO COMMANDS, which is the whole of what this arc's last task changed:
 	// add_actor makes a character and grant_actor_control hands it over, SAYING
-	// what it is. Sent over the wire like every other seed here, so the seed
-	// itself exercises the refusal it would hit if it tried the one-step.
+	// what it is. Sent over the WIRE, unlike the scene above, which this
+	// fixture appends directly since 2026-09-02 — so the seed itself exercises
+	// the refusal it would hit if it tried the one-step, which is the only
+	// reason these two go through the gateway at all.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-fighter",
 		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
@@ -135,22 +133,6 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 // and this package's tests are an EXTERNAL package by design.
 func gridKeyForTest(x, y int32) string {
 	return strconv.Itoa(int(x)) + "," + strconv.Itoa(int(y))
-}
-
-// floorTilesForTest declares every square of a w x h grid as floor. Since
-// create_scene refuses a grid with an undeclared square, a fixture whose
-// subject is something OTHER than terrain still has to name all of it, and
-// spelling that out inline would bury what each of those tests is actually
-// about. All floor, so sight and movement behave exactly as they did when
-// these fixtures carried no terrain at all.
-func floorTilesForTest(w, h int32) map[string]*vttv1.TileRef {
-	tiles := make(map[string]*vttv1.TileRef, w*h)
-	for y := int32(0); y < h; y++ {
-		for x := int32(0); x < w; x++ {
-			tiles[gridKeyForTest(x, y)] = &vttv1.TileRef{Kind: "floor"}
-		}
-	}
-	return tiles
 }
 
 // drainEvents collects every Envelope this connection is given until it has

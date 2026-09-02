@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -29,12 +30,23 @@ func newJoinLinkCmd() *cobra.Command {
 		Use:   "join-link",
 		Short: "Show, open, close or rotate the table's shared join link",
 	}
-	cmd.PersistentFlags().StringVar(&campaignPath, "campaign", "", "path to the campaign SQLite file (required)")
+	cmd.PersistentFlags().StringVar(&campaignPath, "campaign", "", "path to the campaign directory (required)")
 	_ = cmd.MarkPersistentFlagRequired("campaign")
 
+	// withIdentity opens the campaign DIRECTORY the way `vtt serve` does
+	// (2026-09-01-create-scene-leaves Task 4, fix round 1) before opening
+	// identity on campaign.LogPath(campaignPath) inside it — join-link may
+	// be the first command run against a campaign just as easily as invite
+	// or serve, and needs the same directory contract they use.
 	withIdentity := func(fn func(*identity.DB, *cobra.Command) error) func(*cobra.Command, []string) error {
 		return func(c *cobra.Command, _ []string) error {
-			ids, err := identity.Open(campaignPath)
+			camp, err := campaign.Open(campaignPath)
+			if err != nil {
+				return fmt.Errorf("vtt join-link: open campaign: %w", err)
+			}
+			defer camp.Close()
+
+			ids, err := identity.Open(campaign.LogPath(campaignPath))
 			if err != nil {
 				return fmt.Errorf("vtt join-link: open identity: %w", err)
 			}

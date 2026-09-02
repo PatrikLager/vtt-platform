@@ -625,11 +625,18 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       // not counted here. It used to fail both projected seats as well,
       // because each held the
       // bare-canvas `camp` — a visible set with no terrain to remember, so an
-      // empty Explored that had to stay absent. create_scene now refuses a
-      // scene that leaves a square undeclared, `camp` declares all nine of
-      // its own, and every projected scene's Explored is populated. EIGHT
+      // empty Explored that had to stay absent. `camp` declares all nine of
+      // its own now, and every projected scene's Explored is populated. EIGHT
       // corpus cases, measured by injecting the fault and counting, not by
       // decrementing the old figure.
+      //
+      // WHAT KEEPS THAT TRUE CHANGED ON 2026-09-02 while the number did not.
+      // This said "create_scene now refuses a scene that leaves a square
+      // undeclared"; no scenario issues create_scene any more, and every
+      // corpus scene comes from a map file, which mapdef permits to declare
+      // no tiles at all. The eight stands because every committed map under
+      // scenarios/maps/ declares its whole grid — a convention, not a
+      // refusal. Re-measure rather than assume if one ever ships without.
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);

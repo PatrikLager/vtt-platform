@@ -291,7 +291,8 @@ func TestAnObjectWithNoFootprintBlocksNothing(t *testing.T) {
 	// A footprint narrower than one square is NOT merely a bad fixture, though
 	// it is also not the unvalidated-input story an earlier version of this
 	// comment told: mapdef.CheckObjectFootprints rejects W or H below 1 on
-	// every ingest path, create_scene at the gateway included. What is
+	// every ingest path, and since 2026-09-02 every ingest path is a FILE —
+	// create_scene at the gateway was the one that was not, and it left. What is
 	// unchecked is REPLAY — the fold copies a stored SceneCreated's objects
 	// verbatim — so a log written before that check landed arrives here intact.
 	// And sight is a library besides: it cannot see which path built the scene

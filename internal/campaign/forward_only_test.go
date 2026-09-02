@@ -1,7 +1,6 @@
 package campaign_test
 
 import (
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -107,9 +106,15 @@ func unmakes(name string) bool {
 // the file openable — which needs no test now that no operation can leave a log
 // unreplayable in the first place.
 func TestOpenRefusesALogThatDoesNotReplay(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "campaign.db")
+	// dir IS the campaign directory (2026-09-01-create-scene-leaves Task 4: a campaign is a directory). It
+	// already exists (t.TempDir()), so seeding the raw store directly at
+	// campaign.LogPath(dir) — rather than handing campaign.Open a bare log
+	// file — keeps this fixture a VALID campaign directory: the check this
+	// test targets is corrupt-log detection in rebuildLocked, not the
+	// separate "is dir a file" refusal TestOpenRefusesABareLogFile pins.
+	dir := t.TempDir()
 
-	s, err := store.Open(path)
+	s, err := store.Open(campaign.LogPath(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +134,7 @@ func TestOpenRefusesALogThatDoesNotReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := campaign.Open(path)
+	c, err := campaign.Open(dir)
 	if err == nil {
 		c.Close()
 		t.Fatal("want campaign.Open to refuse a log that does not replay")

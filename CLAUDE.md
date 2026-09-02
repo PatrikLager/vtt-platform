@@ -29,7 +29,8 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    if hooks have never fired for you, check `.git/hooks/pre-commit` exists.
 3. **Contract evolution is additive only** (ADR-007). Generated code is
    committed; regenerate via `task generate:contract`. Commands are imperative
-   (`CreateScene`), events past-tense (`SceneCreated`).
+   (`LoadMap`), events past-tense (`SceneCreated`). That example named
+   `CreateScene` until 2026-09-02, when the command left the platform.
    `check:breaking` does NOT enforce this yet, and an agent who believes it
    does will make a breaking change believing it is guarded. Pre-release it
    REPORTS a breaking change and exits 0 (`6c0eb9a`, and ADR-007's own

@@ -2,7 +2,9 @@ package mapdef
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,15 +15,16 @@ import (
 // match the spec's JSON examples exactly; Go-side validation and the
 // friendlier Map/Object/Placement shapes live in format.go and below.
 type mapJSON struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	GridWidth  int32             `json:"grid_width"`
-	GridHeight int32             `json:"grid_height"`
-	Pack       string            `json:"pack"`
-	Tiles      map[string]string `json:"tiles"`
-	Overrides  map[string]string `json:"overrides"`
-	Objects    []ObjectJSON      `json:"objects"`
-	Placements []placementJSON   `json:"placements"`
+	FormatVersion int32             `json:"format_version"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	GridWidth     int32             `json:"grid_width"`
+	GridHeight    int32             `json:"grid_height"`
+	Pack          string            `json:"pack"`
+	Tiles         map[string]string `json:"tiles"`
+	Overrides     map[string]string `json:"overrides"`
+	Objects       []ObjectJSON      `json:"objects"`
+	Placements    []placementJSON   `json:"placements"`
 }
 
 // ObjectJSON is the on-disk shape of one object entry (spec §4.1): an anchor
@@ -97,20 +100,36 @@ type FieldErrFunc func(field, msg string) error
 // completeness/bounds/name logic so internal/adventure's loadScenes can
 // apply the exact same checks to an embedded scene without re-implementing
 // any of them.
-func Load(path string) (*Map, error) {
+func Load(path string) (*Map, error) { return loadAs(path, path) }
+
+// loadAs is Load with the name its errors carry (display) held separate
+// from the file they read (path) — see decodeStrict's doc comment for why
+// that separation exists and who uses it. Load itself passes the path for
+// both, so nothing about Load's errors changed.
+func loadAs(path, display string) (*Map, error) {
 	var raw mapJSON
-	if err := decodeStrict(path, &raw); err != nil {
+	if err := decodeStrict(path, display, &raw); err != nil {
 		return nil, err
 	}
 
-	if raw.GridWidth < 1 {
-		return nil, fieldErr(path, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
+	if raw.FormatVersion == 0 {
+		return nil, fieldErr(display, "format_version", fmt.Sprintf(
+			"required: this server understands %d, and an undeclared format is not "+
+				"assumed to be any of them", MapFormatVersion))
 	}
-	if raw.GridHeight < 1 {
-		return nil, fieldErr(path, "grid_height", fmt.Sprintf("must be >= 1, got %d", raw.GridHeight))
+	if raw.FormatVersion != MapFormatVersion {
+		return nil, fieldErr(display, "format_version", fmt.Sprintf(
+			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
 	}
 
-	errf := func(field, msg string) error { return fieldErr(path, field, msg) }
+	if raw.GridWidth < 1 {
+		return nil, fieldErr(display, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
+	}
+	if raw.GridHeight < 1 {
+		return nil, fieldErr(display, "grid_height", fmt.Sprintf("must be >= 1, got %d", raw.GridHeight))
+	}
+
+	errf := func(field, msg string) error { return fieldErr(display, field, msg) }
 
 	if err := CheckEverySquarePresent(raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
 		return nil, err
@@ -148,15 +167,16 @@ func Load(path string) (*Map, error) {
 	}
 
 	return &Map{
-		ID:         raw.ID,
-		Name:       raw.Name,
-		GridW:      raw.GridWidth,
-		GridH:      raw.GridHeight,
-		Pack:       raw.Pack,
-		Tiles:      raw.Tiles,
-		Overrides:  raw.Overrides,
-		Objects:    objects,
-		Placements: placements,
+		FormatVersion: raw.FormatVersion,
+		ID:            raw.ID,
+		Name:          raw.Name,
+		GridW:         raw.GridWidth,
+		GridH:         raw.GridHeight,
+		Pack:          raw.Pack,
+		Tiles:         raw.Tiles,
+		Overrides:     raw.Overrides,
+		Objects:       objects,
+		Placements:    placements,
 	}, nil
 }
 
@@ -195,20 +215,36 @@ func CheckEverySquarePresent(tiles map[string]string, w, h int32, errf FieldErrF
 
 // RequireEverySquarePresent is the completeness walk itself, WITHOUT the
 // opt-out above: every square of w x h must be named, and a tiles map that
-// names none of them is short of all of them rather than exempt. It is
-// exported for the one caller that has no legacy to protect —
-// internal/gateway's create_scene, the IMPROVISED path by which a place comes
-// into existence mid-session. Nobody has authored a create_scene command in
-// advance, so there is no existing file to keep loading, and a scene that
-// declares no terrain is a featureless grid: internal/sight has nothing to
-// occlude with and everyone sees everything, which is the failure
-// maps-as-geometry exists to prevent.
+// names none of them is short of all of them rather than exempt.
+//
+// IT HAS ONE CALLER AND IT IS CheckEverySquarePresent, one function up. It
+// was exported from 2026-09-01 for internal/gateway's create_scene — the
+// IMPROVISED path by which a place came into existence mid-session, which had
+// no authored files to keep loading and so no claim on the opt-out — and that
+// command left the platform on 2026-09-02 (Patrik's ruling, 2026-09-01: the
+// kernel serves maps, it does not make them).
+//
+// SO IT SITS AT NO BOUNDARY AT ALL NOW, and that is worth stating plainly
+// rather than dressing up. Its one caller has already returned on an empty
+// tiles map before reaching here, so re-adding `if len(tiles) == 0 { return
+// nil }` to this function would be behaviour-preserving for the entire
+// program: no input to Load can tell the two apart.
+// TestRequireEverySquarePresentHasNoOptOut therefore pins an INTERNAL, which
+// sits awkwardly against CLAUDE.md rule 1 ("tests pin boundary behavior, never
+// internals"), and that is the real cost of the split — not a mutant that
+// would otherwise escape.
+//
+// KEPT EXPORTED ANYWAY, for a reason about tests rather than about callers:
+// every test file in this package is `package mapdef_test`, so unexporting
+// this would mean introducing the package's only internal test file to keep
+// one guard. That is a worse trade for a symbol already confined to
+// internal/. The BOUNDARY coverage is independent of all of it and does not
+// move: load_test.go's "missing-square" fixture drives a genuinely partial map
+// file — 8 of a 3x3's 9 squares — through mapdef.Load and gets the refusal.
 //
 // The split is a split of the RULE from its exemption, not a fork of the
-// rule: one walk, one message, two callers that differ only in whether an
-// empty tiles map is a legitimate claim. Reimplementing the walk in the
-// gateway would have put the "every square names its own tile" invariant in
-// two places, which is the drift spec §4.1's own wording warns against.
+// rule: one walk, one message, and the only difference is whether an empty
+// tiles map is a legitimate claim.
 //
 // It walks the GRID, not the tiles map, because completeness is a property
 // of what is MISSING — a map iteration only ever sees what is present. It
@@ -422,11 +458,12 @@ func parseSquareKey(key string) (x, y int32, ok bool) {
 // array it sits in — mirrored in Go by PackTile itself (format.go) being the
 // one exported type for both.
 type packJSON struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	CellPx  int32          `json:"cell_px"`
-	Tiles   []packTileJSON `json:"tiles"`
-	Objects []packTileJSON `json:"objects"`
+	FormatVersion int32          `json:"format_version"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	CellPx        int32          `json:"cell_px"`
+	Tiles         []packTileJSON `json:"tiles"`
+	Objects       []packTileJSON `json:"objects"`
 }
 
 type packTileJSON struct {
@@ -440,16 +477,29 @@ type packTileJSON struct {
 }
 
 // LoadPack reads and validates the pack manifest at dir/pack.json: strict
-// JSON decoding (decodeStrict, the same shape Load uses), then keys Tiles
-// and Objects by name so Resolve (resolve.go) gets an O(1) lookup per
-// square. LoadPack never reads a *Map — a pack is reusable across many maps
-// (spec §4.3's "load standalone" principle applied to art), so it takes only
-// a directory.
+// JSON decoding (decodeStrict, the same shape Load uses), then a
+// format_version check against PackFormatVersion (format.go) — refused,
+// two-step, exactly mirroring Load's own format_version check for maps, but
+// judged against PackFormatVersion rather than MapFormatVersion since a
+// pack moves independently — then keys Tiles and Objects by name so Resolve
+// (resolve.go) gets an O(1) lookup per square. LoadPack never reads a *Map —
+// a pack is reusable across many maps (spec §4.3's "load standalone"
+// principle applied to art), so it takes only a directory.
 func LoadPack(dir string) (*Pack, error) {
 	path := filepath.Join(dir, "pack.json")
 	var raw packJSON
-	if err := decodeStrict(path, &raw); err != nil {
+	if err := decodeStrict(path, path, &raw); err != nil {
 		return nil, err
+	}
+
+	if raw.FormatVersion == 0 {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"required: this server understands %d, and an undeclared format is not "+
+				"assumed to be any of them", PackFormatVersion))
+	}
+	if raw.FormatVersion != PackFormatVersion {
+		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+			"declares %d; this server understands %d", raw.FormatVersion, PackFormatVersion))
 	}
 
 	tiles, err := packTileMap(path, "tiles", raw.Tiles)
@@ -462,11 +512,12 @@ func LoadPack(dir string) (*Pack, error) {
 	}
 
 	return &Pack{
-		ID:      raw.ID,
-		Name:    raw.Name,
-		CellPx:  raw.CellPx,
-		Tiles:   tiles,
-		Objects: objects,
+		FormatVersion: raw.FormatVersion,
+		ID:            raw.ID,
+		Name:          raw.Name,
+		CellPx:        raw.CellPx,
+		Tiles:         tiles,
+		Objects:       objects,
 	}, nil
 }
 
@@ -501,18 +552,55 @@ func packTileMap(path, field string, items []packTileJSON) (map[string]PackTile,
 // disallowed — reused shape from internal/adventure/load.go, so a map
 // author gets the same quality of "you misspelled a field" error an
 // adventure author already gets.
-func decodeStrict(path string, v any) error {
+//
+// display is the name the ERROR carries, held separate from the path
+// OPENED so a caller can name a file the way its reader knows it. Load and
+// LoadPack pass the path itself and read exactly as they always did;
+// LoadInstalled passes "maps/<id>.json", because its errors travel to a
+// client over the wire and an absolute server path is not that client's
+// business (2026-09-01-create-scene-leaves Task 6, fix round 1).
+//
+// os.Open's own error is UNWRAPPED to its bare cause before wrapping: an
+// *fs.PathError prints the path it was given ("open /abs/x.json: no such
+// file or directory"), so forwarding it whole would put the path back in
+// the message display was chosen to keep out — and would say it twice for
+// the callers that pass the path anyway. Unwrapping keeps
+// errors.Is(err, fs.ErrNotExist) working, because that answer comes from
+// the syscall.Errno underneath, not from the PathError around it.
+func decodeStrict(path, display string, v any) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("mapdef: %s: %w", path, err)
+		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
 	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("mapdef: %s: %w", path, err)
+		// The DECODE side needs unpath just as much as the open side: a
+		// path whose entry is a directory opens fine and fails on the
+		// first read, with an *fs.PathError of its own ("read /abs/x:
+		// is a directory").
+		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
 	}
 	return nil
+}
+
+// unpath strips the filesystem path an *fs.PathError carries, leaving the
+// bare cause. Every error decodeStrict returns is already named by display,
+// and a PathError would put the opened path back beside it — twice for the
+// callers that pass the path as display, and where it does not belong for
+// LoadInstalled, whose errors travel to a client.
+//
+// errors.Is survives: "no such file or directory" is answered by the
+// syscall.Errno underneath (its own Is method maps ENOENT to
+// fs.ErrNotExist), not by the PathError wrapper around it. Anything that is
+// not an *fs.PathError is returned untouched.
+func unpath(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }
 
 // fieldErr builds a load error naming both the offending file and field —

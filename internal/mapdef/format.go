@@ -19,11 +19,25 @@
 // or resolve.go touches it.
 package mapdef
 
+// MapFormatVersion is the map format this server understands. A map declares
+// its own, and a mismatch is refused by name rather than guessed at — see
+// LoadPack's PackFormatVersion for why the two version independently.
+const MapFormatVersion int32 = 1
+
 // Map is one fully-loaded, fully-validated map file (spec §4.1's two-layer
 // shape). Tiles and Overrides are BOTH keyed "x,y" (column then row; a comma
 // rather than a dot because a dot reads as a decimal) — deliberately at the
 // same granularity, so each layer can be read independently of the other.
 type Map struct {
+	// FormatVersion is the format this map file declares itself written in
+	// (design spec §7, "Format versions, on maps and on packs separately").
+	// Load refuses a file that omits it or names one this server does not
+	// understand — see Load's own checks immediately after decodeStrict —
+	// so by the time a *Map exists, FormatVersion is always
+	// MapFormatVersion; it is carried through anyway so a caller can name
+	// the fact rather than assume it.
+	FormatVersion int32
+
 	ID, Name     string
 	GridW, GridH int32
 
@@ -109,11 +123,30 @@ type PackTile struct {
 	Desc                       string
 }
 
+// PackFormatVersion is the pack format this server understands, and it
+// moves INDEPENDENTLY of MapFormatVersion. A pack is shared (design spec §7,
+// "Format versions, on maps and on packs separately") — one tileset backs
+// many maps — so a single shared version number would force every pack on
+// disk to be rewritten the first time the map format moved. LoadPack
+// (load.go) refuses a pack that omits format_version or names one this
+// server does not understand, mirroring Load's own two-step refusal for
+// maps.
+const PackFormatVersion int32 = 1
+
 // Pack is one loaded pack manifest (spec §4.2), keyed by tile/object name
 // for the O(1) lookup Resolve needs per square. LoadPack never touches a
 // Map: a pack is reusable content, not bound to any one map, mirroring spec
 // §4.3's "load standalone" principle applied to art rather than geometry.
 type Pack struct {
+	// FormatVersion is the format this pack manifest declares itself
+	// written in (design spec §7, "Format versions, on maps and on packs
+	// separately"). LoadPack refuses a file that omits it or names one this
+	// server does not understand — see LoadPack's own checks immediately
+	// after decodeStrict — so by the time a *Pack exists, FormatVersion is
+	// always PackFormatVersion; it is carried through anyway so a caller
+	// can name the fact rather than assume it.
+	FormatVersion int32
+
 	ID, Name string
 	CellPx   int32
 	Tiles    map[string]PackTile

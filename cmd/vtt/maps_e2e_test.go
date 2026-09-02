@@ -1,15 +1,21 @@
 package main
 
-// maps_e2e_test.go proves `vtt serve --maps-dir` end to end through
-// composeServer's real lifecycle (maps-as-geometry Task 7) — the same
-// concern serve_e2e_test.go's TestComposeServerFailsLoudlyOnAnUnreadable-
-// AdventureGuide covers for --adventures-dir, and the reason this repo's
-// own method change (progress.md, Task 5) requires it: "every task so far
-// was green on its own packages and then failed the [real] gate, because
-// the couplings that bite live outside the layer a task is named after".
-// maps_test.go proves loadMapsDir's OWN logic in isolation; this file
-// proves the WIRING — the flag, composeServer, gateway.Handler() — actually
-// connects them over a real listener.
+// maps_e2e_test.go proves composeServer's real map-serving lifecycle end to
+// end (maps-as-geometry Task 7; the --maps-dir flag itself is gone as of
+// 2026-09-01-create-scene-leaves Task 5 — "the kernel serves maps, it does
+// not make them" — maps now come from the campaign directory's own maps/
+// and packs/, so these tests write straight into campaignPath instead of a
+// separate operator-pointed directory) — the same concern serve_e2e_test.go's
+// TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide covers for
+// --adventures-dir, and the reason a wiring change like Task 5's
+// (docs/superpowers/plans/2026-09-01-create-scene-leaves.md's own Task 5
+// section) needs an end-to-end test of its own rather than trusting
+// loadMapsDir's unit coverage alone: a change to composeServer's own call
+// site is exactly the kind of coupling a package's own unit tests, run in
+// isolation, cannot see. maps_test.go proves loadMapsDir's OWN logic in
+// isolation; this file proves the WIRING — a real composeServer, a real
+// gateway.Handler(), a real listener — actually connects a campaign's
+// maps/ and packs/ to GET /api/maps and GET /api/packs/{pack}/{file}.
 
 import (
 	"encoding/json"
@@ -22,32 +28,41 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// TestServeMapsDirEndToEnd boots composeServer with a real --maps-dir (one
-// map, one pack, one real file) and drives GET /api/maps and GET
+// TestCampaignsMapsAndPacksServeEndToEnd boots composeServer against a
+// campaign directory holding one real map and one real pack (Task 3 layout:
+// maps are flat files under campaignPath/maps/, named by their own id;
+// packs are directories under the sibling campaignPath/packs/, keyed by
+// pack.json's own declared id) and drives GET /api/maps and GET
 // /api/packs/{pack}/{file} over an actual HTTP listener — not the
-// gateway-package fixture, which never goes through composeServer/the CLI
-// flag at all.
-func TestServeMapsDirEndToEnd(t *testing.T) {
-	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+// gateway-package fixture, which never goes through composeServer/the real
+// wiring at all.
+func TestCampaignsMapsAndPacksServeEndToEnd(t *testing.T) {
+	campaignPath := t.TempDir()
 
-	mapsDir := t.TempDir()
-	sub := filepath.Join(mapsDir, "shrine")
-	if err := os.MkdirAll(filepath.Join(sub, "tiles"), 0o755); err != nil {
+	packDir := filepath.Join(campaignPath, "packs", "mossy-keep")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "tiles", "pack.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
+		"format_version": 1,
 		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
 		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png","kind":"floor","material":"wood"}]
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "tiles", "planks_03.png"), []byte("stand-in image bytes"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(packDir, "planks_03.png"), []byte("stand-in image bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "map.json"), []byte(`{
+	mapsSubDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(mapsSubDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mapsSubDir, "shrine.json"), []byte(`{
+		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
 		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
 		"tiles": {"0,0":"wood"},
@@ -56,9 +71,9 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", mapsDir)
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err != nil {
-		t.Fatalf("composeServer with --maps-dir: %v", err)
+		t.Fatalf("composeServer with maps/packs installed in the campaign: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := closeFn(); err != nil {
@@ -78,7 +93,9 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 		t.Fatalf("healthz never became ready: %v", err)
 	}
 
-	ids, err := identity.Open(campaignPath)
+	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves
+	// Task 4); composeServer above has already created log.db inside it.
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,20 +152,34 @@ func TestServeMapsDirEndToEnd(t *testing.T) {
 // TestComposeServerFailsLoudlyOnABrokenMap covers the OTHER end of task-7-
 // brief.md's boot posture through the real composeServer path (not just
 // LoadMapsDir directly, which maps_test.go already covers): one broken map
-// under --maps-dir must stop composeServer from returning a server at all.
+// under the campaign's own maps/ must stop composeServer from returning a
+// server at all. The fixture (testdata/maps-with-one-broken) is copied into
+// a fresh campaign directory via os.CopyFS rather than used as campaignPath
+// directly — campaign.Open/identity.Open both WRITE into campaignPath
+// (log.db, at minimum), and testdata is checked into git; writing into it
+// from a test run would dirty a committed fixture.
 func TestComposeServerFailsLoudlyOnABrokenMap(t *testing.T) {
-	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
+	campaignPath := t.TempDir()
+	if err := os.CopyFS(filepath.Join(campaignPath, "maps"), os.DirFS("testdata/maps-with-one-broken/maps")); err != nil {
+		t.Fatal(err)
+	}
 
-	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "", "testdata/maps-with-one-broken")
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err == nil {
 		if closeFn != nil {
 			_ = closeFn()
 		}
 		_ = srv
-		t.Fatal("composeServer succeeded with a broken map in --maps-dir; " +
+		t.Fatal("composeServer succeeded with a broken map in the campaign's maps/; " +
 			"the table would find out instead of us")
 	}
-	if !strings.Contains(err.Error(), "broken") {
-		t.Errorf("error should name the offending map, got: %v", err)
+	// "broken.json", not the weaker "broken": composeServer's own wrap
+	// ("vtt serve: load maps %s: %w", campaignPath, err) embeds campaignPath
+	// itself (a t.TempDir() path) in EVERY error this call can ever return,
+	// so a bare "broken" substring would pass even if the cause had nothing
+	// to do with the broken map. The full filename can only appear because
+	// the inner error actually named that file.
+	if !strings.Contains(err.Error(), "broken.json") {
+		t.Errorf("error should name the offending file broken.json, got: %v", err)
 	}
 }

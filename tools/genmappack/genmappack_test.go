@@ -10,17 +10,18 @@ import (
 // REPRODUCIBILITY is this generator's load-bearing property, and these tests
 // are what make it checkable rather than merely claimed.
 //
-// The packs under maps/cellar/tiles and client/public/std-pack are committed
-// art, and committed art drifts from its source silently: somebody retouches a
-// PNG, or edits a description in pack.json, and from then on the generator and
-// the repository disagree with nobody noticing. The art was generated rather
-// than taken from a map-building tool whose presets carry no stated licence,
-// and that licensing argument only holds while the committed bytes really are
-// this program's output. A generator nobody re-runs is a generator nobody can
+// The packs under campaigns/example/packs/cellar-basics and
+// client/public/std-pack are committed art, and committed art drifts from
+// its source silently: somebody retouches a PNG, or edits a description in
+// pack.json, and from then on the generator and the repository disagree
+// with nobody noticing. The art was generated rather than taken from a
+// map-building tool whose presets carry no stated licence, and that
+// licensing argument only holds while the committed bytes really are this
+// program's output. A generator nobody re-runs is a generator nobody can
 // trust.
 
 const (
-	committedCellar = "../../maps/cellar/tiles"
+	committedCellar = "../../campaigns/example/packs/cellar-basics"
 	committedStd    = "../../client/public/std-pack"
 )
 

@@ -69,9 +69,9 @@ func TestStepLinesAreEmittedAsTheRunProgresses(t *testing.T) {
 			Participants: []harness.Participant{{Name: "dm", Role: "dm"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: []byte(`{"createScene":{"sceneId":"scn-1","name":"H","gridWidth":4,"gridHeight":4}}`),
+				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-1"}}`),
 					Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: []byte(`{"createScene":{"sceneId":"scn-2","name":"J","gridWidth":4,"gridHeight":4}}`),
+				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-2"}}`),
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
@@ -258,7 +258,7 @@ func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
 			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
-				{By: "dm", Command: []byte(`{"createScene":{"sceneId":"scn-1","name":"H","gridWidth":4,"gridHeight":4}}`),
+				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-1"}}`),
 					Expect: &harness.Expect{OK: true}},
 				// after=1 names e1, which player already saw: only e2 may replay.
 				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 1}},
@@ -551,15 +551,32 @@ func TestUnsetRequestIdGetsTheStepDefault(t *testing.T) {
 	})
 }
 
-// TestSoakGeneratedIdsStartAtOneAndAscend pins the `m.sceneN++` /
-// `m.actorN++` / `m.tokenN++` counters (soak.go).
+// TestSoakGeneratedIdsStartAtOneAndAscend pins the `m.actorN++` /
+// `m.tokenN++` counters and SoakMapIDs's own `i := 1` (soak.go).
 //
-// Mutated to `--`, the generator still produces UNIQUE ids — `soak-scn--1`,
-// `soak-scn--2` — so every determinism, ratio and bookkeeping assertion in
+// Mutated to `--`, the generator still produces UNIQUE ids — `soak-actor--1`,
+// `soak-actor--2` — so every determinism, ratio and bookkeeping assertion in
 // the soak suite still passes: both runs of a same-seed comparison are
 // mutated identically, and nothing else reads the ids' shape. The only
 // observable is the id text itself, which is exactly what a scenario author
 // reading a soak log or reproducing a failure by hand relies on.
+//
+// THE `soak-scn-` ROW BECAME `soak-map-` ON 2026-09-02. There is no scene
+// counter any more: create_scene left the platform (Patrik's ruling,
+// 2026-09-01) and a scene now arrives by loading one of the pool's maps, whose
+// ids SoakMapIDs mints, and the reason is unchanged: the only observable is
+// still the id text itself.
+//
+// STILL ONLY THAT, even though the ids now name FILES. A draft of this
+// paragraph claimed a pool numbered from 0 would name a file "where cmd/vtt
+// installed no such file", which would have made the file system a second
+// observable. It is not true: installSoakMaps (cmd/vtt/client_soak.go) writes
+// one file per id by iterating this same SoakMapIDs(), so it would install
+// soak-map-0.json alongside the rest and every load would still succeed.
+// MEASURED 2026-09-02 by injection — with the loop numbering from 0,
+// `vtt client soak --seed 3 --events 200 --json` came back Pass:true with
+// counts identical to the uninjected run. Nothing but this test's own
+// assertions kills the mutant.
 func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ids := soakTestIDs()
@@ -575,7 +592,7 @@ func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
 
 		// The first id minted for each kind must be 1, and they must ascend.
 		for _, kind := range []struct{ prefix, field string }{
-			{"soak-scn-", "sceneId"},
+			{"soak-map-", "mapId"},
 			{"soak-actor-", "actorId"},
 			{"soak-tok-", "tokenId"},
 		} {
@@ -629,7 +646,9 @@ func TestSoakGeneratedIdsStartAtOneAndAscend(t *testing.T) {
 func TestSoakSurvivesShortRunsAcrossSeeds(t *testing.T) {
 	// 321 is not decoration. Both halves of the guard need a state where the
 	// OTHER half is already satisfied, and those states are rare: reaching
-	// "a scene exists but no actor does" needs a createScene draw (p=0.05)
+	// "a scene exists but no actor does" needs a loadMap draw (p=0.05 — the
+	// band was createScene until 2026-09-02 and has the same share, the same
+	// position and the same single rng draw)
 	// followed by a placeToken draw (p=0.15) with no intervening draw, because
 	// planStep's catch-all fallback is planAddActor and almost every
 	// unproductive draw therefore creates an actor. A 9000-run sweep with the

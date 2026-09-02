@@ -26,14 +26,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"net"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
@@ -82,9 +87,23 @@ func TestScenarioLibraryRunsSelfContained(t *testing.T) {
 // The existing "no scenarios found" guard above does not cover this. It catches
 // the glob matching NOTHING; this catches it matching only SOME.
 //
-// goldens/ is excluded because its contents are not scenarios. How each was
-// produced differs, and the differences are load-bearing rather than trivia
-// (scenarios/goldens/README.md):
+// TWO subdirectories are excluded, and both hold .json that is not a
+// scenario. Feeding either to LoadScenario is a category error.
+//
+// maps/ holds MAP FILES (2026-09-01-create-scene-leaves Task 7) — the
+// mapdef format, one standalone map per file named by its own id, which the
+// runner installs into a scenario's campaign so its load_map steps have
+// something to name. They are INPUTS to the corpus the way rulesets/ and
+// adventures/ are, and they live under scenarios/ rather than beside those
+// because they exist only to serve this library. Nothing about them is a
+// scenario: they declare no participants and no steps.
+// TestEveryMapTheCorpusNamesIsInstalledAndUsed below is what holds them to
+// the library instead, in both directions, so excluding them here does not
+// leave them unchecked.
+//
+// goldens/ is excluded because its contents are not scenarios either. How
+// each was produced differs, and the differences are load-bearing rather
+// than trivia (scenarios/goldens/README.md):
 //
 //	state.json                    HAND-DERIVED from the scenario definition
 //	<name>/stream.json            RECORDED from a real server run
@@ -100,9 +119,10 @@ func TestScenarioLibraryRunsSelfContained(t *testing.T) {
 // property the fold gate exists to test. Feeding any of these to LoadScenario
 // would be a category error.
 //
-// The exclusion is deliberately narrow: one named subdirectory, not "any
+// The exclusion is deliberately narrow: two NAMED subdirectories, not "any
 // subdirectory", so a new subdirectory holding a .json is a failure and
-// somebody has to decide what it is.
+// somebody has to decide what it is. maps/ became the second one by exactly
+// that route — it failed here first, and this comment is the decision.
 func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
 	run := map[string]bool{}
 	paths, err := filepath.Glob(scenarioLibraryGlob)
@@ -146,7 +166,8 @@ func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(filepath.ToSlash(rel), "goldens/") {
+		slash := filepath.ToSlash(rel)
+		if strings.HasPrefix(slash, "goldens/") || strings.HasPrefix(slash, "maps/") {
 			return nil
 		}
 		t.Errorf("scenarios/%s exists but %s does not match it, so it never runs. "+
@@ -188,6 +209,132 @@ func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
 				"WalkDir does not.", abs, scenarioLibraryGlob, root)
 		}
 	}
+}
+
+// TestEveryMapTheCorpusNamesIsInstalledAndUsed holds scenarios/maps/ to the
+// library in BOTH directions: every map id a scenario's load_map names has a
+// file, and every file is named by some scenario.
+//
+// THE FIRST DIRECTION EXISTS BECAUSE A DENIAL CANNOT CHECK IT. Authorize runs
+// before any map lookup (internal/gateway's handleCommand, then
+// handleLoadMap), so a player's load_map naming a map that does not exist is
+// still refused with "not authorized" — which means scenarios/denials.json's
+// two refused load_map steps would go on passing, green and vacuous, if their
+// map id were misspelled or the file were deleted. MEASURED 2026-09-02, not
+// reasoned: misspell that id and TestScenarioLibraryRunsSelfContained/
+// denials.json stays GREEN, and this gate is the only thing that reds. Nothing
+// INSIDE a scenario can catch it, because every wrong id produces the identical
+// refusal — which is why the check has to come from outside, by requiring the
+// file.
+//
+// The second direction catches the leftover: rename a scene and the old map
+// keeps loading and validating at every boot with nothing naming it, which is
+// dead weight that reads as coverage.
+//
+// DERIVED, WITH NO EXEMPTION LIST, on the same reasoning
+// internal/harness/corpus_actor_kind_test.go states for its own gate and
+// internal/gateway's projected-fixture guard states for its: a list of files
+// the rule does not apply to is the artifact that goes stale silently.
+func TestEveryMapTheCorpusNamesIsInstalledAndUsed(t *testing.T) {
+	paths, err := filepath.Glob(scenarioLibraryGlob)
+	if err != nil {
+		t.Fatalf("glob %s: %v", scenarioLibraryGlob, err)
+	}
+	named := map[string][]string{}
+	// THE DIRECTORIES COME FROM THE SCENARIOS, not from a constant here. Every
+	// scenario that loads a map declares which directory its campaign is to be
+	// built from (Scenario.Maps), and today all eight name the same one — so a
+	// hardcoded "../../scenarios/maps/*.json" would be exactly correct and
+	// would go blind the moment a ninth scenario named a different directory:
+	// its maps would be checked by neither direction below. Deriving the set
+	// costs one map and removes that hole rather than documenting it, and it
+	// reuses resolveMapsDir (harness_boot.go) so this gate resolves the path
+	// the same way the runner that installs it does.
+	declared := map[string]bool{}
+	for _, p := range paths {
+		sc, err := harness.LoadScenario(p)
+		if err != nil {
+			t.Fatalf("LoadScenario(%s): %v", p, err)
+		}
+		if sc.Maps != "" {
+			declared[sc.Maps] = true
+		}
+		for i, st := range sc.Steps {
+			if len(st.Command) == 0 {
+				continue
+			}
+			var cmd vttv1.ClientCommand
+			if err := protojson.Unmarshal(st.Command, &cmd); err != nil {
+				t.Fatalf("%s step %d: %v", p, i, err)
+			}
+			if lm := cmd.GetLoadMap(); lm != nil {
+				named[lm.GetMapId()] = append(named[lm.GetMapId()],
+					fmt.Sprintf("%s step %d", filepath.Base(p), i))
+			}
+		}
+	}
+	// Vacuity guard, the rule this corpus's every other enumerating gate
+	// carries: a library that names no map at all must fail here rather than
+	// pass by having nothing to check.
+	if len(named) == 0 {
+		t.Fatal("no scenario issues load_map, so this gate checked nothing — the corpus's " +
+			"maps are unreachable and scenarios/maps/ is unheld")
+	}
+
+	// A scenario issuing load_map while declaring no maps directory has no
+	// campaign to load from, and the loop below would then compare the ids it
+	// named against an EMPTY installed set — reporting every one of them as
+	// missing, which is true but says the wrong thing. Say the actual thing.
+	if len(declared) == 0 {
+		t.Fatal("a scenario issues load_map but no scenario declares a \"maps\" directory, " +
+			"so nothing is installed into any campaign and every load_map names a map that " +
+			"cannot be there")
+	}
+
+	installed := map[string]string{} // map id -> the declared directory holding it
+	for rel := range declared {
+		dir, err := resolveMapsDir(rel)
+		if err != nil {
+			t.Fatalf("a scenario declares maps dir %q: %v", rel, err)
+		}
+		entries, err := filepath.Glob(filepath.Join(dir, "*.json"))
+		if err != nil {
+			t.Fatalf("glob %s: %v", dir, err)
+		}
+		for _, e := range entries {
+			installed[strings.TrimSuffix(filepath.Base(e), ".json")] = rel
+		}
+	}
+
+	for id, where := range named {
+		if _, ok := installed[id]; !ok {
+			t.Errorf("%s names map %q but no declared maps directory (%s) holds %s.json. "+
+				"If that step expects ok, its scenario fails too and this gate only says so "+
+				"sooner. If it expects a DENIAL, its scenario does NOT fail: Authorize runs "+
+				"before any map lookup, so the step is refused with the same message whether "+
+				"or not the map exists, and passes for the wrong reason. That second case is "+
+				"why this gate exists.",
+				strings.Join(where, ", "), id, strings.Join(sortedKeysOf(declared), ", "), id)
+		}
+	}
+	for id, rel := range installed {
+		if _, ok := named[id]; !ok {
+			t.Errorf("%s/%s.json is installed into every campaign that declares that "+
+				"directory, and validated at each of their boots, but no scenario names it. "+
+				"Delete it, or have a scenario load it.", rel, id)
+		}
+	}
+}
+
+// sortedKeysOf names the declared maps directories in a stable order, so a
+// failure message does not shuffle between runs.
+func sortedKeysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // runLibraryScenarioSelfContained loads one scenario file, boots a fresh
@@ -256,6 +403,27 @@ func TestThreeRoleExitScenarioOverLiveServeSubprocess(t *testing.T) {
 	campaignPath := filepath.Join(dir, "campaign.db")
 	addr := mustFreeAddr(t)
 
+	// This path does NOT go through bootSelfContained, so nothing has
+	// installed the scenario's maps for it — and since Task 5 of the
+	// 2026-09-01-create-scene-leaves plan there is no --maps-dir to point
+	// `vtt serve` at one: a map belongs to the campaign that uses it. So the
+	// install happens here, on the campaign directory, BEFORE the subprocess
+	// starts, which is exactly the order an operator works in. The scenario
+	// is read first only to learn which directory it asks for; resolveMapsDir
+	// and installMaps are harness_boot.go's own, reused rather than
+	// duplicated (the same reuse mintInvites gets below).
+	liveSC, err := harness.LoadScenario(filepath.Join("..", "..", "scenarios", "three-role-exit.json"))
+	if err != nil {
+		t.Fatalf("LoadScenario: %v", err)
+	}
+	mapsDir, err := resolveMapsDir(liveSC.Maps)
+	if err != nil {
+		t.Fatalf("resolveMapsDir(%q): %v", liveSC.Maps, err)
+	}
+	if err := installMaps(mapsDir, campaignPath); err != nil {
+		t.Fatalf("installMaps: %v", err)
+	}
+
 	cmd := exec.Command(binPath, "serve", "--campaign", campaignPath, "--addr", addr)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start vtt serve subprocess: %v", err)
@@ -275,11 +443,7 @@ func TestThreeRoleExitScenarioOverLiveServeSubprocess(t *testing.T) {
 	}
 
 	scenarioPath := filepath.Join("..", "..", "scenarios", "three-role-exit.json")
-	sc, err := harness.LoadScenario(scenarioPath)
-	if err != nil {
-		t.Fatalf("LoadScenario: %v", err)
-	}
-	tokens, ids, err := mintInvites(campaignPath, sc)
+	tokens, ids, err := mintInvites(campaignPath, liveSC)
 	if err != nil {
 		t.Fatalf("mint invites: %v", err)
 	}

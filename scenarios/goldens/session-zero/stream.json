@@ -22,544 +22,724 @@
       "gridHeight": 9,
       "tiles": {
         "0,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "0,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "1,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "10,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "11,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "12,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "13,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "14,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "15,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "16,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "17,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "18,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "19,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "2,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "3,0": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,1": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,2": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,3": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,4": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,5": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,6": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,7": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "3,8": {
-          "kind": "wall"
+          "kind": "wall",
+          "material": "stone"
         },
         "4,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "4,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "5,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "6,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "7,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "8,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,3": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,4": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,5": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,6": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,7": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         },
         "9,8": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "stone"
         }
       }
     }
@@ -577,31 +757,40 @@
       "gridHeight": 3,
       "tiles": {
         "0,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "0,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "0,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         }
       }
     }

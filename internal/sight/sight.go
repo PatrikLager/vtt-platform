@@ -55,8 +55,9 @@ import (
 //   - The PROTO TYPE cannot express the minimum. SceneObject.width/height are
 //     plain int32; nothing in the schema says "at least 1".
 //   - Every INGEST PATH enforces it anyway, via mapdef.CheckObjectFootprints —
-//     the map file loader, the adventure loader, and create_scene at the
-//     gateway, which validates before Append and is not gated on role.
+//     the map file loader and the adventure loader, which are now the only two
+//     (create_scene at the gateway was a third until 2026-09-02, when the
+//     command left the platform; objects reach a scene only from a file now).
 //   - The FOLD does not re-validate. engine.Apply copies a stored
 //     SceneCreated's objects verbatim, so a log persisted before that gateway
 //     check landed replays into engine.Scene unchecked.
@@ -89,8 +90,9 @@ type Rect struct{ MinX, MinY, MaxX, MaxY float64 }
 // paragraphs up.
 //
 // WHY GUARD AT ALL, given every ingest path already rejects a sub-1x1 footprint
-// (mapdef.CheckObjectFootprints, reached from the map loader, the adventure
-// loader, and create_scene at the gateway before Append)? Two reasons, and
+// (mapdef.CheckObjectFootprints, reached from the map loader and the adventure
+// loader — create_scene at the gateway was a third until it left the platform
+// on 2026-09-02)? Two reasons, and
 // neither is "the input is unvalidated" — an earlier draft of this comment said
 // that and it was false:
 //
