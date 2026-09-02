@@ -30,18 +30,33 @@ halves and neither substitutes for the other:
     a message deleted from the .proto but left in committed generated code
     would still be on the wire, and this script would call that clean (it
     skips generated output on purpose; check:drift owns that).
-  - This script reads SOURCE across every language in the tree and catches a
-    reintroduced helper — a Go function, a TypeScript export, a proto field
-    name (which events.test.ts does not read), a tool script. It says nothing
-    about the descriptors.
+  - This script reads SOURCE in the twelve extensions listed in
+    SOURCE_SUFFIXES — .go, .proto, .py, the eight JS/TS spellings and .json —
+    and catches a reintroduced helper there: a Go function, a TypeScript
+    export, a proto field name (which events.test.ts does not read), a tool
+    script. It says nothing about the descriptors, and nothing about any other
+    file type (see KNOWN LIMITS).
+
+    CORRECTED 2026-09-02. This read "reads SOURCE across every language in the
+    tree", which is false and had been since the file was written: scope is an
+    extension allow-list, not a language sweep. Found when the sentence was
+    inherited verbatim by tools/check-no-create-scene.py and review injected a
+    helper into a .yml, a .sh and client/index.html — all three silently
+    missed, in both gates. No behaviour is changed by this correction; the
+    claim was the only thing wrong.
 
 Both are needed. Delete either and the other passes anyway.
 
-SCOPE. The whole repository from the given root, so a new top-level package
-joins the gate by existing — the same reasoning check:invariants uses for
-pointing semgrep at a directory. Skipped: generated output (contract/gen,
+SCOPE IS TWO FILTERS, AND ONLY ONE OF THEM IS DIRECTORIES.
+
+By DIRECTORY: the whole repository from the given root, so a new top-level
+package joins the gate by existing — the same reasoning check:invariants uses
+for pointing semgrep at a directory. Skipped: generated output (contract/gen,
 cmd/vtt/tools.json's siblings), vendored and built trees (node_modules,
 webdist, .stryker-tmp), and the untracked scratch dirs.
+
+By EXTENSION: only the twelve in SOURCE_SUFFIXES. Everything else in those
+directories is invisible to this gate — see KNOWN LIMITS.
 
 .json IS SCANNED, and only its OBJECT KEYS are. This was the gate's one hole
 against the spec's own exit criterion 1, which names `scenarios/`: until
@@ -64,10 +79,26 @@ covers COMMAND POSITIONS ONLY, in files something actually loads. A retraction
 key in a golden stream, in a probe, or in a fixture no test opens is refused by
 nothing but this gate.
 
-KNOWN LIMIT, stated rather than hidden: inside a Python f-string the
-interpolated expression is masked along with the literal, so an identifier
-used only there is invisible to this gate. TypeScript template literals do
-NOT have that hole — `${...}` is unmasked and scanned as the code it is.
+KNOWN LIMITS, stated rather than hidden:
+
+  - FILE TYPES OUTSIDE SOURCE_SUFFIXES ARE NOT READ AT ALL, and this is the
+    biggest gap. Inside this gate's own directory scope on 2026-09-02 that is
+    5 .yaml, 4 .yml (including .go-arch-lint.yml and Taskfile.yml), 2 .sh
+    under tools/, and client/index.html — whose inline <script> is real
+    executable client code. The .md files are excluded on purpose, since prose
+    is what this gate exists to preserve; YAML, shell and HTML are not a
+    decision, they are a gap. Verified by injection in the sibling gate
+    tools/check-no-create-scene.py, whose scope is identical.
+  - Inside a Python f-string the interpolated expression is masked along with
+    the literal, so an identifier used only there is invisible to this gate.
+    TypeScript template literals do NOT have that hole — `${...}` is unmasked
+    and scanned as the code it is.
+  - A regex literal after a KEYWORD is a false positive: the `/`-vs-division
+    heuristic starts a regex only after one of ``(,=:[!&|?{};+-*%~^<>`` or at
+    input start, so `return /retract/i.test(k);` would be read as division and
+    the identifier inside the pattern REPORTED. Nothing in this tree is
+    written that way today; widen the prev-character set rather than exempting
+    a file if one arrives.
 
 WHEN A HIT IS CORRECT CODE, it goes in EXEMPT below with a reason, and it
 names the WORDS rather than the file wherever it can: the sites that assert
