@@ -22,8 +22,12 @@ package gateway_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -91,9 +95,36 @@ type mapFixture struct {
 	// load_map batch is a dungeon nobody has walked into yet, and the
 	// visibility projection withholds exactly that from a player.
 	agentToken string
+
+	// mapsDir is the campaign's own maps/ directory — the place a DM
+	// INSTALLS a map into (2026-09-01-create-scene-leaves design spec §4,
+	// "Install, then load"). Set for every fixture; only the installable
+	// one below wires it into the server, so that the older fixtures keep
+	// pinning the behaviour of a server that has no maps directory at all.
+	mapsDir string
 }
 
+// newMapFixture builds the pre-Task-6 shapes: a server whose map set is
+// whatever WithMaps was given at boot and which cannot look anything up on
+// disk. Its two states are the two this file pinned before on-demand
+// loading existed — no maps configured at all, and a boot-loaded cellar.
 func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
+	t.Helper()
+	return newMapFixtureWith(t, withMaps, false)
+}
+
+// newInstallableMapFixture is the shape the 2026-09-01-create-scene-leaves
+// sub-project exists for: a server booted with NOTHING installed, wired to
+// the campaign's own maps/ directory, so a map written there afterwards is
+// loadable with no restart (that plan's design spec §4/§5). maps/ is deliberately not created — a brand-new
+// campaign has no maps directory, and creating one would make this fixture
+// prove less than the real starting state does.
+func newInstallableMapFixture(t *testing.T) *mapFixture {
+	t.Helper()
+	return newMapFixtureWith(t, false, true)
+}
+
+func newMapFixtureWith(t *testing.T, withMaps, installable bool) *mapFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
@@ -126,10 +157,14 @@ func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
 		t.Fatal(err)
 	}
 
+	mapsDir := filepath.Join(path, "maps")
 	srv := gateway.New(c, ids)
 	if withMaps {
 		m, pack := loadCellarMap(t)
 		srv = srv.WithMaps(map[string]*mapdef.Map{m.ID: m}, map[string]*mapdef.Pack{pack.ID: pack})
+	}
+	if installable {
+		srv = srv.WithMapsDir(mapsDir)
 	}
 	httpSrv := httptest.NewServer(srv.Handler())
 	t.Cleanup(httpSrv.Close)
@@ -138,7 +173,55 @@ func newMapFixture(t *testing.T, withMaps bool) *mapFixture {
 		t: t, srv: httpSrv,
 		dmToken: dmToken, playerToken: playerToken, spectatorToken: spectatorToken,
 		agentToken: agentToken,
+		mapsDir:    mapsDir,
 	}
+}
+
+// getAs issues an authenticated GET against this fixture's server, so a
+// test can read /api/maps back. Mirrors mapsFixture.getAs
+// (metadata_test.go), which belongs to a different fixture in a different
+// file.
+func (f *mapFixture) getAs(path, token string) (int, []byte) {
+	f.t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return resp.StatusCode, body
+}
+
+// installMap writes one map file into dir, the way a DM (or a script, or a
+// future editor) installs a place mid-session: outside the platform, by
+// putting a file where the campaign keeps its maps. body is the map's whole
+// JSON, so a test can install a BROKEN map as easily as a good one.
+func installMap(t *testing.T, dir, id, body string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// oneSquareMap is a map that passes every check mapdef.Load makes: a
+// declared format_version this server understands, and "stone", a real name
+// in mapdef's standard vocabulary (standard.go). Both matter — a fixture
+// broken in some unrelated way would make a refusal test pass for a reason
+// that has nothing to do with what it claims to pin.
+func oneSquareMap(id string) string {
+	return `{"format_version":1,"id":"` + id + `","name":"Level Two",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"}}`
 }
 
 // wsURL/dial mirror adventureFixture's own (adventure_test.go) byte-for-byte.
@@ -437,5 +520,310 @@ func TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 	}})
 	if r3 := readResult(t, conn); !r3.Ok {
 		t.Fatalf("want a follow-up ordinary command to still succeed after the collision denial, got %+v", r3)
+	}
+}
+
+// --- installed after boot ---------------------------------------------------
+
+// TestAMapInstalledAfterBootIsLoadable is the whole point of the
+// 2026-09-01-create-scene-leaves sub-project (design spec §4, exit
+// criterion 3): create_scene left the platform, and what replaces
+// improvisation is two separate acts — install a map file into the
+// campaign's own maps/, then load it. The server here booted with NOTHING
+// installed and no maps/ directory at all; the map appears while it is
+// serving; no restart, no reconnect.
+//
+// ok=true alone would not prove it: the assertion follows the batch onto a
+// second connection and reads the SceneCreated back, so the map has to have
+// reached campaign state, not merely satisfied a lookup.
+func TestAMapInstalledAfterBootIsLoadable(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	dmConn := f.dial(f.dmToken, 0)
+	// The AGENT seat reads the batch, not a player's: a map is terrain
+	// nobody has walked into yet, and the visibility projection withholds
+	// exactly that from a player (this file's own note on
+	// TestLoadMapProducesBatchCarryingTilesAndObjects).
+	agentConn := f.dial(f.agentToken, 0)
+
+	installMap(t, f.mapsDir, "level-2", oneSquareMap("level-2"))
+
+	sendCommand(t, dmConn, loadMapCmdFor("level-2"))
+	res := readResult(t, dmConn)
+	if !res.Ok {
+		t.Fatalf("load_map after install: %s", res.Error)
+	}
+
+	env := readEvent(t, agentConn)
+	if got := mapPayloadKind(env); got != "sceneCreated" {
+		t.Fatalf("first batch envelope kind = %q, want sceneCreated", got)
+	}
+	sc := env.GetSceneCreated()
+	if sc.GetSceneId() != "level-2" || sc.GetName() != "Level Two" {
+		t.Fatalf("SceneCreated id/name = %q/%q, want level-2/Level Two", sc.GetSceneId(), sc.GetName())
+	}
+	if len(sc.GetTiles()) != 1 {
+		t.Fatalf("SceneCreated carries %d tiles, want 1 (the map's whole 1x1 grid)", len(sc.GetTiles()))
+	}
+}
+
+// TestAMapInstalledAfterBootJoinsTheListing proves the loaded map genuinely
+// joined the server's map set rather than being compiled once and
+// discarded: /api/maps is how a client discovers what this table has, and a
+// map loaded mid-session has to appear there the same as one present at
+// boot.
+func TestAMapInstalledAfterBootJoinsTheListing(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+
+	if code, body := f.getAs("/api/maps", f.dmToken); code != http.StatusOK || !strings.Contains(string(body), `"maps":[]`) {
+		t.Fatalf("before install: status %d body %s, want 200 and an empty list", code, body)
+	}
+
+	installMap(t, f.mapsDir, "level-2", oneSquareMap("level-2"))
+	sendCommand(t, conn, loadMapCmdFor("level-2"))
+	if res := readResult(t, conn); !res.Ok {
+		t.Fatalf("load_map after install: %s", res.Error)
+	}
+
+	code, body := f.getAs("/api/maps", f.dmToken)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, body)
+	}
+	var got struct {
+		Maps []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"maps"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if len(got.Maps) != 1 || got.Maps[0].ID != "level-2" || got.Maps[0].Name != "Level Two" {
+		t.Fatalf("/api/maps = %+v, want the one map installed during the session", got.Maps)
+	}
+}
+
+// TestAnUnknownMapIsRefusedByName pins the refusal on the other side of the
+// probe: a server that CAN look on disk, asked for something that is not
+// there, answers a clean ok=false naming the map — not a torn connection,
+// and not the raw filesystem error the probe actually got. The negative
+// half is the load-bearing one: os.Open's own error carries the server's
+// absolute path, and handing that to whoever asked would leak the layout of
+// the machine to every DM seat.
+func TestAnUnknownMapIsRefusedByName(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+
+	sendCommand(t, conn, loadMapCmdFor("nowhere"))
+	res := readResult(t, conn)
+	if res.Ok {
+		t.Fatalf("want an unknown map refused, got %+v", res)
+	}
+	if !strings.Contains(res.Error, "unknown map") || !strings.Contains(res.Error, "nowhere") {
+		t.Fatalf("error = %q, want it to name the unknown map", res.Error)
+	}
+	if strings.Contains(res.Error, "no such file") || strings.Contains(res.Error, f.mapsDir) {
+		t.Fatalf("error = %q, want no filesystem path or os error in what a client is told", res.Error)
+	}
+
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{
+		StartSession: &vttv1.StartSession{Name: "s"},
+	}})
+	if r2 := readResult(t, conn); !r2.Ok {
+		t.Fatalf("want a follow-up ordinary command to still succeed after the refusal, got %+v", r2)
+	}
+}
+
+// TestAnInstalledButBrokenMapIsRefusedAndStaysUnloaded proves the probe
+// runs the same validation boot runs and that a refusal leaves the map set
+// untouched. The installed file declares an id that disagrees with its
+// filename — design spec §6's refusal, the one that stops a rename from
+// putting a second scene in the world for the same place — and the error
+// has to name both strings, exactly as it does at boot
+// (cmd/vtt's TestLoadMapsDirRefusesAFilenameThatDisagreesWithTheID).
+//
+// Asking twice is not repetition: a probe that cached before validating
+// would answer the second attempt differently, and /api/maps below would
+// list a map nobody could load.
+func TestAnInstalledButBrokenMapIsRefusedAndStaysUnloaded(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+
+	installMap(t, f.mapsDir, "level-2", oneSquareMap("level-3"))
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		sendCommand(t, conn, loadMapCmdFor("level-2"))
+		res := readResult(t, conn)
+		if res.Ok {
+			t.Fatalf("attempt %d: a map whose filename disagrees with its id loaded", attempt)
+		}
+		for _, want := range []string{`declares id "level-3"`, "level-2"} {
+			if !strings.Contains(res.Error, want) {
+				t.Fatalf("attempt %d: error = %q, want it to contain %q", attempt, res.Error, want)
+			}
+		}
+	}
+
+	code, body := f.getAs("/api/maps", f.dmToken)
+	if code != http.StatusOK || !strings.Contains(string(body), `"maps":[]`) {
+		t.Fatalf("/api/maps = %d %s, want 200 and an empty list — a map that "+
+			"failed to load must not join the set", code, body)
+	}
+}
+
+// TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene is the concurrency
+// case the design spec calls out by name (§5, "Two load_maps racing on the
+// same new id must not both compile and cache it"), pinned where a client
+// can see it: two seats issue load_map for the same freshly installed map at
+// once. Whichever order they arrive in, exactly one puts the scene in the
+// world and the other is cleanly refused for the reason a second load is
+// always refused — the scene id already exists — never a torn connection, a
+// crash, or two scenes for one place.
+//
+// The insert-once property itself is pinned in map_internal_test.go, which
+// can observe the map set directly; this test is the boundary half.
+func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	first := f.dial(f.dmToken, 0)
+	second := f.dial(f.dmToken, 0)
+
+	installMap(t, f.mapsDir, "level-2", oneSquareMap("level-2"))
+
+	start := make(chan struct{})
+	results := make(chan *vttv1.CommandResult, 2)
+	for _, conn := range []*websocket.Conn{first, second} {
+		go func() {
+			<-start
+			sendCommand(t, conn, loadMapCmdFor("level-2"))
+			results <- readResult(t, conn)
+		}()
+	}
+	close(start)
+
+	var ok, refused int
+	for i := 0; i < 2; i++ {
+		res := <-results
+		if res.Ok {
+			ok++
+			continue
+		}
+		refused++
+		if !strings.Contains(res.Error, "already exists") {
+			t.Errorf("the losing load was refused with %q, want the ordinary "+
+				"scene-collision refusal", res.Error)
+		}
+	}
+	if ok != 1 || refused != 1 {
+		t.Fatalf("got %d ok and %d refused, want exactly one of each", ok, refused)
+	}
+}
+
+// --- fix round 1 (2026-09-01-create-scene-leaves Task 6) ---------------------
+
+// TestNoRefusalTellsAClientWhereTheCampaignLives is the wire-level half of
+// the path-disclosure fix. Round 1 of this task had exactly this assertion
+// — and only for a map that is not installed, which is the ONE refusal the
+// handler translated. Every other broken map forwarded mapdef's error
+// verbatim, and mapdef named the file by the path it opened, so an
+// ordinary agent seat could read the server's absolute campaign directory
+// out of a CommandResult. The 260-character id below is the case review
+// fired: it returns ENAMETOOLONG, which is not ENOENT, so nothing about
+// round 1's translation caught it.
+//
+// Every case here is refused for a DIFFERENT reason (missing, unopenable,
+// unreadable, unparseable, invalid, unresolvable, mismatched), because the
+// defect was never about one error — it was about which errors were
+// forwarded, and that is all of them but two.
+func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+
+	installMap(t, f.mapsDir, "mismatch", oneSquareMap("some-other-id"))
+	installMap(t, f.mapsDir, "typo", `{"format_version":1,"id":"typo","name":"Level Two",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stoen"}}`)
+	installMap(t, f.mapsDir, "truncated", `{"format_version":1,"id":"truncated",`)
+	installMap(t, f.mapsDir, "nopack", `{"format_version":1,"id":"nopack","name":"Level Two",
+		"grid_width":1,"grid_height":1,"pack":"cave-basics","tiles":{"0,0":"stone"},
+		"overrides":{"0,0":"cave-floor-1"}}`)
+	if err := os.MkdirAll(filepath.Join(f.mapsDir, "adir.json"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ name, id string }{
+		{"not installed", "nowhere"},
+		{"name too long", strings.Repeat("z", 260)},
+		{"filename disagrees with id", "mismatch"},
+		{"tile name typo", "typo"},
+		{"truncated json", "truncated"},
+		{"pack not loaded", "nopack"},
+		{"a directory where a map should be", "adir"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sendCommand(t, conn, loadMapCmdFor(tc.id))
+			res := readResult(t, conn)
+			if res.Ok {
+				t.Fatalf("id %q loaded; every fixture here is broken", tc.id)
+			}
+			if strings.Contains(res.Error, f.mapsDir) || strings.Contains(res.Error, os.TempDir()) {
+				t.Errorf("a client was told where the campaign lives:\n  %s", res.Error)
+			}
+			if !strings.Contains(res.Error, tc.id) {
+				t.Errorf("error = %q, want it to name the map that was asked for", res.Error)
+			}
+		})
+	}
+
+	// The connection is still usable after all of it: none of these is a
+	// protocol error, whatever the filesystem said.
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{
+		StartSession: &vttv1.StartSession{Name: "s"},
+	}})
+	if r := readResult(t, conn); !r.Ok {
+		t.Fatalf("want an ordinary command to still succeed afterwards, got %+v", r)
+	}
+}
+
+// TestAPackInstalledAfterBootSaysToRestart is I2: the pack seam is real and
+// stays — the design spec asks for maps on demand and is silent about packs
+// — but round 1 explained it with mapdef's "no pack was given to resolve
+// it", which is true of the function call and false about the table: the
+// pack IS there, installed and valid, one restart away. A DM reading that
+// goes and checks the pack field on a map that is already correct.
+//
+// The fixture installs BOTH a map and the pack it names, so the only reason
+// the load fails is that packs are read at startup — and the message has to
+// say that, name the pack, and not claim none was given.
+func TestAPackInstalledAfterBootSaysToRestart(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+
+	packDir := filepath.Join(filepath.Dir(f.mapsDir), "packs", "cave-basics")
+	if err := os.MkdirAll(packDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
+		"format_version": 1, "id": "cave-basics", "name": "Cave Basics", "cell_px": 64,
+		"tiles": [{"name":"cave-floor-1","file":"cave_01.png","kind":"floor","material":"stone"}]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installMap(t, f.mapsDir, "level-5", `{"format_version":1,"id":"level-5","name":"Level Five",
+		"grid_width":1,"grid_height":1,"pack":"cave-basics","tiles":{"0,0":"stone"},
+		"overrides":{"0,0":"cave-floor-1"}}`)
+
+	sendCommand(t, conn, loadMapCmdFor("level-5"))
+	res := readResult(t, conn)
+	if res.Ok {
+		t.Fatal("a map resolving against a pack installed after boot loaded; packs are " +
+			"still boot-time only, and half-loading one would be worse than refusing")
+	}
+	for _, want := range []string{`declares pack "cave-basics"`, "restart"} {
+		if !strings.Contains(res.Error, want) {
+			t.Errorf("error = %q, want it to contain %q", res.Error, want)
+		}
+	}
+	if strings.Contains(res.Error, "no pack was given") {
+		t.Errorf("error = %q — a pack WAS given, and is sitting installed in this "+
+			"campaign; saying otherwise sends the DM to check a correct map", res.Error)
 	}
 }

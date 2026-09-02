@@ -345,3 +345,30 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// TestBootRefusesAFileWhoseNameTrimsToNoIdAndNamesIt closes the gap review
+// found in round 1 of 2026-09-01-create-scene-leaves Task 6: that round's
+// mapdef.idIsAFilename claimed its refusal was unreachable from boot,
+// "because at boot every id comes from a directory entry's own name". This
+// walk derives an id by trimming ".json" off that name, so a file called
+// ".json" yields an id of "" and lands on exactly that refusal. The
+// operator is looking at a directory listing, not at an id they typed, so
+// the message has to name the FILE — round 1's named only the empty id.
+func TestBootRefusesAFileWhoseNameTrimsToNoIdAndNamesIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "maps", ".json"), `{
+		"format_version": 1, "id": "", "name": "Nameless",
+		"grid_width": 1, "grid_height": 1, "tiles": {"0,0":"stone"}
+	}`)
+
+	_, err := LoadMapsDir(dir)
+	if err == nil {
+		t.Fatal("a file named .json booted as a map; its id would be the empty string")
+	}
+	if !strings.Contains(err.Error(), `".json"`) {
+		t.Errorf("error = %q, want it to name the file an operator can actually see", err)
+	}
+}

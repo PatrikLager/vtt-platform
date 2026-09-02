@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -203,8 +204,12 @@ type Server struct {
 
 	// adventureGuides is the markdown served by /api/adventures/{id}/guide,
 	// keyed by adventure id. Set via WithAdventureGuides, boot time only.
-	// Held separately from adventures because the gateway does no file I/O:
-	// cmd/vtt reads the guides and hands them over (ADR-008).
+	// Held separately from adventures because cmd/vtt owns the filesystem
+	// (ADR-008): it reads the guides and hands them over, so an unreadable
+	// one fails loudly at boot rather than becoming a 500 mid-session. The
+	// rule has one deliberate exception since 2026-09-01-create-scene-leaves
+	// Task 6 — mapsDir below — and a guide is not it; see mapByID (map.go)
+	// and WithAdventureGuides (metadata.go) for the whole reasoning.
 	adventureGuides map[string]string
 
 	// static is the built web client, served at / when non-nil. Optional:
@@ -218,10 +223,16 @@ type Server struct {
 	// leaves Task 5 — maps come from the campaign directory itself, not a
 	// --maps-dir flag) — GET /api/maps answers 200 with an empty list, the
 	// same "empty is not an error" posture handleAdventures already gives
-	// (spec §5). Set via WithMaps, BOOT TIME ONLY (mirrors WithAdventures — see
-	// its own doc comment for why), keyed by each map's own declared id
-	// (Map.ID), not any directory name — cmd/vtt's loadMapsDir refuses a
-	// collision there before either map ever reaches here.
+	// (spec §5). Keyed by each map's own declared id (Map.ID), not any
+	// directory name — cmd/vtt's loadMapsDir refuses a collision there
+	// before either map ever reaches here.
+	//
+	// NO LONGER BOOT TIME ONLY as of 2026-09-01-create-scene-leaves Task 6:
+	// WithMaps still fills it before the server serves anything, but a map
+	// installed into the campaign's maps/ during a session joins it on its
+	// first successful load_map (map.go's mapByID). Every access ONCE THE
+	// SERVER IS SERVING therefore goes through mapsMu below; WithMaps'
+	// own write does not, and its doc comment says why.
 	maps map[string]*mapdef.Map
 
 	// packs mirrors maps' own keying but for packs (Pack.ID, set together
@@ -246,6 +257,18 @@ type Server struct {
 	// here, at the layer that actually owns the filesystem boundary
 	// (ADR-008).
 	packFS map[string]fs.FS
+
+	// mapsDir is the campaign's own maps/ directory, set via WithMapsDir:
+	// where map.go's mapByID looks when the set above does not hold an id
+	// (2026-09-01-create-scene-leaves design spec §5). Empty means this
+	// server cannot look anything up on disk, which is every pre-Task-6
+	// behaviour unchanged — see mapByID's own doc comment.
+	mapsDir string
+
+	// mapsMu guards maps, and only maps. packs and packFS stay boot-time
+	// only, so they are read without it (see mapByID and handleMaps, which
+	// both say so where they do it).
+	mapsMu sync.RWMutex
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
@@ -305,16 +328,47 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 
 // WithMaps configures s to answer GET /api/maps from m/packs, keyed by each
 // map's/pack's own declared id (maps-as-geometry Task 7). Both are expected
-// already fully loaded and validated (cmd/vtt's loadMapsDir: mapdef.Load,
-// mapdef.LoadPack, and a boot-time dry-run mapdef.Compile per map — fail
-// loud at boot, spec §4.4); this method does no I/O and no validation of
-// its own, mirroring WithAdventures. Returns s for call-site chaining;
-// mutates s in place, so it is not safe to call concurrently with s already
-// serving traffic. Pack file BYTES are a separate concern — see
-// WithPackFiles.
+// already fully loaded and validated (cmd/vtt's loadMapsDir, via
+// mapdef.LoadInstalled and mapdef.LoadPack — fail loud at boot, spec §4.4);
+// this method does no I/O and no validation of its own, mirroring
+// WithAdventures. Returns s for call-site chaining; mutates s in place
+// WITHOUT taking mapsMu, so it is not safe to call concurrently with s
+// already serving traffic — the map set gains entries during a session
+// (WithMapsDir below), but never through this method. Pack file BYTES are a
+// separate concern — see WithPackFiles.
 func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pack) *Server {
 	s.maps = m
 	s.packs = packs
+	return s
+}
+
+// WithMapsDir tells s where this campaign keeps its maps, so that a map
+// installed while the server is running is loadable without a restart
+// (2026-09-01-create-scene-leaves design spec §4/§5, and the sub-project's
+// own reason to exist: create_scene left the platform, and what replaces
+// improvisation is authoring a map outside the platform, writing it into
+// the campaign's maps/, and loading it). dir is the campaign's maps/
+// directory itself; it need not exist — a brand-new campaign has no maps
+// directory at all, and one that appears later is found on the next lookup,
+// because the probe reads the directory as it is at the moment it is asked
+// rather than holding any state about it.
+//
+// A PATH rather than an fs.FS, unlike WithPackFiles: the point of the probe
+// is that it runs mapdef.LoadInstalled, the SAME function cmd/vtt's boot
+// walk runs (design spec §12 — a map that boots cleanly must not be refused
+// on reload), and that function works in ordinary paths because the boot
+// walk does. An fs.FS here would have needed a second, bytes-shaped entry
+// into mapdef and a second error vocabulary, which is the divergence itself
+// wearing the costume of a safety measure. The escape an fs.FS would have
+// closed is closed instead where the untrusted id enters:
+// mapdef.LoadInstalled refuses any id that is not one plain filename,
+// before it joins anything.
+//
+// Boot time only as a CONFIGURATION call, like every other With* method:
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic.
+func (s *Server) WithMapsDir(dir string) *Server {
+	s.mapsDir = dir
 	return s
 }
 

@@ -213,7 +213,7 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		// RESOLVE (no pack given, or the pack does not define the named
 		// art) — checked at LOAD, not deferred to Compile (adventure-format
 		// spec §7: fail loud at boot, not at the table).
-		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "no pack was given to resolve it"}},
+		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "needs a pack to resolve"}},
 		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
 		// with no tiles at all is incoherent (mirrors mapdef's own
 		// CheckOverridesRequireTiles, reused here the same way every other

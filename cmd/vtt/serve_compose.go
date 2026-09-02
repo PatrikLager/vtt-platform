@@ -103,6 +103,15 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // an override that does not resolve against its pack, or an existing-but-
 // empty maps/ (the same "fail loud, never at the table" posture as
 // adventuresDir above), closing both handles before returning.
+//
+// The maps DIRECTORY is then handed to the server unconditionally
+// (WithMapsDir), present or not, which is what makes install-then-load work
+// during a session rather than only across restarts (Task 6 of the same
+// plan, design spec §5): on a load_map miss the server probes
+// campaignPath/maps/<id>.json through the same mapdef.LoadInstalled this
+// boot walk uses. Boot preloading is unchanged — an operator still learns
+// about a broken map before anyone connects — and what is added is only the
+// map that was not there yet.
 func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
@@ -163,7 +172,8 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	// (permissions, a plain file sitting where maps/ should be) falls
 	// through to loadMapsDir so ITS error surfaces, rather than being
 	// silently swallowed here as "no maps".
-	if _, statErr := os.Stat(filepath.Join(campaignPath, "maps")); statErr == nil || !os.IsNotExist(statErr) {
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if _, statErr := os.Stat(mapsDir); statErr == nil || !os.IsNotExist(statErr) {
 		maps, packs, packFS, err := loadMapsDir(campaignPath)
 		if err != nil {
 			_ = ids.Close() // best-effort; the compose error below is what matters
@@ -172,6 +182,14 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		}
 		gw = gw.WithMaps(maps, packs).WithPackFiles(packFS)
 	}
+	// UNCONDITIONALLY, outside the boot-load guard above: the maps
+	// directory is wired whether or not it exists yet, because the case
+	// this sub-project exists for is precisely the one where it does not
+	// (2026-09-01-create-scene-leaves design spec §4 — a brand-new campaign
+	// starts with nothing installed, and the DM authors a place mid-
+	// session). Inside the guard, a campaign that booted with no maps/
+	// could never find one afterwards, which is the whole feature.
+	gw = gw.WithMapsDir(mapsDir)
 
 	// The embedded client, when this binary was built with one. API-only is
 	// a valid configuration (the harness boots servers this way), so a

@@ -2,7 +2,9 @@ package mapdef
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -98,30 +100,36 @@ type FieldErrFunc func(field, msg string) error
 // completeness/bounds/name logic so internal/adventure's loadScenes can
 // apply the exact same checks to an embedded scene without re-implementing
 // any of them.
-func Load(path string) (*Map, error) {
+func Load(path string) (*Map, error) { return loadAs(path, path) }
+
+// loadAs is Load with the name its errors carry (display) held separate
+// from the file they read (path) — see decodeStrict's doc comment for why
+// that separation exists and who uses it. Load itself passes the path for
+// both, so nothing about Load's errors changed.
+func loadAs(path, display string) (*Map, error) {
 	var raw mapJSON
-	if err := decodeStrict(path, &raw); err != nil {
+	if err := decodeStrict(path, display, &raw); err != nil {
 		return nil, err
 	}
 
 	if raw.FormatVersion == 0 {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+		return nil, fieldErr(display, "format_version", fmt.Sprintf(
 			"required: this server understands %d, and an undeclared format is not "+
 				"assumed to be any of them", MapFormatVersion))
 	}
 	if raw.FormatVersion != MapFormatVersion {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf(
+		return nil, fieldErr(display, "format_version", fmt.Sprintf(
 			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
 	}
 
 	if raw.GridWidth < 1 {
-		return nil, fieldErr(path, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
+		return nil, fieldErr(display, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
 	}
 	if raw.GridHeight < 1 {
-		return nil, fieldErr(path, "grid_height", fmt.Sprintf("must be >= 1, got %d", raw.GridHeight))
+		return nil, fieldErr(display, "grid_height", fmt.Sprintf("must be >= 1, got %d", raw.GridHeight))
 	}
 
-	errf := func(field, msg string) error { return fieldErr(path, field, msg) }
+	errf := func(field, msg string) error { return fieldErr(display, field, msg) }
 
 	if err := CheckEverySquarePresent(raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
 		return nil, err
@@ -464,7 +472,7 @@ type packTileJSON struct {
 func LoadPack(dir string) (*Pack, error) {
 	path := filepath.Join(dir, "pack.json")
 	var raw packJSON
-	if err := decodeStrict(path, &raw); err != nil {
+	if err := decodeStrict(path, path, &raw); err != nil {
 		return nil, err
 	}
 
@@ -528,18 +536,55 @@ func packTileMap(path, field string, items []packTileJSON) (map[string]PackTile,
 // disallowed — reused shape from internal/adventure/load.go, so a map
 // author gets the same quality of "you misspelled a field" error an
 // adventure author already gets.
-func decodeStrict(path string, v any) error {
+//
+// display is the name the ERROR carries, held separate from the path
+// OPENED so a caller can name a file the way its reader knows it. Load and
+// LoadPack pass the path itself and read exactly as they always did;
+// LoadInstalled passes "maps/<id>.json", because its errors travel to a
+// client over the wire and an absolute server path is not that client's
+// business (2026-09-01-create-scene-leaves Task 6, fix round 1).
+//
+// os.Open's own error is UNWRAPPED to its bare cause before wrapping: an
+// *fs.PathError prints the path it was given ("open /abs/x.json: no such
+// file or directory"), so forwarding it whole would put the path back in
+// the message display was chosen to keep out — and would say it twice for
+// the callers that pass the path anyway. Unwrapping keeps
+// errors.Is(err, fs.ErrNotExist) working, because that answer comes from
+// the syscall.Errno underneath, not from the PathError around it.
+func decodeStrict(path, display string, v any) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("mapdef: %s: %w", path, err)
+		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
 	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("mapdef: %s: %w", path, err)
+		// The DECODE side needs unpath just as much as the open side: a
+		// path whose entry is a directory opens fine and fails on the
+		// first read, with an *fs.PathError of its own ("read /abs/x:
+		// is a directory").
+		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
 	}
 	return nil
+}
+
+// unpath strips the filesystem path an *fs.PathError carries, leaving the
+// bare cause. Every error decodeStrict returns is already named by display,
+// and a PathError would put the opened path back beside it — twice for the
+// callers that pass the path as display, and where it does not belong for
+// LoadInstalled, whose errors travel to a client.
+//
+// errors.Is survives: "no such file or directory" is answered by the
+// syscall.Errno underneath (its own Is method maps ENOENT to
+// fs.ErrNotExist), not by the PathError wrapper around it. Anything that is
+// not an *fs.PathError is returned untouched.
+func unpath(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
 }
 
 // fieldErr builds a load error naming both the offending file and field —

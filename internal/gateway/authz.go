@@ -1,7 +1,17 @@
-// Package gateway is the platform's pure authorization/conversion/codec
-// core over vtt.v1 commands and events (spec §4). It imports engine.State
-// only to answer the player-ownership question and never mutates it; it
-// does no I/O — Task 5 wires this core to a real WebSocket server.
+// Package gateway is the platform's authorization/conversion/codec core
+// over vtt.v1 commands and events (spec §4). It imports engine.State only
+// to answer the player-ownership question and never mutates it.
+//
+// This doc used to end "it does no I/O — Task 5 wires this core to a real
+// WebSocket server", from when the package was a pure core with no server
+// around it. Both halves have since stopped being true, and the second one
+// first: the WebSocket server, the static bundle and pack-file serving all
+// live here now. As of 2026-09-01-create-scene-leaves Task 6 the package
+// also READS one file — map.go's mapByID probes the campaign's maps/ when
+// load_map names a map the set does not hold, because that plan's design
+// spec §5 assigns the probe to the server on purpose. Authorization itself
+// (this file) still does no I/O, which is the property that was worth
+// stating and the one worth keeping.
 package gateway
 
 import (

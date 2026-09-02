@@ -141,10 +141,17 @@ var participantRoles = map[identity.Role]bool{
 // /api/adventures/{id}/guide, keyed by adventure id. Boot-time only, like
 // WithAdventures: the map is never mutated per request.
 //
-// Guides are passed in rather than read from disk here because the gateway
-// does no file I/O — cmd/vtt owns the filesystem (ADR-008), and a guide read
-// at request time would also mean an unreadable file becomes a 500 in the
-// middle of a session instead of a loud failure at boot.
+// Guides are passed in rather than read from disk here because cmd/vtt owns
+// the filesystem (ADR-008), and a guide read at request time would also
+// mean an unreadable file becomes a 500 in the middle of a session instead
+// of a loud failure at boot.
+//
+// That rule now has exactly one deliberate exception, and this is not it:
+// map.go's mapByID probes the campaign's maps/ on a lookup miss, because
+// the 2026-09-01-create-scene-leaves design spec §5 assigns that probe to
+// the server on purpose — a map authored mid-session has to be loadable
+// without a restart, and there is nothing about a guide that needs the
+// same.
 func (s *Server) WithAdventureGuides(guides map[string]string) *Server {
 	s.adventureGuides = guides
 	return s
@@ -469,18 +476,28 @@ type mapMetaJSON struct {
 	Pack *packRefJSON `json:"pack,omitempty"`
 }
 
-// handleMaps lists every boot-loaded standalone map (maps-as-geometry Task
-// 7), open to every role (this file's own doc comment above explains why).
+// handleMaps lists every map this server holds (maps-as-geometry Task 7),
+// open to every role (this file's own doc comment above explains why).
 // Each entry's Pack is looked up from s.packs by the map's OWN declared
 // Pack id — enriching the listing with the pack's display name and cell
 // size so a client can render at the right scale without a second request;
-// nil if the map declares no pack, or (should not happen past boot
-// validation, but handled rather than assumed) the id is not one of s.packs.
+// nil if the map declares no pack, or (should not happen past validation,
+// but handled rather than assumed) the id is not one of s.packs.
+//
+// The map set is no longer a boot-time constant: a map installed while the
+// server runs joins it on its first successful load_map (map.go's mapByID,
+// 2026-09-01-create-scene-leaves Task 6), so this listing grows during a
+// session and the read below has to be guarded. The entries are copied out
+// under the lock and the response is written outside it — a client that
+// stops reading must not be able to hold the map set shut against every
+// load_map for as long as it likes. s.packs needs no guarding: packs stay
+// boot-time only (Server.packs' own doc comment).
 func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
 	}
 	out := []mapMetaJSON{}
+	s.mapsMu.RLock()
 	for id, m := range s.maps {
 		item := mapMetaJSON{ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH}
 		if p, ok := s.packs[m.Pack]; ok {
@@ -488,6 +505,7 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, item)
 	}
+	s.mapsMu.RUnlock()
 	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })
 	writeJSON(w, map[string]any{"maps": out})
 }

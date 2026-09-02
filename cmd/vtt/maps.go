@@ -10,21 +10,22 @@
 //
 // SINCE TASK 3, maps and packs are two SEPARATE trees under dir, not one
 // map-per-subdirectory: every "<dir>/maps/<id>.json" is one standalone map,
-// named by its own filename (see the ID-mismatch refusal below — this is
-// the whole point of Task 3, not an incidental rule: mapdef.Compile takes a
-// SceneCreated's id from the map's own ID field, so if the filename alone
-// governed identity, renaming a file and reloading it would silently mint
-// a SECOND scene for the same place while the original stayed in the
-// world); every "<dir>/packs/<name>/pack.json" is one pack, keyed by its
-// OWN declared id (packs/<name>'s directory name need not match — only the
-// pack.json "id" field does, exactly as before Task 3). The two trees are
-// independent: a map names the pack it wants via its own "pack" field, and
-// this loader resolves that reference by ID lookup (packs[m.Pack]) — the
-// SAME lookup handleLoadMap makes at request time (internal/gateway/
-// map.go's own "s.packs[m.Pack]... may legally be nil/absent for a map
-// with no overrides" comment), so the boot-time dry run below fails on
-// exactly the references handleLoadMap would fail on later, and cannot
-// drift from it.
+// named by its own filename (the ID-mismatch refusal that keeps that true
+// lives in mapdef.LoadInstalled since Task 6 of the create_scene-leaves
+// plan — this is the whole point of Task 3, not an incidental rule:
+// mapdef.Compile takes a SceneCreated's id from the map's own ID field, so
+// if the filename alone governed identity, renaming a file and reloading it
+// would silently mint a SECOND scene for the same place while the original
+// stayed in the world); every "<dir>/packs/<name>/pack.json" is one pack,
+// keyed by its OWN declared id (packs/<name>'s directory name need not
+// match — only the pack.json "id" field does, exactly as before Task 3).
+// The two trees are independent: a map names the pack it wants via its own "pack" field, and
+// that reference is resolved by ID lookup (packs[m.Pack]) inside
+// mapdef.LoadInstalled — which is also the function internal/gateway's
+// mapByID calls when a map turns up after boot, so boot-time and
+// request-time validation are not merely alike, they are one function
+// (Task 6 of the create_scene-leaves plan; that plan's design spec §12
+// names their divergence as a hazard in its own right).
 package main
 
 import (
@@ -37,13 +38,13 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// loadMapsDir is the full walk: every packs/<name>/pack.json first (so a
-// map's pack lookup below always sees the complete pack set), then every
-// maps/<id>.json plus a boot-time dry run of mapdef.Compile per map
-// (discarding the result) so an overrides entry that does not resolve
-// against its pack fails HERE rather than only once something eventually
-// calls Compile for real — mirroring loadScenes' identical dry-run of
-// mapdef.BuildSceneCreated for adventure-embedded scenes
+// loadMapsDir is the full walk: every packs/<name>/pack.json first (so the
+// pack set is complete before any map's own pack reference is resolved),
+// then every maps/<id>.json through mapdef.LoadInstalled, which validates
+// each map and dry-runs mapdef.Compile against its pack — so an overrides
+// entry that does not resolve fails HERE rather than only once something
+// eventually calls Compile for real, mirroring loadScenes' identical
+// dry-run of mapdef.BuildSceneCreated for adventure-embedded scenes
 // (internal/adventure/load.go), and reusing Compile itself rather than
 // inventing a second validation path, per Task 4's "one construction site"
 // discipline.
@@ -80,8 +81,9 @@ import (
 // globally and a silent collision would let one pack directory shadow
 // another's images at the SAME route. For MAPS, since Task 3, a duplicate
 // id is no longer reachable through this walk at all: the filename-is-the-
-// id refusal below means a map's key is always exactly its own filename
-// (minus ".json"), and a filesystem cannot hold two entries of the same
+// id refusal (mapdef.LoadInstalled) means a map's key is always exactly its
+// own filename (minus ".json"), and a filesystem cannot hold two entries of
+// the same
 // name in one directory — the collision loadAdventuresDir's map-id check
 // guards against for adventures cannot arise here by construction, so
 // nothing analogous is checked (or tested) for maps.
@@ -159,41 +161,18 @@ func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*map
 		}
 		id := strings.TrimSuffix(e.Name(), ".json")
 
-		m, loadErr := mapdef.Load(mapPath)
+		// mapdef.LoadInstalled is the WHOLE per-map check — read, validate,
+		// filename-is-the-id, and the dry-run Compile against the pack the
+		// map names — and it is the same function internal/gateway's
+		// mapByID calls when a map turns up after boot (2026-09-01-create-
+		// scene-leaves Task 6). One function rather than two similar ones,
+		// because the design spec names their divergence as a hazard of its
+		// own (§12): a map that boots cleanly must not be refused on
+		// reload, nor the reverse. Everything this loop used to do inline
+		// lives there now, with its reasoning.
+		m, loadErr := mapdef.LoadInstalled(mapsDir, id, packs)
 		if loadErr != nil {
-			return nil, nil, nil, loadErr
-		}
-
-		// THE FILENAME IS THE ID (Task 3's own reason for existing — see
-		// this function's package-level doc comment above): mapdef.Compile
-		// takes a scene's id from m.ID, never from the file it was loaded
-		// from, so a filename that disagrees with the map's own declared id
-		// would let a rename silently mint a second scene for the same
-		// place while the original stayed in the world. Refused here,
-		// loudly, naming BOTH the filename and the id it disagrees with, so
-		// the mismatch is loud instead of silent.
-		if m.ID != id {
-			return nil, nil, nil, fmt.Errorf(
-				"maps/%s.json declares id %q: a map's filename is its id, and a "+
-					"disagreement would put a second scene in the world for the same "+
-					"place — mapdef.Compile takes the scene id from the map's ID",
-				id, m.ID)
-		}
-
-		// pack lookup by the map's OWN declared id, not by directory
-		// co-location (packs are a sibling tree since Task 3) — packs[""]
-		// is a legal, deliberate no-op lookup for a map that declares no
-		// Pack, exactly mirroring internal/gateway/map.go's handleLoadMap,
-		// so this dry run fails on precisely the references that handler
-		// would fail on at request time.
-		pack := packs[m.Pack]
-
-		// Dry run: proves every override actually resolves (kind/material
-		// from the standard vocabulary, art from pack) before this map is
-		// ever considered bootable — see this function's own doc comment
-		// for why Compile, not a bespoke check.
-		if _, _, compileErr := mapdef.Compile(m, pack); compileErr != nil {
-			return nil, nil, nil, fmt.Errorf("maps dir %s: map %q (%s): %w", mapsDir, m.ID, mapPath, compileErr)
+			return nil, nil, nil, fmt.Errorf("maps dir %s: %w", mapsDir, loadErr)
 		}
 
 		maps[m.ID] = m
