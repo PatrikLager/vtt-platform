@@ -43,6 +43,48 @@ TypeScript + bun for the client, Taskfile gates, gremlins + Stryker mutation.
 
 ---
 
+## Pre-flight finding: the adventure path, which the spec does not mention
+
+**Found by the pre-flight scan, 2026-09-03, before Task 1.** `internal/adventure`
+is a second consumer of everything this sub-project changes, and neither the spec
+nor the first draft of this plan named it:
+
+- `Adventure.Pack *mapdef.Pack` (`internal/adventure/format.go`) — an adventure
+  carries its OWN embedded art, loaded from `<adventure>/tiles/pack.json` by
+  `loadEmbeddedPack` (`internal/adventure/load.go`).
+- `internal/adventure/compile.go` calls `mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)`.
+- `internal/adventure/load.go` calls `BuildSceneCreated` again as a dry run.
+
+So spec §6's deletion of `mapdef.Pack` and `LoadPack` would remove how adventures
+ship art, and spec §3's flat `campaign/art/` says nothing about art that travels
+*inside* a bundle.
+
+**Ruling (controller, 2026-09-03): an adventure keeps its art self-contained, in
+its own flat `<adventure>/art/`, resolved by the SAME `artlib` rooted at the
+adventure directory.**
+
+*Why:* an adventure is a bundle you hand to someone, and its art must travel with
+it — that is what `loadEmbeddedPack` exists for and it should not be lost. The
+alternative, installing an adventure's art into `campaign/art/` on load, collides
+with the flat namespace by construction: two adventures shipping `masonry-1`
+would fight, and the DM never chose either name. Two roots and one mechanism
+keeps the flat rule intact inside each root, needs no namespace, and means
+`artlib` is the only art code in the tree.
+
+*What it costs if wrong:* the adventure format changes shape
+(`tiles/pack.json` → `art/`), which is breaking and touches `adventures/*/` on
+disk. Cheap to revisit while `contract/RELEASED` is absent; expensive after.
+
+**This is a spec gap, so under CLAUDE.md rule 7 the spec is amended at the merge
+gate and the amendment needs Patrik's approval.** Flagged to him at dispatch
+time rather than after.
+
+**Plan changes this forces:** Task 3 must update `internal/adventure`'s call
+sites or the tree will not compile, and Task 7 must replace the embedded pack
+rather than merely delete it. Both are written into those tasks below.
+
+---
+
 ## Design decision this plan settles
 
 **Spec §3.1 says a directory under `art/` is an error, and spec §3.6 says art
@@ -459,8 +501,18 @@ degrade path exists and is exercised. This task routes the *unresolvable* case
 into it.
 
 **Files:**
-- Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`
-- Test: `internal/mapdef/resolve_test.go`
+- Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`,
+  `internal/adventure/compile.go`, `internal/adventure/load.go`
+- Test: `internal/mapdef/resolve_test.go`, `internal/adventure/compile_test.go`
+
+**The adventure path compiles or nothing does.** `internal/adventure/compile.go`
+calls `mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)` and
+`internal/adventure/load.go` calls it again as a dry run. Changing `Resolve` and
+`BuildSceneCreated` breaks both immediately. For THIS task, pass the adventure's
+art directory (`<adventure>/art/`) as the art root; the embedded pack itself is
+replaced in Task 7. If that directory does not exist yet, every override in an
+adventure scene degrades and warns — which is correct and temporary, and Task 8
+installs the files.
 
 **Interfaces:**
 - Consumes: `artlib.Lookup`, `artlib.ErrNotFound` (Task 1).
@@ -759,16 +811,24 @@ assertion — no `mapdef.Pack`, no `LoadPack`, no `WithPackFiles`.
 
 - [ ] **Step 2: Run it RED.**
 
-- [ ] **Step 3: Delete**, outward-in: `cmd/vtt/maps.go`'s pack walk and the
+- [ ] **Step 3: Replace the adventure's embedded pack FIRST**, because it is the
+one caller that needs something rather than nothing. `Adventure.Pack *mapdef.Pack`
+becomes an art directory rooted at the adventure, and `loadEmbeddedPack` is
+deleted in favour of `artlib` reading `<adventure>/art/`. An adventure with no
+`art/` is legal, exactly as `tiles/pack.json` was optional — its scenes then draw
+from the built-in vocabulary and warn, which is spec §4 applied to the same
+mechanism rather than a second one.
+
+- [ ] **Step 4: Delete**, outward-in: `cmd/vtt/maps.go`'s pack walk and the
 `os.Stat(mapsDir)` guard in `serve_compose.go` (the guard's whole reason was that
 `loadMapsDir` failed on a missing `maps/`; make the maps walk tolerate absence the
 way the pack walk already did, then the guard has nothing left to do);
 `Server.packs`, `Server.packFS`, `WithPackFiles`; `ErrPackNotLoaded` and its arm
 in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
 
-- [ ] **Step 4: Run everything** — `go build ./... && go test ./... -count=1 && bun test client/test contract`.
+- [ ] **Step 5: Run everything** — `go build ./... && go test ./... -count=1 && bun test client/test contract`.
 
-- [ ] **Step 5: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
+- [ ] **Step 6: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
 
 ---
 
@@ -778,7 +838,7 @@ in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
 - Create: `campaigns/example/art/*`, `campaigns/example/campaign.json`
 - Delete: `campaigns/example/packs/`
 - Modify: `campaigns/example/maps/cellar.json`, `scenarios/`, `scenarios/goldens/`,
-  `tools/genmappack/`
+  `tools/genmappack/`, `adventures/*/` (each `tiles/pack.json` becomes `art/`)
 
 - [ ] **Step 1:** Rewrite `campaigns/example/` — every pack tile and object
 becomes `art/<stem>.png` plus, for tile art, `art/<stem>.json`. File stems become
