@@ -1,0 +1,879 @@
+# Art Is A Flat Library — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Delete packs. Art becomes one flat `campaign/art/` directory where the
+filename is the identity, any map may use any art, and unresolvable art degrades
+one square to the built-in vocabulary instead of refusing the map.
+
+**Architecture:** A new `internal/artlib` resolves an art id to a piece by
+filename — no scan, no registry, no cache. `mapdef.Resolve` takes that library
+instead of a `*Pack` and warns instead of erroring when a name does not resolve.
+The gateway reads art at map-load time, so there is no boot-time art load to get
+wrong. `mapdef.Pack` and the whole pack walk are deleted last, once nothing calls
+them.
+
+**Tech Stack:** Go 1.24+ (`os.OpenRoot` for symlink-safe FS), protobuf/buf,
+TypeScript + bun for the client, Taskfile gates, gremlins + Stryker mutation.
+
+**Spec:** `docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`
+
+## Global Constraints
+
+- **`art/` is FLAT.** No subdirectories, ever. A subfolder is a namespace and a
+  namespace is a pack (spec §3.3).
+- **The filename stem IS the art id.** Nothing declares an id. Stems are
+  kebab-case; picture and sidecar share a stem.
+- **Uniqueness is the filesystem's.** No duplicate check is written anywhere.
+- **A sidecar is REQUIRED for tile art, OPTIONAL for object art** (spec §3.4).
+- **Unresolvable art degrades ONE square** to its `tiles` kind/material and
+  warns; it never refuses the map (spec §4).
+- **Nature always comes from `m.Tiles`.** Art never decides a square's kind or
+  material. This is unchanged and must stay true.
+- **`engine.Apply` remains the only fold** (CLAUDE.md rule 4).
+- **Airtight TDD (ADR-009):** tests first, behavioural RED before the solution;
+  after-the-fact assertions need fault-injection proof.
+- **`task check` is the single gateway** (CLAUDE.md rule 2). Never weaken a gate.
+- **Contract additive only** (ADR-007). Exactly one contract addition is planned:
+  `CommandResult.warnings`. The `"pack"` field removal is a breaking change and
+  is permissible ONLY because `contract/RELEASED` does not exist; this must land
+  before that file does (spec §7).
+- **Citations name durable things** (CLAUDE.md rule 8).
+- `cell_px` default is **64** when `campaign/campaign.json` is absent.
+
+---
+
+## Design decision this plan settles
+
+**Spec §3.1 says a directory under `art/` is an error, and spec §3.6 says art
+resolves on demand. Taken naively those conflict:** a scan-free lookup by
+filename never sees a stray directory, and a scan on every map load is the
+boot-time load this design exists to remove, just moved.
+
+**Resolution: two entry points, one cheap and one rare.**
+
+- `artlib.Lookup(dir, id)` — the hot path. Reads `<dir>/<id>.json` and
+  `<dir>/<id>.png` directly. **No `ReadDir`, no cache, no registry.** This is
+  what a map load uses, and it is what makes "the filename IS the identity"
+  literally true rather than merely enforced.
+- `artlib.Validate(dir)` — one `ReadDir`, no file contents. Refuses a
+  subdirectory and a sidecar with no picture. Called by `vtt art install` and
+  once at server start.
+
+The boot call is a **shape check, not a load**: it reads no art, caches nothing,
+and a missing `art/` passes. So it cannot reproduce sub-project 15's boot-order
+defect, where a guard on one directory silently gated the loading of another.
+
+---
+
+## File Structure
+
+**Created**
+
+- `internal/artlib/artlib.go` — `Piece`, `Lookup`, `Validate`, `ErrNotFound`.
+- `internal/artlib/artlib_test.go` — the package's own tests.
+- `internal/campaigncfg/campaigncfg.go` — `Config{CellPx}`, `Load(dir)`.
+- `campaigns/example/art/` — the migrated example art.
+- `campaigns/example/campaign.json`
+- `tools/check-no-pack.py`, `tools/check_no_pack_test.py` — the removal gate.
+
+**Modified**
+
+- `internal/mapdef/resolve.go` — `Resolve` takes an art lookup; degrades + warns.
+- `internal/mapdef/compile.go` — threads the library through `BuildSceneCreated`.
+- `internal/mapdef/format.go` — `Map.Pack` deleted; `Pack`/`PackTile` deleted.
+- `internal/mapdef/load.go` — refuse a map declaring `"pack"`; `LoadPack` deleted.
+- `internal/mapdef/installed.go` — `LoadInstalled` takes an art dir.
+- `internal/gateway/server.go` — `WithArtDir`; `packs`/`packFS`/`WithPackFiles` deleted.
+- `internal/gateway/map.go` — resolve art on demand; `ErrPackNotLoaded` arm deleted.
+- `internal/gateway/metadata.go` — `packRefJSON` deleted; `cellPx` reported directly.
+- `cmd/vtt/maps.go` — the pack walk deleted.
+- `cmd/vtt/serve_compose.go` — the `os.Stat(maps)` guard deleted.
+- `cmd/vtt/art.go` — new `vtt art install` subcommand.
+- `contract/vtt/v1/commands.proto` — `CommandResult.warnings = 5`.
+- `client/src/metadata.ts`, `client/src/wire.ts` — `cellPx` shape; warnings surfaced.
+- `tools/genmappack/` — emits flat art.
+- `Taskfile.yml` — `check:no-pack`.
+
+**Deleted**
+
+- `campaigns/example/packs/`, every `pack.json`, `mapdef.Pack`, `mapdef.PackTile`,
+  `mapdef.LoadPack`, `ErrPackNotLoaded`, `Server.packs`, `Server.packFS`,
+  `WithPackFiles`, `packRefJSON`, `loadMapsDir`'s pack half.
+
+---
+
+## Shared helpers used by several tasks
+
+Define once; later tasks reference them by name.
+
+```go
+// internal/artlib/artlib_test.go — used by every test in this package.
+func writeArt(t *testing.T, dir, stem, sidecar string) {
+	t.Helper()
+	if sidecar != "" {
+		if err := os.WriteFile(filepath.Join(dir, stem+".json"), []byte(sidecar), 0o644); err != nil {
+			t.Fatalf("write sidecar %s: %v", stem, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, stem+".png"), []byte("png bytes"), 0o644); err != nil {
+		t.Fatalf("write picture %s: %v", stem, err)
+	}
+}
+```
+
+---
+
+### Task 1: The art library
+
+**Files:**
+- Create: `internal/artlib/artlib.go`, `internal/artlib/artlib_test.go`
+
+**Interfaces:**
+- Produces: `artlib.Piece{ID, Kind, Material, File, Open, Closed string}`;
+  `artlib.Lookup(dir, id string) (Piece, error)`;
+  `artlib.Validate(dir string) error`; `artlib.ErrNotFound`.
+- Consumes: nothing.
+
+- [ ] **Step 1: Write the failing tests**
+
+```go
+package artlib_test
+
+func TestObjectArtNeedsNoSidecar(t *testing.T) {
+	dir := t.TempDir()
+	writeArt(t, dir, "pillar-stone", "")
+	p, err := artlib.Lookup(dir, "pillar-stone")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if p.ID != "pillar-stone" || p.File != "pillar-stone.png" || p.Kind != "" {
+		t.Fatalf("got %+v, want object art with an empty Kind", p)
+	}
+}
+
+func TestTileArtDeclaresItsNature(t *testing.T) {
+	dir := t.TempDir()
+	writeArt(t, dir, "masonry-1", `{"format_version":1,"kind":"wall","material":"stone"}`)
+	p, err := artlib.Lookup(dir, "masonry-1")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if p.Kind != "wall" || p.Material != "stone" {
+		t.Fatalf("got %+v, want kind=wall material=stone", p)
+	}
+}
+
+func TestADoorCarriesBothPictures(t *testing.T) {
+	dir := t.TempDir()
+	writeArt(t, dir, "cellar-door", `{"format_version":1,"kind":"door","material":"wood",
+		"open":"cellar-door-open.png","closed":"cellar-door-closed.png"}`)
+	p, err := artlib.Lookup(dir, "cellar-door")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if p.Open != "cellar-door-open.png" || p.Closed != "cellar-door-closed.png" {
+		t.Fatalf("got %+v, want both door pictures", p)
+	}
+}
+
+func TestMissingArtIsErrNotFoundSoCallersCanDegrade(t *testing.T) {
+	dir := t.TempDir()
+	_, err := artlib.Lookup(dir, "nothing-here")
+	if !errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("got %v, want ErrNotFound — Resolve distinguishes absent art (degrade) "+
+			"from malformed art (refuse) by this sentinel", err)
+	}
+}
+
+func TestAnUnsupportedFormatVersionIsRefusedNotDegraded(t *testing.T) {
+	dir := t.TempDir()
+	writeArt(t, dir, "future", `{"format_version":2,"kind":"wall","material":"stone"}`)
+	_, err := artlib.Lookup(dir, "future")
+	if err == nil || errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: art that exists and "+
+			"cannot be read is a defect to fix, not a square to draw plain", err)
+	}
+	if !strings.Contains(err.Error(), "declares 2") || !strings.Contains(err.Error(), "understands 1") {
+		t.Fatalf("error %q must name both versions", err)
+	}
+}
+
+func TestASidecarWithNoPictureIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "orphan.json"),
+		[]byte(`{"format_version":1,"kind":"wall","material":"stone"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := artlib.Validate(dir)
+	if err == nil || !strings.Contains(err.Error(), "orphan") {
+		t.Fatalf("got %v, want a refusal naming orphan", err)
+	}
+}
+
+func TestASubdirectoryIsRefusedByName(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "cellar-basics"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := artlib.Validate(dir)
+	if err == nil || !strings.Contains(err.Error(), "cellar-basics") {
+		t.Fatalf("got %v, want a refusal naming cellar-basics — a subfolder is a "+
+			"namespace and a namespace is a pack (spec §3.3)", err)
+	}
+}
+
+func TestValidateAcceptsAnAbsentArtDirectory(t *testing.T) {
+	if err := artlib.Validate(filepath.Join(t.TempDir(), "nope")); err != nil {
+		t.Fatalf("Validate on an absent art/: %v — a campaign with no art yet is "+
+			"ordinary, and refusing it would reproduce the boot-order defect this "+
+			"design removes", err)
+	}
+}
+
+func TestLookupRefusesAnIdThatIsNotAFilename(t *testing.T) {
+	dir := t.TempDir()
+	for _, id := range []string{"../secret", "a/b", "", ".", "..", "x/../../y"} {
+		if _, err := artlib.Lookup(dir, id); err == nil {
+			t.Fatalf("Lookup(%q) was accepted; an id becomes a path and must be a "+
+				"bare filename", id)
+		}
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/artlib/ -count=1`
+Expected: FAIL — package does not exist.
+
+- [ ] **Step 3: Implement**
+
+```go
+// Package artlib reads art out of a campaign's flat art/ directory.
+//
+// THE FILENAME IS THE IDENTITY. Nothing declares an id, so nothing can
+// disagree with one (design spec §3.2). That is why Lookup does no ReadDir:
+// knowing the id IS knowing the path, and a scan would only be a slower way to
+// arrive at the same filename — while quietly becoming the boot-time load this
+// design exists to delete.
+//
+// UNIQUENESS IS THE FILESYSTEM'S (spec §3.3). There is no duplicate check in
+// this package because two files cannot share a name. Subdirectories are
+// refused for exactly that reason: art/a/x.png and art/b/x.png coexist happily,
+// and the moment they can, something has to decide what "x" means.
+package artlib
+
+const FormatVersion int32 = 1
+
+var ErrNotFound = errors.New("artlib: no such art")
+
+// Piece is one art entry. Kind == "" means OBJECT art, which needs no sidecar
+// because the map already declares an object's blocking behaviour (spec §3.4).
+type Piece struct {
+	ID                 string
+	Kind, Material     string
+	File               string
+	Open, Closed       string
+}
+
+type sidecar struct {
+	FormatVersion int32  `json:"format_version"`
+	Kind          string `json:"kind"`
+	Material      string `json:"material"`
+	Open          string `json:"open"`
+	Closed        string `json:"closed"`
+}
+
+// idIsAFilename mirrors mapdef's guard of the same shape: an id arriving from a
+// map file becomes a path, so it must be one path SEGMENT and nothing else.
+func idIsAFilename(id string) bool {
+	return id != "" && id != "." && id != ".." &&
+		!strings.ContainsAny(id, `/\`) && filepath.Base(id) == id
+}
+
+func Lookup(dir, id string) (Piece, error) {
+	if !idIsAFilename(id) {
+		return Piece{}, fmt.Errorf("artlib: art id %q must be a plain filename", id)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	switch {
+	case err == nil:
+		var sc sidecar
+		if jsonErr := json.Unmarshal(raw, &sc); jsonErr != nil {
+			return Piece{}, fmt.Errorf("artlib: art/%s.json: %w", id, jsonErr)
+		}
+		if sc.FormatVersion != FormatVersion {
+			return Piece{}, fmt.Errorf(
+				"artlib: art/%s.json: field \"format_version\": declares %d; this server understands %d",
+				id, sc.FormatVersion, FormatVersion)
+		}
+		p := Piece{ID: id, Kind: sc.Kind, Material: sc.Material,
+			Open: sc.Open, Closed: sc.Closed, File: id + ".png"}
+		if sc.Kind == "door" && (sc.Open == "" || sc.Closed == "") {
+			return Piece{}, fmt.Errorf(
+				"artlib: art/%s.json: a door declares both \"open\" and \"closed\"", id)
+		}
+		return p, nil
+	case errors.Is(err, fs.ErrNotExist):
+		// No sidecar: object art, if the picture is there.
+		if _, statErr := os.Stat(filepath.Join(dir, id+".png")); statErr != nil {
+			return Piece{}, fmt.Errorf("artlib: art/%s: %w", id, ErrNotFound)
+		}
+		return Piece{ID: id, File: id + ".png"}, nil
+	default:
+		return Piece{}, fmt.Errorf("artlib: art/%s.json: %w", id, err)
+	}
+}
+
+// Validate is a SHAPE check, not a load: one ReadDir, no file contents, no
+// cache. An absent art/ passes, because a campaign with no art yet is ordinary.
+func Validate(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("artlib: read art dir %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			return fmt.Errorf(
+				"artlib: art dir %s contains a subdirectory %q; art/ is flat — "+
+					"a subfolder is a namespace, and a namespace is a pack", dir, e.Name())
+		}
+		if strings.HasSuffix(e.Name(), ".json") {
+			stem := strings.TrimSuffix(e.Name(), ".json")
+			if _, statErr := os.Stat(filepath.Join(dir, stem+".png")); statErr != nil {
+				return fmt.Errorf(
+					"artlib: art dir %s: %s has no picture beside it (%s.png)", dir, e.Name(), stem)
+			}
+		}
+	}
+	return nil
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `go test ./internal/artlib/ -count=1 -v`
+Expected: PASS, all nine.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/artlib/
+git commit -m "Art is found by its filename, not by a registry"
+```
+
+---
+
+### Task 2: Warnings reach the client
+
+The channel spec §4 depends on does not exist: `mapdef.Load` returns warnings and
+no contract message carries them, so today a warning dies in Go. This is the one
+additive contract change (ADR-007).
+
+**Files:**
+- Modify: `contract/vtt/v1/commands.proto`, `internal/gateway/` command result
+  construction, `client/src/wire.ts`
+- Test: `internal/gateway/map_test.go`, `client/test/wire.test.ts`, `contract/`
+
+**Interfaces:**
+- Produces: `CommandResult.warnings` (repeated string, field 5).
+
+- [ ] **Step 1: Write the failing test**
+
+```go
+func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
+	// A map naming art that is not installed loads, and the DM is TOLD.
+	// Silence here is worse than the refusal it replaces (spec §4).
+	f := newInstallableMapFixture(t)
+	writeMap(t, f.mapsDir, "shrine", `{"format_version":1,"id":"shrine","name":"Shrine",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},"overrides":{"0,0":"absent-art"}}`)
+	res := f.loadMap(t, "shrine")
+	if !res.GetOk() {
+		t.Fatalf("load_map refused: %s — unresolvable art degrades, it does not refuse", res.GetError())
+	}
+	if len(res.GetWarnings()) == 0 {
+		t.Fatal("no warnings: the square rendered plain and nobody was told why")
+	}
+	if !strings.Contains(strings.Join(res.GetWarnings(), "\n"), "absent-art") {
+		t.Fatalf("warnings %q must name the reference that did not resolve", res.GetWarnings())
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test ./internal/gateway/ -run TestALoadMapWarningReachesTheIssuer -count=1`
+Expected: FAIL — `res.GetWarnings` undefined.
+
+- [ ] **Step 3: Add the field, additively**
+
+In `contract/vtt/v1/commands.proto`, `message CommandResult`:
+
+```proto
+message CommandResult {
+  string request_id = 1;
+  bool ok = 2;
+  string error = 3;
+  int64 sequence = 4;
+
+  // Non-fatal facts about a command that SUCCEEDED. load_map fills it when a
+  // map names art that is not installed: that square renders from its tiles
+  // kind and material (art design spec §4) and this says which references
+  // were dropped. Without it §4 is a silence — the map goes plain and nobody
+  // learns why — which is strictly worse than the refusal it replaces.
+  repeated string warnings = 5;
+}
+```
+
+Run: `task generate:contract`
+
+- [ ] **Step 4: Plumb it**
+
+Carry `mapdef`'s existing `[]string` warnings from the load path onto the
+`CommandResult` the issuer receives. Do not broadcast them: a warning is for
+whoever issued the command, not for the table.
+
+- [ ] **Step 5: Run tests and the client half**
+
+Run: `go test ./internal/gateway/ -count=1 && bun test client/test contract`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "A warning that dies in Go is a silence"
+```
+
+---
+
+### Task 3: Resolve degrades instead of refusing
+
+This is the sharpest seam in the sub-project. `Resolve` already returns
+`Resolved{Kind, Material}` with no `Art` when a square has no override — the
+degrade path exists and is exercised. This task routes the *unresolvable* case
+into it.
+
+**Files:**
+- Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`
+- Test: `internal/mapdef/resolve_test.go`
+
+**Interfaces:**
+- Consumes: `artlib.Lookup`, `artlib.ErrNotFound` (Task 1).
+- Produces: `func Resolve(m *Map, artDir, square string) (Resolved, []string, error)`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```go
+func TestArtThatIsNotInstalledDegradesTheSquareAndWarns(t *testing.T) {
+	artDir := t.TempDir()
+	m := &mapdef.Map{Tiles: map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "absent"}}
+	got, warnings, err := mapdef.Resolve(m, artDir, "0,0")
+	if err != nil {
+		t.Fatalf("Resolve: %v — absent art degrades, it does not refuse (spec §4)", err)
+	}
+	if got.Kind != "wall" || got.Material != "stone" {
+		t.Fatalf("got %+v, want the nature from Tiles, unchanged", got)
+	}
+	if got.Art != "" {
+		t.Fatalf("got Art=%q, want empty: there is no picture to draw", got.Art)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "absent") {
+		t.Fatalf("warnings %q must name the reference", warnings)
+	}
+}
+
+func TestArtThatExistsButCannotBeReadStillRefuses(t *testing.T) {
+	// The distinction that makes §4 safe: ABSENT art is a square to draw
+	// plain; MALFORMED art is a defect to fix. Degrading both would let a
+	// broken sidecar ship silently.
+	artDir := t.TempDir()
+	writeArt(t, artDir, "broken", `{"format_version":99,"kind":"wall","material":"stone"}`)
+	m := &mapdef.Map{Tiles: map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "broken"}}
+	if _, _, err := mapdef.Resolve(m, artDir, "0,0"); err == nil {
+		t.Fatal("malformed art was degraded; it must refuse")
+	}
+}
+
+func TestASquareWithNoOverrideIsUnchanged(t *testing.T) {
+	// The control. This path predates the change and must not move.
+	m := &mapdef.Map{Tiles: map[string]string{"0,0": "earth"}}
+	got, warnings, err := mapdef.Resolve(m, t.TempDir(), "0,0")
+	if err != nil || len(warnings) != 0 || got.Kind != "floor" || got.Art != "" {
+		t.Fatalf("got %+v warnings=%v err=%v; the no-override path must not change",
+			got, warnings, err)
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/mapdef/ -run 'Degrades|CannotBeRead|NoOverride' -count=1`
+Expected: FAIL — `Resolve` still takes `*Pack`.
+
+- [ ] **Step 3: Change the signature and the two error returns**
+
+Replace the `p == nil` refusal and the `m.Pack != p.ID` refusal with a lookup:
+
+```go
+	art, hasArt := m.Overrides[square]
+	if !hasArt {
+		return Resolved{Kind: kind, Material: material}, nil, nil
+	}
+	piece, err := artlib.Lookup(artDir, art)
+	if errors.Is(err, artlib.ErrNotFound) {
+		// DEGRADE, not refuse (spec §4). The nature is already in hand from
+		// m.Tiles, which is the whole reason this is safe: the square keeps
+		// being a wall, it just stops being a PARTICULAR wall.
+		return Resolved{Kind: kind, Material: material},
+			[]string{fmt.Sprintf("square %s names art %q, which is not installed; "+
+				"drawing it plain", square, art)}, nil
+	}
+	if err != nil {
+		// Art that EXISTS and cannot be read is a defect to fix, not a square
+		// to draw plain. Degrading here would ship a broken sidecar silently.
+		return Resolved{}, nil, err
+	}
+```
+
+Keep the existing kind-mismatch WARNING exactly as it is — an illusory wall is
+legitimate dungeon craft and this task must not turn it into a refusal.
+
+- [ ] **Step 4: Run tests**
+
+Run: `go test ./internal/mapdef/ -count=1`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/mapdef/
+git commit -m "A missing picture is a plain square, not a refused map"
+```
+
+---
+
+### Task 4: The gateway resolves art on demand
+
+**Files:**
+- Modify: `internal/gateway/server.go`, `internal/gateway/map.go`,
+  `internal/mapdef/installed.go`
+- Test: `internal/gateway/map_test.go`, `cmd/vtt/client_e2e_test.go`
+
+**Interfaces:**
+- Produces: `(*Server).WithArtDir(dir string) *Server`.
+- Consumes: `mapdef.Resolve` (Task 3).
+
+- [ ] **Step 1: Write the failing tests**
+
+```go
+func TestArtInstalledAfterBootIsFoundWithoutARestart(t *testing.T) {
+	// The defect sub-project 15 shipped, inverted into a requirement. This
+	// MUST go through composeServer: the pack version of this test used a
+	// bare gateway.Server and therefore could not see the boot-order bug at
+	// all (whole-branch review, 2026-09-02).
+	camp := t.TempDir()
+	mustMkdirAll(t, filepath.Join(camp, "maps"), filepath.Join(camp, "art"))
+	srv, _, err := composeServer(camp, "127.0.0.1:0", "", "")
+	if err != nil {
+		t.Fatalf("composeServer: %v", err)
+	}
+	// ... serve, dial as DM ...
+	writeArt(t, filepath.Join(camp, "art"), "late-stone",
+		`{"format_version":1,"kind":"wall","material":"stone"}`)
+	writeMap(t, filepath.Join(camp, "maps"), "hall", `{"format_version":1,"id":"hall",
+		"name":"Hall","grid_width":1,"grid_height":1,"tiles":{"0,0":"stone-wall"},
+		"overrides":{"0,0":"late-stone"}}`)
+	res := loadMap(t, conn, "hall")
+	if !res.GetOk() {
+		t.Fatalf("load_map: %s", res.GetError())
+	}
+	if len(res.GetWarnings()) != 0 {
+		t.Fatalf("warnings %q: the art WAS installed, before the load and after the boot",
+			res.GetWarnings())
+	}
+}
+
+func TestArtOverwrittenInPlaceChangesWhatAReloadDraws(t *testing.T) {
+	// Patrik's scenario, 2026-09-02: "i find a better art ... i should be able
+	// to overwrite it ... And then when I reload the map. It will use the new
+	// art." Nothing is cached across a load, and this is what pins that.
+	// ... load once, overwrite the sidecar's material, load again, assert the
+	// second SceneCreated carries the new material ...
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./cmd/vtt/ -run 'ArtInstalledAfterBoot|OverwrittenInPlace' -count=1`
+Expected: FAIL — `WithArtDir` undefined.
+
+- [ ] **Step 3: Implement**
+
+Add `artDir` to `Server` with `WithArtDir`, wired **unconditionally** in
+`composeServer` — outside any guard, for the reason sub-project 15 learned the
+hard way. Call `artlib.Validate(artDir)` once at compose time and fail the boot
+on a subdirectory or an orphan sidecar; it reads no art and an absent `art/`
+passes.
+
+`LoadInstalled(mapsDir, id, artDir)` replaces the `packs` map parameter.
+
+- [ ] **Step 4: Run tests**
+
+Run: `go test ./cmd/vtt/ ./internal/gateway/ -count=1`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "Art is read when the map is loaded, not once at boot"
+```
+
+---
+
+### Task 5: A map declaring "pack" is refused
+
+**Files:**
+- Modify: `internal/mapdef/format.go` (delete `Map.Pack`), `internal/mapdef/load.go`
+- Test: `internal/mapdef/load_test.go`
+
+- [ ] **Step 1: Write the failing test**
+
+```go
+func TestAMapDeclaringAPackIsRefusedByName(t *testing.T) {
+	// Spec §7: no compatibility layer, and none added later. Ignoring the
+	// field would load a map whose art references were written against a
+	// namespace that no longer exists — and draw the wrong thing.
+	dir := t.TempDir()
+	writeMap(t, dir, "old", `{"format_version":1,"id":"old","name":"Old","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"},"pack":"cellar-basics"}`)
+	_, err := mapdef.Load(filepath.Join(dir, "old.json"))
+	if err == nil {
+		t.Fatal("a map declaring \"pack\" was accepted")
+	}
+	if !strings.Contains(err.Error(), "pack") || !strings.Contains(err.Error(), "art/") {
+		t.Fatalf("error %q must name the field AND point at art/", err)
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify it fails** — `go test ./internal/mapdef/ -run DeclaringAPack -count=1`, expect FAIL (accepted and ignored).
+
+- [ ] **Step 3: Implement.** Keep `pack` in the raw decode struct **solely** to
+detect and refuse it; delete `Map.Pack`.
+
+- [ ] **Step 4: Run tests** — `go test ./internal/mapdef/ -count=1`.
+
+- [ ] **Step 5: Commit** — `git commit -m "A map that names a pack is refused, not quietly ignored"`
+
+---
+
+### Task 6: The outward-facing art surface — cell_px, the route, and `vtt art install`
+
+Three things, one deliverable: everything outside the platform that touches art.
+A reviewer would accept or reject them together, because each is meaningless
+without the flat `art/` directory the other two assume.
+
+**Files:**
+- Create: `internal/campaigncfg/campaigncfg.go`, `cmd/vtt/art.go`
+- Modify: `internal/gateway/metadata.go`, `cmd/vtt/serve_compose.go`,
+  `client/src/metadata.ts`
+- Test: `internal/campaigncfg/campaigncfg_test.go`,
+  `internal/gateway/metadata_test.go`, `cmd/vtt/art_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+```go
+func TestAnAbsentCampaignJSONGivesTheDefaultCellPx(t *testing.T) {
+	cfg, err := campaigncfg.Load(t.TempDir())
+	if err != nil {
+		t.Fatalf("Load: %v — campaign.json is optional", err)
+	}
+	if cfg.CellPx != 64 {
+		t.Fatalf("CellPx = %d, want the documented default 64", cfg.CellPx)
+	}
+}
+```
+
+Plus: metadata reports `cellPx` at the top level and carries no `pack` object;
+`GET /api/art/{file}` serves a file from `art/`; a symlink pointing outside
+`art/` is refused (`os.OpenRoot`, not `os.DirFS` — the reason the pack loader
+already records).
+
+And for the CLI (spec §5), where the point is that it has **no authority**:
+
+```go
+func TestArtInstallWarnsBeforeOverwritingAnExistingStem(t *testing.T) {
+	// Patrik's rule, 2026-09-02: "it will ask if you want to overwrite,
+	// otherwise it will ask you to change name/id". Copying by hand stays
+	// legal and skips this — the command is a convenience, and the LOADER is
+	// the backstop that cannot be bypassed.
+	// ... install masonry-1 twice; assert the second refuses without --force
+	// and names the existing file ...
+}
+
+func TestArtInstallRefusesADirectory(t *testing.T) {
+	// art/ is flat. Accepting a directory here would install a pack.
+}
+
+func TestArtInstallValidatesTheSidecarAtInstallRatherThanAtTheTable(t *testing.T) {
+	// ... install a sidecar with format_version 99; assert it is refused now ...
+}
+```
+
+- [ ] **Step 2: Run to verify they fail.**
+
+- [ ] **Step 3: Implement.** `campaigncfg.Load` returns `Config{CellPx: 64}` when
+the file is absent. `packRefJSON` is deleted; metadata reports `cellPx` directly.
+Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`. `vtt art install <path>...`
+copies files in, refuses a directory, refuses an existing stem without `--force`,
+and runs `artlib.Lookup` on each installed stem so a malformed sidecar is caught
+at install rather than at the table.
+
+- [ ] **Step 4: Run tests** — `go test ./... -count=1 && bunx tsc --noEmit -p client/tsconfig.json`.
+
+- [ ] **Step 5: Commit** — `git commit -m "A grid is uniform, so its cell size belongs to the campaign"`
+
+---
+
+### Task 7: Delete the pack
+
+Nothing calls it now. This is the task that removes sub-project 15's boot-order
+defect by removing the code it lived in.
+
+**Files:**
+- Modify: `internal/mapdef/format.go`, `internal/mapdef/load.go`,
+  `internal/gateway/server.go`, `internal/gateway/map.go`, `cmd/vtt/maps.go`,
+  `cmd/vtt/serve_compose.go`
+
+- [ ] **Step 1: Write the absence test FIRST**, beside the `create_scene`
+precedent in `client/test/command-surface.test.ts` and as a Go compile-level
+assertion — no `mapdef.Pack`, no `LoadPack`, no `WithPackFiles`.
+
+- [ ] **Step 2: Run it RED.**
+
+- [ ] **Step 3: Delete**, outward-in: `cmd/vtt/maps.go`'s pack walk and the
+`os.Stat(mapsDir)` guard in `serve_compose.go` (the guard's whole reason was that
+`loadMapsDir` failed on a missing `maps/`; make the maps walk tolerate absence the
+way the pack walk already did, then the guard has nothing left to do);
+`Server.packs`, `Server.packFS`, `WithPackFiles`; `ErrPackNotLoaded` and its arm
+in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
+
+- [ ] **Step 4: Run everything** — `go build ./... && go test ./... -count=1 && bun test client/test contract`.
+
+- [ ] **Step 5: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
+
+---
+
+### Task 8: Migrate the fixtures and the generator
+
+**Files:**
+- Create: `campaigns/example/art/*`, `campaigns/example/campaign.json`
+- Delete: `campaigns/example/packs/`
+- Modify: `campaigns/example/maps/cellar.json`, `scenarios/`, `scenarios/goldens/`,
+  `tools/genmappack/`
+
+- [ ] **Step 1:** Rewrite `campaigns/example/` — every pack tile and object
+becomes `art/<stem>.png` plus, for tile art, `art/<stem>.json`. File stems become
+kebab-case so the stem IS the referenced id (`masonry_1.png` → `masonry-1.png`).
+`cellar.json` drops its `"pack"` field; its `overrides` values are unchanged
+because they were already the art names.
+
+- [ ] **Step 2:** `tools/genmappack` emits the flat layout and takes `cell_px`
+as its own flag rather than writing it into a pack.
+
+- [ ] **Step 3:** Regenerate goldens where art metadata reaches the wire. Goldens
+have **no `-update` flag** by design; a changed golden is re-derived by hand and
+the change explained in the commit.
+
+- [ ] **Step 4:** Run `go test ./... -count=1 && bun test client/test contract`.
+
+- [ ] **Step 5: Commit** — `git commit -m "The example campaign keeps its art in one place"`
+
+---
+
+### Task 9: Prove the removal with a gate, and run the whole thing
+
+**Files:**
+- Create: `tools/check-no-pack.py`, `tools/check_no_pack_test.py`
+- Modify: `Taskfile.yml`
+
+- [ ] **Step 1:** Build the gate in the shape that already works. Follow
+`tools/check-no-create-scene.py` exactly: mask comments and string literals per
+language, read CODE positions only, exempt by WORD not by file, scan `.json`
+object KEYS only. **Read its `KNOWN LIMITS` block first** — it is accurate about
+what it does and does not cover, including that it reads twelve extensions rather
+than every language, and that a Go-registered MCP tool name is a string literal
+it cannot see.
+
+Measure first, as that gate's docstring does, and put the real number in: the
+word `pack` is ordinary English and will appear in prose that must survive.
+
+- [ ] **Step 2:** Wire it as its own `check:` task **and** into `check` itself.
+Verify by running `task --dry check`, not by reading the file — six gates were
+once added and omitted from the aggregate, repaired at `ac307d5`.
+
+- [ ] **Step 3:** Run the whole gate from cold.
+
+```bash
+go clean -cache
+task check
+```
+
+Before starting: check disk (`df -h /`, 16 GiB floor) and check no detached
+mutation run is already going (`ps -eo etime,command | grep -E 'gremlins|stryker'`)
+— one from a previous session was found still running a day later on 2026-09-02.
+
+- [ ] **Step 4: Adjudicate what the gates find.** Every surviving mutant is killed
+with a test or adjudicated with a stated observable, and you try to FALSIFY your
+own equivalence claim first.
+
+**If the gate reports an adjudication as stale, do not delete it on that alone.**
+`stale` is `set(equivalents) - claimed` where `claimed` holds only `LIVED`, so any
+run that fails to observe a mutant living turns a sound entry into a red gate
+whose printed remedy is destructive. Check the file is byte-unchanged, hand-apply
+the mutation and run the package, check it is not a coverage loss, then re-run
+gremlins on that one package and read the actual status token.
+
+- [ ] **Step 5: Confirm both verdicts describe THIS tree** by recomputing every
+gated package's `package_fingerprint` against `reports/mutation-skip-cache.json`
+and the TS stamp against `reports/mutation/ts-inputs.sha256`. Use the gate's own
+`PACKAGES` strings — the package spelling is inside the hash.
+
+- [ ] **Step 6: Verify and stop.** Report the full gate output. Do not commit.
+
+---
+
+## Merge gate
+
+`task check` green from cold; the spec's nine exit criteria walked one at a time
+with the result recorded; every gated fingerprint recomputed against the tree
+being merged; and the spec amended for any deviation, which needs Patrik's
+approval under CLAUDE.md rule 6.
+
+**Carried debt to close here, from sub-project 15's whole-branch review** — these
+were left unfixed at that merge because this sub-project deletes the pack, but
+three of them survive it and must not be lost:
+
+- `tools/check-no-create-scene.py`'s `KNOWN LIMITS` claims any `create_scene`
+  tool needs a contract oneof arm "and that arm IS a code position this gate
+  sees". False: `internal/mcp` registers tools by Go string literal.
+- `internal/mapdef/format.go`'s `Map.FormatVersion` doc claims every live `*Map`
+  carries `MapFormatVersion`; `internal/adventure/format.go`'s `asMap()` builds
+  one with 0.
+- `internal/mapdef/installed_test.go`'s header asserts the id-shape refusal has
+  no boot-time counterpart, which the same file's own
+  `TestTheBootWalksOwnUnusableIdsAreRefusedByFilename` exists to disprove.
+- `rulesets/dnd45e-minimal/guide.md` cites `298f677` for the statblocks; that
+  commit added the section heading, but `52812d2` added the JSON `actor` form the
+  sentence is actually about.
+- Three committed specs still describe `create_scene` as live contract
+  (`docs/superpowers/specs/2026-07-23-api-gateway-design.md` among them) and need
+  the dated amendment `59542e1` set the precedent for.
