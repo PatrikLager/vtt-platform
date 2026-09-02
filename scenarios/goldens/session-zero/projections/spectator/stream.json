@@ -79,31 +79,40 @@
       "sceneId": "camp",
       "tiles": {
         "0,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "0,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "0,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "1,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,0": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,1": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         },
         "2,2": {
-          "kind": "floor"
+          "kind": "floor",
+          "material": "earth"
         }
       },
       "visible": [

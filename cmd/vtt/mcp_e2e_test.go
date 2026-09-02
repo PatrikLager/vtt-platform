@@ -299,6 +299,22 @@ func startMCPFixture(t *testing.T) mcpFixture {
 	t.Helper()
 	campaignPath := filepath.Join(t.TempDir(), "campaign.db")
 
+	// TestMCPSpecSevenExitCriteria plays scenarios/smoke.json through the
+	// tools, and since 2026-09-01-create-scene-leaves Task 7 smoke.json's
+	// second step is a load_map. A map belongs to the campaign that uses it
+	// (Task 5 — there is no --maps-dir to hand composeServer), so the corpus
+	// maps are installed into this fixture's campaign before it composes.
+	// Unconditionally, rather than reading smoke.json's own Maps field here:
+	// this fixture serves several tests and none of them is harmed by a
+	// campaign that has maps installed and never loads one.
+	mapsDir, err := resolveMapsDir("scenarios/maps")
+	if err != nil {
+		t.Fatalf("resolveMapsDir: %v", err)
+	}
+	if err := installMaps(mapsDir, campaignPath); err != nil {
+		t.Fatalf("installMaps: %v", err)
+	}
+
 	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
 	if err != nil {
 		t.Fatalf("composeServer: %v", err)

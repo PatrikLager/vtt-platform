@@ -52,6 +52,24 @@ type Scenario struct {
 	// scenario exercises no load_adventure command, the common case for the
 	// pre-existing library.
 	Adventures string `json:"adventures,omitempty"`
+	// Maps is OPTIONAL (2026-09-01-create-scene-leaves Task 7): a directory
+	// path relative to the REPOSITORY ROOT (e.g. "scenarios/maps"), holding
+	// one flat map file per map the scenario's load_map steps name.
+	//
+	// IT IS RESOLVED LIKE Adventures ABOVE AND USED UNLIKE IT, which is the
+	// one thing to know about this field. An adventures directory is HANDED
+	// TO THE SERVER, which reads it in place. There is no equivalent for
+	// maps since Task 5 of that plan deleted --maps-dir: a map belongs to
+	// the campaign that uses it, so the runner INSTALLS these files into the
+	// campaign it built (cmd/vtt's installMaps) and the server finds them
+	// there. Naming the directory is therefore a request to install its
+	// contents, not to point at them.
+	//
+	// Empty means this scenario issues no load_map, and nothing is installed
+	// — which is why the field exists at all rather than the runner always
+	// reaching for a fixed corpus path: `vtt client run` must keep working on
+	// a scenario file outside this repository, where no such path exists.
+	Maps string `json:"maps,omitempty"`
 }
 
 // Participant declares one connection the engine dials at scenario start
@@ -224,6 +242,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		Probes       []Probe           `json:"probes"`
 		Ruleset      string            `json:"ruleset,omitempty"`
 		Adventures   string            `json:"adventures,omitempty"`
+		Maps         string            `json:"maps,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -231,7 +250,7 @@ func parseScenario(data []byte) (*Scenario, error) {
 		return nil, fmt.Errorf("parse scenario: %w", err)
 	}
 
-	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset, Adventures: raw.Adventures}
+	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset, Adventures: raw.Adventures, Maps: raw.Maps}
 	sc.Steps = make([]Step, len(raw.Steps))
 	for i, rawStep := range raw.Steps {
 		var st Step

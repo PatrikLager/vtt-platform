@@ -1,0 +1,11 @@
+{
+  "format_version": 1,
+  "id": "scn-annex",
+  "name": "The Annex",
+  "grid_width": 3,
+  "grid_height": 2,
+  "tiles": {
+    "0,0": "stone", "1,0": "stone", "2,0": "stone",
+    "0,1": "stone", "1,1": "stone", "2,1": "stone"
+  }
+}

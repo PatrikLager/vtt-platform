@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "id": "ambush",
+  "name": "Ambush Corridor",
+  "grid_width": 20,
+  "grid_height": 9,
+  "tiles": {
+    "0,0": "stone", "1,0": "stone", "2,0": "stone", "3,0": "stone-wall", "4,0": "stone", "5,0": "stone", "6,0": "stone", "7,0": "stone", "8,0": "stone", "9,0": "stone", "10,0": "stone", "11,0": "stone", "12,0": "stone", "13,0": "stone", "14,0": "stone", "15,0": "stone", "16,0": "stone", "17,0": "stone", "18,0": "stone", "19,0": "stone",
+    "0,1": "stone", "1,1": "stone", "2,1": "stone", "3,1": "stone-wall", "4,1": "stone", "5,1": "stone", "6,1": "stone", "7,1": "stone", "8,1": "stone", "9,1": "stone", "10,1": "stone", "11,1": "stone", "12,1": "stone", "13,1": "stone", "14,1": "stone", "15,1": "stone", "16,1": "stone", "17,1": "stone", "18,1": "stone", "19,1": "stone",
+    "0,2": "stone", "1,2": "stone", "2,2": "stone", "3,2": "stone-wall", "4,2": "stone", "5,2": "stone", "6,2": "stone", "7,2": "stone", "8,2": "stone", "9,2": "stone", "10,2": "stone", "11,2": "stone", "12,2": "stone", "13,2": "stone", "14,2": "stone", "15,2": "stone", "16,2": "stone", "17,2": "stone", "18,2": "stone", "19,2": "stone",
+    "0,3": "stone", "1,3": "stone", "2,3": "stone", "3,3": "stone-wall", "4,3": "stone", "5,3": "stone", "6,3": "stone", "7,3": "stone", "8,3": "stone", "9,3": "stone", "10,3": "stone", "11,3": "stone", "12,3": "stone", "13,3": "stone", "14,3": "stone", "15,3": "stone", "16,3": "stone", "17,3": "stone", "18,3": "stone", "19,3": "stone",
+    "0,4": "stone", "1,4": "stone", "2,4": "stone", "3,4": "stone-wall", "4,4": "stone", "5,4": "stone", "6,4": "stone", "7,4": "stone", "8,4": "stone", "9,4": "stone", "10,4": "stone", "11,4": "stone", "12,4": "stone", "13,4": "stone", "14,4": "stone", "15,4": "stone", "16,4": "stone", "17,4": "stone", "18,4": "stone", "19,4": "stone",
+    "0,5": "stone", "1,5": "stone", "2,5": "stone", "3,5": "stone-wall", "4,5": "stone", "5,5": "stone", "6,5": "stone", "7,5": "stone", "8,5": "stone", "9,5": "stone", "10,5": "stone", "11,5": "stone", "12,5": "stone", "13,5": "stone", "14,5": "stone", "15,5": "stone", "16,5": "stone", "17,5": "stone", "18,5": "stone", "19,5": "stone",
+    "0,6": "stone", "1,6": "stone", "2,6": "stone", "3,6": "stone-wall", "4,6": "stone", "5,6": "stone", "6,6": "stone", "7,6": "stone", "8,6": "stone", "9,6": "stone", "10,6": "stone", "11,6": "stone", "12,6": "stone", "13,6": "stone", "14,6": "stone", "15,6": "stone", "16,6": "stone", "17,6": "stone", "18,6": "stone", "19,6": "stone",
+    "0,7": "stone", "1,7": "stone", "2,7": "stone", "3,7": "stone-wall", "4,7": "stone", "5,7": "stone", "6,7": "stone", "7,7": "stone", "8,7": "stone", "9,7": "stone", "10,7": "stone", "11,7": "stone", "12,7": "stone", "13,7": "stone", "14,7": "stone", "15,7": "stone", "16,7": "stone", "17,7": "stone", "18,7": "stone", "19,7": "stone",
+    "0,8": "stone", "1,8": "stone", "2,8": "stone", "3,8": "stone-wall", "4,8": "stone", "5,8": "stone", "6,8": "stone", "7,8": "stone", "8,8": "stone", "9,8": "stone", "10,8": "stone", "11,8": "stone", "12,8": "stone", "13,8": "stone", "14,8": "stone", "15,8": "stone", "16,8": "stone", "17,8": "stone", "18,8": "stone", "19,8": "stone"
+  }
+}

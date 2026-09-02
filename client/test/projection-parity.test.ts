@@ -145,13 +145,25 @@ test("some projected scene actually has a visible set", () => {
 // each sceneSeen's TILES keys, never from its `visible` list — and it was
 // satisfied by session-zero's `camp`, the one corpus scene that declared no
 // terrain. On 2026-09-01 create_scene began refusing a scene that leaves a
-// square undeclared, so `camp` gained its nine tiles and NO corpus fixture can
-// exhibit an untiled scene any more. The rule itself is unchanged and the shape
-// is still reachable (a map FILE may still omit tiles), so the case was not
-// dropped: it is now constructed rather than exhibited, in
-// client/test/fold-unit.test.ts's "a sceneSeen with visible squares and no
-// terrain remembers nothing", mirroring internal/engine's
-// TestVisibleComesFromItsOwnFieldNotFromTheTiles.
+// square undeclared, so `camp` gained its nine tiles and the fixture went.
+//
+// CORRECTED 2026-09-02. This used to go on to say "NO corpus fixture can
+// exhibit an untiled scene any more", and then — in the same breath — name a
+// map FILE as the exemption. Those two halves stopped being compatible the
+// moment a map file became the ONLY way a corpus scene is made: no scenario
+// issues create_scene now (2026-09-01-create-scene-leaves Task 7), every scene
+// comes from scenarios/maps/, and mapdef exempts a file that declares no tiles
+// at all. MEASURED 2026-09-02: strip the "tiles" key from
+// scenarios/maps/scn-smoke.json and smoke.json still loads it ok=true. So an
+// untiled corpus fixture is reachable again and simply is not written — every
+// committed map declares its whole grid by choice.
+//
+// The rule itself never changed, and neither did where it is pinned: the case
+// is constructed rather than exhibited, in client/test/fold-unit.test.ts's
+// "a sceneSeen with visible squares and no terrain remembers nothing",
+// mirroring internal/engine's TestVisibleComesFromItsOwnFieldNotFromTheTiles.
+// A convention is a weaker guarantee than a refusal, which is the argument for
+// constructing it rather than waiting for a fixture to exhibit it.
 //
 // AND THIS TEST WAS NEVER THE ONLY COVER, which is worth saying because the
 // first version of this note claimed it was. client/test/visibility.test.ts's

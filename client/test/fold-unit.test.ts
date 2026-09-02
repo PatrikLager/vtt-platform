@@ -78,9 +78,11 @@ import { FoldError } from "../src/state";
 // at all, recorded or derived: a re-sent hide (the corpus holds exactly one
 // tokenHidden), Explored unioning across messages (no single stream folds two
 // sceneSeen for one scene, and unioning is a within-stream operation), a
-// sceneSeen that is visible but carries NO terrain (since 2026-09-01 all three
-// of the corpus's sceneSeen carry `tiles`, because create_scene refuses a scene
-// with an undeclared square — that case used to be `camp`), and BOTH
+// sceneSeen that is visible but carries NO terrain (all three of the corpus's
+// sceneSeen carry `tiles`; that case used to be `camp`, which lost its
+// bare-canvas shape on 2026-09-01 — the reason is now simply that every map
+// under scenarios/maps/ declares its whole grid, create_scene having left the
+// corpus on 2026-09-02), and BOTH
 // object-merge cases (no sceneSeen anywhere carries objects, and no corpus
 // stream carries a scene object at all — which is also why the sceneCreated
 // object cases in the terrain section stand on nothing but themselves).
@@ -639,10 +641,13 @@ test("revoking control leaves a party member a party member", () => {
 //       parenthetical was describing — and client/src/fold.ts says it a third
 //       time, which is the ONE place the current measurement is written down.
 //       (It said TEN cases — the goldens plus both projection-parity seats —
-//       which stopped being true when create_scene made every projected
-//       scene's terrain complete and so its Explored non-empty. Three sites
-//       gave three numbers for one measurement; the number now lives with the
-//       code it describes and the other two state the invariant instead.)
+//       which stopped being true on 2026-09-01, when both projected scenes
+//       gained complete terrain and so a non-empty Explored. That was
+//       create_scene's doing at the time; since 2026-09-02 the same two seats
+//       stay complete because their MAP FILES declare every square, which
+//       mapdef does not require of a map. Three sites gave three numbers for
+//       one measurement; the number now lives with the code it describes and
+//       the other two state the invariant instead.)
 //
 // The lesson is the one this file keeps re-learning: a summary written from
 // memory of the cases below it drifts from them, and the cases were right all
@@ -823,9 +828,13 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
   // (Re-measured 2026-08-22, when session-zero took the corpus from 7 to 8.
   // Re-measured again 2026-09-01, when the same injection stopped failing the
   // two PROJECTED cases: it used to catch the bare-canvas scene, a visible set
-  // with no terrain to remember, and create_scene no longer permits one — so
-  // every projected Explored is now populated and the injection is invisible
-  // there. The goldens plus this one case, which is not a corpus case —
+  // with no terrain to remember, and session-zero's `camp` stopped being one —
+  // so every projected Explored is now populated and the injection is invisible
+  // there. (The clause here said "create_scene no longer permits one" until
+  // 2026-09-02. create_scene permits nothing in this corpus now; it issues none.
+  // What keeps those seats populated is that the MAP FILES behind them declare
+  // full terrain, which mapdef does not require — so this could go back to
+  // catching them if a map ever ships without tiles.) The goldens plus this one case, which is not a corpus case —
   // client/src/fold.ts's Explored comment owns the corpus figure, and it is
   // not restated here.)
   const unseen = JSON.parse(foldToDumpJSON(sceneWithADoor()));
@@ -1011,16 +1020,25 @@ test("sceneSeen unions into Explored and never shrinks", () => {
   expect(sc.Tiles!["1,1"]!.Kind).toBe("wall"); // a seen tile lands in Tiles too
 });
 
-// THE BARE CANVAS, and it lives here now because no corpus fixture can hold it
-// any more. Until 2026-09-01 this property was pinned by a FIXTURE:
-// session-zero's `camp` declared no terrain, so its projected Explored stayed
-// empty however much of it was in sight, and client/test/projection-parity
-// compared that against the committed state. create_scene now refuses a scene
-// that leaves a square undeclared, so every scene the corpus creates is fully
-// tiled and no projected seat has an empty Tiles left to exhibit. The SHAPE is
-// still reachable in the platform — a map FILE may still omit tiles, which is
-// the exemption that keeps files authored before the format had terrain
-// loading — so the rule has not changed, only the place it is pinned.
+// THE BARE CANVAS, and it lives here now because no corpus fixture holds it any
+// more. Until 2026-09-01 this property was pinned by a FIXTURE: session-zero's
+// `camp` declared no terrain, so its projected Explored stayed empty however
+// much of it was in sight, and client/test/projection-parity compared that
+// against the committed state. create_scene then began refusing a scene that
+// leaves a square undeclared, `camp` gained its nine tiles, and no projected
+// seat had an empty Tiles left to exhibit.
+//
+// CORRECTED 2026-09-02: "no corpus fixture CAN hold it any more" was the wrong
+// word, and it contradicted this comment's own next sentence — which named a
+// map FILE as the exemption at the same time as a map file became the ONLY way
+// a corpus scene is made. No scenario issues create_scene now
+// (2026-09-01-create-scene-leaves Task 7); every corpus scene comes from
+// scenarios/maps/, and mapdef exempts a file declaring no tiles. MEASURED
+// 2026-09-02: strip the "tiles" key from scenarios/maps/scn-smoke.json and
+// smoke.json still loads it ok=true. So the corpus CAN hold one again; it does
+// not, because every committed map declares its whole grid by choice. The rule
+// has not changed, only the place it is pinned — and a convention is exactly
+// why pinning it here rather than in a fixture was worth doing.
 //
 // Mirrors internal/engine/visibility_fold_test.go's
 // TestVisibleComesFromItsOwnFieldNotFromTheTiles, assertion for assertion.

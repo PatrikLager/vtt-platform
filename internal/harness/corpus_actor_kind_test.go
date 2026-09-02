@@ -577,10 +577,15 @@ var shapesByKey = func() map[string]*corpusShape {
 // creation and every grant it finds to spec §5.1.
 //
 // IT WALKS BY KEY, NOT BY FILE KIND, and that is the design rather than a
-// shortcut. The corpus holds four kinds of JSON — scenario definitions,
-// recorded event streams, hand-derived states, seat declarations — and a fifth
-// arriving next month is exactly what an audit that switched on filename would
-// skip in silence. Matching the key wherever it appears covers projections/, a
+// shortcut. The corpus holds FIVE kinds of JSON — scenario definitions,
+// recorded event streams, hand-derived states, seat declarations, and (since
+// 2026-09-02) map files under scenarios/maps/. This said "four kinds ... and a
+// fifth arriving next month is exactly what an audit that switched on filename
+// would skip in silence". The fifth arrived, on schedule and unannounced, when
+// create_scene left the corpus and every scene became a file — and this walk
+// picked it up with no edit, which is the argument holding rather than an
+// argument still being made. Matching the key wherever it appears covers
+// projections/, a
 // nesting level nobody has invented yet, and any new .json file, and it needs
 // no list of files the rule applies to. It also catches what a hand count
 // misses: the plan's own pre-conversion measurement walked past session-zero's

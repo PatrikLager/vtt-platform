@@ -181,9 +181,20 @@ func goldenDirs(t *testing.T) []string {
 //
 // This is why goblin-fight is NOT in the corpus: a miss emits fewer events
 // than a hit, so its stream differs in SHAPE and no masking of values can
-// make it comparable. Measured at 519 vs 507 lines across two runs.
-// adventure-night and toy-brawl are shape-stable (208 = 208, 178 = 178) —
-// their abilities always resolve the same branch — so masking is sufficient.
+// make it comparable. Measured at 519 vs 507 lines across two runs on the
+// 2026-08-25 corpus — a dated observation, not today's figures.
+//
+// adventure-night and toy-brawl are shape-stable — THE SAME EVENTS IN THE SAME
+// ORDER EVERY RUN, with only roll values differing, because each one's
+// abilities always resolve the same branch — so masking is sufficient. That
+// invariant is the claim. A LINE COUNT IS NOT, and one stood here as if it
+// were: "(208 = 208, 178 = 178)", already wrong when written against those two
+// files and wronger since (4309 and 304 on 2026-09-02, toy-brawl's having moved
+// when its terrain began arriving from a map file). Numbers of this shape rot
+// by any edit at all, including edits that have nothing to do with dice, and
+// the corpus README carried the same pair and the same rot. Compare a fresh
+// capture against the committed file — which is exactly what the test above
+// does — never against a number written in a comment.
 var diceFields = []string{"results", "total", "outcomeSummary", "delta", "newValue", "outcome"}
 
 // maskDice replaces dice-decided values with a constant, recursively.
