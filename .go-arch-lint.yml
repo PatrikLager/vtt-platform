@@ -93,6 +93,14 @@ components:
   # real package rather than a _test.go file because more than one component
   # needs it, and Go cannot import test files.
   testdb:   { in: internal/testdb }
+  # internal/artlib (art-is-a-flat-library Task 1, design spec §3.2-§3.4):
+  # resolves one art piece by filename inside a campaign's flat art/
+  # directory — Lookup reads two files by name, Validate does one ReadDir.
+  # Self-only, deliberately: it takes no dependency on any other component,
+  # so every later task that wires it in (mapdef.Resolve, the gateway,
+  # cmd/vtt, internal/adventure) adds the edge INTO artlib, never the
+  # reverse — the same one-way shape mapdef/adventure already established.
+  artlib:   { in: internal/artlib }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -230,6 +238,11 @@ deps:
   # its own. mapdef is off this list for the same reason: sight is handed an
   # already-folded scene, never a map file.
   sight:    { mayDependOn: [sight, engine] }
+  # internal/artlib: self-only. It reads the campaign's art/ directory by
+  # filename and nothing else — no contract (it returns a plain Piece, not
+  # a wire message; the caller that resolves a name into art decides what
+  # to build), no engine, no mapdef. See its components: entry above.
+  artlib:   { mayDependOn: [artlib] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide

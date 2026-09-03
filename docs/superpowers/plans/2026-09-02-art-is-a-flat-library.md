@@ -98,9 +98,27 @@ boot-time load this design exists to remove, just moved.
   `<dir>/<id>.png` directly. **No `ReadDir`, no cache, no registry.** This is
   what a map load uses, and it is what makes "the filename IS the identity"
   literally true rather than merely enforced.
-- `artlib.Validate(dir)` — one `ReadDir`, no file contents. Refuses a
-  subdirectory and a sidecar with no picture. Called by `vtt art install` and
-  once at server start.
+- `artlib.Validate(dir)` — one `ReadDir` plus a read of each SIDECAR (not of
+  any picture). Refuses a subdirectory, a symlink, a filename that is not a
+  legal art id, and a sidecar whose named pictures are missing. Called by
+  `vtt art install` and once at server start.
+
+  *(That list was incomplete when first written — it named only the
+  subdirectory and missing-picture cases. Corrected 2026-09-03 after the fixer
+  checked it against the tree rather than against this sentence.)*
+
+  **Amended 2026-09-03, Task 1 fix round.** This said "no file contents" until
+  C1 proved that impossible: a door names its two pictures INSIDE its sidecar
+  (`cellar-door-open.png`, `cellar-door-closed.png`, and no `cellar-door.png`),
+  so checking that a sidecar's pictures exist requires reading the sidecar.
+  `Validate` now resolves each sidecar through `Lookup` itself, so install and
+  map-load cannot diverge on what is legal. The consequence is real and is
+  accepted: **a malformed sidecar now fails server start.** Spec §5 already
+  asks for exactly that ("an unreadable sidecar, an unsupported
+  `format_version`" are named as loader refusals), and a LOUD boot failure on
+  broken data is not the defect sub-project 15 shipped — that one was a SILENT
+  gate on one directory suppressing the load of another. Pictures are still
+  never read.
 
 The boot call is a **shape check, not a load**: it reads no art, caches nothing,
 and a missing `art/` passes. So it cannot reproduce sub-project 15's boot-order

@@ -409,6 +409,57 @@ less than its own input"*, then silently discards NOT COVERED, which gremlins
 names in the same output. Same category of unmeasured mutant, opposite
 treatment.
 
+### A guard written as a `switch` is NOT COVERED even at 100% line coverage
+
+Measured 2026-09-03 while gating `internal/artlib`. Its first run reported
+**14 NOT COVERED out of 51 mutants** against a suite with 100.0% statement
+coverage, and nine of the fourteen sat on the character comparisons inside
+`isArtID` — the package's traversal guard, the one function most worth
+measuring.
+
+The cause is positional. Go's cover tool starts a counted block at a `case`
+BODY, not at the case's own expression, so a mutant whose position is a case
+expression falls outside every covered block and gremlins scores it NOT COVERED
+without running anything. Written as `if`/`else if` the identical logic is
+measured normally: rewriting that one loop took the package from 36 killed /
+1 lived / 14 not covered to 46 / 0 / 5, with no test added for that step.
+
+**It is not only the expression-less form.** Measured the same day on a
+purpose-built probe (`Tagged`/`Bare`/`Chain`, four functions, one table test
+covering every arm):
+
+| shape | mutant | verdict |
+|---|---|---|
+| `switch n + 1 {` — the TAG of a tagged switch | `ARITHMETIC_BASE` | **KILLED** |
+| `case n > 1:` — condition in an expression-less switch | `CONDITIONALS_*` | **NOT COVERED** |
+| `case 1 + 1:` — value in a TAGGED switch | `ARITHMETIC_BASE` | **NOT COVERED** |
+| `case -1:` — value in a TAGGED switch | `INVERT_NEGATIVES`, `ARITHMETIC_BASE` | **NOT COVERED** |
+| `if n > 1 {` / `if n == 1+1 {` / `if n == -1 {` | the same mutators | **KILLED** |
+
+So the tag is measured and everything to the right of a `case` is not,
+whichever switch form it is. A case value that is a bare literal is not
+affected, because gremlins generates no mutant for one at all — the effect only
+becomes visible when a case value carries an expression, which is exactly when
+it is worth measuring.
+
+`internal/artlib` now stands at **46 killed / 0 lived / 4 not covered**. The
+four are named rather than tolerated: two on a `const` declaration
+(`maxArtIDLen`), which is never an executable statement and so can never be
+covered by anything, and two on `case err == nil:` arms of error-triage
+switches in `lookupIn` and `statPicture`. All four were hand-injected and each
+reds that package's suite, so nothing about them is unknown — but the gate did
+not do it.
+
+A fifth sat on `Validate`'s symlink refusal — the security guard of that
+package — until review pointed out that the remedy below was being recommended
+and not applied. Converting it to an `if` moved it from NOT COVERED to
+`KILLED CONDITIONALS_NEGATION`, which is the whole argument in one line.
+
+The general rule: **line coverage does not predict mutant coverage**, and a
+package can sit at 100% while a quarter of its mutants are never evaluated.
+When a guard matters, write it as `if`/`else` and let the gate measure it; when
+a switch genuinely reads better, hand-inject its case expressions and say so.
+
 ## Some of the gated packages' "kills" are timeouts, not evaluated detections
 
 Two gate runs on 2026-08-04 over IDENTICAL code: `internal/gateway` 5 then 6,
