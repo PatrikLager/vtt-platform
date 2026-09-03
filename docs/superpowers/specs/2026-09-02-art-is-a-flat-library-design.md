@@ -148,6 +148,19 @@ no gain.
 A sidecar with no matching picture is an error. A picture with no sidecar is
 object art.
 
+**When a picture with no sidecar is named as TILE art, that square degrades and
+warns — it does not refuse.** Amended 2026-09-03 on Patrik's ruling, after Task
+3's review measured the cost of the stricter reading: because `composeServer`
+turns any boot-walk error into a refusal to start, a single sidecar-less PNG
+named on a tile took the whole campaign down for everyone. That is the mistake
+this very section teaches — §3.4 celebrates dropping a PNG in and using it as
+furniture, and naming one on a tile is the natural next move — and §4's own
+posture says a campaign that will not load beats one that loads slightly plain
+exactly backwards. The warning must be its OWN sentence, not the not-installed
+one, because the file is sitting right there: *"has a picture but no sidecar;
+drawing it plain — write `art/<id>.json`"*. This also removes an asymmetry: the
+mirror half-install, a sidecar with no picture, already degraded.
+
 ### 3.5 A map names art directly
 
 ```json
@@ -189,6 +202,15 @@ boot-time art load to order.
 **A missing or unreadable art reference drops that ONE square (or object) to the
 built-in vocabulary. The map loads.**
 
+**An art DIRECTORY that cannot be opened is strict at boot and lenient at
+request time** (Patrik, 2026-09-03). At boot the operator is at a terminal and
+can act on a filesystem path, so the server refuses to start and names the
+directory. At request time a DM cannot act on that path from a browser, and a
+campaign that worked five minutes ago should not stop working — so an unopenable
+art root is treated exactly like an absent one: the map loads, art draws plain,
+one warning. Before this ruling both readers got the same answer and one of them
+could not use it.
+
 Today a missing pack refuses the whole map. That was always wrong given the
 layering: `tiles` already describes every square without art, and a map with no
 `overrides` at all is legal and renders. The information needed to draw a
@@ -198,6 +220,14 @@ So a map referencing three art pieces, one of which is not installed, loads and
 plays. The square renders from its `kind` and `material`. The DM is told which
 references did not resolve, once, as a warning on the load — not an error, and
 not silence.
+
+**Once means once per art NAME, not once per square.** Measured 2026-09-03 on
+the shipped `cellar.json`: the per-square form produced 96 warnings and 6840
+bytes over 4 distinct names, and the client joins them into a single toast — at
+`MaxWireTiles` that is roughly 270 KB in one `CommandResult`, above the read
+limit the test connections set. Four facts buried in 96 near-identical sentences
+is a channel a DM stops reading, which is the silence this section exists to
+prevent, arrived at from the other direction.
 
 **That channel does not exist yet and this design adds it.** `mapdef.Compile`
 and `mapdef.Resolve` already return a `warnings` slice, and nothing carries it any
@@ -310,8 +340,15 @@ test never went through `composeServer`.
 
 **A subdirectory under `art/` is refused**, with the directory named.
 
-**Object art with no sidecar loads**, and tile art with no sidecar is refused.
-These are the two halves of §3.4's asymmetry and neither is safe to assume.
+**Object art with no sidecar loads**, and tile art with no sidecar **degrades
+that square with its own warning** — not the not-installed one, because the file
+is sitting right there. These are the two halves of §3.4's asymmetry and neither
+is safe to assume.
+
+*(Amended 2026-09-03 with §3.4 and exit criterion 6. This paragraph said
+"is refused" until Task 3's re-review caught the contradiction: §8 is the list
+Tasks 8 and 9 write their tests from, so a reader working forward from a stale
+§8 writes the wrong test and then "fixes" working code to match it.)*
 
 **A map declaring `"pack"` is refused** with a message naming the field.
 
@@ -356,7 +393,9 @@ expensive part.
    `load_map`, with no restart and no message suggesting one.
 5. A subdirectory under `art/`, a sidecar with no picture, and a map declaring
    `"pack"` are each refused with a message naming the thing that is wrong.
-6. Object art needs no sidecar; tile art without one is refused.
+6. Object art needs no sidecar. Tile art without one **degrades that square
+   with its own warning** (amended 2026-09-03 — see §3.4; the original criterion
+   said "is refused", which in practice refused the whole server).
 7. No `pack` identifier survives in platform code, enforced by a gate in the
    shape of `check-no-create-scene.py`.
 8. `task check` green, both mutation gates included.

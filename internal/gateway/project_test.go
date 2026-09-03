@@ -467,7 +467,7 @@ func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
 // stronger thing to pin than an absence.
 func shippedActor(t *testing.T, actorID string) *vttv1.Actor {
 	t.Helper()
-	envs, err := adventure.Compile(loadGoblinAmbush(t, loadDnd45eMinimal(t)), engine.NewState())
+	envs, _, err := adventure.Compile(loadGoblinAmbush(t, loadDnd45eMinimal(t)), engine.NewState())
 	if err != nil {
 		t.Fatalf("adventure.Compile(goblin-ambush): %v", err)
 	}

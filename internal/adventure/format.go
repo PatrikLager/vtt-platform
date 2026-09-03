@@ -42,16 +42,28 @@ type Adventure struct {
 	Notes  []AdventureNote
 
 	// Pack is the adventure's own embedded art pack (dir/tiles/pack.json),
-	// loaded once at Load and shared by every scene's Overrides. It mirrors
-	// a standalone map's Pack reference (maps-as-geometry spec §4.2's two
-	// resolution levels) but is embedded rather than named by id, because
-	// the adventure format is self-contained (adventure-format spec §2.2:
-	// "No bestiary format" — shared content libraries were rejected). Nil
-	// when the adventure directory has no tiles/pack.json; legal as long as
-	// no scene declares an Overrides entry — Compile's delegated call into
-	// mapdef.BuildSceneCreated fails loud, through Resolve, the moment one
-	// does and Pack is nil.
+	// loaded once at Load.
+	//
+	// NOTHING READS IT ANY MORE. It is still loaded, so a malformed
+	// tiles/pack.json is still refused at boot rather than silently ignored
+	// mid-removal, but every art name a scene resolves now goes through
+	// ArtDir below (2026-09-02-art-is-a-flat-library Task 3). Task 7 of that
+	// plan deletes this field along with mapdef.Pack itself. It used to say
+	// this pack was "shared by every scene's Overrides" and that a nil Pack
+	// alongside an override failed loud through Resolve; both stopped being
+	// true when Resolve stopped taking a *Pack.
 	Pack *mapdef.Pack
+
+	// ArtDir is the adventure's own flat art directory (dir/art), the root
+	// every scene's Overrides and object art resolve against through
+	// internal/artlib. It is the successor to Pack above and the reason an
+	// adventure stays self-contained: art travels inside the bundle rather
+	// than being installed into the campaign's art/, where two adventures
+	// shipping the same filename would fight (controller's ruling,
+	// 2026-09-03; art-is-a-flat-library plan, pre-flight finding). The
+	// directory need not exist — an adventure with no art is legal and its
+	// scenes draw from the built-in vocabulary, warning once per reference.
+	ArtDir string
 
 	GuidePath string
 }

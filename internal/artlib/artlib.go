@@ -48,6 +48,13 @@
 // caller drops that one square to the built-in vocabulary and warns (spec §4).
 // Everything else is art that exists and cannot be read, and that is a defect
 // to fix rather than a square to draw plain.
+//
+// THE ART ROOT ITSELF IS A THIRD ANSWER, added 2026-09-03: art/ present and
+// unopenable is not one piece failing, it is every piece failing, and the two
+// callers want opposite verdicts on it — a boot walk refuses, a load at the
+// table degrades. ErrArtDirUnreadable is how they tell it apart, and its own
+// doc comment carries the ruling and the path-disclosure rule that shapes its
+// message.
 package artlib
 
 import (
@@ -88,6 +95,31 @@ const (
 // wraps it.
 var ErrNotFound = errors.New("artlib: no such art")
 
+// ErrArtDirUnreadable marks the one failure that is about the art ROOT rather
+// than about any piece in it: art/ exists, and this process cannot open it —
+// a plain file sitting where the directory should be, or a mode that forbids
+// it. Every lookup against that root fails identically, so it is not "this
+// piece is missing" and must not be reported as one.
+//
+// SEPARATE FROM ErrNotFound BECAUSE THE TWO CALLERS WANT OPPOSITE ANSWERS
+// (Patrik's ruling, 2026-09-03). A boot walk should refuse loudly: an
+// operator is at a terminal and can chmod the directory. A load_map at the
+// table should degrade: a DM cannot act on a filesystem path from a browser,
+// and a campaign that worked five minutes ago should not stop working. Giving
+// each its own sentinel lets the caller decide instead of this package.
+//
+// NEITHER THIS ERROR NOR ANYTHING IT WRAPS NAMES A PATH. Lookup's errors
+// travel verbatim to whoever issued load_map or load_adventure — an agent
+// seat included (internal/gateway/authz.go grants load_adventure to RoleAgent
+// as well as RoleDM) — and mapdef.LoadInstalled promises in writing that no
+// error it returns carries the server's layout. os.OpenRoot's own error is an
+// *fs.PathError holding the absolute path, so it is NOT wrapped; only its
+// inner syscall error is, which keeps errors.Is(err, fs.ErrPermission) working
+// while saying only "permission denied". Round 1 of art-is-a-flat-library
+// Task 3 wrapped the whole thing, and the operator's directory layout reached
+// any seat that could load an adventure whose art/ was unreadable.
+var ErrArtDirUnreadable = errors.New("artlib: the art directory cannot be read")
+
 // Piece is one art entry.
 //
 // HasSidecar records whether an <id>.json was read, and it exists because Kind
@@ -123,6 +155,55 @@ type sidecar struct {
 // differently.
 func notFound(id, why string) error {
 	return fmt.Errorf("artlib: art %q %s: %w", id, why, ErrNotFound)
+}
+
+// bareCause strips the path out of an os error, keeping only the syscall
+// failure underneath: "permission denied", "is a directory", "not a
+// directory". errors.Is against fs.ErrPermission and friends still answers,
+// because those sentinels live on the inner error rather than on the
+// *fs.PathError wrapper.
+//
+// EVERY OS ERROR THIS PACKAGE INTERPOLATES ON A CLIENT-REACHABLE PATH GOES
+// THROUGH HERE, and the rule is
+// per SYSCALL PHASE rather than per call site, because that is the axis the
+// leak actually varies along. os.Root's methods do not agree about what their
+// *fs.PathError.Path holds:
+//
+//   - openat failures (Root.OpenRoot, a path escape, a permission denial on
+//     the open) set Path to the RELATIVE name.
+//   - statat failures (Root.Stat, Root.Lstat) set Path to the RELATIVE name.
+//   - READ failures do not. Root.Open hands back an *os.File whose Name() is
+//     the joined ABSOLUTE path, so any error raised after the descriptor
+//     exists — read(2) on a directory, EIO, a short read — carries the whole
+//     campaign path. Root.ReadFile opens and then reads, so its error is
+//     absolute exactly when the open succeeded and the read did not.
+//
+// That third case is why this is a helper rather than three careful format
+// strings. It cost three review rounds on art-is-a-flat-library Task 3: round
+// 1 checked one caller, round 2 edited a format string and left the wrapped
+// *fs.PathError, round 3 covered the open phase and left the read phase. The
+// reproduction was a DIRECTORY named <id>.json in art/ — openat succeeds,
+// read fails EISDIR — which spec §3.1 anticipates as a thing that turns up in
+// an art directory. A new os.Root call added here without this wrapper is the
+// same defect a fourth time.
+//
+// The paths matter because these errors reach a client verbatim: mapdef's
+// LoadInstalled promises no error of its own names the path it opened, and
+// internal/gateway forwards load_map and load_adventure failures as-is to
+// seats that include RoleAgent.
+func bareCause(err error) error {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
+	}
+	return err
+}
+
+// artDirUnreadable turns os.OpenRoot's failure into ErrArtDirUnreadable
+// WITHOUT the path it carries. See ErrArtDirUnreadable's own doc comment for
+// why the path may not survive, and bareCause above for how.
+func artDirUnreadable(err error) error {
+	return fmt.Errorf("%w: %w", ErrArtDirUnreadable, bareCause(err))
 }
 
 // isArtID reports whether id is a name an art file can carry: kebab-case, so
@@ -197,7 +278,7 @@ func Lookup(dir, id string) (Piece, error) {
 			// maps still load and draw plain.
 			return Piece{}, notFound(id, "is not installed: there is no art directory")
 		}
-		return Piece{}, fmt.Errorf("artlib: open art dir %s: %w", dir, err)
+		return Piece{}, artDirUnreadable(err)
 	}
 	defer root.Close()
 	return lookupIn(root, id)
@@ -232,7 +313,10 @@ func lookupIn(root *os.Root, id string) (Piece, error) {
 		}
 		return Piece{ID: id, File: file}, nil
 	default:
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
+		// bareCause, not err: this is the READ phase, and Root.ReadFile's error
+		// after a successful open carries the ABSOLUTE path. The relative name
+		// this message already builds is the only one a client may see.
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, bareCause(err))
 	}
 }
 
@@ -318,7 +402,11 @@ func statPicture(root *os.Root, id, name string) error {
 	case errors.Is(err, fs.ErrNotExist):
 		return notFound(id, fmt.Sprintf("has no picture %q installed", name))
 	default:
-		return fmt.Errorf("artlib: art/%s: picture %s cannot be read: %w", id, name, err)
+		// Root.Stat's own error is already relative; bareCause is applied
+		// anyway so the rule is "every os error in this package", which is one
+		// a reader can check by grepping rather than one that needs the
+		// per-method table in bareCause's doc comment to be re-derived.
+		return fmt.Errorf("artlib: art/%s: picture %s cannot be read: %w", id, name, bareCause(err))
 	}
 }
 
@@ -344,6 +432,12 @@ func Validate(dir string) error {
 		return nil
 	}
 	if err != nil {
+		// The ONE exemption from bareCause's rule, stated here so the rule
+		// survives its own grep. os.ReadDir is not an os.Root method and has
+		// no phase table; more to the point Validate is OPERATOR-facing by
+		// design — every message it returns names dir on purpose, because the
+		// only caller is a boot check with an operator at a terminal. If
+		// Validate ever answers a request, this line becomes a leak.
 		return fmt.Errorf("artlib: read art dir %s: %w", dir, err)
 	}
 	for _, e := range entries {

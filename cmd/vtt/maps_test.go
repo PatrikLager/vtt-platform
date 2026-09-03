@@ -106,94 +106,183 @@ func TestLoadMapsDirLoadsAValidMapAndItsPack(t *testing.T) {
 	}
 }
 
-// TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack pins the
-// fuller promise of spec §4.4 that mapdef.Load alone cannot check (it takes
-// no *Pack argument — see resolve.go's own doc comment): an overrides entry
-// naming an art the pack does not define must fail at BOOT, not only once
-// something tries to Compile it. loadMapsDir proves this by dry-running
-// mapdef.Compile per map, looking its pack up by the map's own declared
-// Pack id (packs[m.Pack] — Task 3's decoupled lookup, the same one
-// internal/gateway/map.go's handleLoadMap makes at request time) — the
-// same technique internal/adventure/load.go's loadScenes already applies
-// to adventure-embedded scenes, reused here rather than a second
-// hand-rolled check, per Task 4's "one construction site" discipline.
-func TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack(t *testing.T) {
+// TestLoadMapsDirFailsLoudWhenArtCannotBeRead pins the fuller promise of
+// maps-as-geometry spec §4.4 that mapdef.Load alone cannot check (it reads no
+// art — see resolve.go's own doc comment): an overrides entry naming art that
+// is installed and cannot be read must fail at BOOT, not only once something
+// tries to Compile it. loadMapsDir proves this by dry-running mapdef.Compile
+// per map against the campaign's own art/ — the same directory
+// internal/gateway/map.go's handleLoadMap will resolve against at request
+// time, and the same technique internal/adventure/load.go's loadScenes
+// applies to adventure-embedded scenes, reused here rather than a second
+// hand-rolled check, per maps-as-geometry Task 4's "one construction site"
+// discipline.
+//
+// It used to drive art the PACK did not define. That case no longer fails
+// anything: 2026-09-02-art-is-a-flat-library spec §4 degrades an art
+// reference with no file behind it to a plain square and one warning, so the
+// only art-side boot refusal left is a piece that exists and cannot be read.
+// TestABootLoadedMapWhoseArtIsNotInstalledStillBoots below is the other half
+// of that pair, and it is the half worth having: without it, "fails loud"
+// could be satisfied by a loader that refuses everything.
+func TestLoadMapsDirFailsLoudWhenArtCannotBeRead(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "packs", "mossy-keep"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "art"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A pack that does not define "wood-planks-split-3", the art the map
-	// below references.
-	writeFile(t, filepath.Join(dir, "packs", "mossy-keep", "pack.json"), `{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
-		"tiles": [{"name":"some-other-tile","file":"x.png"}]
-	}`)
+	// Art that IS installed and declares a format this server does not
+	// understand — the file is there, so this is a defect to fix rather than
+	// a square to draw plain.
+	writeFile(t, filepath.Join(dir, "art", "wood-planks-split-3.json"),
+		`{"format_version": 99, "kind": "floor", "material": "wood"}`)
+	writeFile(t, filepath.Join(dir, "art", "wood-planks-split-3.png"), "fake-png")
 	writeFile(t, filepath.Join(dir, "maps", "shrine.json"), `{
 		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
-		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
+		"grid_width": 1, "grid_height": 1,
 		"tiles": {"0,0":"wood"},
 		"overrides": {"0,0":"wood-planks-split-3"}
 	}`)
 
 	_, err := LoadMapsDir(dir)
 	if err == nil {
-		t.Fatal("an override naming art the pack does not define loaded cleanly; " +
+		t.Fatal("an override naming art that cannot be read loaded cleanly; " +
 			"it should have failed at boot, not waited for someone to Compile it")
 	}
 	if !strings.Contains(err.Error(), "wood-planks-split-3") {
-		t.Errorf("error should name the unresolved art, got: %v", err)
+		t.Errorf("error should name the art it could not read, got: %v", err)
 	}
 }
 
-// TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack is
-// whole-branch-review finding I1's exact reproduction, at the level the
-// reviewer actually ran it: copy a working map+pack pair, typo one object's
-// art, and prove loadMapsDir's boot dry-run refuses it rather than serving
-// it — the same guarantee TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack
-// already gives a tile override, now extended to an object. Before this
-// task, Pack.Objects was loaded by mapdef.LoadPack and read by nothing in
-// Go: this map would have booted cleanly, and the object (blocks_move:
-// true) would have gone on blocking its square forever with nothing ever
-// drawn there — an invisible barrier from a single typo.
-func TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "packs", "mossy-keep"), 0o755); err != nil {
+// TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists is the BOOT half
+// of Patrik's ruling of 2026-09-03, and it drives composeServer rather than
+// LoadMapsDir for a reason the first version of this test learned the hard way.
+//
+// THE SUBTEST THAT MATTERS IS "no maps yet". The check originally lived inside
+// loadMapsDir, and composeServer calls loadMapsDir only when campaignPath/maps
+// EXISTS — so a campaign with a broken art/ and no map yet booted CLEAN and the
+// check never ran. Measured: broken art/ with no maps/ → composeServer returned
+// nil; broken art/ with maps/ present → refused. That is design spec §1's own
+// sentence, rebuilt one directory over: "composeServer gates the pack load on
+// maps/ existing, so a campaign with art and no map yet boots with no art at
+// all." A fresh campaign IS the improvisation case, so it is precisely the one
+// that must not slip through. Only a test through composeServer can see this;
+// a LoadMapsDir test passes either way, which is why that is not what this is.
+//
+// The asymmetry with request time is deliberate and is the other half of the
+// ruling: internal/mapdef's TestAnUnopenableArtDirectoryDegradesAtResolveTime
+// pins that the same condition only warns once a DM is at the table.
+//
+// A plain FILE where art/ belongs, rather than a mode: a permissions fixture
+// passes trivially for a process running as root, and CI containers often do.
+func TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		withMaps bool
+	}{
+		{"no maps yet — the campaign this sub-project exists for", false},
+		{"maps installed", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			campaignPath := filepath.Join(t.TempDir(), "campaign")
+			if err := os.MkdirAll(campaignPath, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(campaignPath, "art"), "a plain file where art/ belongs")
+			if tc.withMaps {
+				if err := os.MkdirAll(filepath.Join(campaignPath, "maps"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(campaignPath, "maps", "shrine.json"), `{
+					"format_version": 1, "id": "shrine", "name": "Obsidian Shrine",
+					"grid_width": 1, "grid_height": 1, "tiles": {"0,0":"wood"}
+				}`)
+			}
+
+			_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+			if err == nil {
+				if closeErr := closeFn(); closeErr != nil {
+					t.Error(closeErr)
+				}
+				t.Fatal("a campaign whose art/ cannot be opened started a server; an " +
+					"operator is the one person who can fix that, and only at boot are " +
+					"they looking")
+			}
+			if !strings.Contains(err.Error(), filepath.Join(campaignPath, "art")) {
+				t.Errorf("error should name the directory an operator has to go and fix, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestAnAbsentArtDirectoryIsNotABootFailure is the other side of the same
+// check, and without it "fails loud" would be satisfied by a walk that refuses
+// every campaign: a campaign that has installed no art at all is the ordinary
+// starting state, and reproducing sub-project 15's boot-order defect — a guard
+// on one directory silently gating another's loading — is exactly what this
+// sub-project exists to remove. It goes through composeServer for the same
+// reason the test above does.
+func TestAnAbsentArtDirectoryIsNotABootFailure(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	if err := os.MkdirAll(filepath.Join(campaignPath, "maps"), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(campaignPath, "maps", "shrine.json"), `{
+		"format_version": 1, "id": "shrine", "name": "Obsidian Shrine",
+		"grid_width": 1, "grid_height": 1, "tiles": {"0,0":"wood"}
+	}`)
+
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err != nil {
+		t.Fatalf("composeServer: %v — no art/ at all is ordinary and must boot", err)
+	}
+	if err := closeFn(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestABootLoadedMapWhoseArtIsNotInstalledStillBoots is spec §8's keystone at
+// the boot walk: "A map loads with every art reference unresolvable, and every
+// square renders from its kind... it fails if anything in the load path still
+// treats art as required."
+//
+// It replaces TestLoadMapsDirFailsLoudWhenObjectArtDoesNotResolveAgainstThePack,
+// and carries forward the fixture that test was built around — whole-branch
+// review finding I1's exact reproduction, an object whose art is misspelled
+// one letter ("boulder-mosy-2"), which used to boot cleanly and then block its
+// square forever with nothing drawn there. The verdict on that fixture has
+// inverted deliberately: spec §4 rules that the object STAYS, because an
+// object is a thing in the world before it is a picture. What I1 was really
+// about was the SILENCE, and the silence is closed elsewhere now — Compile
+// returns a warning naming the reference (internal/mapdef's
+// TestCompileDegradesAnObjectWhoseArtIsNotInstalled), and load_map carries it
+// to the DM (internal/gateway's TestALoadMapWarningReachesTheIssuer). This
+// walk still discards warnings, which is why it can only assert the boot.
+func TestABootLoadedMapWhoseArtIsNotInstalledStillBoots(t *testing.T) {
+	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A pack that defines the tile art the map overrides with, but NOT the
-	// object art the map's one object names.
-	writeFile(t, filepath.Join(dir, "packs", "mossy-keep", "pack.json"), `{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}],
-		"objects": [{"name":"boulder-mossy-2","file":"boulder_02.png"}]
-	}`)
+	// No art/ directory at all: a campaign that has installed no art yet.
 	writeFile(t, filepath.Join(dir, "maps", "shrine.json"), `{
 		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
-		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
+		"grid_width": 1, "grid_height": 1,
 		"tiles": {"0,0":"wood"},
 		"overrides": {"0,0":"wood-planks-split-3"},
 		"objects": [{"id":"boulder-1","kind":"boulder","at":[0,0],"size":[1,1],
 		             "blocks_move":true,"art":"boulder-mosy-2"}]
 	}`)
 
-	_, err := LoadMapsDir(dir)
-	if err == nil {
-		t.Fatal("an object naming art the pack does not define loaded cleanly; " +
-			"it should have failed at boot — the object still blocks its square " +
-			"(blocks_move survives untouched) but nothing would ever draw there")
+	maps, err := LoadMapsDir(dir)
+	if err != nil {
+		t.Fatalf("LoadMapsDir: %v — a campaign with no art installed still boots (spec §4)", err)
 	}
-	if !strings.Contains(err.Error(), "boulder-mosy-2") {
-		t.Errorf("error should name the unresolved art, got: %v", err)
+	if _, ok := maps["shrine"]; !ok {
+		t.Fatalf("maps = %v, want the shrine map loaded", maps)
 	}
 }
 

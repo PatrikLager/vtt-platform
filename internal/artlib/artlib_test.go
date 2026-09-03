@@ -3,6 +3,7 @@ package artlib_test
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -703,5 +704,145 @@ func TestValidateAcceptsAWellFormedFlatDirectory(t *testing.T) {
 	if err := artlib.Validate(dir); err != nil {
 		t.Fatalf("Validate(%q): %v, want nil — every sidecar has the pictures it names "+
 			"beside it and there is no subdirectory", dir, err)
+	}
+}
+
+// TestAnUnopenableArtDirIsASentinelAndNamesNoPath guards the two halves of a
+// path disclosure that shipped in round 1 of art-is-a-flat-library Task 3 and
+// was found in review.
+//
+// THE SENTINEL half: art/ present and unopenable is not one piece missing, it
+// is every piece failing, and the two callers want opposite verdicts on it —
+// a boot walk refuses (an operator can chmod a directory), a load at the table
+// degrades (a DM in a browser cannot). Without ErrArtDirUnreadable there is no
+// way to tell it from a parse failure, which must refuse in both.
+//
+// THE PATH half: this error reaches whoever issued load_map or load_adventure,
+// verbatim, and load_adventure is granted to RoleAgent as well as RoleDM
+// (internal/gateway/authz.go), so an agent seat would receive the operator's
+// filesystem layout. os.OpenRoot's error is an *fs.PathError carrying the
+// absolute path, so removing the path from the FORMAT STRING is not enough —
+// round 1's %w kept it. The whole error has to be replaced by its inner
+// syscall error, which is what the fs.ErrPermission assertion below pins is
+// still reachable afterwards.
+func TestAnUnopenableArtDirIsASentinelAndNamesNoPath(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func(t *testing.T, root string) string
+		is    error
+	}{
+		{"a plain file where art/ belongs", func(t *testing.T, root string) string {
+			t.Helper()
+			p := filepath.Join(root, "art")
+			writeFile(t, root, "art", "not a dir")
+			return p
+		}, nil},
+		{"a directory this process may not open", func(t *testing.T, root string) string {
+			t.Helper()
+			p := filepath.Join(root, "art")
+			if err := os.Mkdir(p, 0o000); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(p, 0o700) })
+			return p
+		}, fs.ErrPermission},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := tc.build(t, root)
+
+			_, err := artlib.Lookup(dir, "masonry-1")
+			if err == nil {
+				t.Fatal("an unopenable art directory resolved cleanly")
+			}
+			if !errors.Is(err, artlib.ErrArtDirUnreadable) {
+				t.Fatalf("err = %v, want it to carry ErrArtDirUnreadable so a caller can "+
+					"tell a broken art ROOT from a broken piece", err)
+			}
+			if errors.Is(err, artlib.ErrNotFound) {
+				t.Fatalf("err = %v — art/ is THERE and unreadable; reporting it as absence "+
+					"would make the boot walk degrade a broken installation", err)
+			}
+			if strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), root) {
+				t.Fatalf("err = %v — this text reaches an agent seat verbatim; it must not "+
+					"carry the server's filesystem layout", err)
+			}
+			if tc.is != nil && !errors.Is(err, tc.is) {
+				t.Errorf("err = %v, want it to still answer errors.Is(%v) — dropping the path "+
+					"must not drop the reason", err, tc.is)
+			}
+		})
+	}
+}
+
+// TestNoLookupErrorNamesTheDirectoryItRead is the CLASS guard, written after
+// three narrow fixes each closed one phase and left another
+// (art-is-a-flat-library Task 3, review rounds 1-3). It walks the syscall
+// phases behind an os.Root rather than the failures somebody happened to think
+// of, because that is the axis the disclosure varies along — see bareCause's
+// own doc comment for the per-phase table.
+//
+// THE READ PHASE IS THE ONE THAT ESCAPED TWICE. Root.ReadFile opens and then
+// reads, and Root.Open hands back an *os.File whose Name() is the joined
+// ABSOLUTE path, so a failure after the descriptor exists carries the whole
+// campaign path while openat and statat failures carry a relative one. A
+// DIRECTORY named <id>.json is the cheap way to reach it — openat on a
+// directory succeeds, read(2) returns EISDIR — and it is a shape spec §3.1
+// expects to find in an art directory rather than an exotic one.
+//
+// Every case must still SAY something: an error that named nothing would pass
+// a "does not contain the path" check while being useless to a DM.
+func TestNoLookupErrorNamesTheDirectoryItRead(t *testing.T) {
+	for _, tc := range []struct {
+		name, phase string
+		build       func(t *testing.T, dir string)
+	}{
+		{"open: the art root is a plain file", "openat", func(t *testing.T, dir string) {
+			t.Helper()
+			writeFile(t, filepath.Dir(dir), filepath.Base(dir), "not a dir")
+		}},
+		{"read: a directory wearing a sidecar's name", "read", func(t *testing.T, dir string) {
+			t.Helper()
+			if err := os.MkdirAll(filepath.Join(dir, "masonry-1.json"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"stat: the picture is a directory", "statat", func(t *testing.T, dir string) {
+			t.Helper()
+			writeFile(t, dir, "masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+			if err := os.MkdirAll(filepath.Join(dir, "masonry-1.png"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"parse: a sidecar this server does not understand", "none", func(t *testing.T, dir string) {
+			t.Helper()
+			writeTileArt(t, dir, "masonry-1", `{"format_version":99}`)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "art")
+			if err := os.MkdirAll(dir, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if tc.phase == "openat" {
+				if err := os.Remove(dir); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tc.build(t, dir)
+
+			_, err := artlib.Lookup(dir, "masonry-1")
+			if err == nil {
+				t.Fatalf("%s: resolved cleanly; this fixture is broken and must fail", tc.phase)
+			}
+			if strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), root) {
+				t.Fatalf("%s phase leaked the campaign's layout to a client:\n  %v", tc.phase, err)
+			}
+			if !strings.Contains(err.Error(), "masonry-1") && !errors.Is(err, artlib.ErrArtDirUnreadable) {
+				t.Errorf("%s: err = %v, want it to name the art or say the art dir is unreadable",
+					tc.phase, err)
+			}
+		})
 	}
 }

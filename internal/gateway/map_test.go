@@ -66,6 +66,10 @@ func cellarPackDir(t *testing.T) string {
 // loudly if either does not load — a broken fixture here would silently
 // turn every test in this file into a no-op, which is worse than a compile
 // error.
+//
+// The pack is still loaded because GET /api/packs/{pack}/{file} still serves
+// from it; nothing RESOLVES against it any more (2026-09-02-art-is-a-flat-library
+// Task 3). Art comes from cellarArtDir below.
 func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 	t.Helper()
 	m, err := mapdef.Load(cellarMapPath(t))
@@ -77,6 +81,52 @@ func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 		t.Fatalf("mapdef.LoadPack(campaigns/example/packs/cellar-basics): %v", err)
 	}
 	return m, pack
+}
+
+// cellarArtDir builds, in a temp directory, exactly the art
+// campaigns/example/maps/cellar.json names — the four tile pieces its
+// overrides reference and the four object pictures its objects do — in the
+// flat layout 2026-09-02-art-is-a-flat-library design spec §3 defines: a
+// picture per piece, and beside it a sidecar for tile art only (§3.4, and
+// mapdef.Resolve refuses tile art with no sidecar).
+//
+// Built here rather than read from campaigns/example/art/, which does not
+// exist yet: Task 8 of that plan migrates the committed fixture, and until it
+// does this is the only way to assert that an override's art reaches the wire
+// without weakening the assertion. The kinds and materials are copied from
+// campaigns/example/packs/cellar-basics/pack.json so no square picks up a
+// spurious kind-mismatch warning.
+//
+// The .png files hold the string "fake-png" rather than image bytes: nothing
+// in internal/artlib reads a picture's contents, only whether the entry
+// exists, so real images would add bytes and prove nothing.
+func cellarArtDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tile := range []struct{ id, sidecar string }{
+		{"masonry-1", `{"format_version":1,"kind":"wall","material":"stone"}`},
+		{"earth-1", `{"format_version":1,"kind":"floor","material":"earth"}`},
+		{"flagstone-1", `{"format_version":1,"kind":"floor","material":"stone"}`},
+	} {
+		write(tile.id+".json", tile.sidecar)
+		write(tile.id+".png", "fake-png")
+	}
+	// A door has TWO pictures and no third (spec §3.4), named by its sidecar.
+	write("cellar-door.json", `{"format_version":1,"kind":"door","material":"wood",
+		"open":"cellar-door-open.png","closed":"cellar-door-closed.png"}`)
+	write("cellar-door-open.png", "fake-png")
+	write("cellar-door-closed.png", "fake-png")
+	// Object art needs no sidecar (spec §3.4's asymmetry).
+	for _, obj := range []string{"pillar-stone", "crate-wood", "barrel", "brazier"} {
+		write(obj+".png", "fake-png")
+	}
+	return dir
 }
 
 // mapFixture is adventureFixture's sibling (adventure_test.go): a
@@ -102,6 +152,13 @@ type mapFixture struct {
 	// one below wires it into the server, so that the older fixtures keep
 	// pinning the behaviour of a server that has no maps directory at all.
 	mapsDir string
+
+	// artDir is the campaign's flat art/ directory, wired into every fixture
+	// (see newMapFixtureWith) and exposed here so a test can install a piece
+	// of art DURING the session — which is the whole of
+	// 2026-09-02-art-is-a-flat-library design spec §3.6, and the only way to
+	// exercise an art failure that arrives after boot.
+	artDir string
 }
 
 // newMapFixture builds the pre-Task-6 shapes: a server whose map set is
@@ -163,6 +220,12 @@ func newMapFixtureWith(t *testing.T, withMaps, installable bool) *mapFixture {
 		m, pack := loadCellarMap(t)
 		srv = srv.WithMaps(map[string]*mapdef.Map{m.ID: m}, map[string]*mapdef.Pack{pack.ID: pack})
 	}
+	// Wired unconditionally, present or not, for the reason the maps
+	// directory is: a server that only has an art directory when something
+	// else is also configured is the boot-order shape this sub-project exists
+	// to delete. An empty/absent art/ resolves nothing and refuses nothing.
+	artDir := cellarArtDir(t)
+	srv = srv.WithArtDir(artDir)
 	if installable {
 		srv = srv.WithMapsDir(mapsDir)
 	}
@@ -174,6 +237,7 @@ func newMapFixtureWith(t *testing.T, withMaps, installable bool) *mapFixture {
 		dmToken: dmToken, playerToken: playerToken, spectatorToken: spectatorToken,
 		agentToken: agentToken,
 		mapsDir:    mapsDir,
+		artDir:     artDir,
 	}
 }
 
@@ -210,6 +274,26 @@ func installMap(t *testing.T, dir, id, body string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// installArt writes one piece of art into dir DURING a session, the way a DM
+// installs art: by putting files where the campaign keeps them, with no
+// restart and nothing told to reload (2026-09-02-art-is-a-flat-library design
+// spec §3.6). sidecar is the whole JSON, so a test can install a BROKEN piece
+// as easily as a good one; the picture is always written, because a sidecar
+// with no picture beside it is a different failure (absence) and would make a
+// refusal test pass for the wrong reason.
+func installArt(t *testing.T, dir, id, sidecar string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(sidecar), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".png"), []byte("fake-png"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -731,9 +815,21 @@ func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
 // round 1's translation caught it.
 //
 // Every case here is refused for a DIFFERENT reason (missing, unopenable,
-// unreadable, unparseable, invalid, unresolvable, mismatched), because the
-// defect was never about one error — it was about which errors were
-// forwarded, and that is all of them but two.
+// unreadable, unparseable, invalid, mismatched, art that cannot be parsed, art
+// that cannot be read past its open),
+// because the defect was never about one error — it was about which errors
+// were forwarded, and that is all of them but one.
+//
+// THE ART CASE IS THE NEWEST AND WAS THE MOST NEARLY MISSED. The old "pack not
+// loaded" row left with the mechanism that produced it
+// (2026-09-02-art-is-a-flat-library Task 3), and round 1 of that task removed
+// it without a substitute — reasoning, in a comment that named a function
+// (artDirNotWiredYet) it had itself already deleted, that no art refusal was
+// reachable through this handler. It was: mapByID and handleLoadMap both
+// resolve against s.artDir, which newMapFixtureWith wires unconditionally.
+// The row below is the substitute, and f.artDir joins the paths this test
+// forbids in an answer, because an art error is exactly as capable of carrying
+// the server's layout as a map error is.
 func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -742,9 +838,28 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	installMap(t, f.mapsDir, "typo", `{"format_version":1,"id":"typo","name":"Level Two",
 		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stoen"}}`)
 	installMap(t, f.mapsDir, "truncated", `{"format_version":1,"id":"truncated",`)
-	installMap(t, f.mapsDir, "nopack", `{"format_version":1,"id":"nopack","name":"Level Two",
-		"grid_width":1,"grid_height":1,"pack":"cave-basics","tiles":{"0,0":"stone"},
-		"overrides":{"0,0":"cave-floor-1"}}`)
+	// An art case, restored. A sidecar declaring a format this server does not
+	// understand is the art failure that still REFUSES (an absent piece, and
+	// an art directory that cannot be opened, both degrade), and it is the one
+	// that carries an artlib error all the way to a client.
+	installArt(t, f.artDir, "broken-stone", `{"format_version":99,"kind":"wall"}`)
+	installMap(t, f.mapsDir, "brokenart", `{"format_version":1,"id":"brokenart","name":"Level Two",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
+		"overrides":{"0,0":"broken-stone"}}`)
+	// The READ phase, on a real seat. A DIRECTORY named <id>.json: openat
+	// succeeds, read(2) returns EISDIR, and Root.ReadFile's error after a
+	// successful open carries the ABSOLUTE path (internal/artlib's bareCause
+	// has the per-phase table). This exact shape reached a DM verbatim through
+	// this handler until review round 3 of art-is-a-flat-library Task 3, and
+	// load_adventure hands the same thing to a RoleAgent seat. The unit tests
+	// in internal/artlib and internal/mapdef both guard it now; this row is
+	// the end-to-end one, because that is where it was actually observed.
+	if err := os.MkdirAll(filepath.Join(f.artDir, "dir-stone.json"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	installMap(t, f.mapsDir, "unreadableart", `{"format_version":1,"id":"unreadableart","name":"Level Two",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
+		"overrides":{"0,0":"dir-stone"}}`)
 	if err := os.MkdirAll(filepath.Join(f.mapsDir, "adir.json"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +870,8 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 		{"filename disagrees with id", "mismatch"},
 		{"tile name typo", "typo"},
 		{"truncated json", "truncated"},
-		{"pack not loaded", "nopack"},
+		{"art whose sidecar cannot be read", "brokenart"},
+		{"art whose sidecar cannot be read past its open", "unreadableart"},
 		{"a directory where a map should be", "adir"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -764,7 +880,8 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 			if res.Ok {
 				t.Fatalf("id %q loaded; every fixture here is broken", tc.id)
 			}
-			if strings.Contains(res.Error, f.mapsDir) || strings.Contains(res.Error, os.TempDir()) {
+			if strings.Contains(res.Error, f.mapsDir) || strings.Contains(res.Error, f.artDir) ||
+				strings.Contains(res.Error, os.TempDir()) {
 				t.Errorf("a client was told where the campaign lives:\n  %s", res.Error)
 			}
 			if !strings.Contains(res.Error, tc.id) {
@@ -783,90 +900,153 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	}
 }
 
-// TestAPackInstalledAfterBootSaysToRestart is I2: the pack seam is real and
-// stays — the design spec asks for maps on demand and is silent about packs
-// — but round 1 explained it with mapdef's "no pack was given to resolve
-// it", which is true of the function call and false about the table: the
-// pack IS there, installed and valid, one restart away. A DM reading that
-// goes and checks the pack field on a map that is already correct.
+// TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot pins the argument
+// mapByID passes to mapdef.LoadInstalled, and it exists because nothing did:
+// fault injection during review of art-is-a-flat-library Task 3 replaced
+// s.artDir with "" at that call site and the ENTIRE gateway suite still
+// passed.
 //
-// The fixture installs BOTH a map and the pack it names, so the only reason
-// the load fails is that packs are read at startup — and the message has to
-// say that, name the pack, and not claim none was given.
-func TestAPackInstalledAfterBootSaysToRestart(t *testing.T) {
+// WHAT "" COSTS IS THE SHAPE OF THE ANSWER, which is subtler than it first
+// looks and is why this test asserts the message rather than just the refusal.
+// handleLoadMap compiles again, against the real s.artDir, immediately after
+// mapByID returns — so the map is still refused either way and a test that
+// checked only ok=false would pass under the mutant. What changes is WHO
+// refuses it. Measured under the injection: the DM receives
+//
+//	artlib: art/cave-floor-1.json: field "format_version": declares 99; this server understands 1
+//
+// with no map named anywhere in it, because LoadInstalled is the layer that
+// wraps every failure as `map "level-5" (maps/level-5.json): …` and its dry run
+// was handed nothing to fail on. mapByID has also cached, as loadable, a map
+// that is not. Boot says the first sentence and on-demand says the second:
+// design spec §12 asks for one function so the two cannot disagree, and handing
+// that one function two different art roots defeats it as thoroughly as writing
+// two functions would.
+//
+// The art is installed AFTER boot on purpose — that is the case a boot-time
+// check can never cover, and the one §3.6 exists for.
+func TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
 
-	packDir := filepath.Join(filepath.Dir(f.mapsDir), "packs", "cave-basics")
-	if err := os.MkdirAll(packDir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
-		"format_version": 1, "id": "cave-basics", "name": "Cave Basics", "cell_px": 64,
-		"tiles": [{"name":"cave-floor-1","file":"cave_01.png","kind":"floor","material":"stone"}]
-	}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	installArt(t, f.artDir, "cave-floor-1", `{"format_version":99,"kind":"floor"}`)
 	installMap(t, f.mapsDir, "level-5", `{"format_version":1,"id":"level-5","name":"Level Five",
-		"grid_width":1,"grid_height":1,"pack":"cave-basics","tiles":{"0,0":"stone"},
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
 		"overrides":{"0,0":"cave-floor-1"}}`)
 
 	sendCommand(t, conn, loadMapCmdFor("level-5"))
 	res := readResult(t, conn)
-	if res.Ok {
-		t.Fatal("a map resolving against a pack installed after boot loaded; packs are " +
-			"still boot-time only, and half-loading one would be worse than refusing")
+	if res.GetOk() {
+		t.Fatal("a map whose art sidecar cannot be read loaded on demand; the boot walk " +
+			"refuses it, so this would let a map load at the table and then refuse to boot")
 	}
-	for _, want := range []string{`declares pack "cave-basics"`, "restart"} {
-		if !strings.Contains(res.Error, want) {
-			t.Errorf("error = %q, want it to contain %q", res.Error, want)
+	if !strings.Contains(res.GetError(), "cave-floor-1") {
+		t.Errorf("error = %q, want it to name the art that could not be read", res.GetError())
+	}
+	// The boot-identical shape: mapdef.LoadInstalled is the layer that names
+	// the map, and it can only name it if it was given the art root to fail on.
+	for _, want := range []string{`map "level-5"`, "maps/level-5.json"} {
+		if !strings.Contains(res.GetError(), want) {
+			t.Errorf("error = %q, want it to contain %q — the on-demand refusal must be the "+
+				"one mapdef.LoadInstalled produces at boot, not a bare artlib error with no "+
+				"map in it", res.GetError(), want)
 		}
-	}
-	if strings.Contains(res.Error, "no pack was given") {
-		t.Errorf("error = %q — a pack WAS given, and is sitting installed in this "+
-			"campaign; saying otherwise sends the DM to check a correct map", res.Error)
 	}
 }
 
+// TestArtInstalledAfterBootDrawsWithoutARestart is the positive half, and
+// without it the test above is satisfied by a server that refuses everything.
+// It is deliberately NOT the composeServer-driven proof Task 4 owns
+// (TestArtInstalledAfterBootIsFoundWithoutARestart, which is what can actually
+// see a boot-order defect): this one pins only that nothing is cached between
+// loads at this layer — the art did not exist when the fixture booted, and the
+// wire carries it anyway.
+func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
+	f := newInstallableMapFixture(t)
+	conn := f.dial(f.dmToken, 0)
+	agentConn := f.dial(f.agentToken, 0)
+
+	installArt(t, f.artDir, "late-stone", `{"format_version":1,"kind":"wall","material":"stone"}`)
+	installMap(t, f.mapsDir, "hall", `{"format_version":1,"id":"hall","name":"Hall",
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone-wall"},
+		"overrides":{"0,0":"late-stone"}}`)
+
+	sendCommand(t, conn, loadMapCmdFor("hall"))
+	res := readResult(t, conn)
+	if !res.GetOk() {
+		t.Fatalf("load_map: %s", res.GetError())
+	}
+	if len(res.GetWarnings()) != 0 {
+		t.Fatalf("warnings %q: the art WAS installed, before the load and after the boot",
+			res.GetWarnings())
+	}
+	sceneEnv := readEvent(t, agentConn)
+	sc := sceneEnv.GetSceneCreated()
+	if sc == nil {
+		t.Fatalf("first batch envelope = %v, want a SceneCreated", sceneEnv)
+	}
+	if got := sc.GetTiles()["0,0"]; got.GetArt() != "late-stone" {
+		t.Fatalf("tiles[0,0] = %+v, want art late-stone", got)
+	}
+}
+
+// TestAPackInstalledAfterBootSaysToRestart is GONE, and its absence is the
+// requirement now. It pinned I2: packs were read once at startup, so a map
+// naming a pack installed since then was refused, and this handler was the
+// only layer that knew a restart was the remedy — so the message had to say
+// so, name the pack, and not claim none was given.
+//
+// 2026-09-02-art-is-a-flat-library deleted the seam rather than the message.
+// Art is read from a directory when the map is loaded (that plan's design
+// spec §3.6), so nothing is ever "installed but not loaded" and no answer
+// here has a restart to suggest. The property that replaces it is the exact
+// inversion — art installed after boot is FOUND, without a restart — and it
+// is Task 4's TestArtInstalledAfterBootIsFoundWithoutARestart, driven through
+// composeServer rather than a constructed Server, because the boot-order
+// defect this whole sub-project removes was invisible to a bare Server value.
+
 // --- 2026-09-02-art-is-a-flat-library Task 2 --------------------------------
 
-// TestALoadMapWarningReachesTheIssuer pins the channel this task adds: a
-// command that SUCCEEDED can still carry non-fatal facts back to whoever
-// issued it (CommandResult.warnings, field 5). That task's own brief drove
-// this scenario through an override naming art that is NOT INSTALLED (art
-// design spec §4) — but that degrade path belongs to Task 3 of this same
-// sub-project, which has not landed: Resolve still takes a *Pack today, and
-// an override with no pack to resolve against REFUSES the map rather than
-// warning about it (resolve.go's own p == nil arm). Driving the brief's
-// literal fixture would therefore pin a refusal, not a warning.
+// TestALoadMapWarningReachesTheIssuer pins the channel Task 2 of
+// 2026-09-02-art-is-a-flat-library added: a command that SUCCEEDED can still
+// carry non-fatal facts back to whoever issued it (CommandResult.warnings,
+// field 5).
 //
-// What this test drives instead is the one warning mapdef.Compile can
-// already produce without Task 3, and that Task 3's own plan explicitly
-// keeps: an override whose pack tile KIND disagrees with its square's base
-// tile kind warns rather than refuses (resolve.go, "an illusory wall is
-// legitimate dungeon craft ... and refusing it would forbid a feature one
-// arc away") — the exact same []string Resolve/Compile already return,
-// which is the channel this task exists to carry the rest of the way.
+// ITS DOC COMMENT WAS WRITTEN BEFORE TASK 3 AND SURVIVED IT UNCORRECTED, which
+// is the failure it now records. It said Task 3 "has not landed", that Resolve
+// "still takes a *Pack today", and that an override with no pack REFUSES via a
+// `p == nil` arm — all three untrue since Task 3, and the last one names a
+// branch that no longer exists. Found in review, 2026-09-03.
+//
+// WHAT IT DRIVES IS UNCHANGED, and Task 3's plan kept the mechanism on purpose:
+// an override whose ART declares a kind disagreeing with its square's base tile
+// WARNS rather than refuses (resolve.go, "an illusory wall is legitimate
+// dungeon craft ... and refusing it would forbid a feature one arc away"). It
+// is now one of four warning producers rather than the only one — art that is
+// not installed, art with no sidecar, and an unreadable art directory all warn
+// too, and any of them would do here.
+//
+// The mechanism now depends on cellarArtDir (above) declaring masonry-1 as
+// kind "wall", which is what campaigns/example/packs/cellar-basics/pack.json
+// declared and what campaigns/example/art/masonry-1.json must declare when
+// Task 8 commits it. If that fixture's kinds are ever softened, this test goes
+// quietly green-for-nothing rather than failing.
 func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
-	// withMaps=true loads campaigns/example/packs/cellar-basics at BOOT
-	// (packs are boot-time only — TestAPackInstalledAfterBootSaysToRestart,
-	// above, pins why), so "shrine" below can declare that pack and resolve
-	// against it once installed. installable=true wires the maps/ directory
-	// so "shrine" can be installed mid-session, on demand
-	// (2026-09-01-create-scene-leaves design spec §4/§5) — neither
-	// newMapFixture nor newInstallableMapFixture wraps this combination, so
-	// newMapFixtureWith is called directly, same package, same as both of
-	// them do.
-	f := newMapFixtureWith(t, true, true)
+	// An installable fixture is enough now: art comes from WithArtDir, which
+	// newMapFixtureWith wires unconditionally, so nothing has to be loaded at
+	// boot for "shrine" to resolve. This used to be newMapFixtureWith(t, true,
+	// true) so that cellar-basics was loaded as a PACK at boot — packs were
+	// boot-time only and an override could not resolve without one. Neither
+	// half of that is true any more.
+	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
 
-	// "stone" is a floor (standard.go's standardTiles); cellar-basics'
-	// "masonry-1" is a wall (campaigns/example/packs/cellar-basics/pack.json).
-	// The override supplies ART, never NATURE (resolve.go's own doc comment
-	// on Resolve), so this square keeps being a floor and loads anyway — it
-	// only warns that its art disagrees.
+	// "stone" is a floor (standard.go's standardTiles); masonry-1 is a wall
+	// (cellarArtDir's sidecar for it). The override supplies ART, never NATURE
+	// (resolve.go's own doc comment on Resolve), so this square keeps being a
+	// floor and loads anyway — it only warns that its art disagrees.
 	installMap(t, f.mapsDir, "shrine", `{"format_version":1,"id":"shrine","name":"Shrine",
-		"grid_width":1,"grid_height":1,"pack":"cellar-basics","tiles":{"0,0":"stone"},
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
 		"overrides":{"0,0":"masonry-1"}}`)
 
 	sendCommand(t, conn, loadMapCmdFor("shrine"))

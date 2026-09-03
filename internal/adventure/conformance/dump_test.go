@@ -55,7 +55,7 @@ func compileFixture(t *testing.T, name string) []*vttv1.Envelope {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envs, err := adventure.Compile(adv, engine.NewState())
+	envs, _, err := adventure.Compile(adv, engine.NewState())
 	if err != nil {
 		t.Fatal(err)
 	}

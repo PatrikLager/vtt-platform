@@ -100,15 +100,33 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		return nil, err
 	}
 
-	// Loaded BEFORE scenes: loadScenes needs pack in hand to prove each
-	// scene's terrain actually resolves (fail loud at boot — see
-	// loadScenes' own doc comment for why this cannot wait for Compile).
+	// AN ADVENTURE'S ART TRAVELS INSIDE IT, in its own flat art/ directory
+	// resolved by the same internal/artlib a campaign's art/ is (controller's
+	// ruling, 2026-09-03, recorded in the art-is-a-flat-library plan's
+	// pre-flight section). An adventure is a bundle you hand to someone, so
+	// its art must go with it; installing it into the campaign's own art/
+	// would collide by construction, since two adventures shipping masonry-1
+	// would fight over a name the DM never chose. Absent art/ is legal and
+	// ordinary — those scenes draw from the built-in vocabulary and warn.
+	artDir := filepath.Join(dir, "art")
+	// The same boot-time strictness cmd/vtt's loadMapsDir applies to a
+	// campaign's art/ (artRootIsOpenable, maps.go), for the same reason
+	// (Patrik's ruling, 2026-09-03): an art/ that exists and cannot be opened
+	// fails HERE, where an operator is starting a server and can fix it, while
+	// adventure.Compile degrades the identical condition to a warning when a
+	// DM issues load_adventure mid-session. Load runs at boot only.
+	if root, openErr := os.OpenRoot(artDir); openErr == nil {
+		_ = root.Close()
+	} else if !os.IsNotExist(openErr) {
+		return nil, fmt.Errorf("adventure: art dir %s: %w", artDir, openErr)
+	}
+
 	pack, err := loadEmbeddedPack(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs, pack)
+	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs, artDir)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +149,7 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		Actors:           actors,
 		Notes:            notes,
 		Pack:             pack,
+		ArtDir:           artDir,
 		GuidePath:        filepath.Join(dir, "guide.md"),
 	}, nil
 }
@@ -140,9 +159,14 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 // implementation plan, Task 10: "maps/cellar/tiles/pack.json"), embedded
 // rather than referenced by id because the adventure format is
 // self-contained (adventure-format spec §2.2: "No bestiary format" — shared
-// content libraries were rejected). Absence is legal and the common case:
-// most adventures use only standard tiles and declare no Overrides at all,
-// so nothing ever needs a pack to resolve against.
+// content libraries were rejected). Absence is legal and the common case.
+//
+// NOTHING RESOLVES AGAINST THE RESULT ANY MORE. Since
+// 2026-09-02-art-is-a-flat-library Task 3 a scene's art comes from
+// Adventure.ArtDir (dir/art) through internal/artlib, and this pack is loaded
+// only so that a malformed tiles/pack.json is still refused at boot rather
+// than silently ignored while the format is mid-removal. Task 7 of that plan
+// deletes this function and replaces the fixtures it reads.
 func loadEmbeddedPack(dir string) (*mapdef.Pack, error) {
 	packDir := filepath.Join(dir, "tiles")
 	if _, err := os.Stat(filepath.Join(packDir, "pack.json")); err != nil {
@@ -378,7 +402,7 @@ type placementJSON struct {
 // (also reused from mapdef — the one check the old scene-plus-four-numbers
 // format could never even express, and a no-op when tiles is empty: no
 // terrain declared means nothing to stand inside).
-func loadScenes(dir string, actorIDs map[string]bool, pack *mapdef.Pack) ([]AdventureScene, error) {
+func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]AdventureScene, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
 		return nil, err
@@ -434,20 +458,26 @@ func loadScenes(dir string, actorIDs map[string]bool, pack *mapdef.Pack) ([]Adve
 
 		// Every square must actually RESOLVE, not just satisfy the shape and
 		// bounds checks above — spec §4.4's fuller promise. An Overrides
-		// entry naming an art the pack doesn't define (or one at all, with
-		// no pack loaded) would otherwise pass every check here and only
-		// surface later, at Compile — "at the table" rather than "at boot"
-		// (adventure-format spec §7's explicit posture, which every other
-		// rule in this function already follows: this is the one gap that
-		// did not exist before this task, because a scene had nothing to
-		// resolve). Reuses the exact call compile.go's own delegation makes
+		// entry naming art that is installed and cannot be read would
+		// otherwise pass every check here and only surface later, at Compile
+		// — "at the table" rather than "at boot" (adventure-format spec §7's
+		// explicit posture, which every other rule in this function already
+		// follows). Reuses the exact call compile.go's own delegation makes
 		// (mapdef.BuildSceneCreated), discarding the result: a genuine dry
 		// run of the one construction site this task exists to create, not
 		// a second check that could drift from what Compile actually does.
+		//
+		// It no longer catches an override naming art that is simply NOT
+		// INSTALLED, and that is deliberate: art-is-a-flat-library spec §4
+		// makes an absent reference a warning on one square rather than a
+		// refusal of the adventure. The warnings are discarded here (the
+		// second `_`) exactly as compile.go discards them — nothing in this
+		// package carries a warning to a caller yet, which is stated in
+		// Compile's own doc comment.
 		if _, _, err := mapdef.BuildSceneCreated(&mapdef.Map{
 			ID: raw.ID, Name: raw.Name, GridW: raw.GridWidth, GridH: raw.GridHeight,
 			Tiles: raw.Tiles, Overrides: raw.Overrides, Objects: objects,
-		}, pack); err != nil {
+		}, artDir); err != nil {
 			return nil, fieldErr(path, "overrides", err.Error())
 		}
 

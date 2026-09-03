@@ -19,13 +19,16 @@
 // stayed in the world); every "<dir>/packs/<name>/pack.json" is one pack,
 // keyed by its OWN declared id (packs/<name>'s directory name need not
 // match — only the pack.json "id" field does, exactly as before Task 3).
-// The two trees are independent: a map names the pack it wants via its own "pack" field, and
-// that reference is resolved by ID lookup (packs[m.Pack]) inside
+// The two trees are independent, and since 2026-09-02-art-is-a-flat-library
+// Task 3 they no longer meet at all: a map's overrides resolve against
+// "<dir>/art", the campaign's one flat art directory, inside
 // mapdef.LoadInstalled — which is also the function internal/gateway's
 // mapByID calls when a map turns up after boot, so boot-time and
 // request-time validation are not merely alike, they are one function
 // (Task 6 of the create_scene-leaves plan; that plan's design spec §12
-// names their divergence as a hazard in its own right).
+// names their divergence as a hazard in its own right). A map's own "pack"
+// field is still parsed and is now read by nobody; Task 5 of the art plan
+// refuses it and Task 7 deletes the packs tree this walk still builds.
 package main
 
 import (
@@ -38,16 +41,20 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// loadMapsDir is the full walk: every packs/<name>/pack.json first (so the
-// pack set is complete before any map's own pack reference is resolved),
-// then every maps/<id>.json through mapdef.LoadInstalled, which validates
-// each map and dry-runs mapdef.Compile against its pack — so an overrides
-// entry that does not resolve fails HERE rather than only once something
-// eventually calls Compile for real, mirroring loadScenes' identical
-// dry-run of mapdef.BuildSceneCreated for adventure-embedded scenes
+// loadMapsDir is the full walk: every packs/<name>/pack.json first (the pack
+// set is still built and served over GET /api/packs/{pack}/{file}, but since
+// 2026-09-02-art-is-a-flat-library Task 3 no map RESOLVES against it — Task 7
+// deletes this half), then every maps/<id>.json through
+// mapdef.LoadInstalled, which validates each map and dry-runs mapdef.Compile
+// against dir/art — so an overrides entry naming art that is installed and
+// unreadable fails HERE rather than only once something eventually calls
+// Compile for real, mirroring loadScenes' identical dry-run of
+// mapdef.BuildSceneCreated for adventure-embedded scenes
 // (internal/adventure/load.go), and reusing Compile itself rather than
 // inventing a second validation path, per Task 4's "one construction site"
-// discipline.
+// discipline. An entry naming art that is merely ABSENT no longer fails at
+// all: it degrades one square and warns (spec §4), and this walk discards
+// the warnings for the same reason mapdef.LoadInstalled does.
 //
 // Each pack's fs.FS comes from os.OpenRoot(packDir).FS(), NOT os.DirFS —
 // this was fixed after review found the difference load-bearing.
@@ -144,6 +151,14 @@ func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*map
 		packDirOf[pack.ID] = packDir
 	}
 
+	// The campaign's flat art directory (2026-09-02-art-is-a-flat-library
+	// design spec §3): the root every map's overrides and object art resolve
+	// against, handed down rather than discovered, because cmd/vtt owns the
+	// filesystem (ADR-008). It need not exist — a campaign that has installed
+	// no art is ordinary, its maps still load, and each unresolved reference
+	// costs one warning rather than the map (spec §4).
+	artDir := filepath.Join(dir, "art")
+
 	mapEntries, err := os.ReadDir(mapsDir)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("read maps dir: %w", err)
@@ -162,15 +177,15 @@ func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*map
 		id := strings.TrimSuffix(e.Name(), ".json")
 
 		// mapdef.LoadInstalled is the WHOLE per-map check — read, validate,
-		// filename-is-the-id, and the dry-run Compile against the pack the
-		// map names — and it is the same function internal/gateway's
+		// filename-is-the-id, and the dry-run Compile against the campaign's
+		// art directory — and it is the same function internal/gateway's
 		// mapByID calls when a map turns up after boot (2026-09-01-create-
 		// scene-leaves Task 6). One function rather than two similar ones,
 		// because the design spec names their divergence as a hazard of its
 		// own (§12): a map that boots cleanly must not be refused on
 		// reload, nor the reverse. Everything this loop used to do inline
 		// lives there now, with its reasoning.
-		m, loadErr := mapdef.LoadInstalled(mapsDir, id, packs)
+		m, loadErr := mapdef.LoadInstalled(mapsDir, id, artDir)
 		if loadErr != nil {
 			return nil, nil, nil, fmt.Errorf("maps dir %s: %w", mapsDir, loadErr)
 		}
@@ -203,4 +218,47 @@ func loadMapsDir(dir string) (maps map[string]*mapdef.Map, packs map[string]*map
 func LoadMapsDir(dir string) (map[string]*mapdef.Map, error) {
 	maps, _, _, err := loadMapsDir(dir)
 	return maps, err
+}
+
+// artRootIsOpenable is the ONE art check boot makes that a request-time load
+// deliberately does not (Patrik's ruling, 2026-09-03): an art/ that exists and
+// cannot be opened — a plain file sitting where the directory belongs, a mode
+// that forbids it — fails the boot loudly, while mapdef.Resolve degrades the
+// same condition to a warning when a DM issues load_map. An operator is at a
+// terminal and can fix a directory; a DM in a browser cannot, and a campaign
+// that worked five minutes ago should not stop working at the table.
+//
+// IT IS CALLED FROM composeServer, NOT FROM loadMapsDir BELOW, and that is the
+// whole point rather than a detail of placement. composeServer calls
+// loadMapsDir only when campaignPath/maps EXISTS, so a check living inside the
+// walk would not run for a campaign that has art and no map yet — which is
+// this sub-project's own reason to exist, quoted in the design spec's §1:
+// "composeServer gates the pack load on maps/ existing, so a campaign with art
+// and no map yet boots with no art at all." Measured on the first version of
+// this check, which did live inside the walk: broken art/ with no maps/ booted
+// clean, broken art/ with maps/ present refused. WithMapsDir sits outside that
+// guard for the same reason; so does this.
+//
+// AN ABSENT art/ PASSES, because a campaign that has installed no art is
+// ordinary and its maps still load and draw plain. Anything else present at
+// that path is a broken installation, not an empty one.
+//
+// This error names the directory, unlike everything mapdef returns: it is
+// printed to whoever started the server and reaches no client, and a path is
+// the only useful thing to say to someone who has to go and chmod it.
+//
+// It opens rather than stats, so a directory with the wrong mode is caught
+// with the same call that a lookup would fail on. Task 4 of that plan calls
+// artlib.Validate at compose time, which subsumes this and also refuses a
+// subdirectory or an orphan sidecar; until it does, this is the whole of the
+// boot-time art check.
+func artRootIsOpenable(artDir string) error {
+	root, err := os.OpenRoot(artDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("art dir %s: %w", artDir, err)
+	}
+	return root.Close()
 }

@@ -24,9 +24,11 @@ const errNoMapsAvailable = "gateway: no maps available"
 // C1 remediation, maps-as-geometry design spec §4.3): lookup by id via
 // mapByID (below — the map set, and on a miss the campaign's own maps/
 // directory, since 2026-09-01-create-scene-leaves Task 6), mapdef.Compile
-// against the map's own pack (s.packs, keyed by the map's declared Pack id —
-// may legally be nil/absent for a map with no overrides, see mapdef.Compile's
-// own doc comment), then one campaign.AppendBatch for the whole ordered
+// against the campaign's flat art directory (s.artDir, set by WithArtDir —
+// art is read at load time now, not once at boot:
+// 2026-09-02-art-is-a-flat-library design spec §3.6, and an unresolved
+// reference degrades one square rather than refusing the map, §4), then one
+// campaign.AppendBatch for the whole ordered
 // event batch Compile returns. This mirrors handleLoadAdventure
 // (adventure.go) almost exactly: every failure — no maps configured, an
 // unknown id, a map installed but broken, a Compile error, an AppendBatch
@@ -42,13 +44,17 @@ const errNoMapsAvailable = "gateway: no maps available"
 // expected to add_actor first; this handler does not special-case that
 // order.
 //
-// mapdef.Compile's second return value is a []string of warnings — today
-// only the kind-mismatch case (2026-08-12-maps-as-geometry design spec
-// §3.2: an override's kind disagreeing with its base tile's warns, never
-// refuses), and from Task 3 of 2026-09-02-art-is-a-flat-library onward also
-// unresolvable art (that sub-project's own design spec §4 — it has not
-// landed as of Task 2, so that second case does not exist on this tree
-// yet). This handler now carries them onto the ok=true CommandResult it
+// mapdef.Compile's second return value is a []string of warnings. There are
+// four producers, and only the first predates 2026-09-02-art-is-a-flat-library
+// Task 3: an override's kind disagreeing with its base tile's
+// (2026-08-12-maps-as-geometry design spec §3.2 — warns, never refuses), art
+// that is not installed, art that has a picture and no sidecar, and an art
+// directory this process cannot open (all three that sub-project's design spec
+// §4). Each is reported ONCE per distinct message with the number of squares
+// or objects it affected, because the un-deduplicated version put 96 warnings
+// and 6840 bytes on one result for the shipped cellar map — see
+// mapdef.BuildSceneCreated's warningTally. This handler carries them onto the
+// ok=true CommandResult it
 // returns (CommandResult.warnings, field 5, added by
 // 2026-09-02-art-is-a-flat-library's Task 2) — the channel this doc comment
 // used to explain the absence of. They go on THIS result and nowhere else:
@@ -66,30 +72,32 @@ const errNoMapsAvailable = "gateway: no maps available"
 // it not an "other" site at all from here: a map loaded for the first time
 // through THIS handler has its warnings computed twice in one request —
 // once inside LoadInstalled's dry run, discarded, and once by the Compile
-// call below, kept. internal/adventure/compile.go's own Compile discards
-// the analogous BuildSceneCreated warnings on load_adventure's LIVE path
-// (adventure.go's handleLoadAdventure calls it directly), and
-// internal/adventure/load.go's loadScenes discards them again in ITS OWN
-// dry run, at adventure-load time. None of these is touched here, and the
-// reason needs stating precisely: handleLoadAdventure DOES build a
-// CommandResult, so "no CommandResult to carry a warning onto" would be
-// false of the very path named two sentences up. What is true of all three
-// is that adventure.Compile's signature is ([]*vttv1.Envelope, error) and
-// swallows the warnings internally -- so widening any of them means changing
-// a signature that drops the warning before a CommandResult is ever in
-// scope, which is a decision this task did not scope.
+// call below, kept.
+//
+// THE ADVENTURE SIDE NO LONGER DISCARDS ANYTHING ON ITS LIVE PATH, and this
+// paragraph said the opposite until 2026-09-03. It read: "adventure.Compile's
+// signature is ([]*vttv1.Envelope, error) and swallows the warnings internally
+// -- so widening any of them means changing a signature that drops the warning
+// before a CommandResult is ever in scope, which is a decision this task did
+// not scope." That was a correct description of a gap and an incorrect
+// description of its cost. Once art-is-a-flat-library Task 3 made unresolvable
+// art WARN instead of refusing, the swallowed warning became the only thing
+// that would have been said at all, so the signature was widened:
+// adventure.Compile returns ([]*vttv1.Envelope, []string, error) and
+// handleLoadAdventure (adventure.go) puts them on its own CommandResult, the
+// same way this handler does.
+//
+// internal/adventure/load.go's loadScenes still discards them in ITS dry run,
+// at adventure-LOAD time, and that one is genuinely fine: it runs at boot with
+// no CommandResult anywhere, and every warning it drops is recomputed on the
+// live path a moment later.
 func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity.Participant) *vttv1.CommandResult {
 	m, lookupErr := s.mapByID(cmd.GetMapId())
 	if lookupErr != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: lookupErr.Error()}
 	}
 
-	// s.packs[""] is a legal, deliberate no-op lookup (Go's zero-value map
-	// read) for a map that declares no Pack — mapdef.Compile accepts a nil
-	// *Pack precisely for that case (see its own doc comment).
-	pack := s.packs[m.Pack]
-
-	envs, warnings, err := mapdef.Compile(m, pack)
+	envs, warnings, err := mapdef.Compile(m, s.artDir)
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
@@ -150,21 +158,13 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 //     map_internal_test.go, which is the only place that property is
 //     visible.
 //
-// s.packs is read without any lock because packs are still boot-time only
-// (Server.packs' own doc comment): WithMaps sets them before the server
-// serves anything, and nothing writes them afterwards. That is also the
-// limit of what this lookup covers, deliberately — design spec §5 asks for
-// maps on demand and says nothing about packs. A map installed together
-// with a NEW pack is therefore refused until the server restarts, and THIS
-// handler is the only layer that knows that is the remedy, so it is the one
-// that says so: mapdef reports the pack is not among those loaded
-// (mapdef.ErrPackNotLoaded) because at boot that means it is not installed,
-// and only here does it also mean "installed since we started reading".
-// Round 1 of 2026-09-01-create-scene-leaves Task 6 let mapdef's raw
-// "no pack was given to resolve it"
-// reach the DM, which is true of the function call and false about the
-// world — a DM reading it goes and checks the pack field on a map that is
-// correct.
+// THE PACK-NOT-LOADED ANSWER IS GONE from here, with the mechanism that
+// produced it (2026-09-02-art-is-a-flat-library Task 3). It existed because
+// packs were read once at boot, so a map installed together with a new pack
+// was refused until a restart and this handler was the only layer that knew
+// so. Art is now read from a directory when the map is loaded (design spec
+// §3.6), so nothing can be "installed but not loaded" and no answer here has
+// a restart to suggest.
 //
 // WHAT REACHES A CLIENT, and it is a narrower question than it looks:
 // mapdef.LoadInstalled names every file it complains about as
@@ -195,15 +195,11 @@ func (s *Server) mapByID(id string) (*mapdef.Map, error) {
 		return nil, fmt.Errorf("gateway: unknown map %q", id)
 	}
 
-	installed, err := mapdef.LoadInstalled(s.mapsDir, id, s.packs)
+	installed, err := mapdef.LoadInstalled(s.mapsDir, id, s.artDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf(
 				"gateway: unknown map %q: nothing installed at maps/%s.json in this campaign", id, id)
-		}
-		if errors.Is(err, mapdef.ErrPackNotLoaded) {
-			return nil, fmt.Errorf("%w. Packs are read once, at startup, so a pack "+
-				"installed since then is not available until this server restarts", err)
 		}
 		return nil, err
 	}

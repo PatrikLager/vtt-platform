@@ -210,10 +210,18 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		{"scene-tile-missing", []string{"cellar.json", "field \"tiles[\\\"0,0\\\"]\"", "no tile named for this square"}},
 		{"scene-placement-in-wall", []string{"cellar.json", `field "placements[0]"`, "inside a wall"}},
 		// An override can pass every shape/bounds check above and still not
-		// RESOLVE (no pack given, or the pack does not define the named
-		// art) — checked at LOAD, not deferred to Compile (adventure-format
-		// spec §7: fail loud at boot, not at the table).
-		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "needs a pack to resolve"}},
+		// RESOLVE — checked at LOAD, not deferred to Compile
+		// (adventure-format spec §7: fail loud at boot, not at the table).
+		//
+		// The fixture is art that EXISTS in the adventure's own art/ and
+		// cannot be read (an unsupported format_version), which since
+		// 2026-09-02-art-is-a-flat-library Task 3 is the only kind of
+		// unresolvable art that refuses anything. It used to name art no
+		// pack defined; that case now degrades the one square and warns
+		// (that plan's spec §4), so driving it here would pin a load that
+		// SUCCEEDS. The directory keeps its name because "unresolvable" is
+		// still exactly what the fixture is.
+		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "declares 99"}},
 		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
 		// with no tiles at all is incoherent (mirrors mapdef's own
 		// CheckOverridesRequireTiles, reused here the same way every other

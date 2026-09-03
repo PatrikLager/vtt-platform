@@ -265,6 +265,20 @@ type Server struct {
 	// behaviour unchanged — see mapByID's own doc comment.
 	mapsDir string
 
+	// artDir is the campaign's flat art/ directory, set via WithArtDir: the
+	// root every override and every object art name resolves against, read
+	// when a map is loaded rather than once at boot
+	// (2026-09-02-art-is-a-flat-library design spec §3.6). Empty means no art
+	// resolves, which is not an error — every override then degrades to its
+	// base tile and warns (that spec's §4), and the map still loads.
+	//
+	// Read without a lock for the same reason mapsDir is: a configuration
+	// call sets it before the server serves anything. Unlike packs, nothing
+	// is CACHED behind it — the directory is read as it is at the moment it
+	// is asked, which is what makes art installed or overwritten during a
+	// session take effect on the next load_map with no restart.
+	artDir string
+
 	// mapsMu guards maps, and only maps. packs and packFS stay boot-time
 	// only, so they are read without it (see mapByID and handleMaps, which
 	// both say so where they do it).
@@ -369,6 +383,40 @@ func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pac
 // serving traffic.
 func (s *Server) WithMapsDir(dir string) *Server {
 	s.mapsDir = dir
+	return s
+}
+
+// WithArtDir tells s where this campaign keeps its art, so that every map it
+// loads resolves overrides and object art against that one flat directory
+// (2026-09-02-art-is-a-flat-library design spec §3). dir need not exist: a
+// campaign that has installed no art is ordinary, its maps still load, and
+// each unresolved reference costs one warning rather than the map (§4).
+//
+// A PATH rather than an fs.FS, for the reason WithMapsDir gives above and one
+// more: internal/artlib opens every file through os.OpenRoot, so the symlink
+// escape an fs.FS would be reached for is already closed underneath, at the
+// syscall rather than at a name check.
+//
+// NOTHING IS READ HERE AND NOTHING IS CACHED. That is the whole point: the
+// boot-order defect this sub-project removes existed because art was loaded
+// once, at startup, in an order another directory's loading depended on.
+// There is no boot-time art load to get wrong any more.
+//
+// This method landed in Task 3 rather than Task 4, where the plan scheduled
+// it: Task 3 moved art resolution off mapdef.Pack, and without somewhere for
+// the gateway to resolve FROM, map_test.go's assertion that an override's art
+// reaches the wire had to be weakened for one task and remembered back. A
+// weakened assertion that nobody restores fails silently; an interface that
+// arrives one task early fails loudly, at the next implementer's first
+// compile. Task 4 still owns calling artlib.Validate at boot, wiring this
+// from cmd/vtt's composeServer, and proving art installed after boot is found
+// without a restart.
+//
+// Boot time only as a CONFIGURATION call, like every other With* method:
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic.
+func (s *Server) WithArtDir(dir string) *Server {
+	s.artDir = dir
 	return s
 }
 

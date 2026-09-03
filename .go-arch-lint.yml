@@ -229,7 +229,15 @@ deps:
   # loads standalone (spec §4.3), and internal/adventure is the one
   # component that depends on mapdef, not the reverse (see adventure's own
   # deps: entry).
-  mapdef: { mayDependOn: [mapdef, contract] }
+  #
+  # artlib added by art-is-a-flat-library Task 3: mapdef.Resolve reads a
+  # square's art out of the campaign's flat art/ directory through
+  # artlib.Lookup, replacing the *Pack it used to be handed. This is the FIRST
+  # of the edges artlib's own entry predicted ("every later task that wires it
+  # in adds the edge INTO artlib, never the reverse"), and it narrows nothing:
+  # artlib stays self-only, so no cycle is expressible and mapdef gains
+  # exactly one component it may read.
+  mapdef: { mayDependOn: [mapdef, contract, artlib] }
   # internal/sight (visibility Task 1): engine and nothing else. It reads
   # engine.Scene/SceneObject/Tile — the folded terrain movement already reads
   # via engine.State.Blocked — and deliberately does NOT depend on contract:

@@ -118,15 +118,17 @@ func resolveMapsDir(rel string) (string, error) {
 // campaign to start.
 //
 // NON-RECURSIVE, matching the flat maps/ layout Task 3 established (one
-// standalone map per file, named by its own id). A packs/ tree is NOT
-// installed, because no scenario map declares a pack — the corpus uses only
-// the standard tile vocabulary, for which mapdef needs none. A corpus map
-// that named a pack and resolved anything against it — a tile override, or an
-// object's art — would fail loudly at boot (mapdef.ErrPackNotLoaded, surfaced
-// through composeServer's own boot load, since mapdef.LoadInstalled dry-runs
-// Compile). One that named a pack and resolved nothing against it would load
-// unchanged, because Compile never consults the pack in that case. Neither is
-// silent breakage, so packs are left out until a scenario genuinely needs art.
+// standalone map per file, named by its own id). No art/ tree is installed,
+// because no scenario map declares an override or an object — the corpus uses
+// only the standard tile vocabulary, which needs no art at all.
+//
+// This paragraph used to say a corpus map resolving art would fail loudly at
+// boot with mapdef.ErrPackNotLoaded. Since 2026-09-02-art-is-a-flat-library
+// Task 3 that sentinel is gone and so is the failure: a corpus map naming art
+// nothing installed would LOAD, drawing plain, and emit one warning per
+// reference that the scenario runner discards. That is quieter than the old
+// behaviour, which is worth knowing before adding art to a scenario — the
+// golden would simply carry an empty art field and nothing would say why.
 func installMaps(srcDir, campaignPath string) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {

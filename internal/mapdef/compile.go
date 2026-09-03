@@ -2,6 +2,7 @@ package mapdef
 
 import (
 	"fmt"
+	"strings"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
@@ -26,12 +27,12 @@ import (
 // and the read limit stop agreeing. Overriding a square costs exactly
 // len(name) + 9 bytes compact and +10 spaced — the `,"art":""` scaffolding
 // plus the name. Shipped TILE names run 7 to 11 characters: the only shipped
-// map that declares a pack is campaigns/example/maps/cellar.json, and
-// cellar-basics names earth-1, masonry-1, flagstone-1 and cellar-door.
+// map that overrides anything is campaigns/example/maps/cellar.json, whose
+// overrides name earth-1, masonry-1, flagstone-1 and cellar-door.
 // (client/public/std-pack is
-// a client-side rendering manifest, never loaded through LoadPack, and that
-// pack's object names ride in SceneObject.art, not TileRef.art — counting
-// either widens the range spuriously.) So overriding all 3600 tiles lands
+// a client-side rendering manifest the server never reads, and its object
+// names ride in SceneObject.art, not TileRef.art — counting either widens
+// the range spuriously.) So overriding all 3600 tiles lands
 // between 209.8 and 223.9 KiB compact, 220.4 and 234.4 spaced: over the limit
 // while still inside this cap, because this counts TILES and the limit counts
 // BYTES. Recorded here rather than repaired, since changing the cap is a
@@ -54,18 +55,24 @@ import (
 // and §7 is explicit that "authoring and transport need not be the same shape".
 const MaxWireTiles = 3600
 
-// Compile turns m (+ its pack p, which may be nil when m carries no
-// overrides) into the ordered wire events one atomic AppendBatch applies:
+// Compile turns m, resolved against the flat art directory artDir, into the
+// ordered wire events one atomic AppendBatch applies:
 // exactly one SceneCreated carrying the resolved terrain of every square the
 // map DECLARES — none, for a scene that declares no tiles, which is legal
 // (see Map.Tiles) — plus its objects, followed by one TokenPlaced per
 // placement in declaration order
 // (spec §4.3: "both paths compile through one code path to the same
-// events"). Any warning Resolve produces along the way (an override's kind
-// not matching its base tile — spec §3.2) is collected and returned rather
-// than dropped; Compile itself never refuses on one.
-func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
-	sc, warnings, err := BuildSceneCreated(m, p)
+// events"). Every warning Resolve and ResolveObjectArt produce along the way
+// — an override's kind not matching its base tile (maps-as-geometry spec
+// §3.2), and art that is not installed, has no sidecar, or sits in an art
+// directory this process cannot open (art-is-a-flat-library spec §4) — is
+// collected, DEDUPLICATED (see warningTally below: once per distinct message,
+// with the number of squares or objects it happened to) and returned rather
+// than dropped; Compile itself never refuses on one. A sidecar that exists and
+// cannot be parsed is the case that does refuse, and it comes back as an error
+// rather than a warning.
+func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
+	sc, warnings, err := BuildSceneCreated(m, artDir)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -102,8 +109,9 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 // Two live sites answer, and they have different inputs, which is why neither
 // can be folded into the other:
 //
-//   - HERE. A map FILE's tile names, resolved against a pack and the standard
-//     vocabulary into TileRefs, plus its objects. The full room.
+//   - HERE. A map FILE's tile names, resolved against the standard vocabulary
+//     into TileRefs, with art names resolved against artDir. Plus its objects.
+//     The full room.
 //   - internal/gateway/project.go's per-viewer scene introduction. A REDACTED
 //     outline — id, name, grid width and height, and deliberately NO tiles and
 //     NO objects at all (visibility spec §4.2: "of course there is a board, but
@@ -130,10 +138,13 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 // carrying projections/*/state.json, so its player and spectator are the only
 // projected seats anything folds.
 //
-// p may be nil when m carries no overrides (Resolve only needs one
-// when an override is present); a nil Pack alongside a non-empty override
-// fails loud through Resolve itself, exactly as it would for a standalone
-// map — see Resolve's own doc comment.
+// artDir may be empty, name a directory that does not exist, or name one this
+// process cannot open: a campaign that has installed no art is ordinary, and
+// its maps still load and draw plain. Every override then degrades to its base
+// tile (art-is-a-flat-library spec §4), and the DM gets ONE warning per
+// distinct reason rather than one per square — see Resolve's own doc comment
+// for the line between that and the sidecar that still refuses, and
+// warningTally below for why the count matters.
 //
 // Squares are resolved in ROW-MAJOR order (y outer, x inner, both from 0),
 // walking the grid rather than ranging m.Tiles: Go map iteration order is
@@ -150,7 +161,7 @@ func Compile(m *Map, p *Pack) ([]*vttv1.Envelope, []string, error) {
 // otherwise fail "square has no tile" for every one of them, since Resolve
 // has no notion of "this map opted out of terrain" — and Tiles ships empty
 // on the wire.
-func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
+func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, error) {
 	// BEFORE the square loop, so an oversized map costs one comparison rather
 	// than resolving thousands of tiles it can never deliver.
 	if len(m.Tiles) > MaxWireTiles {
@@ -166,17 +177,28 @@ func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
 	}
 
 	tiles := make(map[string]*vttv1.TileRef, len(m.Tiles))
-	var warnings []string
+	var squareWarnings, objectWarnings warningTally
 	if len(m.Tiles) > 0 {
 		for y := int32(0); y < m.GridH; y++ {
 			for x := int32(0); x < m.GridW; x++ {
 				key := squareKey(x, y)
-				res, w, err := Resolve(m, p, key)
+				res, w, err := Resolve(m, artDir, key)
 				if err != nil {
-					return nil, warnings, err
+					return nil, squareWarnings.render("square"), err
 				}
 				tiles[key] = &vttv1.TileRef{Kind: res.Kind, Material: res.Material, Art: res.Art}
-				warnings = append(warnings, w...)
+				// A KIND MISMATCH IS THE ONE WARNING WHOSE REMEDY IS THE
+				// SQUARE, so it is the one that carries square keys — see
+				// warningTally.addAt. It is told apart from the three degrade
+				// warnings structurally rather than by matching text: a degrade
+				// returns no Art (there is no picture to draw), a mismatch
+				// returns the art it warned about. Nothing else distinguishes
+				// them, and nothing else needs to.
+				if res.Art != "" {
+					squareWarnings.addAt(key, w...)
+				} else {
+					squareWarnings.add(w...)
+				}
 			}
 		}
 	}
@@ -186,25 +208,142 @@ func BuildSceneCreated(m *Map, p *Pack) (*vttv1.SceneCreated, []string, error) {
 		// Whole-branch-review finding I1: an object's art was never
 		// resolved against anything — ResolveObjectArt (resolve.go) is the
 		// object-shaped sibling of the Resolve call the square loop above
-		// already makes, run here so a bad object art name fails this exact
-		// dry run (maps.go's boot-time mapdef.Compile call) the same way an
-		// unresolvable tile override already does, rather than silently
+		// already makes, run here so a bad object art name is REPORTED by
+		// this exact dry run (maps.go's boot-time mapdef.Compile call) the
+		// same way an unresolvable tile override is, rather than silently
 		// riding through to a SceneObject nothing can ever draw.
-		if err := ResolveObjectArt(i, o, p); err != nil {
-			return nil, warnings, err
+		//
+		// It reports rather than refuses now: art returns empty and w carries
+		// the warning when the piece is not installed, because the object
+		// stays in the world either way (art-is-a-flat-library spec §4).
+		art, w, err := ResolveObjectArt(i, o, artDir)
+		if err != nil {
+			return nil, allWarnings(squareWarnings, objectWarnings), err
 		}
+		objectWarnings.add(w...)
 		objects = append(objects, &vttv1.SceneObject{
 			ObjectId: o.ID, Kind: o.Kind,
 			At:    &vttv1.GridPosition{X: o.X, Y: o.Y},
 			Width: o.W, Height: o.H,
 			RotationDegrees: o.Rotation,
 			BlocksSight:     o.BlocksSight, BlocksMove: o.BlocksMove,
-			Art: o.Art,
+			Art: art,
 		})
 	}
 
 	return &vttv1.SceneCreated{
 		SceneId: m.ID, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH,
 		Tiles: tiles, Objects: objects,
-	}, warnings, nil
+	}, allWarnings(squareWarnings, objectWarnings), nil
+}
+
+// warningTally collects Resolve's warnings and tells the DM about each one
+// ONCE, with the number of things it happened to — spec §4's "The DM is told
+// which references did not resolve, once, as a warning on the load".
+//
+// THE PROBLEM IT SOLVES IS A REAL MEASUREMENT, not a tidiness preference.
+// campaigns/example/maps/cellar.json names four art pieces across 90 squares;
+// with none of them installed the un-deduplicated version produced 96
+// warnings and 6840 bytes, and the client (client/src/app.ts) joins them into
+// one untruncated toast. A map at MaxWireTiles would put roughly 270 KB in a
+// single CommandResult, over the 200 KiB read limit Go clients set
+// (internal/harness/client.go's readLimit) — so the frame would not arrive at
+// all, and the failure would present as a torn-down connection rather than as
+// a warning nobody wanted.
+//
+// GROUPING IS BY THE EXACT STRING, which is why resolve.go's warnings name the
+// art and never the square: two squares missing masonry-1 must produce the
+// same sentence or nothing collapses. Insertion order is preserved, so the
+// row-major grid walk above still decides the order warnings appear in, and
+// TestWarningsSurfaceInRowMajorOrder still has something deterministic to pin.
+//
+// ONE WARNING KEEPS ITS SQUARES, through addAt: a kind mismatch. The other
+// three are actionable on the art name alone — install the file, write the
+// sidecar, fix the directory — but a mismatch's remedy is one of two opposite
+// things, "this is a deliberate illusory wall" or "I put the wrong art here",
+// and only the square tells them apart. A DM with one deliberate illusion and
+// one typo sharing an art name gets one line either way; with the squares
+// listed they can act on it.
+type warningTally struct {
+	order []string
+	count map[string]int
+	// at holds the places that produced each message, in first-encounter
+	// order, for the messages that were recorded WITH a place. A message
+	// recorded through add has no entry here and renders as a count alone.
+	at map[string][]string
+}
+
+func (t *warningTally) add(warnings ...string) {
+	t.record("", warnings)
+}
+
+// addAt is add for a warning whose remedy needs the place: where is a square
+// key ("x,y"). Only the mismatch warning is recorded this way — see the type's
+// own doc comment for why the other three are better off without.
+func (t *warningTally) addAt(where string, warnings ...string) {
+	t.record(where, warnings)
+}
+
+func (t *warningTally) record(where string, warnings []string) {
+	for _, w := range warnings {
+		if t.count == nil {
+			t.count = make(map[string]int)
+			t.at = make(map[string][]string)
+		}
+		if t.count[w] == 0 {
+			t.order = append(t.order, w)
+		}
+		t.count[w]++
+		if where != "" && len(t.at[w]) < maxListedSquares {
+			t.at[w] = append(t.at[w], where)
+		}
+	}
+}
+
+// maxListedSquares bounds the places one warning names. Mismatches are rare by
+// construction — an author has to deliberately put art of one kind on a square
+// of another — so a handful covers the real cases, and the cap is what keeps
+// this from re-creating the unbounded output deduplication exists to remove.
+// Past it the count still tells a DM the scale.
+const maxListedSquares = 4
+
+// render returns one line per distinct warning. unit is "square" or "object":
+// the same missing piece is a different fact about a floor than about a
+// barrel, so the two are tallied separately rather than summed into a number a
+// DM cannot map onto anything.
+//
+// A warning recorded with places names them; one recorded without gets a count
+// when more than one thing produced it, and nothing at all when exactly one
+// did — a bare "(1 squares)" is both ungrammatical and noise, and it is what a
+// `n > 0` here would ship on every shipped campaign. TestASingleWarningCarries
+// NoCountAtAll is the guard.
+func (t *warningTally) render(unit string) []string {
+	if len(t.order) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(t.order))
+	for _, w := range t.order {
+		n := t.count[w]
+		switch places := t.at[w]; {
+		case len(places) > 0 && n > len(places):
+			w = fmt.Sprintf("%s (%d %ss: %s; …)", w, n, unit, strings.Join(places, "; "))
+		case len(places) > 1:
+			w = fmt.Sprintf("%s (%d %ss: %s)", w, n, unit, strings.Join(places, "; "))
+		case len(places) == 1:
+			w = fmt.Sprintf("%s (%s %s)", w, unit, places[0])
+		case n > 1:
+			w = fmt.Sprintf("%s (%d %ss)", w, n, unit)
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// allWarnings is the squares-then-objects order the scene itself is built in.
+func allWarnings(squares, objects warningTally) []string {
+	rendered := squares.render("square")
+	if objs := objects.render("object"); objs != nil {
+		rendered = append(rendered, objs...)
+	}
+	return rendered
 }

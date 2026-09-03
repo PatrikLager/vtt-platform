@@ -313,7 +313,7 @@ func CheckTileNamesKnown(tiles map[string]string, errf FieldErrFunc) error {
 	for key, name := range tiles {
 		if _, _, ok := StandardTile(name); !ok {
 			return errf(fmt.Sprintf("tiles[%q]", key),
-				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; pack tiles resolve in a later step)", name))
+				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; art names resolve in a later step)", name))
 		}
 	}
 	return nil
@@ -322,9 +322,10 @@ func CheckTileNamesKnown(tiles map[string]string, errf FieldErrFunc) error {
 // CheckOverridesInsideGrid validates that every overrides KEY names a square
 // the grid actually contains. Overrides is sparse (spec §4.1), so unlike
 // tiles there is no completeness rule — only a bounds rule. The VALUE is not
-// inspected: it is an opaque pack tile name that only Resolve (resolve.go),
-// given a *Pack, can validate — neither Load nor this function has a pack
-// argument to check it against.
+// inspected: it is an opaque art id that only Resolve (resolve.go), given an
+// art directory, can look up — neither Load nor this function has one to
+// check it against, and since 2026-09-02-art-is-a-flat-library Task 3 a value
+// that looks up to nothing is a warning rather than a refusal anyway.
 func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf FieldErrFunc) error {
 	for key := range overrides {
 		x, y, ok := parseSquareKey(key)
@@ -379,16 +380,18 @@ func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 // the standard pack declares tiles only, never objects
 // (tools/genmappack/std_pack.go, whose own test says so outright: "objects
 // have no standard fallback"). So an object with empty art can never draw,
-// at any pack, under any circumstances — exactly the invisible-barrier
-// defect spec §1.3 exists to prevent (a blocks_move object with nothing
-// telling a player why their square is blocked), and unlike a merely WRONG
-// art name (which resolves the moment the map's pack is fixed), an EMPTY
-// one is unfixable by any pack at all — so it is refused here, at Load,
-// rather than deferred to whichever caller happens to have a pack in hand.
+// under any circumstances — exactly the invisible-barrier defect spec §1.3
+// exists to prevent (a blocks_move object with nothing telling a player why
+// their square is blocked), and unlike a merely WRONG art name (which starts
+// drawing the moment the right file is installed under that name), an EMPTY
+// one names nothing that could ever be installed — so it is refused here, at
+// Load, rather than deferred to whichever caller happens to have an art
+// directory in hand.
 //
-// Whether a non-empty name actually resolves against the map's own pack is
-// a separate, pack-dependent question this function has no way to answer —
-// see ResolveObjectArt (resolve.go).
+// Whether a non-empty name is actually installed is a separate question this
+// function has no way to answer, and since
+// 2026-09-02-art-is-a-flat-library Task 3 the answer "no" is a warning on one
+// object rather than a refusal — see ResolveObjectArt (resolve.go).
 func CheckObjectArtDeclared(objs []Object, errf FieldErrFunc) error {
 	for i, o := range objs {
 		if o.Art == "" {

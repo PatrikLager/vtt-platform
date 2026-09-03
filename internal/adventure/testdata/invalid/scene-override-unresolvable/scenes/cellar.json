@@ -50,6 +50,6 @@
     }
   ],
   "overrides": {
-    "1,1": "nonexistent-tile"
+    "1,1": "unreadable-tile"
   }
 }

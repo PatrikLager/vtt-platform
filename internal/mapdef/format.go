@@ -7,13 +7,16 @@
 // an adventure directory, followed here as the sibling pattern to match.
 //
 // A square's own tile name (Map.Tiles) resolves only against the STANDARD
-// vocabulary (standard.go) — that never needs a pack. A square's ART, when
-// overridden, resolves against its own pack manifest (Pack/PackTile,
-// resolve.go's Resolve); this package owns that manifest format directly
-// rather than importing one, because a pack is content (design spec §4.2)
-// with no engine behaviour riding on it — nothing about Kind/Material ever
-// comes from a pack (see Resolve's doc comment for why that boundary is
-// load-bearing). Compiling a loaded Map into wire events is compile.go's job
+// vocabulary (standard.go) — that needs nothing else. A square's ART, when
+// overridden, resolves by FILENAME inside the campaign's one flat art/
+// directory, through internal/artlib (resolve.go's Resolve, and
+// 2026-09-02-art-is-a-flat-library design spec §3.2). Nothing about
+// Kind/Material ever comes from art — see Resolve's doc comment for why that
+// boundary is load-bearing.
+//
+// Pack/PackTile and LoadPack still live in this package and are read by
+// nobody who resolves anything; Task 7 of that plan deletes them. Compiling a
+// loaded Map into wire events is compile.go's job
 // (Task 4, spec §5) — the one and only reason this package depends on
 // contract/gen/go/vtt/v1 at all; nothing in format.go, load.go, standard.go,
 // or resolve.go touches it.
@@ -41,11 +44,14 @@ type Map struct {
 	ID, Name     string
 	GridW, GridH int32
 
-	// Pack names the custom pack Overrides values resolve against (spec
-	// §4.2). Load does not read the pack file itself — LoadPack and Resolve
-	// (resolve.go) do that, separately, since a map names its pack by ID
-	// rather than embedding it — so Pack is carried through unvalidated by
-	// Load; it may legally be empty for a map that uses only standard tiles.
+	// Pack named the custom pack Overrides values used to resolve against
+	// (maps-as-geometry spec §4.2). NOTHING RESOLVES AGAINST IT ANY MORE:
+	// since 2026-09-02-art-is-a-flat-library Task 3 an override names art by
+	// filename in the campaign's flat art/ directory, and any map may name
+	// any installed art. Load still carries the field through unvalidated;
+	// Task 5 of that plan refuses a map that declares it, and Task 7 deletes
+	// it. Until then it is read only by GET /api/maps' pack reference
+	// (internal/gateway/metadata.go).
 	Pack string
 
 	// Tiles declares the NATURE of every square: what it structurally IS,
@@ -67,10 +73,12 @@ type Map struct {
 
 	// Overrides is sparse and optional: it changes a square's PICTURE only,
 	// never its nature. Deleting the entire map renders and plays
-	// identically in every way that matters (spec §4.1). Values are pack
-	// tile names, carried opaque by Load — resolving one against a *Pack is
-	// Resolve's job (resolve.go), not Load's: Load never takes a pack
-	// argument, and per-square resolution needs one.
+	// identically in every way that matters (spec §4.1). Values are ART IDS
+	// — one kebab-case filename stem in the campaign's art/ — carried opaque
+	// by Load: resolving one is Resolve's job (resolve.go), not Load's, since
+	// Load never takes an art directory and per-square resolution needs one.
+	// A value that resolves to nothing costs its square's picture and one
+	// warning, never the map.
 	Overrides map[string]string
 
 	Objects    []Object

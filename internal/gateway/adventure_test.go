@@ -113,6 +113,18 @@ type adventureFixture struct {
 
 func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
 	t.Helper()
+	return newAdventureFixtureWith(t, withAdventures, nil, nil)
+}
+
+// newAdventureFixtureWith is newAdventureFixture's body with a seam for an
+// adventure set a test builds itself. It exists for
+// TestALoadAdventureWarningReachesTheIssuer, which needs a scene declaring an
+// override — something no committed adventure does yet, and cannot be made to
+// do without changing a shipped bundle. advs nil means "the ordinary fixture",
+// so every existing caller is unaffected.
+func newAdventureFixtureWith(t *testing.T, withAdventures bool,
+	advs map[string]*adventure.Adventure, rs *rules.Ruleset) *adventureFixture {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
 	c, err := campaign.Open(path)
@@ -145,9 +157,12 @@ func newAdventureFixture(t *testing.T, withAdventures bool) *adventureFixture {
 	}
 
 	srv := gateway.New(c, ids)
-	if withAdventures {
-		rs := loadDnd45eMinimal(t)
-		adv := loadGoblinAmbush(t, rs)
+	switch {
+	case advs != nil:
+		srv = srv.WithRuleset(rs).WithAdventures(advs)
+	case withAdventures:
+		loaded := loadDnd45eMinimal(t)
+		adv := loadGoblinAmbush(t, loaded)
 		srv = srv.WithAdventures(map[string]*adventure.Adventure{adv.ID: adv})
 	}
 	httpSrv := httptest.NewServer(srv.Handler())
@@ -509,5 +524,62 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 				readEvent(t, agentConn)
 			}
 		})
+	}
+}
+
+// TestALoadAdventureWarningReachesTheIssuer is handleLoadMap's counterpart for
+// the OTHER load command, and it exists because that half was silent.
+//
+// adventure.Compile's signature was ([]*vttv1.Envelope, error): it discarded
+// mapdef.BuildSceneCreated's warnings, and this handler set no Warnings at all.
+// Harmless while unresolvable art REFUSED — the DM got a loud error — but
+// art-is-a-flat-library Task 3 turned that into a degrade, so from that moment
+// an adventure whose art did not resolve compiled with err == nil, every square
+// plain, and nothing said so anywhere. That design spec §4 names this exact
+// outcome as "strictly worse than the refusal being replaced". Found in review,
+// 2026-09-03; Compile now returns warnings and this puts them on the result.
+//
+// The scene is hand-built on top of the real goblin-ambush rather than driven
+// from a committed fixture, because no shipped adventure declares an override
+// or an object yet — which is also why nothing triggered this in production and
+// why it had to be caught by reading rather than by a red test. Tasks 7-8 are
+// building toward adventure art; this is here before the feature is.
+func TestALoadAdventureWarningReachesTheIssuer(t *testing.T) {
+	rs := loadDnd45eMinimal(t)
+	adv := loadGoblinAmbush(t, rs)
+	// An art root that is real and empty, so the reference is ABSENT rather
+	// than the whole directory being unreadable — the ordinary case, and the
+	// one whose warning names the reference a bundle author has to go and fix.
+	adv.ArtDir = t.TempDir()
+	adv.Scenes = []adventure.AdventureScene{{
+		ID: "cave-mouth", Name: "Cave Mouth", GridW: 1, GridH: 1,
+		Tiles:     map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "mossy-granite"},
+	}}
+	adv.Actors = nil
+	adv.Notes = nil
+
+	f := newAdventureFixtureWith(t, false, map[string]*adventure.Adventure{adv.ID: adv}, rs)
+	conn := f.dial(f.dmToken, 0)
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_LoadAdventure{
+		LoadAdventure: &vttv1.LoadAdventure{AdventureId: adv.ID},
+	}})
+	res := readResult(t, conn)
+	if !res.GetOk() {
+		t.Fatalf("load_adventure refused: %s — art that is not installed degrades one "+
+			"square, it does not refuse the adventure", res.GetError())
+	}
+	if len(res.GetWarnings()) == 0 {
+		t.Fatal("no warnings: the adventure drew every square plain and nobody was told " +
+			"why, which spec §4 calls strictly worse than the refusal it replaced")
+	}
+	joined := strings.Join(res.GetWarnings(), "\n")
+	if !strings.Contains(joined, "mossy-granite") {
+		t.Errorf("warnings %q must name the reference that did not resolve", res.GetWarnings())
+	}
+	if !strings.Contains(joined, "cave-mouth") {
+		t.Errorf("warnings %q must name the SCENE: an adventure compiles several, and "+
+			"mapdef deduplicates per scene, so two scenes missing the same art would "+
+			"otherwise be indistinguishable", res.GetWarnings())
 	}
 }

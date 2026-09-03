@@ -100,9 +100,22 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // validated in full via loadMapsDir (maps.go; layout changed by Task 3 of
 // the 2026-09-01 create_scene-leaves plan — maps are flat files, packs are
 // a sibling tree) — fail loud here, at boot, on any single map's failure,
-// an override that does not resolve against its pack, or an existing-but-
-// empty maps/ (the same "fail loud, never at the table" posture as
-// adventuresDir above), closing both handles before returning.
+// an override naming art that is installed and cannot be read, or an
+// existing-but-empty maps/ (the same "fail loud, never at the table" posture
+// as adventuresDir above), closing both handles before returning. An override
+// naming art that is simply NOT installed is not a boot failure since
+// 2026-09-02-art-is-a-flat-library Task 3: it degrades that one square and
+// warns (spec §4).
+//
+// campaignPath/art IS CHECKED HERE, unconditionally, before the maps guard —
+// see the call site for why "unconditionally" is the whole of it. NO ART
+// DIRECTORY IS HANDED TO THE SERVER YET, though, so a map loaded through
+// load_map resolves no art at all and every override degrades. Task 4 of that
+// plan calls gateway.Server.WithArtDir(campaignPath/art) here and runs
+// artlib.Validate once at this point, which subsumes the check below. Until it
+// does, this boot walk resolves against campaignPath/art and the request path
+// does not — strict at boot and lenient on reload, which is the harmless
+// direction of design spec §12's divergence.
 //
 // The maps DIRECTORY is then handed to the server unconditionally
 // (WithMapsDir), present or not, which is what makes install-then-load work
@@ -164,6 +177,20 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 			return nil, nil, fmt.Errorf("vtt serve: load adventure guides %s: %w", adventuresDir, err)
 		}
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
+	}
+
+	// BEFORE the maps guard below and OUTSIDE it, for the reason WithMapsDir
+	// is outside it: a campaign with art and no map yet is the improvisation
+	// case this whole line of work exists for, and a check that only runs when
+	// maps/ happens to exist is the boot-order defect of design spec §1 rebuilt
+	// in a new directory. An absent art/ passes; art/ present and unopenable
+	// stops the boot, where the operator who can fix it is looking
+	// (artRootIsOpenable, maps.go, and mapdef.Resolve's own doc comment for the
+	// request-time half that degrades instead).
+	if err := artRootIsOpenable(filepath.Join(campaignPath, "art")); err != nil {
+		_ = ids.Close() // best-effort; the compose error below is what matters
+		_ = c.Close()   // best-effort; the compose error below is what matters
+		return nil, nil, fmt.Errorf("vtt serve: %w", err)
 	}
 
 	// campaignPath/maps ABSENT means nothing has been installed yet (see
