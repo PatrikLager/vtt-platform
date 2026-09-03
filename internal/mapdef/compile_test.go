@@ -439,6 +439,67 @@ func TestWarningsSurfaceInRowMajorOrder(t *testing.T) {
 // this square", and NOTHING BUT THE SQUARE tells them apart. A DM with one
 // deliberate illusion and one typo sharing an art name would otherwise get a
 // single line and no way to act on it.
+// maxListedSquaresForTest mirrors compile.go's unexported maxListedSquares.
+// Deliberately a separate literal: importing the constant would make the test
+// agree with whatever the code says, and the number is the thing under test.
+const maxListedSquaresForTest = 4
+
+// TestTheSquareListStopsAtTheCap pins the cap itself, which nothing did.
+//
+// FOUND BY THE MUTATION GATE, not by review: compile.go's
+// `len(t.at[w]) < maxListedSquares` -> `<=` SURVIVED with every package green.
+// Under it the tally collects five squares instead of four, and because render
+// only appends the ellipsis when the count EXCEEDS the list, a five-square
+// mismatch silently prints all five and no ellipsis — the cap quietly becomes
+// five. Two reviews checked this boundary by hand and both got the right
+// answer; neither left a test behind, so the suite could not tell four from
+// five. That evidence lived in a review, which is where evidence goes to die.
+//
+// Five mismatched squares is the smallest fixture that separates the two: at
+// four the mutant and the original agree exactly.
+func TestTheSquareListStopsAtTheCap(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// planks-split-3 is floor art. testdata/valid/cellar.json is 3x3 with six
+	// stone-wall squares; five of them is one more than the list can hold.
+	walls := []string{"0,0", "0,2", "1,0", "1,2", "2,0"}
+	for _, sq := range walls {
+		m.Overrides[sq] = "planks-split-3"
+	}
+
+	_, warnings, err := mapdef.Compile(m, cellarArtDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	w := warnings[0]
+	if !strings.Contains(w, "5 squares") {
+		t.Errorf("warning = %q, want it to count all 5 squares even though it lists fewer", w)
+	}
+	if !strings.Contains(w, "…") {
+		t.Errorf("warning = %q, want an ellipsis: 5 squares mismatched and the list holds 4, "+
+			"so the DM must be told the list is cut", w)
+	}
+	// EXACTLY four of the five are named. Asserted by counting rather than by
+	// naming a particular square, because which four survive is the tally's
+	// walk order and that is not this test's business — the CAP is.
+	named := 0
+	for _, sq := range walls {
+		if strings.Contains(w, sq) {
+			named++
+		}
+	}
+	if named != maxListedSquaresForTest {
+		t.Errorf("warning = %q names %d of the 5 mismatched squares, want %d: "+
+			"one more than the cap mismatched, so exactly the cap should be listed "+
+			"and the rest elided", w, named, maxListedSquaresForTest)
+	}
+}
+
 func TestAKindMismatchNamesItsSquares(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
