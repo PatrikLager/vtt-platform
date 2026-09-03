@@ -199,8 +199,9 @@ plays. The square renders from its `kind` and `material`. The DM is told which
 references did not resolve, once, as a warning on the load — not an error, and
 not silence.
 
-**That channel does not exist yet and this design adds it.** `mapdef.Load`
-already returns a `warnings` slice, and nothing carries it any further: no
+**That channel does not exist yet and this design adds it.** `mapdef.Compile`
+and `mapdef.Resolve` already return a `warnings` slice, and nothing carries it any
+further: no
 contract message has a warnings field, so today a warning dies in Go. The
 `load_map` result gains a repeated string field for them. That is an additive
 contract change (ADR-007) and the only one this sub-project makes.

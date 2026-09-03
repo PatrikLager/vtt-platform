@@ -11,7 +11,7 @@ import type { State } from "../state";
 import type { Participant } from "../session";
 import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
-import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
+import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, placeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
@@ -231,8 +231,14 @@ export interface DMDeps {
    * beside the command races it on a different transport, and losing that race
    * repaints the panel with exactly the state the command was changing — with
    * nothing left to correct it.
+   *
+   * Resolves to the CommandResult, not void: this used to declare Promise<void>,
+   * which erased CommandResult.warnings at this exact boundary — app.ts's `act`
+   * (the function every caller here is actually given) already carries a
+   * warning into the toast, but nothing calling through THIS field's old type
+   * could have read one back (2026-09-02-art-is-a-flat-library Task 2).
    */
-  send: (c: ClientCommand) => Promise<void>;
+  send: (c: ClientCommand) => Promise<CommandResult>;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
   /**

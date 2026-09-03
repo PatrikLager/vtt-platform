@@ -430,7 +430,7 @@ git commit -m "Art is found by its filename, not by a registry"
 
 ### Task 2: Warnings reach the client
 
-The channel spec §4 depends on does not exist: `mapdef.Load` returns warnings and
+The channel spec §4 depends on does not exist: `mapdef.Compile`/`Resolve` return warnings and
 no contract message carries them, so today a warning dies in Go. This is the one
 additive contract change (ADR-007).
 
@@ -520,8 +520,15 @@ into it.
 
 **Files:**
 - Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`,
-  `internal/adventure/compile.go`, `internal/adventure/load.go`
+  `internal/adventure/compile.go`, `internal/adventure/load.go`,
+  `internal/gateway/map.go`, `internal/mapdef/installed.go`
 - Test: `internal/mapdef/resolve_test.go`, `internal/adventure/compile_test.go`
+
+**`internal/gateway/map.go` and `internal/mapdef/installed.go` are on this list
+because they CALL `mapdef.Compile`** (added 2026-09-03 after Task 2's review
+found the omission). Changing `Resolve`/`Compile`'s signature without them
+leaves the tree non-compiling until Task 4, and this task's own commit step
+stages `internal/mapdef/` alone. Stage everything that must compile together.
 
 **The adventure path compiles or nothing does.** `internal/adventure/compile.go`
 calls `mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)` and
@@ -642,6 +649,16 @@ git commit -m "A missing picture is a plain square, not a refused map"
 
 - [ ] **Step 1: Write the failing tests**
 
+**Carry the assertion Task 2 had to retire.** Task 2's brief drove `load_map`
+with a map naming absent art and asserted `ok=true` plus warnings naming the
+reference. Task 3 had not landed, so on that tree absent art still refused, and
+Task 2 correctly substituted a kind-mismatch fixture instead. That means the
+POSITIVE end-to-end §4 case — a map naming absent art loads, succeeds, and
+names the dropped reference — is tested nowhere and was scheduled nowhere until
+this line. It belongs here, because this task already builds the fixture it
+needs (`composeServer` plus a real `art/`). Add it alongside the negative case
+below; the negative one alone would pass on a server that never warns at all.
+
 ```go
 func TestArtInstalledAfterBootIsFoundWithoutARestart(t *testing.T) {
 	// The defect sub-project 15 shipped, inverted into a requirement. This
@@ -713,6 +730,14 @@ git commit -m "Art is read when the map is loaded, not once at boot"
 **Files:**
 - Modify: `internal/mapdef/format.go` (delete `Map.Pack`), `internal/mapdef/load.go`
 - Test: `internal/mapdef/load_test.go`
+
+**Before you start: one existing test WILL go red here, and the cheap fix is
+wrong.** `internal/gateway/map_test.go`'s `TestALoadMapWarningReachesTheIssuer`
+(Task 2) uses a fixture declaring `"pack":"cellar-basics"` to produce a
+kind-mismatch warning. This task makes that declaration a refusal. **Migrate it
+to a sidecar-based kind mismatch; do not delete it.** It is the only test on the
+branch that proves a warning traverses the whole channel to the issuer, and
+deleting a test deletes coverage nothing will shout about.
 
 - [ ] **Step 1: Write the failing test**
 

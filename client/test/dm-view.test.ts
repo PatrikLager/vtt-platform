@@ -1,12 +1,28 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
 import { test, expect, beforeEach } from "bun:test";
+import { create } from "@bufbuild/protobuf";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
-import { JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import {
+  JoinDoor, CommandResultSchema, type ClientCommand, type CommandResult,
+} from "../../contract/gen/ts/vtt/v1/commands_pb";
+
+/**
+ * The ordinary, no-warnings answer these fixtures' fake `send` resolves
+ * with — every test below cares whether a command was SENT (the `sent`
+ * array each fixture also tracks), never what the server answered, so one
+ * shared ok=true stands in everywhere. `renderDMConsole`'s `send` field
+ * resolves to a real CommandResult since
+ * 2026-09-02-art-is-a-flat-library Task 2 (client/src/view/dm.ts): it used
+ * to be Promise<void>, which these fixtures satisfied with a bare `{}`.
+ */
+function okResult(): CommandResult {
+  return create(CommandResultSchema, { ok: true });
+}
 
 function harness(
   st: State = newState(),
@@ -45,7 +61,7 @@ function harness(
     roster: [],
     origin: "https://table.example",
     refreshSharing: () => {},
-    send: async (c) => void sent.push(c),
+    send: async (c) => { sent.push(c); return okResult(); },
     notify: (m) => notices.push(m),
     confirm: (m: string) => {
       confirmCount++;
@@ -1312,7 +1328,7 @@ function shareConsole(opts: {
     roster: opts.roster === undefined ? [] : opts.roster,
     origin: "https://table.example",
     refreshSharing: () => refreshes++,
-    send: async (c) => void sent.push(c),
+    send: async (c) => { sent.push(c); return okResult(); },
     notify: (m) => notices.push(m),
     confirm: () => true,
   });
@@ -1379,7 +1395,7 @@ test("rotating asks first, because it locks out a link already sent", () => {
     st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
-    send: async (c) => void sent.push(c), notify: () => {},
+    send: async (c) => { sent.push(c); return okResult(); }, notify: () => {},
     doorsArmed: false, toggleDoors: () => {},
     confirm: () => {
       asked++;
@@ -1443,7 +1459,7 @@ test("ending a session is addressable, not just clickable by its label", () => {
   const node = renderDMConsole({
     st, adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
-    refreshSharing: () => {}, send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+    refreshSharing: () => {}, send: async (c) => { sent.push(c); return okResult(); }, notify: () => {}, confirm: () => true,
     doorsArmed: false, toggleDoors: () => {},
   });
 
@@ -1460,7 +1476,7 @@ test("rotating goes through once the DM says yes", async () => {
     st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
-    send: async (c) => void sent.push(c), notify: () => {}, confirm: () => true,
+    send: async (c) => { sent.push(c); return okResult(); }, notify: () => {}, confirm: () => true,
     doorsArmed: false, toggleDoors: () => {},
   });
 
@@ -1548,7 +1564,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
     st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
-    send: async () => {}, notify: () => {},
+    send: async () => okResult(), notify: () => {},
     confirm: (m) => {
       asked = m;
       return false;

@@ -289,6 +289,17 @@ message CommandResult {
   bool ok = 2;
   string error = 3;
   int64 sequence = 4;
+
+  // Non-fatal facts about a command that SUCCEEDED. load_map fills it today
+  // only for a kind mismatch — an override's art disagreeing with its
+  // square's tile kind (2026-08-12-maps-as-geometry design spec §3.2) —
+  // and, from Task 3 of 2026-09-02-art-is-a-flat-library onward, also when
+  // a map names art that is not installed: that square renders from its
+  // tiles kind and material instead (that sub-project's own design spec
+  // §4), and this says which references were dropped. Without the second
+  // case, §4 is a silence — the map goes plain and nobody learns why —
+  // which is strictly worse than the refusal it replaces.
+  repeated string warnings = 5;
 }
 
 // CatchUpHead is sent ONCE, first, on every connection: the highest sequence

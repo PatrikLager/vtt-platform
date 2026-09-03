@@ -26,7 +26,7 @@ import { joinSecretFrom, requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
 import { loadPackImages, loadStandardPackImages } from "./view/pack-assets";
 import type { ImageMap } from "./view/canvas";
-import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import type { ClientCommand, CommandResult } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 function gatewayURL(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -360,12 +360,28 @@ function startSession(root: HTMLElement, token: string): Session {
   // does: the door and role commands produce no event, so an HTTP re-read
   // issued beside the command races it on a different transport and can repaint
   // the panel with the state the command was about to change.
-  const act = (cmd: ClientCommand): Promise<void> =>
+  //
+  // RESOLVES TO THE CommandResult ITSELF, not void. A command that SUCCEEDED
+  // can still carry non-fatal facts — CommandResult.warnings, which load_map
+  // fills when a map names art the loader could not resolve
+  // (2026-09-02-art-is-a-flat-library Task 2/3). Before this, `act`'s own
+  // return type erased that field before it reached dm.ts's `send` prop
+  // (client/src/view/dm.ts), which declared Promise<void> — an MCP agent's
+  // tool result carries a CommandResult verbatim and genuinely sees a
+  // warning, but the DM's browser threw it away one frame short of the
+  // person the warning exists for. Widened together with dm.ts's `send`.
+  const act = (cmd: ClientCommand): Promise<CommandResult> =>
     session.send(cmd).then((res) => {
-      // The result is shown verbatim on failure. A player who is told "not
-      // authorized" can act on that; a silent no-op looks like a broken UI.
-      toast = res.ok ? "" : `refused: ${res.error}`;
+      // The result is shown verbatim on failure, and now on a warning too: a
+      // player told "not authorized" can act on that, and a DM told which
+      // art reference did not resolve can go fix it — a silent no-op and a
+      // silently plain square are the same failure, "looks like a broken
+      // UI", wearing two different causes. `warnings` is empty on an
+      // ordinary ok=true result, so `[].join(...)` reproduces the prior ""
+      // exactly and the toast stays hidden (`toast || undefined` below).
+      toast = res.ok ? res.warnings.join("; ") : `refused: ${res.error}`;
       paint();
+      return res;
     });
 
   /**

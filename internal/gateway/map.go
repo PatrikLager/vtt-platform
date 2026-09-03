@@ -42,23 +42,42 @@ const errNoMapsAvailable = "gateway: no maps available"
 // expected to add_actor first; this handler does not special-case that
 // order.
 //
-// mapdef.Compile's second return value is a []string of kind-mismatch
-// warnings (spec §3.2: an override's kind disagreeing with its base tile's
-// warns, never refuses). This handler discards them, deliberately — see the
-// task report for the full reasoning; in short: (1) it matches the two
-// existing production call sites, cmd/vtt/maps.go's boot-time dry run and
-// internal/adventure/compile.go's asMap path, both of which already discard
-// the identical warning at the point closest to Compile; (2) CommandResult
-// (contract/vtt/v1/commands.proto) has no field to carry a warning list on
-// an ok=true result, and adding one is a contract decision the
-// maps-as-geometry task did not scope; (3) this package has no logging
-// channel to write one to instead — which used to be stated here as
-// "package gateway's core does no I/O of its own", and that is no longer
-// true of this very file (mapByID reads a map off disk since
-// 2026-09-01-create-scene-leaves Task 6). The absence of a logging channel
-// is what the reasoning actually rested on, and it still holds. A live, per-load warning surface for the DM is a reasonable
-// follow-up if wanted, but is a new decision, not a silent drop repeated
-// for no reason.
+// mapdef.Compile's second return value is a []string of warnings — today
+// only the kind-mismatch case (2026-08-12-maps-as-geometry design spec
+// §3.2: an override's kind disagreeing with its base tile's warns, never
+// refuses), and from Task 3 of 2026-09-02-art-is-a-flat-library onward also
+// unresolvable art (that sub-project's own design spec §4 — it has not
+// landed as of Task 2, so that second case does not exist on this tree
+// yet). This handler now carries them onto the ok=true CommandResult it
+// returns (CommandResult.warnings, field 5, added by
+// 2026-09-02-art-is-a-flat-library's Task 2) — the channel this doc comment
+// used to explain the absence of. They go on THIS result and nowhere else:
+// warnings are for whoever issued load_map, not for the table, so nothing
+// here broadcasts them — serve's own read loop (server.go) is what makes
+// that automatic, writing the CommandResult answerCommand returns to only
+// THIS connection's own outCh.
+//
+// This used to say "the other two production call sites" discard the
+// identical warning. That miscounted them and misplaced one.
+// cmd/vtt/maps.go never calls Compile or BuildSceneCreated itself — its
+// boot-time walk reaches the discard INDIRECTLY, inside
+// mapdef.LoadInstalled's own dry-run Compile call (installed.go). mapByID
+// (below) calls that exact same LoadInstalled on a cache miss, which makes
+// it not an "other" site at all from here: a map loaded for the first time
+// through THIS handler has its warnings computed twice in one request —
+// once inside LoadInstalled's dry run, discarded, and once by the Compile
+// call below, kept. internal/adventure/compile.go's own Compile discards
+// the analogous BuildSceneCreated warnings on load_adventure's LIVE path
+// (adventure.go's handleLoadAdventure calls it directly), and
+// internal/adventure/load.go's loadScenes discards them again in ITS OWN
+// dry run, at adventure-load time. None of these is touched here, and the
+// reason needs stating precisely: handleLoadAdventure DOES build a
+// CommandResult, so "no CommandResult to carry a warning onto" would be
+// false of the very path named two sentences up. What is true of all three
+// is that adventure.Compile's signature is ([]*vttv1.Envelope, error) and
+// swallows the warnings internally -- so widening any of them means changing
+// a signature that drops the warning before a CommandResult is ever in
+// scope, which is a decision this task did not scope.
 func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity.Participant) *vttv1.CommandResult {
 	m, lookupErr := s.mapByID(cmd.GetMapId())
 	if lookupErr != nil {
@@ -70,7 +89,7 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 	// *Pack precisely for that case (see its own doc comment).
 	pack := s.packs[m.Pack]
 
-	envs, _, err := mapdef.Compile(m, pack)
+	envs, warnings, err := mapdef.Compile(m, pack)
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
@@ -95,7 +114,7 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq, Warnings: warnings}
 }
 
 // mapByID answers with the map called id, loading it from the campaign's

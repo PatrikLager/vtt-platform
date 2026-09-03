@@ -1332,6 +1332,53 @@ test("a command that succeeds clears the toast rather than leaving one up", asyn
   }
 });
 
+test("a warning on an ok=true result reaches the DM's toast", async () => {
+  // 2026-09-02-art-is-a-flat-library Task 2 review, finding I1. wire.test.ts's
+  // own "a result's warnings reach whoever awaited send()" already pins that
+  // CommandResult.warnings decodes correctly off the wire -- but decoding a
+  // field and SHOWING it to anybody are different claims, and this is the
+  // one that was missing. Before this test, app.ts's `act` read only
+  // `res.ok`/`res.error` (`toast = res.ok ? "" : \`refused: ${res.error}\`),
+  // so a warning on an ok=true result decoded correctly and was then thrown
+  // away one line later -- one frame short of the DM's screen, the exact
+  // silence spec §4 exists to prevent, moved one layer out.
+  const { r, s, sock } = await dmTable({
+    "/api/maps": { maps: [{ id: "shrine", name: "Shrine", gridWidth: 1, gridHeight: 1 }] },
+  });
+  byText(r, "Load Shrine")!.click();
+  await settle();
+  const reqID = JSON.parse(sock.sent[0]!).requestId as string;
+  sock.deliver({
+    result: {
+      requestId: reqID, ok: true, sequence: "2",
+      warnings: [
+        `square 0,0 names art "absent-art", which is not installed`,
+        `square 1,0 names art "also-absent", which is not installed`,
+      ],
+    },
+  });
+  await settle();
+
+  // Assert the toast EXISTS before asserting its text. Without this, reverting
+  // act's toast line makes querySelector return null, `?.textContent` undefined,
+  // and the assertion dies with "Received value must be an array type" -- which
+  // says nothing about what broke, in a repo whose failure messages are essays.
+  const toast = r.querySelector(".toast");
+  expect(toast).not.toBeNull();
+  // The WHOLE rendered string, not a substring of it. `toContain("absent-art")`
+  // cannot see the separator, so join("; ") -> join("") or join(",") would live
+  // -- and with more than one warning that is the difference between a readable
+  // line and a run-on. Two warnings, so the separator is actually exercised.
+  expect(toast!.textContent).toBe(
+    `square 0,0 names art "absent-art", which is not installed; ` +
+      `square 1,0 names art "also-absent", which is not installed`,
+  );
+  // Not the refusal shape: a warning is not an error, and showing it as one
+  // would tell a DM their command failed when it succeeded.
+  expect(r.textContent).not.toContain("refused");
+  s?.close();
+});
+
 // REMOVED 2026-08-03: "a player with no token on the board clicks the board
 // harmlessly". It claimed the socket staying silent pinned the `if (cmd)`
 // guard at app.ts:104. It did not — wire.send dereferences cmd.requestId on

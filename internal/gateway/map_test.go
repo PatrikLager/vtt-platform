@@ -827,3 +827,57 @@ func TestAPackInstalledAfterBootSaysToRestart(t *testing.T) {
 			"campaign; saying otherwise sends the DM to check a correct map", res.Error)
 	}
 }
+
+// --- 2026-09-02-art-is-a-flat-library Task 2 --------------------------------
+
+// TestALoadMapWarningReachesTheIssuer pins the channel this task adds: a
+// command that SUCCEEDED can still carry non-fatal facts back to whoever
+// issued it (CommandResult.warnings, field 5). That task's own brief drove
+// this scenario through an override naming art that is NOT INSTALLED (art
+// design spec §4) — but that degrade path belongs to Task 3 of this same
+// sub-project, which has not landed: Resolve still takes a *Pack today, and
+// an override with no pack to resolve against REFUSES the map rather than
+// warning about it (resolve.go's own p == nil arm). Driving the brief's
+// literal fixture would therefore pin a refusal, not a warning.
+//
+// What this test drives instead is the one warning mapdef.Compile can
+// already produce without Task 3, and that Task 3's own plan explicitly
+// keeps: an override whose pack tile KIND disagrees with its square's base
+// tile kind warns rather than refuses (resolve.go, "an illusory wall is
+// legitimate dungeon craft ... and refusing it would forbid a feature one
+// arc away") — the exact same []string Resolve/Compile already return,
+// which is the channel this task exists to carry the rest of the way.
+func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
+	// withMaps=true loads campaigns/example/packs/cellar-basics at BOOT
+	// (packs are boot-time only — TestAPackInstalledAfterBootSaysToRestart,
+	// above, pins why), so "shrine" below can declare that pack and resolve
+	// against it once installed. installable=true wires the maps/ directory
+	// so "shrine" can be installed mid-session, on demand
+	// (2026-09-01-create-scene-leaves design spec §4/§5) — neither
+	// newMapFixture nor newInstallableMapFixture wraps this combination, so
+	// newMapFixtureWith is called directly, same package, same as both of
+	// them do.
+	f := newMapFixtureWith(t, true, true)
+	conn := f.dial(f.dmToken, 0)
+
+	// "stone" is a floor (standard.go's standardTiles); cellar-basics'
+	// "masonry-1" is a wall (campaigns/example/packs/cellar-basics/pack.json).
+	// The override supplies ART, never NATURE (resolve.go's own doc comment
+	// on Resolve), so this square keeps being a floor and loads anyway — it
+	// only warns that its art disagrees.
+	installMap(t, f.mapsDir, "shrine", `{"format_version":1,"id":"shrine","name":"Shrine",
+		"grid_width":1,"grid_height":1,"pack":"cellar-basics","tiles":{"0,0":"stone"},
+		"overrides":{"0,0":"masonry-1"}}`)
+
+	sendCommand(t, conn, loadMapCmdFor("shrine"))
+	res := readResult(t, conn)
+	if !res.Ok {
+		t.Fatalf("load_map refused: %s — a kind mismatch warns, it does not refuse", res.Error)
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatal("no warnings: the mismatch was accepted silently and nobody was told why")
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "masonry-1") {
+		t.Fatalf("warnings %q must name the reference that mismatched", res.Warnings)
+	}
+}
