@@ -80,7 +80,7 @@ func Open(dir string) (*Campaign, error) {
 	info, err := os.Stat(dir)
 	if err == nil && !info.IsDir() {
 		return nil, fmt.Errorf("campaign: %s is a file; a campaign is a "+
-			"directory holding log.db, maps/ and packs/ — put it in one", dir)
+			"directory holding log.db, maps/ and art/ — put it in one", dir)
 	}
 	// A read-only mount must not lose improvisation entirely (spec §12):
 	// installing a map means writing a file into this directory, so a

@@ -912,6 +912,19 @@ func TestArtInstallValidatesTheSidecarAtInstallRatherThanAtTheTable(t *testing.T
 the file is absent. `packRefJSON` is deleted; metadata reports `cellPx` directly.
 Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`.
 
+**Task 7 deleted seven security proofs along with the pack route, and this task
+owes every one of them back.** The pack route's tests for path traversal,
+symlink escape, the content-type allowlist, SVG exclusion, the unknown-file 404
+and end-to-end bytes are gone. Nothing regresses today because no route serves
+bytes — but the ruling now survives only as prose in
+`internal/gateway/metadata.go`, and `internal/artlib` pins the symlink half at
+the LOOKUP layer, never at a route. Re-establish each at the new route.
+
+**And one requirement has no pack precedent to copy.** The pack route was saved
+from serving a nested file only by net/http's single-segment `{file}` wildcard;
+nobody had to think about it, because a pack WAS a directory. `art/` is flat, so
+this is now a rule the route must enforce rather than a shape it inherits.
+
 **The route MUST NOT serve a file inside a subdirectory**, and `os.OpenRoot`
 alone does not stop it: a root CONFINES but does not FLATTEN, and `fs.ValidPath`
 rejects only `..`, so `art/pack-ish/x.png` is legitimately inside the root. Two

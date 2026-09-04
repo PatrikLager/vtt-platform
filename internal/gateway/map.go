@@ -159,12 +159,12 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 //     visible.
 //
 // THE PACK-NOT-LOADED ANSWER IS GONE from here, with the mechanism that
-// produced it (2026-09-02-art-is-a-flat-library Task 3). It existed because
-// packs were read once at boot, so a map installed together with a new pack
-// was refused until a restart and this handler was the only layer that knew
-// so. Art is now read from a directory when the map is loaded (design spec
-// §3.6), so nothing can be "installed but not loaded" and no answer here has
-// a restart to suggest.
+// produced it (2026-09-02-art-is-a-flat-library Task 3, and Task 7 deleted the
+// type itself). It existed because packs were read once at boot, so a map
+// installed together with a new pack was refused until a restart and this
+// handler was the only layer that knew so. Art is now read from a directory
+// when the map is loaded (design spec §3.6), so nothing can be "installed but
+// not loaded" and no answer here has a restart to suggest.
 //
 // WHAT REACHES A CLIENT, and it is a narrower question than it looks:
 // mapdef.LoadInstalled names every file it complains about as
@@ -174,11 +174,12 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 // task translated only fs.ErrNotExist and forwarded the rest, and the rest
 // includes an *fs.PathError for ENAMETOOLONG (an id of 260 characters, from
 // any seat that can issue load_map) and every field error from an ordinary
-// map with a typo in it. Both leaked the path. On top of that guarantee,
-// two errors are given more here: a map that is not installed becomes an
-// ordinary unknown-map answer, and a pack that is not loaded gains the
-// restart. Everything else is forwarded verbatim, because a broken map is a
-// thing the DM has to act on and mapdef already says it best.
+// map with a typo in it. Both leaked the path. On top of that guarantee, ONE
+// error is given more here: a map that is not installed becomes an ordinary
+// unknown-map answer. The second used to be a pack that was not loaded, which
+// gained a restart suggestion; see the paragraph above for where that went.
+// Everything else is forwarded verbatim, because a broken map is a thing the DM
+// has to act on and mapdef already says it best.
 func (s *Server) mapByID(id string) (*mapdef.Map, error) {
 	s.mapsMu.RLock()
 	m, ok := s.maps[id]

@@ -141,9 +141,13 @@ func installMaps(srcDir, campaignPath string) error {
 
 	// BOTH ends go through os.Root (go1.24+; this repo is on go1.26) rather
 	// than filepath.Join of a directory entry's own name — the same primitive
-	// and the same reasoning maps.go already applies to a pack directory:
+	// maps.go's artRootIsOpenable and internal/artlib both open through:
 	// "Methods on Root will follow symbolic links, but symbolic links may not
-	// reference a location outside the root" (go doc os.Root). A name that is
+	// reference a location outside the root" (go doc os.Root). This cited "the
+	// same reasoning maps.go already applies to a pack directory" until
+	// 2026-09-02-art-is-a-flat-library Task 7 deleted the pack walk that
+	// applied it, leaving a sentence about a primitive maps.go had stopped
+	// using for the stated purpose. A name that is
 	// not a single path element, or an entry that is a symlink pointing out of
 	// the corpus, cannot make either half of this copy touch a file outside
 	// the two directories named here. That is worth having even though srcDir

@@ -11,17 +11,16 @@ package main
 // spec §4.4).
 //
 // SINCE TASK 3: a map is a flat file, <dir>/maps/<id>.json, named by its
-// own id — not a directory. A pack is a directory, <dir>/packs/<name>/
-// pack.json, in a SIBLING tree — not co-located beside any one map.
+// own id — not a directory.
 //
-// THE TWO ARE NOT LINKED AT ALL ANY MORE. This said they were "linked only by
-// a map's own \"pack\" field naming a pack's declared id, resolved by
-// loadMapsDir the same way internal/gateway/map.go's handleLoadMap resolves it
-// at request time (packs[m.Pack])" — false in both halves by
-// 2026-09-02-art-is-a-flat-library: Task 3 moved request-time resolution to the
-// campaign's flat art/ directory, and Task 5 deleted mapdef.Map.Pack and made a
-// map file declaring "pack" a refusal. This walk still builds a pack set for
-// GET /api/packs/{pack}/{file} alone, until Task 7 deletes it.
+// THERE IS NO SIBLING packs/ TREE ANY MORE. This walk built one, keyed by each
+// pack.json's own declared id, and served it over GET /api/packs/{pack}/{file};
+// 2026-09-02-art-is-a-flat-library deleted the coupling in three steps and then
+// the thing itself — Task 3 moved request-time art resolution to the campaign's
+// flat art/ directory, Task 5 deleted mapdef.Map.Pack and made a map file
+// declaring "pack" a refusal, and Task 7 deleted the walk, the route and
+// mapdef.Pack. Two tests went with it; their obituaries are below, beside the
+// duplicate-id test that used to guard the route's namespace.
 
 import (
 	"log/slog"
@@ -37,7 +36,7 @@ func TestLoadMapsDirReadsFlatFilesNamedByTheirID(t *testing.T) {
 	root := t.TempDir()
 	writeMap(t, filepath.Join(root, "maps", "cellar.json"), "cellar")
 
-	maps, _, _, err := loadMapsDir(root)
+	maps, err := loadMapsDir(root)
 	if err != nil {
 		t.Fatalf("loadMapsDir: %v", err)
 	}
@@ -54,7 +53,7 @@ func TestLoadMapsDirRefusesAFilenameThatDisagreesWithTheID(t *testing.T) {
 	root := t.TempDir()
 	writeMap(t, filepath.Join(root, "maps", "sunken-cellar.json"), "cellar")
 
-	_, _, _, err := loadMapsDir(root)
+	_, err := loadMapsDir(root)
 	if err == nil {
 		t.Fatal("want a filename/id mismatch refused")
 	}
@@ -90,15 +89,12 @@ func TestBootRefusesAnInvalidMapRatherThanServingIt(t *testing.T) {
 	}
 }
 
-// TestLoadMapsDirLoadsAValidMap walks a campaign holding one map and one pack.
-// It asserted the map's own Pack field until Task 5 of
-// 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack and made a map file
-// declaring "pack" a refusal (design spec §7) — hence the name, which read
-// "...AndItsPack". The packs/ tree is deliberately still in the fixture: this
-// walk still builds a pack set and still serves it over GET
-// /api/packs/{pack}/{file}, so what the fixture proves now is that a campaign
-// which still has packs on disk loads its maps regardless. Task 7 deletes the
-// pack half of the walk and this fixture with it.
+// TestLoadMapsDirLoadsAValidMap walks a campaign holding one map. It asserted
+// the map's own Pack field until Task 5 of 2026-09-02-art-is-a-flat-library
+// deleted mapdef.Map.Pack and made a map file declaring "pack" a refusal
+// (design spec §7) — hence the name, which read "...AndItsPack" — and its
+// fixture kept a packs/ tree beside the map until Task 7 deleted the walk that
+// read one.
 func TestLoadMapsDirLoadsAValidMap(t *testing.T) {
 	dir := t.TempDir()
 	writeShrineMap(t, dir, "shrine")
@@ -404,66 +400,91 @@ func TestABootLoadedMapWhoseArtIsNotInstalledStillBoots(t *testing.T) {
 	}
 }
 
-// TestLoadMapsDirRefusesDuplicatePackIds guards the namespace GET
-// /api/packs/{pack}/{file} addresses by: two packs/ subdirectories
-// declaring the SAME pack id would otherwise let the second silently
-// shadow the first's images at that route — the identical footgun
-// loadAdventuresDir already guards against for adventure ids
-// (adventures.go's own doc comment).
-func TestLoadMapsDirRefusesDuplicatePackIds(t *testing.T) {
-	dir := t.TempDir()
-	writeShrineMap(t, dir, "shrine-a")
-	// A second pack directory, elsewhere in the packs/ tree, whose OWN
-	// pack.json happens to declare the same pack id "mossy-keep" as
-	// shrine-a's.
-	if err := os.MkdirAll(filepath.Join(dir, "packs", "mossy-keep-duplicate"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "packs", "mossy-keep-duplicate", "pack.json"), `{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep (duplicate)", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
-	}`)
+// TWO TESTS STOOD HERE AND LEFT WITH THE PACK WALK
+// (2026-09-02-art-is-a-flat-library Task 7). Both guarded the namespace
+// GET /api/packs/{pack}/{file} addressed packs by, and that route is gone:
+//
+//   - TestLoadMapsDirRefusesDuplicatePackIds: two packs/ subdirectories
+//     declaring the same id, which would have let the second silently shadow
+//     the first's images at the same URL.
+//   - TestLoadMapsDirRefusesAnUnnamedPack: a pack.json with no id at all, which
+//     no URL could ever address.
+//
+// NEITHER PROPERTY MOVES, and neither needs to. Art is addressed by FILENAME
+// inside one flat art/ directory now (that plan's design spec §3), so a
+// filesystem that cannot hold two entries of the same name is the whole of the
+// uniqueness rule — the plan says so outright in its Global Constraints ("No
+// duplicate check is written anywhere") — and nothing declares an id that could
+// be missing. What replaces the "a name nothing can address" refusal is
+// internal/artlib's TestValidateRefusesAFilenameThatIsNotAnArtName.
 
-	_, err := LoadMapsDir(dir)
-	if err == nil {
-		t.Fatal("two packs/ subdirectories declaring the same pack id both loaded; " +
-			"the second would silently shadow the first's images at /api/packs/{pack}/...")
+// TestACampaignWithNoMapsDirectoryLoadsCleanly asserts an ABSENCE — of the
+// refusal this walk used to make — so it was written before the change and
+// failed until 2026-09-02-art-is-a-flat-library Task 7 landed it.
+//
+// IT IS WHAT LETS composeServer's os.Stat(mapsDir) GUARD GO. That guard existed
+// for one reason: this walk failed on a missing maps/, so a brand-new campaign
+// could not be walked at all. The packs half already tolerated a missing
+// packs/, and with the packs half deleted the maps half is the only thing left
+// that did not — so it adopts the same tolerance, the guard has nothing to
+// decide, and a boot-order guard around a load is exactly the shape sub-project
+// 15 shipped as a defect (design spec §1). A campaign that has installed
+// nothing yet is the ordinary starting state (2026-09-01-create-scene-leaves
+// design spec §4, "Install, then load"), not a broken one.
+//
+// An empty-but-PRESENT maps/ is still a boot error — see the test below, which
+// is the case this one must not be confused with.
+func TestACampaignWithNoMapsDirectoryLoadsCleanly(t *testing.T) {
+	maps, err := LoadMapsDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadMapsDir on a campaign with no maps/ at all: %v — a campaign "+
+			"that has installed nothing yet is ordinary, not broken", err)
 	}
-	if !strings.Contains(err.Error(), "mossy-keep") {
-		t.Errorf("error should name the colliding pack id, got: %v", err)
+	if len(maps) != 0 {
+		t.Fatalf("maps = %v, want none: there is no maps/ to have loaded any from", keys(maps))
 	}
 }
 
-// TestLoadMapsDirRefusesAnUnnamedPack pins a check this task's OWN routing
-// needs that mapdef.LoadPack itself does not make (packTileMap requires
-// non-empty NAMES for tiles/objects, but never checks the pack's own
-// top-level id): GET /api/packs/{pack}/{file} addresses a pack by that id,
-// so a pack.json with no id at all cannot be served by any URL — refused at
-// boot rather than silently keyed under "" and only unreachable-in-practice.
-func TestLoadMapsDirRefusesAnUnnamedPack(t *testing.T) {
+// TestAnUnreadableMapsPathIsABootErrorNotAnEmptyCampaign is what HOLDS the
+// discrimination the test above introduced, and without it that discrimination
+// is prose. loadMapsDir tells "maps/ is not there" (nothing installed yet —
+// boot, empty set) from "maps/ is there and I cannot read it" (boot error), and
+// review measured on 2026-09-04 that deleting the second arm entirely left
+// `go build`, `go vet` and this whole package green: NOTHING in the tree held
+// it.
+//
+// THE WRONG BRANCH HERE IS SILENT, WHICH IS WHY IT IS WORTH A TEST OF ITS OWN.
+// At BASE this function made no discrimination at all — every os.ReadDir
+// failure was an error — and absence-tolerance lived in composeServer's
+// os.Stat guard, where deciding wrongly sent you INTO loadMapsDir and still
+// failed loud. Task 7 moved the decision to the one place where getting it
+// wrong says nothing: a campaign whose maps/ is a plain file, or a directory
+// this process cannot read after a bad `cp -a`, a restore, or a container
+// volume mount, would boot cleanly serving zero maps. The DM sees "no maps
+// available"; the operator sees nothing at all.
+//
+// A PLAIN FILE AT maps/ rather than a mode, deliberately, and for the reason
+// TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists already records: a
+// permissions fixture passes trivially for a process running as root, and CI
+// containers often are. os.ReadDir on a plain file is ENOTDIR, which is not
+// os.IsNotExist, so it lands on exactly the arm under test with no privileges
+// involved.
+func TestAnUnreadableMapsPathIsABootErrorNotAnEmptyCampaign(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "packs", "nameless"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "packs", "nameless", "pack.json"), `{
-		"format_version": 1,
-		"name": "Nameless", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png"}]
-	}`)
-	writeFile(t, filepath.Join(dir, "maps", "shrine.json"), `{
-		"format_version": 1,
-		"id": "shrine", "name": "Shrine",
-		"grid_width": 1, "grid_height": 1
-	}`)
+	writeFile(t, filepath.Join(dir, "maps"), "a plain file where maps/ belongs")
 
-	_, err := LoadMapsDir(dir)
+	maps, err := LoadMapsDir(dir)
 	if err == nil {
-		t.Fatal("a pack.json with no declared id loaded without error; " +
-			"nothing could ever address it at /api/packs/{pack}/...")
+		t.Fatalf("a campaign whose maps/ cannot be read booted with %d map(s) and no "+
+			"error — the DM sees an empty map list and the operator is told nothing",
+			len(maps))
+	}
+	// Names the path, so an operator who has to go and fix an ownership or a
+	// stray file knows which one. This error is printed to whoever started the
+	// server and reaches no client, the same reasoning artRootIsOpenable's own
+	// doc comment gives for naming its directory.
+	if !strings.Contains(err.Error(), filepath.Join(dir, "maps")) {
+		t.Errorf("error = %q, want it to name the path an operator has to go and fix", err)
 	}
 }
 
@@ -472,12 +493,22 @@ func TestLoadMapsDirRefusesAnUnnamedPack(t *testing.T) {
 // that exists but was never populated (an empty mkdir, or a sync that
 // dropped its files but not itself) booting cleanly with zero maps
 // configured is a quiet failure, not a loud one — inconsistent with a
-// NONEXISTENT dir, which already fails loud via os.ReadDir's own error
-// (and which composeServer's own caller-side guard treats as "nothing
-// installed yet", not this function's concern — 2026-09-01-create-
-// scene-leaves Task 5).
+// NONEXISTENT dir, which is "nothing installed yet" and boots (see
+// TestACampaignWithNoMapsDirectoryLoadsCleanly directly above).
+//
+// THE FIXTURE MKDIRS maps/, and until 2026-09-02-art-is-a-flat-library Task 7
+// it did not — it handed LoadMapsDir a bare t.TempDir(), so the case it
+// actually exercised was the NONEXISTENT one its own comment disclaims, and it
+// passed on os.ReadDir's not-exist error rather than on the len(maps) == 0
+// check it names. That went unnoticed because both answers were an error. Task
+// 7 splits the two answers apart, which is what made the degenerate fixture
+// visible; the assertion below is unchanged, and now runs against the directory
+// state the sentence above describes.
 func TestLoadMapsDirEmptyDirIsBootError(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadMapsDir(dir); err == nil {
 		t.Fatal("an empty maps dir loaded with zero maps and no error")
 	}
@@ -516,27 +547,21 @@ func keys[T any](m map[string]T) []string {
 	return out
 }
 
-// writeShrineMap writes a minimal but VALID map+pack pair (the spec §4.2
-// worked example, trimmed) as maps/<id>.json and packs/mossy-keep/pack.json
-// under dir — Task 3's decoupled layout. id names the map FILE (a map's
-// filename IS its id, per the refusal this file pins above); the pack
-// directory's own name need not match pack.ID — only pack.json's own "id"
-// field does, and loadMapsDir keys packs by that field, never by directory
-// name (mirroring loadAdventuresDir's own dirOf tracking).
+// writeShrineMap writes a minimal but VALID map as maps/<id>.json under dir —
+// Task 3's flat layout. id names the map FILE, and a map's filename IS its id
+// per the refusal this file pins above.
+//
+// It wrote a packs/mossy-keep/pack.json beside it until
+// 2026-09-02-art-is-a-flat-library Task 7. The override is kept and still names
+// wood-planks-split-3: since Task 3 an override naming art that is not
+// installed costs that square its picture and one warning rather than the map
+// (design spec §4), so this fixture exercises the degrade path on purpose
+// rather than by omission.
 func writeShrineMap(t *testing.T, dir, id string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, "maps"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "packs", "mossy-keep"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "packs", "mossy-keep", "pack.json"), `{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
-		           "kind":"floor", "material":"wood"}]
-	}`)
 	writeFile(t, filepath.Join(dir, "maps", id+".json"), `{
 		"format_version": 1,
 		"id": "`+id+`", "name": "Obsidian Shrine",

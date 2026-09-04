@@ -10,22 +10,36 @@ import (
 // REPRODUCIBILITY is this generator's load-bearing property, and these tests
 // are what make it checkable rather than merely claimed.
 //
-// The packs under campaigns/example/packs/cellar-basics and
-// client/public/std-pack are committed art, and committed art drifts from
-// its source silently: somebody retouches a PNG, or edits a description in
-// pack.json, and from then on the generator and the repository disagree
+// The art under client/public/std-pack is committed, and committed art drifts
+// from its source silently: somebody retouches a PNG, or edits a description
+// in a manifest, and from then on the generator and the repository disagree
 // with nobody noticing. The art was generated rather than taken from a
 // map-building tool whose presets carry no stated licence, and that
 // licensing argument only holds while the committed bytes really are this
 // program's output. A generator nobody re-runs is a generator nobody can
 // trust.
+//
+// THE CELLAR HALF OF THIS CHECK IS CURRENTLY UNPINNED, and that is a real gap
+// with an owner rather than a decision. campaigns/example/packs/cellar-basics
+// was the OTHER committed output, and 2026-09-02-art-is-a-flat-library Task 7
+// deleted it with the pack format itself — its bytes now exist only as this
+// generator's output, reproducible from the fixed seed but compared against
+// nothing. Task 8 of that plan rewrites this generator to emit the flat art/
+// layout and commits campaigns/example/art/; it must add that directory back to
+// the pairs below, or the licensing argument above holds for one of the two
+// shipped art sets and not the other.
+//
+// WHAT IS STILL PINNED FOR THE CELLAR ART, so the gap is exactly one property
+// wide: TestRunningTwiceEmitsIdenticalBytes proves the generator is
+// deterministic for BOTH halves (it compares two temp-dir runs, needing nothing
+// committed), and TestEveryManifestEntryNamesArtThatWasActuallyWritten proves
+// every cellar entry names a file that was really written. What is gone is
+// "the committed bytes ARE this program's output", which is the half that
+// needs a committed artifact to be true of.
 
-const (
-	committedCellar = "../../campaigns/example/packs/cellar-basics"
-	committedStd    = "../../client/public/std-pack"
-)
+const committedStd = "../../client/public/std-pack"
 
-func TestGeneratorReproducesBothCommittedPacksByteForByte(t *testing.T) {
+func TestGeneratorReproducesTheCommittedStandardPackByteForByte(t *testing.T) {
 	gotCellar, gotStd := t.TempDir(), t.TempDir()
 	cellar, std := generate(gotCellar, gotStd)
 	if len(cellar.Tiles) == 0 || len(cellar.Objects) == 0 || len(std.Tiles) == 0 {
@@ -34,7 +48,6 @@ func TestGeneratorReproducesBothCommittedPacksByteForByte(t *testing.T) {
 	}
 
 	for _, pair := range []struct{ name, committed, got string }{
-		{"cellar", committedCellar, gotCellar},
 		{"standard", committedStd, gotStd},
 	} {
 		t.Run(pair.name, func(t *testing.T) {

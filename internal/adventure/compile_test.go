@@ -188,7 +188,10 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 // §4.3) — adventure, which already may depend on mapdef, is the one
 // direction that needs no arch-lint exception to host a genuine two-path
 // test. It is also not two calls into the same helper: mapdef.Compile
-// (called via mapdef.Load+LoadPack) and adventure.Compile (called via
+// (called via mapdef.Load, then Compile against the art directory — it read
+// "mapdef.Load+LoadPack" until 2026-09-02-art-is-a-flat-library Task 7 deleted
+// that loader, which contradicted this file's own fixture doc below) and
+// adventure.Compile (called via
 // adventure.Load) are two independently-invoked public entry points that
 // happen to share ONE construction site inside (mapdef.BuildSceneCreated,
 // internal/mapdef/compile.go) — this test is what proves that sharing is

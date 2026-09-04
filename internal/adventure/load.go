@@ -121,9 +121,35 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		return nil, fmt.Errorf("adventure: art dir %s: %w", artDir, openErr)
 	}
 
-	pack, err := loadEmbeddedPack(dir)
-	if err != nil {
-		return nil, err
+	// AN ADVENTURE THAT STILL SHIPS A PACK IS REFUSED, by name, pointing at
+	// art/ — the same answer mapdef.Load gives a map that declares "pack"
+	// (2026-09-02-art-is-a-flat-library Task 5, design spec §7: "There is no
+	// compatibility layer, and none is added later"). Task 7 of that plan
+	// deleted mapdef.LoadPack and with it loadEmbeddedPack, which used to read
+	// this file; ignoring it instead would load the bundle, draw every
+	// overridden square plain, and say nothing about the art the author
+	// shipped.
+	//
+	// ONLY A STATTABLE pack.json IS REFUSED. Any other stat error means there
+	// is no manifest at that path — tiles/ absent, or tiles/ itself a plain
+	// file — and nothing was declared, so there is nothing to lose and nothing
+	// to say. A tiles/ directory with no pack.json in it has always been legal
+	// and stays so.
+	if _, statErr := os.Stat(filepath.Join(dir, "tiles", "pack.json")); statErr == nil {
+		return nil, fmt.Errorf("adventure: %s: packs no longer exist and this bundle still ships one "+
+			"(tiles/pack.json). An adventure's art now lives in its own flat art/ directory. "+
+			"Move the pack's pictures into %s and delete tiles/, and note that this is a RENAME, "+
+			"not a copy: there is no manifest any more, so a picture's FILENAME STEM is its art "+
+			"id, and it must be exactly the id your scenes already name (pack.json's \"name\", not "+
+			"its \"file\") in kebab-case — masonry_1.png becomes masonry-1.png. Beside each TILE "+
+			"picture write a sidecar art/<id>.json carrying its kind and material; object art needs "+
+			"none. A DOOR IS THE EXCEPTION and has no <id>.png at all: it keeps TWO pictures, named "+
+			"inside its own sidecar by the \"open\" and \"closed\" fields (cellar-door.json naming "+
+			"cellar-door-open.png and cellar-door-closed.png), and a door sidecar declaring only "+
+			"kind and material is REFUSED rather than degraded. The names inside your scenes do not "+
+			"change. A picture whose stem is not the id, or tile art with no sidecar, resolves to "+
+			"nothing and draws plain",
+			dir, filepath.Join(dir, "art"))
 	}
 
 	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs, artDir)
@@ -148,42 +174,9 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		Scenes:           scenes,
 		Actors:           actors,
 		Notes:            notes,
-		Pack:             pack,
 		ArtDir:           artDir,
 		GuidePath:        filepath.Join(dir, "guide.md"),
 	}, nil
-}
-
-// loadEmbeddedPack loads dir/tiles/pack.json if present — mirrors a
-// standalone map's own art-pack directory convention (maps-as-geometry
-// implementation plan, Task 10: "maps/cellar/tiles/pack.json"), embedded
-// rather than referenced by id because the adventure format is
-// self-contained (adventure-format spec §2.2: "No bestiary format" — shared
-// content libraries were rejected). Absence is legal and the common case.
-//
-// NOTHING RESOLVES AGAINST THE RESULT ANY MORE. Since
-// 2026-09-02-art-is-a-flat-library Task 3 a scene's art comes from
-// Adventure.ArtDir (dir/art) through internal/artlib, and this pack is loaded
-// only so that a malformed tiles/pack.json is still refused at boot rather
-// than silently ignored while the format is mid-removal. Task 7 of that plan
-// deletes this function and replaces the fixtures it reads.
-func loadEmbeddedPack(dir string) (*mapdef.Pack, error) {
-	packDir := filepath.Join(dir, "tiles")
-	if _, err := os.Stat(filepath.Join(packDir, "pack.json")); err != nil {
-		if os.IsNotExist(err) {
-			// (nil, nil) is the correct, intentional result here — not the
-			// ambiguous API smell nilnil normally catches: this is an
-			// unexported helper with exactly one caller (Load, immediately
-			// above), which stores the result straight into Adventure.Pack
-			// and documents nil as a legal, expected value. There is no
-			// caller anywhere who could mistake "no error" for "safe to
-			// dereference".
-			//nolint:nilnil
-			return nil, nil
-		}
-		return nil, fmt.Errorf("adventure: %s: %w", packDir, err)
-	}
-	return mapdef.LoadPack(packDir)
 }
 
 // --- adventure.json ---
@@ -358,9 +351,12 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 
 // sceneJSON mirrors mapdef's own mapJSON shape for Tiles/Overrides/Objects
 // (maps-as-geometry spec §4.1) — a scene IS a map (spec §4.3) — so the two
-// formats decode identically field-for-field; only Pack is absent (an
-// adventure's art pack is embedded once for the whole adventure, not named
-// per scene — see load.go's loadEmbeddedPack doc comment).
+// formats decode identically field-for-field, with one deliberate difference:
+// a scene has no "pack" key at all, where mapJSON keeps one solely so a map
+// declaring it can be refused by name. A scene never needed one — an
+// adventure's art was embedded once for the whole bundle, never named per
+// scene — so there is no per-scene declaration to refuse. The bundle-level
+// refusal is in Load above.
 type sceneJSON struct {
 	ID         string              `json:"id"`
 	Name       string              `json:"name"`
@@ -392,8 +388,10 @@ type placementJSON struct {
 // its own refusal (CheckOverridesRequireTiles — an override names art for a
 // square whose nature tiles declares, so there is nothing to attach it to
 // with no tiles present). Also checked: that every square actually RESOLVES
-// against pack (below — bounds alone is not enough: an override naming an
-// art the pack doesn't define is a shape-valid, content-invalid scene),
+// against the adventure's own art/ (below — bounds alone is not enough: an
+// override naming art the bundle does not ship is a shape-valid,
+// content-incomplete scene, and since 2026-09-02-art-is-a-flat-library Task 3
+// that costs the square its picture and a warning rather than the scene),
 // each placement's actor reference against actorIDs, each placement's
 // coordinates against its own scene's grid, scene-id/token-id uniqueness
 // WITHIN the adventure (token ids are unique across ALL scenes, not just

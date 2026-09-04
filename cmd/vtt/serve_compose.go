@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -95,23 +94,22 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // with nothing installed (design spec §4, "Install, then load"), and
 // treating that as a boot failure would stop `vtt client run`'s
 // self-contained throwaway campaign (harness_boot.go) from ever starting —
-// so it is treated exactly like the old mapsDir=="" case: a nil/empty
-// gateway.Server.maps, GET /api/maps answering 200 with an empty list and
-// GET /api/packs/{pack}/{file} always 404ing. campaignPath/maps PRESENT
-// (even placed there by nothing more than an empty mkdir) is loaded and
-// validated in full via loadMapsDir (maps.go; layout changed by Task 3 of
-// the 2026-09-01 create_scene-leaves plan — maps are flat files, packs are
-// a sibling tree) — fail loud here, at boot, on any single map's failure,
-// an override naming art that is installed and cannot be read, or an
-// existing-but-empty maps/ (the same "fail loud, never at the table" posture
-// as adventuresDir above), closing both handles before returning. An override
-// naming art that is simply NOT installed is not a boot failure since
-// 2026-09-02-art-is-a-flat-library Task 3: it degrades that one square and
-// warns (spec §4).
+// so it loads to an empty map set and GET /api/maps answers 200 with an empty
+// list. campaignPath/maps PRESENT (even placed there by nothing more than an
+// empty mkdir) is loaded and validated in full — fail loud here, at boot, on
+// any single map's failure, an override naming art that is installed and cannot
+// be read, or an existing-but-empty maps/ (the same "fail loud, never at the
+// table" posture as adventuresDir above), closing both handles before
+// returning. An override naming art that is simply NOT installed is not a boot
+// failure since 2026-09-02-art-is-a-flat-library Task 3: it degrades that one
+// square and warns (spec §4). loadMapsDir (maps.go) makes all of those calls,
+// and since Task 7 of that plan it is called UNCONDITIONALLY — the
+// os.Stat(campaignPath/maps) guard that used to stand in front of it is gone
+// with the sibling packs/ tree, the pack set and GET /api/packs/{pack}/{file}.
+// Nothing serves art bytes until that plan's Task 6 builds GET /api/art/{file}.
 //
-// campaignPath/art IS CHECKED AND WIRED HERE, unconditionally, before the maps
-// guard — see the call site for why "unconditionally" is the whole of it. THE
-// THREE STEPS HAVE THREE DIFFERENT SEVERITIES and that is the substance of it
+// campaignPath/art IS CHECKED AND WIRED HERE, unconditionally. THE THREE STEPS
+// HAVE THREE DIFFERENT SEVERITIES and that is the substance of it
 // (2026-09-02-art-is-a-flat-library Task 4):
 //
 //   - artRootIsOpenable REFUSES the boot. art/ present and unopenable is every
@@ -193,14 +191,15 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		gw = gw.WithAdventures(advs).WithAdventureGuides(guides)
 	}
 
-	// EVERYTHING ABOUT art/ HAPPENS HERE, BEFORE the maps guard below and
-	// OUTSIDE it, for the reason WithMapsDir is outside it: a campaign with art
+	// EVERYTHING ABOUT art/ HAPPENS HERE, unconditionally: a campaign with art
 	// and no map yet is the improvisation case this whole line of work exists
 	// for, and anything that only runs when maps/ happens to exist is the
-	// boot-order defect of design spec §1 rebuilt in a new directory. All three
-	// steps below are inside that rule — the root check, the walk, and the
-	// wiring — and moving any of them under the os.Stat(mapsDir) guard is
-	// caught by a test (cmd/vtt's
+	// boot-order defect of design spec §1 rebuilt in a new directory. There is
+	// no os.Stat(mapsDir) guard left to be outside of — Task 7 deleted it once
+	// loadMapsDir stopped failing on an absent maps/ — but the rule it forced
+	// these three steps to obey is the rule regardless of what the code around
+	// them looks like on any given day, and putting any of them behind a
+	// condition on some OTHER directory is caught by a test (cmd/vtt's
 	// TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists,
 	// TestEveryArtProblemIsReportedAtBootAndTheServerStartsAnyway, and
 	// TestArtInstalledAfterBootIsFoundWithoutARestart — each of which has a
@@ -264,22 +263,27 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	// each unresolved reference costs one warning rather than the map (§4).
 	gw = gw.WithArtDir(artDir)
 
-	// campaignPath/maps ABSENT means nothing has been installed yet (see
-	// this function's own doc comment above) — skip loading entirely,
-	// exactly like the old mapsDir=="" case. Any OTHER Stat failure
-	// (permissions, a plain file sitting where maps/ should be) falls
-	// through to loadMapsDir so ITS error surfaces, rather than being
-	// silently swallowed here as "no maps".
+	// UNCONDITIONALLY, with no guard on campaignPath/maps existing: loadMapsDir
+	// answers "nothing installed yet" for an absent maps/ itself, and answers a
+	// boot error for every other read failure — permissions, a plain file
+	// sitting where maps/ belongs, an existing-but-empty maps/ (art-is-a-flat-
+	// library Task 7; see loadMapsDir's own doc comment).
+	//
+	// THE GUARD THAT USED TO BE HERE was an os.Stat(mapsDir), and its only
+	// reason was that loadMapsDir failed on a missing directory. It was also
+	// this sub-project's own defect in miniature — a check on one directory
+	// deciding whether another one gets loaded (design spec §1) — and it is why
+	// the three art steps above had to be written OUTSIDE it and pinned by
+	// tests that boot with no maps/ at all. With the walk tolerant, there is
+	// nothing left for it to decide.
 	mapsDir := filepath.Join(campaignPath, "maps")
-	if _, statErr := os.Stat(mapsDir); statErr == nil || !os.IsNotExist(statErr) {
-		maps, packs, packFS, err := loadMapsDir(campaignPath)
-		if err != nil {
-			_ = ids.Close() // best-effort; the compose error below is what matters
-			_ = c.Close()   // best-effort; the compose error below is what matters
-			return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", campaignPath, err)
-		}
-		gw = gw.WithMaps(maps, packs).WithPackFiles(packFS)
+	maps, err := loadMapsDir(campaignPath)
+	if err != nil {
+		_ = ids.Close() // best-effort; the compose error below is what matters
+		_ = c.Close()   // best-effort; the compose error below is what matters
+		return nil, nil, fmt.Errorf("vtt serve: load maps %s: %w", campaignPath, err)
 	}
+	gw = gw.WithMaps(maps)
 	// UNCONDITIONALLY, outside the boot-load guard above: the maps
 	// directory is wired whether or not it exists yet, because the case
 	// this sub-project exists for is precisely the one where it does not

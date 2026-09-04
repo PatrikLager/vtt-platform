@@ -28,72 +28,95 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// --- /api/maps and /api/packs/{pack}/{file} (maps-as-geometry Task 7) -----
+// --- /api/maps (maps-as-geometry Task 7) ----------------------------------
 //
-// Both routes are open to EVERY role, unlike the adventure guide (DM/agent
-// only — DM secrets) or the join link (admission control): a map's geometry
-// and a pack's art carry neither. Spec §7 states this plainly — "everyone
-// still sees the whole map, no filtering in this arc" — so the gate here is
-// simply s.authed, the same shape /api/ruleset and the /api/adventures
-// LIST already use.
+// Open to EVERY role, unlike the adventure guide (DM/agent only — DM secrets)
+// or the join link (admission control): a map's geometry carries neither. Spec
+// §7 states this plainly — "everyone still sees the whole map, no filtering in
+// this arc" — so the gate here is simply s.authed, the same shape /api/ruleset
+// and the /api/adventures LIST already use.
 //
-// CONTENT TYPE AND TRUST BOUNDARY (decided here, not left implicit — and
-// corrected once already by review, see the note below on what changed).
+// --- THE RULING THIS FILE'S RAW-BYTE ROUTE WAS BUILT ON, kept because the
+// route that inherits it has not been built yet -----------------------------
 //
-// handlePackFile does NOT let Content-Type be inferred from the file the
-// way server.go's WithStatic route does for the client bundle
-// (http.FileServerFS's extension/sniffing inference). Instead it serves
-// under a CLOSED ALLOWLIST of genuine tile-art extensions
-// (packFileContentTypes below) with their real Content-Type and
-// X-Content-Type-Options: nosniff; anything not on that list is served as
-// application/octet-stream with Content-Disposition: attachment (still
-// nosniff), so a browser navigating directly to it downloads rather than
-// executes it, whatever it turns out to be.
+// GET /api/packs/{pack}/{file} served raw bytes out of an operator-installed
+// pack directory. 2026-09-02-art-is-a-flat-library Task 7 deleted it with the
+// pack, and Task 6 of that plan builds GET /api/art/{file} over the campaign's
+// one flat art/ directory — the SAME problem, one directory over: a route
+// handing a browser bytes that this process did not author. Everything below
+// was decided here, corrected once by review, and is written down rather than
+// deleted so the next route does not rediscover it by shipping the hole first.
+//
+// NEVER LET Content-Type BE INFERRED the way server.go's WithStatic route does
+// for the client bundle (http.FileServerFS's extension/sniffing inference).
+// Serve under a CLOSED ALLOWLIST of genuine raster tile-art extensions with
+// their real Content-Type and X-Content-Type-Options: nosniff; serve anything
+// NOT on that list as application/octet-stream with Content-Disposition:
+// attachment (still nosniff), so a browser navigating directly to it downloads
+// rather than executes it, whatever it turns out to be. Set both headers BEFORE
+// calling http.ServeFileFS: net/http's serveContent only infers a type when
+// Content-Type is still unset at that point, so setting it first is what
+// suppresses the inference rather than racing it.
 //
 // WHY THIS IS NOT THE SAME CALL AS THE STATIC BUNDLE, even though both are
-// "serve a directory of files this process did not author": the static
-// bundle is FIRST-PARTY — built by this repo's own `task build:client`,
-// committed, embedded into the binary. A pack is directory content an
-// OPERATOR installs, potentially from a third party (spec §4.2 states a
-// pack carries the same trust as an adventure's guide.md — but a guide is
-// hand-authored markdown a browser never executes; a pack is more likely to
-// be community content, and unlike a guide, this route serves it as raw,
-// content-type-labelled bytes rather than JSON-wrapped text). An
-// operator-installed pack containing an .html or .js file, served with a
-// browser-executable Content-Type at a same-origin URL, would let script
-// read this client's own Bearer token — it is stored in localStorage
-// (client/src/auth.ts) and sent on every /api/* request (client/src/
-// metadata.ts) — and call any authenticated route as that participant.
-// Markdown can never do that; same-origin JavaScript can. That is the
-// actual difference in KIND review found and this comment previously
-// missed: "same trust as guide.md" does not mean "safe to serve as
-// browser-executable content," because guide.md was never executable to
-// begin with.
+// "serve a directory of files this process did not author": the static bundle
+// is FIRST-PARTY — built by this repo's own `task build:client`, committed,
+// embedded into the binary. Art is directory content an OPERATOR installs,
+// potentially from a third party (maps-as-geometry spec §4.2 said a pack
+// carried the same trust as an adventure's guide.md — but a guide is
+// hand-authored markdown a browser never executes, and this kind of route
+// serves raw content-type-labelled bytes rather than JSON-wrapped text). An
+// installed file that is .html or .js, served with a browser-executable
+// Content-Type at a same-origin URL, would let script read this client's own
+// Bearer token — it is stored in localStorage (client/src/auth.ts) and sent on
+// every /api/* request (client/src/metadata.ts) — and call any authenticated
+// route as that participant. Markdown can never do that; same-origin JavaScript
+// can. That is the actual difference in KIND review found and this comment
+// previously missed: "same trust as guide.md" does not mean "safe to serve as
+// browser-executable content", because guide.md was never executable to begin
+// with.
 //
-// SVG is deliberately treated as UNSAFE and left OFF the allowlist (forced
-// down the attachment/octet-stream path) even though it is nominally an
-// image format some pack authors might reach for: an SVG document can
-// embed <script>, so "it has an image extension" is not the same claim as
-// "a browser cannot execute anything in it" the way it is for PNG/JPEG/GIF/
-// WebP, which carry no script-execution surface in any current browser.
+// SVG IS UNSAFE and belongs OFF the allowlist (forced down the
+// attachment/octet-stream path) even though it is nominally an image format an
+// author might reach for: an SVG document can embed <script>, so "it has an
+// image extension" is not the same claim as "a browser cannot execute anything
+// in it" the way it is for PNG/JPEG/GIF/WebP, which carry no script-execution
+// surface in any current browser.
 //
-// This is layered ON TOP of, not instead of, the filesystem-level boundary
-// (an fs.FS built via os.OpenRoot cannot be walked outside the directory it
-// was rooted at, by construction or by symlink — see WithPackFiles' doc
-// comment) and the authentication boundary (every pack/map route requires
-// the same Bearer header every other /api route does). A hostile pack
-// directory can still make ITS OWN images ugly, wrong, or offensive — that
-// remains the operator's call to vet, same as an adventure's content — but
-// it can no longer turn into script running in this origin.
+// ALL OF THAT IS LAYERED ON TOP OF, NOT INSTEAD OF, two other boundaries, and
+// each was proven separately because a fix for one says nothing about the
+// other:
+//
+//  1. The filesystem boundary. An fs.FS built via os.OpenRoot(dir).FS()
+//     (go1.24+) cannot be walked outside dir, by ".." or by symlink; os.DirFS
+//     CANNOT make that claim and its own doc comment says so ("does not stop
+//     the access any more than using os.Open does"). This distinction was found
+//     missing by review after DirFS shipped first, and internal/artlib already
+//     opens every file through os.OpenRoot for the same reason
+//     (TestLookupWillNotFollowASymlinkOutOfTheArtDirectory).
+//  2. The authentication boundary. Every /api route requires the same Bearer
+//     header, and this kind of route is no exception — operator-installed
+//     content is trusted about what an AUTHENTICATED caller may read, not about
+//     skipping authentication the way /join and the static bundle deliberately
+//     do.
+//
+// A hostile art directory can still make ITS OWN pictures ugly, wrong or
+// offensive — that remains the operator's call to vet, as an adventure's
+// content is — but it cannot turn into script running in this origin.
+//
+// ONE THING IS NEW FOR art/ AND HAS NO PACK PRECEDENT: art/ is FLAT (that
+// plan's design spec §3.1/§3.3), and os.OpenRoot CONFINES without FLATTENING —
+// "art/pack-ish/x.png" is legitimately inside the root and fs.ValidPath rejects
+// only "..". net/http's single-segment {file} wildcard not matching across "/"
+// is what the pack route relied on; Task 6 must keep that, or check the name,
+// and test it directly.
 
 // adventureGuideRoles mirrors the dm/agent shape load_adventure carries
 // (authz.go) — adventure guides hold DM secrets (adventure/format.go), so a
@@ -480,9 +503,11 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 // what restores one. Believing otherwise would let Task 6 ship a server half,
 // see no change, and think it had closed a regression that was never open.
 //
-// THE REAL LOSS IS THE ROUTE, NOT THE NUMBER. A pack id was the only thing
-// this endpoint ever gave a client to fetch art WITH, so with it gone the
-// client cannot fetch a campaign's art at all until GET /api/art/{file} exists
+// THE REAL LOSS IS THE ROUTE, NOT THE NUMBER, and as of Task 7 the route is
+// literally gone rather than merely unaddressable. A pack id was the only thing
+// this endpoint ever gave a client to fetch art WITH, and
+// GET /api/packs/{pack}/{file} was deleted with the pack itself, so the client
+// cannot fetch a campaign's art at all until GET /api/art/{file} exists
 // (spec §6, Task 6). Nothing shows yet, because no shipped map's art resolves
 // and every TileRef.art is empty, so scene-plan.ts's tileImage falls back to a
 // "std:<kind>/<material>" key the client's own bundled baseline pack answers.
@@ -525,86 +550,4 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	s.mapsMu.RUnlock()
 	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })
 	writeJSON(w, map[string]any{"maps": out})
-}
-
-// --- /api/packs/{pack}/{file} -------------------------------------------
-
-// handlePackFile serves one raw file out of a pack's own directory
-// (maps-as-geometry Task 7), open to every role. Escape is refused by the
-// fs.FS s.packFS[pack] IS, not by anything this handler checks itself — two
-// independent mechanisms, both load-bearing (packfile_internal_test.go
-// proves each separately, because a fix for one says nothing about the
-// other):
-//
-//  1. A literal ".." in the requested name: fs.FS's own contract
-//     (fs.ValidPath) refuses any name containing a ".." element, so
-//     http.ServeFileFS's underlying fsys.Open call rejects it regardless of
-//     what this handler does or forgets to do. (http.ServeFileFS also has
-//     its own separate precaution against a dirty r.URL.Path, and
-//     net/http's ServeMux redirects a dirty path before routing even gets
-//     here — both incidental, neither one is what this handler depends on.)
-//  2. A file that is, on disk, a symlink pointing OUTSIDE the pack
-//     directory — no ".." anywhere in the request, so mechanism 1 does not
-//     apply. This one is NOT fs.FS's contract in general (os.DirFS,
-//     otherwise a valid fs.FS, explicitly does not stop it — see its own
-//     doc comment) — it depends on s.packFS[pack] specifically being built
-//     from os.OpenRoot(dir).FS(), which cmd/vtt does (see WithPackFiles'
-//     doc comment for the full reasoning; this was found missing by
-//     review, after DirFS shipped first).
-//
-// An unknown pack id 404s before ever touching the filesystem, rather than
-// serving a directory listing or leaking which packs exist through a
-// different status code.
-//
-// Content-Type is NOT inferred (this section's own package-doc comment
-// explains why): the extension of the requested name is looked up against
-// packFileContentTypes, a closed allowlist. A hit gets served with its real
-// Content-Type, inline. A miss — including pack.json itself, which is
-// structured data a client fetches programmatically rather than tile art a
-// browser renders, and including .svg, deliberately excluded from the
-// allowlist — gets application/octet-stream and Content-Disposition:
-// attachment, so a browser navigating to it downloads rather than executes
-// whatever it turns out to be. X-Content-Type-Options: nosniff is set on
-// EVERY response from this handler, allowlisted or not, so a browser never
-// second-guesses either header.
-//
-// Content-Type/Content-Disposition are set BEFORE calling http.ServeFileFS
-// deliberately: net/http's serveContent only infers a type when the
-// response's Content-Type header is still unset at that point, so setting
-// it here first is what suppresses ServeFileFS's own inference rather than
-// racing it.
-func (s *Server) handlePackFile(w http.ResponseWriter, r *http.Request) {
-	if s.authed(w, r) == nil {
-		return
-	}
-	fsys, ok := s.packFS[r.PathValue("pack")]
-	if !ok {
-		http.Error(w, "gateway: unknown pack", http.StatusNotFound)
-		return
-	}
-
-	name := r.PathValue("file")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if ct, ok := packFileContentTypes[strings.ToLower(filepath.Ext(name))]; ok {
-		w.Header().Set("Content-Type", ct)
-	} else {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(name)))
-	}
-	http.ServeFileFS(w, r, fsys, name)
-}
-
-// packFileContentTypes is the closed allowlist handlePackFile serves WITH
-// their real Content-Type — genuine tile-art raster formats only, all of
-// them carrying no script-execution surface in any current browser. .svg
-// is deliberately NOT here (this section's own package-doc comment
-// explains why) despite nominally being an image format: it can embed
-// <script>, so it is routed down the octet-stream/attachment path with
-// everything else this map does not name.
-var packFileContentTypes = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".webp": "image/webp",
 }

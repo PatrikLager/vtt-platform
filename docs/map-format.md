@@ -9,6 +9,61 @@ If you take one sentence away, take this one: **art never decides nature.**
 A wall drawn to look like floorboards is still a wall. Everything below
 follows from that.
 
+> **CORRECTION, 2026-09-04 — everything this document says about PACKS and
+> about a map's own DIRECTORY is out of date, and following it will produce
+> art the platform does not load.** Recorded here rather than rewritten,
+> because the replacement's worked example does not exist yet.
+>
+> Four things changed under it:
+>
+> 1. **A map is a flat FILE, not a directory.** `<campaign>/maps/<id>.json`,
+>    and the filename IS the id (2026-09-01-create-scene-leaves Task 3/6).
+>    §0's `maps/cellar/map.json` layout, and everything about a `tiles/`
+>    directory beside it, is gone.
+> 2. **Packs no longer exist anywhere in the platform**
+>    (`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`).
+>    No `pack.json` is read by anything, no route serves one, and a map file
+>    carrying a top-level `"pack"` is REFUSED at load, by name.
+> 3. **Art is one flat `<campaign>/art/` directory**, and a picture's
+>    FILENAME STEM is its id, in kebab-case. `overrides` values and object
+>    `art` names do not change — they were already art ids — but the
+>    PICTURE FILES must be renamed so each stem is exactly the id that names
+>    it (`masonry_1.png` → `masonry-1.png`), and each TILE picture needs a
+>    sidecar `art/<id>.json` beside it carrying its kind and material.
+>    Object art needs no sidecar. A name that resolves to nothing costs its
+>    square's picture and one warning, never the map.
+> 4. **A DOOR IS THE ONE EXCEPTION to "the stem is the id", and getting it
+>    wrong refuses the map rather than degrading one square.** A door has TWO
+>    pictures and no third: `cellar-door.json` names `cellar-door-open.png`
+>    and `cellar-door-closed.png` through its own `open` and `closed` fields,
+>    and **`cellar-door.png` must not exist**. A door sidecar that declares
+>    only kind and material is REFUSED — `a door declares both "open" and
+>    "closed"` — and `mapdef.Resolve` turns that into a refused map. The
+>    demo campaign ships a door (`cellar-door`), so this is the ordinary
+>    case, not a corner.
+>
+> **Section by section, so you know what to trust:**
+>
+> | Section | Status |
+> |---|---|
+> | §1, §2, §3, §6, §9, §11, §12 | correct, unaffected |
+> | §7 | the door RULE is correct — one tile name, two pictures, every door starts closed. **Point 2's mechanism is wrong**: it says a *pack's* door entry "(§5.1)" supplies `file_closed`/`file_open`. There is no pack, and there has never been a §5.1. A door's two pictures are named by its own sidecar's `open` and `closed` fields |
+> | §10 | correct, including the `"pack"` refusal |
+> | §0 | **wrong** — the directory layout and the `tiles/` pack |
+> | §4 | values correct; **"resolution has exactly two levels … first against the map's own pack" is wrong** — there is one flat `art/` and any map may name any piece |
+> | §5 | object shape correct; **"you cannot place a single object without shipping a pack of your own" is wrong** — install the picture into `art/`, no manifest and no sidecar needed for object art |
+> | §8 | first third (what a pack IS, where it lives, how it is served) **wrong**; the paragraphs from *"A map file may no longer name a pack"* to *"…refused exactly like any other `pack`"* are **correct, and the door paragraph among them is the part that matters for the demo campaign**; the manifest example and its field tables after them are **wrong** |
+>
+> The full authoring shape for `art/` lands with `vtt art install` and the
+> migrated `campaigns/example/art/` (Tasks 6 and 8 of
+> `docs/superpowers/plans/2026-09-02-art-is-a-flat-library.md`), and this
+> document is rewritten there against a worked example rather than against a
+> design. Until then: author `tiles`, `overrides`, `objects` and `placements`
+> as §2, §3, §6 and §9 describe; read §4, §5 and §7 for SHAPE and RULES only,
+> never for where a picture comes from; put the map at
+> `<campaign>/maps/<id>.json`; write no `"pack"` line; and expect overridden
+> squares to draw from the standard vocabulary until the art directory exists.
+
 ## 0. Where the file goes, and what it is called
 
 A map is a **directory**, not a loose file. The server is pointed at a maps
@@ -326,8 +381,23 @@ silently drawing the wrong pictures.
 Art now resolves by FILENAME inside one flat `art/` directory per campaign, and
 any map may name any installed piece — so there is no container left to
 mismatch. **Your `overrides` values and object `art` names do not change**:
-they were already the art ids. Removing the `"pack"` line and installing the
-pictures into the campaign's `art/` is the whole migration.
+they were already the art ids. Removing the `"pack"` line and moving the
+pictures into the campaign's `art/` is most of the migration — but the move is a
+RENAME: with no manifest left, a picture's filename stem IS its art id, so
+`masonry_1.png` has to become `masonry-1.png` (the name your `overrides` already
+use, in kebab-case), and each TILE picture needs a sidecar `art/<id>.json`
+beside it declaring its kind and material. Object art needs no sidecar. A
+picture whose stem is not the id, or tile art with no sidecar, resolves to
+nothing and draws plain.
+
+**A DOOR MIGRATES DIFFERENTLY, and the difference is not cosmetic.** A door
+keeps its two pictures and gains no third: the pack entry's `file_open` and
+`file_closed` become the sidecar's own `open` and `closed` fields, so
+`cellar-door.json` names `cellar-door-open.png` and `cellar-door-closed.png`,
+and **there is no `cellar-door.png`**. Write a door sidecar with only kind and
+material and it is REFUSED, not degraded (`a door declares both "open" and
+"closed"`), and `mapdef.Resolve` turns that refusal into a refused map rather
+than a plain square.
 
 **The standard tile vocabulary (§3) is not a pack and is never named.** It is
 built into the platform, which is why `stone`, `wood-door` and the rest work

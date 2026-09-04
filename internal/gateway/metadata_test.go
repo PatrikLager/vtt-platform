@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -338,7 +336,7 @@ func TestMetadataAdventuresListedForEveryRole(t *testing.T) {
 	}
 }
 
-// TestMetadataRulesetGuideServedWhenLoaded is the ruleset guide's happy path;
+// TestMetadataRulesetGuideServedForEveryRole is the ruleset guide's happy path;
 // unlike an adventure guide it carries no DM secrets and is open to all four
 // roles (the LLM affordance every client may read).
 func TestMetadataRulesetGuideServedForEveryRole(t *testing.T) {
@@ -705,12 +703,46 @@ func TestParticipantsNamesEveryoneAndTheirRole(t *testing.T) {
 	}
 }
 
-// --- maps and packs (maps-as-geometry Task 7) -------------------------
+// --- maps (maps-as-geometry Task 7) -----------------------------------
+//
+// SIX TESTS AND A PACK DIRECTORY STOOD HERE, all of them about
+// GET /api/packs/{pack}/{file}, which 2026-09-02-art-is-a-flat-library Task 7
+// deleted with the pack. Each pinned a property, and every one of those
+// properties belongs to GET /api/art/{file} the day Task 6 of that plan builds
+// it — the ruling itself is written down in metadata.go's own doc section so it
+// is not carried only by tests that no longer exist:
+//
+//   - TestPackImagesAreServedAndUnknownOnesAre404: a real file 200s, an unknown
+//     id 404s, and a traversal over the real round trip does not escape.
+//   - TestPackFileUnknownWithinKnownPackIs404: a known directory, a file it
+//     does not contain — without it, a handler that served a listing or always
+//     200'd would pass the two cases above.
+//   - TestPackFileAllowlistedExtensionGetsItsRealContentType and
+//     TestPackFileUnrecognizedExtensionIsOctetStreamAttachment: the closed
+//     allowlist and the octet-stream/attachment fallback, both with nosniff.
+//   - TestPackFileSVGIsNotServedAsImage: the one deliberate exclusion, because
+//     an SVG can embed <script> and a same-origin script can read this client's
+//     Bearer token out of localStorage.
+//   - TestPackFilesRequireAuth: the Bearer gate. This one IS replaced, by
+//     TestNoPackRouteIsServed below, which is only able to tell a deleted route
+//     from a live one BECAUSE that gate answered 401 before anything else.
+//   - TestPackFilesReadableByEveryRole: spec §7's role breadth. The /api/maps
+//     half of that survives in TestMapsListedForEveryRole below.
+//
+// Two more went with internal/gateway/packfile_internal_test.go, which was the
+// whole file: the ".." refusal isolated from ServeMux's own redirect, and the
+// symlink escape that only os.OpenRoot (never os.DirFS) stops. internal/artlib
+// still pins the symlink half at the LOOKUP layer
+// (TestLookupWillNotFollowASymlinkOutOfTheArtDirectory); nothing pins it at a
+// ROUTE, because there is no route serving bytes any more.
+//
+// NOTHING REGRESSES BY DELETING THEM — the surface they guarded is gone, and
+// no client can fetch campaign art at all until Task 6. What WOULD regress is
+// Task 6 shipping that route without re-deriving this list.
 
-// mapsFixture is deliberately separate from metaFixture: these routes need
-// a REAL pack directory on disk (fs.FS-backed byte serving, traversal
-// defence and content-type inference are the whole point under test), which
-// metaFixture's adventures/ruleset setup has no reason to carry.
+// mapsFixture is deliberately separate from metaFixture: /api/maps needs a
+// server holding real maps, which metaFixture's adventures/ruleset setup has
+// no reason to carry.
 type mapsFixture struct {
 	t   *testing.T
 	srv *httptest.Server
@@ -718,12 +750,16 @@ type mapsFixture struct {
 	dmToken, agentToken, playerToken, spectatorToken string
 }
 
-// newGatewayWithPack builds a server with one map ("shrine") and one REAL
-// pack directory ("mossy-keep") — loaded through mapdef.LoadPack, not a
-// hand-built literal, since the loader (not this test) owns what a valid
-// Pack value looks like — containing pack.json plus one real file,
-// planks_03.png, so a request for it has actual bytes to return.
-func newGatewayWithPack(t *testing.T) *mapsFixture {
+// newGatewayWithMaps builds a server holding one map ("shrine") and four
+// tokens, one per role. It built a REAL pack directory beside it until
+// 2026-09-02-art-is-a-flat-library Task 7; nothing is wired for art now,
+// because nothing serves art bytes until Task 6 of that plan.
+//
+// NO STATIC BUNDLE IS WIRED, and TestNoPackRouteIsServed depends on that:
+// server.go registers http.FileServerFS at "/" only when one is present, so
+// with none, a path no route carries reaches nothing at all and ServeMux
+// answers 404 by itself.
+func newGatewayWithMaps(t *testing.T) *mapsFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
@@ -754,66 +790,19 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
-	packDir := filepath.Join(t.TempDir(), "tiles")
-	if err := os.MkdirAll(packDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3", "file":"planks_03.png",
-		           "kind":"floor", "material":"wood"}]
-	}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packDir, "planks_03.png"),
-		[]byte("stand-in bytes; a real Content-Type is looked up from the allowlist by extension, not from this content"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// An SVG file, deliberately: proves the allowlist EXCLUDES it (this
-	// file's own doc comment on TestPackFileSVGIsNotServedAsImage) rather
-	// than the fixture simply never exercising the case.
-	if err := os.WriteFile(filepath.Join(packDir, "icon.svg"),
-		[]byte("<svg><script>alert(1)</script></svg>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	pack, err := mapdef.LoadPack(packDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// The map names NO pack, because no map can any more: mapdef.Map.Pack was
-	// deleted at Task 5 of 2026-09-02-art-is-a-flat-library and a map file that
-	// declares one is refused (design spec §7). The pack below is still loaded
-	// and still served over GET /api/packs/{pack}/{file} — the raw-file route
-	// never depended on a map naming it, and Task 7 is what deletes it.
 	maps := map[string]*mapdef.Map{
 		"shrine": {ID: "shrine", Name: "Obsidian Shrine", GridW: 3, GridH: 3},
 	}
-	packs := map[string]*mapdef.Pack{"mossy-keep": pack}
-	// os.OpenRoot, matching production (cmd/vtt/maps.go) — NOT os.DirFS; see
-	// WithPackFiles' doc comment for why that distinction is load-bearing
-	// (a symlink escape, found by review, that os.DirFS does not stop).
-	root, err := os.OpenRoot(packDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	packFS := map[string]fs.FS{"mossy-keep": root.FS()}
-
-	srv := gateway.New(c, ids).WithMaps(maps, packs).WithPackFiles(packFS)
+	srv := gateway.New(c, ids).WithMaps(maps)
 	f.srv = httptest.NewServer(srv.Handler())
 	t.Cleanup(f.srv.Close)
 	return f
 }
 
-// get issues a GET authenticated as the fixture's DM (every maps/packs
-// route is open to every role per spec §7's "everyone still sees the whole
-// map" — the role-table tests below cover that breadth explicitly; this
-// helper exists for the tests that are not ABOUT roles).
-func (f *mapsFixture) get(path string) (int, []byte) {
-	return f.getAs(path, f.dmToken)
-}
+// mapsFixture.get is gone, with the pack tests that were its only callers
+// (2026-09-02-art-is-a-flat-library Task 7). It issued a GET as the fixture's
+// DM, for tests that were not ABOUT roles; everything left here is about roles
+// or about a route's absence, and both name their token at the call site.
 
 func (f *mapsFixture) getAs(path, token string) (int, []byte) {
 	f.t.Helper()
@@ -836,180 +825,51 @@ func (f *mapsFixture) getAs(path, token string) (int, []byte) {
 	return resp.StatusCode, body
 }
 
-// TestPackImagesAreServedAndUnknownOnesAre404 is task-7-brief.md's own RED
-// test: a real pack file 200s, an unknown pack 404s, and a traversal
-// attempt over the real HTTP round trip does not escape the pack directory.
+// TestNoPackRouteIsServed asserts an ABSENCE, so it was written before the
+// removal and failed until 2026-09-02-art-is-a-flat-library Task 7 landed it —
+// the same shape client/test/command-surface.test.ts uses for create_scene and
+// for retraction. What it does now is keep the route from coming back.
 //
-// HONEST NOTE on what this assertion actually proves (found while fault-
-// injecting, recorded in task-7-report.md): a literal ".." in the URL never
-// reaches handlePackFile at all here — net/http's own ServeMux redirects
-// any request whose path contains a ".." element to the CLEANED path
-// (verified directly: this exact request 307s to /api/etc/passwd, which
-// matches no route and 404s) BEFORE pattern matching ever runs. So this
-// test is real and worth keeping — a caller must still not observe a 200 —
-// but it does not, by itself, exercise handlePackFile's OWN fs.FS defence;
-// it is caught one layer up, by framework behaviour this package does not
-// own or control. TestHandlePackFileRefusesTraversalEvenWithAPathValueSetDirectly
-// (packfile_internal_test.go) is the assertion that actually isolates and
-// proves the fs.FS-level defence the brief asked for, by handing
-// handlePackFile a traversal string directly, bypassing ServeMux's own
-// path-cleaning entirely.
-func TestPackImagesAreServedAndUnknownOnesAre404(t *testing.T) {
-	f := newGatewayWithPack(t)
-	if code, body := f.get("/api/packs/mossy-keep/planks_03.png"); code != 200 {
-		t.Fatalf("pack image returned %d: %s", code, body)
-	}
-	if code, _ := f.get("/api/packs/mossy-keep/../../etc/passwd"); code == 200 {
-		t.Fatal("path traversal escaped the pack directory")
-	}
-	if code, _ := f.get("/api/packs/no-such-pack/x.png"); code != 404 {
-		t.Fatalf("unknown pack returned %d, want 404", code)
-	}
-}
-
-// TestPackFileUnknownWithinKnownPackIs404 covers the adjacent case the
-// brief's own test does not: a KNOWN pack, but a file name that pack does
-// not contain. Without this, a bug that served the whole packDir listing
-// (or always returned 200) on any request under a valid pack id would slip
-// past the "known pack, known file" and "unknown pack" cases alone.
-func TestPackFileUnknownWithinKnownPackIs404(t *testing.T) {
-	f := newGatewayWithPack(t)
-	if code, body := f.get("/api/packs/mossy-keep/does-not-exist.png"); code != http.StatusNotFound {
-		t.Fatalf("unknown file in a known pack: status = %d, want 404 (body %s)", code, body)
-	}
-}
-
-// getFull issues an authenticated (DM) GET and returns the full response
-// for header inspection; the caller closes the body.
-func (f *mapsFixture) getFull(t *testing.T, path string) *http.Response {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+f.dmToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resp
-}
-
-// TestPackFileAllowlistedExtensionGetsItsRealContentType pins this task's
-// content-type decision (metadata.go's own package-doc section explains the
-// reasoning): a .png is on the closed tile-art allowlist, so it is served
-// as image/png, inline (no Content-Disposition), with nosniff set. This
-// used to be plain extension INFERENCE (http.ServeFileFS/ServeContent, the
-// same mechanism WithStatic uses for the client bundle) — review found that
-// insufficient for third-party pack content and this is the corrected
-// behaviour: an allowlist, not inference, even though the OUTCOME for a
-// .png is unchanged.
-func TestPackFileAllowlistedExtensionGetsItsRealContentType(t *testing.T) {
-	f := newGatewayWithPack(t)
-	resp := f.getFull(t, "/api/packs/mossy-keep/planks_03.png")
-	defer resp.Body.Close()
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "image/png") {
-		t.Errorf("Content-Type = %q, want image/png", ct)
-	}
-	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
-	}
-	if got := resp.Header.Get("Content-Disposition"); got != "" {
-		t.Errorf("Content-Disposition = %q, want empty (allowlisted content serves inline)", got)
-	}
-}
-
-// TestPackFileUnrecognizedExtensionIsOctetStreamAttachment pins the
-// fallback half of the allowlist: pack.json is real, legitimate content
-// this route serves (it sits in the same pack directory as the images,
-// and a client fetching it programmatically does not care about
-// Content-Type or Content-Disposition), but it is not TILE ART, so it gets
-// application/octet-stream + an attachment disposition rather than any
-// inference — proving the fallback is not merely theoretical, since a real,
-// always-present file exercises it.
-func TestPackFileUnrecognizedExtensionIsOctetStreamAttachment(t *testing.T) {
-	f := newGatewayWithPack(t)
-	resp := f.getFull(t, "/api/packs/mossy-keep/pack.json")
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
-		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
-	}
-	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
-	}
-	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
-		t.Errorf("Content-Disposition = %q, want it to contain \"attachment\"", cd)
-	}
-}
-
-// TestPackFileSVGIsNotServedAsImage pins the one deliberate exclusion this
-// task's review specifically asked to be explicit about: SVG can embed
-// <script>, so it does NOT get image/svg+xml or inline serving despite
-// nominally being an image format — it is routed down the SAME
-// octet-stream/attachment fallback as any other unrecognised extension.
-// The fixture's icon.svg literally contains a <script> tag, so this test
-// also proves the response never claims to be inline-renderable image
-// content that a browser might choose to display anyway.
-func TestPackFileSVGIsNotServedAsImage(t *testing.T) {
-	f := newGatewayWithPack(t)
-	resp := f.getFull(t, "/api/packs/mossy-keep/icon.svg")
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	if ct := resp.Header.Get("Content-Type"); ct == "image/svg+xml" || strings.HasPrefix(ct, "image/") {
-		t.Errorf("Content-Type = %q, want NOT an image/* type for .svg", ct)
-	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
-		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
-	}
-	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
-		t.Errorf("Content-Disposition = %q, want it to contain \"attachment\"", cd)
-	}
-}
-
-// TestPackFilesRequireAuth pins that pack files sit behind the SAME Bearer-
-// header gate every other /api route does (metadata.go's package doc:
-// "every route it then calls is authenticated") — an installed pack is
-// operator-trusted content (spec §4.2, "same trust as guide.md"), but that
-// trust is about what an AUTHENTICATED caller may read, not about skipping
-// authentication the way /join and the static bundle deliberately do.
-func TestPackFilesRequireAuth(t *testing.T) {
-	f := newGatewayWithPack(t)
-	if code, _ := f.getAs("/api/packs/mossy-keep/planks_03.png", ""); code != http.StatusUnauthorized {
-		t.Fatalf("no token: status = %d, want 401", code)
-	}
-	if code, _ := f.getAs("/api/packs/mossy-keep/planks_03.png", "garbage"); code != http.StatusUnauthorized {
-		t.Fatalf("bad token: status = %d, want 401", code)
-	}
-}
-
-// TestPackFilesReadableByEveryRole pins spec §7's "everyone still sees the
-// whole map. No filtering in this arc" — unlike an adventure guide (DM/agent
-// only, DM secrets) or the join link (admission control), pack art carries
-// neither, so every role that can authenticate at all can read it.
-func TestPackFilesReadableByEveryRole(t *testing.T) {
-	f := newGatewayWithPack(t)
-	for _, tc := range []struct {
-		role  string
-		token string
-	}{
-		{"dm", f.dmToken},
-		{"agent", f.agentToken},
-		{"player", f.playerToken},
-		{"spectator", f.spectatorToken},
-	} {
-		if code, body := f.getAs("/api/packs/mossy-keep/planks_03.png", tc.token); code != http.StatusOK {
-			t.Errorf("%s: status = %d, want 200 (body %s)", tc.role, code, body)
-		}
+// THE ABSENCE IS ONLY OBSERVABLE WITHOUT A TOKEN, and that is the whole design
+// of this test. Authenticated, a route that does not exist and a route whose
+// pack id is unknown both answer 404, so an authenticated probe would have
+// passed for as long as the route existed. Unauthenticated, the two differ:
+// handlePackFile called s.authed FIRST and answered 401 before looking at any
+// pack (TestPackFilesRequireAuth pinned exactly that, and is the test this one
+// replaces), while net/http's ServeMux answers 404 for a pattern it does not
+// carry. A 401 here means the route is still registered.
+//
+// The fixture wires no static bundle, so there is no "/" catch-all to answer
+// instead — see newGatewayWithMaps.
+//
+// WHAT THIS TEST CANNOT SEE, and it is the more dangerous of the two
+// resurrections (review, 2026-09-04). Its entire signal is
+// 404-rather-than-401, and that signal exists ONLY because handlePackFile
+// gated on s.authed before touching anything. A route brought back WITHOUT an
+// auth gate answers 404 for an unknown pack id exactly as an absent route
+// does, and this test passes. So it catches the route returning in the shape
+// it left in; it does not catch the route returning in a worse one, and it is
+// not a general guard against pack code reappearing in this package.
+//
+// tools/check-no-pack.py (Task 9 of 2026-09-02-art-is-a-flat-library) is the
+// instrument for that — it reads code positions across the whole tree — and
+// internal/mapdef's own TestNoPackTypeOrLoaderRemainsInThisPackage is the
+// package-scoped version of the same idea. This test is deliberately NOT
+// grown into either: what it is for is the one property those two cannot
+// assert, which is what a running server actually answers.
+func TestNoPackRouteIsServed(t *testing.T) {
+	f := newGatewayWithMaps(t)
+	if code, body := f.getAs("/api/packs/mossy-keep/planks_03.png", ""); code != http.StatusNotFound {
+		t.Fatalf("unauthenticated GET /api/packs/{pack}/{file} = %d (body %s), want 404 — "+
+			"401 means the route is still registered and only its auth check answered",
+			code, body)
 	}
 }
 
 // TestMapsListedForEveryRole pins /api/maps' shape and its role breadth
-// (same reasoning as TestPackFilesReadableByEveryRole): id, name and grid
+// (spec §7, "everyone still sees the whole map. No filtering in this arc" —
+// unlike an adventure guide, DM/agent only, or the join link, admission
+// control, a map's geometry carries neither secret): id, name and grid
 // dimensions, AND THE ABSENCE of a pack reference.
 //
 // It said the entry carried "the pack's own name/cellPx a client needs to draw
@@ -1021,7 +881,7 @@ func TestPackFilesReadableByEveryRole(t *testing.T) {
 // cell size in the renderer, and metadata.ts merely declared the field. Task 6
 // of that plan is what gives a campaign-level cellPx its first reader.
 func TestMapsListedForEveryRole(t *testing.T) {
-	f := newGatewayWithPack(t)
+	f := newGatewayWithMaps(t)
 	for _, tc := range []struct {
 		role  string
 		token string

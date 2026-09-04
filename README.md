@@ -10,7 +10,7 @@ rationale.
 ## Running
 
 The `vtt` CLI (`cmd/vtt`) opens one campaign DIRECTORY per invocation — its
-log, and (once installed) its maps and packs — created on first use by
+log, and (once installed) its maps and art — created on first use by
 whichever command touches it first; `invite`, `serve` and `revoke` can run
 against it in any order:
 
@@ -39,19 +39,28 @@ vtt serve --campaign campaign/ --addr :8080 \
 ```
 
 Maps are not a flag: they belong to the campaign itself. Every flat file in
-`<campaign>/maps/` (one `<id>.json` per map, named by its own id) plus every
-pack directory in the sibling `<campaign>/packs/` is loaded and served over
-`GET /api/maps` and `GET /api/packs/{pack}/{file}` — see
-[`docs/map-format.md`](docs/map-format.md) for the format itself, including a
-complete worked example and every standard tile name. A map loads
-independently of any adventure (design spec
+`<campaign>/maps/` (one `<id>.json` per map, named by its own id) is loaded and
+listed over `GET /api/maps` — see [`docs/map-format.md`](docs/map-format.md) for
+the format itself, including a complete worked example and every standard tile
+name. A map loads independently of any adventure (design spec
 `docs/superpowers/specs/2026-08-12-maps-as-geometry-design.md` §4.3): drop a
 file into the campaign's `maps/`, restart, and it is servable.
 [`campaigns/example/`](campaigns/example/) is the platform's own demo
 campaign — one map, `cellar.json`, a small room with real cover (pillars,
-crates, an interior wall and a door), generated art included
-(`tools/genmappack`, see that package's own doc comment for how to re-run
-it). `vtt serve --campaign` writes a log and identity state into whatever
+crates, an interior wall and a door).
+
+**Art is mid-migration and the demo campaign currently ships none.** A map's
+`overrides` name art by filename in one flat `<campaign>/art/` directory
+(`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`), and a
+name that resolves to nothing costs its square's picture and one warning rather
+than the map — so `cellar.json` loads and draws from the built-in tile
+vocabulary today. Packs, `<campaign>/packs/` and
+`GET /api/packs/{pack}/{file}` were deleted by Task 7 of that plan;
+`GET /api/art/{file}` (Task 6) and `campaigns/example/art/` (Task 8) are what
+replace them. `tools/genmappack` still holds the drawing code the demo art is
+generated from — see that package's own doc comment.
+
+`vtt serve --campaign` writes a log and identity state into whatever
 directory it opens (`campaign.Open`'s own doc comment), so copy it rather
 than pointing `--campaign` at the checked-in directory directly:
 `cp -r campaigns/example my-campaign && vtt serve --campaign my-campaign`

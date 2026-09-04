@@ -30,7 +30,8 @@ func writeArt(t *testing.T, dir, stem, sidecarJSON string) {
 
 // cellarArtDir installs exactly the art testdata/valid/cellar.json names, plus
 // the two pieces the tests below reach for by hand. It is the flat successor
-// to testdata/packs/mossy-keep, and the three pieces are chosen for the same
+// to the testdata/packs/mossy-keep manifest that 2026-09-02-art-is-a-flat-
+// library Task 7 deleted, and the three pieces are chosen for the same
 // reasons that pack's own entries were:
 //
 //   - planks-split-3 declares material "resin" while the square under it is
@@ -100,46 +101,11 @@ func TestAWallDrawnAsFloorboardsIsStillAWall(t *testing.T) {
 	}
 }
 
-// TestLoadPackRejectsAMissingDirectory mirrors load_test.go's
-// TestLoadRejectsMissingFile: LoadPack fails at the same os.Open boundary
-// Load does (decodeStrict is shared), so a typo'd pack directory is caught
-// here rather than surfacing later as Resolve reading a nil Pack.Tiles.
-func TestLoadPackRejectsAMissingDirectory(t *testing.T) {
-	if _, err := mapdef.LoadPack("testdata/packs/does-not-exist"); err == nil {
-		t.Fatal("want an error for a missing pack directory")
-	}
-}
-
-// TestLoadPackRejectsADuplicateTileName pins that two tiles sharing a name
-// fail loud rather than the second silently overwriting the first in the
-// Tiles map: an author would otherwise only discover the collision when the
-// wrong picture shows up on a table, long after authoring, with no error
-// anywhere to point at the cause.
-func TestLoadPackRejectsADuplicateTileName(t *testing.T) {
-	if _, err := mapdef.LoadPack("testdata/packs/invalid/duplicate-tile-name"); err == nil {
-		t.Fatal("want an error for a duplicate tile name")
-	}
-}
-
-// TestLoadPackRejectsADuplicateObjectName pins that packTileMap's duplicate
-// check is exercised on BOTH arrays LoadPack keys by name, not just Tiles:
-// Objects goes through the identical call, and a collision there is exactly
-// as unreferenceable as a tile collision.
-func TestLoadPackRejectsADuplicateObjectName(t *testing.T) {
-	if _, err := mapdef.LoadPack("testdata/packs/invalid/duplicate-object-name"); err == nil {
-		t.Fatal("want an error for a duplicate object name")
-	}
-}
-
-// TestLoadPackRejectsAnEmptyTileName pins packTileMap's other refusal: a
-// tile with no name at all can never be the target of an override (Overrides
-// values are matched against Pack.Tiles by exact name), so it would load
-// silently into the manifest and then be permanently unreachable.
-func TestLoadPackRejectsAnEmptyTileName(t *testing.T) {
-	if _, err := mapdef.LoadPack("testdata/packs/invalid/empty-tile-name"); err == nil {
-		t.Fatal("want an error for an empty tile name")
-	}
-}
+// FOUR LoadPack TESTS STOOD HERE and left with LoadPack itself
+// (2026-09-02-art-is-a-flat-library Task 7) — a missing pack directory, a
+// duplicate tile name, a duplicate object name, an empty tile name.
+// load_test.go carries the obituary: where each property lives now, and which
+// two are deliberately gone rather than moved.
 
 // TestResolveWithNoOverrideReturnsJustTheBaseNature pins Resolve's plain
 // path: most squares on a real map carry no override at all, so this is the
@@ -275,8 +241,10 @@ func TestTileArtWithNoSidecarDegradesAndNamesTheFileToWrite(t *testing.T) {
 // a DM cannot chmod a directory from a browser, and a campaign that worked
 // five minutes ago should not stop working at the table. The boot walk refuses
 // the same condition, where an operator is at a terminal — cmd/vtt's
-// TestLoadMapsDirFailsLoudWhenTheArtRootCannotBeOpened pins that half, and the
-// two halves together are deliberate asymmetry rather than a divergence.
+// TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists pins that half
+// (this cited TestLoadMapsDirFailsLoudWhenTheArtRootCannotBeOpened, a name no
+// test in the tree has ever carried; corrected 2026-09-04), and the two halves
+// together are deliberate asymmetry rather than a divergence.
 func TestAnUnopenableArtDirectoryDegradesAtResolveTime(t *testing.T) {
 	notADir := filepath.Join(t.TempDir(), "art")
 	if err := os.WriteFile(notADir, []byte("a file where art/ belongs"), 0o600); err != nil {

@@ -17,9 +17,10 @@
 // A MAP THAT DECLARES A PACK IS REFUSED, by Load, naming the field and
 // pointing at art/ (that plan's design spec §7: "There is no compatibility
 // layer, and none is added later"). Map has no Pack field at all any more —
-// mapJSON keeps the JSON one solely so the refusal can be worded. Pack,
-// PackTile and LoadPack DO still live in this package, unreachable from any
-// map: nothing resolves against them, and Task 7 of that plan deletes them.
+// mapJSON keeps the JSON one solely so the refusal can be worded — and since
+// Task 7 of that plan there is no Pack, PackTile or LoadPack in this package
+// either. Nothing here reads a manifest of any kind: the only art code in the
+// tree is internal/artlib, and it looks a piece up by filename.
 //
 // Compiling a loaded Map into wire events is compile.go's job
 // (Task 4, spec §5) — the one and only reason this package depends on
@@ -28,8 +29,14 @@
 package mapdef
 
 // MapFormatVersion is the map format this server understands. A map declares
-// its own, and a mismatch is refused by name rather than guessed at — see
-// LoadPack's PackFormatVersion for why the two version independently.
+// its own, and a mismatch is refused by name rather than guessed at.
+//
+// It used to be one of two independent version numbers, the other being
+// PackFormatVersion — a pack was shared by many maps, so a single shared
+// number would have forced every pack on disk to be rewritten the first time
+// the map format moved. Packs left at 2026-09-02-art-is-a-flat-library Task 7.
+// The successor split lives in internal/artlib, whose sidecars carry their own
+// format_version for the same reason: one picture is named by many maps.
 const MapFormatVersion int32 = 1
 
 // Map is one fully-loaded, fully-validated map file (spec §4.1's two-layer
@@ -38,7 +45,9 @@ const MapFormatVersion int32 = 1
 // same granularity, so each layer can be read independently of the other.
 type Map struct {
 	// FormatVersion is the format this map file declares itself written in
-	// (design spec §7, "Format versions, on maps and on packs separately").
+	// (design spec §7, "Format versions, on maps and on packs separately" —
+	// the pack half of that sentence left at art-is-a-flat-library Task 7; an
+	// art sidecar carries its own version now, see internal/artlib).
 	// Load refuses a file that omits it or names one this server does not
 	// understand — see Load's own checks immediately after decodeStrict —
 	// so by the time a *Map exists, FormatVersion is always
@@ -111,56 +120,4 @@ type Object struct {
 type Placement struct {
 	TokenID, ActorID string
 	X, Y             int32
-}
-
-// PackTile is one named entry from a pack manifest (spec §4.2) — a tile
-// picture or an object picture; the two share this shape because a
-// pack.json entry looks identical whichever list it sits in, and neither
-// list needs a different one. Kind and Material here are ADVISORY: authoring
-// metadata a human or an LLM uses to pick a tile deliberately (spec §1.5),
-// carrying no authority over a square's actual nature. RESOLVE NO LONGER READS
-// A PackTile AT ALL — it reads a sidecar through internal/artlib
-// (2026-09-02-art-is-a-flat-library Task 3), where the same advisory/authority
-// split is stated on Resolve itself; this said "Resolve never reads them as
-// fact, only m.Tiles does" until Task 5 of that plan, which is a true sentence
-// about a call that stopped happening.
-type PackTile struct {
-	Name, Kind, Material       string
-	File, FileOpen, FileClosed string
-	Desc                       string
-}
-
-// PackFormatVersion is the pack format this server understands, and it
-// moves INDEPENDENTLY of MapFormatVersion. A pack is shared (design spec §7,
-// "Format versions, on maps and on packs separately") — one tileset backs
-// many maps — so a single shared version number would force every pack on
-// disk to be rewritten the first time the map format moved. LoadPack
-// (load.go) refuses a pack that omits format_version or names one this
-// server does not understand, mirroring Load's own two-step refusal for
-// maps.
-const PackFormatVersion int32 = 1
-
-// Pack is one loaded pack manifest (spec §4.2), keyed by tile/object name.
-// THAT KEYING NOW SERVES NOBODY: it existed for the O(1) lookup Resolve made
-// per square, and Resolve stopped taking a *Pack at
-// 2026-09-02-art-is-a-flat-library Task 3. LoadPack never touched a Map even
-// then — a pack is reusable content, not bound to any one map, mirroring spec
-// §4.3's "load standalone" principle applied to art rather than geometry — and
-// since Task 5 of that plan no map can name one at all. Task 7 deletes this
-// type; until then LoadPack is still run over a campaign's packs/ at boot, so
-// a malformed pack.json is refused rather than silently ignored mid-removal.
-type Pack struct {
-	// FormatVersion is the format this pack manifest declares itself
-	// written in (design spec §7, "Format versions, on maps and on packs
-	// separately"). LoadPack refuses a file that omits it or names one this
-	// server does not understand — see LoadPack's own checks immediately
-	// after decodeStrict — so by the time a *Pack exists, FormatVersion is
-	// always PackFormatVersion; it is carried through anyway so a caller
-	// can name the fact rather than assume it.
-	FormatVersion int32
-
-	ID, Name string
-	CellPx   int32
-	Tiles    map[string]PackTile
-	Objects  map[string]PackTile
 }

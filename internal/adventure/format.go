@@ -41,23 +41,12 @@ type Adventure struct {
 	Actors []AdventureActor
 	Notes  []AdventureNote
 
-	// Pack is the adventure's own embedded art pack (dir/tiles/pack.json),
-	// loaded once at Load.
-	//
-	// NOTHING READS IT ANY MORE. It is still loaded, so a malformed
-	// tiles/pack.json is still refused at boot rather than silently ignored
-	// mid-removal, but every art name a scene resolves now goes through
-	// ArtDir below (2026-09-02-art-is-a-flat-library Task 3). Task 7 of that
-	// plan deletes this field along with mapdef.Pack itself. It used to say
-	// this pack was "shared by every scene's Overrides" and that a nil Pack
-	// alongside an override failed loud through Resolve; both stopped being
-	// true when Resolve stopped taking a *Pack.
-	Pack *mapdef.Pack
-
 	// ArtDir is the adventure's own flat art directory (dir/art), the root
 	// every scene's Overrides and object art resolve against through
-	// internal/artlib. It is the successor to Pack above and the reason an
-	// adventure stays self-contained: art travels inside the bundle rather
+	// internal/artlib. It is the successor to the embedded tiles/pack.json
+	// Task 7 of that plan deleted (Load refuses a bundle that still ships one,
+	// by name) and the reason an adventure stays self-contained: art travels
+	// inside the bundle rather
 	// than being installed into the campaign's art/, where two adventures
 	// shipping the same filename would fight (controller's ruling,
 	// 2026-09-03; art-is-a-flat-library plan, pre-flight finding). The

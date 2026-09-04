@@ -3,8 +3,8 @@ package main
 // maps_e2e_test.go proves composeServer's real map-serving lifecycle end to
 // end (maps-as-geometry Task 7; the --maps-dir flag itself is gone as of
 // 2026-09-01-create-scene-leaves Task 5 — "the kernel serves maps, it does
-// not make them" — maps now come from the campaign directory's own maps/
-// and packs/, so these tests write straight into campaignPath instead of a
+// not make them" — maps now come from the campaign directory's own maps/,
+// so these tests write straight into campaignPath instead of a
 // separate operator-pointed directory) — the same concern serve_e2e_test.go's
 // TestComposeServerFailsLoudlyOnAnUnreadableAdventureGuide covers for
 // --adventures-dir, and the reason a wiring change like Task 5's
@@ -14,8 +14,12 @@ package main
 // site is exactly the kind of coupling a package's own unit tests, run in
 // isolation, cannot see. maps_test.go proves loadMapsDir's OWN logic in
 // isolation; this file proves the WIRING — a real composeServer, a real
-// gateway.Handler(), a real listener — actually connects a campaign's
-// maps/ and packs/ to GET /api/maps and GET /api/packs/{pack}/{file}.
+// gateway.Handler(), a real listener — actually connects a campaign's maps/
+// to GET /api/maps. It connected a sibling packs/ to
+// GET /api/packs/{pack}/{file} too, until 2026-09-02-art-is-a-flat-library
+// Task 7 deleted both; nothing serves art bytes over the wire until Task 6 of
+// that plan builds GET /api/art/{file}, and this file is where its own
+// end-to-end proof belongs.
 
 import (
 	"context"
@@ -37,31 +41,21 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// TestCampaignsMapsAndPacksServeEndToEnd boots composeServer against a
-// campaign directory holding one real map and one real pack (Task 3 layout:
-// maps are flat files under campaignPath/maps/, named by their own id;
-// packs are directories under the sibling campaignPath/packs/, keyed by
-// pack.json's own declared id) and drives GET /api/maps and GET
-// /api/packs/{pack}/{file} over an actual HTTP listener — not the
-// gateway-package fixture, which never goes through composeServer/the real
-// wiring at all.
-func TestCampaignsMapsAndPacksServeEndToEnd(t *testing.T) {
+// TestCampaignsMapsServeEndToEnd boots composeServer against a campaign
+// directory holding one real map (Task 3 layout: maps are flat files under
+// campaignPath/maps/, named by their own id) and drives GET /api/maps over an
+// actual HTTP listener — not the gateway-package fixture, which never goes
+// through composeServer/the real wiring at all.
+//
+// IT WAS TestCampaignsMapsAndPacksServeEndToEnd, and drove GET /api/packs/{pack}/{file}
+// against a real pack directory in the same campaign, until
+// 2026-09-02-art-is-a-flat-library Task 7. That half asserted the campaign's
+// own installed BYTES came back over a real listener, and no test asserts that
+// about anything today, because no route serves bytes: Task 6 of that plan
+// builds GET /api/art/{file} and owes this file the same round trip.
+func TestCampaignsMapsServeEndToEnd(t *testing.T) {
 	campaignPath := t.TempDir()
 
-	packDir := filepath.Join(campaignPath, "packs", "mossy-keep")
-	if err := os.MkdirAll(packDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{
-		"format_version": 1,
-		"id": "mossy-keep", "name": "Mossy Keep", "cell_px": 64,
-		"tiles": [{"name":"wood-planks-split-3","file":"planks_03.png","kind":"floor","material":"wood"}]
-	}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(packDir, "planks_03.png"), []byte("stand-in image bytes"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	mapsSubDir := filepath.Join(campaignPath, "maps")
 	if err := os.MkdirAll(mapsSubDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -152,11 +146,6 @@ func TestCampaignsMapsAndPacksServeEndToEnd(t *testing.T) {
 	if _, present := got.Maps[0]["pack"]; present {
 		t.Fatalf("/api/maps entry carries a pack reference (%v); no map declares a pack any more",
 			got.Maps[0]["pack"])
-	}
-
-	code, body = get("/api/packs/mossy-keep/planks_03.png")
-	if code != http.StatusOK || string(body) != "stand-in image bytes" {
-		t.Fatalf("/api/packs/mossy-keep/planks_03.png: status = %d, body = %q", code, body)
 	}
 }
 
@@ -468,7 +457,9 @@ func TestAMapNamingArtThatIsNotInstalledLoadsAndNamesTheReference(t *testing.T) 
 // the platform rather than a convenience: a scene id can only be created once,
 // so a second load_map of "hall" is refused by campaign.AppendBatch with an
 // ordinary scene collision (internal/gateway's
-// TestTwoLoadsOfTheSameNewMapRaceCleanly pins that refusal). Two maps naming the
+// TestConcurrentLookupsOfANewlyInstalledMapCompileItOnce pins the one-compile
+// half of that; this cited TestTwoLoadsOfTheSameNewMapRaceCleanly, a name no
+// test in the tree has ever carried — corrected 2026-09-04). Two maps naming the
 // SAME art piece is the same question asked in a way the log can answer: is the
 // sidecar read again, or was it remembered?
 //

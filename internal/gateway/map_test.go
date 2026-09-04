@@ -10,12 +10,12 @@ package gateway_test
 // exists to close: mapdef.Compile's only production caller discarded its
 // result as a boot-time dry run, so maps/cellar could be validated, listed,
 // and have its art served, but never loaded). Built against the REAL
-// committed campaigns/example/maps/cellar.json map and its
-// campaigns/example/packs/cellar-basics pack (Task 3 of the 2026-09-01
+// committed campaigns/example/maps/cellar.json (Task 3 of the 2026-09-01
 // create_scene-leaves plan split what used to be one maps/cellar directory
-// into these two; Task 5 of the same plan moved both under
-// campaigns/example/, once maps stopped being server-wide --maps-dir
-// content and became a campaign's own) — internal/mapdef's own tests
+// into a flat map file and a sibling pack tree; Task 5 of the same plan moved
+// both under campaigns/example/, once maps stopped being server-wide
+// --maps-dir content and became a campaign's own; 2026-09-02-art-is-a-flat-
+// library Task 7 deleted the pack tree) — internal/mapdef's own tests
 // already cover Load/Compile's correctness in isolation; this file proves
 // the WIRING, not the loader. Mirrors adventure_test.go's own shape;
 // load_adventure/handleLoadAdventure is this handler's direct template.
@@ -43,44 +43,30 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// cellarMapPath and cellarPackDir resolve the committed
-// campaigns/example/maps/cellar.json map and its
-// campaigns/example/packs/cellar-basics pack, relative to this test file's
-// own package directory — the same "../../<path>" convention
-// adventure_test.go's goblinAmbushDir establishes. Two functions, not one,
-// because Task 3 (the 2026-09-01 create_scene-leaves plan) split what used
-// to be one maps/cellar directory into a flat file and a sibling pack
-// tree; Task 5 of the same plan then moved both under campaigns/example/.
+// cellarMapPath resolves the committed campaigns/example/maps/cellar.json,
+// relative to this test file's own package directory — the same "../../<path>"
+// convention adventure_test.go's goblinAmbushDir establishes.
+//
+// It had a sibling, cellarPackDir, pointing at
+// campaigns/example/packs/cellar-basics, until 2026-09-02-art-is-a-flat-library
+// Task 7 deleted both the pack and that directory. Art comes from cellarArtDir
+// below, and from campaigns/example/art/ once that plan's Task 8 commits it.
 func cellarMapPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("..", "..", "campaigns", "example", "maps", "cellar.json")
 }
 
-func cellarPackDir(t *testing.T) string {
-	t.Helper()
-	return filepath.Join("..", "..", "campaigns", "example", "packs", "cellar-basics")
-}
-
-// loadCellarMap loads the real committed campaigns/example/maps/cellar.json
-// and its campaigns/example/packs/cellar-basics pack, failing the test
-// loudly if either does not load — a broken fixture here would silently
-// turn every test in this file into a no-op, which is worse than a compile
-// error.
-//
-// The pack is still loaded because GET /api/packs/{pack}/{file} still serves
-// from it; nothing RESOLVES against it any more (2026-09-02-art-is-a-flat-library
-// Task 3). Art comes from cellarArtDir below.
-func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
+// loadCellarMap loads the real committed campaigns/example/maps/cellar.json,
+// failing the test loudly if it does not load — a broken fixture here would
+// silently turn every test in this file into a no-op, which is worse than a
+// compile error.
+func loadCellarMap(t *testing.T) *mapdef.Map {
 	t.Helper()
 	m, err := mapdef.Load(cellarMapPath(t))
 	if err != nil {
 		t.Fatalf("mapdef.Load(campaigns/example/maps/cellar.json): %v", err)
 	}
-	pack, err := mapdef.LoadPack(cellarPackDir(t))
-	if err != nil {
-		t.Fatalf("mapdef.LoadPack(campaigns/example/packs/cellar-basics): %v", err)
-	}
-	return m, pack
+	return m
 }
 
 // cellarArtDir builds, in a temp directory, exactly the art
@@ -95,7 +81,8 @@ func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 // does this is the only way to assert that an override's art reaches the wire
 // without weakening the assertion. The kinds and materials are copied from
 // campaigns/example/packs/cellar-basics/pack.json so no square picks up a
-// spurious kind-mismatch warning.
+// spurious kind-mismatch warning, taken from the manifest while it still
+// existed — Task 7 deleted it along with the pack.
 //
 // WHAT IS THEREFORE UNTESTED, AND IT BELONGS TO TASK 8: nothing anywhere
 // asserts that the SHIPPED campaign's own art reaches the wire.
@@ -240,8 +227,8 @@ func newMapFixtureAt(t *testing.T, withMaps, installable bool, artDir string) *m
 	mapsDir := filepath.Join(path, "maps")
 	srv := gateway.New(c, ids)
 	if withMaps {
-		m, pack := loadCellarMap(t)
-		srv = srv.WithMaps(map[string]*mapdef.Map{m.ID: m}, map[string]*mapdef.Pack{pack.ID: pack})
+		m := loadCellarMap(t)
+		srv = srv.WithMaps(map[string]*mapdef.Map{m.ID: m})
 	}
 	// Wired unconditionally, present or not, for the reason the maps
 	// directory is: a server that only has an art directory when something
@@ -1174,9 +1161,9 @@ func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
 // too, and any of them would do here.
 //
 // The mechanism now depends on cellarArtDir (above) declaring masonry-1 as
-// kind "wall", which is what campaigns/example/packs/cellar-basics/pack.json
-// declared and what campaigns/example/art/masonry-1.json must declare when
-// Task 8 commits it. If that fixture's kinds are ever softened, this test goes
+// kind "wall", which is what the deleted cellar-basics manifest declared and
+// what campaigns/example/art/masonry-1.json must declare when Task 8 commits
+// it. If that fixture's kinds are ever softened, this test goes
 // quietly green-for-nothing rather than failing.
 func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
 	// An installable fixture is enough now: art comes from WithArtDir, which
@@ -1184,7 +1171,8 @@ func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
 	// boot for "shrine" to resolve. This used to be newMapFixtureWith(t, true,
 	// true) so that cellar-basics was loaded as a PACK at boot — packs were
 	// boot-time only and an override could not resolve without one. Neither
-	// half of that is true any more.
+	// half of that is true any more, and since Task 7 there is no pack to
+	// load.
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
 

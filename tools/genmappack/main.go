@@ -1,14 +1,23 @@
-// Command genmappack generates TWO packs: campaigns/example/packs/cellar-
-// basics, the starter pack Task 10 of the maps-as-geometry arc ships as
-// campaigns/example/maps/cellar.json's own art (design spec §4.2, §1.5's "a
-// pack manifest, with no other help") — moved under campaigns/example/ by
-// Task 5 of the 2026-09-01-create-scene-leaves plan, once maps stopped
-// being server-wide --maps-dir content and became a campaign's own — and
-// (added for review finding C2, 2026-08-16) client/public/std-pack, a
-// baseline picture for every one of internal/mapdef/standard.go's eleven
-// standard natures — see std_pack.go's own header comment for why a square
-// with no art override needs this at all, and why it ships from a different
-// place than the cellar pack does.
+// Command genmappack generates TWO sets of art: the cellar starter art that
+// campaigns/example/maps/cellar.json's overrides name (design spec §4.2,
+// §1.5's "a pack manifest, with no other help"), and (added for review
+// finding C2, 2026-08-16) client/public/std-pack, a baseline picture for every
+// one of internal/mapdef/standard.go's eleven standard natures — see
+// std_pack.go's own header comment for why a square with no art override needs
+// this at all, and why it ships from a different place than the cellar art
+// does.
+//
+// THE CELLAR HALF CURRENTLY WRITES A FORMAT NOTHING READS, and this is a
+// mid-migration state with an owner, not a design. It emits a pack.json plus
+// snake_case image files, the shape internal/mapdef.LoadPack expected;
+// 2026-09-02-art-is-a-flat-library Task 7 deleted that loader, the
+// GET /api/packs/{pack}/{file} route and the committed output directory
+// (campaigns/example/packs/cellar-basics) together. Task 8 of that plan
+// rewrites this half to emit the flat art/ layout — one picture per file, a
+// sidecar beside each tile picture, kebab-case stems that ARE the art ids —
+// and commits campaigns/example/art/. Until it does, running with the -out
+// default below writes an untracked directory nothing loads and no route
+// serves. The DRAWING code is unaffected and is what Task 8 keeps.
 //
 // WHY GENERATED RATHER THAN DRAWN OR FETCHED. Patrik's ruling: copy no
 // image, fetch art from nowhere else on the web (fantasymapbuilder.com's
@@ -18,10 +27,11 @@
 // this repo already builds with Go, and Pillow was checked and rejected for
 // exactly that reason — buys three things at once: provenance is
 // unambiguous (every pixel traces to the code below, not to a URL), the
-// pack is RE-TUNABLE rather than an opaque binary (change a colour, rerun,
-// diff the PNGs), and this file doubles as a worked example of what a pack
-// author must actually produce — pack.json plus images beside it, in the
-// exact shape internal/mapdef/load.go's LoadPack expects.
+// art is RE-TUNABLE rather than an opaque binary (change a colour, rerun,
+// diff the PNGs), and this file doubles as a worked example of what an art
+// author must actually produce — which, after Task 8 of the art-is-a-flat-
+// library plan, is the flat layout internal/artlib reads rather than the
+// manifest below.
 //
 // Deliberately simple: flat colour fields, per-pixel noise, and a few lines
 // or a filled circle. "Simple textured surfaces... and a handful of object
@@ -30,7 +40,7 @@
 // reads as a crate, at 64px in a browser tile.
 //
 // Run: go run ./tools/genmappack [-out campaigns/example/packs/cellar-basics] [-std-out client/public/std-pack]
-// Both packs are (re)written on every run — there is no flag to write only one.
+// Both sets are (re)written on every run — there is no flag to write only one.
 package main
 
 import (
@@ -62,7 +72,8 @@ const seed = 20260812
 
 // --- pack.json's on-disk shape --------------------------------------------
 //
-// Mirrors internal/mapdef/load.go's packTileJSON/packJSON field-for-field
+// Mirrored internal/mapdef/load.go's packTileJSON/packJSON field-for-field
+// until art-is-a-flat-library Task 7 deleted both
 // (same JSON keys: name, kind, material, file, file_open, file_closed,
 // desc, cell_px) WITHOUT importing that package. That loader type is
 // unexported and shaped for DECODING (no omitempty — a decoder does not
@@ -86,8 +97,9 @@ type packOut struct {
 	// a bare literal (packFormatVersion below), not an import of that
 	// constant, for the same reason this whole type exists unimported: see
 	// the "pack.json's on-disk shape" section comment above packTileOut.
-	// LoadPack (internal/mapdef/load.go) refuses any pack.json omitting
-	// this field, so every pack this tool writes must carry it.
+	// LoadPack (internal/mapdef/load.go) refused any pack.json omitting
+	// this field, so every pack this tool writes carries it; that loader is
+	// gone and nothing reads the result today (see this file's header).
 	FormatVersion int32         `json:"format_version"`
 	ID            string        `json:"id"`
 	Name          string        `json:"name"`
@@ -96,18 +108,22 @@ type packOut struct {
 	Objects       []packTileOut `json:"objects"`
 }
 
-// packFormatVersion mirrors internal/mapdef.PackFormatVersion's current
-// value (1) without importing that package (see the "pack.json's on-disk
+// packFormatVersion mirrored internal/mapdef.PackFormatVersion's value (1)
+// without importing that package, and outlives it (see the "pack.json's on-disk
 // shape" section comment above packTileOut for why packOut/packTileOut are
 // their own encoding-shaped types).
 const packFormatVersion int32 = 1
 
 func main() {
-	out := flag.String("out", "campaigns/example/packs/cellar-basics", "directory to write the cellar starter pack's pack.json and images into")
+	out := flag.String("out", "campaigns/example/packs/cellar-basics",
+		"directory to write the cellar starter pack's pack.json and images into "+
+			"(THE COMMITTED COPY IS GONE: art-is-a-flat-library Task 7 deleted the pack format, "+
+			"and Task 8 rewrites this half to emit a flat art/ directory instead — until then "+
+			"this default writes an untracked directory nothing loads)")
 	stdOut := flag.String("std-out", "client/public/std-pack",
 		"directory to write the standard-vocabulary baseline pack's pack.json and images into "+
-			"(see std_pack.go's header comment for why this ships from the client bundle, not a "+
-			"GET /api/packs/{pack}/... route)")
+			"(see std_pack.go's header comment for why this ships from the client bundle rather "+
+			"than an authenticated art route)")
 	flag.Parse()
 
 	cellar, std := generate(*out, *stdOut)

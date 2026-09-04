@@ -54,7 +54,7 @@ func getJSON(t *testing.T, srv *http.Server, tok, path string) string {
 
 // mintToken opens dir's identity handle — a SEPARATE handle from the one
 // composeServer already holds open, the same pattern
-// TestCampaignsMapsAndPacksServeEndToEnd (maps_e2e_test.go) uses — and
+// TestCampaignsMapsServeEndToEnd (maps_e2e_test.go) uses — and
 // returns a fresh DM token good against the running server.
 func mintToken(t *testing.T, dir string) string {
 	t.Helper()

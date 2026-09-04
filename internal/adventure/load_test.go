@@ -368,6 +368,116 @@ func TestLoadRejectsMissingFormatVersion(t *testing.T) {
 	}
 }
 
+// TestAnAdventureShippingAPackIsRefusedByName is spec §7's "no compatibility
+// layer, and none is added later" applied to the one place a pack could still
+// travel: INSIDE a bundle. An adventure carried its own art as
+// <adventure>/tiles/pack.json, loaded by loadEmbeddedPack; Task 7 of
+// 2026-09-02-art-is-a-flat-library deleted mapdef.Pack and with it that loader,
+// and the controller's ruling of 2026-09-03 (that plan's pre-flight section)
+// put an adventure's art in its own flat <adventure>/art/ instead, read by the
+// same internal/artlib a campaign's art/ is.
+//
+// IGNORING THE OLD DIRECTORY IS THE ONE ANSWER THAT MUST NOT BE GIVEN. Since
+// Task 3 nothing resolves against an embedded pack, so a bundle handed over
+// with tiles/pack.json in it already draws every overridden square plain — the
+// art is silently gone and the adventure loads saying nothing. That is the same
+// failure mapdef.Load refuses for a map declaring "pack" (Task 5,
+// TestAMapDeclaringAPackIsRefusedByName), and the operator holding the bundle
+// is the only person who can move the files.
+//
+// It asserts the message names pack.json AND art/, for the reason that map
+// refusal states: t.TempDir()'s own path carries this test's name, so a bare
+// "pack" substring would match path noise with the refusal deleted.
+func TestAnAdventureShippingAPackIsRefusedByName(t *testing.T) {
+	rs := loadFixtureRuleset(t)
+	dir := copyFixtureDirExcluding(t, "testdata/valid")
+	// Everything else about this adventure is valid — it is the fixture every
+	// other Load test loads cleanly — so a refusal here can only be the pack.
+	if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tiles", "pack.json"), []byte(`{
+		"format_version": 1, "id": "brace-yard-art", "name": "Brace Yard Art", "cell_px": 64,
+		"tiles": [{"name":"masonry-1","file":"masonry_1.png","kind":"wall","material":"stone"}]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := adventure.Load(dir, rs)
+	if err == nil {
+		t.Fatal("an adventure shipping tiles/pack.json loaded; its art would be " +
+			"silently gone and every overridden square would draw plain")
+	}
+	for _, want := range []string{"pack.json", "art/"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q — the operator holding the bundle "+
+				"is the one who has to move the files", err, want)
+		}
+	}
+	// THE REMEDIATION HALF, and it is pinned because this message has now been
+	// wrong TWICE, each time in a way that walked the operator into a failure
+	// (review, 2026-09-04, rounds 1 and 2). Round 0 said "install the pack's
+	// pictures into art/ … the names your scenes' overrides already use do not
+	// change", and an operator who did exactly that ended up with pictures
+	// still called masonry_1.png — snake_case, while artlib requires the STEM
+	// to BE the kebab-case override id (isArtID) — and with no sidecar, which
+	// mapdef.Resolve needs before it will draw tile art at all: silent art
+	// loss, the very thing the refusal exists to prevent. Round 1 fixed that
+	// and introduced the next one: "each picture's FILENAME STEM is its art id"
+	// and a sidecar "carrying its kind and material" are both FALSE FOR A DOOR,
+	// and the shipped demo pack has one (cellar-door).
+	//
+	// A DOOR HAS TWO PICTURES AND NO THIRD (artlib's pieceFromSidecar leaves
+	// Piece.File empty for kind "door", and TestADoorHasTwoPicturesAndNoThird
+	// pins it): cellar-door.json names cellar-door-open.png and
+	// cellar-door-closed.png through its own "open"/"closed" fields, and
+	// cellar-door.png must not exist. A door sidecar carrying only kind and
+	// material hits `a door declares both "open" and "closed"`, which
+	// mapdef.Resolve takes on its `case err != nil` arm and turns into a
+	// REFUSED MAP. Loud beats silent, but an instruction that ends in a boot
+	// failure is not an instruction.
+	//
+	// Nothing else catches any of this for an ADVENTURE: composeServer runs
+	// artlib.Validate over campaignPath/art only, never over a bundle's own
+	// art/, so a mis-named picture inside an adventure is named by no boot
+	// report anywhere. The message IS the operator's only notice, which is why
+	// its load-bearing clauses are assertions rather than prose.
+	for _, want := range []string{
+		// The rename clause.
+		"masonry_1.png", "masonry-1.png",
+		// The sidecar clause, for ordinary tile art.
+		"sidecar", "kind and material",
+		// The door exception, which is all three of: no <id>.png, the two
+		// pictures named INSIDE the sidecar, and refusal rather than degrading.
+		"<id>.png", "cellar-door-open.png", "cellar-door-closed.png", "REFUSED",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q must contain %q: an operator following this message must "+
+				"end up with pictures RENAMED to their art ids, a sidecar beside each tile "+
+				"picture, and a DOOR left with two pictures and no third — or the art is "+
+				"gone (silently for a tile, as a refused map for a door) and the refusal "+
+				"bought nothing", err, want)
+		}
+	}
+}
+
+// TestAnAdventureWithATilesDirectoryButNoManifestStillLoads is the boundary the
+// refusal above must not overreach past: what is refused is a pack MANIFEST,
+// not a directory called tiles/. An empty tiles/ names no art, loses none, and
+// was always legal (loadEmbeddedPack treated an absent pack.json as the common
+// case), so refusing it would break bundles that never shipped a pack at all.
+func TestAnAdventureWithATilesDirectoryButNoManifestStillLoads(t *testing.T) {
+	rs := loadFixtureRuleset(t)
+	dir := copyFixtureDirExcluding(t, "testdata/valid")
+	if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := adventure.Load(dir, rs); err != nil {
+		t.Fatalf("Load: %v — a tiles/ directory with no pack.json declares no art", err)
+	}
+}
+
 // copyFixtureDirExcluding copies srcDir into a fresh t.TempDir(), skipping
 // any file whose base name is in skip.
 func copyFixtureDirExcluding(t *testing.T, srcDir string, skip ...string) string {

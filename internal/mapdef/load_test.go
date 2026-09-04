@@ -226,6 +226,82 @@ func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
 	}
 }
 
+// TestNoPackTypeOrLoaderRemainsInThisPackage asserts an ABSENCE, so it was
+// written before the removal and failed until 2026-09-02-art-is-a-flat-library
+// Task 7 landed it — the shape client/test/command-surface.test.ts uses for
+// create_scene and for retraction, and the shape that plan's Task 9 generalises
+// into tools/check-no-pack.py for the whole tree. What it does now is keep the
+// pack from growing back HERE, in the package that owned it.
+//
+// A DELETED IDENTIFIER CANNOT BE NAMED IN A COMPILING TEST, which is why this
+// reads source text rather than calling anything — the same move
+// internal/identity's TestVerifyUsesConstantTimeCompare and
+// internal/gateway's TestServeNeverClosesAConnectionsOutboundChannel already make on
+// their own files. It matches
+// DECLARATIONS, not the word: mapJSON.Pack survives on purpose (it is the only
+// way loadAs can refuse a file that declares one — see mapJSON's own comment),
+// so a bare "Pack" search would fail forever and be deleted by whoever hit it.
+func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
+	// Reads this package's own directory: `go test` runs a test binary with
+	// its cwd set to the package under test, which is what makes "." right
+	// here and what apidoc_test.go's "../../docs" relies on from the other
+	// direction.
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	banned := []string{"LoadPack", "PackTile", "PackFormatVersion",
+		"packJSON", "packTileJSON", "packTileMap"}
+	var scanned int
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		scanned++
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// COMMENTS STRIPPED, the same way internal/gateway's
+		// server_internal_test.go strips them before its own source assertion,
+		// and for the same reason: MapFormatVersion's doc comment says truthfully
+		// that PackFormatVersion used to sit beside it, and a gate that cannot
+		// tell code from the comment about the code trains people to delete the
+		// comment. Crude (a "//" inside a string literal would truncate that
+		// line), which is safe in this direction — it can only make the scanned
+		// text shorter, never invent a match.
+		text := stripGoComments(string(src))
+		for _, b := range banned {
+			if strings.Contains(text, b) {
+				t.Errorf("%s still names %q in CODE — the pack left this package at "+
+					"2026-09-02-art-is-a-flat-library Task 7, and art resolves by "+
+					"filename through internal/artlib now", name, b)
+			}
+		}
+	}
+	// Without this the test passes vacuously the day someone moves the
+	// package or breaks the cwd assumption above.
+	if scanned == 0 {
+		t.Fatal("scanned no non-test .go files in this package; the assertion above proved nothing")
+	}
+}
+
+// stripGoComments blanks everything from the first "//" on each line, so a
+// source assertion reads CODE rather than the prose about it. See
+// TestNoPackTypeOrLoaderRemainsInThisPackage for why, and for the one way it is
+// crude.
+func stripGoComments(src string) string {
+	var out strings.Builder
+	for line := range strings.Lines(src) {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i] + "\n"
+		}
+		out.WriteString(line)
+	}
+	return out.String()
+}
+
 // TestAMapDeclaringAPackIsRefusedByName pins design spec §7's migration rule:
 // "There is no compatibility layer, and none is added later. A map carrying a
 // `"pack"` field is refused with a message naming the field and pointing at
@@ -344,77 +420,37 @@ func TestAPackIsTheFirstThingReportedAboutAPreMigrationMap(t *testing.T) {
 	}
 }
 
-// TestLoadPackRefusesAPackWithNoFormatVersion pins the PACK half of design
-// spec §7's rule (Load's own TestLoadRefusesAMapWithNoFormatVersion pins the
-// map half): a pack declares the format it is written in, and this server
-// refuses to guess when it doesn't. No implicit fallback — a missing
-// format_version is refused, never assumed to be 1, even though 1 is
-// currently the only pack format version that exists.
-func TestLoadPackRefusesAPackWithNoFormatVersion(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "pack.json"),
-		`{"id":"p","name":"P","cell_px":64,"tiles":[]}`)
-
-	_, err := mapdef.LoadPack(dir)
-	if err == nil {
-		t.Fatal("want a pack with no format_version refused: an undeclared format is " +
-			"undeclared, and this platform does not default one")
-	}
-	if !strings.Contains(err.Error(), "format_version") {
-		t.Fatalf("error = %q, want it to name format_version", err)
-	}
-}
-
-// TestLoadPackRefusesAFormatThisServerDoesNotUnderstand pins the other half:
-// a DECLARED pack format this server does not understand is refused by
-// name, not guessed at or silently accepted.
+// THE FOUR LoadPack TESTS THAT STOOD HERE ARE GONE, with LoadPack itself
+// (2026-09-02-art-is-a-flat-library Task 7), and this is where each property
+// they pinned lives now — written down because deleting a function makes the
+// compiler shout and deleting a test makes nothing shout at all.
 //
-// "tiles":[] must be otherwise VALID or this test passes for the wrong
-// reason — exactly the defect Load's own first version test shipped with
-// (commit b567e7e: the fixture failed a DIFFERENT check first, so deleting
-// the version-check branch entirely left that test green).
-// TestLoadPackAcceptsTheVersionItUnderstands below loads this identical
-// shape successfully, which is what proves an empty tiles array is not the
-// reason this one fails. The assertion is on the WORDED phrases, not bare
-// digits, for the same reason Load's own test gives: t.TempDir()'s path
-// contains large random integers that would satisfy a bare "2"/"1"
-// substring check even with the version-mismatch branch deleted.
-func TestLoadPackRefusesAFormatThisServerDoesNotUnderstand(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "pack.json"),
-		`{"format_version":2,"id":"p","name":"P","cell_px":64,"tiles":[]}`)
-
-	_, err := mapdef.LoadPack(dir)
-	if err == nil {
-		t.Fatal("want pack format 2 refused while this server understands only 1")
-	}
-	for _, want := range []string{"declares 2", "understands 1"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %q, want it to contain %q", err, want)
-		}
-	}
-}
-
-// TestLoadPackAcceptsTheVersionItUnderstands pins the positive case: a pack
-// declaring format_version 1 (the version every other fixture in this
-// package now carries) loads, and LoadPack reports that version back on
-// Pack — and, load-bearingly for the two refusal tests above, that an empty
-// "tiles" array is otherwise a legal pack, so their fixtures fail for the
-// version reason and no other. This fixture's format_version is also
-// deliberately a HARDCODED 1 rather than an expression built from
-// mapdef.PackFormatVersion: that is what makes this test the one that reds
-// the instant PackFormatVersion drifts from 1 for any reason, including a
-// future edit that aliases it to MapFormatVersion.
-func TestLoadPackAcceptsTheVersionItUnderstands(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "pack.json"),
-		`{"format_version":1,"id":"p","name":"P","cell_px":64,"tiles":[]}`)
-
-	p, err := mapdef.LoadPack(dir)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if p.FormatVersion != mapdef.PackFormatVersion {
-		t.Fatalf("FormatVersion = %d, want %d", p.FormatVersion, mapdef.PackFormatVersion)
-	}
-}
+//   - "a pack with no format_version is refused" and "a declared pack format
+//     this server does not understand is refused by NAME, not guessed at":
+//     internal/artlib's TestAnUnsupportedFormatVersionIsRefusedNotDegraded,
+//     which drives all three arms — a later format, a nonsense one, and none
+//     at all — against an art sidecar. An art sidecar is what carries a
+//     format_version now, and for the same reason a pack did: one picture is
+//     named by many maps, so its format has to move independently of the map
+//     format (see MapFormatVersion's own doc comment, format.go).
+//   - "a pack declaring the version it understands loads, so the two refusals
+//     above fail for the version reason and no other": the positive arm of
+//     every internal/artlib Lookup test, e.g.
+//     TestTileArtDeclaresItsNature, which loads format_version 1 and reads the
+//     nature back.
+//   - "a missing pack directory is an error rather than a nil Tiles map read
+//     later": NOT carried over, deliberately — the answers genuinely differ.
+//     internal/artlib's TestACampaignWithNoArtDirectoryDegrades pins that an
+//     absent art/ costs one square its picture and a warning rather than the
+//     map (design spec §4), and TestAnArtPathThatIsNotADirectoryIsRefused
+//     pins the one shape that IS still an error. There is no manifest to read
+//     a nil field off, so the failure that test protected against cannot occur.
+//   - "two tiles or two objects sharing a name fail loud rather than the second
+//     silently overwriting the first" and "a tile with no name at all is
+//     refused": GONE, and gone on purpose. Uniqueness is the filesystem's now
+//     (that plan's Global Constraints: "No duplicate check is written
+//     anywhere") — one directory cannot hold two entries of the same name, and
+//     a file always has a name. What replaces the empty-name refusal is
+//     internal/artlib's TestValidateRefusesAFilenameThatIsNotAnArtName and
+//     TestLookupRefusesAnIdThatIsNotAFilename, which refuse a name that is not
+//     a legal art id at all.

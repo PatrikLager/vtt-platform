@@ -360,6 +360,15 @@ of `campaigns/example/` and any scenario fixture, not a compatibility layer.
 `art/`. Silently ignoring it would load a map whose art references were written
 against a namespace that no longer exists, and draw the wrong thing.
 
+**The same rule binds an ADVENTURE bundle**, added 2026-09-04 with Task 7. An
+adventure carried its own embedded art at `<adventure>/tiles/pack.json`; that
+becomes a flat `<adventure>/art/` read by the same `artlib` rooted at the
+bundle. A bundle still shipping `tiles/pack.json` is refused by name, pointing
+at `art/`, for exactly the reason the map rule exists: deleting the loader
+without the refusal would let an old bundle load **silently with its art gone**,
+which is the failure the map refusal was written to prevent, one directory over.
+Two roots, one mechanism, one rule.
+
 `contract/RELEASED` does not exist, so ADR-007 reports rather than enforces
 (CLAUDE.md rule 3). This design is not additive, and that is only permissible
 because nothing has been released. It must land before that file does.

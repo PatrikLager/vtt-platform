@@ -235,36 +235,6 @@ type Server struct {
 	// own write does not, and its doc comment says why.
 	maps map[string]*mapdef.Map
 
-	// packs mirrors maps' own keying but for packs (Pack.ID, set together via
-	// WithMaps). loadMapsDir refuses two packs sharing an id before either
-	// reaches here, so this map's keys already match packFS's key-for-key.
-	//
-	// IT HAS NO READER LEFT. It existed to enrich GET /api/maps with each
-	// map's pack name and cell size, looked up under the map's OWN declared
-	// pack id — and Task 5 of 2026-09-02-art-is-a-flat-library deleted
-	// mapdef.Map.Pack, so there is no id to look anything up by and
-	// metadata.go's handleMaps no longer consults this at all (see the
-	// packRefJSON obituary there). Written and never read until Task 7 of that
-	// plan takes it, WithMaps' second parameter, and mapdef.Pack together;
-	// packFS below is the half that is still live, because the raw-file route
-	// never depended on a map naming a pack.
-	packs map[string]*mapdef.Pack
-
-	// packFS is OPTIONAL server config, boot time only, set via
-	// WithPackFiles: one fs.FS PER PACK, each rooted AT that pack's own
-	// directory (cmd/vtt builds them with os.OpenRoot(dir).FS() over a
-	// campaign's own packs/ tree — NOT os.DirFS; see WithPackFiles' own
-	// doc comment for why that distinction is load-bearing, not stylistic).
-	// GET /api/packs/{pack}/{file} (metadata.go's handlePackFile) serves
-	// straight out of the matching entry. A SEPARATE field from packs
-	// rather than folding an fs.FS onto *mapdef.Pack itself: a Pack value
-	// carries no notion of "where it came from" (mapdef is a pure parser —
-	// see its own package doc — and reusable independent of any one
-	// directory), so the directory-rooted serving capability has to live
-	// here, at the layer that actually owns the filesystem boundary
-	// (ADR-008).
-	packFS map[string]fs.FS
-
 	// mapsDir is the campaign's own maps/ directory, set via WithMapsDir:
 	// where map.go's mapByID looks when the set above does not hold an id
 	// (2026-09-01-create-scene-leaves design spec §5). Empty means this
@@ -280,15 +250,16 @@ type Server struct {
 	// base tile and warns (that spec's §4), and the map still loads.
 	//
 	// Read without a lock for the same reason mapsDir is: a configuration
-	// call sets it before the server serves anything. Unlike packs, nothing
-	// is CACHED behind it — the directory is read as it is at the moment it
-	// is asked, which is what makes art installed or overwritten during a
-	// session take effect on the next load_map with no restart.
+	// call sets it before the server serves anything. NOTHING IS CACHED behind
+	// it — the directory is read as it is at the moment it is asked, which is
+	// what makes art installed or overwritten during a session take effect on
+	// the next load_map with no restart, and what a boot-time pack load could
+	// never do.
 	artDir string
 
-	// mapsMu guards maps, and only maps. packs and packFS stay boot-time
-	// only, so they are read without it (see mapByID and handleMaps, which
-	// both say so where they do it).
+	// mapsMu guards maps, and only maps. mapsDir and artDir are set once by a
+	// With* call before the server serves anything and never written again, so
+	// they are read without it (each says so at its own field above).
 	mapsMu sync.RWMutex
 }
 
@@ -348,22 +319,23 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 }
 
 // WithMaps configures s to answer GET /api/maps from m, keyed by each map's
-// own declared id (maps-as-geometry Task 7). Both arguments are expected
-// already fully loaded and validated (cmd/vtt's loadMapsDir, via
-// mapdef.LoadInstalled and mapdef.LoadPack — fail loud at boot, spec §4.4);
-// this method does no I/O and no validation of its own, mirroring
-// WithAdventures.
+// own declared id (maps-as-geometry Task 7). m is expected already fully
+// loaded and validated (cmd/vtt's loadMapsDir, via mapdef.LoadInstalled — fail
+// loud at boot, spec §4.4); this method does no I/O and no validation of its
+// own, mirroring WithAdventures.
 //
-// THE SECOND ARGUMENT NO LONGER FEEDS THAT LISTING, and is stored only so
-// Task 7 of 2026-09-02-art-is-a-flat-library can remove it in one piece — see
-// Server.packs above. Returns s for call-site chaining; mutates s in place
-// WITHOUT taking mapsMu, so it is not safe to call concurrently with s
-// already serving traffic — the map set gains entries during a session
-// (WithMapsDir below), but never through this method. Pack file BYTES are a
-// separate concern — see WithPackFiles.
-func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pack) *Server {
+// IT TOOK A SECOND ARGUMENT, a pack set, until 2026-09-02-art-is-a-flat-library
+// Task 7. That set enriched every /api/maps entry with the map's own declared
+// pack until Task 5 deleted mapdef.Map.Pack and left nothing to key the lookup
+// by; Task 7 took the set, the fs.FS beside it (WithPackFiles) and mapdef.Pack
+// itself. Art is read from a directory at map-load time now — see WithArtDir.
+//
+// Returns s for call-site chaining; mutates s in place WITHOUT taking mapsMu,
+// so it is not safe to call concurrently with s already serving traffic — the
+// map set gains entries during a session (WithMapsDir below), but never
+// through this method.
+func (s *Server) WithMaps(m map[string]*mapdef.Map) *Server {
 	s.maps = m
-	s.packs = packs
 	return s
 }
 
@@ -378,7 +350,7 @@ func (s *Server) WithMaps(m map[string]*mapdef.Map, packs map[string]*mapdef.Pac
 // because the probe reads the directory as it is at the moment it is asked
 // rather than holding any state about it.
 //
-// A PATH rather than an fs.FS, unlike WithPackFiles: the point of the probe
+// A PATH rather than an fs.FS: the point of the probe
 // is that it runs mapdef.LoadInstalled, the SAME function cmd/vtt's boot
 // walk runs (design spec §12 — a map that boots cleanly must not be refused
 // on reload), and that function works in ordinary paths because the boot
@@ -414,7 +386,8 @@ func (s *Server) WithMapsDir(dir string) *Server {
 // There is no boot-time art load to get wrong any more.
 //
 // This method landed in Task 3 rather than Task 4, where the plan scheduled
-// it: Task 3 moved art resolution off mapdef.Pack, and without somewhere for
+// it: Task 3 moved art resolution off the pack Task 7 later deleted, and
+// without somewhere for
 // the gateway to resolve FROM, map_test.go's assertion that an override's art
 // reaches the wire had to be weakened for one task and remembered back. A
 // weakened assertion that nobody restores fails silently; an interface that
@@ -429,33 +402,6 @@ func (s *Server) WithMapsDir(dir string) *Server {
 // serving traffic.
 func (s *Server) WithArtDir(dir string) *Server {
 	s.artDir = dir
-	return s
-}
-
-// WithPackFiles configures s to answer GET /api/packs/{pack}/{file} from
-// fsys, keyed by each pack's own declared id — the SAME keys WithMaps'
-// packs argument uses, kept as a separate call because it is a genuinely
-// different kind of thing (raw filesystem access for byte serving, not a
-// parsed Go value) rather than because the two could disagree in practice.
-//
-// Each fsys entry MUST be rooted AT that pack's own directory via
-// os.OpenRoot(dir).FS() (go1.24+) — NOT os.DirFS. This distinction was
-// found missing by review and is the whole reason this doc comment exists:
-// fs.FS's contract (fs.ValidPath) refuses any NAME containing a ".."
-// element, which stops a request like ".../../../etc/passwd", but it says
-// nothing about a file that is, on disk, a symlink pointing outside the
-// tree — os.DirFS's own doc comment states plainly that "using DirFS does
-// not stop the access any more than using os.Open does" in that case, and
-// nothing about the NAME "evil.png" would ever look wrong. A community-
-// authored pack (spec §4.2's own trust framing: same trust as guide.md, but
-// an installed pack is more likely third-party than a hand-authored guide)
-// could ship exactly that. os.Root closes it: "Methods on Root will follow
-// symbolic links, but symbolic links may not reference a location outside
-// the root" (go doc os.Root). Both mechanisms are proven independently in
-// internal/gateway/packfile_internal_test.go, because a fix for one says
-// nothing about the other. Boot time only, like WithMaps.
-func (s *Server) WithPackFiles(fsys map[string]fs.FS) *Server {
-	s.packFS = fsys
 	return s
 }
 
@@ -478,7 +424,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 	mux.HandleFunc("GET /api/maps", s.handleMaps)
-	mux.HandleFunc("GET /api/packs/{pack}/{file}", s.handlePackFile)
 
 	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
 	// the most specific pattern, so the explicit routes above always win — a
