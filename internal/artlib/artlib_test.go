@@ -281,6 +281,68 @@ func TestASymlinkInTheArtDirectoryIsRefusedByName(t *testing.T) {
 	}
 }
 
+// TestValidateReportsEveryProblemNotOnlyTheFirst is Patrik's boot-severity
+// ruling of 2026-09-03 seen from inside this package. composeServer runs this
+// walk at start, reports what it finds, and STARTS THE SERVER ANYWAY — so an
+// early return costs a DM one boot per mistake, and a campaign with two
+// hand-copied files fixes one, restarts, and learns about the other. Every
+// problem in one pass, or the report is a guessing game.
+//
+// EVERY ARM OF THE WALK IS PLANTED, AND IN ReadDir ORDER, which is the whole
+// shape of the test. os.ReadDir sorts by name, so the entries arrive aaa-good
+// (fine), bbb-Bad.png, ccc-link.png, ddd-subdir, eee-orphan.json, fff-orphan.json —
+// a filename no map could spell (spec §3.2), a symlink (§3.3), a subdirectory
+// (§3.3) and two sidecars with no picture (§3.4, found through Lookup). Four
+// different arms, because collecting is a property of the LOOP and a version
+// that collected in one arm and returned from another would satisfy a
+// single-arm test.
+//
+// THE PREFIXES ARE LOAD-BEARING, not decoration, and so is the SECOND orphan.
+// Every arm is followed by at least one more problem, so a Validate that
+// answered with its FIRST finding loses a name this test asks for — measured by
+// injecting exactly that into the collecting loop, where it costs four of the
+// five (Task 4 report). A fixture whose only bad filename sorted LAST would have
+// left that arm invisible, which is the degenerate-fixture shape this repo has
+// been bitten by before; a single orphan would have done the same to the Lookup
+// arm.
+func TestValidateReportsEveryProblemNotOnlyTheFirst(t *testing.T) {
+	dir := t.TempDir()
+	writeTileArt(t, dir, "aaa-good", `{"format_version":1,"kind":"wall","material":"stone"}`)
+	writePicture(t, dir, "bbb-Bad.png")
+	// RELATIVE, AND NAMED LIKE A PICTURE — `ln -s aaa-good.png ccc-link.png`,
+	// which is what a DM types, and the one symlink shape that RESOLVES at the
+	// table: measured 2026-09-03, Lookup(dir, "ccc-link") returns a Piece and
+	// the square renders. An ABSOLUTE target is refused by os.Root at load time
+	// ("path escapes from parent"), so a fixture built that way leaves the shape
+	// a person actually creates untested (review finding F2). Validate's arm
+	// reads e.Type() and so refuses both identically — that is the point: this
+	// report is the ONLY thing that will ever mention the relative one.
+	if err := os.Symlink("aaa-good.png", filepath.Join(dir, "ccc-link.png")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "ddd-subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "eee-orphan.json", `{"format_version":1,"kind":"wall","material":"stone"}`)
+	writeFile(t, dir, "fff-orphan.json", `{"format_version":1,"kind":"wall","material":"stone"}`)
+
+	err := artlib.Validate(dir)
+	if err == nil {
+		t.Fatal("Validate: nil, want every one of the five problems planted here")
+	}
+	for _, want := range []string{"bbb-Bad.png", "ccc-link.png", "ddd-subdir", "eee-orphan", "fff-orphan"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate = %v\n  want it to also name %q: an operator who is told about "+
+				"one problem per boot pays one boot per problem", err, want)
+		}
+	}
+	// The good piece is not reported as a problem — without this, "report
+	// everything" is satisfied by a walk that complains about every entry.
+	if strings.Contains(err.Error(), "aaa-good") {
+		t.Errorf("Validate = %v\n  aaa-good is a well-formed piece and must not be named", err)
+	}
+}
+
 func TestValidateAcceptsAnAbsentArtDirectory(t *testing.T) {
 	if err := artlib.Validate(filepath.Join(t.TempDir(), "nope")); err != nil {
 		t.Fatalf("Validate on an absent art/: %v — a campaign with no art yet is "+

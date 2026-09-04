@@ -97,6 +97,19 @@ func loadCellarMap(t *testing.T) (*mapdef.Map, *mapdef.Pack) {
 // campaigns/example/packs/cellar-basics/pack.json so no square picks up a
 // spurious kind-mismatch warning.
 //
+// WHAT IS THEREFORE UNTESTED, AND IT BELONGS TO TASK 8: nothing anywhere
+// asserts that the SHIPPED campaign's own art reaches the wire.
+// TestLoadMapProducesBatchCarryingTilesAndObjects below loads the real
+// campaigns/example/maps/cellar.json and resolves it against this synthetic
+// directory, so it proves the wiring and not the fixture — and every override
+// in the shipped campaign degrades today whatever this package does, because
+// campaigns/example/ has no art/ at all. Task 4 considered writing that
+// assertion and could not: the fixture it needs is the one Task 8 creates, and
+// a test built against art that does not exist yet would either be skipped or
+// be this same synthetic directory under another name. Task 8 commits the art
+// and owns the assertion that a map from campaigns/example/ loads with its own
+// art resolved and no warnings.
+//
 // The .png files hold the string "fake-png" rather than image bytes: nothing
 // in internal/artlib reads a picture's contents, only whether the entry
 // exists, so real images would add bytes and prove nothing.
@@ -183,6 +196,16 @@ func newInstallableMapFixture(t *testing.T) *mapFixture {
 
 func newMapFixtureWith(t *testing.T, withMaps, installable bool) *mapFixture {
 	t.Helper()
+	return newMapFixtureAt(t, withMaps, installable, cellarArtDir(t))
+}
+
+// newMapFixtureAt is newMapFixtureWith with the art directory chosen by the
+// caller, for the one thing no well-formed art directory can express: an art
+// ROOT that exists and cannot be opened. That is not one piece failing, it is
+// every piece failing, and it is the third answer artlib.ErrArtDirUnreadable
+// exists to carry.
+func newMapFixtureAt(t *testing.T, withMaps, installable bool, artDir string) *mapFixture {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
 	c, err := campaign.Open(path)
@@ -224,7 +247,6 @@ func newMapFixtureWith(t *testing.T, withMaps, installable bool) *mapFixture {
 	// directory is: a server that only has an art directory when something
 	// else is also configured is the boot-order shape this sub-project exists
 	// to delete. An empty/absent art/ resolves nothing and refuses nothing.
-	artDir := cellarArtDir(t)
 	srv = srv.WithArtDir(artDir)
 	if installable {
 		srv = srv.WithMapsDir(mapsDir)
@@ -897,6 +919,131 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	}})
 	if r := readResult(t, conn); !r.Ok {
 		t.Fatalf("want an ordinary command to still succeed afterwards, got %+v", r)
+	}
+}
+
+// TestNoWarningTellsAClientWhereTheCampaignLives is the same promise as the
+// test above, on the channel that did not exist when that promise was written.
+// Task 2 of 2026-09-02-art-is-a-flat-library added CommandResult.warnings
+// (field 5), and Task 3 turned three art failures into warnings — so an ok=true
+// result now carries text produced by exactly the code whose errors the test
+// above forbids from naming a path, to exactly the same seats.
+//
+// EVERY WARNING SENTENCE THE ART PATH CAN PRODUCE IS DRIVEN HERE, across two
+// subtests, and it took a review finding to get there (F3, 2026-09-03): the
+// first version drove only the unopenable-root sentence and left the other four
+// — artNotInstalled, the no-sidecar sentence, the kind-mismatch sentence and
+// ResolveObjectArt's not-installed sentence — with no guard at the wire at all.
+// None of them can leak today. Nothing pinned that they would not.
+//
+// TWO SUBTESTS BECAUSE ONE ART DIRECTORY CANNOT PRODUCE BOTH SETS: against an
+// unopenable root EVERY lookup returns ErrArtDirUnreadable, so the four
+// resolve-time sentences are unreachable until the root opens.
+//
+// THE ART ROOT IS THE SHAPE THE REFUSAL TEST ABOVE CANNOT COVER. Task 4's brief
+// asked for an unopenable art root to be restored as a refusal row there; it
+// cannot be one, because Patrik's ruling of 2026-09-03 made that condition
+// DEGRADE at request time (internal/mapdef's Resolve — a DM cannot chmod a
+// directory from a browser). The disclosure surface moved with the verdict: an
+// unopenable root is now the loudest thing a load_map can say without refusing,
+// and os.OpenRoot's own error is an *fs.PathError holding the absolute path.
+// internal/artlib's artDirUnreadableWarning is a constant with nothing
+// interpolated into it precisely so that path cannot ride out.
+//
+// FAULT-INJECTION PROOF (these assertions are after-the-fact, per CLAUDE.md
+// rule 1). Appending artDir to the two warnings mapdef.Resolve and
+// mapdef.ResolveObjectArt build for an unreadable root — the change that
+// reintroduces the leak — fails the first subtest. It also fails
+// internal/mapdef's TestNoArtFailureNamesTheDirectoryItRead, which is the
+// unit-level guard on the same sentences and NOT what this duplicates: what
+// only this can see is the sentence arriving on a CommandResult that a real
+// seat reads, which is where the leak was actually observed in Task 3 and the
+// reason the refusal test above keeps its own end-to-end art rows. Recorded in
+// the Task 4 report.
+func TestNoWarningTellsAClientWhereTheCampaignLives(t *testing.T) {
+	t.Run("the art root cannot be opened", func(t *testing.T) {
+		root := t.TempDir()
+		// A plain FILE where art/ belongs, rather than a mode: a permissions
+		// fixture passes trivially for a process running as root, and CI
+		// containers often do.
+		artDir := filepath.Join(root, "art")
+		if err := os.WriteFile(artDir, []byte("a plain file where art/ belongs"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f := newMapFixtureAt(t, false, true, artDir)
+		conn := f.dial(f.dmToken, 0)
+
+		// Two overrides and an object: BOTH producers that can fire against an
+		// unreadable root, so a fix that closes one sentence and leaves the
+		// other is caught.
+		installMap(t, f.mapsDir, "cellar", `{"format_version":1,"id":"cellar","name":"Cellar",
+			"grid_width":2,"grid_height":1,"tiles":{"0,0":"stone","1,0":"stone"},
+			"overrides":{"0,0":"masonry-1","1,0":"earth-1"},
+			"objects":[{"id":"p1","kind":"pillar","art":"pillar-stone","at":[0,0],"size":[1,1]}]}`)
+
+		sendCommand(t, conn, loadMapCmdFor("cellar"))
+		res := readResult(t, conn)
+		if !res.GetOk() {
+			t.Fatalf("load_map: %s — an art root that cannot be opened degrades every square "+
+				"at request time, it does not refuse the map (Patrik's ruling, 2026-09-03)",
+				res.GetError())
+		}
+		if len(res.GetWarnings()) == 0 {
+			t.Fatal("no warnings: every reference in this map dropped, and a silent degrade " +
+				"is the failure spec §4 designs the warning to prevent")
+		}
+		assertNoWarningNamesAPath(t, res.GetWarnings(), artDir, f.mapsDir, root)
+	})
+
+	t.Run("art that resolves — every other warning the art path has", func(t *testing.T) {
+		f := newInstallableMapFixture(t)
+		conn := f.dial(f.dmToken, 0)
+
+		// One square per producer, against the REAL cellarArtDir:
+		//   masonry-1    declares kind "wall" over a "stone" floor -> mismatch
+		//   no-such-art  is installed nowhere                      -> not installed
+		//   pillar-stone is a picture with no sidecar              -> no sidecar
+		//   the object's art is installed nowhere                  -> object not installed
+		installMap(t, f.mapsDir, "cellar", `{"format_version":1,"id":"cellar","name":"Cellar",
+			"grid_width":4,"grid_height":1,
+			"tiles":{"0,0":"stone","1,0":"stone","2,0":"stone","3,0":"stone"},
+			"overrides":{"0,0":"masonry-1","1,0":"no-such-art","2,0":"pillar-stone"},
+			"objects":[{"id":"o1","kind":"pillar","art":"no-such-object","at":[3,0],"size":[1,1]}]}`)
+
+		sendCommand(t, conn, loadMapCmdFor("cellar"))
+		res := readResult(t, conn)
+		if !res.GetOk() {
+			t.Fatalf("load_map: %s — every one of these degrades", res.GetError())
+		}
+		// EACH PRODUCER MUST ACTUALLY HAVE FIRED. Without this the path
+		// assertion below goes vacuous the moment a sentence stops being
+		// produced, which is the degenerate-fixture failure this repo keeps
+		// finding: a guard over an empty set passes.
+		said := strings.Join(res.GetWarnings(), "\n")
+		for _, want := range []string{"masonry-1", "no-such-art", "pillar-stone", "no-such-object"} {
+			if !strings.Contains(said, want) {
+				t.Fatalf("warnings %q, want one naming %q — this test guards the sentence "+
+					"that reference produces, and cannot guard one nobody built",
+					res.GetWarnings(), want)
+			}
+		}
+		assertNoWarningNamesAPath(t, res.GetWarnings(), f.artDir, f.mapsDir)
+	})
+}
+
+// assertNoWarningNamesAPath is the promise itself, in one place because two
+// subtests make it and a third will. os.TempDir() is always forbidden and is
+// the broad net: every fixture path in this package sits under it, so a path
+// this call site forgot to name is still caught.
+func assertNoWarningNamesAPath(t *testing.T, warnings []string, forbidden ...string) {
+	t.Helper()
+	for _, w := range warnings {
+		for _, path := range append(forbidden, os.TempDir()) {
+			if strings.Contains(w, path) {
+				t.Errorf("a client was told where the campaign lives:\n  %s", w)
+				break
+			}
+		}
 	}
 }
 

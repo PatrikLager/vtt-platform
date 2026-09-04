@@ -268,4 +268,15 @@ deps:
   # and calls mapdef.Load/mapdef.LoadPack/mapdef.Compile directly (cmd
   # composes, same shape as rules/adventure above) — see cmd/vtt/maps.go's
   # loadMapsDir.
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef] }
+  #
+  # artlib added art-is-a-flat-library Task 4: composeServer runs
+  # artlib.Validate over campaignPath/art at boot and REPORTS what it finds
+  # while starting anyway (Patrik's severity ruling, 2026-09-03) — the walk
+  # spec §5 calls the backstop, run where an operator can read it. Predicted
+  # in writing by artlib's own components: entry above ("every later task that
+  # wires it in — mapdef.Resolve, the gateway, cmd/vtt, internal/adventure —
+  # adds the edge INTO artlib, never the reverse"), and added at the task that
+  # actually wires it rather than pre-declared, the same as-needed discipline
+  # rules and adventure followed. artlib stays self-only, so no cycle is
+  # expressible.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef, artlib] }

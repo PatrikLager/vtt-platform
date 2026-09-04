@@ -248,10 +248,20 @@ func LoadMapsDir(dir string) (map[string]*mapdef.Map, error) {
 // the only useful thing to say to someone who has to go and chmod it.
 //
 // It opens rather than stats, so a directory with the wrong mode is caught
-// with the same call that a lookup would fail on. Task 4 of that plan calls
-// artlib.Validate at compose time, which subsumes this and also refuses a
-// subdirectory or an orphan sidecar; until it does, this is the whole of the
-// boot-time art check.
+// with the same call that a lookup would fail on.
+//
+// artlib.Validate DOES NOT SUBSUME THIS, which this comment predicted it would
+// until Task 4 of that plan wired it up. composeServer runs both, in this
+// order, and they have different verdicts: Validate finds problems in
+// individual files and REPORTS them while the server starts anyway (Patrik's
+// severity ruling, 2026-09-03 — one hand-copied file must not cost a table its
+// server), and a report is all it is: what each of its findings does at the
+// table ranges from refusing the map to rendering with nothing objecting, and
+// internal/artlib's Validate doc comment carries the measured table. This, by
+// contrast, is the one art condition that still refuses the boot. An
+// unopenable ROOT is not one piece failing, it is every piece failing, and
+// starting on it would serve a campaign with no art at all and a warning on
+// every load.
 func artRootIsOpenable(artDir string) error {
 	root, err := os.OpenRoot(artDir)
 	if err != nil {

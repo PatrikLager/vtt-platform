@@ -18,6 +18,7 @@ package main
 // handleLoadMap resolves it at request time (packs[m.Pack]).
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -242,6 +243,114 @@ func TestAnAbsentArtDirectoryIsNotABootFailure(t *testing.T) {
 	if err := closeFn(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestEveryArtProblemIsReportedAtBootAndTheServerStartsAnyway is Patrik's
+// severity ruling of 2026-09-03, which overrides the plan's own Task 4 brief
+// ("fail the boot on a subdirectory or an orphan sidecar"). RUN THE CHECK AT
+// START, REPORT EVERY PROBLEM, AND START ANYWAY: a campaign with two hundred
+// good pieces and one Masonry-1.png copied off a Windows box must not fail to
+// boot, because the refusal fires on files no map has ever named and fixing
+// five mistakes would otherwise cost five boots. `vtt art install` (Task 6)
+// still refuses outright, because there the operator is holding the file.
+//
+// WHAT THE RULING BUYS IS THE BOOT, NOT A GUARANTEE ABOUT RENDERING. This
+// comment said "nothing malformed can render regardless — artlib.Lookup refuses
+// each broken piece individually when a map names it" until 2026-09-03, and
+// that is false in three of the five arms (review finding F1): a relative
+// symlink and a wrong-cased filename both RENDER, and an orphan sidecar or a
+// subdirectory draws the square plain rather than refusing it. internal/artlib's
+// Validate doc comment carries the measured table. That is what makes THIS test
+// matter more, not less — for two arms the boot report is the only notice
+// anyone gets, so a boot that says nothing is a defect that ships silently.
+//
+// THE "no maps yet" SUBTEST IS THE ONE THAT MATTERS, exactly as in
+// TestABrokenArtDirectoryStopsTheBootWhetherOrNotMapsExists above: composeServer
+// calls loadMapsDir only when campaignPath/maps EXISTS, so a validation call
+// placed inside that guard never runs for a campaign that has art and no map
+// yet — design spec §1's own defect, rebuilt one directory over. A fresh
+// campaign IS the improvisation case.
+//
+// Three problems sit around a piece that is FINE. os.ReadDir sorts by name and
+// 'M' sorts before 'a', so the entries arrive Masonry-1.png, aaa-good.json,
+// aaa-good.png, cellar-basics/, orphan.json — a walk that answers with its
+// first finding names Masonry-1.png and stops, and cellar-basics and orphan are
+// what it could not say. internal/artlib's own
+// TestValidateReportsEveryProblemNotOnlyTheFirst pins the collecting arm by
+// arm; this pins that composeServer runs the walk at all and says what it found.
+func TestEveryArtProblemIsReportedAtBootAndTheServerStartsAnyway(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		withMaps bool
+	}{
+		{"no maps yet — the campaign this sub-project exists for", false},
+		{"maps installed", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			campaignPath := filepath.Join(t.TempDir(), "campaign")
+			artDir := filepath.Join(campaignPath, "art")
+			if err := os.MkdirAll(filepath.Join(artDir, "cellar-basics"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(artDir, "aaa-good.json"),
+				`{"format_version":1,"kind":"wall","material":"stone"}`)
+			writeFile(t, filepath.Join(artDir, "aaa-good.png"), "fake-png")
+			writeFile(t, filepath.Join(artDir, "orphan.json"),
+				`{"format_version":1,"kind":"wall","material":"stone"}`)
+			writeFile(t, filepath.Join(artDir, "Masonry-1.png"), "fake-png")
+			if tc.withMaps {
+				if err := os.MkdirAll(filepath.Join(campaignPath, "maps"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(campaignPath, "maps", "shrine.json"), `{
+					"format_version": 1, "id": "shrine", "name": "Obsidian Shrine",
+					"grid_width": 1, "grid_height": 1, "tiles": {"0,0":"wood"}
+				}`)
+			}
+
+			boot := captureBootLog(t)
+			_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+			if err != nil {
+				t.Fatalf("composeServer: %v — one hand-copied file must not cost a table "+
+					"its server, and none of these is a file any map has named", err)
+			}
+			t.Cleanup(func() {
+				if closeErr := closeFn(); closeErr != nil {
+					t.Error(closeErr)
+				}
+			})
+
+			said := boot.String()
+			for _, want := range []string{"cellar-basics", "orphan", "Masonry-1.png"} {
+				if !strings.Contains(said, want) {
+					t.Errorf("boot said:\n%s\nwant it to name %q — an operator who is told about "+
+						"one problem per boot pays one boot per problem", said, want)
+				}
+			}
+			if strings.Contains(said, "aaa-good") {
+				t.Errorf("boot said:\n%s\naaa-good is a well-formed piece and must not be named", said)
+			}
+		})
+	}
+}
+
+// captureBootLog redirects the default slog logger into a buffer for one test,
+// which is how composeServer's art report is read back: it is a WARNING and
+// not an error, so it cannot come back through composeServer's return values,
+// and slog is where internal/ already puts "the platform continues and here is
+// what is wrong" (internal/campaign's replay skip, internal/gateway's withheld
+// projection).
+//
+// syncBuffer rather than a bytes.Buffer: another test's server may still be
+// draining a goroutine that logs, and the default logger is process-wide.
+// Nothing in this package runs t.Parallel, so the swap itself is safe.
+func captureBootLog(t *testing.T) *syncBuffer {
+	t.Helper()
+	buf := newSyncBuffer()
+	prior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prior) })
+	return buf
 }
 
 // TestABootLoadedMapWhoseArtIsNotInstalledStillBoots is spec §8's keystone at

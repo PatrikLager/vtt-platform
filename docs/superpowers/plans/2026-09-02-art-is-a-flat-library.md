@@ -725,6 +725,50 @@ git commit -m "Art is read when the map is loaded, not once at boot"
 
 ---
 
+### Task 4b: A corrupt sidecar degrades; a newer format still refuses
+
+Patrik's ruling, 2026-09-04. Added after Task 4's review measured that one
+corrupt sidecar named by one committed map **stops the server booting** — exit
+status 1, with every other map fine — because `composeServer` turns any
+map-load error into a refusal to start.
+
+It is deliberately its own task rather than a rider on Task 4: it changes
+behaviour, it amends the spec (§4, §5, criterion 5), and Task 4 was already
+green and reviewed.
+
+**Files:**
+- Modify: `internal/mapdef/resolve.go` (the artlib-error arm in `Resolve` and
+  `ResolveObjectArt`), `internal/artlib/artlib.go` (a sentinel the caller can
+  branch on)
+- Test: `internal/mapdef/resolve_test.go`, `internal/artlib/artlib_test.go`,
+  `cmd/vtt/maps_e2e_test.go`
+
+**Interfaces:**
+- Produces: a way for `Resolve` to tell "cannot be read" from "declares a format
+  I do not understand". `artlib.ErrNotFound` and `artlib.ErrArtDirUnreadable`
+  already exist; this needs a third, e.g. `artlib.ErrFormatVersion`.
+
+- [ ] **Step 1: Write the failing tests.** A map naming art whose sidecar is
+  corrupt JSON loads, that square draws plain, and the warning names the piece
+  AND the cause — never the not-installed sentence, for §3.4's reason. A map
+  naming art whose sidecar declares `format_version: 99` is still refused, and
+  the refusal names both versions. A campaign holding the corrupt file **boots**.
+
+- [ ] **Step 2: Run them RED.** Behavioural, not compile-failure: today both
+  cases refuse, so the corrupt one fails on the refusal and the boot one fails
+  on exit status 1.
+
+- [ ] **Step 3: Split the arm.** Only artlib errors, and only in `Resolve` /
+  `ResolveObjectArt`. A structurally broken MAP — an unknown tile name, a square
+  with no tile — must still refuse; this ruling is about art, not about maps.
+
+- [ ] **Step 4: Run the suites**, including `cmd/vtt`, which is where the boot
+  behaviour is observable.
+
+- [ ] **Step 5: Commit.**
+
+---
+
 ### Task 5: A map declaring "pack" is refused
 
 **Files:**
@@ -827,7 +871,17 @@ func TestArtInstallValidatesTheSidecarAtInstallRatherThanAtTheTable(t *testing.T
 
 - [ ] **Step 3: Implement.** `campaigncfg.Load` returns `Config{CellPx: 64}` when
 the file is absent. `packRefJSON` is deleted; metadata reports `cellPx` directly.
-Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`. `vtt art install <path>...`
+Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`.
+
+**The route MUST NOT serve a file inside a subdirectory**, and `os.OpenRoot`
+alone does not stop it: a root CONFINES but does not FLATTEN, and `fs.ValidPath`
+rejects only `..`, so `art/pack-ish/x.png` is legitimately inside the root. Two
+things keep a subdirectory inert and this task must keep at least one: the
+pattern stays `{file}` — net/http's single-segment wildcard does not match
+across `/`, which is what the pack route already relied on — and/or the handler
+runs `isPictureName` on the name. Test it directly: the spec's whole
+no-subfolders rule (§3.1, §3.3) rests on nothing inside `art/pack-ish/` being
+reachable, and this route is the only place that could make it reachable. `vtt art install <path>...`
 copies files in, refuses a directory, refuses an existing stem without `--force`,
 and runs `artlib.Lookup` on each installed stem so a malformed sidecar is caught
 at install rather than at the table.
@@ -891,6 +945,16 @@ because they were already the art names.
 
 - [ ] **Step 2:** `tools/genmappack` emits the flat layout and takes `cell_px`
 as its own flag rather than writing it into a pack.
+
+- [ ] **Step 2b: Carry the assertion Tasks 4 and 8 pass between them.** Nothing
+tests that the SHIPPED campaign's art reaches the wire —
+`TestLoadMapProducesBatchCarryingTilesAndObjects` loads the real `cellar.json`
+but resolves it against a synthetic art directory. Task 4 correctly judged the
+fixture could not exist before this task creates `campaigns/example/art/`, and
+left a note in `cellarArtDir`'s doc comment. That note is in
+`internal/gateway/map_test.go`, which this task does not otherwise open — so it
+is written here too, where an implementer actually looks. Assert the shipped
+campaign's own art resolves and reaches a seat.
 
 - [ ] **Step 3:** Regenerate goldens where art metadata reaches the wire. Goldens
 have **no `-update` flag** by design; a changed golden is re-derived by hand and

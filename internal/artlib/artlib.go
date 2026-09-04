@@ -20,7 +20,16 @@
 // renderer a filename Linux does not have. Closing that inside Lookup needs a
 // ReadDir, which is the boot-time load this design exists to delete, so the
 // residual stands: it is the same cp-after-boot window spec §5 already accepts,
-// and install or the next boot is what catches it.
+// and `vtt art install` is what catches it.
+//
+// THE NEXT BOOT NO LONGER CATCHES IT, and this sentence said it did until
+// 2026-09-03 (review finding F1). Since art-is-a-flat-library Task 4,
+// composeServer runs Validate at start and REPORTS what it finds rather than
+// refusing (Patrik's severity ruling that day), so a Masonry-1.png dropped in
+// by hand is now NAMED in the boot log and then renders anyway on this machine
+// — handing the renderer masonry-1.png, which is not on disk — while the same
+// campaign draws that square plain on a case-sensitive server. A boot that
+// mentions a defect is not a boot that closes it.
 //
 // UNIQUENESS IS THE FILESYSTEM'S (spec §3.3), which is why art/ is flat.
 // art/a/x.png and art/b/x.png coexist happily, and the moment they can,
@@ -426,6 +435,50 @@ func statPicture(root *os.Root, id, name string) error {
 // no picture beside it (spec §3.4's error) IS absent art, seen from the
 // directory rather than from a map. Validate's own contract is only err or
 // nil.
+//
+// IT REPORTS EVERY PROBLEM IT FINDS, NOT THE FIRST, and that is a deliberate
+// change made at Task 4 of art-is-a-flat-library — Task 1 wrote this to return
+// at its first finding. Patrik's severity ruling of 2026-09-03 is what forced
+// it: cmd/vtt's composeServer runs this walk at boot, reports what it says, and
+// starts the server ANYWAY, because a campaign with two hundred good pieces and
+// one Masonry-1.png copied off a Windows box must not fail to boot over a file
+// no map has ever named. Under an early return, an operator with three mistakes
+// pays three boots to hear about them. The answer is one error per problem,
+// joined with errors.Join, so the message carries them all and errors.Is still
+// reaches each one. `vtt art install` reads it as the single refusal it always
+// was: non-nil is non-nil.
+//
+// A FINDING HERE IS NOT A PROMISE ABOUT WHAT RENDERS, and the first version of
+// Task 4's prose said it was: "each broken piece is refused when a map names
+// it" was written in four places and is false in three of the five arms
+// (measured 2026-09-03, review finding F1). What a map load actually does with
+// each finding:
+//
+//   - A SIDECAR THAT CANNOT BE PARSED, or that declares a format_version this
+//     server does not understand: REFUSES the map. This arm alone is what the
+//     retired claim was true of.
+//   - AN ORPHAN SIDECAR, A SUBDIRECTORY, and a wrong-cased name on a
+//     CASE-SENSITIVE filesystem: Lookup answers ErrNotFound, so the square
+//     DRAWS PLAIN and the DM gets a warning (spec §4). A subdirectory takes its
+//     own stem down with it and its contents are unreachable, which is flatness
+//     holding — but it is a degrade, not a refusal.
+//   - A RELATIVE SYMLINK, and a wrong-cased name on a CASE-INSENSITIVE
+//     filesystem: RENDERS, with nothing anywhere objecting. `ln -s aaa-good.png
+//     linky.png` resolves through Root.Stat because its target is inside the
+//     root — an ABSOLUTE link is refused as an escape, which is exactly why the
+//     relative one is the shape that matters. Masonry-1.png resolves for
+//     "masonry-1" on macOS and hands back a File that is not on disk.
+//
+// FOR THAT LAST PAIR THIS REPORT IS THE ONLY NOTICE ANYONE EVER GETS. Whether a
+// wrong-cased filename should be a narrow boot refusal on those grounds — it is
+// the one finding that changes what RENDERS, and changes it differently per
+// platform — is Patrik's call and was open on 2026-09-03.
+//
+// THE ReadDir FAILURE IS STILL ALONE, because there is no walk after it: the
+// directory itself could not be listed, so there are no entries to have
+// problems. composeServer catches that condition before this runs anyway
+// (cmd/vtt's artRootIsOpenable, which REFUSES the boot on it — an unopenable
+// root is every piece failing, not one).
 func Validate(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -440,57 +493,77 @@ func Validate(dir string) error {
 		// Validate ever answers a request, this line becomes a leak.
 		return fmt.Errorf("artlib: read art dir %s: %w", dir, err)
 	}
+	var problems []error
 	for _, e := range entries {
-		name := e.Name()
-		// Type() is the entry's OWN type, not its target's, which is the point:
-		// a symlink to a directory answers IsDir() == false, so `ln -s` walked
-		// straight past a subdirectory check and re-created the pack. A symlink
-		// to a file is refused by the same rule, because it is a second name
-		// for one piece and §3.3 says a piece has exactly one.
-		//
-		// This runs on EVERY entry, before the "is it art at all" filter below,
-		// so a symlinked .DS_Store is refused where a real one is ignored. That
-		// asymmetry is deliberate: the filter asks what a file IS to this
-		// package, and the link rule asks whether art/ owns it at all.
-		//
-		// if rather than a switch, for the reason isArtID gives: gremlins
-		// scores a switch case's condition NOT COVERED, and this comparison is
-		// the whole of the symlink refusal.
-		typ := e.Type()
-		if typ&fs.ModeSymlink != 0 {
-			return fmt.Errorf(
-				"artlib: art dir %s contains a symlink %q; art/ holds files — a link is a "+
-					"second name for one piece, and a link to a directory is a subfolder "+
-					"in disguise", dir, name)
+		if problem := entryProblem(dir, e); problem != nil {
+			problems = append(problems, problem)
 		}
-		if typ.IsDir() {
-			return fmt.Errorf(
-				"artlib: art dir %s contains a subdirectory %q; art/ is flat — "+
-					"a subfolder is a namespace, and a namespace is a pack", dir, name)
-		}
+	}
+	// errors.Join returns nil for an empty slice, so a clean directory still
+	// answers nil rather than a non-nil error wrapping nothing.
+	return errors.Join(problems...)
+}
 
-		// Art is a picture and an optional sidecar. Anything else in the
-		// directory belongs to whoever put it there — a .DS_Store must not
-		// stop a campaign booting — but a name that only LOOKS like art is
-		// refused, because a case-insensitive filesystem hands y.JSON to a
-		// lookup that a case-sensitive one never would.
-		ext := filepath.Ext(name)
-		if !strings.EqualFold(ext, sidecarExt) && !strings.EqualFold(ext, pictureExt) {
-			continue
-		}
-		stem := strings.TrimSuffix(name, ext)
-		if ext != strings.ToLower(ext) || !isArtID(stem) {
-			return fmt.Errorf(
-				"artlib: art dir %s: %q is not an art filename: a kebab-case stem and a "+
-					"lowercase %s or %s, so the stem IS the id a map names (design spec §3.2)",
-				dir, name, pictureExt, sidecarExt)
-		}
-		if ext == sidecarExt {
-			// Resolved through Lookup itself, not a second check that could
-			// disagree with it: what install accepts, a map load accepts.
-			if _, lookupErr := Lookup(dir, stem); lookupErr != nil {
-				return fmt.Errorf("artlib: art dir %s: %w", dir, lookupErr)
-			}
+// entryProblem is what is wrong with one entry of art/, or nil.
+//
+// ONE ENTRY CONTRIBUTES AT MOST ONE PROBLEM, AND THAT IS STRUCTURAL HERE — the
+// return type says it, so an arm appended below cannot break it. The first
+// collecting version of Validate held these arms inline in its loop, where the
+// same invariant was POSITIONAL: every arm but the last needed a `continue` and
+// the last one needed none, so appending an arm would have made the previous
+// last arm fall through into it, silently, with no gate able to see it (review
+// finding F4, 2026-09-03). The count an operator reads is the number of files
+// to go and fix, and it stays that way by construction.
+func entryProblem(dir string, e fs.DirEntry) error {
+	name := e.Name()
+	// Type() is the entry's OWN type, not its target's, which is the point:
+	// a symlink to a directory answers IsDir() == false, so `ln -s` walked
+	// straight past a subdirectory check and re-created the pack. A symlink
+	// to a file is refused by the same rule, because it is a second name
+	// for one piece and §3.3 says a piece has exactly one.
+	//
+	// This runs on EVERY entry, before the "is it art at all" filter below,
+	// so a symlinked .DS_Store is refused where a real one is ignored. That
+	// asymmetry is deliberate: the filter asks what a file IS to this
+	// package, and the link rule asks whether art/ owns it at all.
+	//
+	// if rather than a switch, for the reason isArtID gives: gremlins
+	// scores a switch case's condition NOT COVERED, and this comparison is
+	// the whole of the symlink refusal.
+	typ := e.Type()
+	if typ&fs.ModeSymlink != 0 {
+		return fmt.Errorf(
+			"artlib: art dir %s contains a symlink %q; art/ holds files — a link is a "+
+				"second name for one piece, and a link to a directory is a subfolder "+
+				"in disguise", dir, name)
+	}
+	if typ.IsDir() {
+		return fmt.Errorf(
+			"artlib: art dir %s contains a subdirectory %q; art/ is flat — "+
+				"a subfolder is a namespace, and a namespace is a pack", dir, name)
+	}
+
+	// Art is a picture and an optional sidecar. Anything else in the
+	// directory belongs to whoever put it there — a .DS_Store must not
+	// stop a campaign booting — but a name that only LOOKS like art is
+	// refused, because a case-insensitive filesystem hands y.JSON to a
+	// lookup that a case-sensitive one never would.
+	ext := filepath.Ext(name)
+	if !strings.EqualFold(ext, sidecarExt) && !strings.EqualFold(ext, pictureExt) {
+		return nil
+	}
+	stem := strings.TrimSuffix(name, ext)
+	if ext != strings.ToLower(ext) || !isArtID(stem) {
+		return fmt.Errorf(
+			"artlib: art dir %s: %q is not an art filename: a kebab-case stem and a "+
+				"lowercase %s or %s, so the stem IS the id a map names (design spec §3.2)",
+			dir, name, pictureExt, sidecarExt)
+	}
+	if ext == sidecarExt {
+		// Resolved through Lookup itself, not a second check that could
+		// disagree with it: what install accepts, a map load accepts.
+		if _, lookupErr := Lookup(dir, stem); lookupErr != nil {
+			return fmt.Errorf("artlib: art dir %s: %w", dir, lookupErr)
 		}
 	}
 	return nil

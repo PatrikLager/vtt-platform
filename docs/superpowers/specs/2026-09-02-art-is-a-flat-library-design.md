@@ -202,6 +202,27 @@ boot-time art load to order.
 **A missing or unreadable art reference drops that ONE square (or object) to the
 built-in vocabulary. The map loads.**
 
+**Art that cannot be READ degrades; art that declares a FORMAT THIS SERVER DOES
+NOT UNDERSTAND refuses** (Patrik, 2026-09-04). These share one code path today
+and must be split.
+
+A corrupt sidecar — a missing brace, a truncated copy — degrades that square
+with its own sentence naming the piece and the cause. Until this ruling it
+refused the map, and because `composeServer` turns any map-load error into a
+refusal to start, **one bad file stopped the server booting** while every other
+map sat there fine; measured 2026-09-03, exit status 1. That is the same shape
+ruled against three times already — the sidecar-less PNG, the unopenable art
+root, and boot-time `Validate` — and it survived only because nobody re-asked
+after the warning channel existed to carry the information a refusal used to
+carry.
+
+`format_version` is the opposite case and keeps its refusal. It does not mean
+the file is broken; it means the CONTENT IS NEWER THAN THE SERVER. Degrading it
+would turn a whole v2 art set into hundreds of plain squares and a wall of
+warnings, which reads as "my art is broken" when the true diagnosis is "this
+server is too old". One refusal naming the version says that; ninety warnings
+do not.
+
 **An art DIRECTORY that cannot be opened is strict at boot and lenient at
 request time** (Patrik, 2026-09-03). At boot the operator is at a terminal and
 can act on a filesystem path, so the server refuses to start and names the
@@ -266,6 +287,24 @@ early validation.
 **The loader is the backstop that cannot be bypassed**, and it is where the
 rules actually bind: a subdirectory in `art/`, a sidecar with no picture, an
 unreadable sidecar, an unsupported `format_version`.
+
+**"Binds" means the FILE is named, not that anything is refused.** Amended
+2026-09-03 and corrected 2026-09-04, because the first amendment repeated a
+sentence that five Go files had already retired: *"each broken piece is then
+refused individually the moment a map names it."* That is false, and it is false
+in a way no amount of care about wording would have fixed — **a `Validate`
+finding does not predict what a map load does with it.** The subdirectory and
+symlink arms each span all three outcomes, because a load is decided by what
+`Lookup` finds at `<stem>.json` and `<stem>.png`, not by which arm reported the
+entry. `art/pack-ish/` degrades; `art/masonry-1.png/` refuses. A relative
+in-root symlink renders; a dangling symlinked sidecar refuses.
+
+At boot every problem is reported and the server starts. `vtt art install`
+refuses outright, because there the operator is holding the file. A subdirectory is the mildest
+case of all: art ids must be plain filenames, so nothing inside `art/pack-ish/`
+is reachable by any map — the tree is inert, and the boot warning exists to stop
+a DM wondering why art they installed does nothing. Refusing to start over an
+inert folder would take a campaign down for a mistake that cannot affect play.
 
 ---
 
@@ -391,8 +430,14 @@ expensive part.
    built-in vocabulary, warning once per unresolved reference.
 4. Art installed or overwritten while the server runs takes effect on the next
    `load_map`, with no restart and no message suggesting one.
-5. A subdirectory under `art/`, a sidecar with no picture, and a map declaring
-   `"pack"` are each refused with a message naming the thing that is wrong.
+5. **Every malformed thing is NAMED at boot**, and some of them RENDER anyway.
+   Those are the two claims that survive every arm, and they are deliberately
+   the only ones stated: three earlier drafts of this criterion tried to
+   enumerate outcomes by kind and each was measurably wrong, because a
+   `Validate` finding does not predict a load (see §5). The rendering cases are
+   a resolvable in-root symlink, and a wrong-cased filename on a
+   case-insensitive filesystem — for those, the boot report is the only notice
+   anyone gets.
 6. Object art needs no sidecar. Tile art without one **degrades that square
    with its own warning** (amended 2026-09-03 — see §3.4; the original criterion
    said "is refused", which in practice refused the whole server).

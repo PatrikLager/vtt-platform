@@ -408,9 +408,10 @@ func (s *Server) WithMapsDir(dir string) *Server {
 // reaches the wire had to be weakened for one task and remembered back. A
 // weakened assertion that nobody restores fails silently; an interface that
 // arrives one task early fails loudly, at the next implementer's first
-// compile. Task 4 still owns calling artlib.Validate at boot, wiring this
-// from cmd/vtt's composeServer, and proving art installed after boot is found
-// without a restart.
+// compile. Task 4 then did what it owned: cmd/vtt's composeServer calls this
+// with campaignPath/art, unconditionally and outside its maps guard, having
+// first run artlib.Validate over that directory and reported (not refused) what
+// it found.
 //
 // Boot time only as a CONFIGURATION call, like every other With* method:
 // mutates s in place, so it is not safe to call concurrently with s already

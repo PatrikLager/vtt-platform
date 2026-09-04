@@ -51,10 +51,11 @@ type Resolved struct{ Kind, Material, Art string }
 //     until then, so a reader holding an older copy will find them disagreeing.
 //     Note the asymmetry it removes: the mirror case, a sidecar whose picture
 //     is absent, already degraded.
-//   - AN ART ROOT THAT CANNOT BE OPENED, here at request time. The boot walk
-//     keeps refusing it (cmd/vtt's loadMapsDir checks the root before it walks
-//     any map), where an operator is at a terminal and can act. A DM cannot
-//     chmod a directory from a browser, and a campaign that worked five
+//   - AN ART ROOT THAT CANNOT BE OPENED, here at request time. The boot keeps
+//     refusing it — cmd/vtt's artRootIsOpenable, called from composeServer
+//     rather than from the maps walk, so that a campaign with art and no map
+//     yet is checked too — where an operator is at a terminal and can act. A DM
+//     cannot chmod a directory from a browser, and a campaign that worked five
 //     minutes ago should not stop working.
 //
 // The two refusals this replaced were `p == nil` ("needs a pack to resolve")
