@@ -14,9 +14,14 @@
 // Kind/Material ever comes from art — see Resolve's doc comment for why that
 // boundary is load-bearing.
 //
-// Pack/PackTile and LoadPack still live in this package and are read by
-// nobody who resolves anything; Task 7 of that plan deletes them. Compiling a
-// loaded Map into wire events is compile.go's job
+// A MAP THAT DECLARES A PACK IS REFUSED, by Load, naming the field and
+// pointing at art/ (that plan's design spec §7: "There is no compatibility
+// layer, and none is added later"). Map has no Pack field at all any more —
+// mapJSON keeps the JSON one solely so the refusal can be worded. Pack,
+// PackTile and LoadPack DO still live in this package, unreachable from any
+// map: nothing resolves against them, and Task 7 of that plan deletes them.
+//
+// Compiling a loaded Map into wire events is compile.go's job
 // (Task 4, spec §5) — the one and only reason this package depends on
 // contract/gen/go/vtt/v1 at all; nothing in format.go, load.go, standard.go,
 // or resolve.go touches it.
@@ -43,16 +48,6 @@ type Map struct {
 
 	ID, Name     string
 	GridW, GridH int32
-
-	// Pack named the custom pack Overrides values used to resolve against
-	// (maps-as-geometry spec §4.2). NOTHING RESOLVES AGAINST IT ANY MORE:
-	// since 2026-09-02-art-is-a-flat-library Task 3 an override names art by
-	// filename in the campaign's flat art/ directory, and any map may name
-	// any installed art. Load still carries the field through unvalidated;
-	// Task 5 of that plan refuses a map that declares it, and Task 7 deletes
-	// it. Until then it is read only by GET /api/maps' pack reference
-	// (internal/gateway/metadata.go).
-	Pack string
 
 	// Tiles declares the NATURE of every square: what it structurally IS,
 	// enforced by the engine (spec §3.2).
@@ -123,8 +118,12 @@ type Placement struct {
 // pack.json entry looks identical whichever list it sits in, and neither
 // list needs a different one. Kind and Material here are ADVISORY: authoring
 // metadata a human or an LLM uses to pick a tile deliberately (spec §1.5),
-// carrying no authority over a square's actual nature — Resolve (resolve.go)
-// never reads them as fact, only m.Tiles does.
+// carrying no authority over a square's actual nature. RESOLVE NO LONGER READS
+// A PackTile AT ALL — it reads a sidecar through internal/artlib
+// (2026-09-02-art-is-a-flat-library Task 3), where the same advisory/authority
+// split is stated on Resolve itself; this said "Resolve never reads them as
+// fact, only m.Tiles does" until Task 5 of that plan, which is a true sentence
+// about a call that stopped happening.
 type PackTile struct {
 	Name, Kind, Material       string
 	File, FileOpen, FileClosed string
@@ -141,10 +140,15 @@ type PackTile struct {
 // maps.
 const PackFormatVersion int32 = 1
 
-// Pack is one loaded pack manifest (spec §4.2), keyed by tile/object name
-// for the O(1) lookup Resolve needs per square. LoadPack never touches a
-// Map: a pack is reusable content, not bound to any one map, mirroring spec
-// §4.3's "load standalone" principle applied to art rather than geometry.
+// Pack is one loaded pack manifest (spec §4.2), keyed by tile/object name.
+// THAT KEYING NOW SERVES NOBODY: it existed for the O(1) lookup Resolve made
+// per square, and Resolve stopped taking a *Pack at
+// 2026-09-02-art-is-a-flat-library Task 3. LoadPack never touched a Map even
+// then — a pack is reusable content, not bound to any one map, mirroring spec
+// §4.3's "load standalone" principle applied to art rather than geometry — and
+// since Task 5 of that plan no map can name one at all. Task 7 deletes this
+// type; until then LoadPack is still run over a campaign's packs/ at boot, so
+// a malformed pack.json is refused rather than silently ignored mid-removal.
 type Pack struct {
 	// FormatVersion is the format this pack manifest declares itself
 	// written in (design spec §7, "Format versions, on maps and on packs

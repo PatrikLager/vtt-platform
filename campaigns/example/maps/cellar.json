@@ -4,7 +4,6 @@
   "name": "The Sunken Cellar",
   "grid_width": 10,
   "grid_height": 9,
-  "pack": "cellar-basics",
 
   "tiles": {
     "0,0": "stone-wall", "1,0": "stone-wall", "2,0": "stone-wall", "3,0": "stone-wall", "4,0": "stone-wall", "5,0": "stone-wall", "6,0": "stone-wall", "7,0": "stone-wall", "8,0": "stone-wall", "9,0": "stone-wall",

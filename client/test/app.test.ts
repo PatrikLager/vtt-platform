@@ -562,6 +562,14 @@ test("an adventures fetch that never happens leaves the console's list empty", a
   s?.close();
 });
 
+// THE SERVER CAN NO LONGER SEND THE SHAPE THIS TEST MOCKS. /api/maps carries
+// no pack reference since Task 5 of 2026-09-02-art-is-a-flat-library deleted
+// mapdef.Map.Pack (metadata.go's packRefJSON went with it), so what is pinned
+// below is client wiring against a response nothing produces. Kept rather than
+// deleted because Task 6 of that plan is what replaces the path — with
+// GET /api/art/{file} and a campaign-level cellPx — and deleting the test now
+// would delete the wiring coverage that task inherits, with nothing to shout
+// about the loss.
 test("a configured map's pack is fetched and its images requested with the Bearer token", async () => {
   // Task 10's seam: nothing before this task ever fetched a tile image (see
   // pack-assets.ts's own header comment). This proves the WIRING end to end

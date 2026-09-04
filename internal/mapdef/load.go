@@ -15,16 +15,45 @@ import (
 // match the spec's JSON examples exactly; Go-side validation and the
 // friendlier Map/Object/Placement shapes live in format.go and below.
 type mapJSON struct {
-	FormatVersion int32             `json:"format_version"`
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	GridWidth     int32             `json:"grid_width"`
-	GridHeight    int32             `json:"grid_height"`
-	Pack          string            `json:"pack"`
-	Tiles         map[string]string `json:"tiles"`
-	Overrides     map[string]string `json:"overrides"`
-	Objects       []ObjectJSON      `json:"objects"`
-	Placements    []placementJSON   `json:"placements"`
+	FormatVersion int32  `json:"format_version"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	GridWidth     int32  `json:"grid_width"`
+	GridHeight    int32  `json:"grid_height"`
+	// Pack is kept here SOLELY so loadAs can refuse a file that declares it
+	// (design spec §7, "There is no compatibility layer, and none is added
+	// later") — nothing reads its value except the refusal's own message.
+	// Deleting it would still refuse the file, through decodeStrict's
+	// DisallowUnknownFields, but as `unknown field "pack"`: true, useless,
+	// and pointing nowhere. Map itself has no Pack field any more.
+	//
+	// A json.RawMessage, AND NOTHING ELSE WILL DO, because what is refused is
+	// the field's PRESENCE (spec §7: "a map carrying a `pack` field") and the
+	// obvious Go types all fail to carry that:
+	//
+	//   - a `string` cannot tell `"pack":""` from an absent key.
+	//   - a `*string` cannot tell `"pack":null` from an absent key either —
+	//     encoding/json sets a pointer to nil for a JSON null. That WAS this
+	//     field's type, and `null` loaded silently while `""` and every named
+	//     pack were refused; found in review, 2026-09-04, by probing the
+	//     shapes rather than the one a test happened to drive. `null` is the
+	//     second thing an author or an LLM writes when told to remove a field.
+	//   - a `*json.RawMessage` is the same trap in a costume: also nil for null.
+	//
+	// A bare json.RawMessage is nil ONLY when the key is truly absent. `null`
+	// arrives as the four bytes "null" and `""` as the two bytes `""`, so one
+	// `!= nil` covers every way of writing the field.
+	//
+	// Its bytes go into the refusal message verbatim (%s, not %q): for a JSON
+	// string they ALREADY carry their own quotes and escaping — JSON forbids a
+	// literal control character inside a string — so the message reads
+	// byte-identically to the `*string` version for every input that reached
+	// it, and reads `null` or `5` for the ones that did not.
+	Pack       json.RawMessage   `json:"pack"`
+	Tiles      map[string]string `json:"tiles"`
+	Overrides  map[string]string `json:"overrides"`
+	Objects    []ObjectJSON      `json:"objects"`
+	Placements []placementJSON   `json:"placements"`
 }
 
 // ObjectJSON is the on-disk shape of one object entry (spec §4.1): an anchor
@@ -122,6 +151,32 @@ func loadAs(path, display string) (*Map, error) {
 			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
 	}
 
+	// A map authored before 2026-09-02-art-is-a-flat-library named the ONE
+	// pack its overrides resolved inside. There are no packs now — art is one
+	// flat art/ directory per campaign and a picture's filename is its id
+	// (that plan's design spec §3) — so the very same overrides values mean
+	// something else than they did. Refusing is spec §7 verbatim: "There is
+	// no compatibility layer, and none is added later. A map carrying a
+	// `pack` field is refused with a message naming the field and pointing at
+	// `art/`." Ignoring it would load a map whose art references were written
+	// against a namespace that no longer exists, and draw the wrong thing.
+	//
+	// REFUSED HERE, after format_version and before every geometry check,
+	// under this function's own ordering rule (Load's doc comment: the first
+	// error a broken file produces should be the most useful one to fix). For
+	// a pre-migration file the pack line IS what to fix; reporting a stray
+	// square first would send its author to correct something the file's age
+	// is not about.
+	if raw.Pack != nil {
+		return nil, fieldErr(display, "pack", fmt.Sprintf(
+			"packs no longer exist and this file still declares one (%s). Art is now one flat "+
+				"art/ directory per campaign, where a picture's own filename is the id a map "+
+				"names (2026-09-02-art-is-a-flat-library design spec §3). Delete this field and "+
+				"install the pack's pictures into that art/ directory; the values under "+
+				"\"overrides\" and each object's \"art\" already name art by id and need no change",
+			raw.Pack))
+	}
+
 	if raw.GridWidth < 1 {
 		return nil, fieldErr(display, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
 	}
@@ -172,7 +227,6 @@ func loadAs(path, display string) (*Map, error) {
 		Name:          raw.Name,
 		GridW:         raw.GridWidth,
 		GridH:         raw.GridHeight,
-		Pack:          raw.Pack,
 		Tiles:         raw.Tiles,
 		Overrides:     raw.Overrides,
 		Objects:       objects,
@@ -350,11 +404,14 @@ func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf Fiel
 // author-supplied JSON, and `at:2147483647, size:1` wraps a naive int32 sum
 // negative, which is also less than w and so also wrongly passes. This
 // function's own job stops at GEOMETRY — an object's ART is checked
-// separately, split across two functions by what each can prove without a
-// *Pack: CheckObjectArtDeclared (below) proves a name was declared at all;
+// separately, split across two functions by what each can prove without an art
+// directory: CheckObjectArtDeclared (below) proves a name was declared at all;
 // ResolveObjectArt (resolve.go) proves a declared name actually resolves
-// against the map's pack, run by BuildSceneCreated (compile.go) during the
-// same dry run that already catches an unresolvable tile override.
+// against the campaign's flat art/ directory, run by BuildSceneCreated
+// (compile.go) during the same dry run that already catches an unresolvable
+// tile override. It said "against the map's pack" until Task 5 of
+// 2026-09-02-art-is-a-flat-library, which deleted the field a map named one
+// with; Task 3 of the same plan had already moved the resolution itself.
 func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 	for i, o := range objs {
 		field := fmt.Sprintf("objects[%d]", i)

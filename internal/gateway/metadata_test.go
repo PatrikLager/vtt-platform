@@ -783,8 +783,13 @@ func newGatewayWithPack(t *testing.T) *mapsFixture {
 		t.Fatal(err)
 	}
 
+	// The map names NO pack, because no map can any more: mapdef.Map.Pack was
+	// deleted at Task 5 of 2026-09-02-art-is-a-flat-library and a map file that
+	// declares one is refused (design spec §7). The pack below is still loaded
+	// and still served over GET /api/packs/{pack}/{file} — the raw-file route
+	// never depended on a map naming it, and Task 7 is what deletes it.
 	maps := map[string]*mapdef.Map{
-		"shrine": {ID: "shrine", Name: "Obsidian Shrine", GridW: 3, GridH: 3, Pack: "mossy-keep"},
+		"shrine": {ID: "shrine", Name: "Obsidian Shrine", GridW: 3, GridH: 3},
 	}
 	packs := map[string]*mapdef.Pack{"mossy-keep": pack}
 	// os.OpenRoot, matching production (cmd/vtt/maps.go) — NOT os.DirFS; see
@@ -1004,9 +1009,17 @@ func TestPackFilesReadableByEveryRole(t *testing.T) {
 }
 
 // TestMapsListedForEveryRole pins /api/maps' shape and its role breadth
-// (same reasoning as TestPackFilesReadableByEveryRole): id, name, grid
-// dimensions, and the pack's own name/cellPx a client needs to draw at the
-// right scale without a second request.
+// (same reasoning as TestPackFilesReadableByEveryRole): id, name and grid
+// dimensions, AND THE ABSENCE of a pack reference.
+//
+// It said the entry carried "the pack's own name/cellPx a client needs to draw
+// at the right scale without a second request" — and that sentence was wrong in
+// both halves by the time it was read. The entry carries no pack at all since
+// Task 5 of 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack, which is
+// what the second half of this test now asserts; and no client ever read
+// cellPx to draw with — client/src/view/spectator.ts's CELL = 44 is the only
+// cell size in the renderer, and metadata.ts merely declared the field. Task 6
+// of that plan is what gives a campaign-level cellPx its first reader.
 func TestMapsListedForEveryRole(t *testing.T) {
 	f := newGatewayWithPack(t)
 	for _, tc := range []struct {
@@ -1028,11 +1041,6 @@ func TestMapsListedForEveryRole(t *testing.T) {
 				Name       string `json:"name"`
 				GridWidth  int    `json:"gridWidth"`
 				GridHeight int    `json:"gridHeight"`
-				Pack       *struct {
-					ID     string `json:"id"`
-					Name   string `json:"name"`
-					CellPx int    `json:"cellPx"`
-				} `json:"pack"`
 			} `json:"maps"`
 		}
 		if err := json.Unmarshal(body, &got); err != nil {
@@ -1045,8 +1053,26 @@ func TestMapsListedForEveryRole(t *testing.T) {
 		if m.ID != "shrine" || m.Name != "Obsidian Shrine" || m.GridWidth != 3 || m.GridHeight != 3 {
 			t.Errorf("%s: map = %+v, want shrine/Obsidian Shrine/3x3", tc.role, m)
 		}
-		if m.Pack == nil || m.Pack.ID != "mossy-keep" || m.Pack.Name != "Mossy Keep" || m.Pack.CellPx != 64 {
-			t.Errorf("%s: pack = %+v, want mossy-keep/Mossy Keep/64", tc.role, m.Pack)
+
+		// THE PACK REFERENCE IS GONE, and its absence is what this half now
+		// pins — it used to assert mossy-keep/Mossy Keep/64 rode along on
+		// every entry. A map has no pack to name since Task 5 of
+		// 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack, so a
+		// "pack" key here could only be a leftover claiming an association
+		// nothing can establish. Asserted on the RAW object rather than
+		// through a typed decode, because a struct with no Pack field would
+		// pass whether the server sent one or not — encoding/json discards
+		// what it has nowhere to put, so the typed shape above cannot tell
+		// the deletion from a fixture that happens not to exercise it.
+		var raw struct {
+			Maps []map[string]any `json:"maps"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("%s: decode raw: %v (body %s)", tc.role, err, body)
+		}
+		if _, present := raw.Maps[0]["pack"]; present {
+			t.Errorf("%s: entry carries a pack reference (%v); no map declares a pack any more",
+				tc.role, raw.Maps[0]["pack"])
 		}
 	}
 }

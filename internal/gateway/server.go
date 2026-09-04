@@ -235,12 +235,19 @@ type Server struct {
 	// own write does not, and its doc comment says why.
 	maps map[string]*mapdef.Map
 
-	// packs mirrors maps' own keying but for packs (Pack.ID, set together
-	// via WithMaps): used to enrich GET /api/maps with each map's pack name
-	// and cell size, so a client can render at the right scale without a
-	// second request. loadMapsDir refuses two packs sharing an id before
-	// either reaches here, so this map's keys already match packFS's
-	// key-for-key.
+	// packs mirrors maps' own keying but for packs (Pack.ID, set together via
+	// WithMaps). loadMapsDir refuses two packs sharing an id before either
+	// reaches here, so this map's keys already match packFS's key-for-key.
+	//
+	// IT HAS NO READER LEFT. It existed to enrich GET /api/maps with each
+	// map's pack name and cell size, looked up under the map's OWN declared
+	// pack id — and Task 5 of 2026-09-02-art-is-a-flat-library deleted
+	// mapdef.Map.Pack, so there is no id to look anything up by and
+	// metadata.go's handleMaps no longer consults this at all (see the
+	// packRefJSON obituary there). Written and never read until Task 7 of that
+	// plan takes it, WithMaps' second parameter, and mapdef.Pack together;
+	// packFS below is the half that is still live, because the raw-file route
+	// never depended on a map naming a pack.
 	packs map[string]*mapdef.Pack
 
 	// packFS is OPTIONAL server config, boot time only, set via
@@ -340,12 +347,16 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 	return s
 }
 
-// WithMaps configures s to answer GET /api/maps from m/packs, keyed by each
-// map's/pack's own declared id (maps-as-geometry Task 7). Both are expected
+// WithMaps configures s to answer GET /api/maps from m, keyed by each map's
+// own declared id (maps-as-geometry Task 7). Both arguments are expected
 // already fully loaded and validated (cmd/vtt's loadMapsDir, via
 // mapdef.LoadInstalled and mapdef.LoadPack — fail loud at boot, spec §4.4);
 // this method does no I/O and no validation of its own, mirroring
-// WithAdventures. Returns s for call-site chaining; mutates s in place
+// WithAdventures.
+//
+// THE SECOND ARGUMENT NO LONGER FEEDS THAT LISTING, and is stored only so
+// Task 7 of 2026-09-02-art-is-a-flat-library can remove it in one piece — see
+// Server.packs above. Returns s for call-site chaining; mutates s in place
 // WITHOUT taking mapsMu, so it is not safe to call concurrently with s
 // already serving traffic — the map set gains entries during a session
 // (WithMapsDir below), but never through this method. Pack file BYTES are a

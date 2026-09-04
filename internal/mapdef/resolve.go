@@ -59,14 +59,17 @@ type Resolved struct{ Kind, Material, Art string }
 //     minutes ago should not stop working.
 //
 // The two refusals this replaced were `p == nil` ("needs a pack to resolve")
-// and `m.Pack != p.ID` ("that is not this map's pack"), each with a long
-// comment arguing for its exact wording. Both arguments were about WHICH
-// container a name belonged to, and there are no containers now: any map may
-// name any installed art (spec §3.3, exit criterion 2). Their reasoning is not
-// carried forward because it has no subject left, and the one durable piece of
-// it — that an error must be true of the world rather than of the call — is
-// honoured by the degrade warning below, which says the art is not installed
-// rather than that no art directory was handed in.
+// and a comparison of the map's own declared pack against the pack it was
+// handed ("that is not this map's pack"), each with a long comment arguing for
+// its exact wording. Both arguments were about WHICH container a name belonged
+// to, and there are no containers now: any map may name any installed art
+// (spec §3.3, exit criterion 2). Their reasoning is not carried forward because
+// it has no subject left — Map.Pack, the field the second one read, was itself
+// deleted at Task 5 of the same plan, which made a map file that declares one a
+// refusal at Load. The one durable piece of that reasoning — that an error must
+// be true of the world rather than of the call — is honoured by the degrade
+// warning below, which says the art is not installed rather than that no art
+// directory was handed in.
 func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
 	base, ok := m.Tiles[square]
 	if !ok {

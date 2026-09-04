@@ -316,23 +316,25 @@ Both are served the same way over HTTP, alongside the images — a pack is
 content, never something written into the campaign's event log, so nothing
 about it is frozen the way the wire contract is.
 
-**A pack is always your own, and there is no registry of shared packs.** The
-top-level `pack` field in a map file does not look anything up: it names the
-pack sitting in that map's own `tiles/` directory, and it exists so that a
-mismatch is caught rather than silently drawing the wrong pictures. If it is
-set, it must equal the `id` inside your own `tiles/pack.json`. You cannot
-name a pack you do not ship, and no map can borrow another map's art.
+**A map file may no longer name a pack, and the field is REFUSED.** A
+top-level `"pack"` is rejected at load, with a message naming the field and
+pointing at `art/` (2026-09-02-art-is-a-flat-library design spec §7: *"There is
+no compatibility layer, and none is added later."*). It used to name the pack in
+that map's own `tiles/` directory, so that a mismatch was caught rather than
+silently drawing the wrong pictures.
+
+Art now resolves by FILENAME inside one flat `art/` directory per campaign, and
+any map may name any installed piece — so there is no container left to
+mismatch. **Your `overrides` values and object `art` names do not change**:
+they were already the art ids. Removing the `"pack"` line and installing the
+pictures into the campaign's `art/` is the whole migration.
 
 **The standard tile vocabulary (§3) is not a pack and is never named.** It is
 built into the platform, which is why `stone`, `wood-door` and the rest work
 with no `pack`, no `tiles/` directory, and no `overrides` at all. If you have
 seen a manifest with `"id": "std"`, that is the client's own bundle of
 pictures for those standard names — it is not something a map file
-references, and writing `"pack": "std"` will not reach it.
-
-`pack` is only ever consulted when you use `overrides` (§4), since overrides
-are the only thing that names pack art for a tile. A map with no overrides
-never has its `pack` field read.
+references, and `"pack": "std"` is refused exactly like any other `"pack"`.
 
 ```json
 {
@@ -368,7 +370,7 @@ never has its `pack` field read.
 
 | field | meaning |
 |---|---|
-| `id` | the pack's own identifier — this is what a map's top-level `"pack"` field names |
+| `id` | the pack's own identifier |
 | `name` | a display name for the pack |
 | `cell_px` | the pixel size each image is drawn at (images should be square, this size) |
 | `tiles` | an array of named tile pictures — see below |
@@ -401,11 +403,11 @@ telling the reader something).
 
 ```json
 {
+  "format_version": 1,
   "id": "shrine",
   "name": "Obsidian Shrine",
   "grid_width": 3,
   "grid_height": 3,
-  "pack": "mossy-keep",
 
   "tiles": {
     "0,0": "stone-wall", "1,0": "stone-wall", "2,0": "stone-wall",
@@ -430,41 +432,55 @@ telling the reader something).
 
 | field | meaning |
 |---|---|
+| `format_version` | REQUIRED, and currently `1`. A map declares the format it is written in; a file that omits it is refused rather than assumed to be any version. |
 | `id` | the map's own identifier — also becomes the scene's id when the map is loaded into a campaign |
 | `name` | a display name |
 | `grid_width`, `grid_height` | the grid's size in squares |
-| `pack` | the id of the pack `overrides` and `objects[].art` resolve against. May be omitted (or empty) for a map that uses only standard tiles and no objects with art. |
 | `tiles` | see §1, §3 |
 | `overrides` | see §1, §4 |
 | `objects` | see §5 |
 | `placements` | see §6 |
 
-Beside `shrine.json`'s directory sits its pack:
-`maps/shrine/tiles/pack.json` (§8), and the images it names.
+**There is no `pack` field, and writing one is refused** — see §8. The art that
+`overrides` and `objects[].art` name lives in the campaign's own flat `art/`
+directory and resolves by filename.
 
 ## 10. What gets refused, and why
 
 A map is validated fully before it is ever served to a table — never at the
 table. In order, roughly:
 
-1. `grid_width` and `grid_height` must each be at least `1`.
-2. If `tiles` is non-empty, **every** square in the grid must have an entry
+1. `format_version` must be present and must be a version this server
+   understands.
+2. A `pack` field must not be present **at all**. Any way of writing it is
+   refused — `"pack": "cellar-basics"`, `"pack": ""`, and `"pack": null`
+   alike — with a message naming the field and pointing at `art/`. Deleting
+   the line is the whole fix; your `overrides` and `objects[].art` values do
+   not change.
+3. `grid_width` and `grid_height` must each be at least `1`.
+4. If `tiles` is non-empty, **every** square in the grid must have an entry
    (§1) — no missing squares, and no extra entries naming a square outside
    the grid.
-3. Every `tiles` value must be a known standard tile name (§3) — a typo, or
+5. Every `tiles` value must be a known standard tile name (§3) — a typo, or
    a name that does not exist, is refused with the offending square and
    name named directly.
-4. Every `overrides` key must name a square inside the grid. `overrides`
+6. Every `overrides` key must name a square inside the grid. `overrides`
    with a non-empty `tiles` needs no further check here; a non-empty
    `overrides` against an **empty** `tiles` is refused outright — there is
    no nature for the art to attach to.
-5. Every object's full **footprint** (not just its anchor square) must lie
+7. Every object's full **footprint** (not just its anchor square) must lie
    inside the grid, and its `size` must be at least `[1, 1]`.
-6. Every `placements` entry must name a square inside the grid, and that
+8. Every `placements` entry must name a square inside the grid, and that
    square must not currently be a wall or a closed door.
-7. (Once a pack is involved) every `overrides` value and every `objects[].art`
-   must actually name something the pack declares.
-8. `tiles` must hold no more than **3600** entries — see §12.
+9. `tiles` must hold no more than **3600** entries — see §12.
+
+**Art that does not resolve is NOT in this list, and that is deliberate.** An
+`overrides` value or an `objects[].art` naming a picture that is not installed
+costs that square its picture and produces one warning to whoever loaded the
+map — never the map, and never the table. The square keeps its nature, which
+comes from `tiles` and never from art. This entry used to read "every
+`overrides` value and every `objects[].art` must actually name something the
+pack declares", and that stopped being true when art moved out of packs.
 
 Every refusal names the offending file, field, and (where relevant) the
 exact square — so a fix is a matter of reading the message, not guessing.

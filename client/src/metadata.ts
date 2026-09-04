@@ -46,9 +46,26 @@ export interface AdventureMeta {
   name: string;
 }
 
-/** The pack a map declares (maps-as-geometry spec §4.2) — enough to draw
+/** The pack a map declared (maps-as-geometry spec §4.2) — enough to draw
  *  at the right scale (cellPx) and to find its files (id), without a
- *  second request just to learn the pack's own name. */
+ *  second request just to learn the pack's own name.
+ *
+ *  THE SERVER NO LONGER SENDS THIS. Task 5 of 2026-09-02-art-is-a-flat-library
+ *  deleted mapdef.Map.Pack and made a map file declaring "pack" a refusal
+ *  (that plan's design spec §7), so metadata.go's handleMaps has no id to look
+ *  a pack up by and dropped its packRefJSON. This type and MapMeta.pack below
+ *  are kept for one task only: Task 6 replaces the whole path with a
+ *  campaign-level cellPx and GET /api/art/{file} (spec §6), and deletes them.
+ *  Until then app.ts's loadMapPacks iterates and finds nothing to load, so the
+ *  client draws from the standard baseline pack alone — which is exactly what
+ *  it did before, because no map's art resolved and every TileRef.art was
+ *  empty.
+ *
+ *  cellPx IS NOT A LOSS. Nothing in this client has ever read it: view/
+ *  spectator.ts's CELL = 44 is the only cell size the renderer uses. The field
+ *  below was declared and never consumed, so removing the endpoint that
+ *  supplied it changed no pixel. Task 6 gives a campaign-level cellPx its
+ *  FIRST reader; it does not restore one. */
 export interface PackRef {
   id: string;
   name: string;
@@ -57,7 +74,7 @@ export interface PackRef {
 
 /** One entry from GET /api/maps (metadata.go's mapMetaJSON): a standalone
  *  map the campaign's own maps/ has loaded and validated at boot. pack is
- *  absent for a map that names none (mapdef.Map.Pack "" is legal). */
+ *  now ALWAYS absent — see PackRef above for why, and for when it goes. */
 export interface MapMeta {
   id: string;
   name: string;

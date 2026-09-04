@@ -26,9 +26,11 @@
 // mapByID calls when a map turns up after boot, so boot-time and
 // request-time validation are not merely alike, they are one function
 // (Task 6 of the create_scene-leaves plan; that plan's design spec §12
-// names their divergence as a hazard in its own right). A map's own "pack"
-// field is still parsed and is now read by nobody; Task 5 of the art plan
-// refuses it and Task 7 deletes the packs tree this walk still builds.
+// names their divergence as a hazard in its own right). A map that DECLARES a
+// pack is now refused outright by mapdef.Load, naming the field and pointing at
+// art/ (Task 5 of the art plan, that plan's design spec §7), so this walk's own
+// packs half serves nothing but GET /api/packs/{pack}/{file} — Task 7 deletes
+// the tree it still builds.
 package main
 
 import (
@@ -43,8 +45,9 @@ import (
 
 // loadMapsDir is the full walk: every packs/<name>/pack.json first (the pack
 // set is still built and served over GET /api/packs/{pack}/{file}, but since
-// 2026-09-02-art-is-a-flat-library Task 3 no map RESOLVES against it — Task 7
-// deletes this half), then every maps/<id>.json through
+// 2026-09-02-art-is-a-flat-library Task 3 no map RESOLVES against it and since
+// Task 5 no map may even NAME it — Task 7 deletes this half), then every
+// maps/<id>.json through
 // mapdef.LoadInstalled, which validates each map and dry-runs mapdef.Compile
 // against dir/art — so an overrides entry naming art that is installed and
 // unreadable fails HERE rather than only once something eventually calls

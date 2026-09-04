@@ -458,31 +458,53 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 
 // --- /api/maps ---------------------------------------------------------
 
-type packRefJSON struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	CellPx int32  `json:"cellPx"`
-}
+// packRefJSON IS GONE, and its absence is the requirement now. It carried a
+// map's pack — id, display name, cell size — on every /api/maps entry, built
+// by looking s.packs up under the map's OWN declared pack id. That id was
+// mapdef.Map.Pack, and Task 5 of 2026-09-02-art-is-a-flat-library deleted the
+// field and made a map file that declares one a refusal (design spec §7). With
+// nothing left to key the lookup by, a pack reference cannot be built at all —
+// so this is rubble from that deletion rather than Task 6's work brought
+// forward, and leaving the JSON key in place would have shipped a field that
+// can never again be non-null.
+//
+// WHAT A CLIENT LOSES, AND IT IS NOT cellPx. An earlier version of this
+// comment said the renderer read cellPx from pack.cellPx to draw at the right
+// scale, and that was false — corrected in review, 2026-09-04. NOTHING in the
+// client has ever read it: client/src/view/spectator.ts's CELL = 44 is the only
+// cell size in the renderer, passed to planScene, planFog, planGrid and
+// cellFromPoint, and client/src/metadata.ts merely DECLARES the field.
+// client/public/std-pack/pack.json's own cell_px is ignored for the same
+// reason. So this endpoint dropping cellPx costs the client nothing today, and
+// Task 6 is what gives a campaign-level cellPx its first reader rather than
+// what restores one. Believing otherwise would let Task 6 ship a server half,
+// see no change, and think it had closed a regression that was never open.
+//
+// THE REAL LOSS IS THE ROUTE, NOT THE NUMBER. A pack id was the only thing
+// this endpoint ever gave a client to fetch art WITH, so with it gone the
+// client cannot fetch a campaign's art at all until GET /api/art/{file} exists
+// (spec §6, Task 6). Nothing shows yet, because no shipped map's art resolves
+// and every TileRef.art is empty, so scene-plan.ts's tileImage falls back to a
+// "std:<kind>/<material>" key the client's own bundled baseline pack answers.
+// The moment Task 8 installs campaigns/example/art/ and TileRef.art starts
+// arriving non-empty, tileImage emits "tile:<art>" instead, the ImageMap has no
+// such key, and canvas.ts paints drawMissingTile's magenta checkerboard over
+// every overridden square. Task 6 lands before Task 8, so the order holds —
+// but that is the dependency, and it is between those two tasks rather than
+// between this one and either.
 
 type mapMetaJSON struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	GridWidth  int32  `json:"gridWidth"`
 	GridHeight int32  `json:"gridHeight"`
-	// Pack is a pointer, omitted entirely for a map that names no pack
-	// (mapdef.Map.Pack "" is legal — a map using only standard tiles) rather
-	// than a zero-valued packRefJSON, which would read as "a pack named
-	// empty-string" instead of "no pack".
-	Pack *packRefJSON `json:"pack,omitempty"`
 }
 
 // handleMaps lists every map this server holds (maps-as-geometry Task 7),
-// open to every role (this file's own doc comment above explains why).
-// Each entry's Pack is looked up from s.packs by the map's OWN declared
-// Pack id — enriching the listing with the pack's display name and cell
-// size so a client can render at the right scale without a second request;
-// nil if the map declares no pack, or (should not happen past validation,
-// but handled rather than assumed) the id is not one of s.packs.
+// open to every role (this file's own doc comment above explains why). An
+// entry is now the map's own identity and geometry and nothing else — see
+// packRefJSON's obituary above for why the pack reference it used to carry
+// could not survive mapdef.Map.Pack.
 //
 // The map set is no longer a boot-time constant: a map installed while the
 // server runs joins it on its first successful load_map (map.go's mapByID,
@@ -490,8 +512,7 @@ type mapMetaJSON struct {
 // session and the read below has to be guarded. The entries are copied out
 // under the lock and the response is written outside it — a client that
 // stops reading must not be able to hold the map set shut against every
-// load_map for as long as it likes. s.packs needs no guarding: packs stay
-// boot-time only (Server.packs' own doc comment).
+// load_map for as long as it likes.
 func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
@@ -499,11 +520,7 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	out := []mapMetaJSON{}
 	s.mapsMu.RLock()
 	for id, m := range s.maps {
-		item := mapMetaJSON{ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH}
-		if p, ok := s.packs[m.Pack]; ok {
-			item.Pack = &packRefJSON{ID: p.ID, Name: p.Name, CellPx: p.CellPx}
-		}
-		out = append(out, item)
+		out = append(out, mapMetaJSON{ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH})
 	}
 	s.mapsMu.RUnlock()
 	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })

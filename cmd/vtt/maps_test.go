@@ -12,10 +12,16 @@ package main
 //
 // SINCE TASK 3: a map is a flat file, <dir>/maps/<id>.json, named by its
 // own id — not a directory. A pack is a directory, <dir>/packs/<name>/
-// pack.json, in a SIBLING tree — not co-located beside any one map. The
-// two are linked only by a map's own "pack" field naming a pack's declared
-// id, resolved by loadMapsDir the same way internal/gateway/map.go's
-// handleLoadMap resolves it at request time (packs[m.Pack]).
+// pack.json, in a SIBLING tree — not co-located beside any one map.
+//
+// THE TWO ARE NOT LINKED AT ALL ANY MORE. This said they were "linked only by
+// a map's own \"pack\" field naming a pack's declared id, resolved by
+// loadMapsDir the same way internal/gateway/map.go's handleLoadMap resolves it
+// at request time (packs[m.Pack])" — false in both halves by
+// 2026-09-02-art-is-a-flat-library: Task 3 moved request-time resolution to the
+// campaign's flat art/ directory, and Task 5 deleted mapdef.Map.Pack and made a
+// map file declaring "pack" a refusal. This walk still builds a pack set for
+// GET /api/packs/{pack}/{file} alone, until Task 7 deletes it.
 
 import (
 	"log/slog"
@@ -84,10 +90,16 @@ func TestBootRefusesAnInvalidMapRatherThanServingIt(t *testing.T) {
 	}
 }
 
-// TestLoadMapsDirLoadsAValidMapAndItsPack is the happy path: a map naming a
-// pack that lives in the sibling packs/ tree (Task 3's decoupled layout),
-// loaded and validated with no error.
-func TestLoadMapsDirLoadsAValidMapAndItsPack(t *testing.T) {
+// TestLoadMapsDirLoadsAValidMap walks a campaign holding one map and one pack.
+// It asserted the map's own Pack field until Task 5 of
+// 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack and made a map file
+// declaring "pack" a refusal (design spec §7) — hence the name, which read
+// "...AndItsPack". The packs/ tree is deliberately still in the fixture: this
+// walk still builds a pack set and still serves it over GET
+// /api/packs/{pack}/{file}, so what the fixture proves now is that a campaign
+// which still has packs on disk loads its maps regardless. Task 7 deletes the
+// pack half of the walk and this fixture with it.
+func TestLoadMapsDirLoadsAValidMap(t *testing.T) {
 	dir := t.TempDir()
 	writeShrineMap(t, dir, "shrine")
 
@@ -101,9 +113,6 @@ func TestLoadMapsDirLoadsAValidMapAndItsPack(t *testing.T) {
 	}
 	if m.Name != "Obsidian Shrine" {
 		t.Errorf("Name = %q, want %q", m.Name, "Obsidian Shrine")
-	}
-	if m.Pack != "mossy-keep" {
-		t.Errorf("Pack = %q, want %q", m.Pack, "mossy-keep")
 	}
 }
 
@@ -531,7 +540,7 @@ func writeShrineMap(t *testing.T, dir, id string) {
 	writeFile(t, filepath.Join(dir, "maps", id+".json"), `{
 		"format_version": 1,
 		"id": "`+id+`", "name": "Obsidian Shrine",
-		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
+		"grid_width": 1, "grid_height": 1,
 		"tiles": {"0,0":"wood"},
 		"overrides": {"0,0":"wood-planks-split-3"}
 	}`)

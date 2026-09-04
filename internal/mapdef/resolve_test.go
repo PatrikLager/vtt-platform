@@ -56,7 +56,16 @@ func cellarArtDir(t *testing.T) string {
 // TestAWallDrawnAsFloorboardsIsStillAWall's job below, which uses a base with
 // a genuinely different Kind on purpose.
 func TestOverrideChangesThePictureAndNothingElse(t *testing.T) {
-	m, _ := mapdef.Load("testdata/valid/cellar.json")
+	// The error is CHECKED, not discarded, and it was discarded until
+	// 2026-09-04. A broken fixture then reached Resolve as a nil *Map and the
+	// test segfaulted instead of saying which file failed to load — observed
+	// while Task 5 of 2026-09-02-art-is-a-flat-library was migrating this
+	// package's fixtures. A panic and a stack trace is not a worse message
+	// than a sentence; it is a different question entirely.
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
 	got, _, err := mapdef.Resolve(m, cellarArtDir(t), "1,1")
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +82,10 @@ func TestOverrideChangesThePictureAndNothingElse(t *testing.T) {
 func TestAWallDrawnAsFloorboardsIsStillAWall(t *testing.T) {
 	// Spec §3.2, and it is deliberately NOT an error: this is how an illusory
 	// wall is built, one arc before illusions become a feature.
-	m, _ := mapdef.Load("testdata/valid/cellar.json")
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
 	m.Overrides["0,0"] = "planks-split-3" // floor art on a wall square
 
 	got, warnings, err := mapdef.Resolve(m, cellarArtDir(t), "0,0")

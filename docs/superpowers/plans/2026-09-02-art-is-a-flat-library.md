@@ -725,6 +725,45 @@ git commit -m "Art is read when the map is loaded, not once at boot"
 
 ---
 
+
+---
+
+## Execution order changed 2026-09-04 — delete the pack NEXT, not seventh
+
+**Patrik:** *"Some times it is better to delete the old solution before building
+the new. Our decision to keep the old packs while building the new only create
+challenges unnecessarily since no one is using the product."*
+
+He is right and the cost is measurable. This plan ordered the pack's deletion
+LAST, copying `create_scene`'s removal in sub-project 15 — build the
+replacement, prove it, then remove. That caution was correct there and wrong
+here, and the difference was never checked: `create_scene` was a **contract
+command** with five completeness gates and live clients, so removing it early
+would have left a hole on the wire. Packs are **internal Go types with no
+external consumer and no released contract**, and the product has no users. The
+same caution bought nothing.
+
+What it cost across Tasks 1-5: `Map.Pack` stayed live so every task threaded a
+dying type (Task 3 reached 22 files, Task 5 reached 32); `metadata.go` kept
+serving `packRefJSON` until Task 5 deleted it as "rubble from this deletion";
+14 fixtures were MIGRATED off `"pack"` when deleting the pack would have had
+them rewritten once, in Task 8, where they were going anyway; and a false
+`cellPx` cost comment existed only because `packRefJSON` was still alive to be
+mourned — it would have misdirected Task 6.
+
+**New order: 5 → 7 → 4b → 6 → 8 → 9.** Task 7 runs next. Then Task 6 builds
+`GET /api/art/{file}` into a tree with no `GET /api/packs/{pack}/{file}` beside
+it to work around, and Task 8's migration is a rewrite rather than a
+reconciliation.
+
+**No gap is created by moving it.** Nothing serves art bytes today, and
+`campaigns/example/art/` does not exist until Task 8 — so deleting the pack
+route removes a capability nothing is currently using.
+
+**The test for next time is not "is this a removal?" but "who is standing on it
+while I take it away?"** Here the answer was nobody.
+
+---
 ### Task 4b: A corrupt sidecar degrades; a newer format still refuses
 
 Patrik's ruling, 2026-09-04. Added after Task 4's review measured that one

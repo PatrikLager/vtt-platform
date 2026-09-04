@@ -7,10 +7,17 @@
 // resolves art names into Tile.Art at COMPILE time and stops there (spec §5:
 // "packs are needed to author and to draw, never to fold") — a client
 // replaying the log sees "masonry-1" and has no way to ask the log which
-// pack that name means anything in. GET /api/maps is therefore the only
-// route this client can learn a pack id from at all (metadata.go's
-// handleMaps, which already enriches every configured map with its own
-// declared pack). app.ts loads EVERY configured map's pack eagerly rather
+// pack that name means anything in. GET /api/maps was therefore the only
+// route this client could learn a pack id from at all, because handleMaps
+// enriched every configured map with its own declared pack.
+//
+// IT NO LONGER CARRIES ONE, so nothing below runs against a real server: Task
+// 5 of 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack and refuses a
+// map file that declares one (that plan's design spec §7), which left
+// handleMaps with no id to look a pack up by. Task 6 of the same plan replaces
+// this file's whole route with GET /api/art/{file} over one flat directory and
+// a campaign-level cellPx (spec §6). Everything from here down describes the
+// mechanism as it was; app.ts loaded EVERY configured map's pack eagerly rather
 // than trying to correlate a live scene back to the specific map it came
 // from — the wire gives no clean way to do that correlation (two different
 // live scenes could share an id with two different maps, and nothing here

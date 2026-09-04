@@ -69,7 +69,7 @@ func TestCampaignsMapsAndPacksServeEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(mapsSubDir, "shrine.json"), []byte(`{
 		"format_version": 1,
 		"id": "shrine", "name": "Obsidian Shrine",
-		"grid_width": 1, "grid_height": 1, "pack": "mossy-keep",
+		"grid_width": 1, "grid_height": 1,
 		"tiles": {"0,0":"wood"},
 		"overrides": {"0,0":"wood-planks-split-3"}
 	}`), 0o644); err != nil {
@@ -133,19 +133,25 @@ func TestCampaignsMapsAndPacksServeEndToEnd(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("/api/maps status = %d, want 200 (body %s)", code, body)
 	}
+	// Decoded into map[string]any rather than a typed shape, so the assertion
+	// can see a "pack" key that should no longer be there: encoding/json
+	// silently discards a field a struct has nowhere to put, so a typed decode
+	// without a Pack field would pass whether the server sent one or not. This
+	// asserted `pack.id == "mossy-keep"` until Task 5 of
+	// 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack — with no field
+	// to key the lookup by, /api/maps has no pack reference to build.
 	var got struct {
-		Maps []struct {
-			ID   string `json:"id"`
-			Pack *struct {
-				ID string `json:"id"`
-			} `json:"pack"`
-		} `json:"maps"`
+		Maps []map[string]any `json:"maps"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("decode /api/maps: %v (body %s)", err, body)
 	}
-	if len(got.Maps) != 1 || got.Maps[0].ID != "shrine" || got.Maps[0].Pack == nil || got.Maps[0].Pack.ID != "mossy-keep" {
-		t.Fatalf("/api/maps = %+v, want one shrine map with pack mossy-keep", got.Maps)
+	if len(got.Maps) != 1 || got.Maps[0]["id"] != "shrine" {
+		t.Fatalf("/api/maps = %+v, want exactly one shrine map", got.Maps)
+	}
+	if _, present := got.Maps[0]["pack"]; present {
+		t.Fatalf("/api/maps entry carries a pack reference (%v); no map declares a pack any more",
+			got.Maps[0]["pack"])
 	}
 
 	code, body = get("/api/packs/mossy-keep/planks_03.png")

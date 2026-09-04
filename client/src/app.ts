@@ -216,6 +216,22 @@ function startSession(root: HTMLElement, token: string): Session {
       // trailing .catch below.
     });
 
+  // INERT UNTIL TASK 6, and deliberately left standing rather than removed:
+  // no /api/maps entry carries a pack any more (Task 5 of
+  // 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack, so metadata.go
+  // has nothing to build a pack reference from), which means this loop runs
+  // and finds nothing every time. The squares still draw, from the standard
+  // baseline pack loaded just above, and identically to before: no shipped
+  // map's art resolves yet, so every TileRef.art is empty and scene-plan.ts's
+  // tileImage emits the "std:<kind>/<material>" key that baseline answers.
+  //
+  // WHAT BREAKS IF TASK 6 DOES NOT LAND FIRST: Task 8 installs the campaign's
+  // art/ and TileRef.art starts arriving non-empty, tileImage switches to
+  // "tile:<art>", nothing populates that key, and canvas.ts draws its magenta
+  // missing-tile marker over every overridden square. Task 6 replaces this
+  // whole path with GET /api/art/{file} and a campaign-level cellPx (that
+  // plan's design spec §6) and lands first; pack-assets.ts's header carries
+  // the same note.
   const loadedPacks = new Set<string>();
   const loadMapPacks = (maps: MapMeta[]) => {
     for (const m of maps) {

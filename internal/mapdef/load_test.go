@@ -226,6 +226,124 @@ func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
 	}
 }
 
+// TestAMapDeclaringAPackIsRefusedByName pins design spec §7's migration rule:
+// "There is no compatibility layer, and none is added later. A map carrying a
+// `"pack"` field is refused with a message naming the field and pointing at
+// `art/`." Ignoring the field would load a map whose art references were
+// written against a namespace that no longer exists — the override values were
+// resolved inside ONE named pack, and since Task 3 of the same plan they name a
+// file in the campaign's one flat art/ directory instead. Same strings, a
+// different world: the map would load and draw the wrong thing, or nothing.
+//
+// The message is the whole of what a DM sees when a campaign authored before
+// this change is opened, so the assertions below are about the message and not
+// merely about err != nil: it must name the FIELD (so the line to delete is
+// unambiguous) and point at art/ (so the reader knows where the pictures go
+// now). fieldErr supplies the third part, the file, which LoadInstalled renders
+// as the "maps/<id>.json" a DM knows rather than a server path.
+//
+// It asserts on `field "pack"` rather than the bare word: t.TempDir()'s path
+// carries this test's own name, and a bare "pack" substring check would pass on
+// path noise alone with the refusal deleted — the trap
+// TestLoadRefusesAFormatThisServerDoesNotUnderstand records for bare digits,
+// which is the same trap.
+func TestAMapDeclaringAPackIsRefusedByName(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "old.json")
+	// Everything else about this file is valid — "stone" is a real name in
+	// standardTiles — so a refusal here can only be the pack declaration. A
+	// fixture broken some other way would make this test pass for a reason
+	// that has nothing to do with what it claims to pin.
+	writeFile(t, p, `{"format_version":1,"id":"old","name":"Old","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"},"pack":"cellar-basics"}`)
+
+	_, err := mapdef.Load(p)
+	if err == nil {
+		t.Fatal(`a map declaring "pack" was accepted: its overrides name art in a namespace that no longer exists`)
+	}
+	for _, want := range []string{`field "pack"`, "art/"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want it to contain %q — the message is the whole migration experience", err, want)
+		}
+	}
+}
+
+// TestAMapDeclaringAnEmptyPackIsRefusedToo pins that it is the FIELD'S
+// PRESENCE that is refused, not a non-empty value. Spec §7 says "a map carrying
+// a `"pack"` field", and the difference is not pedantry: emptying the value is
+// exactly the half-migration an author — or an LLM told to remove a field —
+// reaches for first, and it fixes nothing, because every overrides value under
+// it is still the name it had inside the pack.
+//
+// BOTH WAYS OF WRITING "NOTHING" ARE HERE, and the second is why mapJSON.Pack
+// is a json.RawMessage. Neither a `string` nor a `*string` can carry this rule:
+// a `string` cannot tell `"pack":""` from an absent key, and a `*string` — the
+// first implementation of this test, which passed — comes back nil for
+// `"pack":null` exactly as it does for an absent key, so `null` LOADED. Found
+// in review, 2026-09-04, by probing the four shapes rather than the one the
+// test happened to drive. A json.RawMessage is nil only when the key is truly
+// absent: `null` arrives as the four bytes "null", `""` as the two bytes `""`.
+// A *json.RawMessage does NOT work either — it is nil for null, same trap.
+func TestAMapDeclaringAnEmptyPackIsRefusedToo(t *testing.T) {
+	for _, c := range []struct{ name, value string }{
+		{"empty-string", `""`},
+		// The one that shipped broken: told to remove "pack", an author or an
+		// LLM writes null at least as readily as it deletes the line.
+		{"null", `null`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "blanked.json")
+			writeFile(t, p, `{"format_version":1,"id":"blanked","name":"Blanked","grid_width":1,
+				"grid_height":1,"tiles":{"0,0":"stone"},"pack":`+c.value+`}`)
+
+			_, err := mapdef.Load(p)
+			if err == nil {
+				t.Fatalf(`a map declaring "pack":%s was accepted: the field is what is refused, not its value`, c.value)
+			}
+			if !strings.Contains(err.Error(), `field "pack"`) {
+				t.Fatalf("error = %q, want it to name the field — a refusal for some other reason proves nothing here", err)
+			}
+		})
+	}
+}
+
+// TestAMapWithNoPackFieldStillLoads is the other half of the pair above, and it
+// is the one that would catch the refusal firing on every map in the world: the
+// ordinary, migrated file — no "pack" key at all — must load exactly as before.
+func TestAMapWithNoPackFieldStillLoads(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "migrated.json")
+	writeFile(t, p, `{"format_version":1,"id":"migrated","name":"Migrated","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"}}`)
+
+	if _, err := mapdef.Load(p); err != nil {
+		t.Fatalf("load: %v — a map that names no pack is the ordinary case", err)
+	}
+}
+
+// TestAPackIsTheFirstThingReportedAboutAPreMigrationMap pins WHICH error a map
+// authored before the flat art library gets, not merely that it gets one. Such
+// a file is very likely to have other complaints against it — the fixture below
+// also names a square outside its own grid — and reporting that one first sends
+// its author to fix a stray coordinate in a file whose actual problem is its
+// age. Load's doc comment states the rule this follows: the first error a
+// broken file produces should be the most useful one to fix.
+func TestAPackIsTheFirstThingReportedAboutAPreMigrationMap(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "old-and-broken.json")
+	writeFile(t, p, `{"format_version":1,"id":"old","name":"Old","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone","9,9":"stone"},"pack":"cellar-basics"}`)
+
+	_, err := mapdef.Load(p)
+	if err == nil {
+		t.Fatal("this map was accepted; it declares a pack AND names a square outside its grid")
+	}
+	if !strings.Contains(err.Error(), `field "pack"`) {
+		t.Fatalf("error = %q, want the pack declaration reported first, not the stray square", err)
+	}
+}
+
 // TestLoadPackRefusesAPackWithNoFormatVersion pins the PACK half of design
 // spec §7's rule (Load's own TestLoadRefusesAMapWithNoFormatVersion pins the
 // map half): a pack declares the format it is written in, and this server
