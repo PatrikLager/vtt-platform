@@ -97,16 +97,22 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // so it loads to an empty map set and GET /api/maps answers 200 with an empty
 // list. campaignPath/maps PRESENT (even placed there by nothing more than an
 // empty mkdir) is loaded and validated in full — fail loud here, at boot, on
-// any single map's failure, an override naming art that is installed and cannot
-// be read, or an existing-but-empty maps/ (the same "fail loud, never at the
-// table" posture as adventuresDir above), closing both handles before
-// returning. An override naming art that is simply NOT installed is not a boot
-// failure since 2026-09-02-art-is-a-flat-library Task 3: it degrades that one
-// square and warns (spec §4). loadMapsDir (maps.go) makes all of those calls,
-// and since Task 7 of that plan it is called UNCONDITIONALLY — the
-// os.Stat(campaignPath/maps) guard that used to stand in front of it is gone
-// with the sibling packs/ tree, the pack set and GET /api/packs/{pack}/{file}.
-// Nothing serves art bytes until that plan's Task 6 builds GET /api/art/{file}.
+// any single map's failure, an override naming art written for a
+// format_version this server does not understand, or an existing-but-empty
+// maps/ (the same "fail loud, never at the table" posture as adventuresDir
+// above), closing both handles before returning. An override naming art that
+// is simply NOT installed is not a boot failure since
+// 2026-09-02-art-is-a-flat-library Task 3, and one naming art that is
+// installed and CANNOT BE READ stopped being one at Task 4b: each degrades
+// that one square and warns (spec §4). Until 4b that second case was
+// measurably fatal — one corrupt sidecar named by one committed map, exit
+// status 1, every other map fine.
+//
+// loadMapsDir (maps.go) makes all of those calls, and since Task 7 of that
+// plan it is called UNCONDITIONALLY — the os.Stat(campaignPath/maps) guard
+// that used to stand in front of it is gone with the sibling packs/ tree, the
+// pack set and GET /api/packs/{pack}/{file}. Nothing serves art bytes until
+// that plan's Task 6 builds GET /api/art/{file}.
 //
 // campaignPath/art IS CHECKED AND WIRED HERE, unconditionally. THE THREE STEPS
 // HAVE THREE DIFFERENT SEVERITIES and that is the substance of it
@@ -230,11 +236,13 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	// THIS REPORT IS THE SIGNAL, AND FOR TWO ARMS IT IS THE ONLY ONE. This
 	// comment said "nothing malformed can render regardless — artlib.Lookup
 	// refuses each broken piece individually when a map names it" until
-	// 2026-09-03, and that is false in three of the five arms (review finding
-	// F1): a sidecar that cannot be parsed refuses, an orphan sidecar or a
-	// subdirectory draws the square PLAIN, and a relative symlink or a
-	// wrong-cased filename RENDERS with nothing objecting. artlib.Validate's own
-	// doc comment carries the measured per-arm table; do not restate it here,
+	// 2026-09-03, and that is false in four of the five arms (review finding
+	// F1, widened by Patrik's ruling of 2026-09-04): a sidecar that cannot be
+	// parsed, an orphan sidecar or a subdirectory all draw the square PLAIN,
+	// and a relative symlink or a wrong-cased filename RENDERS with nothing
+	// objecting. Only a declared format_version this server does not understand
+	// still refuses the map. artlib.Validate's own doc comment carries the
+	// measured per-arm table; do not restate it here,
 	// because a second copy is a second thing to rot. What the ruling buys is
 	// that one hand-copied file does not cost a table its server — not that the
 	// loader will catch everything this walk names. `vtt art install` (Task 6)

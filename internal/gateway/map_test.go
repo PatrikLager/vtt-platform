@@ -73,8 +73,10 @@ func loadCellarMap(t *testing.T) *mapdef.Map {
 // campaigns/example/maps/cellar.json names — the four tile pieces its
 // overrides reference and the four object pictures its objects do — in the
 // flat layout 2026-09-02-art-is-a-flat-library design spec §3 defines: a
-// picture per piece, and beside it a sidecar for tile art only (§3.4, and
-// mapdef.Resolve refuses tile art with no sidecar).
+// picture per piece, and beside it a sidecar for tile art only (§3.4; tile art
+// with no sidecar draws plain and warns, which this fixture does not want to
+// be testing by accident — this clause said "mapdef.Resolve refuses" it, true
+// until Patrik's ruling of 2026-09-03).
 //
 // Built here rather than read from campaigns/example/art/, which does not
 // exist yet: Task 8 of that plan migrates the committed fixture, and until it
@@ -824,10 +826,21 @@ func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
 // round 1's translation caught it.
 //
 // Every case here is refused for a DIFFERENT reason (missing, unopenable,
-// unreadable, unparseable, invalid, mismatched, art that cannot be parsed, art
-// that cannot be read past its open),
-// because the defect was never about one error — it was about which errors
-// were forwarded, and that is all of them but one.
+// unreadable, unparseable, invalid, mismatched, and art written for a format
+// this server does not understand), because the defect was never about one
+// error — it was about which errors were forwarded, and that is all of them
+// but one.
+//
+// THE READ-PHASE ART ROW LEFT ON 2026-09-04 AND DID NOT STOP MATTERING. A
+// DIRECTORY named <id>.json — openat succeeds, read(2) returns EISDIR, and
+// Root.ReadFile's error after a successful open carries the ABSOLUTE path
+// (internal/artlib's bareCause has the per-phase table) — was a row here until
+// Patrik's ruling of that day made a sidecar this server cannot read DEGRADE
+// rather than refuse. The disclosure surface moved with the verdict, exactly as
+// the unopenable root's did a day earlier: that shape now travels on
+// CommandResult.warnings, to the same seats, and
+// TestNoWarningTellsAClientWhereTheCampaignLives below carries it. It is the
+// same fixture and the same absolute path; only the channel changed.
 //
 // THE ART CASE IS THE NEWEST AND WAS THE MOST NEARLY MISSED. The old "pack not
 // loaded" row left with the mechanism that produced it
@@ -847,28 +860,15 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	installMap(t, f.mapsDir, "typo", `{"format_version":1,"id":"typo","name":"Level Two",
 		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stoen"}}`)
 	installMap(t, f.mapsDir, "truncated", `{"format_version":1,"id":"truncated",`)
-	// An art case, restored. A sidecar declaring a format this server does not
-	// understand is the art failure that still REFUSES (an absent piece, and
-	// an art directory that cannot be opened, both degrade), and it is the one
-	// that carries an artlib error all the way to a client.
+	// The one art case left. A sidecar declaring a format this server does not
+	// understand is the art failure that still REFUSES (an absent piece, an art
+	// directory that cannot be opened, and since 2026-09-04 every sidecar this
+	// server simply cannot read, all degrade), and it is the one that carries
+	// an artlib error all the way to a client.
 	installArt(t, f.artDir, "broken-stone", `{"format_version":99,"kind":"wall"}`)
 	installMap(t, f.mapsDir, "brokenart", `{"format_version":1,"id":"brokenart","name":"Level Two",
 		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
 		"overrides":{"0,0":"broken-stone"}}`)
-	// The READ phase, on a real seat. A DIRECTORY named <id>.json: openat
-	// succeeds, read(2) returns EISDIR, and Root.ReadFile's error after a
-	// successful open carries the ABSOLUTE path (internal/artlib's bareCause
-	// has the per-phase table). This exact shape reached a DM verbatim through
-	// this handler until review round 3 of art-is-a-flat-library Task 3, and
-	// load_adventure hands the same thing to a RoleAgent seat. The unit tests
-	// in internal/artlib and internal/mapdef both guard it now; this row is
-	// the end-to-end one, because that is where it was actually observed.
-	if err := os.MkdirAll(filepath.Join(f.artDir, "dir-stone.json"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	installMap(t, f.mapsDir, "unreadableart", `{"format_version":1,"id":"unreadableart","name":"Level Two",
-		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
-		"overrides":{"0,0":"dir-stone"}}`)
 	if err := os.MkdirAll(filepath.Join(f.mapsDir, "adir.json"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -879,8 +879,7 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 		{"filename disagrees with id", "mismatch"},
 		{"tile name typo", "typo"},
 		{"truncated json", "truncated"},
-		{"art whose sidecar cannot be read", "brokenart"},
-		{"art whose sidecar cannot be read past its open", "unreadableart"},
+		{"art written for a format this server does not understand", "brokenart"},
 		{"a directory where a map should be", "adir"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -917,11 +916,39 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 // above forbids from naming a path, to exactly the same seats.
 //
 // EVERY WARNING SENTENCE THE ART PATH CAN PRODUCE IS DRIVEN HERE, across two
-// subtests, and it took a review finding to get there (F3, 2026-09-03): the
-// first version drove only the unopenable-root sentence and left the other four
-// — artNotInstalled, the no-sidecar sentence, the kind-mismatch sentence and
-// ResolveObjectArt's not-installed sentence — with no guard at the wire at all.
-// None of them can leak today. Nothing pinned that they would not.
+// subtests, and it has taken two review findings to make that sentence true
+// (F3 on 2026-09-03, F1 on 2026-09-05). The first version drove only the
+// unopenable-root sentence and left four others with no guard at the wire at
+// all; the second added artCannotBeUsed on the TILE arm and missed that
+// mapdef.ResolveObjectArt builds the same sentence from its own switch.
+//
+// THERE ARE EIGHT TEMPLATES, and the count is worth stating because a reader
+// consults exactly this sentence before deciding whether to widen the table.
+// mapdef.Resolve builds five — not installed, no sidecar, the unreadable art
+// root, a kind mismatch, and cannot-be-used — and mapdef.ResolveObjectArt
+// builds three, its own not-installed, unreadable-root and cannot-be-used.
+// Only the two cannot-be-used sentences interpolate an artlib ERROR; the
+// unreadable-root pair is a constant with nothing interpolated at all (which
+// is why "the others carry an art name and nothing else" was false of it); the
+// rest carry an art name, and the mismatch also carries two kinds.
+//
+// THE TWO cannot-be-used SENTENCES ARE THE DANGEROUS ONES, because they carry
+// text produced by the same code whose errors the refusal test above forbids
+// from naming a path. Both dir-stone rows below are the READ phase: a DIRECTORY
+// named <id>.json, where openat succeeds, read(2) returns EISDIR, and
+// Root.ReadFile's error carries the ABSOLUTE campaign path. That exact shape
+// reached a DM verbatim through this handler until review round 3 of
+// art-is-a-flat-library Task 3; it was a REFUSAL row in the test above until
+// Patrik's ruling of 2026-09-04 made it degrade, and it is here because the
+// leak moved channel rather than closing.
+//
+// A TILE ROW DOES NOT COVER THE OBJECT ARM. Measured 2026-09-05: appending
+// artDir to ONLY ResolveObjectArt's tail left both of this file's path tests
+// green while internal/mapdef's unit test caught it — and this test exists
+// precisely because a unit test cannot see the sentence arriving on a
+// CommandResult that a real seat reads. load_adventure puts these same
+// warnings on a result for RoleAgent seats, which no refusal test reaches at
+// all. So the object arm gets its own dir-stone row.
 //
 // TWO SUBTESTS BECAUSE ONE ART DIRECTORY CANNOT PRODUCE BOTH SETS: against an
 // unopenable root EVERY lookup returns ErrArtDirUnreadable, so the four
@@ -938,7 +965,18 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 // interpolated into it precisely so that path cannot ride out.
 //
 // FAULT-INJECTION PROOF (these assertions are after-the-fact, per CLAUDE.md
-// rule 1). Appending artDir to the two warnings mapdef.Resolve and
+// rule 1). For the dir-stone rows: dropping bareCause from artlib's read-phase
+// arm — `fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)` instead of
+// bareCause(err) in lookupIn's default branch, which is the one-token form of
+// the leak that actually shipped — fails the second subtest with "a client was
+// told where the campaign lives". Measured 2026-09-04, Task 4b.
+//
+// And for the OBJECT row specifically, which is the one F1 found missing:
+// appending artDir to the tail mapdef.ResolveObjectArt passes artCannotBeUsed,
+// and to nothing else, fails this subtest. Before that row existed the same
+// injection left both of this file's path tests green. Measured 2026-09-05.
+//
+// Appending artDir to the two warnings mapdef.Resolve and
 // mapdef.ResolveObjectArt build for an unreadable root — the change that
 // reintroduces the leak — fails the first subtest. It also fails
 // internal/mapdef's TestNoArtFailureNamesTheDirectoryItRead, which is the
@@ -986,16 +1024,31 @@ func TestNoWarningTellsAClientWhereTheCampaignLives(t *testing.T) {
 		f := newInstallableMapFixture(t)
 		conn := f.dial(f.dmToken, 0)
 
-		// One square per producer, against the REAL cellarArtDir:
+		// A DIRECTORY where a sidecar belongs: the read phase, and the one
+		// artlib error whose *fs.PathError holds the absolute path.
+		if err := os.MkdirAll(filepath.Join(f.artDir, "dir-stone.json"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		// One producer per square or object, against the REAL cellarArtDir:
 		//   masonry-1    declares kind "wall" over a "stone" floor -> mismatch
 		//   no-such-art  is installed nowhere                      -> not installed
 		//   pillar-stone is a picture with no sidecar              -> no sidecar
-		//   the object's art is installed nowhere                  -> object not installed
+		//   dir-stone    is a sidecar that cannot be read          -> cannot be used
+		//   o1's art is installed nowhere                          -> object not installed
+		//   o2's art is dir-stone                                  -> object cannot be used
+		//
+		// o2 is the row F1 added. The two cannot-be-used sentences are built by
+		// two different switches with nothing forcing them to agree, so the
+		// tile row proves nothing about the object one.
 		installMap(t, f.mapsDir, "cellar", `{"format_version":1,"id":"cellar","name":"Cellar",
-			"grid_width":4,"grid_height":1,
-			"tiles":{"0,0":"stone","1,0":"stone","2,0":"stone","3,0":"stone"},
-			"overrides":{"0,0":"masonry-1","1,0":"no-such-art","2,0":"pillar-stone"},
-			"objects":[{"id":"o1","kind":"pillar","art":"no-such-object","at":[3,0],"size":[1,1]}]}`)
+			"grid_width":6,"grid_height":1,
+			"tiles":{"0,0":"stone","1,0":"stone","2,0":"stone","3,0":"stone","4,0":"stone",
+				"5,0":"stone"},
+			"overrides":{"0,0":"masonry-1","1,0":"no-such-art","2,0":"pillar-stone",
+				"3,0":"dir-stone"},
+			"objects":[{"id":"o1","kind":"pillar","art":"no-such-object","at":[4,0],"size":[1,1]},
+				{"id":"o2","kind":"pillar","art":"dir-stone","at":[5,0],"size":[1,1]}]}`)
 
 		sendCommand(t, conn, loadMapCmdFor("cellar"))
 		res := readResult(t, conn)
@@ -1007,12 +1060,29 @@ func TestNoWarningTellsAClientWhereTheCampaignLives(t *testing.T) {
 		// produced, which is the degenerate-fixture failure this repo keeps
 		// finding: a guard over an empty set passes.
 		said := strings.Join(res.GetWarnings(), "\n")
-		for _, want := range []string{"masonry-1", "no-such-art", "pillar-stone", "no-such-object"} {
+		for _, want := range []string{"masonry-1", "no-such-art", "pillar-stone", "dir-stone",
+			"no-such-object"} {
 			if !strings.Contains(said, want) {
 				t.Fatalf("warnings %q, want one naming %q — this test guards the sentence "+
 					"that reference produces, and cannot guard one nobody built",
 					res.GetWarnings(), want)
 			}
+		}
+		// BY NAME IS NOT ENOUGH FOR dir-stone, which two producers now name: a
+		// square and an object. Only the object tail tells them apart, so
+		// without this the object arm could stop producing anything and the
+		// loop above would still pass on the tile sentence alone — the
+		// degenerate-fixture failure this repo keeps finding.
+		var objectCannotBeUsed bool
+		for _, w := range res.GetWarnings() {
+			if strings.Contains(w, "cannot be used") && strings.Contains(w, "the object stays") {
+				objectCannotBeUsed = true
+			}
+		}
+		if !objectCannotBeUsed {
+			t.Fatalf("warnings %q carry no OBJECT cannot-be-used sentence; "+
+				"mapdef.ResolveObjectArt builds it from its own switch and this is the "+
+				"only test that sees it on a CommandResult", res.GetWarnings())
 		}
 		assertNoWarningNamesAPath(t, res.GetWarnings(), f.artDir, f.mapsDir)
 	})
@@ -1034,7 +1104,7 @@ func assertNoWarningNamesAPath(t *testing.T, warnings []string, forbidden ...str
 	}
 }
 
-// TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot pins the argument
+// TestAMapWithArtFromALaterFormatIsRefusedOnDemandExactlyAsAtBoot pins the argument
 // mapByID passes to mapdef.LoadInstalled, and it exists because nothing did:
 // fault injection during review of art-is-a-flat-library Task 3 replaced
 // s.artDir with "" at that call site and the ENTIRE gateway suite still
@@ -1059,7 +1129,15 @@ func assertNoWarningNamesAPath(t *testing.T, warnings []string, forbidden ...str
 //
 // The art is installed AFTER boot on purpose — that is the case a boot-time
 // check can never cover, and the one §3.6 exists for.
-func TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot(t *testing.T) {
+//
+// THE FIXTURE IS NARROWER THAN THE NAME USED TO SAY. It was
+// TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot, and a sidecar
+// that cannot be read stopped refusing anything on 2026-09-04 (Task 4b) — it
+// degrades one square now, so this test would have gone green-for-nothing
+// under any other broken sidecar. format_version 99 was already the fixture,
+// so the mechanism this pins is unchanged; only the name and the sentences
+// around it were describing a wider class than still exists.
+func TestAMapWithArtFromALaterFormatIsRefusedOnDemandExactlyAsAtBoot(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
 
@@ -1071,11 +1149,12 @@ func TestAMapWithUnreadableArtIsRefusedOnDemandExactlyAsAtBoot(t *testing.T) {
 	sendCommand(t, conn, loadMapCmdFor("level-5"))
 	res := readResult(t, conn)
 	if res.GetOk() {
-		t.Fatal("a map whose art sidecar cannot be read loaded on demand; the boot walk " +
-			"refuses it, so this would let a map load at the table and then refuse to boot")
+		t.Fatal("a map naming art written for a later format loaded on demand; the boot " +
+			"walk refuses it, so this would let a map load at the table and then refuse " +
+			"to boot")
 	}
 	if !strings.Contains(res.GetError(), "cave-floor-1") {
-		t.Errorf("error = %q, want it to name the art that could not be read", res.GetError())
+		t.Errorf("error = %q, want it to name the art it refused", res.GetError())
 	}
 	// The boot-identical shape: mapdef.LoadInstalled is the layer that names
 	// the map, and it can only name it if it was given the art root to fail on.
@@ -1156,9 +1235,9 @@ func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
 // an override whose ART declares a kind disagreeing with its square's base tile
 // WARNS rather than refuses (resolve.go, "an illusory wall is legitimate
 // dungeon craft ... and refusing it would forbid a feature one arc away"). It
-// is now one of four warning producers rather than the only one — art that is
-// not installed, art with no sidecar, and an unreadable art directory all warn
-// too, and any of them would do here.
+// is now one of five warning producers rather than the only one — art that is
+// not installed, art with no sidecar, art that is installed and cannot be read,
+// and an unreadable art directory all warn too, and any of them would do here.
 //
 // The mechanism now depends on cellarArtDir (above) declaring masonry-1 as
 // kind "wall", which is what the deleted cellar-basics manifest declared and

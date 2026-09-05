@@ -289,15 +289,24 @@ rules actually bind: a subdirectory in `art/`, a sidecar with no picture, an
 unreadable sidecar, an unsupported `format_version`.
 
 **"Binds" means the FILE is named, not that anything is refused.** Amended
-2026-09-03 and corrected 2026-09-04, because the first amendment repeated a
-sentence that five Go files had already retired: *"each broken piece is then
-refused individually the moment a map names it."* That is false, and it is false
-in a way no amount of care about wording would have fixed — **a `Validate`
-finding does not predict what a map load does with it.** The subdirectory and
-symlink arms each span all three outcomes, because a load is decided by what
-`Lookup` finds at `<stem>.json` and `<stem>.png`, not by which arm reported the
-entry. `art/pack-ish/` degrades; `art/masonry-1.png/` refuses. A relative
-in-root symlink renders; a dangling symlinked sidecar refuses.
+2026-09-03 and corrected twice on 2026-09-04, because the first amendment
+repeated a sentence that five Go files had already retired: *"each broken piece
+is then refused individually the moment a map names it."* That is false, and it
+is false in a way no amount of care about wording would have fixed — **a
+`Validate` finding does not predict what a map load does with it.** The symlink
+arm spans two outcomes and the subdirectory arm two different routes to the
+same one, because a load is decided by what `Lookup` finds at `<stem>.json` and
+`<stem>.png`, not by which arm reported the entry. `art/pack-ish/` degrades as
+ABSENT art and `art/masonry-1.png/` degrades as art that cannot be read — two
+different sentences to the DM, out of one `Validate` arm. A relative in-root
+symlink renders; a dangling symlinked sidecar degrades.
+
+*The second correction of 2026-09-04 is the ruling in §4. Those last two
+sentences read "`art/masonry-1.png/` refuses" and "a dangling symlinked sidecar
+refuses" until it landed, and both went the other way with the class: neither
+declares a `format_version`, so neither is the one thing that still refuses.
+Nothing else in this section moved — a `Validate` finding still predicts
+nothing.*
 
 At boot every problem is reported and the server starts. `vtt art install`
 refuses outright, because there the operator is holding the file. A subdirectory is the mildest
@@ -393,6 +402,14 @@ that square with its own warning** — not the not-installed one, because the fi
 is sitting right there. These are the two halves of §3.4's asymmetry and neither
 is safe to assume.
 
+**A campaign holding a corrupt sidecar BOOTS**, and that is a boot-level test
+rather than a `Resolve` one: the whole cost of the refusal it replaces was that
+`composeServer` turned it into `exit status 1` for every map in the campaign, and
+a unit test on one square cannot see that. Its companion is the other half of the
+split — **a sidecar declaring a `format_version` this server does not understand
+still refuses, naming both versions**, and refuses at that same boot. *(Added
+2026-09-04 with §4's ruling.)*
+
 *(Amended 2026-09-03 with §3.4 and exit criterion 6. This paragraph said
 "is refused" until Task 3's re-review caught the contradiction: §8 is the list
 Tasks 8 and 9 write their tests from, so a reader working forward from a stale
@@ -446,7 +463,14 @@ expensive part.
    `Validate` finding does not predict a load (see §5). The rendering cases are
    a resolvable in-root symlink, and a wrong-cased filename on a
    case-insensitive filesystem — for those, the boot report is the only notice
-   anyone gets.
+   anyone gets. **Exactly one malformed thing stops the boot on its own**: an
+   art root that cannot be opened. **Exactly one stops a MAP**: a sidecar
+   declaring a `format_version` NUMBER this server does not understand — and
+   that one stops the boot as well, whenever a committed map names it. A
+   `format_version` that is absent, or that holds something which is not a
+   version number at all, is a broken file and degrades with them. *(Both sentences
+   were added 2026-09-04 with §4's ruling; before it, every unreadable sidecar
+   did both.)*
 6. Object art needs no sidecar. Tile art without one **degrades that square
    with its own warning** (amended 2026-09-03 — see §3.4; the original criterion
    said "is refused", which in practice refused the whole server).

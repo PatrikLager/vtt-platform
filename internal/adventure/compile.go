@@ -57,7 +57,8 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, []string, err
 		//
 		// ITS WARNINGS ARE CARRIED NOW, and the `_` that used to sit here was
 		// a real silence rather than a tidy omission. Art-is-a-flat-library
-		// Task 3 turned unresolvable art from a refusal into a warning, so
+		// Task 3 turned unresolvable art from a refusal into a warning — and
+		// Task 4b widened that to every sidecar this server cannot read — so
 		// from that moment an adventure whose art/ was unopenable compiled
 		// with err == nil, every square plain, and NOTHING said so anywhere —
 		// which that design spec §4 names as the outcome strictly worse than

@@ -157,18 +157,22 @@ func TestLoadInstalledReportsAMapThatIsNotInstalledAsNotExist(t *testing.T) {
 	}
 }
 
-// TestLoadInstalledRefusesAnOverrideWhoseArtCannotBeRead is the §12
+// TestLoadInstalledRefusesAnOverrideNamingArtFromALaterFormat is the §12
 // anti-divergence proof at this level: loading on demand runs the SAME
 // mapdef.Compile dry run boot does (cmd/vtt's
-// TestLoadMapsDirFailsLoudWhenArtCannotBeRead pins the boot side), against
-// the same art directory. Without it, a map with a broken sidecar would
-// boot-fail but reload cleanly — the exact inversion the spec warns about.
+// TestLoadMapsDirFailsLoudWhenArtDeclaresAFormatItDoesNotUnderstand pins the
+// boot side), against the same art directory. Without it, a map naming art
+// written for a later format would boot-fail but reload cleanly — the exact
+// inversion the spec warns about.
 //
-// The fixture is art that EXISTS and cannot be read, not art that is absent:
-// since 2026-09-02-art-is-a-flat-library Task 3 an absent reference degrades
-// one square and warns rather than refusing anything (spec §4), so absence
-// can no longer drive a refusal at any level.
-func TestLoadInstalledRefusesAnOverrideWhoseArtCannotBeRead(t *testing.T) {
+// THE FIXTURE HAS BEEN NARROWED TWICE, and each narrowing was a ruling rather
+// than a preference. It was art the pack did not define until
+// 2026-09-02-art-is-a-flat-library Task 3 made an absent reference degrade one
+// square and warn (spec §4). It was any art that existed and could not be read
+// until Task 4b, when Patrik's ruling of 2026-09-04 made those degrade too.
+// What is left is the one art failure that still refuses anything: a sidecar
+// declaring a format_version this server does not understand.
+func TestLoadInstalledRefusesAnOverrideNamingArtFromALaterFormat(t *testing.T) {
 	root := t.TempDir()
 	mapsDir := filepath.Join(root, "maps")
 	artDir := filepath.Join(root, "art")
@@ -180,11 +184,11 @@ func TestLoadInstalledRefusesAnOverrideWhoseArtCannotBeRead(t *testing.T) {
 
 	_, err := mapdef.LoadInstalled(mapsDir, "shrine", artDir)
 	if err == nil {
-		t.Fatal("an override naming art that cannot be read loaded cleanly; " +
+		t.Fatal("an override naming art written for a later format loaded cleanly; " +
 			"boot refuses it, and on demand must refuse it identically")
 	}
 	if !strings.Contains(err.Error(), "wood-planks-split-3") {
-		t.Fatalf("error = %q, want it to name the art it could not read", err)
+		t.Fatalf("error = %q, want it to name the art it refused", err)
 	}
 }
 

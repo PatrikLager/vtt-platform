@@ -44,13 +44,15 @@ const errNoMapsAvailable = "gateway: no maps available"
 // expected to add_actor first; this handler does not special-case that
 // order.
 //
-// mapdef.Compile's second return value is a []string of warnings. There are
-// four producers, and only the first predates 2026-09-02-art-is-a-flat-library
-// Task 3: an override's kind disagreeing with its base tile's
-// (2026-08-12-maps-as-geometry design spec §3.2 — warns, never refuses), art
-// that is not installed, art that has a picture and no sidecar, and an art
-// directory this process cannot open (all three that sub-project's design spec
-// §4). Each is reported ONCE per distinct message with the number of squares
+// mapdef.Compile's second return value is a []string of warnings. Only the
+// first producer predates 2026-09-02-art-is-a-flat-library Task 3: an
+// override's kind disagreeing with its base tile's (2026-08-12-maps-as-geometry
+// design spec §3.2 — warns, never refuses), art that is not installed, art that
+// has a picture and no sidecar, an art directory this process cannot open, and
+// — since Patrik's ruling of 2026-09-04, which is what stopped a corrupt
+// sidecar taking the whole boot down — art that is installed and cannot be
+// used (all of those, that sub-project's design spec §4). Each is reported
+// ONCE per distinct message with the number of squares
 // or objects it affected, because the un-deduplicated version put 96 warnings
 // and 6840 bytes on one result for the shipped cellar map — see
 // mapdef.BuildSceneCreated's warningTally. This handler carries them onto the

@@ -43,16 +43,23 @@ import (
 
 // loadMapsDir walks "<dir>/maps" and loads every "<id>.json" through
 // mapdef.LoadInstalled, which validates each map and dry-runs mapdef.Compile
-// against "<dir>/art" — so an overrides entry naming art that is installed and
-// unreadable fails HERE rather than only once something eventually calls
-// Compile for real, mirroring loadScenes' identical dry-run of
-// mapdef.BuildSceneCreated for adventure-embedded scenes
+// against "<dir>/art" — so an overrides entry naming art written for a
+// format_version this server does not understand fails HERE rather than only
+// once something eventually calls Compile for real, mirroring loadScenes'
+// identical dry-run of mapdef.BuildSceneCreated for adventure-embedded scenes
 // (internal/adventure/load.go), and reusing Compile itself rather than
 // inventing a second validation path, per Task 4's "one construction site"
-// discipline. An entry naming art that is merely ABSENT no longer fails at
-// all: it degrades one square and warns (2026-09-02-art-is-a-flat-library
-// design spec §4), and this walk discards the warnings for the same reason
-// mapdef.LoadInstalled does.
+// discipline.
+//
+// THAT IS THE ONLY ART FAILURE LEFT THAT CAN FAIL A BOOT. An entry naming art
+// that is merely ABSENT stopped failing at Task 3, and since Patrik's ruling
+// of 2026-09-04 so has one naming art that is installed and CANNOT BE READ — a
+// missing brace, a truncated copy, a door naming one picture. Each degrades
+// one square and warns (2026-09-02-art-is-a-flat-library design spec §4), and
+// this walk discards the warnings for the same reason mapdef.LoadInstalled
+// does. The second change is not tidying: this walk really did refuse a boot
+// over one such file, measured 2026-09-03, exit status 1 with every other map
+// in the campaign fine.
 //
 // AN ABSENT maps/ IS NOT AN ERROR, and that is what lets composeServer wire the
 // maps directory with no guard around this call (art-is-a-flat-library Task 7).

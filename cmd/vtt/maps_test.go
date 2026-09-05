@@ -112,11 +112,12 @@ func TestLoadMapsDirLoadsAValidMap(t *testing.T) {
 	}
 }
 
-// TestLoadMapsDirFailsLoudWhenArtCannotBeRead pins the fuller promise of
-// maps-as-geometry spec §4.4 that mapdef.Load alone cannot check (it reads no
-// art — see resolve.go's own doc comment): an overrides entry naming art that
-// is installed and cannot be read must fail at BOOT, not only once something
-// tries to Compile it. loadMapsDir proves this by dry-running mapdef.Compile
+// TestLoadMapsDirFailsLoudWhenArtDeclaresAFormatItDoesNotUnderstand pins the
+// fuller promise of maps-as-geometry spec §4.4 that mapdef.Load alone cannot
+// check (it reads no art — see resolve.go's own doc comment): an overrides
+// entry naming art written for a format_version this server does not
+// understand must fail at BOOT, not only once something tries to Compile it.
+// loadMapsDir proves this by dry-running mapdef.Compile
 // per map against the campaign's own art/ — the same directory
 // internal/gateway/map.go's handleLoadMap will resolve against at request
 // time, and the same technique internal/adventure/load.go's loadScenes
@@ -124,14 +125,20 @@ func TestLoadMapsDirLoadsAValidMap(t *testing.T) {
 // hand-rolled check, per maps-as-geometry Task 4's "one construction site"
 // discipline.
 //
-// It used to drive art the PACK did not define. That case no longer fails
-// anything: 2026-09-02-art-is-a-flat-library spec §4 degrades an art
-// reference with no file behind it to a plain square and one warning, so the
-// only art-side boot refusal left is a piece that exists and cannot be read.
-// TestABootLoadedMapWhoseArtIsNotInstalledStillBoots below is the other half
-// of that pair, and it is the half worth having: without it, "fails loud"
-// could be satisfied by a loader that refuses everything.
-func TestLoadMapsDirFailsLoudWhenArtCannotBeRead(t *testing.T) {
+// IT USED TO DRIVE ART THE PACK DID NOT DEFINE, then art that simply could not
+// be read, and both of those now degrade instead: 2026-09-02-art-is-a-flat-
+// library spec §4 drops an art reference with no file behind it to a plain
+// square and one warning (Task 3), and Patrik's ruling of 2026-09-04 does the
+// same for a file that is installed and broken (Task 4b). The only art-side
+// boot refusal left is the one this drives — a sidecar declaring a format this
+// server does not understand.
+//
+// TestABootLoadedMapWhoseArtIsNotInstalledStillBoots and
+// TestACampaignHoldingACorruptSidecarStillBoots (maps_e2e_test.go) are the
+// other half of that pair, and it is the half worth having: without them,
+// "fails loud" could be satisfied by a loader that refuses everything, which
+// is measurably what this one did until Task 4b.
+func TestLoadMapsDirFailsLoudWhenArtDeclaresAFormatItDoesNotUnderstand(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "art"), 0o755); err != nil {
 		t.Fatal(err)
@@ -140,8 +147,8 @@ func TestLoadMapsDirFailsLoudWhenArtCannotBeRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Art that IS installed and declares a format this server does not
-	// understand — the file is there, so this is a defect to fix rather than
-	// a square to draw plain.
+	// understand — the file is not broken, this server is too old to read it,
+	// and that is the one art fact a boot still refuses on.
 	writeFile(t, filepath.Join(dir, "art", "wood-planks-split-3.json"),
 		`{"format_version": 99, "kind": "floor", "material": "wood"}`)
 	writeFile(t, filepath.Join(dir, "art", "wood-planks-split-3.png"), "fake-png")
@@ -155,11 +162,11 @@ func TestLoadMapsDirFailsLoudWhenArtCannotBeRead(t *testing.T) {
 
 	_, err := LoadMapsDir(dir)
 	if err == nil {
-		t.Fatal("an override naming art that cannot be read loaded cleanly; " +
+		t.Fatal("an override naming art written for a later format loaded cleanly; " +
 			"it should have failed at boot, not waited for someone to Compile it")
 	}
 	if !strings.Contains(err.Error(), "wood-planks-split-3") {
-		t.Errorf("error should name the art it could not read, got: %v", err)
+		t.Errorf("error should name the art it refused, got: %v", err)
 	}
 }
 

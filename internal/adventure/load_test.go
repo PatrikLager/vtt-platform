@@ -214,13 +214,14 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		// (adventure-format spec §7: fail loud at boot, not at the table).
 		//
 		// The fixture is art that EXISTS in the adventure's own art/ and
-		// cannot be read (an unsupported format_version), which since
-		// 2026-09-02-art-is-a-flat-library Task 3 is the only kind of
-		// unresolvable art that refuses anything. It used to name art no
-		// pack defined; that case now degrades the one square and warns
-		// (that plan's spec §4), so driving it here would pin a load that
-		// SUCCEEDS. The directory keeps its name because "unresolvable" is
-		// still exactly what the fixture is.
+		// declares a format_version this server does not understand, which is
+		// the only kind of unresolvable art left that refuses anything. It
+		// used to name art no pack defined, and that case began degrading the
+		// one square at 2026-09-02-art-is-a-flat-library Task 3 (spec §4);
+		// every OTHER unreadable sidecar joined it at Task 4b (Patrik,
+		// 2026-09-04), so a fixture built on a missing brace would now pin a
+		// load that SUCCEEDS. The directory keeps its name because
+		// "unresolvable" is still exactly what the fixture is.
 		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "declares 99"}},
 		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
 		// with no tiles at all is incoherent (mirrors mapdef's own
@@ -432,10 +433,17 @@ func TestAnAdventureShippingAPackIsRefusedByName(t *testing.T) {
 	// pins it): cellar-door.json names cellar-door-open.png and
 	// cellar-door-closed.png through its own "open"/"closed" fields, and
 	// cellar-door.png must not exist. A door sidecar carrying only kind and
-	// material hits `a door declares both "open" and "closed"`, which
-	// mapdef.Resolve takes on its `case err != nil` arm and turns into a
-	// REFUSED MAP. Loud beats silent, but an instruction that ends in a boot
-	// failure is not an instruction.
+	// material hits `a door declares both "open" and "closed"`.
+	//
+	// THAT CONSEQUENCE CHANGED ON 2026-09-04 AND THE MESSAGE CHANGED WITH IT.
+	// mapdef.Resolve took it on its `case err != nil` arm and turned it into a
+	// REFUSED MAP; Patrik's ruling of that day made every unreadable sidecar
+	// degrade instead (art-is-a-flat-library Task 4b), so the door now draws
+	// plain and the adventure loads. Round 1 of this message ended an
+	// operator in a boot failure, which is not an instruction; it now ends
+	// them in a door with no picture, which is quieter and makes this message
+	// MORE load-bearing rather than less — see the paragraph below on why
+	// nothing else would tell them.
 	//
 	// Nothing else catches any of this for an ADVENTURE: composeServer runs
 	// artlib.Validate over campaignPath/art only, never over a bundle's own
@@ -448,8 +456,12 @@ func TestAnAdventureShippingAPackIsRefusedByName(t *testing.T) {
 		// The sidecar clause, for ordinary tile art.
 		"sidecar", "kind and material",
 		// The door exception, which is all three of: no <id>.png, the two
-		// pictures named INSIDE the sidecar, and refusal rather than degrading.
-		"<id>.png", "cellar-door-open.png", "cellar-door-closed.png", "REFUSED",
+		// pictures named INSIDE the sidecar, and what getting it wrong costs.
+		// The last was "REFUSED" until 2026-09-04; the phrase asserted now is
+		// unique to the door clause, so it cannot be satisfied by the tile
+		// clause's own "resolves to nothing and draws plain".
+		"<id>.png", "cellar-door-open.png", "cellar-door-closed.png",
+		"THE DOOR DRAWS PLAIN",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q must contain %q: an operator following this message must "+

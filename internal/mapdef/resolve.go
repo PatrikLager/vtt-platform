@@ -25,38 +25,66 @@ type Resolved struct{ Kind, Material, Art string }
 // because a wall that looks like a passage is an illusory wall — legitimate
 // dungeon craft, and refusing it would forbid a feature one arc away.
 //
-// ABSENT ART DEGRADES; A SIDECAR THAT CANNOT BE PARSED REFUSES
-// (art-is-a-flat-library spec §4). Those are two different facts about the
-// world, and the second is what makes the first safe to ship: a reference with
-// no file behind it is a typo or a piece nobody installed yet, and the square
-// is fully described without it, so it draws plain and the DM is told which
-// reference dropped. A sidecar that EXISTS and does not parse is a defect in
-// installed content, and drawing that square plain would ship the broken file
-// silently. artlib draws the line with sentinels — artlib.ErrNotFound and
-// artlib.ErrArtDirUnreadable — so this decision is never made by reading error
-// text.
+// EVERY ART PROBLEM DEGRADES BUT ONE (art-is-a-flat-library spec §4). A square
+// is fully described without art — the nature comes from m.Tiles — so an art
+// reference that does not resolve costs the picture and nothing else: the
+// square draws plain and the DM is told which reference dropped and why.
 //
-// TWO CASES THAT LOOK LIKE "BROKEN" DEGRADE ANYWAY, both by Patrik's ruling of
-// 2026-09-03, and both because the alternative takes a table down over a file
-// an operator can fix in a second:
+// THE EXCEPTION IS A SIDECAR DECLARING A format_version THIS SERVER DOES NOT
+// UNDERSTAND, and it refuses (Patrik, 2026-09-04). It is not "this file is
+// broken" but "this content is newer than this server", and the two want
+// different answers: degrading it would turn a v2 art set into hundreds of
+// plain squares and a wall of warnings reading "my art is broken", when the
+// remedy is a newer server. One refusal naming both versions says that; ninety
+// warnings do not.
 //
-//   - A PICTURE WITH NO SIDECAR named as tile art. Refusing it stopped the
-//     whole server booting, since composeServer turns any loadMapsDir error
-//     into a refusal to start — the campaign down for everyone over one
-//     missing JSON file, and over exactly the move spec §3.4 teaches (drop a
-//     PNG in and use it). It warns with its own sentence naming the file to
-//     write, because "not installed" would be false of a file that is sitting
-//     right there. Spec §3.4 and exit criterion 6 were amended the same day and
-//     now say this outright; criterion 6 read "tile art without one is refused"
-//     until then, so a reader holding an older copy will find them disagreeing.
-//     Note the asymmetry it removes: the mirror case, a sidecar whose picture
-//     is absent, already degraded.
-//   - AN ART ROOT THAT CANNOT BE OPENED, here at request time. The boot keeps
-//     refusing it — cmd/vtt's artRootIsOpenable, called from composeServer
-//     rather than from the maps walk, so that a campaign with art and no map
-//     yet is checked too — where an operator is at a terminal and can act. A DM
-//     cannot chmod a directory from a browser, and a campaign that worked five
-//     minutes ago should not stop working.
+// THE DECISION IS MADE ON SENTINELS, NEVER ON MESSAGE TEXT —
+// artlib.ErrNotFound, artlib.ErrArtDirUnreadable, artlib.ErrFormatVersion —
+// which is the discipline artlib has kept since Task 1 built the first of
+// them. A strings.Contains here would silently stop refusing the day somebody
+// rewords an error.
+//
+// FOUR CASES THAT LOOK LIKE "BROKEN" DEGRADE ANYWAY, and every one of them
+// because the alternative takes a table down over a file an operator can fix
+// in a second:
+//
+//   - A PICTURE WITH NO SIDECAR named as tile art (Patrik, 2026-09-03).
+//     Refusing it stopped the whole server booting, since composeServer turns
+//     any loadMapsDir error into a refusal to start — the campaign down for
+//     everyone over one missing JSON file, and over exactly the move spec §3.4
+//     teaches (drop a PNG in and use it). It warns with its own sentence naming
+//     the file to write, because "not installed" would be false of a file that
+//     is sitting right there. Spec §3.4 and exit criterion 6 were amended the
+//     same day and now say this outright; criterion 6 read "tile art without one
+//     is refused" until then, so a reader holding an older copy will find them
+//     disagreeing. Note the asymmetry it removes: the mirror case, a sidecar
+//     whose picture is absent, already degraded.
+//   - AN ART ROOT THAT CANNOT BE OPENED, here at request time (Patrik,
+//     2026-09-03). The boot keeps refusing it — cmd/vtt's artRootIsOpenable,
+//     called from composeServer rather than from the maps walk, so that a
+//     campaign with art and no map yet is checked too — where an operator is at
+//     a terminal and can act. A DM cannot chmod a directory from a browser, and
+//     a campaign that worked five minutes ago should not stop working.
+//   - A SIDECAR THAT CANNOT BE READ: a missing brace, a truncated copy, a
+//     wrongly typed field, a format_version holding something that is not a
+//     version number, a picture that turns out to be a directory (Patrik,
+//     2026-09-04). This one REFUSED until that ruling, and the refusal was
+//     measured: one corrupt sidecar named by one committed map stopped the
+//     server booting, exit status 1, every other map fine, with the boot log
+//     printing "the server is starting anyway" one line earlier. It is the same
+//     shape ruled against three times already, and it survived only because
+//     nobody re-asked after the warning channel existed to carry what the
+//     refusal used to carry.
+//   - A DOOR SIDECAR DECLARING ONLY kind AND material, which the ruling does
+//     not name and which is decided here as part of the case above. The line
+//     the ruling draws is "is this file broken, or is this server too old", and
+//     a door with one picture is a broken file: this server reads it perfectly
+//     and finds it incomplete, and the remedy is to edit that one file, exactly
+//     as for a missing brace. campaigns/example ships a door, so under a
+//     refusal an operator who drops the "open" line out of art/cellar-door.json
+//     cannot start the server at all. No code decides it — the door error is
+//     simply not one of the three sentinels — and that is the evidence the line
+//     is in the right place.
 //
 // The two refusals this replaced were `p == nil` ("needs a pack to resolve")
 // and a comparison of the map's own declared pack against the pack it was
@@ -92,11 +120,19 @@ func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
 		return Resolved{Kind: kind, Material: material}, []string{artNotInstalled(art)}, nil
 	case errors.Is(err, artlib.ErrArtDirUnreadable):
 		return Resolved{Kind: kind, Material: material}, []string{artDirUnreadableWarning}, nil
-	case err != nil:
-		// A sidecar that EXISTS and cannot be read is a defect to fix, not a
-		// square to draw plain. Degrading here would ship a broken sidecar
-		// silently.
+	case errors.Is(err, artlib.ErrFormatVersion):
+		// THE ONE ART FAILURE THAT STILL REFUSES, and it is a fact about the
+		// SERVER rather than about the file — see this function's own doc
+		// comment for the ruling. The error already names both versions.
 		return Resolved{}, nil, err
+	case err != nil:
+		// EVERYTHING ELSE A SIDECAR CAN GET WRONG DEGRADES (Patrik,
+		// 2026-09-04). The nature is already in hand from m.Tiles, so the
+		// square keeps being what the map says it is and loses only its
+		// picture — and the campaign keeps booting, which is what the refusal
+		// this replaced actually cost.
+		return Resolved{Kind: kind, Material: material},
+			[]string{artCannotBeUsed(art, err, "drawing it plain")}, nil
 	}
 	// A SIDECAR IS EXPECTED FOR TILE ART and never for object art (spec §3.4),
 	// and this is the only place in the tree that can tell the two apart:
@@ -146,17 +182,20 @@ func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
 // functions already use for this exact reason), since an object's own ID is
 // author-supplied and neither required nor guaranteed unique.
 //
-// THE RETURNED ART IS EMPTY WHEN THE PIECE IS NOT INSTALLED, and the object
-// still ships. art-is-a-flat-library spec §4: "Object art that does not
+// THE RETURNED ART IS EMPTY WHENEVER THE PIECE DOES NOT RESOLVE, and the
+// object still ships. art-is-a-flat-library spec §4: "Object art that does not
 // resolve leaves the object in place, with its blocking behaviour intact,
 // drawn from its kind. An object is a thing in the world before it is a
 // picture, and dropping it because its picture is missing would change what
-// the room is." So this makes the same absent/unreadable split Resolve does,
-// for the same reasons, with one asymmetry: a bare picture is COMPLETE object
-// art (spec §3.4), so nothing here warns about a missing sidecar the way
-// Resolve does. That is the whole of the difference between the two now —
-// since 2026-09-03 the tile side warns rather than refusing there, so the
-// asymmetry costs a sentence to a DM instead of a map to a table.
+// the room is." So this makes the same four-way split Resolve does, for the
+// same reasons, with one asymmetry: a bare picture is COMPLETE object art
+// (spec §3.4), so nothing here warns about a missing sidecar the way Resolve
+// does. That is the whole of the difference between the two now.
+//
+// THE SPLIT IS WRITTEN OUT TWICE, HERE AND IN Resolve, and nothing forces the
+// two switches to agree — which is why internal/mapdef's object-side tests are
+// not redundant with the tile-side ones. A ruling applied to one arm and not
+// the other compiles and passes every test about the other.
 //
 // An empty o.Art is refused, redundantly with CheckObjectArtDeclared:
 // BuildSceneCreated (compile.go, which calls this per object) is the ONE
@@ -180,8 +219,11 @@ func ResolveObjectArt(idx int, o Object, artDir string) (string, []string, error
 	case errors.Is(err, artlib.ErrArtDirUnreadable):
 		return "", []string{artDirUnreadableWarning +
 			"; the object stays, drawn from its kind"}, nil
-	case err != nil:
+	case errors.Is(err, artlib.ErrFormatVersion):
 		return "", nil, err
+	case err != nil:
+		return "", []string{artCannotBeUsed(o.Art, err,
+			"the object stays, drawn from its kind")}, nil
 	}
 	return o.Art, nil, nil
 }
@@ -213,4 +255,50 @@ const artDirUnreadableWarning = "the art directory cannot be read; drawing it pl
 // compile.go's aggregation groups by exact string.
 func artNotInstalled(art string) string {
 	return fmt.Sprintf("art %q is not installed; drawing it plain", art)
+}
+
+// artCannotBeUsed is the sentence for art that IS installed and does not
+// resolve — a truncated sidecar, a wrongly typed field, a door that names one
+// picture (Patrik's ruling, 2026-09-04, which turned all of these from a
+// refused map into a plain square).
+//
+// IT IS NOT artNotInstalled WITH DIFFERENT WORDS, and that is the point §3.4
+// makes about the sidecar-less picture for the same reason: the file is
+// sitting in art/ where the DM can see it, so "not installed" would send them
+// hunting for something that is already there. This names the piece, carries
+// the cause verbatim, and leaves them looking at the file they have to fix.
+//
+// "CANNOT BE USED" RATHER THAN "CANNOT BE READ", because a door declaring only
+// kind and material was read perfectly well and is merely incomplete — one
+// sentence covers both, and neither half of it is false of either.
+//
+// tail is what happened instead: a square draws plain, an object stays. It is
+// a parameter rather than two functions because the two callers must not drift
+// apart on the first half, which is the half a DM reads.
+//
+// err IS SAFE TO INTERPOLATE, and this helper is the only thing in this file
+// that interpolates one. THAT IS TWO OF THE EIGHT SENTENCES THE ART PATH CAN
+// PRODUCE, not one: Resolve and ResolveObjectArt each call this, from switches
+// that nothing forces to agree. The other six are the two not-installed
+// sentences, the no-sidecar sentence, the kind mismatch, and the
+// unreadable-root pair — of which the first four carry an art name and the
+// last two are a constant carrying nothing at all.
+//
+// Every artlib error that can arrive here either never named a path or had it
+// stripped by that package's bareCause, which matters because these warnings
+// ride back to whoever issued load_map — an agent seat included — exactly as
+// an error does. internal/mapdef's TestNoArtFailureNamesTheDirectoryItRead and
+// internal/gateway's TestNoWarningTellsAClientWhereTheCampaignLives are the
+// guards, at the unit and the wire, and the wire one needs BOTH arms driven:
+// review measured (2026-09-05) that appending artDir to only the object tail
+// left every gateway path test green while the unit test caught it.
+//
+// IT STILL DEDUPLICATES, which is not obvious once an error is inside the
+// string: compile.go's warningTally groups by the exact sentence, so anything
+// varying per SQUARE would put the 96-warning measurement spec §4 records
+// straight back. artlib's errors are a function of the file, not of the
+// lookup, so ninety squares naming one broken piece produce ninety identical
+// sentences and one line with a count.
+func artCannotBeUsed(art string, err error, tail string) string {
+	return fmt.Sprintf("art %q is installed but cannot be used (%v); %s", art, err, tail)
 }

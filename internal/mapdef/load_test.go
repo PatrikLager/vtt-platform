@@ -425,14 +425,25 @@ func TestAPackIsTheFirstThingReportedAboutAPreMigrationMap(t *testing.T) {
 // they pinned lives now — written down because deleting a function makes the
 // compiler shout and deleting a test makes nothing shout at all.
 //
-//   - "a pack with no format_version is refused" and "a declared pack format
-//     this server does not understand is refused by NAME, not guessed at":
-//     internal/artlib's TestAnUnsupportedFormatVersionIsRefusedNotDegraded,
-//     which drives all three arms — a later format, a nonsense one, and none
-//     at all — against an art sidecar. An art sidecar is what carries a
+//   - "a declared pack format this server does not understand is refused by
+//     NAME, not guessed at": internal/artlib's
+//     TestADeclaredFormatVersionThisServerDoesNotUnderstandCarriesItsOwnSentinel,
+//     driven against an art sidecar. An art sidecar is what carries a
 //     format_version now, and for the same reason a pack did: one picture is
 //     named by many maps, so its format has to move independently of the map
 //     format (see MapFormatVersion's own doc comment, format.go).
+//   - "a pack with no format_version is refused": NOT carried over as a
+//     refusal, and the answer changed rather than moved. Patrik's ruling of
+//     2026-09-04 split the art side — a sidecar this server cannot read
+//     degrades one square, and only a DECLARED version it does not understand
+//     refuses — and an undeclared version is the first of those.
+//     internal/artlib's
+//     TestASidecarThatDeclaresNoFormatVersionIsCorruptRatherThanNewer
+//     is where the field is still required, and internal/mapdef's
+//     TestACorruptSidecarDegradesTheSquareAndNamesTheCause is what the caller
+//     does with it. A MAP with no format_version is still
+//     refused outright — TestLoadRefusesAMapWithNoFormatVersion above — and
+//     the two are different files with different readers.
 //   - "a pack declaring the version it understands loads, so the two refusals
 //     above fail for the version reason and no other": the positive arm of
 //     every internal/artlib Lookup test, e.g.

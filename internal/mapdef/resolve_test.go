@@ -289,11 +289,25 @@ func TestAnUnopenableArtDirectoryDegradesAtResolveTime(t *testing.T) {
 // DirectoryItRead, which walks SYSCALL PHASES (openat, read, statat, parse)
 // rather than failures anyone thought of — see bareCause's doc comment for why
 // the read phase is the one that carries an absolute path. The cases here are
-// this layer's end-to-end echo of that: the two unopenable-root shapes (which
-// degrade, so they are exercised through WARNINGS rather than errors), a
+// this layer's end-to-end echo of that: the two unopenable-root shapes, a
 // directory wearing a sidecar's name (the read phase), and a sidecar that
-// cannot be parsed (which refuses). artDir sits INSIDE root, so a leak of
-// either path fails this.
+// cannot be parsed. artDir sits INSIDE root, so a leak of either path fails
+// this.
+//
+// FOUR OF THE FIVE DEGRADE AND ONE REFUSES, which is why this test collects
+// warnings AND errors into one `said` string rather than asserting on an
+// error. Three were refusals when it was written: the unopenable root became a
+// warning on 2026-09-03, and the read-phase and parse-phase sidecars on
+// 2026-09-04. A version of this that only read err would have gone vacuous,
+// silently, on each of those days — the assertion would still run and there
+// would be nothing left in it.
+//
+// THE PARSE ROW AND THE VERSION ROW ARE SEPARATE ROWS, and they were one row
+// carrying the wrong fixture until 2026-09-04: it was called "sidecar cannot
+// be parsed" and its fixture was `{"format_version":99}`, which is not a parse
+// failure at all. That mattered the moment the two answers diverged — the row
+// exercised the error path under a name that now describes the warning path,
+// so the parse phase would have been covered by nothing.
 func TestNoArtFailureNamesTheDirectoryItRead(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -330,6 +344,19 @@ func TestNoArtFailureNamesTheDirectoryItRead(t *testing.T) {
 			if err := os.Mkdir(p, 0o750); err != nil {
 				t.Fatal(err)
 			}
+			// Truncated, so the JSON decoder is what fails. This DEGRADES,
+			// so it is exercised through a warning.
+			writeArt(t, p, "masonry-1", `{"format_version":1,"kind":"wa`)
+			return p
+		}},
+		{"sidecar declares a format this server does not understand", func(t *testing.T, root string) string {
+			t.Helper()
+			p := filepath.Join(root, "art")
+			if err := os.Mkdir(p, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			// The one art failure that still REFUSES, so it is the one row
+			// here exercised through an error.
 			writeArt(t, p, "masonry-1", `{"format_version":99}`)
 			return p
 		}},
@@ -404,16 +431,46 @@ func TestObjectArtThatIsNotInstalledLeavesTheObjectInPlace(t *testing.T) {
 	}
 }
 
-// TestObjectArtThatExistsButCannotBeReadStillRefuses is the object-side
-// counterpart of TestArtThatExistsButCannotBeReadStillRefuses. Without it the
-// object path could degrade EVERYTHING — a broken sidecar included — and the
-// only test watching it would be the tile one.
-func TestObjectArtThatExistsButCannotBeReadStillRefuses(t *testing.T) {
+// TestObjectArtDeclaringAFormatThisServerDoesNotUnderstandStillRefuses is the
+// object-side counterpart of
+// TestArtDeclaringAFormatThisServerDoesNotUnderstandStillRefuses. Without it
+// the object path could degrade EVERYTHING — a v2 art set included — and the
+// only test watching it would be the tile one. The two arms are written
+// separately in resolve.go and there is nothing forcing them to agree.
+func TestObjectArtDeclaringAFormatThisServerDoesNotUnderstandStillRefuses(t *testing.T) {
 	artDir := t.TempDir()
-	writeArt(t, artDir, "broken-boulder", `{"format_version":99}`)
+	writeArt(t, artDir, "future-boulder", `{"format_version":99}`)
 	if _, _, err := mapdef.ResolveObjectArt(
-		0, mapdef.Object{ID: "boulder-1", Art: "broken-boulder"}, artDir); err == nil {
-		t.Fatal("malformed object art was degraded; it must refuse")
+		0, mapdef.Object{ID: "boulder-1", Art: "future-boulder"}, artDir); err == nil {
+		t.Fatal("object art written for a later format was degraded; it must refuse")
+	}
+}
+
+// TestObjectArtWithACorruptSidecarDegradesAndNamesTheCause is the object half
+// of Patrik's 2026-09-04 ruling, and it is not implied by the tile half:
+// ResolveObjectArt has its own switch, so a split applied to one arm and not
+// the other compiles and passes every tile test in this file.
+//
+// The object stays either way (spec §4) — an object is a thing in the world
+// before it is a picture — so all that changes is that the map still loads.
+func TestObjectArtWithACorruptSidecarDegradesAndNamesTheCause(t *testing.T) {
+	artDir := t.TempDir()
+	writeArt(t, artDir, "half-copied-boulder", `{"format_version":1,"kind":"bo`)
+	art, warnings, err := mapdef.ResolveObjectArt(
+		0, mapdef.Object{ID: "boulder-1", Art: "half-copied-boulder"}, artDir)
+	if err != nil {
+		t.Fatalf("ResolveObjectArt: %v — a sidecar that cannot be read costs the object "+
+			"its picture, not the map its load", err)
+	}
+	if art != "" {
+		t.Fatalf("art is %q, want empty: there is no picture to draw", art)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "half-copied-boulder") ||
+		!strings.Contains(warnings[0], "cannot be used") {
+		t.Fatalf("warnings %q must name the piece and why it dropped", warnings)
+	}
+	if strings.Contains(warnings[0], "not installed") {
+		t.Fatalf("warning = %q — the file IS installed and broken", warnings[0])
 	}
 }
 
@@ -479,16 +536,138 @@ func TestArtThatIsNotInstalledDegradesTheSquareAndWarns(t *testing.T) {
 	}
 }
 
-func TestArtThatExistsButCannotBeReadStillRefuses(t *testing.T) {
-	// The distinction that makes §4 safe: ABSENT art is a square to draw
-	// plain; MALFORMED art is a defect to fix. Degrading both would let a
-	// broken sidecar ship silently.
+// TestArtDeclaringAFormatThisServerDoesNotUnderstandStillRefuses is the one
+// art failure left that refuses a map, and it is a fact about the SERVER
+// rather than about the file (Patrik, 2026-09-04). Everything else a sidecar
+// can get wrong degrades one square — see
+// TestACorruptSidecarDegradesTheSquareAndNamesTheCause below, which is what
+// this test used to assert.
+//
+// THE REFUSAL NAMES BOTH VERSIONS, because that is the whole content of the
+// message: the remedy is a newer server, and a DM cannot guess which one from
+// "this art is broken".
+func TestArtDeclaringAFormatThisServerDoesNotUnderstandStillRefuses(t *testing.T) {
 	artDir := t.TempDir()
-	writeArt(t, artDir, "broken", `{"format_version":99,"kind":"wall","material":"stone"}`)
+	writeArt(t, artDir, "from-the-future", `{"format_version":99,"kind":"wall","material":"stone"}`)
 	m := &mapdef.Map{Tiles: map[string]string{"0,0": "stone-wall"},
-		Overrides: map[string]string{"0,0": "broken"}}
-	if _, _, err := mapdef.Resolve(m, artDir, "0,0"); err == nil {
-		t.Fatal("malformed art was degraded; it must refuse")
+		Overrides: map[string]string{"0,0": "from-the-future"}}
+	_, warnings, err := mapdef.Resolve(m, artDir, "0,0")
+	if err == nil {
+		t.Fatalf("art written for a later format was degraded (warnings %q); one refusal "+
+			"naming both versions says \"this server is too old\", and ninety warnings "+
+			"saying \"your art is broken\" do not", warnings)
+	}
+	said := err.Error()
+	if !strings.Contains(said, "99") || !strings.Contains(said, "understands 1") {
+		t.Fatalf("error = %q, want it to name the version the file declares AND the one "+
+			"this server understands", said)
+	}
+}
+
+// TestACorruptSidecarDegradesTheSquareAndNamesTheCause is Patrik's ruling of
+// 2026-09-04 and the reason Task 4b exists at all. Task 4's review measured
+// the cost of the refusal this replaces: composeServer turns ANY map-load
+// error into a refusal to start, so ONE corrupt sidecar named by ONE committed
+// map stopped the server booting — exit status 1, every other map fine, and
+// the boot log saying "starting anyway" one line earlier.
+//
+// THE WARNING IS NOT THE NOT-INSTALLED SENTENCE, for §3.4's reason: the file
+// is sitting in art/ where the DM can see it, and sending them to hunt for a
+// missing picture wastes the trip. It names the piece and the cause.
+//
+// THE FIXTURE IS A TRUNCATED FILE, the "missing brace, a truncated copy" spec
+// §4 names. A well-typed sidecar with one wrongly-typed field would work as
+// well; this one is the shape an interrupted cp actually leaves.
+func TestACorruptSidecarDegradesTheSquareAndNamesTheCause(t *testing.T) {
+	artDir := t.TempDir()
+	writeArt(t, artDir, "half-copied", `{"format_version":1,"kind":"wa`)
+	m := &mapdef.Map{Tiles: map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "half-copied"}}
+
+	got, warnings, err := mapdef.Resolve(m, artDir, "0,0")
+	if err != nil {
+		t.Fatalf("Resolve: %v — a sidecar that cannot be read degrades one square; "+
+			"refusing took the whole server down with it (Patrik, 2026-09-04)", err)
+	}
+	if got.Kind != "wall" || got.Material != "stone" || got.Art != "" {
+		t.Fatalf("got %+v, want the nature from Tiles and no art", got)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	if !strings.Contains(warnings[0], "half-copied") {
+		t.Fatalf("warning = %q, want it to name the piece", warnings[0])
+	}
+	if strings.Contains(warnings[0], "not installed") {
+		t.Fatalf("warning = %q — the file IS installed and broken; saying otherwise sends "+
+			"the DM hunting for a file that is sitting in art/", warnings[0])
+	}
+	// The CAUSE, not merely the name. Without this the sentence could be
+	// artNotInstalled with two words changed, and a DM would be told a piece
+	// dropped without being told there is a file to go and fix.
+	if !strings.Contains(warnings[0], "cannot be used") {
+		t.Fatalf("warning = %q, want it to say why the piece dropped", warnings[0])
+	}
+	// THE CAUSE MUST BE THE PARSE FAILURE, and this is the assertion the whole
+	// test rested on without making (review, 2026-09-05). artlib reads the
+	// version in a pass of its own before the strict decode; delete that pass's
+	// error return and a truncated file reaches the version check with an
+	// empty format_version, so it reports `field "format_version": required`
+	// instead. The verdict is identical — degrade, one warning, this square
+	// plain — so nothing else here moves, and the DM is sent to add a line to a
+	// file that is cut in half.
+	if !strings.Contains(warnings[0], "unexpected EOF") {
+		t.Fatalf("warning = %q, want it to quote the parse failure", warnings[0])
+	}
+	if strings.Contains(warnings[0], "format_version") {
+		t.Fatalf("warning = %q blames the version field for a file that never got as far "+
+			"as having one", warnings[0])
+	}
+}
+
+// TestADoorMissingOnePictureDegradesRatherThanRefusingTheMap is the case
+// Patrik's 2026-09-04 ruling does not name, decided here: a door sidecar
+// declaring only kind and material is CORRUPT, not newer.
+//
+// The line the ruling draws is "is this file broken, or is this server too
+// old". A door with one picture is a broken file: this server reads it
+// perfectly and finds it incomplete, and the remedy is to edit that one file,
+// which is exactly the remedy for a missing brace. Nothing about it says the
+// content was written for a later format.
+//
+// IT IS SAFE FOR THE SAME REASON EVERY OTHER DEGRADE IS. The square's nature
+// comes from m.Tiles ("wood-door" here), never from art, so sight and movement
+// still see a door; only the picture drops. The map stays playable.
+//
+// AND THE SHIPPED CAMPAIGN IS WHY IT MATTERS. campaigns/example/maps/cellar.json
+// overrides 5,4 with "cellar-door", so under a refusal an operator who drops
+// the "open" line out of art/cellar-door.json cannot start the server at all —
+// every other map in the campaign down with it. Degraded, they get one warning
+// naming cellar-door, a door square drawn plain, and a table that plays.
+//
+// NO CODE DECIDES THIS, and that is the evidence the line is in the right
+// place: the door error is simply not one of the three sentinels, so it falls
+// into the degrade arm by construction. Only the fact that goes the other way
+// needed a sentinel of its own.
+func TestADoorMissingOnePictureDegradesRatherThanRefusingTheMap(t *testing.T) {
+	artDir := t.TempDir()
+	writeArt(t, artDir, "cellar-door", `{"format_version":1,"kind":"door","material":"wood"}`)
+	m := &mapdef.Map{Tiles: map[string]string{"0,0": "wood-door"},
+		Overrides: map[string]string{"0,0": "cellar-door"}}
+
+	got, warnings, err := mapdef.Resolve(m, artDir, "0,0")
+	if err != nil {
+		t.Fatalf("Resolve: %v — an incomplete door is a broken file, not content written "+
+			"for a later server, and the shipped campaign has one", err)
+	}
+	if got.Kind != "door" || got.Art != "" {
+		t.Fatalf("got %+v, want the nature from Tiles and no art: the square is still a "+
+			"door to sight and movement", got)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "cellar-door") ||
+		!strings.Contains(warnings[0], "a door declares both") {
+		t.Fatalf("warnings = %v, want one naming the piece and what its sidecar is missing",
+			warnings)
 	}
 }
 

@@ -505,3 +505,121 @@ func TestArtOverwrittenInPlaceChangesWhatAReloadDraws(t *testing.T) {
 			"the square, so the old one was remembered rather than read", second.GetWarnings())
 	}
 }
+
+// --- 2026-09-02-art-is-a-flat-library Task 4b -------------------------------
+
+// TestACampaignHoldingACorruptSidecarStillBoots is the measurement this task
+// was written from, inverted into a requirement. Task 4's review put one
+// truncated sidecar in a campaign whose committed map named it and started the
+// server: exit status 1, every other map fine, and the boot log printing "the
+// server is starting anyway" one line before it did not. `composeServer` turns
+// ANY map-load error into a refusal to start, and until Patrik's ruling of
+// 2026-09-04 a sidecar that could not be parsed was one.
+//
+// IT MUST GO THROUGH composeServer, and that is the whole reason this test is
+// here rather than only in internal/mapdef. A Resolve unit test sees one square
+// degrade; only a boot sees the campaign come up. The failure this guards is
+// not "the square is wrong", it is "nobody plays".
+//
+// THE ART AND THE MAP ARE BOTH IN PLACE BEFORE THE BOOT, unlike every other
+// test in this file, which installs during the session: a file that arrives
+// after the walk has run cannot fail the walk.
+//
+// A SECOND, WELL-FORMED PIECE AND A SECOND MAP sit beside the broken one so the
+// test can say what the refusal actually cost. Without them a green run is
+// consistent with a server that boots and serves nothing.
+func TestACampaignHoldingACorruptSidecarStillBoots(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	artDir := filepath.Join(campaignPath, "art")
+	mapsDir := filepath.Join(campaignPath, "maps")
+	for _, dir := range []string{artDir, mapsDir} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A truncated copy — the shape an interrupted cp leaves, and spec §4's own
+	// example of a sidecar that cannot be read.
+	writeFile(t, filepath.Join(artDir, "half-copied.json"), `{"format_version":1,"kind":"flo`)
+	writeFile(t, filepath.Join(artDir, "half-copied.png"), "fake-png")
+	writeFile(t, filepath.Join(artDir, "good-stone.json"),
+		`{"format_version":1,"kind":"floor","material":"stone"}`)
+	writeFile(t, filepath.Join(artDir, "good-stone.png"), "fake-png")
+	writeFile(t, filepath.Join(mapsDir, "hall.json"), `{"format_version":1,"id":"hall","name":"Hall",
+		"grid_width":2,"grid_height":1,"tiles":{"0,0":"stone","1,0":"stone"},
+		"overrides":{"0,0":"half-copied","1,0":"good-stone"}}`)
+	writeFile(t, filepath.Join(mapsDir, "vault.json"), oneOverrideMap("vault", "good-stone"))
+
+	// startArtCampaign fails the test if composeServer refuses, which is
+	// exactly the exit status 1 this task exists to remove.
+	c := startArtCampaign(t, campaignPath)
+
+	res := c.loadMap("hall")
+	if !res.GetOk() {
+		t.Fatalf("load_map: %s — the corrupt piece costs its own square, not the map",
+			res.GetError())
+	}
+	said := strings.Join(res.GetWarnings(), "\n")
+	if !strings.Contains(said, "half-copied") || !strings.Contains(said, "cannot be used") {
+		t.Fatalf("warnings %q, want the broken piece named and the reason given: a square "+
+			"that silently draws plain is a file nobody ever goes and fixes",
+			res.GetWarnings())
+	}
+	if strings.Contains(said, "not installed") {
+		t.Fatalf("warnings %q say the piece is not installed; it is sitting in art/, and "+
+			"sending the DM to look for a missing file wastes the trip", res.GetWarnings())
+	}
+	sc := c.scene()
+	if got := sc.GetTiles()["0,0"]; got.GetArt() != "" || got.GetKind() != "floor" {
+		t.Errorf("tiles[0,0] = %+v, want no art and the kind its map declared", got)
+	}
+	if got := sc.GetTiles()["1,0"].GetArt(); got != "good-stone" {
+		t.Errorf("tiles[1,0].art = %q, want good-stone — the well-formed piece beside the "+
+			"broken one must be unaffected", got)
+	}
+	// The other map booted too. One broken file used to cost every map in the
+	// campaign, not only the one that named it.
+	if vault := c.loadMap("vault"); !vault.GetOk() {
+		t.Fatalf("load_map vault: %s — it names none of the broken art", vault.GetError())
+	}
+}
+
+// TestACampaignWhoseArtDeclaresANewerFormatRefusesToBoot is the half of
+// Patrik's 2026-09-04 ruling that goes the other way, driven at the boot where
+// the difference is visible. A declared format_version this server does not
+// understand is not "this file is broken", it is "this content is newer than
+// this server", and one refusal naming both versions says that where a wall of
+// warnings would read as "my art is broken".
+//
+// It calls composeServer directly rather than through startArtCampaign,
+// because startArtCampaign's job is to boot successfully and this asserts the
+// opposite.
+func TestACampaignWhoseArtDeclaresANewerFormatRefusesToBoot(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	artDir := filepath.Join(campaignPath, "art")
+	mapsDir := filepath.Join(campaignPath, "maps")
+	for _, dir := range []string{artDir, mapsDir} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(artDir, "from-the-future.json"),
+		`{"format_version":99,"kind":"floor","material":"stone"}`)
+	writeFile(t, filepath.Join(artDir, "from-the-future.png"), "fake-png")
+	writeFile(t, filepath.Join(mapsDir, "hall.json"), oneOverrideMap("hall", "from-the-future"))
+
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err == nil {
+		if closeErr := closeFn(); closeErr != nil {
+			t.Error(closeErr)
+		}
+		t.Fatal("a campaign whose art was written for a later format started a server; " +
+			"the operator is then reading a plain square as broken art when the " +
+			"diagnosis is that this server is too old — one square here, and one per " +
+			"square of a whole v2 art set")
+	}
+	said := err.Error()
+	if !strings.Contains(said, "99") || !strings.Contains(said, "understands 1") {
+		t.Fatalf("boot refusal = %q, want both versions named — the remedy is a newer "+
+			"server, and nothing else in the message says which", said)
+	}
+}

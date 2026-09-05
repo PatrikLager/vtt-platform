@@ -27,8 +27,11 @@ import (
 // discards the warnings because it answers with a *Map rather than with a
 // load result — the live Compile call the caller makes next returns the same
 // warnings, computed against the same directory, and that is the one that
-// reaches whoever asked. What still fails here is art that EXISTS and cannot
-// be read. An empty artDir is legal and means no art resolves.
+// reaches whoever asked. Art that exists and CANNOT BE READ degrades the same
+// way as of Patrik's ruling of 2026-09-04; the one art failure still fatal
+// here is a sidecar declaring a format_version this server does not understand
+// (see Resolve's own doc comment for why those two go opposite ways). An empty
+// artDir is legal and means no art resolves.
 //
 // This function exists because there are two ways into a campaign's maps
 // and they must not disagree. cmd/vtt's loadMapsDir calls it once per file
@@ -88,11 +91,12 @@ func LoadInstalled(mapsDir, id, artDir string) (*Map, error) {
 	}
 
 	// Dry run: proves every square's nature resolves against the standard
-	// vocabulary, and that no art this map names is installed-but-unreadable,
-	// before the map is considered loadable at all. Compile itself, not a
-	// bespoke second check — the same "one construction site" discipline
-	// internal/adventure/load.go's loadScenes follows, and the reason boot
-	// and on-demand cannot drift apart on what a loadable map is.
+	// vocabulary, and that no art this map names was written for a format this
+	// server does not understand, before the map is considered loadable at
+	// all. Compile itself, not a bespoke second check — the same "one
+	// construction site" discipline internal/adventure/load.go's loadScenes
+	// follows, and the reason boot and on-demand cannot drift apart on what a
+	// loadable map is.
 	if _, _, err := Compile(m, artDir); err != nil {
 		return nil, fmt.Errorf("map %q (%s): %w", m.ID, display, err)
 	}

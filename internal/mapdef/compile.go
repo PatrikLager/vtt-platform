@@ -64,13 +64,13 @@ const MaxWireTiles = 3600
 // (spec §4.3: "both paths compile through one code path to the same
 // events"). Every warning Resolve and ResolveObjectArt produce along the way
 // — an override's kind not matching its base tile (maps-as-geometry spec
-// §3.2), and art that is not installed, has no sidecar, or sits in an art
-// directory this process cannot open (art-is-a-flat-library spec §4) — is
-// collected, DEDUPLICATED (see warningTally below: once per distinct message,
-// with the number of squares or objects it happened to) and returned rather
-// than dropped; Compile itself never refuses on one. A sidecar that exists and
-// cannot be parsed is the case that does refuse, and it comes back as an error
-// rather than a warning.
+// §3.2), and art that is not installed, has no sidecar, cannot be read, or
+// sits in an art directory this process cannot open (art-is-a-flat-library
+// spec §4) — is collected, DEDUPLICATED (see warningTally below: once per
+// distinct message, with the number of squares or objects it happened to) and
+// returned rather than dropped; Compile itself never refuses on one. A sidecar
+// declaring a format_version this server does not understand is the one case
+// that does refuse, and it comes back as an error rather than a warning.
 func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 	sc, warnings, err := BuildSceneCreated(m, artDir)
 	if err != nil {
@@ -143,8 +143,8 @@ func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 // its maps still load and draw plain. Every override then degrades to its base
 // tile (art-is-a-flat-library spec §4), and the DM gets ONE warning per
 // distinct reason rather than one per square — see Resolve's own doc comment
-// for the line between that and the sidecar that still refuses, and
-// warningTally below for why the count matters.
+// for the line between that and the one sidecar failure that still refuses,
+// and warningTally below for why the count matters.
 //
 // Squares are resolved in ROW-MAJOR order (y outer, x inner, both from 0),
 // walking the grid rather than ranging m.Tiles: Go map iteration order is
@@ -257,13 +257,13 @@ func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, er
 // row-major grid walk above still decides the order warnings appear in, and
 // TestWarningsSurfaceInRowMajorOrder still has something deterministic to pin.
 //
-// ONE WARNING KEEPS ITS SQUARES, through addAt: a kind mismatch. The other
-// three are actionable on the art name alone — install the file, write the
-// sidecar, fix the directory — but a mismatch's remedy is one of two opposite
-// things, "this is a deliberate illusory wall" or "I put the wrong art here",
-// and only the square tells them apart. A DM with one deliberate illusion and
-// one typo sharing an art name gets one line either way; with the squares
-// listed they can act on it.
+// ONE WARNING KEEPS ITS SQUARES, through addAt: a kind mismatch. The others are
+// actionable on the art name alone — install the file, write the sidecar, fix
+// the broken one, fix the directory — but a mismatch's remedy is one of two
+// opposite things, "this is a deliberate illusory wall" or "I put the wrong art
+// here", and only the square tells them apart. A DM with one deliberate
+// illusion and one typo sharing an art name gets one line either way; with the
+// squares listed they can act on it.
 type warningTally struct {
 	order []string
 	count map[string]int

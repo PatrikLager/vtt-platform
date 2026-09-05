@@ -256,19 +256,21 @@ func TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable(t *testi
 // Resolve error: the whole call must fail loud rather than silently emitting
 // a SceneCreated with a hole in its Tiles map.
 //
-// The fixture had to change with this task. It used to be an override naming
-// art the pack did not define, and that case is no longer an error at all —
-// art that is not installed degrades one square and warns (spec §4). What
-// still refuses, and so is what this can be driven with, is art that IS
-// installed and cannot be read.
+// The fixture has had to narrow twice. It used to be an override naming art
+// the pack did not define, and that stopped being an error at Task 3 — art
+// that is not installed degrades one square and warns (spec §4). Art that was
+// installed and could not be read replaced it, and that stopped being an error
+// at Task 4b (Patrik, 2026-09-04). What is left, and so what this is driven
+// with, is a sidecar declaring a format_version this server does not
+// understand: the last thing a Resolve failure can be.
 func TestCompilePropagatesAResolveFailure(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	artDir := cellarArtDir(t)
-	writeArt(t, artDir, "unreadable", `{"format_version":99,"kind":"floor"}`)
-	m.Overrides["1,1"] = "unreadable"
+	writeArt(t, artDir, "from-the-future", `{"format_version":99,"kind":"floor"}`)
+	m.Overrides["1,1"] = "from-the-future"
 	if _, _, err := mapdef.Compile(m, artDir); err == nil {
 		t.Fatal("want an error compiling a map whose override does not resolve")
 	}
@@ -628,6 +630,52 @@ func TestOneMissingArtNameCostsOneWarningNoMatterHowManySquares(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0], "absent-everywhere") || !strings.Contains(warnings[0], "9 squares") {
 		t.Fatalf("warning = %q, want it to name the art and how many squares went plain", warnings[0])
+	}
+}
+
+// TestACorruptSidecarAlsoCostsOneWarningNoMatterHowManySquares is the same
+// size limit for the one degrade sentence that carries an artlib ERROR inside
+// it (mapdef's artCannotBeUsed, added 2026-09-04). The other three sentences
+// interpolate an art NAME and nothing else, so their collapse is obvious from
+// reading them; this one collapses only because artlib's errors are a function
+// of the FILE rather than of the lookup.
+//
+// If that ever stops being true — a path, a byte offset, an errno that varies
+// per call — every square gets its own sentence and the measurement in the
+// test above comes straight back, as a dropped connection rather than a
+// warning. Nothing else in the tree would notice: the map still loads, the
+// squares still draw, and the frame simply never arrives.
+//
+// FAULT-INJECTION PROOF (this assertion is after-the-fact, per CLAUDE.md rule
+// 1). Adding ` @%p` on err to artCannotBeUsed's format string — one token, and
+// the smallest thing that makes the sentence vary per LOOKUP rather than per
+// file — gives nine warnings here instead of one. Measured 2026-09-05, Task 4b.
+func TestACorruptSidecarAlsoCostsOneWarningNoMatterHowManySquares(t *testing.T) {
+	artDir := t.TempDir()
+	writeArt(t, artDir, "half-copied", `{"format_version":1,"kind":"wa`)
+	tiles := make(map[string]string, 9)
+	overrides := make(map[string]string, 9)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 3; x++ {
+			key := strconv.Itoa(x) + "," + strconv.Itoa(y)
+			tiles[key] = "stone-wall"
+			overrides[key] = "half-copied"
+		}
+	}
+	m := &mapdef.Map{ID: "wall", Name: "Wall", GridW: 3, GridH: 3,
+		Tiles: tiles, Overrides: overrides}
+
+	_, warnings, err := mapdef.Compile(m, artDir)
+	if err != nil {
+		t.Fatalf("Compile: %v — a corrupt sidecar degrades its squares", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1 for one broken piece across 9 squares",
+			warnings)
+	}
+	if !strings.Contains(warnings[0], "half-copied") || !strings.Contains(warnings[0], "9 squares") {
+		t.Fatalf("warning = %q, want it to name the art and how many squares went plain",
+			warnings[0])
 	}
 }
 

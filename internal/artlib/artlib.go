@@ -51,19 +51,35 @@
 // symbolic links may not reference a location outside the root" (go doc
 // os.Root).
 //
-// ABSENT ART DEGRADES; BROKEN ART REFUSES. Lookup answers ErrNotFound when
-// nothing is installed under an id — including when the id is one no file
-// could carry, which is what a typo in a map looks like from here — so the
-// caller drops that one square to the built-in vocabulary and warns (spec §4).
-// Everything else is art that exists and cannot be read, and that is a defect
-// to fix rather than a square to draw plain.
+// ALMOST EVERYTHING DEGRADES; ONE THING REFUSES. This package returns an error
+// for every failure and decides nothing; three sentinels are what let the
+// caller decide, and since Patrik's ruling of 2026-09-04 the split runs
+// one-against-the-rest rather than absent-against-broken:
 //
-// THE ART ROOT ITSELF IS A THIRD ANSWER, added 2026-09-03: art/ present and
-// unopenable is not one piece failing, it is every piece failing, and the two
-// callers want opposite verdicts on it — a boot walk refuses, a load at the
-// table degrades. ErrArtDirUnreadable is how they tell it apart, and its own
-// doc comment carries the ruling and the path-disclosure rule that shapes its
-// message.
+//   - ErrNotFound: nothing is installed under an id — including an id no file
+//     could carry, which is what a typo in a map looks like from here. The
+//     caller drops that one square to the built-in vocabulary and warns
+//     (spec §4).
+//   - ErrArtDirUnreadable: art/ present and unopenable. Not one piece failing,
+//     every piece failing, and the two callers want opposite verdicts — a boot
+//     walk refuses, a load at the table degrades.
+//   - ErrFormatVersion: the sidecar declares a format this server does not
+//     understand. The one art failure that still refuses a map, because it is
+//     a fact about the SERVER rather than about the file.
+//   - EVERYTHING ELSE — a missing brace, a truncated copy, a wrongly typed
+//     field, a format_version that is not a version number, a door naming one
+//     picture, a picture that is a directory — is a broken file, and the
+//     caller degrades that one square with a warning naming the piece and the
+//     cause.
+//
+// THE LAST BULLET USED TO SAY THE OPPOSITE, and the sentence it replaces —
+// "art that exists and cannot be read is a defect to fix rather than a square
+// to draw plain" — was true of this package and catastrophic at the caller:
+// composeServer turns any map-load error into a refusal to start, so one
+// truncated sidecar named by one committed map stopped the server booting with
+// every other map fine (measured 2026-09-03, exit status 1). Each sentinel's
+// own doc comment carries its ruling, and ErrArtDirUnreadable's carries the
+// path-disclosure rule that shapes every message here.
 package artlib
 
 import (
@@ -78,7 +94,11 @@ import (
 )
 
 // FormatVersion is the sidecar format this package understands. A sidecar
-// declaring a different version is refused, not degraded (spec §3.4).
+// DECLARING A DIFFERENT NUMBER is the single art failure that is still refused
+// rather than degraded (spec §4, Patrik 2026-09-04) — see ErrFormatVersion.
+// The other two things the field can be — absent, or holding something that is
+// not a version number at all — are broken files and degrade with them; see
+// pieceFromSidecar, which is where all three are told apart.
 const FormatVersion int32 = 1
 
 const (
@@ -99,8 +119,11 @@ const (
 	maxArtIDLen = 255 - len(sidecarExt)
 )
 
-// ErrNotFound is the sentinel a caller checks with errors.Is to tell absent
-// art (degrade the square) from malformed art (refuse the map). Only notFound
+// ErrNotFound is the sentinel a caller checks with errors.Is to tell absent art
+// from art that is installed and does not resolve. BOTH degrade the square
+// since 2026-09-04; what differs is the sentence the DM is told, and that is
+// the whole reason the distinction is still worth a sentinel — "not installed"
+// sends someone hunting for a file that is sitting in art/. Only notFound
 // wraps it.
 var ErrNotFound = errors.New("artlib: no such art")
 
@@ -129,13 +152,46 @@ var ErrNotFound = errors.New("artlib: no such art")
 // any seat that could load an adventure whose art/ was unreadable.
 var ErrArtDirUnreadable = errors.New("artlib: the art directory cannot be read")
 
+// ErrFormatVersion marks the ONE sidecar failure that still refuses a map
+// (Patrik's ruling, 2026-09-04): the file declares a format_version this
+// server does not understand.
+//
+// IT IS NOT A CLAIM THAT THE FILE IS BROKEN. Every other unreadable sidecar —
+// a missing brace, a truncated copy, a door that names one picture — degrades
+// that one square with a warning, because the remedy is to fix the file and a
+// campaign must not lose its server over one of them. This says the opposite
+// thing: the content is NEWER THAN THIS SERVER, and the remedy is a newer
+// server. Degrading it would turn a v2 art set into hundreds of plain squares
+// and a wall of warnings reading "my art is broken", when the diagnosis is
+// "this server is too old". One refusal naming both versions says that; ninety
+// warnings do not.
+//
+// TWO OTHER THINGS THE FIELD CAN BE ARE NOT THIS, and both degrade. A sidecar
+// with NO format_version at all: an absent field does not assert that the
+// content is newer, it asserts that somebody hand-wrote a file and left a line
+// out — the same class as a missing brace, and refusing it would leave the
+// measured defect this ruling exists to remove half alive. And a field holding
+// something that is NOT A VERSION NUMBER — "2", 1.0, 2.5, null, an integer
+// past int32: this server cannot read it as a version at all, so it cannot be
+// reading a later one. Every plausible spelling of a later format is a plain
+// JSON integer, which is what makes it safe to leave both of those with the
+// broken files.
+//
+// THE SENTINEL IS THE INTERFACE. mapdef.Resolve branches on errors.Is, never
+// on message text, so this var is what carries the ruling across the package
+// boundary. See pieceFromSidecar for why the version is read in a pass of its
+// own before the strict decode.
+var ErrFormatVersion = errors.New("artlib: unsupported sidecar format")
+
 // Piece is one art entry.
 //
 // HasSidecar records whether an <id>.json was read, and it exists because Kind
 // cannot carry that fact: a sidecar is OPTIONAL for object art (spec §3.4), so
 // a sidecar declaring no kind and no sidecar at all both leave Kind empty.
-// Exit criterion 6 — "tile art without a sidecar is refused" — is decided on
-// this bit by the caller that knows a square from an object.
+// Exit criterion 6 — tile art without a sidecar — is decided on this bit by the
+// caller that knows a square from an object. The criterion read "is refused"
+// until 2026-09-03, when Patrik ruled that square degrades with its own
+// warning; this bit is what the caller needs either way.
 //
 // File is the picture the renderer asks for, and it is EMPTY for a door: a
 // door has the two pictures its sidecar names, Open and Closed, and no third.
@@ -149,7 +205,42 @@ type Piece struct {
 	HasSidecar bool
 }
 
+// declaredFormat is the version pre-pass's probe: one field, read on its own,
+// before the strict decode below ever runs. See pieceFromSidecar for why that
+// ordering is load-bearing.
+//
+// IT IS A NAMED, PACKAGE-LEVEL TYPE BECAUSE ITS NAME REACHES A DM. When this
+// probe was an anonymous struct, encoding/json spelled the WHOLE STRUCT
+// LITERAL — field name, Go type and json tag — into its own error for a
+// sidecar holding a JSON array, and that error travels verbatim to whoever
+// issued load_map. It told them this server's sidecar type has exactly one
+// field, which is false of the sidecar type and is nobody's business either
+// way. Named, the same error says artlib.declaredFormat: true, and no more
+// than the spec already says. (Review finding F3, 2026-09-05.)
+//
+// json.RawMessage RATHER THAN int32, for the reason mapJSON.Pack is one
+// (internal/mapdef/load.go, art-is-a-flat-library Task 5): a Go zero value
+// cannot carry PRESENCE. A plain int32 here cannot tell an ABSENT field from
+// an explicit {"format_version": 0}, so the rule this package documents —
+// undeclared degrades, declared-and-unknown refuses — was implemented as
+// zero-versus-non-zero, and a file that DID declare a version was told "an
+// undeclared format is not assumed to be any of them" (review finding F4,
+// 2026-09-05). A *int32 fixes that one case and leaves the next: JSON null
+// unmarshals into a pointer as nil, so {"format_version": null} would read as
+// absent. Raw bytes decide nothing until pieceFromSidecar decides.
+type declaredFormat struct {
+	FormatVersion json.RawMessage `json:"format_version"`
+}
+
 // sidecar is the on-disk shape of <id>.json.
+//
+// FormatVersion IS DECODED AND NEVER READ, and it must stay: since
+// pieceFromSidecar reads the version through declaredFormat in a pass of its
+// own, this field's only remaining job is to keep DisallowUnknownFields from
+// refusing "format_version" as an unknown field. Delete it as dead and every
+// sidecar in every campaign stops parsing —
+// TestTileArtDeclaresItsNature fails with `json: unknown field
+// "format_version"`, measured 2026-09-04.
 type sidecar struct {
 	FormatVersion int32  `json:"format_version"`
 	Kind          string `json:"kind"`
@@ -164,6 +255,65 @@ type sidecar struct {
 // differently.
 func notFound(id, why string) error {
 	return fmt.Errorf("artlib: art %q %s: %w", id, why, ErrNotFound)
+}
+
+// unsupportedFormat is the ONLY place ErrFormatVersion is wrapped, for the
+// reason notFound is the only place ErrNotFound is: a caller decides what to
+// do by errors.Is, so a second construction site is a second thing that can
+// forget the sentinel and silently turn a refusal into a degrade.
+//
+// It names BOTH versions because that is the entire content of the message.
+// The remedy is a newer server, and "this art is broken" does not say which
+// one to go and get.
+func unsupportedFormat(id string, declared int32) error {
+	return fmt.Errorf(
+		"artlib: art/%s%s: field \"format_version\": declares %d; this server understands %d: %w",
+		id, sidecarExt, declared, FormatVersion, ErrFormatVersion)
+}
+
+// clip bounds a fragment of author-controlled sidecar text before it is
+// interpolated into a message, and makes it safe to put on the wire.
+//
+// BOUNDED, because those messages ride back to whoever issued load_map on a
+// CommandResult and a sidecar may hold a value of any length — spec §4's own
+// measurement is a load whose warnings did not arrive at all because they
+// exceeded the client read limit.
+//
+// AND VALID UTF-8, which a byte count alone does not give:
+// CommandResult.warnings is a proto3 repeated string, proto3 strings must be
+// valid UTF-8, and there are two ways raw campaign bytes would not be. A
+// json.RawMessage keeps the file's bytes verbatim, so a sidecar written in some
+// other encoding carries whatever it carries; and cutting at a fixed byte
+// offset splits a multi-byte rune in half — {"format_version":
+// "üüüüüüüüüüüüüüüüüüüüü"} is enough, measured. Either one makes protojson
+// refuse to marshal the frame, which is a campaign file deciding that a
+// load_map answer never arrives at all. Both are handled below by the same
+// call, run twice.
+//
+// IT IS NOT THE ONLY SITE THAT INTERPOLATES RAW CAMPAIGN BYTES, and an earlier
+// draft of this comment said it was. mapdef's pack refusal (load.go, the
+// `raw.Pack != nil` arm) puts a map file's own bytes into an error that reaches
+// CommandResult.error, which is the same proto3 string rule on the other
+// channel, and it is neither bounded nor validated. That is older than this
+// function and belongs to whoever owns that refusal; it is recorded here rather
+// than fixed, because a comment claiming uniqueness is how the second site
+// stops being looked for.
+// TWO ToValidUTF8 PASSES AND NO HAND-ROLLED SCAN, which is the shape the
+// mutation gate argued this into. The first draft backed up over continuation
+// bytes with `for cut > 0 && !utf8.RuneStart(s[cut]) { cut-- }`, and the gate
+// answered with three survivors: `cut > 0` is unreachable-different, because
+// valid UTF-8 backs up at most three bytes and s[0] is always a rune start, so
+// the guard was dead code that only a panic could have distinguished. The
+// second pass says the same thing with no boundary to get wrong — a cut that
+// splits a rune leaves bytes that are not valid UTF-8, and an EMPTY
+// replacement drops exactly those.
+func clip(raw []byte) string {
+	const limit = 40
+	s := strings.ToValidUTF8(string(raw), "\uFFFD")
+	if len(s) <= limit {
+		return s
+	}
+	return strings.ToValidUTF8(s[:limit], "") + "…"
 }
 
 // bareCause strips the path out of an os error, keeping only the syscall
@@ -331,7 +481,77 @@ func lookupIn(root *os.Root, id string) (Piece, error) {
 
 // pieceFromSidecar turns a sidecar's bytes into a Piece, refusing anything it
 // does not fully understand.
+//
+// IT READS THE VERSION IN A PASS OF ITS OWN, before the strict decode, and
+// that ordering is load-bearing rather than tidy. Since Patrik's ruling of
+// 2026-09-04 the two failures have opposite verdicts at the caller — a sidecar
+// this server cannot read degrades one square, a DECLARED version it does not
+// understand refuses the map — and a single strict decode reports those two in
+// the wrong order for the case the ruling exists for. A real v2 sidecar carries
+// FIELDS, and DisallowUnknownFields fires on the first of those before any
+// version check runs: measured on {"format_version":2,"kind":"wall",
+// "variants":["mossy"]}, one strict decode answers `json: unknown field
+// "variants"` and never mentions the version at all. The whole v2 art set
+// would then degrade as a wall of parse warnings while a bare
+// {"format_version":2} refused — which is the outcome the refusal was kept to
+// prevent, arrived at through the decoder instead of the rule.
+//
+// The first pass is LENIENT ABOUT EVERY OTHER FIELD and about nothing else: it
+// decodes into declaredFormat, which has only the one field, so an unknown or
+// wrongly typed sibling is skipped rather than reported. Nothing is accepted on
+// the strength of it — every field a Piece is built from comes from the strict
+// decode below.
+//
+// IT IS A json.Decoder AND NOT json.Unmarshal, which looks like a stylistic
+// choice and is not. Unmarshal REFUSES TRAILING BYTES and Decode ignores them,
+// so the obvious spelling of this pre-pass silently narrowed what a sidecar may
+// be: measured, `{"format_version":1,"kind":"wall"} SURPRISE` and two
+// concatenated objects both resolved before this pass existed and began
+// degrading with "invalid character after top-level value" after it. This pass
+// exists to REORDER two reports, not to change which files are accepted, and a
+// tightening nobody decided is the kind that ships unnoticed — the more so
+// here, because it would have made artlib stricter than mapdef.decodeStrict,
+// which still ignores trailing data in a map file. Whether trailing bytes
+// should be refused is a real question and a separate one; it belongs to the
+// map format and the sidecar format together, not to a version pre-pass.
+// TestTrailingBytesAfterASidecarAreIgnoredAsTheyAlwaysWere is the guard.
+// (Review finding F2, 2026-09-05.)
 func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
+	var declared declaredFormat
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&declared); err != nil {
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
+	}
+	if len(declared.FormatVersion) == 0 {
+		// NO SENTINEL, on purpose: an absent field does not assert that the
+		// content is newer than this server, so this degrades with the missing
+		// braces rather than refusing with the later formats. See
+		// ErrFormatVersion's own doc comment.
+		return Piece{}, fmt.Errorf(
+			"artlib: art/%s%s: field \"format_version\": required: this server understands "+
+				"%d, and an undeclared format is not assumed to be any of them",
+			id, sidecarExt, FormatVersion)
+	}
+	// A POINTER, so an explicit null is told apart from a number: JSON null
+	// unmarshals into any pointer as nil without erroring, so a plain int32
+	// here would read {"format_version": null} as 0 and refuse it as "declares
+	// 0" — a version the author never wrote.
+	var version *int32
+	if err := json.Unmarshal(declared.FormatVersion, &version); err != nil || version == nil {
+		// DEGRADES, and it is the third answer this field can give. The
+		// refusal is for a version this server does not understand; a value
+		// that is not a version AT ALL — "2", 1.0, 2.5, null, an integer past
+		// int32 — is a broken file, and a broken file draws its square plain
+		// like every other broken file (Patrik, 2026-09-04). Every plausible
+		// spelling of a LATER format is a plain JSON integer, so nothing this
+		// arm catches is the case the refusal exists for.
+		return Piece{}, fmt.Errorf(
+			"artlib: art/%s%s: field \"format_version\": %s is not a version number; this "+
+				"server understands %d", id, sidecarExt, clip(declared.FormatVersion), FormatVersion)
+	}
+	if *version != FormatVersion {
+		return Piece{}, unsupportedFormat(id, *version)
+	}
+
 	var sc sidecar
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	// Unknown fields are refused for the reason mapdef's decodeStrict gives:
@@ -343,17 +563,6 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&sc); err != nil {
 		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
-	}
-	if sc.FormatVersion == 0 {
-		return Piece{}, fmt.Errorf(
-			"artlib: art/%s%s: field \"format_version\": required: this server understands "+
-				"%d, and an undeclared format is not assumed to be any of them",
-			id, sidecarExt, FormatVersion)
-	}
-	if sc.FormatVersion != FormatVersion {
-		return Piece{}, fmt.Errorf(
-			"artlib: art/%s%s: field \"format_version\": declares %d; this server understands %d",
-			id, sidecarExt, sc.FormatVersion, FormatVersion)
 	}
 
 	p := Piece{ID: id, Kind: sc.Kind, Material: sc.Material, HasSidecar: true}
@@ -454,14 +663,18 @@ func statPicture(root *os.Root, id, name string) error {
 // (measured 2026-09-03, review finding F1). What a map load actually does with
 // each finding:
 //
-//   - A SIDECAR THAT CANNOT BE PARSED, or that declares a format_version this
-//     server does not understand: REFUSES the map. This arm alone is what the
-//     retired claim was true of.
-//   - AN ORPHAN SIDECAR, A SUBDIRECTORY, and a wrong-cased name on a
-//     CASE-SENSITIVE filesystem: Lookup answers ErrNotFound, so the square
-//     DRAWS PLAIN and the DM gets a warning (spec §4). A subdirectory takes its
-//     own stem down with it and its contents are unreachable, which is flatness
-//     holding — but it is a degrade, not a refusal.
+//   - A SIDECAR THAT DECLARES A format_version THIS SERVER DOES NOT UNDERSTAND:
+//     REFUSES the map. Since Patrik's ruling of 2026-09-04 this arm alone is
+//     what the retired claim was true of; it named "a sidecar that cannot be
+//     parsed" alongside, and that half moved to the line below.
+//   - A SIDECAR THAT CANNOT BE PARSED, AN ORPHAN SIDECAR, A SUBDIRECTORY, and a
+//     wrong-cased name on a CASE-SENSITIVE filesystem: the square DRAWS PLAIN
+//     and the DM gets a warning (spec §4) — from ErrNotFound for the last
+//     three, and from the ordinary-error arm for the unparseable one, which
+//     gets a different sentence because the file is sitting right there. A
+//     subdirectory takes its own stem down with it and its contents are
+//     unreachable, which is flatness holding — but it is a degrade, not a
+//     refusal.
 //   - A RELATIVE SYMLINK, and a wrong-cased name on a CASE-INSENSITIVE
 //     filesystem: RENDERS, with nothing anywhere objecting. `ln -s aaa-good.png
 //     linky.png` resolves through Root.Stat because its target is inside the

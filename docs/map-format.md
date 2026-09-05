@@ -32,15 +32,22 @@ follows from that.
 >    sidecar `art/<id>.json` beside it carrying its kind and material.
 >    Object art needs no sidecar. A name that resolves to nothing costs its
 >    square's picture and one warning, never the map.
-> 4. **A DOOR IS THE ONE EXCEPTION to "the stem is the id", and getting it
->    wrong refuses the map rather than degrading one square.** A door has TWO
+> 4. **A DOOR IS THE ONE EXCEPTION to "the stem is the id".** A door has TWO
 >    pictures and no third: `cellar-door.json` names `cellar-door-open.png`
 >    and `cellar-door-closed.png` through its own `open` and `closed` fields,
 >    and **`cellar-door.png` must not exist**. A door sidecar that declares
->    only kind and material is REFUSED — `a door declares both "open" and
->    "closed"` — and `mapdef.Resolve` turns that into a refused map. The
->    demo campaign ships a door (`cellar-door`), so this is the ordinary
->    case, not a corner.
+>    only kind and material does not resolve — `a door declares both "open"
+>    and "closed"` — and that square draws plain with one warning naming the
+>    piece and the cause. The demo campaign ships a door (`cellar-door`), so
+>    this is the ordinary case, not a corner.
+>
+>    *This paragraph said the map was REFUSED until 2026-09-04. It was, and
+>    the cost was measured: because `composeServer` turns any map-load error
+>    into a refusal to start, one such file stopped the whole server booting.
+>    Patrik ruled that art which cannot be READ degrades; only art declaring a
+>    `format_version` this server does not understand still refuses, because
+>    that says the content is newer than the server rather than that the file
+>    is broken.*
 >
 > **Section by section, so you know what to trust:**
 >
@@ -49,10 +56,11 @@ follows from that.
 > | §1, §2, §3, §6, §9, §11, §12 | correct, unaffected |
 > | §7 | the door RULE is correct — one tile name, two pictures, every door starts closed. **Point 2's mechanism is wrong**: it says a *pack's* door entry "(§5.1)" supplies `file_closed`/`file_open`. There is no pack, and there has never been a §5.1. A door's two pictures are named by its own sidecar's `open` and `closed` fields |
 > | §10 | correct, including the `"pack"` refusal |
+> | art failures generally | **only one refuses a map**: a sidecar declaring a `format_version` this server does not understand. Absent art, an unopenable `art/` at request time, a picture with no sidecar, and a sidecar that cannot be read all draw that square plain and warn (2026-09-04) |
 > | §0 | **wrong** — the directory layout and the `tiles/` pack |
 > | §4 | values correct; **"resolution has exactly two levels … first against the map's own pack" is wrong** — there is one flat `art/` and any map may name any piece |
 > | §5 | object shape correct; **"you cannot place a single object without shipping a pack of your own" is wrong** — install the picture into `art/`, no manifest and no sidecar needed for object art |
-> | §8 | first third (what a pack IS, where it lives, how it is served) **wrong**; the paragraphs from *"A map file may no longer name a pack"* to *"…refused exactly like any other `pack`"* are **correct, and the door paragraph among them is the part that matters for the demo campaign**; the manifest example and its field tables after them are **wrong** |
+> | §8 | first third (what a pack IS, where it lives, how it is served) **wrong**; the paragraphs from *"A map file may no longer name a pack"* to *"…refused exactly like any other `pack`"* are **correct, and the door paragraph among them is the part that matters for the demo campaign — except where it says a bad door refuses the map, which point 4 above corrects** |
 >
 > The full authoring shape for `art/` lands with `vtt art install` and the
 > migrated `campaigns/example/art/` (Tasks 6 and 8 of
@@ -395,9 +403,17 @@ keeps its two pictures and gains no third: the pack entry's `file_open` and
 `file_closed` become the sidecar's own `open` and `closed` fields, so
 `cellar-door.json` names `cellar-door-open.png` and `cellar-door-closed.png`,
 and **there is no `cellar-door.png`**. Write a door sidecar with only kind and
-material and it is REFUSED, not degraded (`a door declares both "open" and
-"closed"`), and `mapdef.Resolve` turns that refusal into a refused map rather
-than a plain square.
+material and it does not resolve (`a door declares both "open" and "closed"`):
+that square draws plain and the load carries one warning naming the piece and
+the cause.
+
+*This said the door was REFUSED, and the map with it, until 2026-09-04. That
+was true and it was expensive — because `composeServer` turns any map-load
+error into a refusal to start, one such file stopped the server booting for
+every map in the campaign. Patrik ruled that art which cannot be READ degrades;
+the only art that still refuses a map is a sidecar declaring a `format_version`
+this server does not understand, which says the content is newer than the
+server rather than that the file is broken.*
 
 **The standard tile vocabulary (§3) is not a pack and is never named.** It is
 built into the platform, which is why `stone`, `wood-door` and the rest work

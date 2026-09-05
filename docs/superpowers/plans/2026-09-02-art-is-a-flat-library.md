@@ -912,6 +912,26 @@ func TestArtInstallValidatesTheSidecarAtInstallRatherThanAtTheTable(t *testing.T
 the file is absent. `packRefJSON` is deleted; metadata reports `cellPx` directly.
 Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`.
 
+**An unresolved OBJECT paints a magenta checkerboard, and the spec says it is
+"drawn from its kind". Fix that here.** Found by Task 4b's review, 2026-09-05,
+by checking the CLIENT rather than the server. `objectImage` returns `tile:` for
+an empty `Art` and `canvas.ts`'s `paint` sends that to `drawMissingTile` — a 2x2
+checkerboard — while spec §4 promises the object stays, drawn from its kind, and
+`ResolveObjectArt`'s own warning tells the DM exactly that.
+
+Tiles are fine and the asymmetry is the point: `tileImage` falls back to
+`std:<kind>/<material>`, so a degraded tile stays a wall and a degraded door
+stays a door for sight, movement and the door tool. **Objects have no such
+fallback.** Every argument this sub-project has made about degrading safely was
+verified on tiles and silently assumed for objects.
+
+`campaigns/example/maps/cellar.json` names four object arts — `barrel`,
+`brazier`, `crate-wood`, `pillar-stone` — so once Task 8 installs them, one
+corrupt `pillar-stone.json` boots the server and paints checkerboards where the
+pillars are. This is a CLAUDE.md rule 7 deviation: delivered behaviour
+contradicts a spec sentence the code quotes. The spec is right; the code is
+wrong.
+
 **Task 7 deleted seven security proofs along with the pack route, and this task
 owes every one of them back.** The pack route's tests for path traversal,
 symlink escape, the content-type allowlist, SVG exclusion, the unknown-file 404

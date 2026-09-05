@@ -145,8 +145,9 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 			"picture write a sidecar art/<id>.json carrying its kind and material; object art needs "+
 			"none. A DOOR IS THE EXCEPTION and has no <id>.png at all: it keeps TWO pictures, named "+
 			"inside its own sidecar by the \"open\" and \"closed\" fields (cellar-door.json naming "+
-			"cellar-door-open.png and cellar-door-closed.png), and a door sidecar declaring only "+
-			"kind and material is REFUSED rather than degraded. The names inside your scenes do not "+
+			"cellar-door-open.png and cellar-door-closed.png); a door sidecar declaring only kind "+
+			"and material resolves to nothing and THE DOOR DRAWS PLAIN, with a warning at load "+
+			"rather than a failure here. The names inside your scenes do not "+
 			"change. A picture whose stem is not the id, or tile art with no sidecar, resolves to "+
 			"nothing and draws plain",
 			dir, filepath.Join(dir, "art"))
@@ -456,7 +457,8 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 
 		// Every square must actually RESOLVE, not just satisfy the shape and
 		// bounds checks above — spec §4.4's fuller promise. An Overrides
-		// entry naming art that is installed and cannot be read would
+		// entry naming art written for a format_version this server does not
+		// understand would
 		// otherwise pass every check here and only surface later, at Compile
 		// — "at the table" rather than "at boot" (adventure-format spec §7's
 		// explicit posture, which every other rule in this function already
@@ -465,10 +467,16 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 		// run of the one construction site this task exists to create, not
 		// a second check that could drift from what Compile actually does.
 		//
-		// It no longer catches an override naming art that is simply NOT
-		// INSTALLED, and that is deliberate: art-is-a-flat-library spec §4
-		// makes an absent reference a warning on one square rather than a
-		// refusal of the adventure. The warnings are discarded here (the
+		// WHAT IT CATCHES HAS NARROWED TWICE, and both narrowings are
+		// deliberate. It no longer catches an override naming art that is
+		// simply NOT INSTALLED (art-is-a-flat-library Task 3), nor one naming
+		// art that is installed and cannot be read (Patrik's ruling of
+		// 2026-09-04, Task 4b — one corrupt sidecar was measured stopping a
+		// server booting). Both are a warning on one square now, not a refusal
+		// of the adventure. What is left is a sidecar declaring a
+		// format_version this server does not understand, which says the
+		// content is newer than the server rather than that a file is broken.
+		// The warnings are discarded here (the
 		// second `_`) exactly as compile.go discards them — nothing in this
 		// package carries a warning to a caller yet, which is stated in
 		// Compile's own doc comment.

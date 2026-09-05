@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
 )
@@ -74,8 +75,9 @@ func TestObjectArtNeedsNoSidecar(t *testing.T) {
 	}
 	if p.HasSidecar {
 		t.Fatalf("got %+v, want HasSidecar false — exit criterion 6 (tile art without a "+
-			"sidecar is refused) needs this bit, and Kind == \"\" cannot carry it: a "+
-			"sidecar declaring no kind produces the same empty string", p)
+			"sidecar degrades with its own warning) needs this bit, and Kind == \"\" "+
+			"cannot carry it: a sidecar declaring no kind produces the same empty "+
+			"string", p)
 	}
 }
 
@@ -550,8 +552,9 @@ func TestLookupWillNotFollowASymlinkOutOfTheArtDirectory(t *testing.T) {
 			t.Fatalf("%s: Lookup read the file outside art/: %+v %v", target, p, err)
 		}
 		if errors.Is(err, artlib.ErrNotFound) {
-			t.Fatalf("%s: got %v, want a refusal that is NOT ErrNotFound: a symlink out of "+
-				"art/ is art that exists and must not be read, which is a defect to fix",
+			t.Fatalf("%s: got %v, want an error that is NOT ErrNotFound: a symlink out of "+
+				"art/ is art that exists and must not be read, and reporting it as absent "+
+				"would tell a DM to go and install what is already there",
 				target, err)
 		}
 	}
@@ -582,8 +585,9 @@ func TestADoorsPictureNamesMustBeFilenamesInTheArtDirectory(t *testing.T) {
 
 			_, err := artlib.Lookup(dir, "cellar-door")
 			if err == nil || errors.Is(err, artlib.ErrNotFound) {
-				t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: a sidecar naming "+
-					"something that is not a picture in art/ is malformed art", err)
+				t.Fatalf("got %v, want an error that is NOT ErrNotFound: a sidecar naming "+
+					"something that is not a picture in art/ is installed and broken, not "+
+					"absent", err)
 			}
 			if !strings.Contains(err.Error(), tc.field) {
 				t.Errorf("error %q must name the offending field", err)
@@ -627,25 +631,275 @@ func TestAnUnknownFieldInASidecarIsRefused(t *testing.T) {
 	}
 }
 
-func TestAnUnsupportedFormatVersionIsRefusedNotDegraded(t *testing.T) {
+// TestADeclaredFormatVersionThisServerDoesNotUnderstandCarriesItsOwnSentinel
+// is the half of Patrik's ruling of 2026-09-04 that keeps its refusal. Every
+// other unreadable sidecar now degrades one square (mapdef.Resolve), and this
+// one may not join them: a declared version is not "this file is broken", it is
+// "this content is newer than this server", and degrading a whole v2 art set
+// into hundreds of plain squares reads as the first when the remedy is the
+// second. One refusal naming both versions says that; ninety warnings do not.
+//
+// THE SENTINEL IS THE WHOLE POINT. mapdef.Resolve branches on errors.Is and
+// must never branch on message text (Task 1's sentinel discipline), so a
+// version refusal that came back as a plain error would silently degrade.
+//
+// THE THIRD ROW IS THE ONE THAT NEEDED CODE. A real v2 sidecar carries v2
+// fields, and DisallowUnknownFields fires on those before any version check
+// reads the file — so the sidecar this ruling exists for would have degraded
+// as an unknown-field parse error while a bare {"format_version":2} refused.
+// pieceFromSidecar reads the declared version first, on its own, for exactly
+// this row; deleting that first pass leaves the other two green.
+func TestADeclaredFormatVersionThisServerDoesNotUnderstandCarriesItsOwnSentinel(t *testing.T) {
 	for _, tc := range []struct{ name, json, want string }{
 		{"a later format", `{"format_version":2,"kind":"wall"}`, "declares 2"},
 		{"a nonsense format", `{"format_version":-1,"kind":"wall"}`, "declares -1"},
-		{"no format at all", `{"kind":"wall"}`, "required"},
+		{"a later format carrying fields this one has never heard of",
+			`{"format_version":2,"kind":"wall","variants":["mossy"]}`, "declares 2"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTileArt(t, dir, "future", tc.json)
 			_, err := artlib.Lookup(dir, "future")
 			if err == nil || errors.Is(err, artlib.ErrNotFound) {
-				t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: art that exists and "+
-					"cannot be read is a defect to fix, not a square to draw plain", err)
+				t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: a sidecar written "+
+					"for a later format is content this server is too old to read", err)
+			}
+			if !errors.Is(err, artlib.ErrFormatVersion) {
+				t.Fatalf("error %v does not wrap ErrFormatVersion — without the sentinel "+
+					"mapdef.Resolve degrades this the way it degrades a missing brace, and "+
+					"a v2 art set becomes a wall of warnings", err)
 			}
 			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "1") {
 				t.Fatalf("error %q must say %q and name the version this server understands",
 					err, tc.want)
 			}
 		})
+	}
+}
+
+// TestAnExplicitZeroIsDECLAREDAndRefusedLikeAnyOtherUnknownVersion is review
+// finding F4 of 2026-09-05, which caught the rule being implemented as
+// zero-versus-non-zero rather than declared-versus-undeclared. Before the
+// probe became a json.RawMessage, {"format_version": 0} took the "required"
+// arm: it DEGRADED, and the DM was told "an undeclared format is not assumed
+// to be any of them" about a file that had declared one. -1 refused and 0 did
+// not, which is a boundary nobody chose.
+//
+// Zero is a declared version this server does not understand, so it refuses
+// with -1, 2 and 99. There is nothing special about it except that Go's zero
+// value used to swallow it.
+func TestAnExplicitZeroIsDECLAREDAndRefusedLikeAnyOtherUnknownVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeTileArt(t, dir, "zero", `{"format_version":0,"kind":"wall"}`)
+	_, err := artlib.Lookup(dir, "zero")
+	if !errors.Is(err, artlib.ErrFormatVersion) {
+		t.Fatalf("got %v, want ErrFormatVersion: 0 is a version this file DECLARES, and "+
+			"a declared version this server does not understand refuses", err)
+	}
+	if !strings.Contains(err.Error(), "declares 0") {
+		t.Fatalf("error %q must name the version the file declares", err)
+	}
+	if strings.Contains(err.Error(), "undeclared") {
+		t.Fatalf("error %q calls a declared version undeclared", err)
+	}
+}
+
+// TestAFormatVersionThatIsNotAVersionNumberIsCorruptRatherThanNewer is the
+// THIRD answer this one field can give, and it exists because the other two
+// are both wrong for it. A value that is not a version at all does not say the
+// content is newer than this server (so it must not refuse), and it is not an
+// absent field either (so "required" would be false of it).
+//
+// EVERY PLAUSIBLE SPELLING OF A LATER FORMAT IS A PLAIN JSON INTEGER, which is
+// what makes degrading these safe: nothing this arm catches is the case the
+// refusal was kept for. An integer past int32 is included deliberately —
+// arguably "newer", certainly a typo, and the tie is broken by the same rule
+// as the rest: this server cannot read it AS a version.
+//
+// null is here because it is the case a *int32 probe would still have got
+// wrong: JSON null unmarshals into a pointer as nil without erroring, so it
+// would have read as absent.
+func TestAFormatVersionThatIsNotAVersionNumberIsCorruptRatherThanNewer(t *testing.T) {
+	for _, tc := range []struct{ name, json string }{
+		{"a string", `{"format_version":"2","kind":"wall"}`},
+		{"a whole number written as a float", `{"format_version":1.0,"kind":"wall"}`},
+		{"a fraction", `{"format_version":2.5,"kind":"wall"}`},
+		{"exponent notation", `{"format_version":1e0,"kind":"wall"}`},
+		{"past the end of an int32", `{"format_version":99999999999,"kind":"wall"}`},
+		{"null", `{"format_version":null,"kind":"wall"}`},
+		{"an object", `{"format_version":{"major":2},"kind":"wall"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTileArt(t, dir, "odd", tc.json)
+			_, err := artlib.Lookup(dir, "odd")
+			if err == nil || errors.Is(err, artlib.ErrNotFound) {
+				t.Fatalf("got %v, want an error that is NOT ErrNotFound: the file is "+
+					"installed and its version field is unusable", err)
+			}
+			if errors.Is(err, artlib.ErrFormatVersion) {
+				t.Fatalf("error %v wraps ErrFormatVersion — this is not a declaration that "+
+					"the content is newer than this server, it is a broken field, and "+
+					"refusing it puts a typo back in the way of the whole boot", err)
+			}
+			if !strings.Contains(err.Error(), "is not a version number") {
+				t.Fatalf("error %q must say what is wrong with the field", err)
+			}
+		})
+	}
+}
+
+// TestAnUnreadableVersionFieldDoesNotShipItsWholeValueToTheClient bounds the
+// one place this package interpolates author-controlled sidecar text into a
+// message. Those messages ride to whoever issued load_map on a CommandResult,
+// and spec §4 records a load whose warnings did not arrive because they went
+// over the client read limit — so a sidecar carrying a very long number must
+// not be able to put that number on the wire.
+func TestAnUnreadableVersionFieldDoesNotShipItsWholeValueToTheClient(t *testing.T) {
+	dir := t.TempDir()
+	huge := strings.Repeat("9", 4000)
+	writeTileArt(t, dir, "huge", `{"format_version":`+huge+`,"kind":"wall"}`)
+	_, err := artlib.Lookup(dir, "huge")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if len(err.Error()) > 500 {
+		t.Fatalf("error is %d bytes; a 4000-digit number reached the wire whole",
+			len(err.Error()))
+	}
+}
+
+// TestAnUnreadableVersionFieldStaysValidUTF8OnTheWire guards the other half of
+// quoting a campaign file's raw bytes back to a client, and it is the half a
+// length check does not give.
+//
+// CommandResult.warnings is a proto3 repeated string, proto3 strings must be
+// valid UTF-8, and this is the only place in the tree where raw bytes out of a
+// campaign file reach one. Cutting at a fixed byte offset splits a multi-byte
+// rune in half; a json.RawMessage also keeps whatever the file held, valid or
+// not. Either one makes protojson refuse to marshal the frame — a campaign
+// file deciding that a load_map answer never arrives at all, which is strictly
+// worse than the warning it was carrying.
+//
+// The fixture is sized so the 40-byte bound lands INSIDE a two-byte rune: 21
+// 'ü' is 42 bytes, so a naive cut at 40 ends on the lead byte of the 21st.
+//
+// FAULT-INJECTION PROOF (this assertion is after-the-fact, per CLAUDE.md rule
+// 1). Removing clip's rune-boundary backup and cutting at the raw byte gives
+// `…"üüüüüüüüüüüüüüüüüüü\xc3… is not a version number…` — a dangling lead byte,
+// measured 2026-09-05. Nothing else in the suite notices: the verdict, the
+// warning count and the square drawn plain are all unchanged, and the frame
+// simply fails to marshal.
+func TestAnUnreadableVersionFieldStaysValidUTF8OnTheWire(t *testing.T) {
+	dir := t.TempDir()
+	writeTileArt(t, dir, "wide", `{"format_version":"`+strings.Repeat("ü", 21)+`","kind":"wall"}`)
+	_, err := artlib.Lookup(dir, "wide")
+	if err == nil {
+		t.Fatal("want an error: a string is not a version number")
+	}
+	if !utf8.ValidString(err.Error()) {
+		t.Fatalf("error is not valid UTF-8: %q — proto3 cannot carry it, so the frame "+
+			"this rides on would not marshal at all", err.Error())
+	}
+	// THE EXACT FRAGMENT, not merely a valid one. Validity alone passes for a
+	// clip that walks the WRONG WAY over the split rune — measured on the
+	// first draft, whose cut++ mutant landed on the far boundary of the same
+	// rune and produced a longer, still-valid string that nothing objected to.
+	// 44 raw bytes, cut at 40, so the 20th u-umlaut is the one that splits.
+	if want := `"` + strings.Repeat("ü", 19) + "…"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %q, want it to carry %q", err.Error(), want)
+	}
+}
+
+// TestAValueExactlyAtTheBoundIsNotClippedAtAll pins the bound itself. clip
+// returns the whole fragment at exactly `limit` bytes and clips past it, and
+// nothing else in this file distinguishes those: every other fixture is either
+// far under or far over, so `len(s) <= limit` and `len(s) < limit` agree on all
+// of them. The mutation gate found that gap rather than a reader.
+//
+// 38 x's inside two quotes is 40 raw bytes on the nose. Under the mutant the
+// message gains an ellipsis while losing nothing, which is why the assertion is
+// on the ellipsis and not on the length.
+func TestAValueExactlyAtTheBoundIsNotClippedAtAll(t *testing.T) {
+	dir := t.TempDir()
+	value := strings.Repeat("x", 38)
+	writeTileArt(t, dir, "onthenose", `{"format_version":"`+value+`","kind":"wall"}`)
+	_, err := artlib.Lookup(dir, "onthenose")
+	if err == nil {
+		t.Fatal("want an error: a string is not a version number")
+	}
+	if !strings.Contains(err.Error(), `"`+value+`"`) {
+		t.Fatalf("error = %q, want the whole 40-byte value", err.Error())
+	}
+	if strings.Contains(err.Error(), "…") {
+		t.Fatalf("error = %q — 40 bytes is exactly the bound and is not clipped; an "+
+			"ellipsis here means the comparison excludes its own boundary", err.Error())
+	}
+}
+
+// TestTrailingBytesAfterASidecarAreIgnoredAsTheyAlwaysWere is review finding
+// F2 of 2026-09-05, and it guards a NON-change rather than a change. The
+// version pre-pass exists to reorder two reports; written with json.Unmarshal
+// — the obvious spelling — it also silently narrowed what a sidecar may be,
+// because Unmarshal refuses trailing bytes and Decode ignores them. Measured:
+// both fixtures below resolved before the pre-pass existed and began degrading
+// with "invalid character after top-level value" after it.
+//
+// That would also have made artlib stricter than mapdef.decodeStrict, which
+// still ignores trailing data in a MAP file — one format tightened and its
+// sibling not, by an edit whose stated purpose was neither.
+//
+// THIS TEST DOES NOT ARGUE THAT TRAILING BYTES SHOULD BE ACCEPTED. It pins
+// that this task did not decide it. Refusing them is a real question for the
+// sidecar and the map format together, and the day it is answered this test is
+// the one to change, deliberately, rather than the assertion that quietly
+// stopped being true.
+func TestTrailingBytesAfterASidecarAreIgnoredAsTheyAlwaysWere(t *testing.T) {
+	for _, tc := range []struct{ name, json string }{
+		{"a word after the object", `{"format_version":1,"kind":"wall"} SURPRISE`},
+		{"a second object", `{"format_version":1,"kind":"wall"}{"format_version":2}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTileArt(t, dir, "masonry-1", tc.json)
+			p, err := artlib.Lookup(dir, "masonry-1")
+			if err != nil {
+				t.Fatalf("Lookup: %v — this resolved before the version pre-pass existed, "+
+					"and the pre-pass was not a decision about trailing bytes", err)
+			}
+			if p.Kind != "wall" {
+				t.Fatalf("got %+v, want the kind the first object declares", p)
+			}
+		})
+	}
+}
+
+// TestASidecarThatDeclaresNoFormatVersionIsCorruptRatherThanNewer draws the
+// line inside the format_version check itself. An undeclared version does not
+// say the content is newer than this server; it says a field is missing, which
+// is a hand-written file with a mistake in it — the same class as a missing
+// brace, and it degrades with them (Patrik's ruling, 2026-09-04, read for what
+// it says: the refusal is for a format "newer than this server").
+//
+// Keeping it a refusal would leave the measured defect half alive:
+// {"kind":"wall","material":"stone"} is a plausible thing to hand-write, and
+// under a refusal one such file in one campaign still stops the server booting
+// over every other map.
+func TestASidecarThatDeclaresNoFormatVersionIsCorruptRatherThanNewer(t *testing.T) {
+	dir := t.TempDir()
+	writeTileArt(t, dir, "undeclared", `{"kind":"wall","material":"stone"}`)
+	_, err := artlib.Lookup(dir, "undeclared")
+	if err == nil || errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("got %v, want an error that is NOT ErrNotFound: the file is installed, "+
+			"it is just incomplete", err)
+	}
+	if errors.Is(err, artlib.ErrFormatVersion) {
+		t.Fatalf("error %v wraps ErrFormatVersion — an absent field is not a declaration "+
+			"that the content is newer than this server, and refusing it puts one "+
+			"hand-written sidecar back in the way of the whole boot", err)
+	}
+	if !strings.Contains(err.Error(), "required") {
+		t.Fatalf("error %q must say the field is required", err)
 	}
 }
 
@@ -668,8 +922,10 @@ func TestASidecarThatIsNotValidJSONIsRefused(t *testing.T) {
 	writeTileArt(t, dir, "broken", `{"format_version":1,"kind":123,"material":"stone"}`)
 	_, err := artlib.Lookup(dir, "broken")
 	if err == nil || errors.Is(err, artlib.ErrNotFound) {
-		t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: a sidecar that will not "+
-			"even parse is a defect to fix, not a square to draw plain", err)
+		t.Fatalf("got %v, want an error that is NOT ErrNotFound: the caller degrades this "+
+			"square either way, but "+
+			"only a non-ErrNotFound answer gets the sentence that says there is a file "+
+			"in art/ to go and fix", err)
 	}
 }
 
@@ -689,8 +945,10 @@ func TestADoorMissingOnePictureIsRefused(t *testing.T) {
 		writeFile(t, dir, "half-door.json", sidecar)
 		_, err := artlib.Lookup(dir, "half-door")
 		if err == nil || errors.Is(err, artlib.ErrNotFound) {
-			t.Fatalf("%s: got %v, want a refusal: a door with only one picture is a defect "+
-				"to fix, not a square to draw plain", sidecar, err)
+			t.Fatalf("%s: got %v, want an error: a door with only one picture is an "+
+				"incomplete file, and this package's job is to say so — what the caller "+
+				"does with it is mapdef's (it degrades: internal/mapdef's "+
+				"TestADoorMissingOnePictureDegradesRatherThanRefusingTheMap)", sidecar, err)
 		}
 		if !strings.Contains(err.Error(), "a door declares both") {
 			t.Errorf("%s: error = %q, want it to name what a door must declare", sidecar, err)
@@ -698,7 +956,14 @@ func TestADoorMissingOnePictureIsRefused(t *testing.T) {
 	}
 }
 
-func TestAnUnreadableSidecarIsRefusedNotDegraded(t *testing.T) {
+// TestAnUnreadableSidecarIsNotReportedAsAbsent was named
+// TestAnUnreadableSidecarIsRefusedNotDegraded until 2026-09-04, and the second
+// half of that stopped being true that day: the caller now degrades this
+// square (mapdef.Resolve, Patrik's ruling). What this still pins is the half
+// that matters here — the answer is NOT ErrNotFound, so the DM is told there
+// is a file in art/ to go and fix rather than sent hunting for one that is not
+// installed.
+func TestAnUnreadableSidecarIsNotReportedAsAbsent(t *testing.T) {
 	dir := t.TempDir()
 	// A directory where the sidecar filename is expected makes the read fail
 	// with something other than fs.ErrNotExist — the case Lookup's default
@@ -708,8 +973,8 @@ func TestAnUnreadableSidecarIsRefusedNotDegraded(t *testing.T) {
 	}
 	_, err := artlib.Lookup(dir, "weird")
 	if err == nil || errors.Is(err, artlib.ErrNotFound) {
-		t.Fatalf("got %v, want a refusal that is NOT ErrNotFound: an unreadable sidecar "+
-			"is a defect to fix, not absent art", err)
+		t.Fatalf("got %v, want an error that is NOT ErrNotFound: an unreadable sidecar "+
+			"is a file sitting in art/, not absent art", err)
 	}
 }
 
