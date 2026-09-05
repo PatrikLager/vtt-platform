@@ -1173,3 +1173,44 @@ func TestNoLookupErrorNamesTheDirectoryItRead(t *testing.T) {
 		})
 	}
 }
+
+// --- IsArtFileName (art-is-a-flat-library Task 6) ---------------------------
+
+// TestIsArtFileNameAcceptsExactlyAPictureAndASidecar pins the rule
+// GET /api/art/{file} serves by. It is the only guard between that route and a
+// subdirectory: os.OpenRoot CONFINES WITHOUT FLATTENING, so "art/pack-ish/x.png"
+// is legitimately inside the root and fs.ValidPath rejects only "..".
+//
+// The refusals are the assertions that matter, and each one is a distinct
+// escape rather than a variation on one: a subdirectory (flatness, design spec
+// §3.1/§3.3), a traversal, an absolute path, a dotfile, an SVG (a document that
+// can embed <script>, read by a same-origin script that then holds this
+// client's Bearer token), and a bare stem with no extension at all.
+func TestIsArtFileNameAcceptsExactlyAPictureAndASidecar(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+		why  string
+	}{
+		{"masonry-1.png", true, "a picture is what the browser draws"},
+		{"masonry-1.json", true, "a sidecar is what tells a client which of a door's two pictures to ask for"},
+		{"cellar-door-open.png", true, "a door's own picture names are art ids too"},
+		{"a.png", true, "a one-character stem is a kebab-case id"},
+
+		{"pack-ish/x.png", false, "a subdirectory is a namespace, and a namespace is a pack"},
+		{"../secret.png", false, "a traversal is not a filename"},
+		{"/etc/passwd.png", false, "an absolute path is not a filename"},
+		{".hidden.png", false, "a leading dot is not a kebab-case id"},
+		{"icon.svg", false, "an SVG can embed <script>; it is not art and this route does not hand it out"},
+		{"masonry-1", false, "a bare stem is an id, not a file"},
+		{"masonry-1.PNG", false, "an uppercase extension resolves on one filesystem and not the next"},
+		{"Masonry-1.png", false, "an uppercase stem is not an art id (see this package's own doc)"},
+		{"", false, "the empty name is not a file"},
+		{".png", false, "an extension with no stem names nothing"},
+		{"masonry-1.png.json", false, "a stem may not carry another extension"},
+	} {
+		if got := artlib.IsArtFileName(tc.name); got != tc.want {
+			t.Errorf("IsArtFileName(%q) = %v, want %v — %s", tc.name, got, tc.want, tc.why)
+		}
+	}
+}

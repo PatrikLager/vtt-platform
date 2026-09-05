@@ -1,6 +1,7 @@
 package mapdef_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -465,3 +466,147 @@ func TestAPackIsTheFirstThingReportedAboutAPreMigrationMap(t *testing.T) {
 //     internal/artlib's TestValidateRefusesAFilenameThatIsNotAnArtName and
 //     TestLookupRefusesAnIdThatIsNotAFilename, which refuse a name that is not
 //     a legal art id at all.
+
+// --- cell_px is a property of the MAP (art-is-a-flat-library, 2026-09-05) ----
+//
+// PATRIK'S RULING, taken from how MapTool solves the same problem: grid size
+// lives on the ZONE, not on the campaign — `Grid.size`, per map, clamped
+// MIN_GRID_SIZE 9 to MAX_GRID_SIZE 350, default 100. That is right and this
+// sub-project's first placement was wrong. Design spec §6 argued "a grid is
+// uniform... One number per campaign says that plainly", and the sentence is
+// true of ONE map and false of a campaign: grid size is exactly what varies
+// between an art set drawn at 64 and one drawn at 128, so the first time a DM
+// installs both, a campaign-wide number is wrong for one of them.
+//
+// campaign.json keeps its value as the DEFAULT a map inherits when it declares
+// none, which is every map that exists today.
+
+// TestAMapMayDeclareItsOwnCellPx is the field's whole reason to be here.
+func TestAMapMayDeclareItsOwnCellPx(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "hall.json")
+	writeFile(t, p, `{"format_version":1,"id":"hall","name":"Hall","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":128}`)
+
+	m, err := mapdef.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m.CellPx != 128 {
+		t.Fatalf("CellPx = %d, want 128 — the map's own declaration", m.CellPx)
+	}
+}
+
+// TestAMapDeclaringNoCellPxInheritsRatherThanGuesses pins the ZERO, and the
+// zero is load-bearing: it is how a *Map says "I did not declare one" to the
+// caller that holds the campaign default. Every map in this repo is in this
+// state, so a Load that invented a number here would silently override a
+// campaign that had set one.
+func TestAMapDeclaringNoCellPxInheritsRatherThanGuesses(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "hall.json")
+	writeFile(t, p, `{"format_version":1,"id":"hall","name":"Hall","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"}}`)
+
+	m, err := mapdef.Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m.CellPx != 0 {
+		t.Fatalf("CellPx = %d, want 0 — an undeclared field is not a declaration, and 0 is how "+
+			"this type says so to whoever holds the campaign default", m.CellPx)
+	}
+}
+
+// TestACellPxOutsideTheBoundsIsRefusedByName is MapTool's clamp, kept as a
+// REFUSAL rather than a silent clamp-into-range: a file that says 100000 means
+// something, and quietly serving 1024 instead would be the "silently ignoring"
+// failure this format refuses everywhere else (see the "pack" refusal above).
+//
+// The message names BOTH bounds, because an author who got one wrong cannot
+// tell from a message that names only the one they crossed.
+func TestACellPxOutsideTheBoundsIsRefusedByName(t *testing.T) {
+	for _, tc := range []struct{ name, value string }{
+		{"zero", "0"},
+		{"negative", "-64"},
+		{"below the floor", "1"},
+		{"absurdly large", "100000"},
+		{"not a whole number", "63.5"},
+		{"not a number at all", `"64"`},
+		{"null", "null"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "hall.json")
+			writeFile(t, p, `{"format_version":1,"id":"hall","name":"Hall","grid_width":1,
+				"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":`+tc.value+`}`)
+
+			_, err := mapdef.Load(p)
+			if err == nil {
+				t.Fatalf("a map declaring cell_px %s was accepted", tc.value)
+			}
+			if !strings.Contains(err.Error(), `field "cell_px"`) {
+				t.Errorf("error = %q, want it to name the field", err)
+			}
+		})
+	}
+}
+
+// TestTheCellPxBoundsAreNamedInTheRefusal keeps the message from degrading to
+// "invalid": the numbers an author has to choose between are the whole content
+// of it.
+func TestTheCellPxBoundsAreNamedInTheRefusal(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "hall.json")
+	writeFile(t, p, `{"format_version":1,"id":"hall","name":"Hall","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":100000}`)
+	_, err := mapdef.Load(p)
+	if err == nil {
+		t.Fatal("cell_px 100000 was accepted")
+	}
+	for _, want := range []string{
+		fmt.Sprint(mapdef.MinCellPx), fmt.Sprint(mapdef.MaxCellPx), "100000",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+// TestTheBoundsAreTheOnesTheFormatDocuments guards the two constants against
+// drifting away from the doc that tells an author what to write, and against
+// a bound so wide it excludes nothing. MapTool's own pair is 9..350; ours is
+// wider at the top because nothing here renders at native size, and the point
+// of the ceiling is to catch a typo rather than to police resolution.
+func TestTheBoundsAreTheOnesTheFormatDocuments(t *testing.T) {
+	if mapdef.MinCellPx != 8 {
+		t.Errorf("MinCellPx = %d, want 8", mapdef.MinCellPx)
+	}
+	if mapdef.MaxCellPx != 1024 {
+		t.Errorf("MaxCellPx = %d, want 1024", mapdef.MaxCellPx)
+	}
+	// The bounds must admit the default, or every campaign that declares
+	// nothing is holding a number its own maps could not declare.
+	if mapdef.MinCellPx > 64 || mapdef.MaxCellPx < 64 {
+		t.Errorf("the bounds %d..%d exclude the documented default 64",
+			mapdef.MinCellPx, mapdef.MaxCellPx)
+	}
+}
+
+// TestTheBoundsThemselvesAreAccepted pins the edges as INCLUSIVE, which a
+// `<`/`<=` slip changes without any other test noticing.
+func TestTheBoundsThemselvesAreAccepted(t *testing.T) {
+	for _, v := range []int32{mapdef.MinCellPx, mapdef.MaxCellPx} {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "hall.json")
+		writeFile(t, p, fmt.Sprintf(`{"format_version":1,"id":"hall","name":"Hall","grid_width":1,
+			"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":%d}`, v))
+		m, err := mapdef.Load(p)
+		if err != nil {
+			t.Fatalf("cell_px %d (a bound) was refused: %v", v, err)
+		}
+		if m.CellPx != v {
+			t.Errorf("CellPx = %d, want %d", m.CellPx, v)
+		}
+	}
+}

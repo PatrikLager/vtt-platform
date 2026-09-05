@@ -6,7 +6,7 @@ import { boot } from "../src/app";
 // exports them "so a test can assert on the exact marker colour rather than
 // just 'something non-empty was drawn'", and a copy here would go on agreeing
 // with itself after the real one moved.
-import { missingTileColors } from "../src/view/canvas";
+import { missingTileColors, plainObjectColors } from "../src/view/canvas";
 
 // happy-dom starts at about:blank and does NOT move location on
 // history.replaceState — setURL is its control surface. Discovered the hard
@@ -562,22 +562,25 @@ test("an adventures fetch that never happens leaves the console's list empty", a
   s?.close();
 });
 
-// THE SERVER CAN NO LONGER SEND THE SHAPE THIS TEST MOCKS. /api/maps carries
-// no pack reference since Task 5 of 2026-09-02-art-is-a-flat-library deleted
-// mapdef.Map.Pack (metadata.go's packRefJSON went with it), so what is pinned
-// below is client wiring against a response nothing produces. Kept rather than
-// deleted because Task 6 of that plan is what replaces the path — with
-// GET /api/art/{file} and a campaign-level cellPx — and deleting the test now
-// would delete the wiring coverage that task inherits, with nothing to shout
-// about the loss.
-test("a configured map's pack is fetched and its images requested with the Bearer token", async () => {
-  // Task 10's seam: nothing before this task ever fetched a tile image (see
-  // pack-assets.ts's own header comment). This proves the WIRING end to end
-  // from GET /api/maps through to the pack manifest and its image files —
-  // the one thing this suite CAN prove, since happy-dom implements neither
-  // canvas nor createImageBitmap (canvas.ts's own header comment), so
-  // whether the decoded result actually reaches paint() is verified by
-  // reading spectator.ts, not by a DOM assertion here.
+test("a live scene's art is fetched over /api/art with the Bearer token", async () => {
+  // THE SEAM THIS PROVES. A scene arrives over the wire carrying ART IDS —
+  // TileRef.art is a filename stem in the campaign's flat art/ directory — and
+  // nothing else: no container, no manifest, no listing. So the whole client
+  // path is "fold the scene, read its ids, ask GET /api/art/{file}", and this
+  // is the test that it is wired at all, end to end from a SceneCreated frame
+  // to the two requests one piece implies.
+  //
+  // IT REPLACES "a configured map's pack is fetched and its images requested
+  // with the Bearer token", which drove GET /api/maps -> a pack id -> a pack
+  // manifest -> its files. That path had been unreachable since Task 5 of
+  // 2026-09-02-art-is-a-flat-library dropped the pack reference from /api/maps:
+  // the test mocked a response no server could send, and said so in its own
+  // header comment. Task 6 replaced the path, and this is the wiring coverage
+  // it inherits.
+  //
+  // THE SIDECAR IS ASKED FOR FIRST, which is not an implementation detail: a
+  // door has two pictures and NO <id>.png at all, and their filenames live in
+  // <id>.json. Same order artlib.lookupIn resolves in.
   localStorage.setItem("vtt.token", "tok");
   const asked: { path: string; auth: string | null }[] = [];
   const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
@@ -592,27 +595,17 @@ test("a configured map's pack is fetched and its images requested with the Beare
     if (path === "/api/ruleset") {
       return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
     }
-    if (path === "/api/adventures") {
-      return Response.json({ adventures: [] });
-    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
     if (path === "/api/maps") {
       return Response.json({
-        maps: [{
-          id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
-          pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
-        }],
+        cellPx: 64,
+        maps: [{ id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9, cellPx: 64 }],
       });
     }
-    if (path === "/api/packs/cellar-basics/pack.json") {
-      return Response.json({
-        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
-        tiles: [{ name: "earth-1", kind: "floor", material: "earth", file: "earth_1.png" }],
-        objects: [],
-      });
+    if (path === "/api/art/masonry-1.json") {
+      return Response.json({ format_version: 1, kind: "wall", material: "stone" });
     }
-    if (path === "/api/packs/cellar-basics/earth_1.png") {
-      return new Response("fake-png-bytes", { status: 200 });
-    }
+    if (path === "/api/art/masonry-1.png") return new Response("fake-png-bytes");
     return new Response("", { status: 404 });
   }) as typeof fetch;
   useFakeSocket();
@@ -620,21 +613,29 @@ test("a configured map's pack is fetched and its images requested with the Beare
   try {
     const r = root();
     const s = boot(r);
-    FakeSocket.instances[0]!.open();
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "s1", name: "Hall", gridWidth: 1, gridHeight: 1,
+          tiles: { "0,0": { kind: "wall", material: "stone", art: "masonry-1" } },
+        },
+      }),
+    );
     await settle();
 
-    expect(asked.map((a) => a.path)).toContain("/api/maps");
-    expect(asked.map((a) => a.path)).toContain("/api/packs/cellar-basics/pack.json");
-    expect(asked.map((a) => a.path)).toContain("/api/packs/cellar-basics/earth_1.png");
+    const paths = asked.map((a) => a.path);
+    expect(paths).toContain("/api/art/masonry-1.json");
+    expect(paths).toContain("/api/art/masonry-1.png");
     // The token, as a Bearer header on every one of them — never a query
     // parameter (metadata.ts's own header comment: a token in a query string
     // leaks into access logs, Referer headers and browser history).
     //
     // Scoped to /api/ paths: boot() also fires an unconditional, UNauthenticated
     // fetch of the standard baseline pack at "/std-pack/..." (the next test
-    // below), which is not part of what this test is proving and must not
-    // make this assertion flaky against that call's own (correct) lack of a
-    // token.
+    // below), which is correct and must not make this assertion flaky.
     for (const a of asked.filter((c) => c.path.startsWith("/api/"))) expect(a.auth).toBe("Bearer tok");
     s?.close();
   } finally {
@@ -730,6 +731,11 @@ function recordingCtx(calls: string[]): CanvasRenderingContext2D {
     restore() {},
     translate() {},
     rotate() {},
+    // The per-frame device-pixel-ratio scale renderGrid applies (2026-09-05).
+    // A no-op here on purpose: what THIS file reads back is which pictures
+    // reached the board, and spectator-view.test.ts is where the ratio and its
+    // position in the call order are asserted exactly.
+    scale() {},
     beginPath() {},
     moveTo() {},
     lineTo() {},
@@ -740,18 +746,25 @@ function recordingCtx(calls: string[]): CanvasRenderingContext2D {
     fillRect() {
       calls.push(`fillRect:${pen.fillStyle}`);
     },
+    // The plain-object fallback canvas.ts draws for an object whose art did not
+    // resolve (art-is-a-flat-library design spec §4). font/textAlign/
+    // textBaseline are left off this double on purpose — canvas.test.ts asserts
+    // those exactly, against a recorder that traps unknown writes; what THIS
+    // file needs from them is only which word reached the board.
+    fillText(text: string) {
+      calls.push(`fillText:${text}`);
+    },
   } as unknown as CanvasRenderingContext2D;
 }
 
-test("both packs' art reaches the canvas: an overridden square AND a plain one", async () => {
-  // WHAT THE TWO TESTS ABOVE DO NOT PROVE. They assert that the pack files are
-  // REQUESTED — the manifest, the image, with or without a Bearer header —
-  // and stop there. Nothing observed the decoded pictures arriving in the
-  // ImageMap app.ts hands to renderSpectator, so throwing either merge away
-  // (or replacing it with a fresh, empty object) left both of them green while
-  // every square of both shipped adventures drew the magenta missing-tile
-  // marker. That is review finding C2's exact failure mode, which is a bad one
-  // to be blind to twice.
+test("both sources reach the canvas: an overridden square AND a plain one", async () => {
+  // WHAT THE TEST ABOVE DOES NOT PROVE. It asserts that the art files are
+  // REQUESTED and stops there. Nothing observed the decoded pictures arriving
+  // in the ImageMap app.ts hands to renderSpectator, so throwing either merge
+  // away (or replacing it with a fresh, empty object) left it green while every
+  // square of both shipped adventures drew the magenta missing-tile marker.
+  // That is review finding C2's exact failure mode, which is a bad one to be
+  // blind to twice.
   //
   // HOW IT IS OBSERVED. happy-dom's canvas.getContext("2d") always answers
   // null, so renderGrid's `if (ctx)` never opens and paint() is unreachable
@@ -763,16 +776,16 @@ test("both packs' art reaches the canvas: an overridden square AND a plain one",
   // file in one process, so a leaked patch would reach the view tests, which
   // drive the same code through their own seam.
   //
-  // BOTH LEVELS OF SPEC §4.2's resolution in one scene, because they arrive
-  // from different fetches on different schedules: the overridden square wants
-  // the map's own pack (Bearer, /api/packs/...), the plain one wants the
-  // standard vocabulary (no token, /std-pack/...), and either merge losing its
-  // half is a board that draws half a room.
+  // BOTH LEVELS OF RESOLUTION IN ONE SCENE, because they arrive from different
+  // fetches on different schedules: the overridden square wants the CAMPAIGN's
+  // art (Bearer, /api/art/...), the plain one wants the standard vocabulary (no
+  // token, /std-pack/...), and either merge losing its half is a board that
+  // draws half a room.
   localStorage.setItem("vtt.token", "tok");
   const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
   // The decoded stand-in carries the FILE'S OWN BYTES as its tag, so a
   // drawImage can be traced back to the exact file it came from — "something
-  // was drawn" would pass with the two packs' images swapped.
+  // was drawn" would pass with the two pictures swapped.
   (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
     async (blob: Blob) => ({ tag: await blob.text() }) as unknown as ImageBitmap;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -784,20 +797,14 @@ test("both packs' art reaches the canvas: an overridden square AND a plain one",
     if (path === "/api/adventures") return Response.json({ adventures: [] });
     if (path === "/api/maps") {
       return Response.json({
-        maps: [{
-          id: "cellar", name: "The Sunken Cellar", gridWidth: 2, gridHeight: 1,
-          pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
-        }],
+        cellPx: 64,
+        maps: [{ id: "cellar", name: "The Sunken Cellar", gridWidth: 2, gridHeight: 1, cellPx: 64 }],
       });
     }
-    if (path === "/api/packs/cellar-basics/pack.json") {
-      return Response.json({
-        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
-        tiles: [{ name: "masonry-1", kind: "floor", material: "stone", file: "masonry_1.png" }],
-        objects: [],
-      });
+    if (path === "/api/art/masonry-1.json") {
+      return Response.json({ format_version: 1, kind: "floor", material: "stone" });
     }
-    if (path === "/api/packs/cellar-basics/masonry_1.png") return new Response("pack-art");
+    if (path === "/api/art/masonry-1.png") return new Response("campaign-art");
     if (path === "/std-pack/pack.json") {
       return Response.json({
         id: "std", name: "Standard Vocabulary", cell_px: 64,
@@ -827,8 +834,8 @@ test("both packs' art reaches the canvas: an overridden square AND a plain one",
           tiles: {
             // Art empty: the standard vocabulary answers, by kind/material.
             "0,0": { kind: "floor", material: "earth", art: "" },
-            // Art set: the map's own pack answers, by name (mapdef.Resolve
-            // wrote this in at compile time — spec §4.2's two levels).
+            // Art set: the campaign's own art/ answers, by name (mapdef.Resolve
+            // wrote this in at compile time).
             "1,0": { kind: "floor", material: "stone", art: "masonry-1" },
           },
         },
@@ -847,7 +854,7 @@ test("both packs' art reaches the canvas: an overridden square AND a plain one",
     await settle();
 
     expect(drawn).toContain("drawImage:std-art");
-    expect(drawn).toContain("drawImage:pack-art");
+    expect(drawn).toContain("drawImage:campaign-art");
     // AND NOTHING WAS MARKED MISSING. Without this, dropping one merge would
     // still leave the other's assertion above passing on its own half.
     expect(drawn.filter((c) => c.startsWith(`fillRect:${missingTileColors[0]}`))).toHaveLength(0);
@@ -858,25 +865,95 @@ test("both packs' art reaches the canvas: an overridden square AND a plain one",
   }
 });
 
-test("a map with no pack is skipped, and a pack two maps share is fetched once", async () => {
-  // THE TWO WAYS THE LOOP OVER /api/maps CAN GO WRONG, and they are one line
-  // apart. Configuring several maps is ordinary — a campaign is a handful of
-  // them, and both shipped adventures ship more than one — and pack-assets.ts
-  // loads EVERY configured map's pack because the wire gives no way to
-  // correlate a live scene back to the map it came from.
+test("an object whose art is not installed is drawn from its kind, not marked broken", async () => {
+  // THE WHOLE PATH, from a wire frame to what the board actually paints. Spec
+  // §4: "Object art that does not resolve leaves the object in place, with its
+  // blocking behaviour intact, drawn from its kind" — and the server's own
+  // warning (mapdef.ResolveObjectArt) tells the DM exactly that.
   //
-  //   - A map with NO pack at all is legal (MapMeta.pack is optional, and a
-  //     map authored with no art overrides needs none). Reading its pack id
-  //     anyway throws, and the throw lands in the metadata chain's own
-  //     trailing .catch — so the symptom is not a stack trace, it is every
-  //     LATER map's art silently never loading.
-  //   - Two maps sharing a pack is the normal case for a multi-level dungeon.
-  //     Without the loaded-set guard each one re-fetches the manifest and
-  //     every image in it, which on a real pack is dozens of files per extra
-  //     map and paints nothing new.
+  // The server ships the object with an EMPTY art, which is the state this
+  // whole arc made ordinary; until 2026-09-05 the client turned that into the
+  // key "tile:", which resolves to nothing, and canvas.ts painted the magenta
+  // checkerboard over it. campaigns/example/maps/cellar.json names four object
+  // arts, so the day they are installed one corrupt sidecar would have painted
+  // checkerboards where the pillars are.
   //
-  // The pack-less map is listed FIRST on purpose: it is the position where
-  // reading its id takes down the maps behind it too.
+  // ASSERTED THROUGH app.ts's OWN paint rather than at planScene, because the
+  // unit halves (scene-plan.test.ts, canvas.test.ts) each prove one side of a
+  // seam and neither proves the two are joined.
+  localStorage.setItem("vtt.token", "tok");
+  const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (blob: Blob) => ({ tag: await blob.text() }) as unknown as ImageBitmap;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return Response.json({ participantId: "p", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") return Response.json({ cellPx: 64, maps: [] });
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  const drawn: string[] = [];
+  const canvasProto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+  const originalGetContext = canvasProto.getContext;
+  canvasProto.getContext = () => recordingCtx(drawn);
+  try {
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "s1", name: "Hall", gridWidth: 1, gridHeight: 1,
+          tiles: {},
+          objects: [{
+            objectId: "pillar-west-1", kind: "pillar", at: { x: 0, y: 0 },
+            width: 1, height: 1, rotationDegrees: 0,
+            blocksSight: true, blocksMove: true, art: "",
+          }],
+        },
+      }),
+    );
+    await settle();
+    drawn.length = 0;
+    sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+    await settle();
+
+    // Drawn from its kind: the word "pillar", on a plain block.
+    expect(drawn).toContain("fillText:pillar");
+    expect(drawn).toContain(`fillRect:${plainObjectColors[0]}`);
+    // And NOT marked broken. This is the assertion the whole fix is about.
+    expect(drawn.filter((c) => c === `fillRect:${missingTileColors[0]}`)).toHaveLength(0);
+    s?.close();
+  } finally {
+    canvasProto.getContext = originalGetContext;
+    (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
+test("an art id two scenes share is fetched once, and a scene naming none costs nothing", async () => {
+  // THE TWO WAYS THE SCAN CAN GO WRONG, and they are one line apart.
+  //
+  //   - A piece named by several scenes (or by ninety squares of one) must be
+  //     fetched ONCE. A dungeon level is one masonry texture repeated across a
+  //     perimeter and the level below it uses the same one; without the
+  //     requested-set guard that is dozens of round trips per scene that paint
+  //     nothing new. It is the same deduplication mapdef's warnings make, for
+  //     the same reason: a name is a property of the piece, not of the square.
+  //   - A scene naming no art at all — every square standard, which is what
+  //     both shipped adventures are — must ask for nothing. Asking for "" would
+  //     be one guaranteed 404 per square.
+  //
+  // IT REPLACES "a map with no pack is skipped, and a pack two maps share is
+  // fetched once", which pinned the same two properties on the loop over
+  // /api/maps. The loop is gone with the pack; the properties are not, they
+  // just belong to the scene scan now.
   localStorage.setItem("vtt.token", "tok");
   const asked: string[] = [];
   const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
@@ -890,29 +967,11 @@ test("a map with no pack is skipped, and a pack two maps share is fetched once",
       return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
     }
     if (path === "/api/adventures") return Response.json({ adventures: [] });
-    if (path === "/api/maps") {
-      return Response.json({
-        maps: [
-          { id: "attic", name: "The Attic", gridWidth: 4, gridHeight: 4 },
-          {
-            id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
-            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
-          },
-          {
-            id: "cellar-north", name: "The North Cellar", gridWidth: 10, gridHeight: 9,
-            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 },
-          },
-        ],
-      });
+    if (path === "/api/maps") return Response.json({ cellPx: 64, maps: [] });
+    if (path === "/api/art/masonry-1.json") {
+      return Response.json({ format_version: 1, kind: "wall", material: "stone" });
     }
-    if (path === "/api/packs/cellar-basics/pack.json") {
-      return Response.json({
-        id: "cellar-basics", name: "Cellar Basics", cell_px: 64,
-        tiles: [{ name: "earth-1", kind: "floor", material: "earth", file: "earth_1.png" }],
-        objects: [],
-      });
-    }
-    if (path === "/api/packs/cellar-basics/earth_1.png") return new Response("fake-png-bytes");
+    if (path === "/api/art/masonry-1.png") return new Response("fake-png-bytes");
     return new Response("", { status: 404 });
   }) as typeof fetch;
   useFakeSocket();
@@ -920,20 +979,212 @@ test("a map with no pack is skipped, and a pack two maps share is fetched once",
   try {
     const r = root();
     const s = boot(r);
-    FakeSocket.instances[0]!.open();
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    // A scene naming NO art, first — the position where a scan that reads an
+    // empty name anyway takes down the scenes behind it too.
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "attic", name: "The Attic", gridWidth: 1, gridHeight: 1,
+          tiles: { "0,0": { kind: "floor", material: "earth", art: "" } },
+        },
+      }),
+    );
+    // Two scenes naming the same piece, across two separate frames — which is
+    // what makes this a test of the guard rather than of one call's own
+    // deduplication.
+    sock.deliver(
+      envelope(3, {
+        sceneCreated: {
+          sceneId: "cellar", name: "The Cellar", gridWidth: 2, gridHeight: 1,
+          tiles: {
+            "0,0": { kind: "wall", material: "stone", art: "masonry-1" },
+            "1,0": { kind: "wall", material: "stone", art: "masonry-1" },
+          },
+        },
+      }),
+    );
+    await settle();
+    sock.deliver(
+      envelope(4, {
+        sceneCreated: {
+          sceneId: "cellar-north", name: "The North Cellar", gridWidth: 1, gridHeight: 1,
+          tiles: { "0,0": { kind: "wall", material: "stone", art: "masonry-1" } },
+        },
+      }),
+    );
     await settle();
 
-    // The shared pack loaded — once — and the pack-less map cost nothing.
-    expect(asked.filter((p) => p === "/api/packs/cellar-basics/pack.json")).toHaveLength(1);
-    expect(asked.filter((p) => p === "/api/packs/cellar-basics/earth_1.png")).toHaveLength(1);
-    // And nothing was asked for on behalf of the map that has no pack: an id
-    // read off `undefined` would 404 as the literal string, which is the shape
+    expect(asked.filter((p) => p === "/api/art/masonry-1.json")).toHaveLength(1);
+    expect(asked.filter((p) => p === "/api/art/masonry-1.png")).toHaveLength(1);
+    // Nothing was asked for on behalf of the square that names no art: an empty
+    // name would show up as a request for ".json"/".png", which is the shape
     // this failure takes when the guard is present but reversed.
-    expect(asked.filter((p) => p.includes("undefined"))).toHaveLength(0);
-    expect(asked.filter((p) => p.startsWith("/api/packs/"))).toHaveLength(2);
+    expect(asked.filter((p) => p === "/api/art/.json" || p === "/api/art/.png")).toHaveLength(0);
+    expect(asked.filter((p) => p.startsWith("/api/art/"))).toHaveLength(2);
     s?.close();
   } finally {
     (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
+test("a scene naming no art repaints once, not twice", async () => {
+  // KILLS THE ConditionalExpression MUTANT on loadSceneArt's `if (names.length
+  // === 0) continue`, which survived the whole suite on the TS mutation gate,
+  // 2026-09-05. Without the guard, every scene with nothing left to fetch still
+  // calls loadArtImages with an EMPTY list: no request goes out, so no fetch
+  // assertion anywhere can see it — and the promise still resolves, still
+  // spreads an empty ImageMap, and still calls paint(). One extra full repaint
+  // per scene per event, for both shipped adventures, which carry no art
+  // overrides at all.
+  //
+  // SO THE OBSERVABLE IS THE REPAINT, and it is counted rather than asserted as
+  // "a paint happened": the board draws one std:floor/earth picture per frame,
+  // so one frame is one drawImage and the doubled path is two.
+  localStorage.setItem("vtt.token", "tok");
+  const originalCIB = (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (blob: Blob) => ({ tag: await blob.text() }) as unknown as ImageBitmap;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return Response.json({ participantId: "p", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") return Response.json({ cellPx: 64, maps: [] });
+    if (path === "/std-pack/pack.json") {
+      return Response.json({
+        id: "std", name: "Standard Vocabulary", cell_px: 64,
+        tiles: [{ name: "earth", kind: "floor", material: "earth", file: "std_earth_floor.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/std-pack/std_earth_floor.png") return new Response("std-art");
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+
+  const drawn: string[] = [];
+  const canvasProto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+  const originalGetContext = canvasProto.getContext;
+  canvasProto.getContext = () => recordingCtx(drawn);
+  try {
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "s1", name: "Hall", gridWidth: 1, gridHeight: 1,
+          // No art anywhere: the standard vocabulary answers this square, and
+          // loadSceneArt has nothing to ask for.
+          tiles: { "0,0": { kind: "floor", material: "earth", art: "" } },
+        },
+      }),
+    );
+    await settle();
+    await settle();
+
+    // The steady state, with every load already landed and repainted.
+    drawn.length = 0;
+    sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+    await settle();
+
+    expect(drawn.filter((c) => c === "drawImage:std-art")).toHaveLength(1);
+    s?.close();
+  } finally {
+    canvasProto.getContext = originalGetContext;
+    (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = originalCIB;
+  }
+});
+
+test("the board is repainted when its container resizes, not only when an event arrives", async () => {
+  // WITHOUT THIS THE PANE ONLY EVER CATCHES UP BY ACCIDENT. renderSpectator
+  // measures the board and draws to that size, but nothing in the wire ever
+  // fires on a window resize — so a DM who maximises the window keeps the old
+  // board until the next token moves, which at a quiet table is minutes.
+  //
+  // OBSERVED AS A REPAINT rather than as "an observer was constructed": what
+  // matters is that a resize reaches paint(), and a ResizeObserver that was
+  // built and never wired would satisfy any assertion about its existence.
+  localStorage.setItem("vtt.token", "tok");
+  const observed: Element[] = [];
+  let fire: (() => void) | null = null;
+  const RealRO = globalThis.ResizeObserver;
+  class FakeRO {
+    constructor(cb: () => void) {
+      fire = cb;
+    }
+    observe(el: Element) {
+      observed.push(el);
+    }
+    disconnect() {}
+    unobserve() {}
+  }
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = FakeRO;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return Response.json({ participantId: "p", name: "DM", role: "dm" });
+    if (path === "/api/ruleset") {
+      return Response.json({ id: "r", name: "R", abilities: [], conditions: [], resources: [] });
+    }
+    if (path === "/api/adventures") return Response.json({ adventures: [] });
+    if (path === "/api/maps") return Response.json({ cellPx: 64, maps: [] });
+    if (path === "/std-pack/pack.json") {
+      return Response.json({
+        id: "std", name: "Standard Vocabulary", cell_px: 64,
+        tiles: [{ name: "earth", kind: "floor", material: "earth", file: "std_earth_floor.png" }],
+        objects: [],
+      });
+    }
+    if (path === "/std-pack/std_earth_floor.png") return new Response("std-art");
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  (globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap =
+    async (blob: Blob) => ({ tag: await blob.text() }) as unknown as ImageBitmap;
+  useFakeSocket();
+
+  const drawn: string[] = [];
+  const canvasProto = HTMLCanvasElement.prototype as unknown as { getContext: unknown };
+  const originalGetContext = canvasProto.getContext;
+  canvasProto.getContext = () => recordingCtx(drawn);
+  try {
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(
+      envelope(2, {
+        sceneCreated: {
+          sceneId: "s1", name: "Hall", gridWidth: 1, gridHeight: 1,
+          tiles: { "0,0": { kind: "floor", material: "earth", art: "" } },
+        },
+      }),
+    );
+    await settle();
+    await settle();
+
+    // THE ROOT is what is watched, because it is the one element that survives
+    // every repaint — the board itself is rebuilt from scratch on each frame, so
+    // an observer on it would be replaced (and leaked) once per event.
+    expect(observed).toContain(r);
+
+    drawn.length = 0;
+    expect(fire).not.toBeNull();
+    fire!();
+    await settle();
+    // The board was drawn again, with no event and no fetch in between.
+    expect(drawn.filter((c) => c === "drawImage:std-art").length).toBeGreaterThan(0);
+    s?.close();
+  } finally {
+    canvasProto.getContext = originalGetContext;
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = RealRO;
   }
 });
 
@@ -1351,7 +1602,7 @@ test("a warning on an ok=true result reaches the DM's toast", async () => {
   // away one line later -- one frame short of the DM's screen, the exact
   // silence spec §4 exists to prevent, moved one layer out.
   const { r, s, sock } = await dmTable({
-    "/api/maps": { maps: [{ id: "shrine", name: "Shrine", gridWidth: 1, gridHeight: 1 }] },
+    "/api/maps": { cellPx: 64, maps: [{ id: "shrine", name: "Shrine", gridWidth: 1, gridHeight: 1, cellPx: 64 }] },
   });
   byText(r, "Load Shrine")!.click();
   await settle();

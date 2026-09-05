@@ -352,6 +352,39 @@ Making it campaign-level rather than per-art is deliberate: a grid is uniform,
 and art pieces at differing native resolutions on the same board is a rendering
 problem, not a capability. One number per campaign says that plainly.
 
+**Amended 2026-09-05 on Patrik's ruling: `cell_px` is a property of the MAP, and
+the campaign's value is the DEFAULT a map inherits by declaring none.** Taken
+from how MapTool solves the same problem — grid size lives on the Zone, not the
+campaign (`Grid.size`, clamped `MIN_GRID_SIZE` 9 to `MAX_GRID_SIZE` 350). The
+paragraph above is right about the reason and wrong about the scope: a grid is
+uniform across ONE MAP, and grid size is exactly what differs between an art set
+drawn at 64 and one drawn at 128 — so the first time a DM installs both, a
+campaign-wide number is wrong for one of them. A map file may now declare
+`"cell_px"`, bounded 8..1024 and **refused rather than clamped** outside that
+(0 and 100000 are not smaller and larger squares, they are a file that cannot
+mean what it says); `GET /api/maps` reports each entry's resolved value beside
+the campaign default.
+
+**The bounds differ from MapTool's 9..350 deliberately.** The floor is
+essentially theirs — the same judgement that below about a dozen pixels a square
+carries no tile detail — and 8 is only the power of two every export dialog
+offers. The ceiling is the real divergence: theirs is a RENDERING bound, because
+MapTool draws at `gridSize * zoom` every frame, and nothing here draws at native
+size, so 1024 exists to catch a typo rather than to police resolution. If this
+client ever gains zoom, that reasoning expires and their 350 stops being a
+divergence and starts being data. `internal/mapdef`'s `MinCellPx` carries the
+full argument. This is additive to the map format and needs no contract
+change — `cell_px` never crosses the protobuf wire.
+
+**Also amended 2026-09-05: what `cell_px` is FOR.** It has one reader,
+`vtt art install`, which warns when an installed picture is not a whole multiple
+of the campaign's default — with the operator holding the file, which is the only
+place anyone can act on it. It is deliberately NOT read by the renderer:
+`client/src/view/spectator.ts`'s `CELL` is a SCREEN size and `cell_px` a SOURCE
+size, and `drawImage` scales one to the other whatever they are. The board's own
+size is a separate question, answered by the container it sits in — see the
+amendment to §9 below.
+
 **Renamed:** `GET /api/packs/{pack}/{file}` becomes `GET /api/art/{file}`. The
 route serves one flat directory, so it takes one segment. It must remain
 symlink-safe: `os.OpenRoot` over `art/`, not `os.DirFS`, for the reason the pack
@@ -426,6 +459,34 @@ Per CLAUDE.md rule 1 the deletion tests come first and run RED, and any
 after-the-fact assertion carries fault-injection proof.
 
 ---
+
+### 6.1 The board follows the window
+
+*(Added 2026-09-05 with §6's amendment, on Patrik's ruling.)*
+
+`cell_px` was mistaken for the answer to "the board is a fixed 640x480". It is
+not: `client/src/view/spectator.ts` hard-coded `PANE_W`/`PANE_H`, and that was
+the whole of it. The renderer's own architecture already anticipated the fix —
+`planScene`, `planGrid` and `planFog` all take `viewW`/`viewH` as arguments, and
+only the call site fed them literals.
+
+**The board's size follows its CONTAINER: neither the scene nor a constant.**
+Both of the other answers have been shipped and both were wrong. Sized by the
+SCENE, the board was `gridWidth * CELL` px tall — 1408 for a 32x32 map — so the
+page grew with the map and the controls sat below every laptop fold (backlog
+T1/#19). Sized by a CONSTANT, a 200x200 outdoor map and a 10x10 room laid out
+identically, which was the point, and a 27-inch display drew the same postage
+stamp as a laptop, which was not.
+
+The stylesheet gives the board `width: 100%` and a height clamped against the
+VIEWPORT, so it can never grow the page again; the renderer measures what that
+produced, sizes the canvas backing store by `devicePixelRatio` so it is not soft
+on a high-DPI display, and re-plans on resize. A deterministic fallback keeps
+every existing render test asserting the same geometry it always did.
+
+**Zoom and pan are still absent and are not this.** MapTool multiplies grid size
+by a zoom scale every frame; this client has a fit-once camera and no way to move
+it. That is a real gap and its own sub-project.
 
 ## 9. What could go wrong
 

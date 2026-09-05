@@ -599,8 +599,8 @@ test("an adventure with no guide says so rather than showing nothing", async () 
 test("a DM loads a map by picking it, and the button says which one", () => {
   const h = harness(newState(), {
     maps: [
-      { id: "cellar", name: "The Cellar", gridWidth: 10, gridHeight: 9 },
-      { id: "wood", name: "", gridWidth: 40, gridHeight: 40 },
+      { id: "cellar", name: "The Cellar", gridWidth: 10, gridHeight: 9, cellPx: 64 },
+      { id: "wood", name: "", gridWidth: 40, gridHeight: 40, cellPx: 64 },
     ],
   });
   const load = h.node.querySelector<HTMLButtonElement>('[data-action="load-map"]');
@@ -614,7 +614,7 @@ test("a DM loads a map by picking it, and the button says which one", () => {
 
 test("a map with no name is offered under its id rather than a blank button", () => {
   const h = harness(newState(), {
-    maps: [{ id: "wood", name: "", gridWidth: 40, gridHeight: 40 }],
+    maps: [{ id: "wood", name: "", gridWidth: 40, gridHeight: 40, cellPx: 64 }],
   });
   const buttons = Array.from(h.node.querySelectorAll<HTMLButtonElement>('[data-action="load-map"]'));
   expect(buttons.map((b) => b.textContent)).toEqual(["Load wood"]);
@@ -837,7 +837,7 @@ test("every group carries a heading", () => {
   // unadjudicated survivor: nothing ever rendered the heading this test
   // could have caught it reading.
   const titles = Array.from(
-    harness(open, { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }] }).node.querySelectorAll("h3"),
+    harness(open, { maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4, cellPx: 64 }] }).node.querySelectorAll("h3"),
   ).map((n) => n.textContent);
   for (const t of ["Session", "Add actor", "…or paste actor JSON",
                    "Place token", "Adventures", "Maps", "Notes", "Remove condition"]) {
@@ -859,7 +859,7 @@ test("a group's row holds only its elements, with no stray text", () => {
   // below walk that row too.
   const h = harness(newState(), {
     adventures: [{ id: "a", name: "A" }],
-    maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4 }],
+    maps: [{ id: "m", name: "M", gridWidth: 4, gridHeight: 4, cellPx: 64 }],
   });
   const rows = Array.from(h.node.querySelectorAll(".row"));
   expect(rows.length).toBeGreaterThan(0);

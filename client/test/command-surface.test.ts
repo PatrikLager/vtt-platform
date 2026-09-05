@@ -267,7 +267,7 @@ function dmFixture(open: boolean): HTMLElement {
   return renderDMConsole({
     st,
     adventures: [{ id: "adv-1", name: "Adventure" }],
-    maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4 }],
+    maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4, cellPx: 64 }],
     guideFor: async () => null,
     participants: [{ participantId: "p-me", displayName: "Hero's Player" }],
     joinLink: { open: false, secret: "s3cret" },

@@ -416,8 +416,44 @@ func isArtID(id string) bool {
 // because they are exactly as much a path as an id is — spec §6 turns each
 // into GET /api/art/{file}.
 func isPictureName(name string) bool {
-	stem, ok := strings.CutSuffix(name, pictureExt)
+	return isArtNameWithExt(name, pictureExt)
+}
+
+// isArtNameWithExt is the shape both name rules are made of: strip exactly one
+// known extension and hold what is left to isArtID. One helper rather than two
+// copies of the same two lines, because the two rules must not be able to
+// disagree about what a stem is — the day isArtID changes, both move.
+func isArtNameWithExt(name, ext string) bool {
+	stem, ok := strings.CutSuffix(name, ext)
 	return ok && isArtID(stem)
+}
+
+// IsArtFileName reports whether name is ONE FLAT ART FILENAME: an art id
+// carrying the picture or the sidecar extension, and nothing else.
+//
+// EXPORTED FOR THE ROUTE, and that is its whole reason to exist.
+// GET /api/art/{file} (internal/gateway/metadata.go) hands a browser raw bytes
+// out of a directory an operator installed, and design spec §3.1/§3.3 say art/
+// is FLAT. os.OpenRoot CONFINES WITHOUT FLATTENING — "art/pack-ish/x.png" is
+// legitimately inside the root, and fs.ValidPath rejects only ".." — so nothing
+// underneath the route stops a subdirectory being served. The pack route it
+// replaces was saved from that only by net/http's single-segment {file}
+// wildcard not matching across "/", which nobody had to think about, because a
+// pack WAS a directory.
+//
+// So the route checks the NAME, here, against the same rule Lookup resolves by,
+// rather than writing a second one in the gateway that could drift from this
+// one. Everything a subdirectory needs — a "/" — fails isArtID, and so does
+// "..", an absolute path, a dotfile and every uppercase spelling.
+//
+// TWO EXTENSIONS AND NO MORE. A picture is what a browser draws; the sidecar is
+// what a client reads to learn which of a door's two pictures to ask for, the
+// same order lookupIn resolves in. Anything else in art/ — a .DS_Store, a
+// stray .svg, a README — is not art and is not this route's to hand out; an SVG
+// in particular can embed <script>, and a same-origin script reads this
+// client's Bearer token out of localStorage.
+func IsArtFileName(name string) bool {
+	return isArtNameWithExt(name, pictureExt) || isArtNameWithExt(name, sidecarExt)
 }
 
 // Lookup resolves id to a Piece. It reads <dir>/<id>.json when there is one

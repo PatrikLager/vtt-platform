@@ -28,10 +28,15 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -43,27 +48,35 @@ import (
 // this arc" — so the gate here is simply s.authed, the same shape /api/ruleset
 // and the /api/adventures LIST already use.
 //
-// --- THE RULING THIS FILE'S RAW-BYTE ROUTE WAS BUILT ON, kept because the
-// route that inherits it has not been built yet -----------------------------
+// --- THE RULING THIS FILE'S RAW-BYTE ROUTE IS BUILT ON ---------------------
 //
 // GET /api/packs/{pack}/{file} served raw bytes out of an operator-installed
 // pack directory. 2026-09-02-art-is-a-flat-library Task 7 deleted it with the
-// pack, and Task 6 of that plan builds GET /api/art/{file} over the campaign's
-// one flat art/ directory — the SAME problem, one directory over: a route
-// handing a browser bytes that this process did not author. Everything below
-// was decided here, corrected once by review, and is written down rather than
-// deleted so the next route does not rediscover it by shipping the hole first.
+// pack, and Task 6 of that plan built GET /api/art/{file} (handleArtFile below)
+// over the campaign's one flat art/ directory — the SAME problem, one directory
+// over: a route handing a browser bytes that this process did not author.
+// Everything below was decided for the pack route, corrected once by review,
+// and survived the interval between the two as prose so that the successor did
+// not rediscover it by shipping the hole first.
 //
 // NEVER LET Content-Type BE INFERRED the way server.go's WithStatic route does
 // for the client bundle (http.FileServerFS's extension/sniffing inference).
-// Serve under a CLOSED ALLOWLIST of genuine raster tile-art extensions with
-// their real Content-Type and X-Content-Type-Options: nosniff; serve anything
-// NOT on that list as application/octet-stream with Content-Disposition:
-// attachment (still nosniff), so a browser navigating directly to it downloads
-// rather than executes it, whatever it turns out to be. Set both headers BEFORE
-// calling http.ServeFileFS: net/http's serveContent only infers a type when
+// Serve under a CLOSED ALLOWLIST with a real Content-Type and
+// X-Content-Type-Options: nosniff; serve anything NOT on that list as
+// application/octet-stream with Content-Disposition: attachment (still
+// nosniff), so a browser navigating directly to it downloads rather than
+// executes it, whatever it turns out to be. Set both headers BEFORE calling
+// http.ServeFileFS: net/http's serveContent only infers a type when
 // Content-Type is still unset at that point, so setting it first is what
 // suppresses the inference rather than racing it.
+//
+// THE ALLOWLIST HAS ONE ENTRY NOW, and it shrank rather than weakened. The pack
+// route allowed .png/.jpg/.jpeg/.gif/.webp because a pack author could name any
+// file. An art id resolves to exactly two filenames — artlib's pictureExt is
+// ".png" and its sidecarExt is ".json" — so artlib.IsArtFileName refuses every
+// other extension before the content type is ever chosen, and a .jpg entry here
+// would be a row nothing can reach. What the fallback still serves, and must,
+// is the SIDECAR: real content this route hands out, and not a picture.
 //
 // WHY THIS IS NOT THE SAME CALL AS THE STATIC BUNDLE, even though both are
 // "serve a directory of files this process did not author": the static bundle
@@ -83,12 +96,14 @@ import (
 // browser-executable content", because guide.md was never executable to begin
 // with.
 //
-// SVG IS UNSAFE and belongs OFF the allowlist (forced down the
-// attachment/octet-stream path) even though it is nominally an image format an
-// author might reach for: an SVG document can embed <script>, so "it has an
-// image extension" is not the same claim as "a browser cannot execute anything
-// in it" the way it is for PNG/JPEG/GIF/WebP, which carry no script-execution
-// surface in any current browser.
+// SVG IS UNSAFE. The pack route forced it down the attachment/octet-stream path
+// rather than serving it inline, because an SVG document can embed <script>, so
+// "it has an image extension" is not the same claim as "a browser cannot
+// execute anything in it" the way it is for PNG/JPEG/GIF/WebP, which carry no
+// script-execution surface in any current browser. THIS route goes further and
+// does not serve it at all: .svg is not one of the two extensions an art id can
+// carry, so it 404s at the name check (TestArtNameNotAnArtFilenameIs404). The
+// ruling is unchanged; the surface it applies to got narrower.
 //
 // ALL OF THAT IS LAYERED ON TOP OF, NOT INSTEAD OF, two other boundaries, and
 // each was proven separately because a fix for one says nothing about the
@@ -115,8 +130,32 @@ import (
 // plan's design spec §3.1/§3.3), and os.OpenRoot CONFINES without FLATTENING —
 // "art/pack-ish/x.png" is legitimately inside the root and fs.ValidPath rejects
 // only "..". net/http's single-segment {file} wildcard not matching across "/"
-// is what the pack route relied on; Task 6 must keep that, or check the name,
-// and test it directly.
+// is what the pack route relied on without anyone deciding it, because a pack
+// WAS a directory.
+//
+// THAT WILDCARD IS NOT ENOUGH, AND THE BELIEF THAT IT WAS IS THE FINDING.
+// Measured by fault injection on 2026-09-05: with handleArtFile's name check
+// neutralised, GET /api/art/pack-ish/x.png is refused by routing as expected —
+// and GET /api/art/pack-ish%2Fx.png IS SERVED, 200, with the nested file's
+// bytes. ServeMux decodes %2F before matching, so the request presents as ONE
+// segment, matches {file}, and arrives at PathValue as "pack-ish/x.png";
+// fs.ValidPath then accepts it, because a subdirectory path contains no "..".
+// The pack route inherited the same hole and nobody looked, since a pack was a
+// directory and a nested request meant nothing there.
+//
+// SO THE NAME CHECK IS THE GUARD: handleArtFile runs artlib.IsArtFileName, the
+// same rule a map load resolves by, and every subdirectory shape fails it.
+// Pinned at two levels — TestArtInsideASubdirectoryIsNotReachable over the wire
+// (both the plain and the encoded spelling) and
+// TestHandleArtFileRefusesANestedNameThatRoutingWouldNeverProduce with
+// PathValue set by hand, bypassing routing entirely.
+//
+// THE SINGLE-SEGMENT PATTERN STAYS, as a second layer, and its independent
+// contribution is currently ZERO by measurement: widening it to {file...} while
+// the name check stands changed no test. It is kept because two independent
+// refusals cost one word and this file's own history is a list of single
+// defences found insufficient — but nobody may rely on it, and a reader who
+// deletes the name check on the strength of it has re-opened the hole above.
 
 // adventureGuideRoles mirrors the dm/agent shape load_adventure carries
 // (authz.go) — adventure guides hold DM secrets (adventure/format.go), so a
@@ -518,11 +557,29 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 // but that is the dependency, and it is between those two tasks rather than
 // between this one and either.
 
+// DefaultCellPx is what this server reports for cell_px when nothing has told
+// it otherwise: 64, the number design spec §6 writes into campaign.json's own
+// example.
+//
+// DUPLICATED FROM campaigncfg.DefaultCellPx ON PURPOSE. internal/gateway reads
+// no files and must not gain a dependency on a package whose whole job is
+// reading one — the same division ADR-008 draws everywhere else, and the reason
+// WithCellPx takes a number rather than a path. cmd/vtt imports both and is the
+// one place that can see the two constants at once, so the guard against them
+// drifting lives there (TestTheServerDefaultAndTheCampaignDefaultAreTheSameNumber).
+const DefaultCellPx int32 = 64
+
 type mapMetaJSON struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	GridWidth  int32  `json:"gridWidth"`
 	GridHeight int32  `json:"gridHeight"`
+	// CellPx is this map's grid resolution, ALREADY RESOLVED: the map's own
+	// declaration when it made one, and the campaign default otherwise. The
+	// inheritance is done here rather than left for every client to re-derive by
+	// noticing a field is absent — one rule, in the one place that holds both
+	// numbers.
+	CellPx int32 `json:"cellPx"`
 }
 
 // handleMaps lists every map this server holds (maps-as-geometry Task 7),
@@ -545,9 +602,141 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	out := []mapMetaJSON{}
 	s.mapsMu.RLock()
 	for id, m := range s.maps {
-		out = append(out, mapMetaJSON{ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH})
+		// ZERO MEANS THE MAP DECLARED NOTHING (mapdef.Map.CellPx), which is every
+		// map in this repo — so this is the inheritance, not a defensive guard.
+		cellPx := m.CellPx
+		if cellPx == 0 {
+			cellPx = s.cellPx
+		}
+		out = append(out, mapMetaJSON{
+			ID: id, Name: m.Name, GridWidth: m.GridW, GridHeight: m.GridH, CellPx: cellPx,
+		})
 	}
 	s.mapsMu.RUnlock()
 	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })
-	writeJSON(w, map[string]any{"maps": out})
+	// THE TOP-LEVEL cellPx IS THE CAMPAIGN DEFAULT, and each entry carries its
+	// own resolved value beside it. Both, because they answer different
+	// questions: "what does THIS map draw at" is per entry, and "what will the
+	// next map that declares nothing draw at" is the campaign's.
+	//
+	// THE ENTRY FIELD DID NOT EXIST FOR ONE DAY, and this comment argued it
+	// should not: design spec §6 said cell_px was campaign-level because "a grid
+	// is uniform", and a per-entry copy looked like the pack's own defect rebuilt
+	// one field over. Patrik overturned that on 2026-09-05 from MapTool, which
+	// puts grid size on the Zone rather than the campaign. A grid is uniform
+	// across ONE MAP; grid size is exactly what differs between an art set drawn
+	// at 64 and one drawn at 128, so two maps of one campaign SHOULD be able to
+	// disagree — because their art does.
+	writeJSON(w, map[string]any{"maps": out, "cellPx": s.cellPx})
+}
+
+// --- GET /api/art/{file} (art-is-a-flat-library design spec §6) -------------
+
+// artContentTypes is the closed allowlist: a hit is served with its real
+// Content-Type, inline. A miss — which today is exactly the sidecar — gets
+// application/octet-stream and Content-Disposition: attachment, so a browser
+// navigating straight to it downloads rather than renders it. nosniff is set on
+// EVERY response, allowlisted or not, so a browser never second-guesses either
+// header.
+//
+// ONE ENTRY, and see this file's own doc section for why that is the allowlist
+// shrinking rather than loosening: artlib.IsArtFileName admits only "<id>.png"
+// and "<id>.json", so a .jpg row here would be unreachable code claiming to be
+// a security control.
+var artContentTypes = map[string]string{
+	".png": "image/png",
+}
+
+// handleArtFile serves ONE FILE out of the campaign's flat art/ directory. It
+// is this package's only route that hands back bytes an operator installed, and
+// every rule it obeys is written down in this file's own doc section above,
+// because the route it replaces was deleted with its proofs and the ruling had
+// to outlive both.
+//
+// THE NAME IS CHECKED BEFORE ANYTHING IS OPENED, against artlib's own rule
+// rather than a second one written here — what a map load resolves, this route
+// serves, and a private copy of the kebab-case rule would be free to drift from
+// the one that decides whether art renders at all. That check is also what
+// keeps art/ FLAT over this route: os.OpenRoot confines without flattening.
+//
+// THE ROOT IS OPENED PER REQUEST AND THIS SERVER CACHES NOTHING, which is
+// design spec §3.6 at the HTTP surface: a piece installed while the server runs
+// is served without a restart, and one overwritten in place hands back the new
+// bytes on the next request. The pack route could not do this — WithPackFiles
+// resolved one fs.FS per pack at boot — and that boot-time resolution is the
+// defect §1 exists to delete, in its other half.
+//
+// AND THAT SENTENCE IS ABOUT THE ROUTE, NOT ABOUT THE TABLE, which is the whole
+// reason Cache-Control is set below (review finding F1, 2026-09-05 — this
+// comment claimed the guarantee while the header that delivers it was missing).
+// A 200 carrying only Last-Modified is heuristically cacheable (RFC 9111
+// §4.2.2), so a browser may reuse month-old art for days without asking, and
+// spec §10 criterion 4 — overwrite the file, reload the map, see the new art —
+// is broken with every byte on this side of the wire correct. no-cache rather
+// than no-store: the browser may keep the bytes and must revalidate before
+// reusing them, which http.ServeFileFS's own Last-Modified answers with a 304.
+// TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser pins both halves.
+//
+// AN UNOPENABLE OR ABSENT ART ROOT IS A 404, NOT A 500 (Patrik's ruling,
+// 2026-09-03: "strict at boot and lenient at request time"). cmd/vtt's
+// artRootIsOpenable already refused the boot where an operator could chmod the
+// directory; a DM in a browser cannot, and a campaign that worked five minutes
+// ago should not start answering 500 at the table.
+//
+// NO RESPONSE NAMES A PATH. An error body travels to any authenticated seat, an
+// agent included, and the server's filesystem layout is nobody's business — the
+// same rule mapdef.LoadInstalled promises in writing, applied to a route.
+func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
+	if s.authed(w, r) == nil {
+		return
+	}
+	name := r.PathValue("file")
+	if s.artDir == "" || !artlib.IsArtFileName(name) {
+		http.Error(w, "gateway: no such art", http.StatusNotFound)
+		return
+	}
+	root, err := os.OpenRoot(s.artDir)
+	if err != nil {
+		// Absent and unopenable answer alike, deliberately: neither is
+		// something the caller can act on, and telling them apart would tell an
+		// unauthenticated-adjacent seat about the operator's filesystem.
+		http.Error(w, "gateway: no such art", http.StatusNotFound)
+		return
+	}
+	defer root.Close()
+
+	// ONE REGULAR FILE OR NOTHING, and the stat runs on the SAME fs.FS the serve
+	// below uses rather than on the path — which is what keeps it from masking
+	// the confinement it sits in front of. os.DirFS's Stat follows a symlink out
+	// of the tree and reports the target, so swapping root.FS() for os.DirFS
+	// still leaks through both this check and ServeFileFS; the fault injection
+	// in artfile_internal_test.go stays honest (measured 2026-09-05).
+	//
+	// The shape this catches is `mkdir art/masonry-1.png`: a name artlib.Lookup
+	// refuses as art that cannot be read, which http.ServeFileFS answered with a
+	// 301 to the same path plus a trailing slash. Nothing escaped — that target
+	// matches no route — but a route and the loader must not give two different
+	// answers about the same bytes.
+	fsys := root.FS()
+	if info, err := fs.Stat(fsys, name); err != nil || !info.Mode().IsRegular() {
+		http.Error(w, "gateway: no such art", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// no-cache, so the browser REVALIDATES rather than guessing. See this
+	// function's own doc comment: without it the route's per-request read is a
+	// guarantee the table never sees.
+	w.Header().Set("Cache-Control", "no-cache")
+	if ct, ok := artContentTypes[filepath.Ext(name)]; ok {
+		w.Header().Set("Content-Type", ct)
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	}
+	// root.FS() rather than os.DirFS: a symlink inside art/ pointing outside it
+	// carries no ".." anywhere, so fs.ValidPath never engages and os.DirFS's own
+	// doc comment says it "does not stop the access any more than using os.Open
+	// does". os.Root does. See artfile_internal_test.go.
+	http.ServeFileFS(w, r, fsys, name)
 }

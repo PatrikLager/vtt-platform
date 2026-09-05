@@ -62,13 +62,35 @@ follows from that.
 > | §5 | object shape correct; **"you cannot place a single object without shipping a pack of your own" is wrong** — install the picture into `art/`, no manifest and no sidecar needed for object art |
 > | §8 | first third (what a pack IS, where it lives, how it is served) **wrong**; the paragraphs from *"A map file may no longer name a pack"* to *"…refused exactly like any other `pack`"* are **correct, and the door paragraph among them is the part that matters for the demo campaign — except where it says a bad door refuses the map, which point 4 above corrects** |
 >
-> The full authoring shape for `art/` lands with `vtt art install` and the
-> migrated `campaigns/example/art/` (Tasks 6 and 8 of
-> `docs/superpowers/plans/2026-09-02-art-is-a-flat-library.md`), and this
-> document is rewritten there against a worked example rather than against a
-> design. Until then: author `tiles`, `overrides`, `objects` and `placements`
-> as §2, §3, §6 and §9 describe; read §4, §5 and §7 for SHAPE and RULES only,
-> never for where a picture comes from; put the map at
+> **`vtt art install` EXISTS as of 2026-09-05** (Task 6 of
+> `docs/superpowers/plans/2026-09-02-art-is-a-flat-library.md`), and so does
+> `GET /api/art/{file}`, which is how the web client fetches a campaign's
+> pictures. Installing is still just copying files into `<campaign>/art/`; the
+> command adds the checks an operator holding the file can act on:
+>
+> ```
+> vtt art install --campaign my-campaign masonry-1.png masonry-1.json
+> ```
+>
+> It refuses a directory, refuses a filename no map could spell, refuses one
+> already installed unless you pass `--force`, and validates every sidecar
+> before it lands — all or nothing, so a refusal leaves `art/` exactly as it
+> was.
+>
+> **A MAP FILE MAY DECLARE `"cell_px"`** (added 2026-09-05) — how many pixels one
+> grid square of THIS map's art occupies, a whole number between 8 and 1024,
+> refused by name rather than clamped if it is outside that. Leave it out and the
+> map inherits the campaign's default, which is what every map in this repo does.
+> The default lives in an OPTIONAL `<campaign>/campaign.json` holding
+> `{"format_version": 1, "cell_px": 64}`, and `vtt art install` warns when an
+> installed picture is not a whole number of those squares.
+>
+> WHAT IS STILL MISSING IS THE WORKED EXAMPLE, and that is why this document is
+> still corrected rather than rewritten: `campaigns/example/art/` arrives with
+> Task 8 of that plan, and the rewrite happens there, against real files rather
+> than against a design. Until then: author `tiles`, `overrides`, `objects` and
+> `placements` as §2, §3, §6 and §9 describe; read §4, §5 and §7 for SHAPE and
+> RULES only, never for where a picture comes from; put the map at
 > `<campaign>/maps/<id>.json`; write no `"pack"` line; and expect overridden
 > squares to draw from the standard vocabulary until the art directory exists.
 

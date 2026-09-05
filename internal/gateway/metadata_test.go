@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -987,5 +988,752 @@ func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 	}
 	if got.Maps == nil {
 		t.Error("maps must be [] and never null — the client iterates it directly")
+	}
+}
+
+// --- GET /api/art/{file} (art-is-a-flat-library Task 6) ---------------------
+//
+// EVERY TEST BELOW IS A PROOF TASK 7 DELETED. Six route tests plus the whole of
+// internal/gateway/packfile_internal_test.go went with GET /api/packs/{pack}/{file},
+// and the ruling behind them survived only as prose in metadata.go's own doc
+// section. This is where each one comes back, against the route that inherited
+// the problem — a route handing a browser raw bytes this process did not author:
+//
+//   - a real file 200s, an unknown name 404s (TestPackImagesAreServedAndUnknownOnesAre404,
+//     TestPackFileUnknownWithinKnownPackIs404)
+//   - the closed allowlist with nosniff, and the octet-stream/attachment
+//     fallback (TestPackFileAllowlistedExtensionGetsItsRealContentType,
+//     TestPackFileUnrecognizedExtensionIsOctetStreamAttachment)
+//   - SVG is not served as an image (TestPackFileSVGIsNotServedAsImage) — and
+//     under this route's narrower name rule it is not served AT ALL
+//   - the Bearer gate (TestPackFilesRequireAuth) and the role breadth
+//     (TestPackFilesReadableByEveryRole)
+//   - the ".." refusal isolated from ServeMux's own redirect, and the symlink
+//     escape only os.OpenRoot stops — both in artfile_internal_test.go, which
+//     is packfile_internal_test.go's successor
+//
+// AND ONE THAT HAS NO PACK PRECEDENT: art/ is FLAT, and a pack WAS a directory,
+// so nobody ever had to stop the route serving a nested file. os.OpenRoot
+// confines without flattening. TestArtInsideASubdirectoryIsNotReachable is the
+// half over the wire; the internal file carries the half that bypasses routing.
+
+// artFixture is a server whose campaign has a real art/ directory on disk, and
+// four tokens, one per role. Separate from mapsFixture because these tests need
+// BYTES on a filesystem — the whole point under test — which a map set held in
+// memory has no reason to carry.
+type artFixture struct {
+	t      *testing.T
+	srv    *httptest.Server
+	artDir string
+
+	dmToken, agentToken, playerToken, spectatorToken string
+}
+
+// newGatewayWithArt installs one picture, its sidecar, and three files that
+// must NOT come back: an SVG (a document that can embed <script>), a plain
+// README (not art at all), and a nested pack-shaped subdirectory holding a
+// perfectly ordinary picture.
+//
+// The subdirectory is written by the fixture rather than asserted about in one
+// test, so every case here runs against a directory that HAS one — a route that
+// started walking into it would fail more than the test that names it.
+func newGatewayWithArt(t *testing.T) *artFixture {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "campaign.db")
+
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+
+	mint := func(name string, role identity.Role) string {
+		tok, _, err := ids.CreateInvite(name, role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+
+	artDir := filepath.Join(t.TempDir(), "art")
+	if err := os.MkdirAll(filepath.Join(artDir, "pack-ish"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(artDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Not real PNG bytes: the Content-Type comes from the allowlist by
+	// extension, never from the content, and asserting that is the point.
+	write("masonry-1.png", "stand-in picture bytes")
+	write("masonry-1.json", `{"format_version":1,"kind":"wall","material":"stone"}`)
+	write("icon.svg", "<svg><script>alert(1)</script></svg>")
+	write("README", "notes to whoever installed this art")
+	write(filepath.Join("pack-ish", "x.png"), "a picture inside a subdirectory, and it must stay unreachable")
+
+	f := &artFixture{
+		t:              t,
+		artDir:         artDir,
+		dmToken:        mint("DM", identity.RoleDM),
+		agentToken:     mint("Agent", identity.RoleAgent),
+		playerToken:    mint("Lera", identity.RolePlayer),
+		spectatorToken: mint("Watcher", identity.RoleSpectator),
+	}
+	srv := gateway.New(c, ids).WithArtDir(artDir)
+	f.srv = httptest.NewServer(srv.Handler())
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+// getFull issues an authenticated (DM) GET and returns the whole response, so
+// a test can read headers as well as a status. The caller closes the body.
+func (f *artFixture) getFull(path string) *http.Response {
+	f.t.Helper()
+	return f.getFullAs(path, f.dmToken)
+}
+
+func (f *artFixture) getFullAs(path, token string) *http.Response {
+	f.t.Helper()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return resp
+}
+
+func (f *artFixture) get(path string) (int, []byte) {
+	f.t.Helper()
+	resp := f.getFull(path)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return resp.StatusCode, body
+}
+
+// TestArtIsServedAndUnknownArtIs404 is TestPackImagesAreServedAndUnknownOnesAre404's
+// successor: a real file comes back with its own bytes, a name nothing is
+// installed under 404s, and a traversal over the real round trip does not
+// escape.
+//
+// HONEST NOTE, carried forward from the test this replaces: a literal ".." in
+// the URL never reaches the handler at all here — net/http's ServeMux redirects
+// any request whose path contains a ".." element to the CLEANED path before
+// pattern matching runs. This assertion is still worth having, because a caller
+// must not observe a 200 whatever the reason, but it does not isolate the
+// handler's own defence. artfile_internal_test.go is what does that.
+//
+// THE BYTES ARE COMPARED, not merely the status. Without that, a handler that
+// 200'd with an empty body — or with the wrong file — passes.
+func TestArtIsServedAndUnknownArtIs404(t *testing.T) {
+	f := newGatewayWithArt(t)
+	code, body := f.get("/api/art/masonry-1.png")
+	if code != http.StatusOK {
+		t.Fatalf("installed art returned %d: %s", code, body)
+	}
+	if string(body) != "stand-in picture bytes" {
+		t.Fatalf("body = %q, want the file's own bytes", body)
+	}
+	if code, _ := f.get("/api/art/not-installed.png"); code != http.StatusNotFound {
+		t.Errorf("art nothing is installed under returned %d, want 404", code)
+	}
+	if code, _ := f.get("/api/art/../../etc/passwd"); code == http.StatusOK {
+		t.Error("a traversal escaped the art directory")
+	}
+}
+
+// TestASidecarIsServedSoAClientCanResolveADoor pins the second of the two
+// filenames this route serves, and the reason it serves it. A door has two
+// pictures and no <id>.png (artlib.Piece's own doc comment), and their
+// filenames are written in <id>.json — so a client that can fetch only
+// pictures cannot draw a door at all. It is the same order artlib.lookupIn
+// resolves in: sidecar first, picture second.
+func TestASidecarIsServedSoAClientCanResolveADoor(t *testing.T) {
+	f := newGatewayWithArt(t)
+	code, body := f.get("/api/art/masonry-1.json")
+	if code != http.StatusOK {
+		t.Fatalf("sidecar returned %d: %s", code, body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("the sidecar must arrive parseable as its own JSON: %v (body %s)", err, body)
+	}
+	if got["kind"] != "wall" {
+		t.Errorf("sidecar = %v, want the file's own contents", got)
+	}
+}
+
+// TestArtInsideASubdirectoryIsNotReachable is the requirement with NO PACK
+// PRECEDENT, and the one design spec §3.1/§3.3's entire no-subfolders rule
+// rests on: nothing inside art/pack-ish/ may be reachable by anything, because
+// the moment it is, the platform has to decide which of two same-named pieces a
+// map means — which is a namespace, which is a pack.
+//
+// os.OpenRoot DOES NOT CLOSE THIS. A root confines without flattening:
+// art/pack-ish/x.png is legitimately inside it, and fs.ValidPath rejects only
+// "..". The pack route was saved only by net/http's single-segment {file}
+// wildcard not matching across "/", which nobody had to think about because a
+// pack WAS a directory.
+//
+// BOTH SPELLINGS ARE DRIVEN, and the second one is the one that matters:
+// ServeMux decodes %2F before matching, so /api/art/pack-ish%2Fx.png presents
+// as ONE segment, matches {file}, and reaches PathValue as "pack-ish/x.png".
+// The single-segment wildcard refuses the plain spelling and nothing else —
+// measured 2026-09-05 by neutralising handleArtFile's name check, which left
+// the plain form 404 and served the encoded form with the nested file's bytes.
+// The name check is what actually holds this line; artfile_internal_test.go
+// proves it again with routing bypassed entirely.
+func TestArtInsideASubdirectoryIsNotReachable(t *testing.T) {
+	f := newGatewayWithArt(t)
+	// The file is really there — assert the fixture, so this test cannot pass
+	// by failing to create what it is about.
+	if _, err := os.Stat(filepath.Join(f.artDir, "pack-ish", "x.png")); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	for _, path := range []string{
+		"/api/art/pack-ish/x.png",
+		"/api/art/pack-ish%2Fx.png",
+	} {
+		resp := f.getFull(path)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			t.Errorf("GET %s = 200 (%s); a subdirectory under art/ is inert by design", path, body)
+		}
+	}
+	// The directory itself is not a listing, either.
+	if code, body := f.get("/api/art/pack-ish"); code == http.StatusOK {
+		t.Errorf("GET /api/art/pack-ish = 200 (%s); art/ holds files, and a directory is not one", body)
+	}
+}
+
+// TestArtNameNotAnArtFilenameIs404 is TestPackFileUnknownWithinKnownPackIs404's
+// successor plus the half that route never had. Without it, a handler that
+// served a directory listing, or one that 200'd on anything inside the root,
+// passes the "a real file comes back" and "an unknown name 404s" cases above.
+//
+// README IS THE INTERESTING ROW. It is a real, readable file sitting in art/,
+// and art/ belongs to whoever installed it — artlib.Validate deliberately
+// ignores a .DS_Store rather than refusing the campaign over one. That makes it
+// the case a status-only assertion cannot fake: the file EXISTS and must still
+// not come back, because it is not art and this route hands out art.
+func TestArtNameNotAnArtFilenameIs404(t *testing.T) {
+	f := newGatewayWithArt(t)
+	for _, tc := range []struct{ path, why string }{
+		{"/api/art/README", "a file in art/ that is not art is not this route's to hand out"},
+		{"/api/art/icon.svg", "an SVG can embed <script>, and a same-origin script reads the Bearer token out of localStorage"},
+		{"/api/art/masonry-1", "a bare stem is an id, not a file"},
+		{"/api/art/Masonry-1.png", "an uppercase stem is not an art id, and resolves on macOS but not on Linux"},
+	} {
+		resp := f.getFull(tc.path)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d (%s), want 404 — %s", tc.path, resp.StatusCode, body, tc.why)
+		}
+	}
+}
+
+// TestADirectoryWEARINGAnArtFilenameIs404 closes the one shape that passes the
+// name check and is not a file: `mkdir art/masonry-1.png`. artlib.Lookup refuses
+// it — the square degrades as art that cannot be read, and artlib's own test
+// table carries the case ("stat: the picture is a directory") — so a route that
+// answered anything else would be a second opinion disagreeing with the loader
+// about the same bytes, which is the divergence hazard this package keeps being
+// warned about.
+//
+// MEASURED BEFORE THE GUARD EXISTED, 2026-09-05: http.ServeFileFS answered 301,
+// redirecting to the same path with a trailing slash. No listing and no bytes
+// escaped — that redirect target matches no route, because {file} does not match
+// a trailing empty segment — so this was never a leak, and THIS TEST PASSED
+// WITHOUT THE FIX, because Go's http.Client follows the redirect into the same
+// 404. It is kept as the end-to-end statement that nothing from inside the
+// directory comes back; the 301 itself is only visible one layer down, and
+// artfile_internal_test.go is where it is pinned.
+func TestADirectoryWEARINGAnArtFilenameIs404(t *testing.T) {
+	f := newGatewayWithArt(t)
+	dir := filepath.Join(f.artDir, "earth-1.png")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "inside.txt"), []byte("INSIDE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resp := f.getFull("/api/art/earth-1.png")
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d (%s), want 404 — art/ holds files, and artlib refuses this shape too",
+			resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "INSIDE") {
+		t.Fatalf("the response carried something from inside the directory: %q", body)
+	}
+}
+
+// TestArtPictureGetsItsRealContentTypeInline is
+// TestPackFileAllowlistedExtensionGetsItsRealContentType's successor: the
+// allowlist decides the Content-Type, never inference, and nosniff is set so a
+// browser cannot second-guess it. Inline (no Content-Disposition), because a
+// picture is what this route exists to let a canvas draw.
+func TestArtPictureGetsItsRealContentTypeInline(t *testing.T) {
+	f := newGatewayWithArt(t)
+	resp := f.getFull("/api/art/masonry-1.png")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "image/png") {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := resp.Header.Get("Content-Disposition"); got != "" {
+		t.Errorf("Content-Disposition = %q, want empty (an allowlisted picture serves inline)", got)
+	}
+}
+
+// TestArtSidecarIsOctetStreamAttachment is
+// TestPackFileUnrecognizedExtensionIsOctetStreamAttachment's successor, and the
+// fallback is not theoretical: a sidecar is real, always-present content this
+// route serves, and it is NOT a picture. It gets application/octet-stream and
+// an attachment disposition, so a browser navigating straight to it downloads
+// rather than renders it, while fetch().json() — which is what the client
+// actually does with it — is unaffected by either header.
+func TestArtSidecarIsOctetStreamAttachment(t *testing.T) {
+	f := newGatewayWithArt(t)
+	resp := f.getFull("/api/art/masonry-1.json")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Errorf("Content-Disposition = %q, want it to contain \"attachment\"", cd)
+	}
+}
+
+// TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser is the half of
+// design spec §3.6 that the route cannot state by itself, and the half every
+// "overwrite art and reload" proof on this branch stopped short of:
+// TestArtInstalledAfterTheServerStartedIsServed above proves the SERVER hands
+// back the new bytes when asked, and says nothing about whether the browser
+// asks.
+//
+// A 200 carrying only Last-Modified is HEURISTICALLY CACHEABLE (RFC 9111
+// §4.2.2, commonly a tenth of the elapsed age), so a piece installed a month ago
+// stays fresh for about three days: the reload draws the OLD picture out of the
+// browser's own cache and no request reaches this handler at all.
+// loadArtImages issues a plain fetch() (client/src/view/art-assets.ts), which
+// is subject to that cache like any other GET, and an Authorization header does
+// not exempt it — RFC 9111 §3.5 bars a SHARED cache from storing it, and the
+// browser's is private.
+//
+// That is Patrik's own requirement, 2026-09-02: "i find a better art to
+// represent that, i should be able to overwrite it with a new masonry_1.png.
+// And then when I reload the map. It will use the new art" — spec §10
+// criterion 4.
+//
+// no-cache, NOT no-store, and the difference is what this costs. no-store
+// forbids keeping the bytes at all and makes every reload a full download;
+// no-cache lets the browser keep them and requires it to REVALIDATE before
+// reuse, which Last-Modified turns into a conditional request answered 304 with
+// no body. The second half of this test is that 304, because "revalidation is
+// cheap" is the claim that makes the header the right one rather than merely a
+// correct one.
+func TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser(t *testing.T) {
+	f := newGatewayWithArt(t)
+	// BOTH KINDS, because the header is set beside nosniff for every response
+	// this route serves rather than per content type: a sidecar decides what a
+	// square IS, so a stale one is the same defect wearing a different
+	// extension.
+	for _, path := range []string{"/api/art/masonry-1.png", "/api/art/masonry-1.json"} {
+		resp := f.getFull(path)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
+		}
+		if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
+			t.Errorf("GET %s: Cache-Control = %q, want it to require revalidation — without it a "+
+				"browser holds installed art for a heuristic freshness lifetime and an overwrite "+
+				"never reaches the table (spec §10 criterion 4)", path, cc)
+		}
+		if lm := resp.Header.Get("Last-Modified"); lm == "" {
+			t.Errorf("GET %s: no Last-Modified — it is what makes the revalidation a 304 rather "+
+				"than a re-download of every picture on the map", path)
+		}
+	}
+
+	// The revalidation itself, over the real round trip: the browser asks with
+	// the validator it was given and is told nothing changed.
+	resp := f.getFull("/api/art/masonry-1.png")
+	resp.Body.Close()
+	req, err := http.NewRequest(http.MethodGet, f.srv.URL+"/api/art/masonry-1.png", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+f.dmToken)
+	req.Header.Set("If-Modified-Since", resp.Header.Get("Last-Modified"))
+	again, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(again.Body)
+	again.Body.Close()
+	if again.StatusCode != http.StatusNotModified {
+		t.Fatalf("a conditional GET carrying the file's own Last-Modified = %d (%q), want 304 — "+
+			"revalidation is what no-cache asks for, and it must not cost the bytes again",
+			again.StatusCode, body)
+	}
+	if len(body) != 0 {
+		t.Errorf("the 304 carried a body of %d bytes", len(body))
+	}
+}
+
+// TestArtFilesRequireAuth is TestPackFilesRequireAuth's successor. Installed
+// art is operator-trusted content, and that trust is about what an
+// AUTHENTICATED caller may read — never about skipping authentication the way
+// /join and the static bundle deliberately do.
+func TestArtFilesRequireAuth(t *testing.T) {
+	f := newGatewayWithArt(t)
+	for _, tc := range []struct{ name, token string }{
+		{"no token", ""},
+		{"a token nothing minted", "garbage"},
+	} {
+		resp := f.getFullAs("/api/art/masonry-1.png", tc.token)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d (%s), want 401", tc.name, resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), "stand-in picture bytes") {
+			t.Errorf("%s: the file's bytes came back to an unauthenticated caller", tc.name)
+		}
+	}
+}
+
+// TestArtIsReadableByEveryRole is TestPackFilesReadableByEveryRole's successor:
+// design spec §7's "everyone still sees the whole map. No filtering in this
+// arc". Unlike an adventure guide (DM secrets) or the join link (admission
+// control), a picture of a wall carries neither.
+func TestArtIsReadableByEveryRole(t *testing.T) {
+	f := newGatewayWithArt(t)
+	for _, tc := range []struct{ role, token string }{
+		{"dm", f.dmToken},
+		{"agent", f.agentToken},
+		{"player", f.playerToken},
+		{"spectator", f.spectatorToken},
+	} {
+		resp := f.getFullAs("/api/art/masonry-1.png", tc.token)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: status = %d (%s), want 200", tc.role, resp.StatusCode, body)
+		}
+	}
+}
+
+// TestArtInstalledAfterTheServerStartedIsServed pins design spec §3.6 at the
+// ROUTE, where §3.6 has never been asserted: "Art is read when a map is loaded,
+// not once at boot. A piece installed while the server is running is found."
+// The route opens the art root per request and caches nothing, so a file
+// dropped in mid-session is served without a restart — and one overwritten in
+// place hands back the new bytes.
+//
+// Without this, a handler that resolved an fs.FS once in Handler() (which is
+// exactly what WithPackFiles did) passes every other test in this file and
+// silently reinstates the boot-order defect design spec §1 exists to delete.
+//
+// IT PROVES THE SERVER HALF AND ONLY THAT HALF, which is worth saying here
+// because this test was read as the whole proof of "overwrite art and reload"
+// for the length of the branch. A browser that never issues the second request
+// gets the old picture from its own cache and this test still passes, every
+// byte on this side correct — measured, and fixed with one header (review
+// finding F1, 2026-09-05). The other half is
+// TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser, and neither
+// test can see what the other is about.
+func TestArtInstalledAfterTheServerStartedIsServed(t *testing.T) {
+	f := newGatewayWithArt(t)
+	if code, _ := f.get("/api/art/earth-1.png"); code != http.StatusNotFound {
+		t.Fatalf("earth-1 is not installed yet: status = %d, want 404", code)
+	}
+	if err := os.WriteFile(filepath.Join(f.artDir, "earth-1.png"), []byte("installed mid-session"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, body := f.get("/api/art/earth-1.png")
+	if code != http.StatusOK || string(body) != "installed mid-session" {
+		t.Fatalf("after installing: status = %d, body = %q — art installed while the server runs must be "+
+			"served with no restart (design spec §3.6)", code, body)
+	}
+	if err := os.WriteFile(filepath.Join(f.artDir, "earth-1.png"), []byte("overwritten in place"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := f.get("/api/art/earth-1.png"); string(body) != "overwritten in place" {
+		t.Fatalf("after overwriting: body = %q, want the new bytes — nothing is cached across a request", body)
+	}
+}
+
+// TestArtWithNoArtDirectoryConfiguredIs404 covers the server the harness and
+// every throwaway test build: no WithArtDir at all. A campaign that has
+// installed no art is ordinary (WithArtDir's own doc comment), so the route
+// answers "nothing here" rather than a 500 — and it must not answer with
+// whatever an empty path happens to resolve to on the filesystem.
+func TestArtWithNoArtDirectoryConfiguredIs404(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(gateway.New(c, ids).Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/art/masonry-1.png", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 — a server with no art directory has no art", resp.StatusCode)
+	}
+}
+
+// TestAnUnopenableArtRootDegradesAtRequestTime pins Patrik's ruling of
+// 2026-09-03 at the one surface that had no way to honour it before this route
+// existed: "An art DIRECTORY that cannot be opened is strict at boot and
+// lenient at request time." A DM in a browser cannot chmod a path, and a
+// campaign that worked five minutes ago should not start answering 500.
+func TestAnUnopenableArtRootDegradesAtRequestTime(t *testing.T) {
+	f := newGatewayWithArt(t)
+	if err := os.Chmod(f.artDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.artDir, 0o755) })
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: mode 000 does not forbid this process anything")
+	}
+	code, body := f.get("/api/art/masonry-1.png")
+	if code != http.StatusNotFound {
+		t.Fatalf("status = %d (%s), want 404 — an unopenable art root is lenient at request time", code, body)
+	}
+}
+
+// TestNoArtResponseNamesWhereTheCampaignLives is internal/mapdef's
+// TestNoArtFailureNamesTheDirectoryItRead at the HTTP surface. An error body
+// travels to any authenticated seat, an agent included, and the server's
+// filesystem layout is nobody's business — the same rule
+// mapdef.LoadInstalled promises in writing, applied to a route rather than to a
+// command result.
+func TestNoArtResponseNamesWhereTheCampaignLives(t *testing.T) {
+	f := newGatewayWithArt(t)
+	for _, path := range []string{
+		"/api/art/not-installed.png",
+		"/api/art/README",
+		"/api/art/pack-ish",
+	} {
+		resp := f.getFull(path)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if strings.Contains(string(body), f.artDir) {
+			t.Errorf("GET %s leaked the campaign's layout: %s", path, body)
+		}
+	}
+}
+
+// --- cellPx (design spec §6) ------------------------------------------------
+
+// TestMapsReportsTheCampaignCellPx pins the CAMPAIGN DEFAULT at the top level of
+// /api/maps: the number every map inherits by declaring nothing, which is every
+// map that exists today.
+//
+// THIS TEST ASSERTED THE OPPOSITE OF ITS SIBLING BELOW FOR ONE DAY, and the
+// retraction is worth more than the assertion. Written 2026-09-05, it said "TOP
+// LEVEL IS THE ASSERTION... a per-entry cellPx would be a second place for two
+// maps of one campaign to disagree about a grid that §6 says is uniform, which
+// is the pack's own defect rebuilt one field over" — and it checked that an
+// entry carried NO cellPx at all. Patrik overturned that the same day, from how
+// MapTool solves the same problem: grid size lives on the Zone, not the
+// campaign. The old reasoning was wrong in its premise, not its logic: a grid is
+// uniform across ONE MAP, and grid size is exactly what differs between an art
+// set drawn at 64 and one drawn at 128. Two maps of one campaign SHOULD be able
+// to disagree, because their art does.
+func TestMapsReportsTheCampaignCellPx(t *testing.T) {
+	f := newGatewayWithMaps(t)
+	code, body := f.getAs("/api/maps", f.dmToken)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200", code, body)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	got, present := raw["cellPx"]
+	if !present {
+		t.Fatalf("/api/maps carries no cellPx: %s", body)
+	}
+	if got != float64(64) {
+		t.Errorf("cellPx = %v, want 64 — a server told nothing reports the documented default", got)
+	}
+	var entries struct {
+		Maps []map[string]any `json:"maps"`
+	}
+	if err := json.Unmarshal(body, &entries); err != nil {
+		t.Fatal(err)
+	}
+	// AND THE ENTRY CARRIES ITS OWN, RESOLVED. newGatewayWithMaps' map declares
+	// no cell_px, so what an entry reports is the campaign default — the
+	// inheritance made visible where a client reads it, rather than left for
+	// every client to re-derive by noticing a field is absent.
+	got, perEntry := entries.Maps[0]["cellPx"]
+	if !perEntry {
+		t.Fatalf("the entry carries no cellPx: %s", body)
+	}
+	if got != float64(64) {
+		t.Errorf("entry cellPx = %v, want the inherited campaign default 64", got)
+	}
+}
+
+// TestAMapsOwnCellPxOverridesTheCampaignDefault is the half the test above
+// cannot see, and the one Patrik's ruling is about: a map that declares its own
+// grid resolution reports THAT, while its neighbour in the same campaign keeps
+// inheriting. Two maps, one campaign, two answers — which is the whole point.
+func TestAMapsOwnCellPxOverridesTheCampaignDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	maps := map[string]*mapdef.Map{
+		// Declares nothing: inherits.
+		"attic": {ID: "attic", Name: "The Attic", GridW: 2, GridH: 2},
+		// Declares its own, drawn at twice the campaign's resolution.
+		"cellar": {ID: "cellar", Name: "The Cellar", GridW: 2, GridH: 2, CellPx: 128},
+	}
+	srv := httptest.NewServer(gateway.New(c, ids).WithMaps(maps).WithCellPx(64).Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/maps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		CellPx float64          `json:"cellPx"`
+		Maps   []map[string]any `json:"maps"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if got.CellPx != 64 {
+		t.Errorf("top-level cellPx = %v, want the campaign default 64", got.CellPx)
+	}
+	// Sorted by id, so attic is first.
+	if got.Maps[0]["id"] != "attic" || got.Maps[0]["cellPx"] != float64(64) {
+		t.Errorf("attic = %v, want it to inherit 64", got.Maps[0])
+	}
+	if got.Maps[1]["id"] != "cellar" || got.Maps[1]["cellPx"] != float64(128) {
+		t.Errorf("cellar = %v, want its own 128 — a map's declaration is what varies between an "+
+			"art set drawn at 64 and one drawn at 128", got.Maps[1])
+	}
+}
+
+// TestACampaignsOwnCellPxReachesTheClient is the other half: the number a
+// campaign DECLARED has to travel, or campaign.json is a file nothing reads.
+// Asserted through WithCellPx rather than the default, so a handler that
+// hard-coded 64 fails here while passing the test above.
+func TestACampaignsOwnCellPxReachesTheClient(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(gateway.New(c, ids).WithCellPx(32).Handler())
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/maps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if raw["cellPx"] != float64(32) {
+		t.Fatalf("cellPx = %v, want 32 — the campaign's own declaration, not the default", raw["cellPx"])
 	}
 }

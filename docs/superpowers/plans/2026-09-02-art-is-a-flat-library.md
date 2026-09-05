@@ -940,10 +940,20 @@ bytes — but the ruling now survives only as prose in
 `internal/gateway/metadata.go`, and `internal/artlib` pins the symlink half at
 the LOOKUP layer, never at a route. Re-establish each at the new route.
 
-**And one requirement has no pack precedent to copy.** The pack route was saved
-from serving a nested file only by net/http's single-segment `{file}` wildcard;
-nobody had to think about it, because a pack WAS a directory. `art/` is flat, so
-this is now a rule the route must enforce rather than a shape it inherits.
+**And one requirement has no pack precedent to copy — but NOT for the reason
+this paragraph originally gave.** It claimed the pack route was saved from
+serving a nested file by net/http's single-segment `{file}` wildcard. **Measured
+2026-09-05 and false:** the wildcard rejects the literal form
+(`/api/art/a/x.png` → 404) and passes the ENCODED one —
+`/api/art/pack-ish%2Fx.png` arrives at the handler with
+`PathValue("file") == "pack-ish/x.png"`, because the mux decodes `%2F` into the
+value after matching. So the pattern's independent contribution against a
+determined request is **zero**, and the pack route had the identical hole; it
+was never protected by its shape.
+
+The real guard is the name check, and it must be explicit. `art/` being flat
+does not make a subdirectory unreachable — only refusing a name that is not a
+plain art filename does.
 
 **The route MUST NOT serve a file inside a subdirectory**, and `os.OpenRoot`
 alone does not stop it: a root CONFINES but does not FLATTEN, and `fs.ValidPath`
@@ -1000,6 +1010,20 @@ in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
 - [ ] **Step 6: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
 
 ---
+
+**Before you install real sidecars, close one inherited defect.** Found by Task
+6's review, 2026-09-05, in Task 3's code: a sidecar declaring
+`"format_version": 0` returns `artlib.ErrFormatVersion`, so `mapdef.Resolve`
+**refuses the map** — and `composeServer` refuses the BOOT when a committed map
+names it. The message is neutral so no operator is misdirected, but a typo'd `0`
+is not "content newer than this server", and §4 reserves the one surviving
+refusal for exactly that case.
+
+It is the same absent-versus-zero shape fixed twice already — `mapJSON.Pack`
+(Task 5) and `campaigncfg`'s two fields (Task 6) — one directory over, and it
+has been harmless only because no real sidecar existed. **This task is what
+makes real sidecars exist.** Fix it here, with the `*int32` precedent both
+earlier fixes used.
 
 ### Task 8: Migrate the fixtures and the generator
 

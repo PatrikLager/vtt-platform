@@ -39,6 +39,54 @@ package mapdef
 // format_version for the same reason: one picture is named by many maps.
 const MapFormatVersion int32 = 1
 
+// MinCellPx and MaxCellPx bound a map's declared cell_px — how many pixels one
+// grid square of this map's art occupies.
+//
+// BORROWED FROM MapTool, which solves the same problem on the same object: grid
+// size lives on its Zone, clamped MIN_GRID_SIZE 9 to MAX_GRID_SIZE 350. The
+// bounds exist here for the reason theirs do — 0 and 100000 are not smaller and
+// larger squares, they are a file that cannot mean what it says.
+//
+// THE NUMBERS DELIBERATELY DIFFER FROM THEIRS, 8..1024 against 9..350, and the
+// divergence is written down so the next reader comparing the two does not
+// assume one is a typo:
+//
+//   - THE FLOOR IS ESSENTIALLY THEIRS. 8 against 9 is the same judgement about
+//     the same thing — below roughly a dozen pixels a square carries no tile
+//     detail at all — and 8 is chosen only because it is the power of two every
+//     art tool's export dialog already offers. Nothing rests on the one-pixel
+//     difference; either would refuse the same files.
+//   - THE CEILING IS THREE TIMES THEIRS, AND THAT IS THE REAL DIVERGENCE.
+//     MapTool's 350 is a RENDERING bound: it draws at gridSize * zoom every
+//     frame, so an enormous grid size is a real cost in a real window. Nothing
+//     in this renderer draws at native size — client/src/view/spectator.ts fits
+//     the whole scene into the pane and lets drawImage scale each piece — so a
+//     1024px art set costs a decode and nothing else. Our ceiling is therefore
+//     not doing MapTool's job; it exists to catch a typo (a stray zero, a value
+//     in some other unit) while leaving every resolution anyone actually ships
+//     art at comfortably inside. 1024 is four times the 256 high-DPI sets use
+//     and sixteen times the 64 default.
+//
+// IF THIS CLIENT EVER GAINS ZOOM AND DRAWS AT NATIVE SIZE, that reasoning
+// expires and the ceiling becomes a rendering bound like theirs — which is the
+// point at which their 350 stops being a divergence and starts being data.
+//
+// A VALUE OUTSIDE THEM IS REFUSED, NEVER CLAMPED INTO RANGE. Silently serving
+// 1024 to a file that says 100000 is the "ignore it and load anyway" answer this
+// format refuses everywhere else — see loadAs's own "pack" refusal, whose whole
+// argument is that a file meaning something else than it says draws the wrong
+// thing with nobody told.
+//
+// DUPLICATED IN internal/campaigncfg, which bounds the campaign-wide default by
+// the same pair and may not import this package (it is self-only, and a settings
+// reader has no business knowing the map format). cmd/vtt imports both and is
+// the one place that can see them at once: its
+// TestTheCellPxConstantsAgreeAcrossThePackagesThatCarryThem is the guard.
+const (
+	MinCellPx int32 = 8
+	MaxCellPx int32 = 1024
+)
+
 // Map is one fully-loaded, fully-validated map file (spec §4.1's two-layer
 // shape). Tiles and Overrides are BOTH keyed "x,y" (column then row; a comma
 // rather than a dot because a dot reads as a decimal) — deliberately at the
@@ -57,6 +105,27 @@ type Map struct {
 
 	ID, Name     string
 	GridW, GridH int32
+
+	// CellPx is how many pixels one grid square of THIS MAP's art occupies,
+	// bounded by MinCellPx..MaxCellPx above.
+	//
+	// ZERO MEANS UNDECLARED, and that is the field's most important state
+	// rather than a defensive default: every map in this repo declares none, and
+	// a caller holding the campaign-wide default (campaign.json's cell_px, via
+	// internal/campaigncfg) needs to know which maps are asking to inherit it.
+	// Load never invents a number here — an absent field stays 0, and only a
+	// declared one is carried.
+	//
+	// IT WAS A CAMPAIGN-LEVEL SETTING AND ONLY THAT until 2026-09-05
+	// (art-is-a-flat-library design spec §6, amended that day on Patrik's
+	// ruling). The original argument — "a grid is uniform... One number per
+	// campaign says that plainly" — is true of one MAP and false of a campaign:
+	// grid size is exactly what differs between an art set drawn at 64 and one
+	// drawn at 128, so the first time a DM installs both, a campaign-wide number
+	// is wrong for one of them. MapTool puts it on the Zone for the same reason.
+	// The campaign value stays, as the default a map inherits by declaring
+	// nothing.
+	CellPx int32
 
 	// Tiles declares the NATURE of every square: what it structurally IS,
 	// enforced by the engine (spec §3.2).

@@ -18,33 +18,81 @@ import { paint, shadeFog, strokeGrid, type ImageMap } from "./canvas";
 
 export const CELL = 44;
 
-// The pane is a FIXED size, independent of the scene's grid dimensions —
-// this is backlog T1/#19 (spec §1.4, §7): the old board was gridWidth*CELL
-// px tall (1408 for a 32x32 scene), so the page grew with the map and the
-// controls sat ~1450px down it, below every laptop fold. A 200x200 outdoor
-// map and a 10x10 room now lay out identically; the camera (fitCamera) is
-// what makes the whole scene visible inside whichever of the two binds.
-const PANE_W = 640;
-const PANE_H = 480;
+// THE PANE FOLLOWS THE WINDOW, and these two numbers are only what it falls
+// back to when nothing can be measured (2026-09-05).
+//
+// THEY WERE THE WHOLE ANSWER, and the reason is worth keeping because the
+// obvious "fix" is to go back to it. Before backlog T1/#19 the board was
+// gridWidth*CELL px tall — 1408 for a 32x32 scene — so the page GREW WITH THE
+// MAP and the controls sat ~1450px down it, below every laptop fold. Fixing
+// that with a constant made a 200x200 outdoor map and a 10x10 room lay out
+// identically, which was right, and made the board ignore a 27-inch display,
+// which was not.
+//
+// THE THIRD OPTION IS THE ONE TAKEN HERE: the size follows the CONTAINER —
+// neither the scene nor a constant. style.css gives .grid a width of 100% and a
+// height bounded by the VIEWPORT (never by the scene), so the board grows with
+// the window and can never push the controls down the page again; this file
+// then measures what the stylesheet actually produced. The camera (fitCamera)
+// keeps doing what it always did: make the whole scene visible inside whichever
+// axis binds.
+export const DEFAULT_PANE_W = 640;
+export const DEFAULT_PANE_H = 480;
+
+/**
+ * paneSize is the board's drawing size in CSS pixels: what the container was
+ * measured at, or the documented fallback.
+ *
+ * A MEASUREMENT OF ZERO IS NOT A SIZE. An element that is not in the document,
+ * not laid out yet, or hidden reports 0 for both — and happy-dom reports 0 for
+ * EVERY element, which is what keeps this whole suite's geometry deterministic
+ * (spectator-view.test.ts's own note). Taking a 0 literally would divide by zero
+ * inside fitCamera and turn every coordinate on the board into NaN.
+ *
+ * ALL OR NOTHING ACROSS THE TWO AXES, deliberately: a half-measured element is
+ * a laid-out-but-hidden one, and a pane 1000 wide and 0 tall is the same
+ * division by zero wearing one good number.
+ */
+export function paneSize(container: HTMLElement | null): { w: number; h: number } {
+  const w = container?.clientWidth ?? 0;
+  const h = container?.clientHeight ?? 0;
+  if (w > 0 && h > 0) return { w, h };
+  return { w: DEFAULT_PANE_W, h: DEFAULT_PANE_H };
+}
 
 // The default when app.ts has not (yet, or ever) supplied one: extras.images
-// is optional (a spectator view built directly in a test, say, rarely has a
-// live pack to load), and an empty map keeps the canvas honestly blank
-// rather than inventing a picture — canvas.ts's paint() already skips an
-// unresolved key rather than throwing (see its own test). pack-assets.ts
-// (Task 10) is what actually populates a real one, over HTTP from
-// GET /api/packs/{pack}/{file}; app.ts wires its result in as extras.images.
+// is optional (a spectator view built directly in a test, say, rarely has art
+// to load), and an empty map keeps the canvas honestly blank rather than
+// inventing a picture — canvas.ts's paint() already skips an unresolved key
+// rather than throwing (see its own test).
+//
+// TWO THINGS POPULATE A REAL ONE, and app.ts merges both into extras.images:
+// view/pack-assets.ts's loadStandardPackImages, from the client's own bundle at
+// "/std-pack/...", and view/art-assets.ts's loadArtImages, from the campaign's
+// flat art/ directory. This comment named a single per-pack route until
+// 2026-09-05; 2026-09-02-art-is-a-flat-library deleted the pack and split the
+// answer in two.
 const NO_IMAGES: ImageMap = {};
 
 /**
  * boardCamera is the ONE fit renderGrid uses -- for the canvas terrain, for
  * token discs, and for click resolution alike. Exported so a test can derive
- * the exact expected transform (via this, not a hand-copied PANE_W/PANE_H
- * pair) rather than duplicating the fit arithmetic and risking silent drift
- * from whatever this function actually computes.
+ * the exact expected transform (via this, not a hand-copied viewport pair)
+ * rather than duplicating the fit arithmetic and risking silent drift from
+ * whatever this function actually computes.
+ *
+ * THE VIEWPORT IS A PARAMETER since 2026-09-05, because the pane follows the
+ * window. It DEFAULTS to the documented fallback so every existing caller —
+ * and every geometry assertion in spectator-view.test.ts — keeps deriving the
+ * same numbers it always did.
  */
-export function boardCamera(width: number, height: number): Camera {
-  return fitCamera(width, height, CELL, PANE_W, PANE_H);
+export function boardCamera(
+  width: number,
+  height: number,
+  viewW: number = DEFAULT_PANE_W,
+  viewH: number = DEFAULT_PANE_H,
+): Camera {
+  return fitCamera(width, height, CELL, viewW, viewH);
 }
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
@@ -125,6 +173,12 @@ function renderGrid(
   // optional/defaulted parameters below it: TypeScript refuses a required
   // parameter after an optional one.
   doorsArmed: boolean,
+  // The board's drawing size in CSS pixels, measured by renderSpectator from
+  // the PREVIOUS frame's board (see its own comment) or falling back to the
+  // documented default. A parameter rather than a measurement taken here,
+  // because at this point the element this function builds is not in the
+  // document and has no size to read.
+  pane: { w: number; h: number },
   onCell?: (c: { x: number; y: number }) => void,
   // TEST-ONLY SEAM (review finding C4, 2026-08-16): how this function
   // obtains a 2D context. Defaults to the real canvas.getContext, which is
@@ -161,11 +215,13 @@ function renderGrid(
   // hardcode CELL instead of CELL * cam.scale unnoticed for as long as
   // nothing was drawn on the canvas to visibly disagree with it -- see the
   // backgroundSize assignment's own comment).
-  const cam = boardCamera(scene.GridWidth, scene.GridHeight);
+  const cam = boardCamera(scene.GridWidth, scene.GridHeight, pane.w, pane.h);
 
   const board = el("div", "grid");
-  // NO inline width/height keyed to the scene (T1/#19, see PANE_W/PANE_H
-  // above) -- the pane's size comes from style.css and stays fixed.
+  // NO inline width/height keyed to the SCENE (T1/#19, see DEFAULT_PANE_W
+  // above) -- the pane's size comes from style.css, which keys it to the
+  // WINDOW. That distinction is the whole of that backlog item: a board sized
+  // by its map grows the page, a board sized by its container does not.
   //
   // NO CSS BACKGROUND LATTICE EITHER: strokeGrid draws the grid on the canvas
   // below, through the camera. A CSS tiling cannot be made to agree with it,
@@ -183,8 +239,20 @@ function renderGrid(
   if (doorsArmed) board.classList.add("armed");
 
   const canvas = document.createElement("canvas");
-  canvas.width = PANE_W;
-  canvas.height = PANE_H;
+  // TWO SIZES, AND THEY ARE NOT THE SAME NUMBER. The BACKING STORE is in device
+  // pixels (CSS pixels times devicePixelRatio) and the CSS box stays in CSS
+  // pixels, or every line strokeGrid draws is resampled and the board is soft on
+  // any retina display. The context is then scaled by the same ratio below, so
+  // every planner goes on emitting CSS-pixel coordinates and none of them has to
+  // know a display ratio exists.
+  //
+  // Rounded, because a fractional backing store is not a thing a canvas has, and
+  // devicePixelRatio is 1.5 on plenty of Windows laptops.
+  const dpr = globalThis.devicePixelRatio || 1;
+  canvas.width = Math.round(pane.w * dpr);
+  canvas.height = Math.round(pane.h * dpr);
+  canvas.style.width = `${pane.w}px`;
+  canvas.style.height = `${pane.h}px`;
   board.appendChild(canvas);
 
   // Fit the WHOLE scene into the pane (spec §7: "always start seeing the
@@ -196,19 +264,25 @@ function renderGrid(
   // canvas.getContext.
   const ctx = getContext(canvas);
   if (ctx) {
-    const ops = planScene(st, sceneId, cam, CELL, PANE_W, PANE_H);
+    // ONE scale for the whole frame, before anything is drawn: from here down
+    // every coordinate is a CSS pixel, which is what the planners emit and what
+    // the click path (worldFromScreen, below) reads back out of a
+    // getBoundingClientRect. Without it a dpr-2 backing store draws the entire
+    // board into its own top-left quarter.
+    ctx.scale(dpr, dpr);
+    const ops = planScene(st, sceneId, cam, CELL, pane.w, pane.h);
     paint(ctx, ops, images);
     // THEN the fog, over the terrain it dims and under the lattice that
     // divides it (spec §6.1's order: terrain, fog, grid). Drawn before the
     // terrain it would be painted over and remembered ground would look lit;
     // drawn after the grid it would dim the lattice too, making a room you
     // remember harder to count for no gain.
-    shadeFog(ctx, planFog(st, sceneId, cam, CELL, PANE_W, PANE_H));
+    shadeFog(ctx, planFog(st, sceneId, cam, CELL, pane.w, pane.h));
     // AFTER the tiles, deliberately: the lattice divides the terrain, so it
     // belongs on top of it. Drawn first, every tile would paint over it and the
     // board would be uncountable again — which is exactly what happened to the
     // old CSS background-size lattice the moment canvas terrain arrived.
-    strokeGrid(ctx, planGrid(st, sceneId, cam, CELL, PANE_W, PANE_H));
+    strokeGrid(ctx, planGrid(st, sceneId, cam, CELL, pane.w, pane.h));
   }
 
   if (onCell) {
@@ -544,9 +618,20 @@ export function renderSpectator(
   // DM just made. A scene selector belongs with the DM console (T8).
   const sceneId = Object.keys(st.Scenes).sort().at(-1) ?? "";
 
+  // MEASURED FROM THE PREVIOUS FRAME'S BOARD, which is the only element in the
+  // document with the board's real size at this moment: the tree is rebuilt
+  // wholesale on every paint, so the one this call is about to create has not
+  // been laid out yet and reports nothing.
+  //
+  // IT IS NOT A FRAME BEHIND. .grid is fluid (style.css), so by the time a
+  // resize triggers a repaint the browser has already re-laid-out the OLD
+  // element to the NEW size — the measurement is current, and the first frame of
+  // all falls back to the documented default.
+  const pane = paneSize(root.querySelector<HTMLElement>(".grid"));
+
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, extras.onCell, extras.getContext),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, pane, extras.onCell, extras.getContext),
     renderFeed(buildFeed(log)),
     renderNotes(st),
     renderTicker(log),

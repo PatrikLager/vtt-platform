@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { fetchRuleset, fetchAdventures, fetchRulesetGuide, fetchAdventureGuide, fetchMe,
-  fetchJoinLink, fetchParticipants, fetchMaps } from "../src/metadata";
+  fetchJoinLink, fetchParticipants, fetchMaps, type MapsResponse } from "../src/metadata";
 
 function fakeAPI(routes: Record<string, { status?: number; body: unknown }>) {
   const seenAuth: string[] = [];
@@ -84,18 +84,28 @@ test("adventures decode into id/name pairs", async () => {
   }
 });
 
-test("maps decode with their pack reference, when they have one", async () => {
-  // The pack ref is the ONE thing pack-assets.ts needs from this route
-  // (id, name, cellPx) — asserted by field, not just presence, because a
-  // silently-dropped cellPx would still let a naive test pass while
-  // drawing every tile at the wrong scale.
+test("maps decode into id, name and geometry, and carry no container", async () => {
+  // THIS ASSERTED A PACK REFERENCE — id, name and cellPx, by field — until
+  // 2026-09-05, and by then no server could send one: Task 5 of
+  // 2026-09-02-art-is-a-flat-library deleted mapdef.Map.Pack and handleMaps
+  // dropped its packRefJSON with it. What the entry carries now is the map's own
+  // identity and geometry, which is what the DM console's picker needs and all
+  // it ever needed.
+  //
+  // ASSERTED ON THE RAW OBJECT for the "pack" half, because a typed decode
+  // cannot see a field the type has nowhere to put: TypeScript erases at
+  // runtime, so `maps[0].pack` on a MapMeta without the field is a compile
+  // error rather than a runtime observation, and JSON.parse keeps whatever the
+  // server sent. The server-side guard is
+  // internal/gateway's TestMapsListedForEveryRole, which makes the same
+  // assertion from the other end.
   const api = fakeAPI({
     "/api/maps": {
       body: {
+        cellPx: 64,
         maps: [
-          { id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9,
-            pack: { id: "cellar-basics", name: "Cellar Basics", cellPx: 64 } },
-          { id: "bare", name: "Bare Room", gridWidth: 2, gridHeight: 2 },
+          { id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9, cellPx: 128 },
+          { id: "bare", name: "Bare Room", gridWidth: 2, gridHeight: 2, cellPx: 64 },
         ],
       },
     },
@@ -103,10 +113,33 @@ test("maps decode with their pack reference, when they have one", async () => {
   try {
     const maps = await fetchMaps(api.base, "t");
     expect(maps).toHaveLength(2);
-    expect(maps[0]!.pack).toEqual({ id: "cellar-basics", name: "Cellar Basics", cellPx: 64 });
-    // A map that declares no pack (mapdef.Map.Pack "" is legal) must not
-    // fabricate one.
-    expect(maps[1]!.pack).toBeUndefined();
+    expect(maps[0]).toEqual({
+      id: "cellar", name: "The Sunken Cellar", gridWidth: 10, gridHeight: 9, cellPx: 128,
+    });
+    // A map's OWN resolution, already resolved by the server — two maps of one
+    // campaign may legitimately differ, which is Patrik's 2026-09-05 ruling.
+    expect(maps[1]!.cellPx).toBe(64);
+    expect((maps[1] as unknown as Record<string, unknown>)["pack"]).toBeUndefined();
+  } finally {
+    api.stop();
+  }
+});
+
+test("the campaign's cellPx rides beside the list, not on each entry", async () => {
+  // cellPx is a property of the CAMPAIGN (design spec §6), so it is read off the
+  // response rather than off a map. fetchMaps deliberately returns only the
+  // list — nothing in this renderer reads cellPx, and MapsResponse's own doc
+  // comment says at length why that is correct rather than an oversight — so
+  // this asserts the SHAPE the server sends, which is what a future reader
+  // would have to fetch to use it.
+  const api = fakeAPI({
+    "/api/maps": { body: { cellPx: 32, maps: [] } },
+  });
+  try {
+    const resp = await fetch(api.base + "/api/maps", { headers: { Authorization: "Bearer t" } });
+    const body = (await resp.json()) as MapsResponse;
+    expect(body.cellPx).toBe(32);
+    expect(body.maps).toEqual([]);
   } finally {
     api.stop();
   }

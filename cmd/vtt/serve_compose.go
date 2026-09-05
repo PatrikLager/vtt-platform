@@ -10,6 +10,7 @@ import (
 
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/campaigncfg"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -111,8 +112,16 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // loadMapsDir (maps.go) makes all of those calls, and since Task 7 of that
 // plan it is called UNCONDITIONALLY — the os.Stat(campaignPath/maps) guard
 // that used to stand in front of it is gone with the sibling packs/ tree, the
-// pack set and GET /api/packs/{pack}/{file}. Nothing serves art bytes until
-// that plan's Task 6 builds GET /api/art/{file}.
+// pack set and GET /api/packs/{pack}/{file}. Task 6 of that plan replaced that
+// last one with GET /api/art/{file}, served straight out of campaignPath/art by
+// the same WithArtDir wired below — so the campaign's own installed bytes reach
+// a browser again, and TestCampaignsArtServesEndToEnd (maps_e2e_test.go) is the
+// round trip that says so.
+//
+// campaignPath/campaign.json IS READ HERE TOO, first of everything, for its one
+// number (cell_px, design spec §6). Optional, defaulted, and refused loudly when
+// present and unreadable — see the call itself for why that is not art's
+// degrade ruling.
 //
 // campaignPath/art IS CHECKED AND WIRED HERE, unconditionally. THE THREE STEPS
 // HAVE THREE DIFFERENT SEVERITIES and that is the substance of it
@@ -144,6 +153,35 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // about a broken map before anyone connects — and what is added is only the
 // map that was not there yet.
 func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.Server, func() error, error) {
+	// campaign.json, and the ONE number in it (2026-09-02-art-is-a-flat-library
+	// design spec §6). The file is OPTIONAL and absence is the ordinary case —
+	// every campaign that exists has none — so campaigncfg.Load answers the
+	// documented default rather than erring, and a campaign keeps working
+	// untouched. An absent campaign DIRECTORY is the same answer, which is what
+	// lets this run before campaign.Open has created one.
+	//
+	// A PRESENT-BUT-UNREADABLE ONE STOPS THE BOOT, and that is deliberately NOT
+	// art's degrade ruling. Every art degrade exists because a DM at a browser
+	// cannot act on a filesystem path mid-session (§4); campaign.json has one
+	// reader and it is this line, with an operator at a terminal, so it gets a
+	// broken map's posture. Falling back to 64 would serve a campaign that
+	// declared 32 a grid it never asked for, with nothing said.
+	//
+	// READ FIRST, before anything is opened: it is the cheapest refusal
+	// available and it needs nothing open, so a typo in a settings file costs no
+	// SQLite handle and leaves nothing to undo. This comment said exactly that
+	// while the call sat third, after campaign.Open and identity.Open, closing
+	// both on the way out (review finding F3, 2026-09-05 — the comment described
+	// the code someone should write). Moving the call was the fix, because the
+	// sentence was the better design.
+	// TestABrokenCampaignJSONIsRefusedBeforeAnythingIsOpened is what keeps it
+	// here: it asserts no log.db exists after the refusal, which is the only
+	// observable this ordering has.
+	cfg, err := campaigncfg.Load(campaignPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("vtt serve: %w", err)
+	}
+
 	c, err := campaign.Open(campaignPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtt serve: open campaign: %w", err)
@@ -161,7 +199,9 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		return nil, nil, fmt.Errorf("vtt serve: open identity: %w", err)
 	}
 
-	gw := gateway.New(c, ids)
+	// The campaign's cell_px, read above before anything was opened.
+	gw := gateway.New(c, ids).WithCellPx(cfg.CellPx)
+
 	var rs *rules.Ruleset
 	if rulesetDir != "" {
 		rs, err = rules.Load(rulesetDir)

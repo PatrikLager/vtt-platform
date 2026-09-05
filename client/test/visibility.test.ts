@@ -352,6 +352,10 @@ function orderingCtx(calls: string[]): CanvasRenderingContext2D {
   return {
     fillStyle: "", strokeStyle: "", lineWidth: 0,
     save() {}, restore() {}, translate() {}, rotate() {},
+    // The per-frame device-pixel-ratio scale renderGrid applies (2026-09-05).
+    // A no-op here: this double is about the ORDER of terrain, fog and grid,
+    // and spectator-view.test.ts asserts the ratio and its position exactly.
+    scale() {},
     beginPath() {}, moveTo() {}, lineTo() {},
     drawImage() { calls.push("drawImage"); },
     fillRect() { calls.push("fillRect"); },

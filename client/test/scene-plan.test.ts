@@ -436,3 +436,113 @@ test("explored ground keyed past the declared grid is not fogged", () => {
     { x: 70, y: 27, w: 20, h: 20 },
   ]);
 });
+
+// --- an unresolved OBJECT is drawn from its kind (art-is-a-flat-library §4) --
+
+test("an object whose art did not resolve stays, and is planned from its KIND", () => {
+  // THE ASYMMETRY IS THE POINT. A tile that loses its art falls back to
+  // `std:<kind>/<material>` — tileImage's own second branch — so a degraded
+  // wall stays a wall and a degraded door stays a door for sight, movement and
+  // the door tool. An OBJECT HAS NO SUCH FALLBACK: its kind is an open
+  // descriptive label (contract SceneObject.kind: "no behaviour may be
+  // inferred from it"), so there is no std picture to reach for and never will
+  // be.
+  //
+  // Until this landed, objectImage returned `tile:${obj.Art}` unconditionally,
+  // so an empty Art produced the key "tile:" — which resolves to nothing, and
+  // canvas.ts painted its magenta missing-tile checkerboard over the object.
+  // That contradicts spec §4 in the words the server's own warning uses:
+  // "the object stays, drawn from its kind" (mapdef.ResolveObjectArt).
+  // Every degrade ruling on that branch was verified on tiles and assumed for
+  // objects; campaigns/example/maps/cellar.json names four object arts, so one
+  // corrupt sidecar painted checkerboards where the pillars are.
+  const st = newState();
+  st.Scenes["hall"] = {
+    ID: "hall",
+    Name: "Hall",
+    GridWidth: 4,
+    GridHeight: 4,
+    Tiles: {},
+    Objects: [
+      {
+        ObjectID: "o1",
+        Kind: "pillar",
+        X: 1,
+        Y: 1,
+        Width: 1,
+        Height: 1,
+        RotationDegrees: 0,
+        // Empty because mapdef.ResolveObjectArt could not resolve it — the
+        // object still ships, with its blocking intact (spec §4).
+        BlocksSight: true,
+        BlocksMove: true,
+        Art: "",
+      },
+    ],
+    OpenDoors: {},
+  };
+  const cam = fitCamera(4, 4, 44, 176, 176); // exact fit: scale 1, offset 0
+  const ops = planScene(st, "hall", cam, 44, 176, 176);
+
+  expect(ops).toHaveLength(1);
+  const op = ops[0]!;
+  // IT IS STILL PLANNED, at its own footprint: the object is a thing in the
+  // world before it is a picture, and dropping it would change what the room is.
+  expect(op.sx).toBe(44);
+  expect(op.sy).toBe(44);
+  expect(op.sw).toBe(44);
+  expect(op.sh).toBe(44);
+  // AND IT ASKS FOR NO PICTURE. "tile:" is the key that produced the
+  // checkerboard; an empty key is what tells canvas.ts this op never had one.
+  expect(op.image).toBe("");
+  expect(op.image).not.toBe("tile:");
+  // DRAWN FROM ITS KIND: the kind travels with the op, so the drawing layer
+  // makes no decision of its own about what to show.
+  expect(op.plain).toBe("pillar");
+});
+
+test("an object whose art DID resolve carries no plain fallback", () => {
+  // The other half, and the one that keeps the branch honest: `plain` present
+  // on a resolved object would send every object down the fallback path the
+  // moment canvas.ts checks it first.
+  const st = newState();
+  st.Scenes["hall"] = {
+    ID: "hall",
+    Name: "Hall",
+    GridWidth: 4,
+    GridHeight: 4,
+    Tiles: {},
+    Objects: [
+      {
+        ObjectID: "o1", Kind: "pillar", X: 0, Y: 0, Width: 1, Height: 1,
+        RotationDegrees: 0, BlocksSight: true, BlocksMove: true, Art: "pillar-stone",
+      },
+    ],
+    OpenDoors: {},
+  };
+  const cam = fitCamera(4, 4, 44, 176, 176);
+  const ops = planScene(st, "hall", cam, 44, 176, 176);
+  expect(ops[0]!.image).toBe("tile:pillar-stone");
+  expect(ops[0]!.plain).toBeUndefined();
+});
+
+test("a TILE never carries a plain fallback, because it already has one", () => {
+  // tileImage resolves an unoverridden square to `std:<kind>/<material>`, which
+  // the client's own bundled baseline answers — so a tile is never in the
+  // position an object is, and marking one `plain` would silently replace a
+  // real standard picture with a blank block.
+  const st = newState();
+  st.Scenes["hall"] = {
+    ID: "hall",
+    Name: "Hall",
+    GridWidth: 1,
+    GridHeight: 1,
+    Tiles: { "0,0": { Kind: "floor", Material: "earth", Art: "" } },
+    Objects: [],
+    OpenDoors: {},
+  };
+  const cam = fitCamera(1, 1, 44, 44, 44);
+  const ops = planScene(st, "hall", cam, 44, 44, 44);
+  expect(ops[0]!.image).toBe("std:floor/earth");
+  expect(ops[0]!.plain).toBeUndefined();
+});

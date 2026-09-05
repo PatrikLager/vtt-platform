@@ -623,3 +623,341 @@ func TestACampaignWhoseArtDeclaresANewerFormatRefusesToBoot(t *testing.T) {
 			"server, and nothing else in the message says which", said)
 	}
 }
+
+// --- 2026-09-02-art-is-a-flat-library Task 6 --------------------------------
+
+// TestCampaignsArtServesEndToEnd is the round trip TestCampaignsMapsAndPacksServeEndToEnd's
+// pack half used to make and nothing has made since Task 7 deleted it: a
+// campaign's OWN INSTALLED BYTES coming back over a real listener, through a
+// real composeServer, from a real directory on disk.
+//
+// IT IS NOT REDUNDANT WITH internal/gateway's route tests. Those build a
+// gateway.Server by hand and hand it an art directory, so they prove what the
+// HANDLER does; this proves that composeServer wires campaignPath/art to it at
+// all. That distinction is exactly the one design spec §1's defect lived in —
+// the pack load was gated on maps/ existing, and no gateway fixture could see
+// it, because a constructed Server has whatever the test handed it and no boot
+// order at all.
+//
+// NO maps/ HERE, deliberately, for the same reason: a campaign with art and no
+// map yet is §1's own case, and art must be reachable in it.
+func TestCampaignsArtServesEndToEnd(t *testing.T) {
+	campaignPath := t.TempDir()
+	artDir := filepath.Join(campaignPath, "art")
+	if err := os.MkdirAll(artDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(artDir, "masonry-1.png"), "the campaign's own installed bytes")
+	writeFile(t, filepath.Join(artDir, "masonry-1.json"),
+		`{"format_version":1,"kind":"wall","material":"stone"}`)
+
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err != nil {
+		t.Fatalf("composeServer with art installed and no maps/: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := closeFn(); err != nil {
+			t.Errorf("closeFn: %v", err)
+		}
+	})
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	base := "http://" + ln.Addr().String()
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	if err := waitForHealthz(base, 3*time.Second); err != nil {
+		t.Fatalf("healthz never became ready: %v", err)
+	}
+
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) (int, []byte) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, base+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, body
+	}
+
+	code, body := get("/api/art/masonry-1.png")
+	if code != http.StatusOK {
+		t.Fatalf("/api/art/masonry-1.png = %d (%s), want 200 — composeServer must wire "+
+			"campaignPath/art to the route, and it must not be gated on maps/ existing", code, body)
+	}
+	if string(body) != "the campaign's own installed bytes" {
+		t.Fatalf("body = %q, want the installed file's own bytes", body)
+	}
+
+	// Installed DURING the session, with nothing restarted and nothing told to
+	// reload (design spec §3.6/§10 criterion 4).
+	writeFile(t, filepath.Join(artDir, "earth-1.png"), "installed while the server was running")
+	if code, body := get("/api/art/earth-1.png"); code != http.StatusOK ||
+		string(body) != "installed while the server was running" {
+		t.Fatalf("mid-session install: %d %q — art installed while the server runs must be served "+
+			"with no restart", code, body)
+	}
+}
+
+// TestTheCampaignsDeclaredCellPxReachesTheClient is campaign.json's own end-to-
+// end proof: the file is optional (design spec §6), so a campaign that DOES
+// write one has to see its number arrive, or nothing distinguishes the file
+// from a file nobody reads.
+//
+// Both halves in one test on purpose — a default-only assertion passes against
+// a server that hard-codes 64 and never opens campaign.json at all.
+func TestTheCampaignsDeclaredCellPxReachesTheClient(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		file string
+		want float64
+	}{
+		{"no campaign.json at all", "", 64},
+		{"a campaign that declares its own grid", `{"format_version":1,"cell_px":32}`, 32},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			campaignPath := t.TempDir()
+			if tc.file != "" {
+				writeFile(t, filepath.Join(campaignPath, "campaign.json"), tc.file)
+			}
+			srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+			if err != nil {
+				t.Fatalf("composeServer: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := closeFn(); err != nil {
+					t.Errorf("closeFn: %v", err)
+				}
+			})
+			ln, err := net.Listen("tcp", srv.Addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := "http://" + ln.Addr().String()
+			go func() { _ = srv.Serve(ln) }()
+			t.Cleanup(func() { _ = srv.Close() })
+			if err := waitForHealthz(base, 3*time.Second); err != nil {
+				t.Fatalf("healthz never became ready: %v", err)
+			}
+			ids, err := identity.Open(campaign.LogPath(campaignPath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ids.Close()
+			tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequest(http.MethodGet, base+"/api/maps", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+tok)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("decode: %v (body %s)", err, body)
+			}
+			if got["cellPx"] != tc.want {
+				t.Fatalf("cellPx = %v, want %v (body %s)", got["cellPx"], tc.want, body)
+			}
+		})
+	}
+}
+
+// TestAMapsOwnCellPxSurvivesTheWholeBootPath is the per-map half of the ruling,
+// through the REAL composeServer: a map file that declares cell_px is loaded by
+// mapdef's boot walk, carried on the *Map the gateway holds, and reported on its
+// own /api/maps entry — while a sibling that declares nothing reports the
+// campaign's. Neither the mapdef unit test nor the gateway fixture can see that
+// chain: one stops at the *Map and the other starts from one handed in.
+func TestAMapsOwnCellPxSurvivesTheWholeBootPath(t *testing.T) {
+	campaignPath := t.TempDir()
+	writeFile(t, filepath.Join(campaignPath, "campaign.json"), `{"format_version":1,"cell_px":48}`)
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(mapsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(mapsDir, "attic.json"), `{"format_version":1,"id":"attic",
+		"name":"The Attic","grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"}}`)
+	writeFile(t, filepath.Join(mapsDir, "cellar.json"), `{"format_version":1,"id":"cellar",
+		"name":"The Cellar","grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":128}`)
+
+	srv, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err != nil {
+		t.Fatalf("composeServer: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := closeFn(); err != nil {
+			t.Errorf("closeFn: %v", err)
+		}
+	})
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "http://" + ln.Addr().String()
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	if err := waitForHealthz(base, 3*time.Second); err != nil {
+		t.Fatalf("healthz never became ready: %v", err)
+	}
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	tok, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/api/maps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		CellPx float64          `json:"cellPx"`
+		Maps   []map[string]any `json:"maps"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, body)
+	}
+	if got.CellPx != 48 {
+		t.Errorf("top-level cellPx = %v, want the campaign's declared 48", got.CellPx)
+	}
+	if len(got.Maps) != 2 {
+		t.Fatalf("got %d maps, want 2 (body %s)", len(got.Maps), body)
+	}
+	// Sorted by id: attic, then cellar.
+	if got.Maps[0]["cellPx"] != float64(48) {
+		t.Errorf("attic cellPx = %v, want the campaign's 48 by inheritance", got.Maps[0]["cellPx"])
+	}
+	if got.Maps[1]["cellPx"] != float64(128) {
+		t.Errorf("cellar cellPx = %v, want its own 128", got.Maps[1]["cellPx"])
+	}
+}
+
+// TestAMapDeclaringAnImpossibleCellPxStopsTheBoot keeps the map-format refusal
+// reachable where an operator reads it. A map file is loaded at boot and fails
+// loud there, exactly as every other malformed map field does — this is a MAP
+// error, not an art one, so §4's degrade ruling does not reach it.
+func TestAMapDeclaringAnImpossibleCellPxStopsTheBoot(t *testing.T) {
+	campaignPath := t.TempDir()
+	mapsDir := filepath.Join(campaignPath, "maps")
+	if err := os.MkdirAll(mapsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(mapsDir, "cellar.json"), `{"format_version":1,"id":"cellar",
+		"name":"The Cellar","grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},"cell_px":100000}`)
+
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err == nil {
+		if closeErr := closeFn(); closeErr != nil {
+			t.Error(closeErr)
+		}
+		t.Fatal("a map declaring cell_px 100000 started a server")
+	}
+	if !strings.Contains(err.Error(), "cell_px") {
+		t.Fatalf("boot refusal = %q, want it to name the field", err)
+	}
+}
+
+// TestABrokenCampaignJSONIsRefusedBeforeAnythingIsOpened pins the ORDER of
+// composeServer's first two acts, which is a claim its own comment made and its
+// code did not (review finding F3, 2026-09-05): the call sat after
+// campaign.Open and identity.Open, under a sentence saying it was read "before
+// any handle-closing work below has to be undone, and before anything else
+// touches the campaign".
+//
+// THE ORDER IS WORTH PINNING RATHER THAN JUST THE REFUSAL. A config refusal
+// needs nothing open, so reading it first means a campaign.json with a typo in
+// it costs the operator nothing — no SQLite file created, no identity schema
+// migrated, nothing to undo. Reading it third means every boot against a broken
+// settings file opens two handles and closes them again, and the "best-effort"
+// close of a handle nobody wanted is a failure mode invented by ordering alone.
+//
+// log.db IS THE OBSERVABLE, and it is the campaign's own (campaign.LogPath):
+// campaign.Open creates the directory and the store, so its absence after a
+// refusal is the proof that the refusal came first. A test asserting only the
+// error passes with the call anywhere at all.
+func TestABrokenCampaignJSONIsRefusedBeforeAnythingIsOpened(t *testing.T) {
+	campaignPath := t.TempDir()
+	writeFile(t, filepath.Join(campaignPath, "campaign.json"), `{"format_version":1,"cell_px":`)
+
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err == nil {
+		if closeErr := closeFn(); closeErr != nil {
+			t.Error(closeErr)
+		}
+		t.Fatal("a campaign whose campaign.json cannot be read started a server")
+	}
+	if _, statErr := os.Stat(campaign.LogPath(campaignPath)); statErr == nil {
+		t.Fatalf("%s exists after the refusal — the campaign log was opened for a boot that was "+
+			"never going to happen, which is the ordering composeServer's own comment claims it "+
+			"has", campaign.LogPath(campaignPath))
+	}
+}
+
+// TestABrokenCampaignJSONStopsTheBoot pins campaigncfg's strict-at-boot posture
+// where it actually binds. The file has exactly one server-side reader and it
+// is this one, with an operator at a terminal — the same posture a broken MAP
+// already gets here, and deliberately NOT art's degrade ruling, which exists
+// because a DM in a browser cannot act on a filesystem path (spec §4).
+//
+// Booting on the default instead would leave a campaign that DECLARED 32 being
+// served 64 with nothing said, which is the silence §4's warning channel exists
+// to prevent, arrived at from the other direction.
+func TestABrokenCampaignJSONStopsTheBoot(t *testing.T) {
+	campaignPath := t.TempDir()
+	writeFile(t, filepath.Join(campaignPath, "campaign.json"), `{"format_version":1,"cell_px":`)
+
+	_, closeFn, err := composeServer(campaignPath, "127.0.0.1:0", "", "")
+	if err == nil {
+		if closeErr := closeFn(); closeErr != nil {
+			t.Error(closeErr)
+		}
+		t.Fatal("a campaign whose campaign.json cannot be read started a server; the operator " +
+			"is at a terminal and can fix the file, and a silent fallback to the default would " +
+			"serve a grid the campaign never declared")
+	}
+	if !strings.Contains(err.Error(), "campaign.json") {
+		t.Fatalf("boot refusal = %q, want it to name campaign.json", err)
+	}
+}

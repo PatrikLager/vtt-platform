@@ -48,7 +48,15 @@ type mapJSON struct {
 	// literal control character inside a string — so the message reads
 	// byte-identically to the `*string` version for every input that reached
 	// it, and reads `null` or `5` for the ones that did not.
-	Pack       json.RawMessage   `json:"pack"`
+	Pack json.RawMessage `json:"pack"`
+	// CellPx is a json.RawMessage for the reason Pack above is, minus the
+	// refusal: PRESENCE is what decides. A plain int32 cannot tell an absent
+	// cell_px from an explicit {"cell_px": 0}, so "an undeclared map inherits
+	// the campaign default" and "zero pixels is refused" would be one branch
+	// pretending to be two — and a *int32 only moves the hole, since JSON null
+	// unmarshals into a pointer as nil and would read as absent. Raw bytes
+	// decide nothing until loadAs decides.
+	CellPx     json.RawMessage   `json:"cell_px"`
 	Tiles      map[string]string `json:"tiles"`
 	Overrides  map[string]string `json:"overrides"`
 	Objects    []ObjectJSON      `json:"objects"`
@@ -176,6 +184,26 @@ func loadAs(path, display string) (*Map, error) {
 			raw.Pack))
 	}
 
+	// cell_px, when the map declares one (art-is-a-flat-library design spec §6 as
+	// amended 2026-09-05). Checked HERE, right after the two refusals about what
+	// the file IS and before the geometry, because it is a property of the whole
+	// map rather than of any square — and refused rather than clamped, for the
+	// reason MinCellPx's own doc comment gives.
+	var cellPx int32
+	if raw.CellPx != nil {
+		if err := json.Unmarshal(raw.CellPx, &cellPx); err != nil {
+			return nil, fieldErr(display, "cell_px", fmt.Sprintf(
+				"must be a whole number of pixels between %d and %d: %v",
+				MinCellPx, MaxCellPx, err))
+		}
+		if cellPx < MinCellPx || cellPx > MaxCellPx {
+			return nil, fieldErr(display, "cell_px", fmt.Sprintf(
+				"is %d; one grid square of art is between %d and %d pixels. Leave the field out "+
+					"to use the campaign's own cell_px (campaign.json), which is what every map "+
+					"that declares nothing does", cellPx, MinCellPx, MaxCellPx))
+		}
+	}
+
 	if raw.GridWidth < 1 {
 		return nil, fieldErr(display, "grid_width", fmt.Sprintf("must be >= 1, got %d", raw.GridWidth))
 	}
@@ -226,6 +254,7 @@ func loadAs(path, display string) (*Map, error) {
 		Name:          raw.Name,
 		GridW:         raw.GridWidth,
 		GridH:         raw.GridHeight,
+		CellPx:        cellPx,
 		Tiles:         raw.Tiles,
 		Overrides:     raw.Overrides,
 		Objects:       objects,

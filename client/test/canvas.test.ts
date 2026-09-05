@@ -3,6 +3,7 @@ import {
   fogInk,
   missingTileColors,
   paint,
+  plainObjectColors,
   shadeFog,
   strokeGrid,
   type ImageMap,
@@ -61,7 +62,7 @@ import {
  */
 function recorder(): { calls: string[]; ctx: CanvasRenderingContext2D } {
   const calls: string[] = [];
-  const pen = { fillStyle: "", strokeStyle: "", lineWidth: 0 };
+  const pen = { fillStyle: "", strokeStyle: "", lineWidth: 0, font: "", textAlign: "", textBaseline: "" };
   const ctx = {
     get fillStyle(): string {
       return pen.fillStyle;
@@ -113,6 +114,35 @@ function recorder(): { calls: string[]; ctx: CanvasRenderingContext2D } {
     },
     drawImage(img: unknown, dx: number, dy: number, dw: number, dh: number): void {
       calls.push(`drawImage(${(img as { tag: string }).tag},${dx},${dy},${dw},${dh})`);
+    },
+    // The four members drawPlainObject adds (art-is-a-flat-library Task 6).
+    // font, textAlign and textBaseline are PROPERTIES, so they are recorded as
+    // assignments for the reason the doc comment above gives at length: the
+    // label's size and its centring are only ever observable as a write
+    // happening between two other calls.
+    get font(): string {
+      return pen.font;
+    },
+    set font(v: string) {
+      pen.font = v;
+      calls.push(`font=${v}`);
+    },
+    get textAlign(): string {
+      return pen.textAlign;
+    },
+    set textAlign(v: string) {
+      pen.textAlign = v;
+      calls.push(`textAlign=${v}`);
+    },
+    get textBaseline(): string {
+      return pen.textBaseline;
+    },
+    set textBaseline(v: string) {
+      pen.textBaseline = v;
+      calls.push(`textBaseline=${v}`);
+    },
+    fillText(text: string, x: number, y: number, maxWidth?: number): void {
+      calls.push(`fillText(${text},${x},${y},${maxWidth})`);
     },
   } as unknown as CanvasRenderingContext2D;
 
@@ -388,4 +418,89 @@ test("an ImageMap key is used exactly as scene-plan emitted it, suffix and all",
   };
   paint(ctx, [{ image: "std:door/wood/open", sx: 0, sy: 0, sw: 48, sh: 16, rot: 0 }], images);
   expect(calls).toContain("drawImage(open-door,-24,-8,48,16)");
+});
+
+// --- an object with no picture is drawn from its KIND, never marked missing --
+
+test("an op carrying `plain` draws a plain block labelled with the kind, and NO magenta", () => {
+  // THE DEFECT THIS CLOSES. objectImage used to return `tile:${obj.Art}` for
+  // every object, so an object whose art did not resolve produced the key
+  // "tile:" — which resolves to nothing, and landed here in the `else` branch
+  // that paints the magenta missing-tile checkerboard. Spec §4 says the
+  // opposite in the words the server's own warning uses: "the object stays,
+  // drawn from its kind" (mapdef.ResolveObjectArt).
+  //
+  // THE TWO ARE DIFFERENT CLAIMS AND MUST LOOK DIFFERENT. The checkerboard says
+  // "a picture was asked for and is not here" — a tile override that resolved
+  // and whose file will not load. `plain` says "no picture was ever asked for",
+  // which is an ordinary, warned-about state a DM can fix by installing art.
+  // A DM told "broken" about art that is merely not installed goes looking for
+  // a corrupt file, once per pillar.
+  //
+  // ASSERTED AS THE WHOLE CALL LOG, in order, including the absence of any
+  // magenta: an implementation that drew the block AND the marker would satisfy
+  // a "the block was drawn" assertion.
+  const { calls, ctx } = recorder();
+  paint(ctx, [{ ...OP, image: "", plain: "pillar" }], {});
+  expect(calls).toEqual([
+    "save",
+    "translate(54,78)",
+    "rotate(0.7)",
+    `fillStyle=${"#5b6472"}`,
+    "fillRect(-24,-8,48,16)",
+    `fillStyle=${"#eef1f5"}`,
+    "font=8px system-ui, sans-serif",
+    "textAlign=center",
+    "textBaseline=middle",
+    "fillText(pillar,0,0,38)",
+    "restore",
+  ]);
+  expect(calls.some((c) => c.includes(missingTileColors[0]))).toBe(false);
+});
+
+test("the label grows with the footprint, so a two-square object is not lettered like a one-square one", () => {
+  // The font size is derived from the SHORTER side of the footprint, which is
+  // the only side that can clip a centred line of text vertically. Two ops with
+  // different shapes, so a hard-coded size — or one derived from the wrong side
+  // — cannot pass both.
+  const { calls, ctx } = recorder();
+  paint(ctx, [{ image: "", plain: "brazier", sx: 0, sy: 0, sw: 90, sh: 36, rot: 0 }], {});
+  expect(calls).toContain("font=12px system-ui, sans-serif");
+  expect(calls).toContain("fillText(brazier,0,0,72)");
+});
+
+test("the plain-object colours are the two the block actually draws with", () => {
+  // Exported for the same reason missingTileColors is, and asserted against
+  // literals for the same reason: a constant compared against itself cannot
+  // fail, so blanking the array would leave an interpolating caller green.
+  expect(plainObjectColors).toEqual(["#5b6472", "#eef1f5"]);
+  // AND THEY ARE NOT THE MISSING-TILE PAIR. The whole point is that a DM can
+  // tell the two states apart on sight.
+  expect(plainObjectColors[0]).not.toBe(missingTileColors[0]);
+  expect(plainObjectColors[1]).not.toBe(missingTileColors[1]);
+});
+
+test("an op with `plain` whose image DOES resolve draws the picture, not the block", () => {
+  // The precedence, and the arm that would silently blank every object the day
+  // `plain` started being set unconditionally: a resolved picture always wins.
+  const { calls, ctx } = recorder();
+  paint(ctx, [{ ...OP, plain: "pillar" }], { "tile:a": ART });
+  expect(calls).toEqual([
+    "save",
+    "translate(54,78)",
+    "rotate(0.7)",
+    "drawImage(art,-24,-8,48,16)",
+    "restore",
+  ]);
+});
+
+test("an op with NO `plain` whose image is missing still gets the magenta marker", () => {
+  // The other side of the precedence: a tile override that resolved and whose
+  // file did not load is still "a picture was asked for and is not here", and
+  // must keep saying so. Without this, routing everything through the plain
+  // block would delete spec §7's marker outright.
+  const { calls, ctx } = recorder();
+  paint(ctx, [OP], {});
+  expect(calls).toContain(`fillStyle=${missingTileColors[0]}`);
+  expect(calls.some((c) => c.startsWith("fillText"))).toBe(false);
 });

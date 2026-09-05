@@ -101,6 +101,14 @@ components:
   # cmd/vtt, internal/adventure) adds the edge INTO artlib, never the
   # reverse — the same one-way shape mapdef/adventure already established.
   artlib:   { in: internal/artlib }
+  # internal/campaigncfg (art-is-a-flat-library Task 6, design spec §6): reads
+  # campaign.json, the one settings file a campaign directory may hold, for the
+  # one number in it (cell_px). Self-only for the same reason artlib is: it is a
+  # file reader with no opinion about anything else, so every task that wires it
+  # in adds the edge INTO it. cmd/vtt is the only such caller today — ADR-008
+  # gives cmd the filesystem — and internal/gateway deliberately does NOT read
+  # this package: WithCellPx takes a number, not a path.
+  campaigncfg: { in: internal/campaigncfg }
   cmd:      { in: cmd/** }
 deps:
   store:    { mayDependOn: [contract, store] }
@@ -158,7 +166,17 @@ deps:
   # sight.VisibleFrom over the folded scene. Declared with the package rather
   # than left for that task, so arch-lint never blocks the wiring on a
   # forgotten dependency-graph update.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight] }
+  #
+  # artlib added art-is-a-flat-library Task 6: GET /api/art/{file}
+  # (metadata.go's handleArtFile) checks the requested name with
+  # artlib.IsArtFileName before opening anything — the SAME rule a map load
+  # resolves by, rather than a second copy of the kebab-case id rule living in
+  # this package and free to drift from the one that decides whether art renders
+  # at all. It is also the guard that keeps art/ flat over that route, since
+  # os.OpenRoot confines without flattening. Predicted in writing by artlib's own
+  # components: entry above, which names the gateway among the callers that would
+  # add the edge INTO artlib; artlib stays self-only, so no cycle is expressible.
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight, artlib] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
@@ -253,6 +271,10 @@ deps:
   # a wire message; the caller that resolves a name into art decides what
   # to build), no engine, no mapdef. See its components: entry above.
   artlib:   { mayDependOn: [artlib] }
+  # internal/campaigncfg: self-only, exactly like artlib and for the same reason.
+  # It reads one JSON file and returns a struct of plain numbers — no contract
+  # (it builds no wire message), no gateway (it knows nothing about a server).
+  campaigncfg: { mayDependOn: [campaigncfg] }
   # rules added Task 6: `vtt serve --ruleset` and `vtt mcp --ruleset` both
   # call rules.Load directly (cmd composes; internal/mcp itself still may
   # NOT import rules — its Config carries only the already-loaded guide
@@ -283,4 +305,10 @@ deps:
   # actually wires it rather than pre-declared, the same as-needed discipline
   # rules and adventure followed. artlib stays self-only, so no cycle is
   # expressible.
-  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef, artlib] }
+  #
+  # campaigncfg added art-is-a-flat-library Task 6: composeServer reads
+  # campaignPath/campaign.json for cell_px and hands the NUMBER to
+  # gateway.WithCellPx, and `vtt art install` reads the same file to warn when an
+  # installed picture is not a whole number of cell_px squares. cmd owns the
+  # filesystem (ADR-008), which is why this edge is here and not on gateway.
+  cmd:      { mayDependOn: [gateway, identity, campaign, contract, cmd, harness, mcp, rules, adventure, mapdef, artlib, campaigncfg] }

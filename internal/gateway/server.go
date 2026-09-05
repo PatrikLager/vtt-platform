@@ -257,9 +257,18 @@ type Server struct {
 	// never do.
 	artDir string
 
-	// mapsMu guards maps, and only maps. mapsDir and artDir are set once by a
-	// With* call before the server serves anything and never written again, so
-	// they are read without it (each says so at its own field above).
+	// cellPx is how many pixels one grid square of this campaign's art
+	// occupies, reported on GET /api/maps and set via WithCellPx. New fills it
+	// with DefaultCellPx, so a Server nobody configured still reports the
+	// documented number rather than a zero that would read as "no grid".
+	//
+	// Read without a lock for the same reason mapsDir and artDir are: a
+	// configuration call sets it before the server serves anything.
+	cellPx int32
+
+	// mapsMu guards maps, and only maps. mapsDir, artDir and cellPx are set
+	// once by a With* call before the server serves anything and never written
+	// again, so they are read without it (each says so at its own field above).
 	mapsMu sync.RWMutex
 }
 
@@ -274,6 +283,7 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 		pingInterval: gatewayPingInterval, pingTimeout: gatewayPingTimeout,
 		presence:    newPresenceRegistry(),
 		encodeFrame: EncodeFrame,
+		cellPx:      DefaultCellPx,
 	}
 }
 
@@ -405,6 +415,25 @@ func (s *Server) WithArtDir(dir string) *Server {
 	return s
 }
 
+// WithCellPx tells s how many pixels one grid square of this campaign's art
+// occupies — campaign.json's cell_px, read by cmd/vtt (ADR-008: cmd owns the
+// filesystem) through internal/campaigncfg and handed over as a number, which
+// is why this package takes an int32 and never a path.
+//
+// It was a PACK field until 2026-09-02-art-is-a-flat-library, served to the
+// client as pack.cellPx on every /api/maps entry. Design spec §6 rehomes it to
+// the campaign because a grid is uniform: art pieces at differing native
+// resolutions on the same board is a rendering problem, not a capability, and
+// one number per campaign says so.
+//
+// Boot time only as a CONFIGURATION call, like every other With* method:
+// mutates s in place, so it is not safe to call concurrently with s already
+// serving traffic.
+func (s *Server) WithCellPx(px int32) *Server {
+	s.cellPx = px
+	return s
+}
+
 // Handler returns the http.Handler routing /healthz and /ws (spec §3).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -424,6 +453,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 	mux.HandleFunc("GET /api/maps", s.handleMaps)
+	// The campaign's own art bytes. SINGLE-SEGMENT {file} DELIBERATELY — see
+	// handleArtFile, where the reason is written down: net/http's wildcard does
+	// not match across "/", and art/ is flat.
+	mux.HandleFunc("GET /api/art/{file}", s.handleArtFile)
 
 	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
 	// the most specific pattern, so the explicit routes above always win — a

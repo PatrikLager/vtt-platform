@@ -49,16 +49,51 @@ file into the campaign's `maps/`, restart, and it is servable.
 campaign — one map, `cellar.json`, a small room with real cover (pillars,
 crates, an interior wall and a door).
 
-**Art is mid-migration and the demo campaign currently ships none.** A map's
-`overrides` name art by filename in one flat `<campaign>/art/` directory
-(`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`), and a
-name that resolves to nothing costs its square's picture and one warning rather
-than the map — so `cellar.json` loads and draws from the built-in tile
-vocabulary today. Packs, `<campaign>/packs/` and
-`GET /api/packs/{pack}/{file}` were deleted by Task 7 of that plan;
-`GET /api/art/{file}` (Task 6) and `campaigns/example/art/` (Task 8) are what
-replace them. `tools/genmappack` still holds the drawing code the demo art is
-generated from — see that package's own doc comment.
+**Art lives in one flat directory, and the demo campaign does not ship any
+yet.** A map's `overrides` and its objects' `art` name art by FILENAME in
+`<campaign>/art/` — the filename stem is the id, there are no subfolders, and
+any map may use any installed piece
+(`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`). A name
+that resolves to nothing costs its square's picture and one warning rather than
+the map, so `cellar.json` loads and draws from the built-in tile vocabulary
+today. Packs, `<campaign>/packs/` and their route were deleted by Task 7 of that
+plan; `campaigns/example/art/` arrives with Task 8. `tools/genmappack` still
+holds the drawing code the demo art is generated from — see that package's own
+doc comment.
+
+Installing art is copying files in, and `cp` is a supported way to do it. The
+convenience is:
+
+```
+vtt art install --campaign my-campaign path/to/masonry-1.png path/to/masonry-1.json
+```
+
+which refuses a directory (`art/` is flat), refuses a filename already installed
+unless you pass `--force`, and validates every sidecar before it lands — so a
+malformed one is caught with you holding the file rather than at the table. A
+picture needs no sidecar to be used as an object; a square's art wants one, to
+say what kind of square it is. The client fetches each piece over
+`GET /api/art/{file}`.
+
+**`cell_px` belongs to the MAP, and the campaign supplies the default.** A map
+file may declare `"cell_px": 128` — how many pixels one grid square of ITS art
+occupies — and a campaign holding one map drawn at 64 and another at 128 is the
+case that placement exists for. Values are bounded 8..1024 and a file outside
+that is refused by name rather than quietly clamped.
+
+`<campaign>/campaign.json` is OPTIONAL and holds the default a map inherits by
+declaring nothing, which is every map today:
+
+```json
+{ "format_version": 1, "cell_px": 64 }
+```
+
+`GET /api/maps` reports each map's resolved value beside the campaign default.
+`vtt art install` warns when an installed picture is not a whole number of the
+campaign default's squares — it is handed files rather than a map, so it cannot
+know which map you meant, and it says so. The renderer scales art to the board
+either way, so this is about a board that mixes resolutions rather than about art
+that will not draw.
 
 `vtt serve --campaign` writes a log and identity state into whatever
 directory it opens (`campaign.Open`'s own doc comment), so copy it rather
