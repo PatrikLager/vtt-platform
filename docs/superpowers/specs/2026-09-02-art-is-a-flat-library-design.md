@@ -398,18 +398,27 @@ Campaigns in this repo are the only ones that exist, so migration is a rewrite
 of `campaigns/example/` and any scenario fixture, not a compatibility layer.
 
 **There is no compatibility layer**, and none is added later. A map carrying a
-`"pack"` field is refused with a message naming the field and pointing at
-`art/`. Silently ignoring it would load a map whose art references were written
-against a namespace that no longer exists, and draw the wrong thing.
+`"pack"` field is refused, by `mapdef.Load`'s strict decoding — `json: unknown
+field "pack"`, and the same for the field under any rename. Silently ignoring it
+would load a map whose art references were written against a namespace that no
+longer exists, and draw the wrong thing.
 
-**The same rule binds an ADVENTURE bundle**, added 2026-09-04 with Task 7. An
-adventure carried its own embedded art at `<adventure>/tiles/pack.json`; that
-becomes a flat `<adventure>/art/` read by the same `artlib` rooted at the
-bundle. A bundle still shipping `tiles/pack.json` is refused by name, pointing
-at `art/`, for exactly the reason the map rule exists: deleting the loader
-without the refusal would let an old bundle load **silently with its art gone**,
-which is the failure the map refusal was written to prevent, one directory over.
-Two roots, one mechanism, one rule.
+***Amended 2026-09-06 — THE MIGRATION ROUTE IS DELETED, the refusal is not.***
+*Patrik: "We never used the platform, there is no need for a migration route. We
+talked about this before." This section originally specified three refusals that
+carried migration INSTRUCTIONS in their messages: a map declaring `"pack"`, the
+same map declaring `"package"`, and an adventure bundle still shipping
+`tiles/pack.json`. All three were built for an audience of nobody —
+`contract/RELEASED` does not exist, nothing has ever shipped, every campaign
+that has ever existed is in this repository, and Task 5 of the plan had already
+rewritten all fourteen fixtures that declared a pack. The two map arms are gone and
+`json: unknown field "pack"` is what a declaring map gets, which is adequate for
+the only people who will ever read it; the bundle refusal is gone outright, and
+a bundle shipping `tiles/pack.json` now loads with that art unresolved, the same
+answer a bundle with no `art/` already gets under §4 — degraded, and warned
+about to whoever issues `load_adventure`.
+`TestAMapDeclaringAPackOrAPackageIsStillRefused` is what keeps the refusal
+honest.*
 
 `contract/RELEASED` does not exist, so ADR-007 reports rather than enforces
 (CLAUDE.md rule 3). This design is not additive, and that is only permissible
@@ -448,7 +457,9 @@ still refuses, naming both versions**, and refuses at that same boot. *(Added
 Tasks 8 and 9 write their tests from, so a reader working forward from a stale
 §8 writes the wrong test and then "fixes" working code to match it.)*
 
-**A map declaring `"pack"` is refused** with a message naming the field.
+**A map declaring `"pack"` is refused** — by strict decoding, naming the field
+as `unknown field "pack"`. *(Amended 2026-09-06 with §7: the message said more
+than that until the migration route was deleted.)*
 
 **Two art pieces cannot collide**, which is not a test of platform code but of
 the claim in §3.3. It is asserted by a test that tries to construct the

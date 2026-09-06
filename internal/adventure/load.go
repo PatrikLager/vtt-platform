@@ -121,38 +121,6 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 		return nil, fmt.Errorf("adventure: art dir %s: %w", artDir, openErr)
 	}
 
-	// AN ADVENTURE THAT STILL SHIPS A PACK IS REFUSED, by name, pointing at
-	// art/ — the same answer mapdef.Load gives a map that declares "pack"
-	// (2026-09-02-art-is-a-flat-library Task 5, design spec §7: "There is no
-	// compatibility layer, and none is added later"). Task 7 of that plan
-	// deleted mapdef.LoadPack and with it loadEmbeddedPack, which used to read
-	// this file; ignoring it instead would load the bundle, draw every
-	// overridden square plain, and say nothing about the art the author
-	// shipped.
-	//
-	// ONLY A STATTABLE pack.json IS REFUSED. Any other stat error means there
-	// is no manifest at that path — tiles/ absent, or tiles/ itself a plain
-	// file — and nothing was declared, so there is nothing to lose and nothing
-	// to say. A tiles/ directory with no pack.json in it has always been legal
-	// and stays so.
-	if _, statErr := os.Stat(filepath.Join(dir, "tiles", "pack.json")); statErr == nil {
-		return nil, fmt.Errorf("adventure: %s: packs no longer exist and this bundle still ships one "+
-			"(tiles/pack.json). An adventure's art now lives in its own flat art/ directory. "+
-			"Move the pack's pictures into %s and delete tiles/, and note that this is a RENAME, "+
-			"not a copy: there is no manifest any more, so a picture's FILENAME STEM is its art "+
-			"id, and it must be exactly the id your scenes already name (pack.json's \"name\", not "+
-			"its \"file\") in kebab-case — masonry_1.png becomes masonry-1.png. Beside each TILE "+
-			"picture write a sidecar art/<id>.json carrying its kind and material; object art needs "+
-			"none. A DOOR IS THE EXCEPTION and has no <id>.png at all: it keeps TWO pictures, named "+
-			"inside its own sidecar by the \"open\" and \"closed\" fields (cellar-door.json naming "+
-			"cellar-door-open.png and cellar-door-closed.png); a door sidecar declaring only kind "+
-			"and material resolves to nothing and THE DOOR DRAWS PLAIN, with a warning at load "+
-			"rather than a failure here. The names inside your scenes do not "+
-			"change. A picture whose stem is not the id, or tile art with no sidecar, resolves to "+
-			"nothing and draws plain",
-			dir, filepath.Join(dir, "art"))
-	}
-
 	scenes, err := loadScenes(filepath.Join(dir, "scenes"), actorIDs, artDir)
 	if err != nil {
 		return nil, err

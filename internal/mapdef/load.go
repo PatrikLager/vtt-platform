@@ -19,64 +19,14 @@ type mapJSON struct {
 	Name          string `json:"name"`
 	GridWidth     int32  `json:"grid_width"`
 	GridHeight    int32  `json:"grid_height"`
-	// Pack is kept here SOLELY so loadAs can refuse a file that declares it
-	// (design spec §7, "There is no compatibility layer, and none is added
-	// later") — nothing reads its value except the refusal's own message.
-	// Deleting it would still refuse the file, through decodeStrict's
-	// DisallowUnknownFields, but as `unknown field "pack"`: true, useless,
-	// and pointing nowhere. Map itself has no Pack field any more.
-	//
-	// A json.RawMessage, AND NOTHING ELSE WILL DO, because what is refused is
-	// the field's PRESENCE (spec §7: "a map carrying a `pack` field") and the
-	// obvious Go types all fail to carry that:
-	//
-	//   - a `string` cannot tell `"pack":""` from an absent key.
-	//   - a `*string` cannot tell `"pack":null` from an absent key either —
-	//     encoding/json sets a pointer to nil for a JSON null. That WAS this
-	//     field's type, and `null` loaded silently while `""` and every named
-	//     pack were refused; found in review, 2026-09-04, by probing the
-	//     shapes rather than the one a test happened to drive. `null` is the
-	//     second thing an author or an LLM writes when told to remove a field.
-	//   - a `*json.RawMessage` is the same trap in a costume: also nil for null.
-	//
-	// A bare json.RawMessage is nil ONLY when the key is truly absent. `null`
-	// arrives as the four bytes "null" and `""` as the two bytes `""`, so one
-	// `!= nil` covers every way of writing the field.
-	//
-	// Its bytes go into the refusal message verbatim (%s, not %q): for a JSON
-	// string they ALREADY carry their own quotes and escaping — JSON forbids a
-	// literal control character inside a string — so the message reads
-	// byte-identically to the `*string` version for every input that reached
-	// it, and reads `null` or `5` for the ones that did not.
-	Pack json.RawMessage `json:"pack"`
-	// Package is the SAME REFUSAL for the one rename the tree-wide gate cannot
-	// see, and it is not redundant with the decoder's strictness.
-	//
-	// loadAs decodes with DisallowUnknownFields, so `{"package": ...}` already
-	// fails — with `json: unknown field "package"`, which tells a DM whose
-	// campaign predates the flat art library nothing about what to do. The
-	// whole value of the `"pack"` refusal is its message; a container renamed
-	// to `package` deserves the same one, because the values under "overrides"
-	// are wrong in exactly the same way.
-	//
-	// WHY THIS SPELLING AND NOT ANY OTHER. tools/check-no-pack.py carves
-	// `pack`-followed-by-`age` out of its needle so Go's own keyword does not
-	// red every file in the repository, and the carve-out is a SUBSTRING one:
-	// `ArtPackage`, `LoadPackage` and `handlePackageFile` all escape it, and
-	// "art package" is the most idiomatic rename anyone would reach for. That
-	// limit is stated in the gate; this field and the banned list in
-	// TestNoPackTypeOrLoaderRemainsInThisPackage are the two halves of it that
-	// can actually be closed. A json.RawMessage for the reason Pack above is:
-	// PRESENCE is what is refused, and neither a string nor a pointer can tell
-	// `null` from an absent key.
-	Package json.RawMessage `json:"package"`
-	// CellPx is a json.RawMessage for the reason Pack above is, minus the
-	// refusal: PRESENCE is what decides. A plain int32 cannot tell an absent
-	// cell_px from an explicit {"cell_px": 0}, so "an undeclared map inherits
-	// the campaign default" and "zero pixels is refused" would be one branch
-	// pretending to be two — and a *int32 only moves the hole, since JSON null
-	// unmarshals into a pointer as nil and would read as absent. Raw bytes
-	// decide nothing until loadAs decides.
+	// CellPx is a json.RawMessage because PRESENCE is what decides. A plain
+	// int32 cannot tell an absent cell_px from an explicit {"cell_px": 0}, so
+	// "an undeclared map inherits the campaign default" and "zero pixels is
+	// refused" would be one branch pretending to be two — and a *int32 only
+	// moves the hole, since JSON null unmarshals into a pointer as nil and would
+	// read as absent. A bare json.RawMessage is nil ONLY when the key is truly
+	// absent: `null` arrives as the four bytes "null". Raw bytes decide nothing
+	// until loadAs decides.
 	CellPx     json.RawMessage   `json:"cell_px"`
 	Tiles      map[string]string `json:"tiles"`
 	Overrides  map[string]string `json:"overrides"`
@@ -140,6 +90,17 @@ type FieldErrFunc func(field, msg string) error
 // (nil, err) as soon as the first violation is found, matching adventure's
 // fail-loud-at-load posture (spec §7).
 //
+// THE STRICTNESS IS LOAD-BEARING AND NOT MERELY TIDY. It is the whole of what
+// refuses a map authored before 2026-09-02-art-is-a-flat-library — one carrying
+// a `"pack"` container, or that container under any rename — whose overrides
+// values were written against a namespace that no longer exists and would
+// otherwise draw the wrong thing with nobody told. Two loadAs arms carried that
+// refusal with migration instructions attached until 2026-09-06, when Patrik
+// ruled the route out (nothing has ever shipped, and every campaign that has
+// ever existed is in this repository). What is left is
+// TestAMapDeclaringAPackOrAPackageIsStillRefused, which drives the file through
+// Load rather than trusting this sentence.
+//
 // Checks run in an order chosen so the FIRST error a broken file produces is
 // the most useful one to fix: grid sanity gates everything else (there is no
 // point naming a square outside a grid whose own size is nonsense); then
@@ -179,51 +140,11 @@ func loadAs(path, display string) (*Map, error) {
 			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
 	}
 
-	// A map authored before 2026-09-02-art-is-a-flat-library named the ONE
-	// pack its overrides resolved inside. There are no packs now — art is one
-	// flat art/ directory per campaign and a picture's filename is its id
-	// (that plan's design spec §3) — so the very same overrides values mean
-	// something else than they did. Refusing is spec §7 verbatim: "There is
-	// no compatibility layer, and none is added later. A map carrying a
-	// `pack` field is refused with a message naming the field and pointing at
-	// `art/`." Ignoring it would load a map whose art references were written
-	// against a namespace that no longer exists, and draw the wrong thing.
-	//
-	// REFUSED HERE, after format_version and before every geometry check,
-	// under this function's own ordering rule (Load's doc comment: the first
-	// error a broken file produces should be the most useful one to fix). For
-	// a pre-migration file the pack line IS what to fix; reporting a stray
-	// square first would send its author to correct something the file's age
-	// is not about.
-	if raw.Pack != nil {
-		return nil, fieldErr(display, "pack", fmt.Sprintf(
-			"packs no longer exist and this file still declares one (%s). Art is now one flat "+
-				"art/ directory per campaign, where a picture's own filename is the id a map "+
-				"names (2026-09-02-art-is-a-flat-library design spec §3). Delete this field and "+
-				"install the pack's pictures into that art/ directory; the values under "+
-				"\"overrides\" and each object's \"art\" already name art by id and need no change",
-			raw.Pack))
-	}
-
-	// The same refusal for the same file, spelled the way a rename would spell
-	// it. Reported AFTER "pack" so a file carrying both — which is what a
-	// half-done rename looks like — names the original field first.
-	if raw.Package != nil {
-		return nil, fieldErr(display, "package", fmt.Sprintf(
-			"packs no longer exist and this file still declares one (%s), renamed or not. Art "+
-				"is now one flat art/ directory per campaign, where a picture's own filename is "+
-				"the id a map names (2026-09-02-art-is-a-flat-library design spec §3). Delete "+
-				"this field and install the container's pictures into that art/ directory; the "+
-				"values under \"overrides\" and each object's \"art\" already name art by id and "+
-				"need no change",
-			raw.Package))
-	}
-
 	// cell_px, when the map declares one (art-is-a-flat-library design spec §6 as
-	// amended 2026-09-05). Checked HERE, right after the two refusals about what
-	// the file IS and before the geometry, because it is a property of the whole
-	// map rather than of any square — and refused rather than clamped, for the
-	// reason MinCellPx's own doc comment gives.
+	// amended 2026-09-05). Checked HERE, after format_version and before the
+	// geometry, because it is a property of the whole map rather than of any
+	// square — and refused rather than clamped, for the reason MinCellPx's own
+	// doc comment gives.
 	var cellPx int32
 	if raw.CellPx != nil {
 		if err := json.Unmarshal(raw.CellPx, &cellPx); err != nil {

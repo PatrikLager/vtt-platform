@@ -53,15 +53,24 @@ anyone would reach for, and it reads as ordinary English to a reviewer. This is
 the largest hole in the needle and it is listed again under KNOWN LIMITS.
 
 A TIGHTER NEEDLE IS NOT AVAILABLE, and that was measured rather than assumed:
-308 code positions across 39 distinct `package`-family words exist in this tree
+304 code positions across 37 distinct `package`-family words exist in this tree
 (2026-09-06). Any rule permissive enough to clear those clears `ArtPackage` too.
 So this is a limit to write down, not a needle to fix — and the two halves that
-CAN be closed have been, both in the package that owned the container:
-`internal/mapdef`'s `mapJSON.Package` refuses the `"package"` key with the same
-migration message `"pack"` gets, and
-`TestNoPackTypeOrLoaderRemainsInThisPackage` bans `Package{`, `ArtPackage`,
-`LoadPackage` and `PackageTile` alongside the `Pack` forms. Neither closes the
-general case, and nothing in this repository does.
+CAN be closed have been:
+
+  - THE FILE FORMAT, closed by `internal/mapdef`'s decodeStrict, which decodes
+    with DisallowUnknownFields and so refuses `"package"` — and every other
+    spelling of a key this server has no field for — without knowing any of
+    their names. `mapJSON` carried a `Pack` and a `Package` field until
+    2026-09-06 purely to word a migration message; Patrik ruled the migration
+    route out (nothing has ever shipped) and they went, which LEAVES THE REFUSAL
+    UNCHANGED and strictly wider. `TestAMapDeclaringAPackOrAPackageIsStillRefused`
+    drives it.
+  - THAT PACKAGE'S OWN DECLARATIONS, by
+    `TestNoPackTypeOrLoaderRemainsInThisPackage`, which bans `Package{`,
+    `ArtPackage`, `LoadPackage` and `PackageTile` alongside the `Pack` forms.
+
+Neither closes the general case, and nothing in this repository does.
 
 WHAT IS CARVED OUT IS ONLY `package`. `packet`, `packed` and `unpack` are NOT,
 and that is a decision rather than an oversight: each is one keystroke from the
@@ -86,18 +95,21 @@ neither is a leftover:
     eleven standard natures so a square with no override draws something. What
     LEFT is the per-container half: packFileURL, packManifestURL,
     imageRequestsForPack, loadPackImages and GET /api/packs/{pack}/{file}.
-  - THE SITES WHOSE JOB IS TO REFUSE THE CONTAINER. `mapJSON.Pack` is the only
-    way loadAs can refuse a file that declares one, and the tests named for
-    those refusals have to write the word down to assert its absence.
-    internal/mapdef/load_test.go recorded the trap before this gate existed:
-    "mapJSON.Pack survives on purpose ... so a bare `Pack` search would fail
-    forever and be deleted by whoever hit it."
+  - THE TESTS WHOSE JOB IS TO PROVE THE CONTAINER IS GONE. A test named for
+    what it refuses has to write the word down in order to assert its absence:
+    internal/mapdef/load_test.go and internal/gateway/metadata_test.go by test
+    NAME, cmd/vtt/art_test.go by the fixture path its refusal is driven with.
+    NO NON-TEST GO FILE IS IN THIS FAMILY ANY MORE: internal/mapdef/load.go
+    was, for `mapJSON.Pack` — "the only way loadAs can refuse a file that
+    declares one" — until 2026-09-06, when the migration route was deleted and
+    strict decoding turned out to be the whole of the refusal. If a production
+    file ever needs an entry here again, that is the fact to argue with first.
 
 Both families are EXEMPT BY WORD, never by file, so the module with the most
 legitimate mentions is still scanned for every other spelling of the container
 — see test_an_exemption_allows_only_the_words_it_names. Measured 2026-09-06:
-87 code positions across 13 files, 23 distinct words, every one of them in one
-of those two families, and the table names exactly those 13 files and those 23
+80 code positions across 11 files, 18 distinct words, every one of them in one
+of those two families, and the table names exactly those 11 files and those 18
 words with nothing dead in it. The 1857 above is a DATED OBSERVATION and not
 the current shape: the raw count rose the moment this gate arrived, because
 this file, its self-test and its Taskfile entry all write the word down in
@@ -109,9 +121,10 @@ WHAT THIS COVERS, AND WHAT THE TWO GO TESTS COVER. Three different halves, and
 none substitutes for another:
 
   - internal/mapdef's TestNoPackTypeOrLoaderRemainsInThisPackage reads that ONE
-    package's non-test .go files for six exact strings — LoadPack, PackTile,
-    PackFormatVersion, packJSON, packTileJSON, packTileMap — after a crude
-    comment strip. It is the strongest check for a resurrection under the old
+    package's non-test .go files for a list of exact strings — LoadPack,
+    PackTile, PackFormatVersion, packJSON, packTileJSON, packTileMap, and the
+    `type Pack`/`*Pack`/`Pack{` and `Package` forms — after a crude comment
+    strip. It is the strongest check for a resurrection under the old
     names in the package that owned them, and it is blind to a rename, to test
     files, and to every other package. This gate is blind to none of those and
     knows none of those names: see test_a_rename_of_the_container_is_still_caught.
@@ -349,27 +362,19 @@ EXEMPT = {
          "writeStandardPack"},
         "the generator's own tests, named for the baseline they cover",
     ),
-    # --- the sites whose job is to refuse the container ---------------------
+    # --- the tests whose job is to prove the container is gone --------------
     #
     # A gate that deleted its own enforcement would pass while proving nothing.
-    "internal/mapdef/load.go": (
-        {"Pack"},
-        "mapJSON.Pack: the only way loadAs can refuse a map file that declares "
-        "a container (design spec §7, no compatibility layer). Map itself has "
-        "no such field.",
-    ),
+    # internal/mapdef/load.go held one entry, {"Pack"}, until 2026-09-06:
+    # mapJSON.Pack existed solely to word a migration message. Patrik ruled the
+    # migration route out and the field went; decodeStrict's
+    # DisallowUnknownFields refuses the key without naming it, so NO PRODUCTION
+    # FILE needs an exemption here now.
     "internal/mapdef/load_test.go": (
-        {"TestAMapDeclaringAPackIsRefusedByName",
-         "TestAMapDeclaringAnEmptyPackIsRefusedToo",
-         "TestAMapWithNoPackFieldStillLoads",
-         "TestAPackIsTheFirstThingReportedAboutAPreMigrationMap",
+        {"TestAMapDeclaringAPackOrAPackageIsStillRefused",
          "TestNoPackTypeOrLoaderRemainsInThisPackage"},
-        "the refusal's own tests, plus the package-scoped absence test this "
-        "gate is the tree-wide version of",
-    ),
-    "internal/adventure/load_test.go": (
-        {"TestAnAdventureShippingAPackIsRefusedByName"},
-        "the same refusal for an adventure that ships one",
+        "the surviving refusal's own test, plus the package-scoped absence test "
+        "this gate is the tree-wide version of",
     ),
     "internal/gateway/metadata_test.go": (
         {"TestNoPackRouteIsServed"},

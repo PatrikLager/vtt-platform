@@ -27,8 +27,10 @@
 // boot, so boot-time and request-time validation are not merely alike, they are
 // one function (Task 6 of the create_scene-leaves plan; that plan's design spec
 // §12 names their divergence as a hazard in its own right). Task 5 then made a
-// map that DECLARES a pack a refusal, naming the field and pointing at art/,
-// and Task 7 took the tree, the route and mapdef.Pack itself. Nothing serves
+// map that DECLARES a pack a refusal, and Task 7 took the tree, the route and
+// mapdef.Pack itself. That refusal's message carried migration instructions
+// until 2026-09-06, when Patrik ruled the route out; what refuses such a map now
+// is mapdef's strict decoding, `json: unknown field "pack"`. Nothing serves
 // art bytes until that plan's Task 6 builds GET /api/art/{file}.
 package main
 

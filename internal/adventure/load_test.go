@@ -369,124 +369,62 @@ func TestLoadRejectsMissingFormatVersion(t *testing.T) {
 	}
 }
 
-// TestAnAdventureShippingAPackIsRefusedByName is spec §7's "no compatibility
-// layer, and none is added later" applied to the one place a pack could still
-// travel: INSIDE a bundle. An adventure carried its own art as
-// <adventure>/tiles/pack.json, loaded by loadEmbeddedPack; Task 7 of
-// 2026-09-02-art-is-a-flat-library deleted mapdef.Pack and with it that loader,
-// and the controller's ruling of 2026-09-03 (that plan's pre-flight section)
-// put an adventure's art in its own flat <adventure>/art/ instead, read by the
-// same internal/artlib a campaign's art/ is.
+// TestABundlesTilesDirectoryIsNotReadAtAll pins what an adventure's old art
+// directory costs now, which is nothing: Load walks adventure.json, actors/,
+// art/, scenes/ and notes/, and a tiles/ directory beside them — with or
+// without the pack.json manifest that used to be its point — is neither read
+// nor complained about.
 //
-// IGNORING THE OLD DIRECTORY IS THE ONE ANSWER THAT MUST NOT BE GIVEN. Since
-// Task 3 nothing resolves against an embedded pack, so a bundle handed over
-// with tiles/pack.json in it already draws every overridden square plain — the
-// art is silently gone and the adventure loads saying nothing. That is the same
-// failure mapdef.Load refuses for a map declaring "pack" (Task 5,
-// TestAMapDeclaringAPackIsRefusedByName), and the operator holding the bundle
-// is the only person who can move the files.
+// IT USED TO BE A REFUSAL, and TestAnAdventureShippingAPackIsRefusedByName
+// stood here to pin the message. Patrik's ruling of 2026-09-06 deleted the
+// migration route across the platform — "We never used the platform, there is
+// no need for a migration route" — and this bundle is the one place the route
+// still had a foothold. What that refusal bought is genuinely gone: a bundle
+// handed over with tiles/pack.json in it loads, and every square its scenes
+// override draws plain unless the pictures were also installed into the
+// bundle's own art/. That is the SAME answer a bundle with no art/ at all
+// already gets — resolution degrades and nothing refuses (art-is-a-flat-library
+// design spec §4, Patrik's ruling 2026-09-04) — so the refusal was a second,
+// louder answer to a question the platform had already settled the other way,
+// aimed at operators who do not exist.
 //
-// It asserts the message names pack.json AND art/, for the reason that map
-// refusal states: t.TempDir()'s own path carries this test's name, so a bare
-// "pack" substring would match path noise with the refusal deleted.
-func TestAnAdventureShippingAPackIsRefusedByName(t *testing.T) {
-	rs := loadFixtureRuleset(t)
-	dir := copyFixtureDirExcluding(t, "testdata/valid")
-	// Everything else about this adventure is valid — it is the fixture every
-	// other Load test loads cleanly — so a refusal here can only be the pack.
-	if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "tiles", "pack.json"), []byte(`{
-		"format_version": 1, "id": "brace-yard-art", "name": "Brace Yard Art", "cell_px": 64,
-		"tiles": [{"name":"masonry-1","file":"masonry_1.png","kind":"wall","material":"stone"}]
-	}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := adventure.Load(dir, rs)
-	if err == nil {
-		t.Fatal("an adventure shipping tiles/pack.json loaded; its art would be " +
-			"silently gone and every overridden square would draw plain")
-	}
-	for _, want := range []string{"pack.json", "art/"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q, want it to name %q — the operator holding the bundle "+
-				"is the one who has to move the files", err, want)
-		}
-	}
-	// THE REMEDIATION HALF, and it is pinned because this message has now been
-	// wrong TWICE, each time in a way that walked the operator into a failure
-	// (review, 2026-09-04, rounds 1 and 2). Round 0 said "install the pack's
-	// pictures into art/ … the names your scenes' overrides already use do not
-	// change", and an operator who did exactly that ended up with pictures
-	// still called masonry_1.png — snake_case, while artlib requires the STEM
-	// to BE the kebab-case override id (isArtID) — and with no sidecar, which
-	// mapdef.Resolve needs before it will draw tile art at all: silent art
-	// loss, the very thing the refusal exists to prevent. Round 1 fixed that
-	// and introduced the next one: "each picture's FILENAME STEM is its art id"
-	// and a sidecar "carrying its kind and material" are both FALSE FOR A DOOR,
-	// and the shipped demo pack has one (cellar-door).
-	//
-	// A DOOR HAS TWO PICTURES AND NO THIRD (artlib's pieceFromSidecar leaves
-	// Piece.File empty for kind "door", and TestADoorHasTwoPicturesAndNoThird
-	// pins it): cellar-door.json names cellar-door-open.png and
-	// cellar-door-closed.png through its own "open"/"closed" fields, and
-	// cellar-door.png must not exist. A door sidecar carrying only kind and
-	// material hits `a door declares both "open" and "closed"`.
-	//
-	// THAT CONSEQUENCE CHANGED ON 2026-09-04 AND THE MESSAGE CHANGED WITH IT.
-	// mapdef.Resolve took it on its `case err != nil` arm and turned it into a
-	// REFUSED MAP; Patrik's ruling of that day made every unreadable sidecar
-	// degrade instead (art-is-a-flat-library Task 4b), so the door now draws
-	// plain and the adventure loads. Round 1 of this message ended an
-	// operator in a boot failure, which is not an instruction; it now ends
-	// them in a door with no picture, which is quieter and makes this message
-	// MORE load-bearing rather than less — see the paragraph below on why
-	// nothing else would tell them.
-	//
-	// Nothing else catches any of this for an ADVENTURE: composeServer runs
-	// artlib.Validate over campaignPath/art only, never over a bundle's own
-	// art/, so a mis-named picture inside an adventure is named by no boot
-	// report anywhere. The message IS the operator's only notice, which is why
-	// its load-bearing clauses are assertions rather than prose.
-	for _, want := range []string{
-		// The rename clause.
-		"masonry_1.png", "masonry-1.png",
-		// The sidecar clause, for ordinary tile art.
-		"sidecar", "kind and material",
-		// The door exception, which is all three of: no <id>.png, the two
-		// pictures named INSIDE the sidecar, and what getting it wrong costs.
-		// The last was "REFUSED" until 2026-09-04; the phrase asserted now is
-		// unique to the door clause, so it cannot be satisfied by the tile
-		// clause's own "resolves to nothing and draws plain".
-		"<id>.png", "cellar-door-open.png", "cellar-door-closed.png",
-		"THE DOOR DRAWS PLAIN",
+// WHERE THE WARNING GOES, precisely, because "it warns" is too loose to act on:
+// Compile's second return carries one per unresolved reference and
+// handleLoadAdventure puts it on the CommandResult, so a DM issuing
+// load_adventure is told. Load — this function, the BOOT path — discards them
+// (its own dry-run comment says so, and says compile.go does the same). That
+// asymmetry predates this change and is untouched by it.
+//
+// The empty-tiles/ case is kept from that test's own boundary half: whatever
+// this directory means, an adventure that merely HAS one must keep loading.
+func TestABundlesTilesDirectoryIsNotReadAtAll(t *testing.T) {
+	for _, tc := range []struct{ name, manifest string }{
+		{"no manifest", ""},
+		// The shape that was refused until 2026-09-06, written the way a real
+		// pre-migration bundle wrote it.
+		{"a pack manifest still in it", `{
+			"format_version": 1, "id": "brace-yard-art", "name": "Brace Yard Art", "cell_px": 64,
+			"tiles": [{"name":"masonry-1","file":"masonry_1.png","kind":"wall","material":"stone"}]
+		}`},
 	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q must contain %q: an operator following this message must "+
-				"end up with pictures RENAMED to their art ids, a sidecar beside each tile "+
-				"picture, and a DOOR left with two pictures and no third — or the art is "+
-				"gone (silently for a tile, as a refused map for a door) and the refusal "+
-				"bought nothing", err, want)
-		}
-	}
-}
+		t.Run(tc.name, func(t *testing.T) {
+			rs := loadFixtureRuleset(t)
+			dir := copyFixtureDirExcluding(t, "testdata/valid")
+			if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if tc.manifest != "" {
+				if err := os.WriteFile(filepath.Join(dir, "tiles", "pack.json"),
+					[]byte(tc.manifest), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-// TestAnAdventureWithATilesDirectoryButNoManifestStillLoads is the boundary the
-// refusal above must not overreach past: what is refused is a pack MANIFEST,
-// not a directory called tiles/. An empty tiles/ names no art, loses none, and
-// was always legal (loadEmbeddedPack treated an absent pack.json as the common
-// case), so refusing it would break bundles that never shipped a pack at all.
-func TestAnAdventureWithATilesDirectoryButNoManifestStillLoads(t *testing.T) {
-	rs := loadFixtureRuleset(t)
-	dir := copyFixtureDirExcluding(t, "testdata/valid")
-	if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := adventure.Load(dir, rs); err != nil {
-		t.Fatalf("Load: %v — a tiles/ directory with no pack.json declares no art", err)
+			if _, err := adventure.Load(dir, rs); err != nil {
+				t.Fatalf("Load: %v — a tiles/ directory is not part of this format and "+
+					"is not read; the art an adventure ships lives in its own art/", err)
+			}
+		})
 	}
 }
 

@@ -242,12 +242,17 @@ func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
 // It matches a LIST OF NAME STRINGS, not "declarations" in any grammatical
 // sense, and the difference is what review found on 2026-09-06: the sentence
 // here used to claim it matched declarations, which made the list look
-// exhaustive when it was six names. The bare word cannot be on it — mapJSON.Pack
-// survives on purpose, as the only way loadAs can refuse a file that declares a
-// container (see mapJSON's own comment), so a bare "Pack" search would fail
-// forever and be deleted by whoever hit it. What is on the list instead is every
+// exhaustive when it was six names. What is on the list instead is every
 // SPELLING a resurrection would use, including the `type Pack`/`*Pack`/`Pack{`
 // forms and the `Package` ones the tree-wide gate structurally cannot see.
+//
+// THIS TEST GOT MORE LOAD-BEARING ON 2026-09-06, NOT LESS. Until that day the
+// package still declared mapJSON.Pack and mapJSON.Package, so the container's
+// own word lived here legitimately and the list had to route around it. Patrik
+// ruled the migration route out and both fields went; the file format is now
+// refused by decodeStrict's DisallowUnknownFields, which knows no names at all.
+// This list is what is left that knows the names — the only thing in this
+// package that would notice `type Pack` or `LoadPackage` coming back.
 func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
 	// Reads this package's own directory: `go test` runs a test binary with
 	// its cwd set to the package under test, which is what makes "." right
@@ -257,11 +262,12 @@ func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// THE BARE TOKEN `Pack` IS NOT ON THIS LIST AND CANNOT BE: mapJSON.Pack is
-	// the refusal itself (see its own comment), so banning the word would ban
-	// the enforcement. What is banned instead is every way of DECLARING or
-	// USING a type by that name — `type Pack`, `*Pack`, `Pack{` — which is what
-	// a resurrected container actually looks like and which the six name
+	// THE BARE TOKEN `Pack` IS NOT ON THIS LIST, and the reason is now only
+	// about false positives rather than about self-sabotage: it was excluded
+	// while mapJSON.Pack was the refusal itself, and that field left with the
+	// migration route on 2026-09-06. What is banned is every way of DECLARING
+	// or USING a type by that name — `type Pack`, `*Pack`, `Pack{` — which is
+	// what a resurrected container actually looks like and which the six name
 	// strings below do not cover. Review, 2026-09-06: adding `type Pack struct`
 	// and `func Load(dir string) (*Pack, error)` to load.go left this test and
 	// tools/check-no-pack.py BOTH green, because the gate's exemption for this
@@ -276,7 +282,7 @@ func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
 	// substring; `Package{`, `ArtPackage`, `LoadPackage` and `PackageTile` do
 	// not follow and are named. The bare word `Package` is NOT banned — this
 	// file's own `// Package mapdef` doc line survives comment-stripping in
-	// spirit, and mapJSON.Package is the refusal for the `"package"` key.
+	// spirit.
 	banned := []string{"LoadPack", "PackTile", "PackFormatVersion",
 		"packJSON", "packTileJSON", "packTileMap",
 		"type Pack", "*Pack", "Pack{",
@@ -331,145 +337,82 @@ func stripGoComments(src string) string {
 	return out.String()
 }
 
-// TestAMapDeclaringAPackIsRefusedByName pins design spec §7's migration rule:
-// "There is no compatibility layer, and none is added later. A map carrying a
-// `"pack"` field is refused with a message naming the field and pointing at
-// `art/`." Ignoring the field would load a map whose art references were
-// written against a namespace that no longer exists — the override values were
-// resolved inside ONE named pack, and since Task 3 of the same plan they name a
-// file in the campaign's one flat art/ directory instead. Same strings, a
-// different world: the map would load and draw the wrong thing, or nothing.
+// TestAMapDeclaringAPackOrAPackageIsStillRefused is what survives the deletion
+// of the migration route (Patrik's ruling, 2026-09-06: "We never used the
+// platform, there is no need for a migration route. We talked about this
+// before."). Three refusals carried instructions for moving a pack's pictures
+// into art/; nothing has ever shipped, contract/RELEASED does not exist, and
+// every campaign that has ever existed is in this repository, all fourteen
+// pre-migration fixtures rewritten by Task 5 of the same plan. The instructions
+// were written for an audience of nobody.
 //
-// The message is the whole of what a DM sees when a campaign authored before
-// this change is opened, so the assertions below are about the message and not
-// merely about err != nil: it must name the FIELD (so the line to delete is
-// unambiguous) and point at art/ (so the reader knows where the pictures go
-// now). fieldErr supplies the third part, the file, which LoadInstalled renders
-// as the "maps/<id>.json" a DM knows rather than a server path.
+// WHAT MUST NOT GO WITH THEM IS THE REFUSAL, and it does not: loadAs decodes
+// through decodeStrict's DisallowUnknownFields, so a key mapJSON has no field
+// for fails before any check in this package runs. That is asserted here rather
+// than argued from the decoder's documentation, because the arms this replaces
+// are exactly what the argument used to rest on.
 //
-// It asserts on `field "pack"` rather than the bare word: t.TempDir()'s path
-// carries this test's own name, and a bare "pack" substring check would pass on
-// path noise alone with the refusal deleted — the trap
+// PRESENCE, NOT VALUE, which is what the deleted arms refused too — and it now
+// comes free rather than costing a json.RawMessage per spelling.
+// DisallowUnknownFields fires on the KEY, so `""`, `null` and a named container
+// are one case rather than three shapes a Go type had to be picked to tell
+// apart. All three are still driven here: `null` is what an author, or an LLM
+// told to remove a field, writes second, and it is the shape that once loaded
+// SILENTLY under a *string (review, 2026-09-04).
+//
+// `package` IS HERE FOR ITS OWN REASON. tools/check-no-pack.py carves
+// `pack`-followed-by-`age` out of its needle so Go's own keyword does not red
+// every file in the repository, and that carve-out is a SUBSTRING one, so a
+// container renamed `ArtPackage` escapes the tree-wide gate entirely. The file
+// format is one of the two halves that CAN be closed, and strict decoding closes
+// it for every spelling at once, this one included.
+//
+// It asserts `unknown field "pack"` rather than the bare word: t.TempDir()'s
+// path carries this test's own name, so a bare "pack" substring check would pass
+// on path noise alone with the strictness switched off — the trap
 // TestLoadRefusesAFormatThisServerDoesNotUnderstand records for bare digits,
 // which is the same trap.
-func TestAMapDeclaringAPackIsRefusedByName(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "old.json")
-	// Everything else about this file is valid — "stone" is a real name in
-	// standardTiles — so a refusal here can only be the pack declaration. A
-	// fixture broken some other way would make this test pass for a reason
-	// that has nothing to do with what it claims to pin.
-	writeFile(t, p, `{"format_version":1,"id":"old","name":"Old","grid_width":1,
-		"grid_height":1,"tiles":{"0,0":"stone"},"pack":"cellar-basics"}`)
+func TestAMapDeclaringAPackOrAPackageIsStillRefused(t *testing.T) {
+	for _, key := range []string{"pack", "package"} {
+		for _, c := range []struct{ name, value string }{
+			{"named", `"cellar-basics"`},
+			{"empty-string", `""`},
+			{"null", `null`},
+		} {
+			t.Run(key+"/"+c.name, func(t *testing.T) {
+				dir := t.TempDir()
+				p := filepath.Join(dir, "old.json")
+				// Valid in every other respect — "stone" is a real name in
+				// standardTiles — so a refusal here can only be the container.
+				// A fixture broken some other way would make this test pass for
+				// a reason that has nothing to do with what it claims.
+				writeFile(t, p, `{"format_version":1,"id":"old","name":"Old","grid_width":1,
+					"grid_height":1,"tiles":{"0,0":"stone"},"`+key+`":`+c.value+`}`)
 
-	_, err := mapdef.Load(p)
-	if err == nil {
-		t.Fatal(`a map declaring "pack" was accepted: its overrides name art in a namespace that no longer exists`)
-	}
-	for _, want := range []string{`field "pack"`, "art/"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error = %q, want it to contain %q — the message is the whole migration experience", err, want)
+				_, err := mapdef.Load(p)
+				if err == nil {
+					t.Fatalf("a map declaring %q:%s was accepted: its overrides name art in a "+
+						"namespace that no longer exists", key, c.value)
+				}
+				if want := `unknown field "` + key + `"`; !strings.Contains(err.Error(), want) {
+					t.Fatalf("error = %q, want it to contain %q", err, want)
+				}
+			})
 		}
 	}
 }
 
-// TestAMapDeclaringAnEmptyPackIsRefusedToo pins that it is the FIELD'S
-// PRESENCE that is refused, not a non-empty value. Spec §7 says "a map carrying
-// a `"pack"` field", and the difference is not pedantry: emptying the value is
-// exactly the half-migration an author — or an LLM told to remove a field —
-// reaches for first, and it fixes nothing, because every overrides value under
-// it is still the name it had inside the pack.
+// TestAMapNamingNoContainerAtAllStillLoads is the negative control for the
+// refusal above: it must fire on the declaration and on nothing else. Without
+// it, strictness that rejected every map in the world would pass every
+// assertion up there.
 //
-// BOTH WAYS OF WRITING "NOTHING" ARE HERE, and the second is why mapJSON.Pack
-// is a json.RawMessage. Neither a `string` nor a `*string` can carry this rule:
-// a `string` cannot tell `"pack":""` from an absent key, and a `*string` — the
-// first implementation of this test, which passed — comes back nil for
-// `"pack":null` exactly as it does for an absent key, so `null` LOADED. Found
-// in review, 2026-09-04, by probing the four shapes rather than the one the
-// test happened to drive. A json.RawMessage is nil only when the key is truly
-// absent: `null` arrives as the four bytes "null", `""` as the two bytes `""`.
-// A *json.RawMessage does NOT work either — it is nil for null, same trap.
-func TestAMapDeclaringAnEmptyPackIsRefusedToo(t *testing.T) {
-	for _, c := range []struct{ name, value string }{
-		{"empty-string", `""`},
-		// The one that shipped broken: told to remove "pack", an author or an
-		// LLM writes null at least as readily as it deletes the line.
-		{"null", `null`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			p := filepath.Join(dir, "blanked.json")
-			writeFile(t, p, `{"format_version":1,"id":"blanked","name":"Blanked","grid_width":1,
-				"grid_height":1,"tiles":{"0,0":"stone"},"pack":`+c.value+`}`)
-
-			_, err := mapdef.Load(p)
-			if err == nil {
-				t.Fatalf(`a map declaring "pack":%s was accepted: the field is what is refused, not its value`, c.value)
-			}
-			if !strings.Contains(err.Error(), `field "pack"`) {
-				t.Fatalf("error = %q, want it to name the field — a refusal for some other reason proves nothing here", err)
-			}
-		})
-	}
-}
-
-// TestAMapDeclaringAPackageIsRefusedByName closes the ONE spelling the tree's
-// tree-wide gate structurally cannot see, and the reason it exists is worth
-// stating rather than inferring.
-//
-// tools/check-no-pack.py carves `pack` followed by `age` out of its needle,
-// because Go's own `package` keyword opens every .go file in the repository and
-// 923 of the word's 1857 occurrences are that keyword or the English word. The
-// carve-out is a SUBSTRING carve-out, so `ArtPackage`, `LoadPackage`,
-// `handlePackageFile` and `PackageTile` all escape it — and "art package" is the
-// most idiomatic rename anyone reaching for a distribution unit would write. A
-// tighter needle is not available: 303 code positions across 36 distinct
-// `package`-family words exist in this tree today, and any rule permissive
-// enough for those permits `ArtPackage` too.
-//
-// So the gate carries that as a stated limit, and this test plus the banned
-// list in TestNoPackTypeOrLoaderRemainsInThisPackage close the two halves that
-// CAN be closed: the file format, here, and this package's own declarations,
-// there. Neither closes the general case; nothing in this repository does.
-//
-// The refusal is the same one `"pack"` gets and for the same reason — a
-// pre-migration map's overrides name art inside a namespace that no longer
-// exists — so the message names the field and points at art/.
-func TestAMapDeclaringAPackageIsRefusedByName(t *testing.T) {
-	for _, c := range []struct{ name, value string }{
-		{"named", `"cellar-basics"`},
-		// The same two ways of writing nothing mapJSON.Pack learned about in
-		// review on 2026-09-04, for the same reason: PRESENCE is what is
-		// refused, and `null` is what an author told to remove a field writes.
-		{"empty-string", `""`},
-		{"null", `null`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			p := filepath.Join(dir, "renamed.json")
-			// Valid in every other respect — "stone" is a real standardTiles
-			// name — so a refusal here can only be the declaration.
-			writeFile(t, p, `{"format_version":1,"id":"renamed","name":"Renamed","grid_width":1,
-				"grid_height":1,"tiles":{"0,0":"stone"},"package":`+c.value+`}`)
-
-			_, err := mapdef.Load(p)
-			if err == nil {
-				t.Fatalf(`a map declaring "package":%s was accepted: renaming the container does not make it one this server understands`, c.value)
-			}
-			for _, want := range []string{`field "package"`, "art/"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Fatalf("error = %q, want it to contain %q", err, want)
-				}
-			}
-		})
-	}
-}
-
-// TestAMapWithNoPackageFieldStillLoads is to the test above what
-// TestAMapWithNoPackFieldStillLoads is to its own pair: the refusal must fire on
-// the declaration and on nothing else. Without it, a refusal that rejected every
-// map in the world would pass every assertion above.
-func TestAMapWithNoPackageFieldStillLoads(t *testing.T) {
+// IT IS ONE TEST WHERE IT WAS TWO. TestAMapWithNoPackFieldStillLoads and
+// TestAMapWithNoPackageFieldStillLoads each stood as the control for its own
+// refusal arm; with both arms gone the two fixtures were byte-identical — a map
+// with no container key of any spelling — and two copies of one assertion are
+// not two assertions.
+func TestAMapNamingNoContainerAtAllStillLoads(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "ordinary.json")
 	writeFile(t, p, `{"format_version":1,"id":"ordinary","name":"Ordinary","grid_width":1,
@@ -480,41 +423,42 @@ func TestAMapWithNoPackageFieldStillLoads(t *testing.T) {
 	}
 }
 
-// TestAMapWithNoPackFieldStillLoads is the other half of the pair above, and it
-// is the one that would catch the refusal firing on every map in the world: the
-// ordinary, migrated file — no "pack" key at all — must load exactly as before.
-func TestAMapWithNoPackFieldStillLoads(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "migrated.json")
-	writeFile(t, p, `{"format_version":1,"id":"migrated","name":"Migrated","grid_width":1,
-		"grid_height":1,"tiles":{"0,0":"stone"}}`)
-
-	if _, err := mapdef.Load(p); err != nil {
-		t.Fatalf("load: %v — a map that names no pack is the ordinary case", err)
-	}
-}
-
-// TestAPackIsTheFirstThingReportedAboutAPreMigrationMap pins WHICH error a map
-// authored before the flat art library gets, not merely that it gets one. Such
-// a file is very likely to have other complaints against it — the fixture below
-// also names a square outside its own grid — and reporting that one first sends
-// its author to fix a stray coordinate in a file whose actual problem is its
-// age. Load's doc comment states the rule this follows: the first error a
-// broken file produces should be the most useful one to fix.
-func TestAPackIsTheFirstThingReportedAboutAPreMigrationMap(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "old-and-broken.json")
-	writeFile(t, p, `{"format_version":1,"id":"old","name":"Old","grid_width":1,
-		"grid_height":1,"tiles":{"0,0":"stone","9,9":"stone"},"pack":"cellar-basics"}`)
-
-	_, err := mapdef.Load(p)
-	if err == nil {
-		t.Fatal("this map was accepted; it declares a pack AND names a square outside its grid")
-	}
-	if !strings.Contains(err.Error(), `field "pack"`) {
-		t.Fatalf("error = %q, want the pack declaration reported first, not the stray square", err)
-	}
-}
+// THE FOUR MIGRATION TESTS THAT STOOD HERE ARE GONE, with the two refusal arms
+// and the two mapJSON fields that existed only to feed them (Patrik's ruling,
+// 2026-09-06: "We never used the platform, there is no need for a migration
+// route"). This is where each property they pinned lives now — written down
+// because deleting a function makes the compiler shout and deleting a test
+// makes nothing shout at all. It is the SECOND such record in this file, and
+// the block below it is the first: the pack left this package in two acts, and
+// each act owes the reader the same accounting.
+//
+//   - TestAMapDeclaringAPackIsRefusedByName pinned two things at once, and only
+//     one of them survives. "A map carrying `pack` is REFUSED" is
+//     TestAMapDeclaringAPackOrAPackageIsStillRefused above, through
+//     decodeStrict's DisallowUnknownFields, which is where it always actually
+//     came from — loadAs's own arm could only be reached by a decoder that had
+//     already accepted the field. "…with a message naming the field and
+//     pointing at art/" is GONE ON PURPOSE: it was migration instructions, and
+//     `unknown field "pack"` is adequate for the only people who will ever read
+//     it. Nothing has shipped, contract/RELEASED does not exist, and Task 5 of
+//     this plan already rewrote all fourteen fixtures that declared one.
+//   - TestAMapDeclaringAnEmptyPackIsRefusedToo pinned PRESENCE rather than
+//     value, over `""` and `null`. Both are cases of the test above.
+//     mapJSON.Pack's json.RawMessage — chosen in review on 2026-09-04 because a
+//     `*string` reads `null` as an absent key and let it load — has no successor
+//     and needs none: DisallowUnknownFields decides on the KEY, so every way of
+//     writing a value is one case rather than a Go type to be picked carefully.
+//   - TestAMapDeclaringAPackageIsRefusedByName pinned the one rename
+//     tools/check-no-pack.py structurally cannot see. It is the `package` arm of
+//     the test above, and strict decoding closes it for every unknown spelling
+//     at once rather than for the one that was guessed.
+//   - TestAPackIsTheFirstThingReportedAboutAPreMigrationMap pinned that a map
+//     which BOTH declares a container and names a square outside its grid is
+//     told about the container. NOT carried over, and it cannot be:
+//     decodeStrict runs before every check in loadAs, so the file never reaches
+//     a geometry check to lose the race. The property is structural where it
+//     used to be a choice about arm order, and there is no fault to inject that
+//     would reorder it without also deleting the refusal the test above pins.
 
 // THE FOUR LoadPack TESTS THAT STOOD HERE ARE GONE, with LoadPack itself
 // (2026-09-02-art-is-a-flat-library Task 7), and this is where each property
@@ -616,7 +560,8 @@ func TestAMapDeclaringNoCellPxInheritsRatherThanGuesses(t *testing.T) {
 // TestACellPxOutsideTheBoundsIsRefusedByName is MapTool's clamp, kept as a
 // REFUSAL rather than a silent clamp-into-range: a file that says 100000 means
 // something, and quietly serving 1024 instead would be the "silently ignoring"
-// failure this format refuses everywhere else (see the "pack" refusal above).
+// failure this format refuses everywhere else — the same posture decodeStrict
+// takes to a key it has no field for (TestAMapDeclaringAPackOrAPackageIsStillRefused).
 //
 // The message names BOTH bounds, because an author who got one wrong cannot
 // tell from a message that names only the one they crossed.

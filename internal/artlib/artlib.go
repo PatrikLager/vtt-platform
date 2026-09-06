@@ -258,9 +258,8 @@ type Piece struct {
 // way. Named, the same error says artlib.declaredFormat: true, and no more
 // than the spec already says. (Review finding F3, 2026-09-05.)
 //
-// json.RawMessage RATHER THAN int32, for the reason mapJSON.Pack is one
-// (internal/mapdef/load.go, art-is-a-flat-library Task 5): a Go zero value
-// cannot carry PRESENCE. A plain int32 here cannot tell an ABSENT field from
+// json.RawMessage RATHER THAN int32, for the reason mapJSON.CellPx is one
+// (internal/mapdef/load.go): a Go zero value cannot carry PRESENCE. A plain int32 here cannot tell an ABSENT field from
 // an explicit {"format_version": 0}, so the rule this package documents —
 // undeclared degrades, declared-and-unknown refuses — was implemented as
 // zero-versus-non-zero, and a file that DID declare a version was told "an
@@ -337,14 +336,14 @@ func unsupportedFormat(id string, declared int32) error {
 // load_map answer never arrives at all. Both are handled below by the same
 // call, run twice.
 //
-// IT IS NOT THE ONLY SITE THAT INTERPOLATES RAW CAMPAIGN BYTES, and an earlier
-// draft of this comment said it was. mapdef's pack refusal (load.go, the
-// `raw.Pack != nil` arm) puts a map file's own bytes into an error that reaches
-// CommandResult.error, which is the same proto3 string rule on the other
-// channel, and it is neither bounded nor validated. That is older than this
-// function and belongs to whoever owns that refusal; it is recorded here rather
-// than fixed, because a comment claiming uniqueness is how the second site
-// stops being looked for.
+// DO NOT READ THIS AS "THE ONLY SITE THAT INTERPOLATES RAW CAMPAIGN BYTES",
+// which an earlier draft of this comment claimed and then had to retract. The
+// second site it named — mapdef's `raw.Pack != nil` arm, which put a map file's
+// own bytes into an error reaching CommandResult.error, the same proto3 string
+// rule on the other channel, neither bounded nor validated — was DELETED on
+// 2026-09-06 with the whole migration route, so the retraction's example is
+// gone. The retraction itself stands: a comment claiming uniqueness is how the
+// next such site stops being looked for, and no one has re-surveyed the tree.
 // TWO ToValidUTF8 PASSES AND NO HAND-ROLLED SCAN, which is the shape the
 // mutation gate argued this into. The first draft backed up over continuation
 // bytes with `for cut > 0 && !utf8.RuneStart(s[cut]) { cut-- }`, and the gate
@@ -641,8 +640,9 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	// into a refusal to BOOT when a committed map named that piece — the whole
 	// campaign down, for everyone, over a mistyped digit whose remedy is to fix
 	// the file and not to fetch a newer server. It is the same absent-versus-
-	// zero shape mapJSON.Pack and campaigncfg's two fields were fixed for on
-	// this same branch, and it was harmless only while no real sidecar existed.
+	// zero shape campaigncfg's two fields — and mapJSON.Pack, until it was
+	// deleted on 2026-09-06 with the migration route — were fixed for on this
+	// same branch, and it was harmless only while no real sidecar existed.
 	//
 	// The boundary is killable in both directions: at *version == FormatVersion
 	// a `>=` here refuses a sidecar this server understands, and a `<=` below

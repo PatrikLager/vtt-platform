@@ -633,7 +633,8 @@ func TestACampaignWhoseArtDeclaresANewerFormatRefusesToBoot(t *testing.T) {
 // newer server would fix.
 //
 // It is the same absent-versus-zero defect fixed twice already on this branch
-// (mapJSON.Pack, and campaigncfg's two fields), and it stayed harmless only
+// (campaigncfg's two fields, and mapJSON.Pack — which itself went on 2026-09-06
+// with the migration route it existed to word), and it stayed harmless only
 // while no real sidecar existed. Task 8 of the art-is-a-flat-library plan is
 // what makes campaigns/example/art/ real, so it closes this first.
 //

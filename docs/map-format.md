@@ -423,11 +423,17 @@ content, never something written into the campaign's event log, so nothing
 about it is frozen the way the wire contract is.
 
 **A map file may no longer name a pack, and the field is REFUSED.** A
-top-level `"pack"` is rejected at load, with a message naming the field and
-pointing at `art/` (2026-09-02-art-is-a-flat-library design spec §7: *"There is
-no compatibility layer, and none is added later."*). It used to name the pack in
-that map's own `tiles/` directory, so that a mismatch was caught rather than
-silently drawing the wrong pictures.
+top-level `"pack"` is rejected at load — `json: unknown field "pack"`, from the
+strict decoder, which refuses any key this server has no field for
+(2026-09-02-art-is-a-flat-library design spec §7: *"There is no compatibility
+layer, and none is added later."*). It used to name the pack in that map's own
+`tiles/` directory, so that a mismatch was caught rather than silently drawing
+the wrong pictures.
+
+*The refusal carried migration instructions in its message until 2026-09-06,
+when Patrik ruled the route out: nothing has ever shipped, and every campaign
+that has ever existed is in this repository. The instructions live here now, in
+the paragraphs below, which is where a reader looks anyway.*
 
 Art now resolves by FILENAME inside one flat `art/` directory per campaign, and
 any map may name any installed piece — so there is no container left to
@@ -579,13 +585,16 @@ directory and resolves by filename.
 A map is validated fully before it is ever served to a table — never at the
 table. In order, roughly:
 
-1. `format_version` must be present and must be a version this server
+1. The file must contain **no key this server does not know**, and a `pack`
+   field is the one worth calling out: any way of writing it is refused —
+   `"pack": "cellar-basics"`, `"pack": ""`, and `"pack": null` alike, and the
+   same for the field under any rename. It is the PRESENCE of the key that is
+   refused, not its value, and it is refused by the JSON decoder, so this
+   happens before every check below it. Deleting the line is the whole fix;
+   your `overrides` and `objects[].art` values do not change — see §8 for
+   where the pictures go.
+2. `format_version` must be present and must be a version this server
    understands.
-2. A `pack` field must not be present **at all**. Any way of writing it is
-   refused — `"pack": "cellar-basics"`, `"pack": ""`, and `"pack": null`
-   alike — with a message naming the field and pointing at `art/`. Deleting
-   the line is the whole fix; your `overrides` and `objects[].art` values do
-   not change.
 3. `grid_width` and `grid_height` must each be at least `1`.
 4. If `tiles` is non-empty, **every** square in the grid must have an entry
    (§1) — no missing squares, and no extra entries naming a square outside

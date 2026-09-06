@@ -14,13 +14,14 @@
 // Kind/Material ever comes from art — see Resolve's doc comment for why that
 // boundary is load-bearing.
 //
-// A MAP THAT DECLARES A PACK IS REFUSED, by Load, naming the field and
-// pointing at art/ (that plan's design spec §7: "There is no compatibility
-// layer, and none is added later"). Map has no Pack field at all any more —
-// mapJSON keeps the JSON one solely so the refusal can be worded — and since
-// Task 7 of that plan there is no Pack, PackTile or LoadPack in this package
-// either. Nothing here reads a manifest of any kind: the only art code in the
-// tree is internal/artlib, and it looks a piece up by filename.
+// A MAP THAT DECLARES A PACK IS REFUSED, by Load, through decodeStrict's
+// DisallowUnknownFields — `json: unknown field "pack"`, and the same for any
+// rename. Map has no Pack field, mapJSON has none either since 2026-09-06 (the
+// two it kept solely to word a migration message went with the route Patrik
+// ruled out), and since Task 7 of the art-is-a-flat-library plan there is no
+// Pack, PackTile or LoadPack in this package at all. Nothing here reads a
+// manifest of any kind: the only art code in the tree is internal/artlib, and it
+// looks a piece up by filename.
 //
 // Compiling a loaded Map into wire events is compile.go's job
 // (Task 4, spec §5) — the one and only reason this package depends on
@@ -73,9 +74,10 @@ const MapFormatVersion int32 = 1
 //
 // A VALUE OUTSIDE THEM IS REFUSED, NEVER CLAMPED INTO RANGE. Silently serving
 // 1024 to a file that says 100000 is the "ignore it and load anyway" answer this
-// format refuses everywhere else — see loadAs's own "pack" refusal, whose whole
-// argument is that a file meaning something else than it says draws the wrong
-// thing with nobody told.
+// format refuses everywhere else — see decodeStrict's DisallowUnknownFields
+// (load.go), which refuses a key this server has no field for rather than
+// dropping it, on the same argument: a file meaning something other than it says
+// draws the wrong thing with nobody told.
 //
 // DUPLICATED IN internal/campaigncfg, which bounds the campaign-wide default by
 // the same pair and may not import this package (it is self-only, and a settings
