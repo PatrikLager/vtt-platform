@@ -239,9 +239,15 @@ func TestLoadAcceptsTheVersionItUnderstands(t *testing.T) {
 // internal/identity's TestVerifyUsesConstantTimeCompare and
 // internal/gateway's TestServeNeverClosesAConnectionsOutboundChannel already make on
 // their own files. It matches
-// DECLARATIONS, not the word: mapJSON.Pack survives on purpose (it is the only
-// way loadAs can refuse a file that declares one — see mapJSON's own comment),
-// so a bare "Pack" search would fail forever and be deleted by whoever hit it.
+// It matches a LIST OF NAME STRINGS, not "declarations" in any grammatical
+// sense, and the difference is what review found on 2026-09-06: the sentence
+// here used to claim it matched declarations, which made the list look
+// exhaustive when it was six names. The bare word cannot be on it — mapJSON.Pack
+// survives on purpose, as the only way loadAs can refuse a file that declares a
+// container (see mapJSON's own comment), so a bare "Pack" search would fail
+// forever and be deleted by whoever hit it. What is on the list instead is every
+// SPELLING a resurrection would use, including the `type Pack`/`*Pack`/`Pack{`
+// forms and the `Package` ones the tree-wide gate structurally cannot see.
 func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
 	// Reads this package's own directory: `go test` runs a test binary with
 	// its cwd set to the package under test, which is what makes "." right
@@ -251,8 +257,30 @@ func TestNoPackTypeOrLoaderRemainsInThisPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// THE BARE TOKEN `Pack` IS NOT ON THIS LIST AND CANNOT BE: mapJSON.Pack is
+	// the refusal itself (see its own comment), so banning the word would ban
+	// the enforcement. What is banned instead is every way of DECLARING or
+	// USING a type by that name — `type Pack`, `*Pack`, `Pack{` — which is what
+	// a resurrected container actually looks like and which the six name
+	// strings below do not cover. Review, 2026-09-06: adding `type Pack struct`
+	// and `func Load(dir string) (*Pack, error)` to load.go left this test and
+	// tools/check-no-pack.py BOTH green, because the gate's exemption for this
+	// file allows the word `Pack` and this list did not carry the forms.
+	//
+	// THE `Package` SPELLINGS ARE HERE FOR A DIFFERENT REASON. The tree-wide
+	// gate carves `pack`-followed-by-`age` out of its needle so Go's keyword
+	// does not red every file, and that carve-out is a SUBSTRING one, so
+	// `ArtPackage` and `LoadPackage` escape it entirely. This package is where
+	// the container lived, so this is where that spelling is refused. Note
+	// `type Pack` and `*Pack` already catch `type Package` and `*Package` by
+	// substring; `Package{`, `ArtPackage`, `LoadPackage` and `PackageTile` do
+	// not follow and are named. The bare word `Package` is NOT banned — this
+	// file's own `// Package mapdef` doc line survives comment-stripping in
+	// spirit, and mapJSON.Package is the refusal for the `"package"` key.
 	banned := []string{"LoadPack", "PackTile", "PackFormatVersion",
-		"packJSON", "packTileJSON", "packTileMap"}
+		"packJSON", "packTileJSON", "packTileMap",
+		"type Pack", "*Pack", "Pack{",
+		"Package{", "ArtPack", "ArtPackage", "LoadPackage", "PackageTile"}
 	var scanned int
 	for _, e := range entries {
 		name := e.Name()
@@ -382,6 +410,73 @@ func TestAMapDeclaringAnEmptyPackIsRefusedToo(t *testing.T) {
 				t.Fatalf("error = %q, want it to name the field — a refusal for some other reason proves nothing here", err)
 			}
 		})
+	}
+}
+
+// TestAMapDeclaringAPackageIsRefusedByName closes the ONE spelling the tree's
+// tree-wide gate structurally cannot see, and the reason it exists is worth
+// stating rather than inferring.
+//
+// tools/check-no-pack.py carves `pack` followed by `age` out of its needle,
+// because Go's own `package` keyword opens every .go file in the repository and
+// 923 of the word's 1857 occurrences are that keyword or the English word. The
+// carve-out is a SUBSTRING carve-out, so `ArtPackage`, `LoadPackage`,
+// `handlePackageFile` and `PackageTile` all escape it — and "art package" is the
+// most idiomatic rename anyone reaching for a distribution unit would write. A
+// tighter needle is not available: 303 code positions across 36 distinct
+// `package`-family words exist in this tree today, and any rule permissive
+// enough for those permits `ArtPackage` too.
+//
+// So the gate carries that as a stated limit, and this test plus the banned
+// list in TestNoPackTypeOrLoaderRemainsInThisPackage close the two halves that
+// CAN be closed: the file format, here, and this package's own declarations,
+// there. Neither closes the general case; nothing in this repository does.
+//
+// The refusal is the same one `"pack"` gets and for the same reason — a
+// pre-migration map's overrides name art inside a namespace that no longer
+// exists — so the message names the field and points at art/.
+func TestAMapDeclaringAPackageIsRefusedByName(t *testing.T) {
+	for _, c := range []struct{ name, value string }{
+		{"named", `"cellar-basics"`},
+		// The same two ways of writing nothing mapJSON.Pack learned about in
+		// review on 2026-09-04, for the same reason: PRESENCE is what is
+		// refused, and `null` is what an author told to remove a field writes.
+		{"empty-string", `""`},
+		{"null", `null`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "renamed.json")
+			// Valid in every other respect — "stone" is a real standardTiles
+			// name — so a refusal here can only be the declaration.
+			writeFile(t, p, `{"format_version":1,"id":"renamed","name":"Renamed","grid_width":1,
+				"grid_height":1,"tiles":{"0,0":"stone"},"package":`+c.value+`}`)
+
+			_, err := mapdef.Load(p)
+			if err == nil {
+				t.Fatalf(`a map declaring "package":%s was accepted: renaming the container does not make it one this server understands`, c.value)
+			}
+			for _, want := range []string{`field "package"`, "art/"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestAMapWithNoPackageFieldStillLoads is to the test above what
+// TestAMapWithNoPackFieldStillLoads is to its own pair: the refusal must fire on
+// the declaration and on nothing else. Without it, a refusal that rejected every
+// map in the world would pass every assertion above.
+func TestAMapWithNoPackageFieldStillLoads(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "ordinary.json")
+	writeFile(t, p, `{"format_version":1,"id":"ordinary","name":"Ordinary","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"}}`)
+
+	if _, err := mapdef.Load(p); err != nil {
+		t.Fatalf("load: %v — a map that names no container is the ordinary case", err)
 	}
 }
 

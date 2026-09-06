@@ -49,6 +49,27 @@ type mapJSON struct {
 	// byte-identically to the `*string` version for every input that reached
 	// it, and reads `null` or `5` for the ones that did not.
 	Pack json.RawMessage `json:"pack"`
+	// Package is the SAME REFUSAL for the one rename the tree-wide gate cannot
+	// see, and it is not redundant with the decoder's strictness.
+	//
+	// loadAs decodes with DisallowUnknownFields, so `{"package": ...}` already
+	// fails — with `json: unknown field "package"`, which tells a DM whose
+	// campaign predates the flat art library nothing about what to do. The
+	// whole value of the `"pack"` refusal is its message; a container renamed
+	// to `package` deserves the same one, because the values under "overrides"
+	// are wrong in exactly the same way.
+	//
+	// WHY THIS SPELLING AND NOT ANY OTHER. tools/check-no-pack.py carves
+	// `pack`-followed-by-`age` out of its needle so Go's own keyword does not
+	// red every file in the repository, and the carve-out is a SUBSTRING one:
+	// `ArtPackage`, `LoadPackage` and `handlePackageFile` all escape it, and
+	// "art package" is the most idiomatic rename anyone would reach for. That
+	// limit is stated in the gate; this field and the banned list in
+	// TestNoPackTypeOrLoaderRemainsInThisPackage are the two halves of it that
+	// can actually be closed. A json.RawMessage for the reason Pack above is:
+	// PRESENCE is what is refused, and neither a string nor a pointer can tell
+	// `null` from an absent key.
+	Package json.RawMessage `json:"package"`
 	// CellPx is a json.RawMessage for the reason Pack above is, minus the
 	// refusal: PRESENCE is what decides. A plain int32 cannot tell an absent
 	// cell_px from an explicit {"cell_px": 0}, so "an undeclared map inherits
@@ -182,6 +203,20 @@ func loadAs(path, display string) (*Map, error) {
 				"install the pack's pictures into that art/ directory; the values under "+
 				"\"overrides\" and each object's \"art\" already name art by id and need no change",
 			raw.Pack))
+	}
+
+	// The same refusal for the same file, spelled the way a rename would spell
+	// it. Reported AFTER "pack" so a file carrying both — which is what a
+	// half-done rename looks like — names the original field first.
+	if raw.Package != nil {
+		return nil, fieldErr(display, "package", fmt.Sprintf(
+			"packs no longer exist and this file still declares one (%s), renamed or not. Art "+
+				"is now one flat art/ directory per campaign, where a picture's own filename is "+
+				"the id a map names (2026-09-02-art-is-a-flat-library design spec §3). Delete "+
+				"this field and install the container's pictures into that art/ directory; the "+
+				"values under \"overrides\" and each object's \"art\" already name art by id and "+
+				"need no change",
+			raw.Package))
 	}
 
 	// cell_px, when the map declares one (art-is-a-flat-library design spec §6 as
