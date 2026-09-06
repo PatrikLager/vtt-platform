@@ -47,19 +47,22 @@ name. A map loads independently of any adventure (design spec
 file into the campaign's `maps/`, restart, and it is servable.
 [`campaigns/example/`](campaigns/example/) is the platform's own demo
 campaign — one map, `cellar.json`, a small room with real cover (pillars,
-crates, an interior wall and a door).
+crates, an interior wall and a door), and the art it draws with in
+[`campaigns/example/art/`](campaigns/example/art/).
 
-**Art lives in one flat directory, and the demo campaign does not ship any
-yet.** A map's `overrides` and its objects' `art` name art by FILENAME in
-`<campaign>/art/` — the filename stem is the id, there are no subfolders, and
-any map may use any installed piece
+**Art lives in one flat directory.** A map's `overrides` and its objects' `art`
+name art by FILENAME in `<campaign>/art/` — the filename stem is the id, there
+are no subfolders, and any map may use any installed piece
 (`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`). A name
 that resolves to nothing costs its square's picture and one warning rather than
-the map, so `cellar.json` loads and draws from the built-in tile vocabulary
-today. Packs, `<campaign>/packs/` and their route were deleted by Task 7 of that
-plan; `campaigns/example/art/` arrives with Task 8. `tools/genmappack` still
-holds the drawing code the demo art is generated from — see that package's own
-doc comment.
+the map. The demo's thirteen files are the whole format in miniature: three
+tile pieces as `<id>.png` plus an `<id>.json` sidecar saying what kind of square
+it is, `cellar-door` as a sidecar naming its own two pictures and no
+`cellar-door.png`, and four objects as bare pictures with no sidecar at all.
+Packs, `<campaign>/packs/` and their route were deleted by Task 7 of that plan.
+`tools/genmappack` holds the drawing code that art is generated from — running
+it with no flags rewrites exactly what is committed, so `git diff` is the check
+that the two still agree.
 
 Installing art is copying files in, and `cp` is a supported way to do it. The
 convenience is:

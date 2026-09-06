@@ -69,8 +69,12 @@ const MaxWireTiles = 3600
 // spec §4) — is collected, DEDUPLICATED (see warningTally below: once per
 // distinct message, with the number of squares or objects it happened to) and
 // returned rather than dropped; Compile itself never refuses on one. A sidecar
-// declaring a format_version this server does not understand is the one case
-// that does refuse, and it comes back as an error rather than a warning.
+// declaring a format_version LATER than this server understands is the one case
+// that does refuse, and it comes back as an error rather than a warning. (It
+// read "a format_version this server does not understand" until
+// art-is-a-flat-library Task 8, when a typo'd 0 stopped refusing: nothing below
+// this server's own version is content it is too old for, so those degrade with
+// the broken files.)
 func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 	sc, warnings, err := BuildSceneCreated(m, artDir)
 	if err != nil {

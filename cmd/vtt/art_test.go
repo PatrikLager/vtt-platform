@@ -596,6 +596,49 @@ func TestTheCellPxConstantsAgreeAcrossThePackagesThatCarryThem(t *testing.T) {
 	}
 }
 
+// TestTheShippedCampaignDeclaresTheCellSizeItsArtWasDrawnAt is the third guard
+// of the same shape as the two above, and the only one about FILES rather than
+// constants: campaigns/example/campaign.json says how many pixels a grid square
+// of this campaign's art is, and campaigns/example/art holds the pictures that
+// number is about.
+//
+// NOTHING ELSE COMPARES THEM. `vtt art install` warns when an installed picture
+// is not a whole multiple of the campaign's cell_px, which the shipped art would
+// pass at 32 and at 16 as well as at 64, so the warning cannot catch a
+// campaign.json that drifted. tools/genmappack pins the same pixels against its
+// own -cell-px default (TestTheCommittedArtIsDrawnAtThisToolsOwnDefault) and
+// cannot do this half, because .go-arch-lint.yml does not let that tool import
+// campaigncfg — cmd/vtt is the composition root and the place where every other
+// cell_px agreement is already asserted.
+//
+// IT ALSO LOADS THE SHIPPED SETTINGS FILE THROUGH THE REAL READER. campaign.json
+// is optional, so a malformed one in the demo campaign would be found by the
+// first person to boot it rather than by this suite.
+func TestTheShippedCampaignDeclaresTheCellSizeItsArtWasDrawnAt(t *testing.T) {
+	const shippedCampaign = "../../campaigns/example"
+
+	cfg, err := campaigncfg.Load(shippedCampaign)
+	if err != nil {
+		t.Fatalf("campaigncfg.Load(campaigns/example): %v — no server could boot the demo "+
+			"campaign either", err)
+	}
+
+	f, err := os.Open(filepath.Join(shippedCampaign, "art", "masonry-1.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.DecodeConfig(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int32(img.Width) != cfg.CellPx {
+		t.Errorf("campaign.json declares cell_px %d and art/masonry-1.png is %d pixels wide — "+
+			"one of the two was changed without the other, and `vtt art install` would then "+
+			"warn about every piece the campaign ships", cfg.CellPx, img.Width)
+	}
+}
+
 // TestASuccessfulForcedInstallLeavesNoLitter closes the other end of the
 // backup TestARefusedForcedInstallPutsTheOldArtBack depends on: the replaced
 // file is set aside so a refusal can put it back, and when nothing refuses it

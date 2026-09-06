@@ -165,6 +165,7 @@ there is, that is what its parent's number means.
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
 | `cmd/vtt` | **never measured** | unknown | unknown | **unresolvable + symlink** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
+| `tools/genmappack` | **never measured** | unknown | unknown | **unresolvable (above)** |
 
 `cmd/vtt`'s row held "0 of 77 evaluated" until 2026-08-05. It was retracted, not
 recomputed: every run of it so far has been a constant-KILLED oracle, by one of
@@ -190,6 +191,46 @@ never made it measurable; it removed one of two reasons it was not.
 That `internal/adventure/conformance` was gated while `internal/adventure` was
 not, for as long as it was, remains the signature of how the list was
 originally assembled — from whatever happened to have been measured.
+
+### `tools/genmappack` — recorded 2026-09-06, still unmeasured
+
+It has the shape this file opens with: `package main` in a directory not named
+`main`, so gremlins resolves the bare module path and scores every mutant a
+false KILL in milliseconds. That is the same blocker `tools/toolgen` was removed
+from the gated set for on 2026-08-04. Adding it to `PACKAGES` would not
+reproduce that lie a third time — `check-mutation.py`'s `unresolvable_packages`
+guard refuses such a package outright — so what is missing is a way to MEASURE
+it, not a guard against measuring it wrongly.
+
+**What is new is not the blocker, it is that nobody had written it down.** It
+was in neither `check-mutation.py`'s `PACKAGES` nor this file — the exact state
+`internal/mapdef` was in when the maps-as-geometry review found it, and the
+state this file exists to make impossible. Found by the Task 8 review of
+`2026-09-02-art-is-a-flat-library`.
+
+**What is unguarded meanwhile.** `main.go` grew by 293 lines against 96 removed
+in that task — a flag layer (`-out`, `-std-out`, `-cell-px`) with an exit-code
+contract now testable through `run(args, stdout, stderr) int`, a package-level
+mutable `size` that every drawing primitive bounds its loops by, and one
+refusal path (`checkCellPx`, which rejects a non-positive size because
+`png.Encode` writes a 0x0 picture that every reader accepts and no board can
+draw). The only pressure on any of it is the coverage floor,
+`tools/coverage-thresholds.txt`'s 90.0 for this package.
+
+**`size` being a package-level `var` is an order-dependence hazard, not a
+defect.** Both tests that set it restore it with `t.Cleanup`
+(`TestRunRefusesAnUndrawableCellSizeBeforeWritingAnything` and
+`TestRunWritesBothSetsAtTheSizeItWasGiven`), and `go test -shuffle=on` on the
+package was green three times running on 2026-09-06. **`-shuffle=on` is what
+would catch a third test forgetting to, and no gate here runs it** — neither
+`check:coverage` nor `check:race` passes the flag (grep the Taskfile). A
+mutation gate would not catch it either: gremlins mutates SOURCE, and a test
+that leaks `size` is a defect in the test. So this hazard is guarded by hand or
+not at all, which is why it is written down rather than left as a habit.
+
+**Whether it is measurable by `toolgen`'s route is untested.** `toolgen`'s 0
+came from a renamed, symlink-free worktree copy; nobody has tried that here, so
+"never measured" above means never measured, not measured-and-unresolvable.
 
 ### `internal/adventure` — worked down and gated 2026-08-04
 

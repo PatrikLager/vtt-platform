@@ -44,7 +44,7 @@ import (
 // loadMapsDir walks "<dir>/maps" and loads every "<id>.json" through
 // mapdef.LoadInstalled, which validates each map and dry-runs mapdef.Compile
 // against "<dir>/art" — so an overrides entry naming art written for a
-// format_version this server does not understand fails HERE rather than only
+// LATER format_version than this server understands fails HERE rather than only
 // once something eventually calls Compile for real, mirroring loadScenes'
 // identical dry-run of mapdef.BuildSceneCreated for adventure-embedded scenes
 // (internal/adventure/load.go), and reusing Compile itself rather than

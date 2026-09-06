@@ -26,6 +26,17 @@
 // wrong for the two the server warns about instead of refusing — a door piece
 // named on a floor square, and a wall piece named on a door square.
 //
+// THAT PARAGRAPH IS ABOUT THE FETCH, AND THE KEY IS A SEPARATE QUESTION — with
+// one residual gap this file does not close. A WALL piece named on a DOOR
+// square keeps its art on the wire (mapdef.Resolve warns and returns the name
+// anyway), so scene-plan.ts's tileImage asks for `tile:<art>/open` the moment
+// that door is opened, while the loop below produces an `/open` key only for a
+// sidecar declaring both pictures. The square draws correctly shut and paints
+// the magenta marker open. It takes an authoring error to reach, it predates
+// this file, and the fix is a decision about which layer may drop an art id —
+// so it is recorded here rather than patched (art-is-a-flat-library Task 8
+// review, "record, do not fix").
+//
 // NOTHING HERE IS A SECOND VALIDATOR. The server has already decided what
 // resolves and empties the name when it does not: a Tile.Art survives only when
 // artlib.Lookup succeeded AND the piece had a sidecar, and a SceneObject.art

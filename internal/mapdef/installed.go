@@ -29,8 +29,9 @@ import (
 // warnings, computed against the same directory, and that is the one that
 // reaches whoever asked. Art that exists and CANNOT BE READ degrades the same
 // way as of Patrik's ruling of 2026-09-04; the one art failure still fatal
-// here is a sidecar declaring a format_version this server does not understand
-// (see Resolve's own doc comment for why those two go opposite ways). An empty
+// here is a sidecar declaring a format_version LATER than this server
+// understands (see Resolve's own doc comment for why those two go opposite
+// ways; a version BELOW it is a typo and degrades). An empty
 // artDir is legal and means no art resolves.
 //
 // This function exists because there are two ways into a campaign's maps
@@ -91,8 +92,8 @@ func LoadInstalled(mapsDir, id, artDir string) (*Map, error) {
 	}
 
 	// Dry run: proves every square's nature resolves against the standard
-	// vocabulary, and that no art this map names was written for a format this
-	// server does not understand, before the map is considered loadable at
+	// vocabulary, and that no art this map names was written for a format LATER
+	// than this server understands, before the map is considered loadable at
 	// all. Compile itself, not a bespoke second check — the same "one
 	// construction site" discipline internal/adventure/load.go's loadScenes
 	// follows, and the reason boot and on-demand cannot drift apart on what a

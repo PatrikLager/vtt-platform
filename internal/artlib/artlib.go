@@ -38,6 +38,34 @@
 // fs.DirEntry.IsDir() reads the entry's own type, so a symlink to a directory
 // answers false. Lookup never sees either, because it never lists anything.
 //
+// MAPTOOL SOLVES THIS SAME PROBLEM AND ARRIVES AT THE SAME SHAPE FROM THE
+// OTHER END (read 2026-09-05, CLAUDE.md rule 9, from
+// net/rptools/maptool/model/AssetManager.java). Its asset cache is ONE FLAT
+// DIRECTORY: getAssetCacheFile is cacheDir/<id> and getAssetInfoFile is
+// cacheDir/<id>.info, a properties file beside the picture holding its name and
+// type — a picture plus a sidecar, keyed by stem, with no manifest listing what
+// is installed and no subdirectory anywhere. searchForImageReferences walks
+// whatever directory tree a user points it at and imports what it finds INTO
+// that flat cache, so folders are a browsing convenience and never part of an
+// identity. sanitizeAssetId canonicalises the resolved path and refuses
+// anything outside the cache, which is what os.OpenRoot does for us.
+//
+// THE ONE DIVERGENCE IS THE ID ITSELF, and it is deliberate: theirs is the MD5
+// of the picture's bytes and the human name is a field in the sidecar, where
+// ours is the filename and nothing declares a name at all. Content-addressing
+// buys them de-duplication of identical bytes and rename-safety for free, and
+// costs what this platform cannot pay: a map file here is JSON that a DM or an
+// LLM writes by hand, and `"overrides": {"0,1": "masonry-1"}` is a sentence
+// either can read where a 32-character digest is not. It also means retouching
+// a picture would change its id and orphan every reference to it, which is the
+// opposite of spec §3.3's "cp over it and reload". What we give up is real and
+// worth naming: two copies of the same picture under two names are two pieces
+// here, and renaming a file breaks every map that names it.
+//
+// A campaign's assets travel INSIDE the .cmpgn zip there, which is the same
+// answer this sub-project's pre-flight ruling reached for an adventure bundle's
+// own <adventure>/art/ — art that ships with the thing you hand someone.
+//
 // EVERY FILE IS OPENED THROUGH os.OpenRoot, never a plain filepath.Join.
 // Validate lists art/ with os.ReadDir, which follows nothing and opens no
 // entry; every byte either function reads comes through a root. Art is
@@ -63,14 +91,14 @@
 //   - ErrArtDirUnreadable: art/ present and unopenable. Not one piece failing,
 //     every piece failing, and the two callers want opposite verdicts — a boot
 //     walk refuses, a load at the table degrades.
-//   - ErrFormatVersion: the sidecar declares a format this server does not
-//     understand. The one art failure that still refuses a map, because it is
+//   - ErrFormatVersion: the sidecar declares a LATER format than this server
+//     understands. The one art failure that still refuses a map, because it is
 //     a fact about the SERVER rather than about the file.
 //   - EVERYTHING ELSE — a missing brace, a truncated copy, a wrongly typed
-//     field, a format_version that is not a version number, a door naming one
-//     picture, a picture that is a directory — is a broken file, and the
-//     caller degrades that one square with a warning naming the piece and the
-//     cause.
+//     field, a format_version that is not a version number or is BELOW the one
+//     this server understands, a door naming one picture, a picture that is a
+//     directory — is a broken file, and the caller degrades that one square
+//     with a warning naming the piece and the cause.
 //
 // THE LAST BULLET USED TO SAY THE OPPOSITE, and the sentence it replaces —
 // "art that exists and cannot be read is a defect to fix rather than a square
@@ -94,11 +122,14 @@ import (
 )
 
 // FormatVersion is the sidecar format this package understands. A sidecar
-// DECLARING A DIFFERENT NUMBER is the single art failure that is still refused
+// DECLARING A LATER NUMBER is the single art failure that is still refused
 // rather than degraded (spec §4, Patrik 2026-09-04) — see ErrFormatVersion.
-// The other two things the field can be — absent, or holding something that is
-// not a version number at all — are broken files and degrade with them; see
-// pieceFromSidecar, which is where all three are told apart.
+// The other three things the field can be — absent, holding something that is
+// not a version number at all, or declaring a number BELOW this one — are
+// broken files and degrade with them; see pieceFromSidecar, which is where all
+// four are told apart. It said "a different number" until
+// art-is-a-flat-library Task 8, and that spelling is what gave a typo'd 0 the
+// refusal reserved for the future.
 const FormatVersion int32 = 1
 
 const (
@@ -153,8 +184,16 @@ var ErrNotFound = errors.New("artlib: no such art")
 var ErrArtDirUnreadable = errors.New("artlib: the art directory cannot be read")
 
 // ErrFormatVersion marks the ONE sidecar failure that still refuses a map
-// (Patrik's ruling, 2026-09-04): the file declares a format_version this
-// server does not understand.
+// (Patrik's ruling, 2026-09-04): the file declares a format_version LATER than
+// the one this server understands.
+//
+// "LATER", NOT "DIFFERENT", and the difference is a whole campaign. The rule
+// was written as `!= FormatVersion` until art-is-a-flat-library Task 8, so a
+// typo'd `"format_version": 0` took this sentinel, mapdef.Resolve refused the
+// map, and composeServer refused the BOOT for every seat — over a digit, with
+// the message telling an operator that their file is from the future. Nothing
+// below this server's own version can be content this server is too old for;
+// pieceFromSidecar degrades those with the broken files.
 //
 // IT IS NOT A CLAIM THAT THE FILE IS BROKEN. Every other unreadable sidecar —
 // a missing brace, a truncated copy, a door that names one picture — degrades
@@ -166,16 +205,17 @@ var ErrArtDirUnreadable = errors.New("artlib: the art directory cannot be read")
 // "this server is too old". One refusal naming both versions says that; ninety
 // warnings do not.
 //
-// TWO OTHER THINGS THE FIELD CAN BE ARE NOT THIS, and both degrade. A sidecar
-// with NO format_version at all: an absent field does not assert that the
-// content is newer, it asserts that somebody hand-wrote a file and left a line
-// out — the same class as a missing brace, and refusing it would leave the
-// measured defect this ruling exists to remove half alive. And a field holding
+// THREE OTHER THINGS THE FIELD CAN BE ARE NOT THIS, and all three degrade. A
+// sidecar with NO format_version at all: an absent field does not assert that
+// the content is newer, it asserts that somebody hand-wrote a file and left a
+// line out — the same class as a missing brace, and refusing it would leave the
+// measured defect this ruling exists to remove half alive. A field holding
 // something that is NOT A VERSION NUMBER — "2", 1.0, 2.5, null, an integer
 // past int32: this server cannot read it as a version at all, so it cannot be
 // reading a later one. Every plausible spelling of a later format is a plain
 // JSON integer, which is what makes it safe to leave both of those with the
-// broken files.
+// broken files. And a number BELOW this server's own — 0, -1: a version no
+// server has ever written, which is a typo wearing a version's clothes.
 //
 // THE SENTINEL IS THE INTERFACE. mapdef.Resolve branches on errors.Is, never
 // on message text, so this var is what carries the ruling across the package
@@ -265,6 +305,13 @@ func notFound(id, why string) error {
 // It names BOTH versions because that is the entire content of the message.
 // The remedy is a newer server, and "this art is broken" does not say which
 // one to go and get.
+//
+// declared IS ALWAYS GREATER THAN FormatVersion at the one call site, which is
+// what makes that remedy true of every message this builds. The MESSAGE stays
+// neutral about the direction anyway — campaigncfg.ErrFormatVersion's doc
+// records the same choice for the same file one directory over — because the
+// two versions are the fact, and a sentence about who is behind is an
+// inference the reader can draw from them.
 func unsupportedFormat(id string, declared int32) error {
 	return fmt.Errorf(
 		"artlib: art/%s%s: field \"format_version\": declares %d; this server understands %d: %w",
@@ -573,8 +620,8 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	// 0" — a version the author never wrote.
 	var version *int32
 	if err := json.Unmarshal(declared.FormatVersion, &version); err != nil || version == nil {
-		// DEGRADES, and it is the third answer this field can give. The
-		// refusal is for a version this server does not understand; a value
+		// DEGRADES, and it is one of three answers this field can give that
+		// are not the refusal. That refusal is for a LATER version; a value
 		// that is not a version AT ALL — "2", 1.0, 2.5, null, an integer past
 		// int32 — is a broken file, and a broken file draws its square plain
 		// like every other broken file (Patrik, 2026-09-04). Every plausible
@@ -584,8 +631,40 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 			"artlib: art/%s%s: field \"format_version\": %s is not a version number; this "+
 				"server understands %d", id, sidecarExt, clip(declared.FormatVersion), FormatVersion)
 	}
-	if *version != FormatVersion {
+	// TWO ARMS RATHER THAN ONE `!= FormatVersion`, and here the DIRECTION
+	// decides the verdict rather than only the sentence — which is what makes
+	// this split sharper than campaigncfg.Load's, where both arms refuse.
+	//
+	// A single arm shipped until art-is-a-flat-library Task 8 and gave a
+	// typo'd `"format_version": 0` the refusal reserved for content from the
+	// future: mapdef.Resolve returned the error, and composeServer turned it
+	// into a refusal to BOOT when a committed map named that piece — the whole
+	// campaign down, for everyone, over a mistyped digit whose remedy is to fix
+	// the file and not to fetch a newer server. It is the same absent-versus-
+	// zero shape mapJSON.Pack and campaigncfg's two fields were fixed for on
+	// this same branch, and it was harmless only while no real sidecar existed.
+	//
+	// The boundary is killable in both directions: at *version == FormatVersion
+	// a `>=` here refuses a sidecar this server understands, and a `<=` below
+	// degrades one, and every test that resolves a v1 piece says so.
+	if *version > FormatVersion {
 		return Piece{}, unsupportedFormat(id, *version)
+	}
+	if *version < FormatVersion {
+		// DEGRADES. A version BELOW the one this server understands is not
+		// content this server is too old for, so no sentinel: 0 and -1 are what
+		// a hand-written file says when somebody typed the field and not the
+		// number, and no server has ever written either.
+		//
+		// WHEN A SECOND VERSION EXISTS this arm becomes a real compatibility
+		// question rather than a typo report — a v1 sidecar read by a v2 server
+		// is a file this server could very likely still read. Deciding that is
+		// the job of whoever bumps FormatVersion; degrading is the answer that
+		// keeps the campaign booting until they do.
+		return Piece{}, fmt.Errorf(
+			"artlib: art/%s%s: field \"format_version\": declares %d; this server understands "+
+				"%d, and %d is not a format anything ever wrote — check the file",
+			id, sidecarExt, *version, FormatVersion, *version)
 	}
 
 	var sc sidecar
@@ -620,6 +699,46 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 		return Piece{}, fmt.Errorf(
 			"artlib: art/%s%s: a door declares both \"open\" and \"closed\"", id, sidecarExt)
 	}
+	// A DOOR MAY NAME THE SAME PICTURE TWICE, and that is a ruling rather than
+	// a gap (art-is-a-flat-library Task 8 review, finding F4). Nothing below
+	// compares Open against Closed, so a door that looks shut when opened
+	// installs, validates and resolves without a word.
+	//
+	// THE CHECK WOULD BE SYNTAX WEARING JUDGEMENT'S CLOTHES. What an author gets
+	// wrong is that the two pictures LOOK the same; what == sees is that they
+	// are SPELLED the same. `cp cellar-door-closed.png cellar-door-open.png` is
+	// the likelier mistake — it is one command — and it leaves two different
+	// names over identical bytes, which such a check passes. So it would refuse
+	// one spelling of the error, say nothing about the other, and read as
+	// coverage of both. Comparing the BYTES is the check that would work, and it
+	// is not this package's business: artlib decides what a piece IS, never what
+	// a picture shows (CLAUDE.md rule 5's line, applied to pixels).
+	//
+	// RULE 9, MapTool: it cannot even ask the question. A token's several
+	// pictures live in Token.imageAssetMap keyed by state name and valued by
+	// MD5Key, and net.rptools.lib.MD5Key is a digest OF THE BYTES — so two
+	// states showing one picture hold the same key by construction, and
+	// Token.getAllImageAssets collapses them into a HashSet without comment.
+	// Fifteen years of tables produced no such refusal because content-addressing
+	// makes the condition invisible.
+	//
+	// AND IT IS SOMETIMES MEANT: an archway or a threshold that blocks movement
+	// and sight while looking the same either way, or a placeholder pointing
+	// both states at one picture until the second is drawn. Refusing costs those
+	// authors their door; permitting costs the mistaken author a warning.
+	//
+	// A WARNING WAS THE THIRD OPTION and was not taken. mapdef.Resolve has the
+	// channel for it, but it would carry the same defect one register quieter —
+	// silent on the copied file, loud on the spelled-alike one — and a warning
+	// that fires on the rarer half of a mistake teaches the wrong lesson about
+	// what is checked.
+	//
+	// WHAT DOES GUARD IT is narrower and says so:
+	// TestTheShippedArtResolvesThroughThisPackage requires door.Open !=
+	// door.Closed for campaigns/example alone, because that campaign is a
+	// fixture this repo owns and its door demonstrably opens. The permission
+	// itself is pinned by TestADoorMayNameTheSamePictureForBothStates, so
+	// whoever decides to refuse it later has to move a test and read this.
 	// A door has TWO pictures and no third: File stays empty. Spec §3.1's own
 	// listing carries cellar-door.json, cellar-door-open.png and
 	// cellar-door-closed.png, and no cellar-door.png.
@@ -699,11 +818,15 @@ func statPicture(root *os.Root, id, name string) error {
 // (measured 2026-09-03, review finding F1). What a map load actually does with
 // each finding:
 //
-//   - A SIDECAR THAT DECLARES A format_version THIS SERVER DOES NOT UNDERSTAND:
-//     REFUSES the map. Since Patrik's ruling of 2026-09-04 this arm alone is
-//     what the retired claim was true of; it named "a sidecar that cannot be
-//     parsed" alongside, and that half moved to the line below.
-//   - A SIDECAR THAT CANNOT BE PARSED, AN ORPHAN SIDECAR, A SUBDIRECTORY, and a
+//   - A SIDECAR THAT DECLARES A LATER format_version THAN THIS SERVER
+//     UNDERSTANDS: REFUSES the map. Since Patrik's ruling of 2026-09-04 this
+//     arm alone is what the retired claim was true of; it named "a sidecar that
+//     cannot be parsed" alongside, and that half moved to the line below. It
+//     read "a format_version this server does not understand" until
+//     art-is-a-flat-library Task 8, which was true of a typo'd 0 as well and so
+//     described a refusal 0 no longer gets.
+//   - A SIDECAR THAT CANNOT BE PARSED, ONE DECLARING A VERSION BELOW THIS
+//     SERVER'S, AN ORPHAN SIDECAR, A SUBDIRECTORY, and a
 //     wrong-cased name on a CASE-SENSITIVE filesystem: the square DRAWS PLAIN
 //     and the DM gets a warning (spec §4) — from ErrNotFound for the last
 //     three, and from the ordinary-error arm for the unparseable one, which

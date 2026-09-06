@@ -474,7 +474,7 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 		// 2026-09-04, Task 4b — one corrupt sidecar was measured stopping a
 		// server booting). Both are a warning on one square now, not a refusal
 		// of the adventure. What is left is a sidecar declaring a
-		// format_version this server does not understand, which says the
+		// format_version LATER than this server understands, which says the
 		// content is newer than the server rather than that a file is broken.
 		// The warnings are discarded here (the
 		// second `_`) exactly as compile.go discards them — nothing in this

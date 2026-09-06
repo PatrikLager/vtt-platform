@@ -6,9 +6,11 @@ import {
   type ArtSidecarJSON,
 } from "../src/view/art-assets";
 import * as packAssets from "../src/view/pack-assets";
+import { fitCamera } from "../src/view/camera";
+import { planScene } from "../src/view/scene-plan";
 import { readdirSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
-import type { Scene } from "../src/state";
+import { newState, type Scene } from "../src/state";
 
 // --- what the wire actually gives this client ------------------------------
 //
@@ -351,4 +353,173 @@ test("pack-assets.ts exports only the STANDARD baseline pack, and none of the pe
   // module having been emptied or renamed out from under it.
   expect(typeof packAssets.loadStandardPackImages).toBe("function");
   expect(typeof packAssets.standardPackFileURL).toBe("function");
+});
+
+// --- the shipped campaign, end to end through both halves -------------------
+
+/**
+ * THE MAGENTA CHECKERBOARD IS THE DEFECT THIS SECTION EXISTS FOR. canvas.ts's
+ * paint() draws drawMissingTile over any op whose `image` key is absent from
+ * the ImageMap, so the whole art path fails in exactly one way at the table: a
+ * key scene-plan.ts emits that art-assets.ts never produced. Every test above
+ * checks one half against a hand-written table, and two halves that agree with
+ * the same table can still disagree with each other.
+ *
+ * So this composes the REAL functions over the REAL shipped files:
+ * artNamesInScene reads the ids, loadArtImages fetches them out of
+ * campaigns/example/art (served here off disk, one Response per file, exactly
+ * as GET /api/art/{file} serves them), planScene emits the ops, and every op's
+ * key must be one loadArtImages produced.
+ *
+ * IT IS WHY NO BROWSER SPEC WAS ADDED FOR THE OBJECT PATH. Neither shipped
+ * adventure has a single object, so client/e2e — which boots a campaign
+ * directory with no maps/ and no art/ and loads an adventure — cannot reach one
+ * without a new fixture campaign of its own. What a browser would add over this
+ * is that createImageBitmap decodes these particular PNGs and that the 2D
+ * context draws them; what it would NOT add is the key agreement, which is the
+ * thing that was actually unproven.
+ */
+const shippedArtDir = join(import.meta.dir, "../../campaigns/example/art");
+const shippedMapPath = join(import.meta.dir, "../../campaigns/example/maps/cellar.json");
+
+/** A fetch double serving one real directory, the way GET /api/art/{file} does. */
+function diskFetch(dir: string) {
+  return (async (input: RequestInfo | URL) => {
+    const name = decodeURIComponent(new URL(String(input)).pathname.replace("/api/art/", ""));
+    try {
+      return new Response(readFileSync(join(dir, name)));
+    } catch {
+      return new Response("", { status: 404 });
+    }
+  }) as typeof fetch;
+}
+
+/**
+ * shippedNatures is the kind and material each standard tile name cellar.json
+ * writes in `tiles` carries onto the wire — mapdef.StandardTile's four relevant
+ * rows (internal/mapdef/standard.go, and docs/map-format.md §3's table).
+ *
+ * IT IS NOT A COPY OF THE VOCABULARY, only of the part this one map uses, and
+ * `natureOf` throws on anything else — so the day cellar.json gains a fifth
+ * nature this fixture stops rather than quietly building a square with an empty
+ * Kind. THAT EMPTINESS IS THE DEFECT THIS TABLE EXISTS TO CLOSE: until
+ * 2026-09-06 every square here was built `{ Kind: "", Material: "" }` under a
+ * comment claiming planScene read them only for the `std:` fallback, and
+ * scene-plan.ts's tileImage gates the door's open picture on
+ * `tile.Kind === "door"` — so the door branch was unreachable, both halves of
+ * the loop below produced the identical plan, and renaming the `/open` key in
+ * art-assets.ts left this test passing.
+ */
+const shippedNatures: Record<string, { Kind: string; Material: string }> = {
+  "stone-wall": { Kind: "wall", Material: "stone" },
+  "wood-door": { Kind: "door", Material: "wood" },
+  stone: { Kind: "floor", Material: "stone" },
+  earth: { Kind: "floor", Material: "earth" },
+};
+
+function natureOf(name: string, square: string): { Kind: string; Material: string } {
+  const std = shippedNatures[name];
+  if (!std) throw new Error(`cellar.json names ${name} at ${square}; shippedNatures has no such standard tile`);
+  return std;
+}
+
+/**
+ * shippedCellarScene is campaigns/example/maps/cellar.json as the client would
+ * hold it after a load_map.
+ *
+ * Kind and Material come from `tiles`, and Art from `overrides`, because that is
+ * the split the wire actually carries: mapdef.Resolve fills Resolved.Kind and
+ * Resolved.Material from StandardTile for EVERY square, overridden or not
+ * ("Kind and Material NEVER come from art" — mapdef.Resolved's own doc), and
+ * only Art comes from the override. So this is reading the map the way the
+ * server does, not inventing data — internal/gateway's
+ * TestTheShippedCampaignResolvesItsOwnArt asserts the same `kind=door` at 5,4
+ * off the wire.
+ *
+ * An override that went missing is still the failure worth seeing here: this
+ * test loads only campaigns/example/art, never the bundled standard pack, so
+ * such a square keys `std:floor/earth`, which loadArtImages never produces and
+ * `missing` therefore catches. At the table pack-assets.ts's
+ * loadStandardPackImages is what answers those keys.
+ */
+function shippedCellarScene(openDoors: Record<string, boolean>): Scene {
+  const raw = JSON.parse(readFileSync(shippedMapPath, "utf8")) as {
+    grid_width: number;
+    grid_height: number;
+    tiles: Record<string, string>;
+    overrides: Record<string, string>;
+    objects: { id: string; kind: string; at: [number, number]; size: [number, number];
+               rot: number; blocks_sight: boolean; blocks_move: boolean; art: string }[];
+  };
+  const tiles: Record<string, { Kind: string; Material: string; Art: string }> = {};
+  for (const [square, nature] of Object.entries(raw.tiles)) {
+    const { Kind, Material } = natureOf(nature, square);
+    tiles[square] = { Kind, Material, Art: raw.overrides[square] ?? "" };
+  }
+  return {
+    ID: "cellar",
+    Name: "The Sunken Cellar",
+    GridWidth: raw.grid_width,
+    GridHeight: raw.grid_height,
+    Tiles: tiles,
+    Objects: raw.objects.map((o) => ({
+      ObjectID: o.id, Kind: o.kind, X: o.at[0], Y: o.at[1],
+      Width: o.size[0], Height: o.size[1], RotationDegrees: o.rot,
+      BlocksSight: o.blocks_sight, BlocksMove: o.blocks_move, Art: o.art,
+    })),
+    OpenDoors: openDoors,
+  };
+}
+
+test("every image the shipped campaign's board asks for is one its own art/ answers", async () => {
+  // The door's expected key rides along with each state, because "no key is
+  // missing" is one-sided: a plan that never asked for the open picture at all
+  // satisfies it too, and that is exactly the hole an empty Kind opened here.
+  for (const [doors, doorKey] of [
+    [{}, "tile:cellar-door"],
+    [{ "5,4": true }, "tile:cellar-door/open"],
+  ] as const) {
+    const sc = shippedCellarScene(doors);
+    const names = artNamesInScene(sc);
+    expect(names.length).toBeGreaterThan(0);
+
+    const images = await loadArtImages(
+      "http://x", "tok", names, diskFetch(shippedArtDir),
+      async () => ({}) as unknown as CanvasImageSource,
+    );
+
+    // A viewport that holds the whole 10x9 board, so nothing is culled and the
+    // op count is the board rather than whatever happened to fit.
+    const cell = 44;
+    const cam = fitCamera(sc.GridWidth, sc.GridHeight, cell, sc.GridWidth * cell, sc.GridHeight * cell);
+    const ops = planScene(
+      { ...newState(), Scenes: { cellar: sc } },
+      "cellar", cam, cell, sc.GridWidth * cell, sc.GridHeight * cell,
+    );
+    // 90 squares plus 6 objects: if this drops, the loop below stops covering
+    // the board and would pass on an empty plan.
+    expect(ops.length).toBe(96);
+
+    // The door square 5,4 is the only one naming cellar-door, so its ONE key
+    // pins both directions at once: the open board asks for the open picture,
+    // and it stops asking for the closed one.
+    const keys = new Set(ops.map((o) => o.image));
+    expect([...keys].filter((k) => k.startsWith("tile:cellar-door"))).toEqual([doorKey]);
+
+    const missing = [...keys].filter((k) => k !== "" && !(k in images));
+    expect(missing).toEqual([]);
+  }
+});
+
+test("the shipped door is the piece whose OPEN picture is a different file", async () => {
+  // The door is the one shape with two pictures and no <id>.png, and the only
+  // one where a wrong key would paint over a square that CHANGES mid-session —
+  // so "the plan asks for a key that exists" is not enough: the two states must
+  // ask for different pictures, or a door that opens looks shut.
+  const images = await loadArtImages(
+    "http://x", "tok", ["cellar-door"], diskFetch(shippedArtDir),
+    async (blob) => ({ bytes: (await blob.arrayBuffer()).byteLength }) as unknown as CanvasImageSource,
+  );
+  expect(Object.keys(images).sort()).toEqual(["tile:cellar-door", "tile:cellar-door/open"]);
+  expect(images["tile:cellar-door"]).not.toEqual(images["tile:cellar-door/open"]!);
 });

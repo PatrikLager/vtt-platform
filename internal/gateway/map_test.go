@@ -86,18 +86,18 @@ func loadCellarMap(t *testing.T) *mapdef.Map {
 // spurious kind-mismatch warning, taken from the manifest while it still
 // existed — Task 7 deleted it along with the pack.
 //
-// WHAT IS THEREFORE UNTESTED, AND IT BELONGS TO TASK 8: nothing anywhere
-// asserts that the SHIPPED campaign's own art reaches the wire.
-// TestLoadMapProducesBatchCarryingTilesAndObjects below loads the real
-// campaigns/example/maps/cellar.json and resolves it against this synthetic
-// directory, so it proves the wiring and not the fixture — and every override
-// in the shipped campaign degrades today whatever this package does, because
-// campaigns/example/ has no art/ at all. Task 4 considered writing that
-// assertion and could not: the fixture it needs is the one Task 8 creates, and
-// a test built against art that does not exist yet would either be skipped or
-// be this same synthetic directory under another name. Task 8 commits the art
-// and owns the assertion that a map from campaigns/example/ loads with its own
-// art resolved and no warnings.
+// THE SHIPPED CAMPAIGN'S OWN ART IS ASSERTED SEPARATELY, and this fixture is
+// still the right one for everything else here. Task 4 could not write that
+// assertion — campaigns/example/ had no art/ at all, so every override in the
+// shipped campaign degraded whatever this package did — and Task 8 created the
+// directory and wrote it: TestTheShippedCampaignResolvesItsOwnArt below, which
+// uses shippedArtDir rather than this. What this one keeps is the ability to
+// build art a committed campaign does not have, which is most of this file.
+//
+// KEEPING BOTH IS DELIBERATE. This directory can hold a broken piece, a
+// half-installed one, or a piece that arrives mid-session; the committed one
+// must stay well-formed, because it is what a DM copies. A test that needs a
+// failure builds it here.
 //
 // The .png files hold the string "fake-png" rather than image bytes: nothing
 // in internal/artlib reads a picture's contents, only whether the entry
@@ -129,6 +129,20 @@ func cellarArtDir(t *testing.T) string {
 		write(obj+".png", "fake-png")
 	}
 	return dir
+}
+
+// shippedArtDir resolves the committed campaigns/example/art — the art the
+// demo campaign actually ships, in the same "../../<path>" convention
+// cellarMapPath uses.
+//
+// It is a REAL DIRECTORY handed to a real server, not a copy: the point of the
+// one test that uses it is that the bytes in this repository resolve, so
+// copying them into a temp dir first would only prove that a copy of them does.
+// Nothing writes to it — installArt takes an explicit dir, and every test that
+// installs art passes a temp one.
+func shippedArtDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("..", "..", "campaigns", "example", "art")
 }
 
 // mapFixture is adventureFixture's sibling (adventure_test.go): a
@@ -555,6 +569,108 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 		if env.GetOccurredAt() == nil {
 			t.Errorf("envelope has no OccurredAt")
 		}
+	}
+}
+
+// TestTheShippedCampaignResolvesItsOwnArt is the assertion Tasks 4 and 8 passed
+// between them, and the first time anything in this tree has run the demo
+// campaign's own art through the code that serves it.
+//
+// EVERY OTHER ART TEST BUILDS ITS FIXTURE. cellarArtDir writes a synthetic
+// directory whose kinds and materials were copied out of the pack manifest by
+// hand, so TestLoadMapProducesBatchCarryingTilesAndObjects proves the WIRING and
+// says nothing about the files this repository ships. Until Task 8 there were no
+// such files: campaigns/example/ had maps/ and nothing else, so every square of
+// the demo drew from the built-in vocabulary and the shipped `overrides` were
+// ninety warnings waiting to happen. Nobody would have found that out from a
+// green suite.
+//
+// NO WARNINGS IS THE WHOLE ASSERTION, and it is stronger than it looks. spec §4
+// makes every art failure degrade, so a campaign whose art is missing, misnamed,
+// wrong-cased, half-installed or wrong about a square's nature still loads with
+// ok=true — the ONLY difference between that and a working demo is this list
+// being empty. An assertion on the tiles alone would pass with the art deleted,
+// because the kind and material come from m.Tiles either way.
+//
+// IT ALSO COVERS THE DOOR, which has never met real traffic: cellar-door is the
+// one piece with two pictures and no <id>.png, and every test that has exercised
+// that path used a hand-written sidecar. Here the sidecar is the one
+// tools/genmappack wrote and the pictures are the ones it drew.
+func TestTheShippedCampaignResolvesItsOwnArt(t *testing.T) {
+	f := newMapFixtureAt(t, true, false, shippedArtDir(t))
+	dmConn := f.dial(f.dmToken, 0)
+	// The agent seat, for the reason TestLoadMapProducesBatchCarryingTilesAndObjects
+	// gives: a map is terrain a player has not walked into, and the visibility
+	// projection withholds it.
+	agentConn := f.dial(f.agentToken, 0)
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "seed-fighter",
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		}},
+	})
+	if r0 := readResult(t, dmConn); !r0.Ok {
+		t.Fatalf("seed AddActor act-fighter: %s", r0.Error)
+	}
+	readEvent(t, agentConn)
+
+	sendCommand(t, dmConn, loadMapCmdFor("cellar"))
+	res := readResult(t, dmConn)
+	if !res.Ok {
+		t.Fatalf("load_map cellar against campaigns/example/art: %s", res.Error)
+	}
+	if len(res.GetWarnings()) != 0 {
+		t.Fatalf("the shipped campaign warns on its own art: %q. Every one of these is a "+
+			"square that draws plain at the table, and the demo is the thing anybody "+
+			"looks at first", res.GetWarnings())
+	}
+
+	sceneEnv := readEvent(t, agentConn)
+	sc := sceneEnv.GetSceneCreated()
+	if sc.GetSceneId() != "cellar" {
+		t.Fatalf("first batch envelope is %q, want the cellar SceneCreated", mapPayloadKind(sceneEnv))
+	}
+
+	// Read what the map file itself declares rather than a second copy of it:
+	// cellar.json overrides every one of its 90 squares today, and a hardcoded
+	// count here would be a number that rots the first time somebody edits the
+	// map.
+	m := loadCellarMap(t)
+	if len(m.Overrides) == 0 || len(m.Objects) == 0 {
+		t.Fatalf("cellar.json declares %d overrides and %d objects; with either at zero "+
+			"this test asserts nothing", len(m.Overrides), len(m.Objects))
+	}
+	for square, want := range m.Overrides {
+		got := sc.GetTiles()[square]
+		if got.GetArt() != want {
+			t.Errorf("tiles[%s].art = %q, want %q — the map names it and art/ has it",
+				square, got.GetArt(), want)
+		}
+	}
+	for _, o := range m.Objects {
+		var got *vttv1.SceneObject
+		for _, candidate := range sc.GetObjects() {
+			if candidate.GetObjectId() == o.ID {
+				got = candidate
+			}
+		}
+		if got == nil {
+			t.Errorf("objects missing %s", o.ID)
+			continue
+		}
+		if got.GetArt() != o.Art {
+			t.Errorf("objects[%s].art = %q, want %q", o.ID, got.GetArt(), o.Art)
+		}
+	}
+
+	// The door, named on its own because it is the piece with two pictures and
+	// no <id>.png, and because its NATURE must still come from m.Tiles: art
+	// never decides what a square is.
+	door := sc.GetTiles()["5,4"]
+	if door.GetArt() != "cellar-door" || door.GetKind() != "door" || door.GetMaterial() != "wood" {
+		t.Errorf("tiles[5,4] = %+v, want art=cellar-door kind=door material=wood", door)
 	}
 }
 

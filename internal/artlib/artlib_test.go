@@ -649,10 +649,19 @@ func TestAnUnknownFieldInASidecarIsRefused(t *testing.T) {
 // as an unknown-field parse error while a bare {"format_version":2} refused.
 // pieceFromSidecar reads the declared version first, on its own, for exactly
 // this row; deleting that first pass leaves the other two green.
+//
+// EVERY ROW HERE IS LATER THAN THIS SERVER, and that is the whole membership
+// rule. A `{"format_version":-1}` row sat here until art-is-a-flat-library
+// Task 8 and was the defect in miniature: -1 is not a format anybody will ever
+// ship, so the remedy the sentinel promises — go and get a newer server — is
+// not available for it. It moved to
+// TestAVersionBelowTheOneThisServerUnderstandsIsATypoAndDegrades with the
+// typo'd 0 it always belonged beside, and 99 took its place so the table still
+// spans more than one later number.
 func TestADeclaredFormatVersionThisServerDoesNotUnderstandCarriesItsOwnSentinel(t *testing.T) {
 	for _, tc := range []struct{ name, json, want string }{
-		{"a later format", `{"format_version":2,"kind":"wall"}`, "declares 2"},
-		{"a nonsense format", `{"format_version":-1,"kind":"wall"}`, "declares -1"},
+		{"the next format", `{"format_version":2,"kind":"wall"}`, "declares 2"},
+		{"a format far ahead of this one", `{"format_version":99,"kind":"wall"}`, "declares 99"},
 		{"a later format carrying fields this one has never heard of",
 			`{"format_version":2,"kind":"wall","variants":["mossy"]}`, "declares 2"},
 	} {
@@ -677,30 +686,52 @@ func TestADeclaredFormatVersionThisServerDoesNotUnderstandCarriesItsOwnSentinel(
 	}
 }
 
-// TestAnExplicitZeroIsDECLAREDAndRefusedLikeAnyOtherUnknownVersion is review
-// finding F4 of 2026-09-05, which caught the rule being implemented as
-// zero-versus-non-zero rather than declared-versus-undeclared. Before the
-// probe became a json.RawMessage, {"format_version": 0} took the "required"
-// arm: it DEGRADED, and the DM was told "an undeclared format is not assumed
-// to be any of them" about a file that had declared one. -1 refused and 0 did
-// not, which is a boundary nobody chose.
+// TestAVersionBelowTheOneThisServerUnderstandsIsATypoAndDegrades is the
+// direction half of the ruling, and the case an operator actually types.
 //
-// Zero is a declared version this server does not understand, so it refuses
-// with -1, 2 and 99. There is nothing special about it except that Go's zero
-// value used to swallow it.
-func TestAnExplicitZeroIsDECLAREDAndRefusedLikeAnyOtherUnknownVersion(t *testing.T) {
-	dir := t.TempDir()
-	writeTileArt(t, dir, "zero", `{"format_version":0,"kind":"wall"}`)
-	_, err := artlib.Lookup(dir, "zero")
-	if !errors.Is(err, artlib.ErrFormatVersion) {
-		t.Fatalf("got %v, want ErrFormatVersion: 0 is a version this file DECLARES, and "+
-			"a declared version this server does not understand refuses", err)
-	}
-	if !strings.Contains(err.Error(), "declares 0") {
-		t.Fatalf("error %q must name the version the file declares", err)
-	}
-	if strings.Contains(err.Error(), "undeclared") {
-		t.Fatalf("error %q calls a declared version undeclared", err)
+// Review finding F4 of 2026-09-05 closed the PRESENCE half: {"format_version":
+// 0} is declared, not absent, and must not be told "an undeclared format is not
+// assumed to be any of them". It then made 0 refuse, which is the other error:
+// ErrFormatVersion means the content is NEWER THAN THIS SERVER and the remedy
+// is a newer server (spec §4, and the sentinel's own doc comment says so at
+// length). No server has ever written a 0, so a 0 is a typo — and refusing it
+// costs the whole map, and the whole BOOT when a committed map names it,
+// because composeServer turns a map-load error into a refusal to start. That is
+// the shape spec §4 exists to remove, arrived at through the version field.
+//
+// campaigncfg.Load already split this into two arms on 2026-09-05 for the same
+// reason one directory over; there the split changes only the sentence, because
+// campaign.json has no request-time reader to degrade for. Here it changes the
+// VERDICT, which is why it is worth a test of its own.
+//
+// -1 IS THE SAME FACT and moved here from the sentinel test above with 0: it is
+// not a later format either, and "declares -1" was refusing a map for a file
+// nobody could have generated.
+func TestAVersionBelowTheOneThisServerUnderstandsIsATypoAndDegrades(t *testing.T) {
+	for _, tc := range []struct{ name, json, want string }{
+		{"a typo'd zero", `{"format_version":0,"kind":"wall"}`, "declares 0"},
+		{"a negative version", `{"format_version":-1,"kind":"wall"}`, "declares -1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTileArt(t, dir, "typo", tc.json)
+			_, err := artlib.Lookup(dir, "typo")
+			if err == nil || errors.Is(err, artlib.ErrNotFound) {
+				t.Fatalf("got %v, want an error that is NOT ErrNotFound: the file is "+
+					"installed and its version field cannot be honoured", err)
+			}
+			if errors.Is(err, artlib.ErrFormatVersion) {
+				t.Fatalf("error %v wraps ErrFormatVersion, so mapdef.Resolve refuses the map "+
+					"and composeServer refuses the boot — for a version no server has ever "+
+					"written. The refusal is reserved for content NEWER than this server", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q must name the version the file declares", err)
+			}
+			if strings.Contains(err.Error(), "undeclared") {
+				t.Fatalf("error %q calls a declared version undeclared", err)
+			}
+		})
 	}
 }
 
@@ -953,6 +984,41 @@ func TestADoorMissingOnePictureIsRefused(t *testing.T) {
 		if !strings.Contains(err.Error(), "a door declares both") {
 			t.Errorf("%s: error = %q, want it to name what a door must declare", sidecar, err)
 		}
+	}
+}
+
+// TestADoorMayNameTheSamePictureForBothStates pins a PERMISSION, and it is the
+// sibling of the test above: a door missing one picture is refused, a door
+// naming one picture twice is not. The reasoning is in pieceFromSidecar's door
+// arm — a string comparison would refuse `"open"` and `"closed"` spelled alike
+// while passing the likelier `cp closed.png open.png`, so it would read as a
+// guarantee it cannot make.
+//
+// It exists so that whoever decides to refuse this later has to delete a test
+// with the ruling attached, rather than adding a check over silence.
+func TestADoorMayNameTheSamePictureForBothStates(t *testing.T) {
+	dir := t.TempDir()
+	writePicture(t, dir, "arch-both.png")
+	writeFile(t, dir, "arch.json", `{"format_version":1,"kind":"door","material":"stone",
+		"open":"arch-both.png","closed":"arch-both.png"}`)
+
+	p, err := artlib.Lookup(dir, "arch")
+	if err != nil {
+		t.Fatalf("Lookup: %v — a door naming one picture twice is permitted on purpose; "+
+			"see pieceFromSidecar's door arm", err)
+	}
+	if p.Open != "arch-both.png" || p.Closed != "arch-both.png" {
+		t.Fatalf("got open %q closed %q, want both to be the one file the sidecar names",
+			p.Open, p.Closed)
+	}
+	if p.File != "" {
+		t.Errorf("got File=%q, want empty: it is still a door — two named states that "+
+			"happen to share a picture, not a plain piece", p.File)
+	}
+	// Validate is the half `vtt art install` reads as its single refusal, so
+	// installing such a door must not be refused either.
+	if err := artlib.Validate(dir); err != nil {
+		t.Errorf("Validate: %v — `vtt art install` refuses on any non-nil answer here", err)
 	}
 }
 
@@ -1214,3 +1280,105 @@ func TestIsArtFileNameAcceptsExactlyAPictureAndASidecar(t *testing.T) {
 		}
 	}
 }
+
+// --- the art this repository actually ships ---------------------------------
+
+// shippedArtDir is campaigns/example/art — the demo campaign's own flat art
+// directory, resolved the way internal/mapdef/apidoc_test.go resolves the map
+// beside it.
+const shippedArtDir = "../../campaigns/example/art"
+
+// TestTheShippedArtResolvesThroughThisPackage is the first thing in this tree
+// to run the real reader over the real files.
+//
+// EVERY OTHER TEST IN THIS FILE WRITES ITS OWN FIXTURE, which is right for
+// pinning behaviour and proves nothing about what ships. campaigns/example had
+// no art at all until 2026-09-02-art-is-a-flat-library Task 8: the demo's
+// overrides named four tile pieces that did not exist, so every square drew from
+// the built-in vocabulary and a green suite said so about none of it.
+//
+// STRUCTURAL, NOT A TABLE OF THE FILES' OWN CONTENTS. A hand-copied list of
+// kinds and materials here would restate the sidecars and fail whenever somebody
+// legitimately retunes one; what must hold whatever the campaign draws is that
+// every stem resolves, that a sidecar means tile art and its absence means
+// object art (spec §3.4's asymmetry, which mapdef.Resolve decides on
+// Piece.HasSidecar alone), and that a door has two pictures and no third.
+//
+// tools/genmappack's own test pins these bytes as that generator's output, so
+// "what the generator writes resolves" follows from this plus that, without
+// this package's tests or that tool's reaching across the layering
+// (.go-arch-lint.yml keeps artlib self-only and genmappack out of it).
+func TestTheShippedArtResolvesThroughThisPackage(t *testing.T) {
+	if err := artlib.Validate(shippedArtDir); err != nil {
+		t.Fatalf("artlib.Validate(campaigns/example/art): %v — every boot of the demo "+
+			"campaign prints this", err)
+	}
+
+	entries, err := os.ReadDir(shippedArtDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]bool{}
+	for _, e := range entries {
+		present[e.Name()] = true
+	}
+	if len(present) == 0 {
+		t.Fatal("campaigns/example/art is empty, so every assertion below is vacuous")
+	}
+
+	// One Lookup per PICTURE stem, which is every id a map could name: a door's
+	// two pictures are legal ids of their own, and object art has no sidecar to
+	// find it by.
+	looked := 0
+	for name := range present {
+		if filepath.Ext(name) != ".png" {
+			continue
+		}
+		id := strings.TrimSuffix(name, ".png")
+		piece, err := artlib.Lookup(shippedArtDir, id)
+		if err != nil {
+			t.Errorf("Lookup(%q): %v — the file is in art/ and a map naming it draws plain",
+				id, err)
+			continue
+		}
+		looked++
+		if piece.HasSidecar != present[id+".json"] {
+			t.Errorf("Lookup(%q).HasSidecar = %v, and %s.json on disk is %v",
+				id, piece.HasSidecar, id, present[id+".json"])
+		}
+		if piece.HasSidecar && piece.Kind == "" {
+			t.Errorf("Lookup(%q) has a sidecar declaring no kind; mapdef.Resolve cannot "+
+				"tell that from object art", id)
+		}
+		if !piece.HasSidecar && piece.File != name {
+			t.Errorf("Lookup(%q).File = %q, want %s", id, piece.File, name)
+		}
+	}
+	if looked == 0 {
+		t.Fatal("no picture resolved, so the loop above asserted nothing")
+	}
+
+	// The door, named because it is the one shape whose pictures are not its own
+	// name and the one this campaign is the first real user of.
+	door, err := artlib.Lookup(shippedArtDir, "cellar-door")
+	if err != nil {
+		t.Fatalf("Lookup(cellar-door): %v", err)
+	}
+	if door.Kind != kindDoorLiteral || door.File != "" {
+		t.Errorf("cellar-door = kind %q file %q, want a door with no third picture",
+			door.Kind, door.File)
+	}
+	if !present[door.Open] || !present[door.Closed] || door.Open == door.Closed {
+		t.Errorf("cellar-door names open %q and closed %q; both must be in art/ and they "+
+			"must be different files, or an opened door looks shut", door.Open, door.Closed)
+	}
+	if present["cellar-door.png"] {
+		t.Error("cellar-door.png exists; a door has two pictures and no third (spec §3.4), " +
+			"and a stray one is what a renderer would ask for and never get")
+	}
+}
+
+// kindDoorLiteral is "door" spelled once here rather than reached for out of the
+// package under test: artlib's own kindDoor is unexported, and an external test
+// asserting the on-disk word should not be able to move with the code it checks.
+const kindDoorLiteral = "door"

@@ -11,8 +11,26 @@ follows from that.
 
 > **CORRECTION, 2026-09-04 — everything this document says about PACKS and
 > about a map's own DIRECTORY is out of date, and following it will produce
-> art the platform does not load.** Recorded here rather than rewritten,
-> because the replacement's worked example does not exist yet.
+> art the platform does not load.** Recorded here rather than rewritten; the
+> rewrite is named as debt at this sub-project's merge gate, and the table
+> below is what to trust until it happens.
+>
+> **THE WORKED EXAMPLE NOW EXISTS** (Task 8 of the `art-is-a-flat-library`
+> plan): [`campaigns/example/`](../campaigns/example/) is a complete campaign in
+> the current format — `campaign.json`, `maps/cellar.json`, and an `art/`
+> directory holding one of each shape the flat format has:
+>
+> - **tile art** — a picture plus a sidecar beside it, which tile art requires:
+>   `masonry-1.png` and `masonry-1.json`.
+> - **a door** — a sidecar naming TWO pictures, and no `<id>.png` of its own:
+>   `cellar-door.json`, `cellar-door-open.png`, `cellar-door-closed.png`.
+> - **object art** — a bare picture with no sidecar at all: `pillar-stone.png`.
+>
+> Those three shapes are §3 of
+> [the design spec](superpowers/specs/2026-09-02-art-is-a-flat-library-design.md),
+> **not** §3 of this document, which is the standard tile vocabulary and is a
+> different subject entirely. Read that directory rather than §0, §4, §5 or §8
+> here, and generate art of your own with `go run ./tools/genmappack`.
 >
 > Four things changed under it:
 >
@@ -85,14 +103,17 @@ follows from that.
 > `{"format_version": 1, "cell_px": 64}`, and `vtt art install` warns when an
 > installed picture is not a whole number of those squares.
 >
-> WHAT IS STILL MISSING IS THE WORKED EXAMPLE, and that is why this document is
-> still corrected rather than rewritten: `campaigns/example/art/` arrives with
-> Task 8 of that plan, and the rewrite happens there, against real files rather
-> than against a design. Until then: author `tiles`, `overrides`, `objects` and
-> `placements` as §2, §3, §6 and §9 describe; read §4, §5 and §7 for SHAPE and
-> RULES only, never for where a picture comes from; put the map at
-> `<campaign>/maps/<id>.json`; write no `"pack"` line; and expect overridden
-> squares to draw from the standard vocabulary until the art directory exists.
+> HOW TO AUTHOR A MAP FROM THIS DOCUMENT TODAY: author `tiles`, `overrides`,
+> `objects` and `placements` as §2, §3, §6 and §9 describe; read §4, §5 and §7
+> for SHAPE and RULES only, never for where a picture comes from; put the map at
+> `<campaign>/maps/<id>.json`; write no `"pack"` line; and install each piece of
+> art named by an override or an object into `<campaign>/art/` under the exact
+> name that names it.
+>
+> *This paragraph ended "expect overridden squares to draw from the standard
+> vocabulary until the art directory exists" until 2026-09-05. The directory
+> exists, and the demo campaign's own overrides resolve —
+> `TestTheShippedCampaignResolvesItsOwnArt` is what says so.*
 
 ## 0. Where the file goes, and what it is called
 

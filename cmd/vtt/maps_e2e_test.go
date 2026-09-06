@@ -624,6 +624,65 @@ func TestACampaignWhoseArtDeclaresANewerFormatRefusesToBoot(t *testing.T) {
 	}
 }
 
+// TestACampaignWhoseArtHasATypodVersionStillBoots is the boundary between the
+// two tests above, driven where it costs something. `"format_version": 0` is
+// the shape a hand-written sidecar takes when somebody types the field and
+// leaves the number at zero, or copies a line and truncates it — and until this
+// task it took the SAME path as 99: mapdef.Resolve refused the map, and
+// composeServer refused the boot, for a file no server has ever written and no
+// newer server would fix.
+//
+// It is the same absent-versus-zero defect fixed twice already on this branch
+// (mapJSON.Pack, and campaigncfg's two fields), and it stayed harmless only
+// while no real sidecar existed. Task 8 of the art-is-a-flat-library plan is
+// what makes campaigns/example/art/ real, so it closes this first.
+//
+// THE ASSERTION IS THE BOOT, not the square, for the reason
+// TestACampaignHoldingACorruptSidecarStillBoots gives: a Resolve unit test sees
+// one square degrade; only a boot sees whether anybody gets to play. A second,
+// well-formed piece sits beside the typo so a green run cannot be a server that
+// came up serving nothing.
+func TestACampaignWhoseArtHasATypodVersionStillBoots(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	artDir := filepath.Join(campaignPath, "art")
+	mapsDir := filepath.Join(campaignPath, "maps")
+	for _, dir := range []string{artDir, mapsDir} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(artDir, "typod-version.json"),
+		`{"format_version":0,"kind":"floor","material":"stone"}`)
+	writeFile(t, filepath.Join(artDir, "typod-version.png"), "fake-png")
+	writeFile(t, filepath.Join(artDir, "good-stone.json"),
+		`{"format_version":1,"kind":"floor","material":"stone"}`)
+	writeFile(t, filepath.Join(artDir, "good-stone.png"), "fake-png")
+	writeFile(t, filepath.Join(mapsDir, "hall.json"), `{"format_version":1,"id":"hall","name":"Hall",
+		"grid_width":2,"grid_height":1,"tiles":{"0,0":"stone","1,0":"stone"},
+		"overrides":{"0,0":"typod-version","1,0":"good-stone"}}`)
+
+	c := startArtCampaign(t, campaignPath)
+
+	res := c.loadMap("hall")
+	if !res.GetOk() {
+		t.Fatalf("load_map: %s — a typo'd version costs its own square, not the map",
+			res.GetError())
+	}
+	said := strings.Join(res.GetWarnings(), "\n")
+	if !strings.Contains(said, "typod-version") || !strings.Contains(said, "cannot be used") {
+		t.Fatalf("warnings %q, want the piece named and the reason given: a square that "+
+			"silently draws plain is a file nobody ever goes and fixes", res.GetWarnings())
+	}
+	sc := c.scene()
+	if got := sc.GetTiles()["0,0"]; got.GetArt() != "" || got.GetKind() != "floor" {
+		t.Errorf("tiles[0,0] = %+v, want no art and the kind its map declared", got)
+	}
+	if got := sc.GetTiles()["1,0"].GetArt(); got != "good-stone" {
+		t.Errorf("tiles[1,0].art = %q, want good-stone — the well-formed piece beside the "+
+			"typo must be unaffected", got)
+	}
+}
+
 // --- 2026-09-02-art-is-a-flat-library Task 6 --------------------------------
 
 // TestCampaignsArtServesEndToEnd is the round trip TestCampaignsMapsAndPacksServeEndToEnd's

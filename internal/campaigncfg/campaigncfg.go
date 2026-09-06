@@ -77,7 +77,19 @@ const (
 // ErrFormatVersion marks the campaign.json failure that is a fact about the
 // FORMAT rather than about the syntax: the file declares a format_version this
 // server does not understand. Exactly what artlib.ErrFormatVersion means one
-// directory up, and its MESSAGE is neutral about which side is behind for the same reason ours is. artlib's SENTINEL DOC is not — it says at length that the content is newer than this server and the remedy is a newer server, which is true of the case artlib reserves it for and NOT of a typo'd 0. A caller following this pointer to artlib's doc would write the upgrade-your-server branch and fire it on a typo, which is the defect F2 removed from the message, reintroduced through the sentinel.
+// directory up, and its MESSAGE is neutral about which side is behind for the
+// same reason ours is.
+//
+// THE TWO SENTINELS NOW COVER DIFFERENT SETS, and a caller must not read one
+// through the other. artlib's fires only for a version LATER than that server
+// understands: art-is-a-flat-library Task 8 moved a typo'd 0 out of it, because
+// there the sentinel decides refuse-versus-degrade and a refusal costs the map
+// and the boot. Ours still fires in both directions, because campaign.json has
+// no request-time reader to degrade for — every arm below refuses, and the
+// direction changes only the sentence. This paragraph said artlib's SENTINEL
+// DOC claimed the upgrade-your-server remedy for a typo'd 0; that was true when
+// it was written on 2026-09-05 and Task 8 fixed the sentinel rather than the
+// doc.
 //
 // IT SAID "so the content is NEWER THAN THIS SERVER and the remedy is a newer
 // server" until 2026-09-05, and that was true of the only case anyone had
