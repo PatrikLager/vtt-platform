@@ -1689,7 +1689,7 @@ test("presence marks a holder away, and says nothing when they are here", () => 
     participants: [{ participantId: "p-ana", displayName: "Ana" }], roster,
   });
 
-  expect(away.node.querySelector(".control-actor .held .away")).not.toBeNull();
+  expect(away.node.querySelector(".control-actor .held .away")!.textContent).toBe("away");
   expect(here.node.querySelector(".control-actor .held .away")).toBeNull();
 });
 
@@ -1744,29 +1744,44 @@ test("the grant list is sorted by name across BOTH sources", () => {
   // Zoe comes from the roster and is inserted FIRST; Ana comes from presence
   // and is inserted second. Insertion order would show Zoe first, so this is
   // what makes the sort observable at all.
+  // The ids run OPPOSITE to the names on purpose: Zoe is p-a and Ana is p-b.
+  // With ids ordered the same way as names, a comparator that ignored names
+  // entirely and sorted by id would produce this same list, and the name arm
+  // would be unobservable — which is exactly what the first version of this
+  // fixture did.
   const h = harness(tableWithActor(), {
-    roster: [{ participantId: "p-z", name: "Zoe", role: "player" }],
-    participants: [{ participantId: "p-a", displayName: "Ana" }],
+    roster: [{ participantId: "p-a", name: "Zoe", role: "player" }],
+    participants: [{ participantId: "p-b", displayName: "Ana" }],
   });
 
   const target = h.node.querySelector(".grant-target") as HTMLSelectElement;
   expect(Array.from(target.options).map((o) => o.textContent))
     .toEqual(["choose a participant", "Ana", "Zoe"]);
+  expect(Array.from(target.options).map((o) => o.value)).toEqual(["", "p-b", "p-a"]);
 });
 
 test("two people sharing a display name are ordered by participant id", () => {
   // Asserted on VALUE, not text: the tie-break is invisible in the labels, so a
   // text assertion passes whichever way the comparator points.
   const h = harness(tableWithActor(), {
+    // SCRAMBLED insertion order, and neither ascending nor descending would do.
+    // A comparator that loses its tie-break collapses to a CONSTANT, and the
+    // two constants fail in opposite directions: jammed at -1 it reverses the
+    // input, jammed at +1 it is a stable no-op that returns the input
+    // untouched. So an ascending fixture is killed by the first and passed by
+    // the second, a descending one exactly the other way round, and each looks
+    // like a fixed test while leaving the other half unpinned. The insertion
+    // order must be neither the expected order nor its reverse.
     roster: [
       { participantId: "p-b", name: "Sam", role: "player" },
+      { participantId: "p-c", name: "Sam", role: "player" },
       { participantId: "p-a", name: "Sam", role: "player" },
     ],
     participants: [],
   });
 
   const target = h.node.querySelector(".grant-target") as HTMLSelectElement;
-  expect(Array.from(target.options).map((o) => o.value)).toEqual(["", "p-a", "p-b"]);
+  expect(Array.from(target.options).map((o) => o.value)).toEqual(["", "p-a", "p-b", "p-c"]);
 });
 
 test("a holder in neither the roster nor presence is marked away", () => {
@@ -1777,7 +1792,9 @@ test("a holder in neither the roster nor presence is marked away", () => {
 
   const held = h.node.querySelector(".control-actor .held")!;
   expect(held.querySelector(".held-who")!.textContent).toBe("p-ana");
-  expect(held.querySelector(".away")).not.toBeNull();
+  // The TEXT, not just the element: an empty marker occupies the DOM and says
+  // nothing, which is indistinguishable from no marker to the person reading it.
+  expect(held.querySelector(".away")!.textContent).toBe("away");
 });
 
 test("a holder whose only name is empty falls back to the id, not to blank", () => {
