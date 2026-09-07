@@ -33,7 +33,7 @@ const shot = (name: string) => ({ path: `client/e2e/.artifacts/${name}.png`, ful
 async function expectNoRefusal(page: Page, step: string) {
   if ((await page.locator(".toast").count()) === 0) return;
   const text = (await page.locator(".toast").textContent()) ?? "";
-  throw new Error(`${step}: the server refused it — ${text}`);
+  throw new Error(`${step}: it was refused — ${text}`);
 }
 
 async function openAs(page: Page, role: keyof typeof tokens) {
@@ -114,6 +114,15 @@ test("a DM hands a second character over, and the player keeps both across a rec
       const row = dm.locator(`.control-actor[data-actor="${actorId}"]`);
       await expect(row).toBeVisible({ timeout: 10_000 });
       await row.locator(".grant-target").selectOption(ids.player);
+      // THE SECOND QUESTION, and the console refuses without it — kind is asked
+      // at every grant rather than stamped once (visibility spec §5.1), because
+      // a charmed monster becomes a player's to run and then becomes a monster
+      // again. This spec predated that requirement and clicked Grant with the
+      // field still blank, so the console refused LOCALLY and nothing was ever
+      // sent. Here that surfaced immediately, at the expectNoRefusal one line
+      // below, which reads the toast the console's own guard raised — which is
+      // why that helper no longer calls it a refusal by the server.
+      await row.locator(".grant-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
       await row.locator(".grant").click();
       await dm.waitForTimeout(400);
       await expectNoRefusal(dm, `grant ${actorId}`);

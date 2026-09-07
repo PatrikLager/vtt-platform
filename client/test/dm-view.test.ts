@@ -31,6 +31,7 @@ function harness(
     maps?: MapMeta[];
     guide?: string | null;
     participants?: { participantId: string; displayName: string }[];
+    roster?: Roster[];
     doorsArmed?: boolean;
   } = {},
 ) {
@@ -58,7 +59,13 @@ function harness(
     // The sharing panel is exercised by its own tests below; these existing
     // cases assert the rest of the console, so they render without one.
     joinLink: null,
-    roster: [],
+    // DERIVED from participants unless a test says otherwise, because that is
+    // what the tests written before the two were told apart already meant:
+    // "these people are at the table". Only the roster/presence split tests
+    // below pass them separately, which is the whole point of the split.
+    roster: opts.roster ?? (opts.participants ?? []).map((p) => ({
+      participantId: p.participantId, name: p.displayName, role: "player" as const,
+    })),
     origin: "https://table.example",
     refreshSharing: () => {},
     send: async (c) => { sent.push(c); return okResult(); },
@@ -1613,4 +1620,177 @@ test("arming doors sends nothing over the wire — it is a local mode, not a com
   const h = harness();
   h.action("arm-doors").click();
   expect(h.sent).toHaveLength(0);
+});
+
+// --- the roster/presence split (Patrik's ruling, 2026-09-06) ----------------
+//
+// Control is DURABLE: it lives in the log as controllerIds and outlives any
+// connection. Presence is connection-scoped and lives only in memory. The
+// console used to resolve BOTH the grant list and a holder's name through
+// presence, which made durable control look broken — a held character read as
+// held by a uuid, and a character could not be handed to anyone who was not
+// dialled in at that instant.
+//
+// MapTool settles the design (CLAUDE.md rule 9): Token.ownerList is a Set of
+// player names ON THE TOKEN, saved with the campaign, and removeOwner is called
+// from exactly one place in that codebase — a human picking it from a
+// right-click menu. Its disconnect path touches the player list and never the
+// owner list. Twenty years, never wired together.
+
+test("a character can be handed to someone who is not connected", () => {
+  // THE SESSION-PREP CASE: a DM assigns characters before anyone dials in.
+  // The server has never disagreed — controls() in internal/gateway/authz.go
+  // tests id membership and asks nothing about presence, and
+  // validateGrantActorControl checks only that the grant states a kind.
+  const h = harness(tableWithActor(), {
+    participants: [],
+    roster: [{ participantId: "p-robin", name: "Robin", role: "player" }],
+  });
+
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]')!;
+  const target = row.querySelector(".grant-target") as HTMLSelectElement;
+  // Array.from, not spread: HTMLOptionsCollection is not iterable under
+  // this tsconfig, and bun test accepts the spread while client:typecheck
+  // rejects it — a green suite and a red gate.
+  expect(Array.from(target.options).map((o) => o.value)).toContain("p-robin");
+
+  // DRIVEN, not merely present: a select whose option exists but whose value
+  // will not take is still a console that cannot grant.
+  target.value = "p-robin";
+  (row.querySelector(".grant-kind") as HTMLSelectElement).value = "ACTOR_KIND_PARTY_MEMBER";
+  (row.querySelector("button.grant") as HTMLButtonElement).click();
+  expect(h.sent).toHaveLength(1);
+  expect(h.sent[0]!.command.value).toMatchObject({
+    actorId: "act-warden", participantId: "p-robin",
+  });
+});
+
+test("a holder who is away is named, not printed as a participant id", () => {
+  // tableWithActor gives act-warden to p-ana. With p-ana off the wire the
+  // console must still name them: a character held by "p-ana" reads as held by
+  // nobody legible, which is what made durable control look like a bug.
+  const h = harness(tableWithActor(), {
+    participants: [],
+    roster: [{ participantId: "p-ana", name: "Ana", role: "player" }],
+  });
+
+  const held = h.node.querySelector('.control-actor[data-actor="act-warden"] .held-who')!;
+  expect(held.textContent).toBe("Ana");
+  expect(held.textContent).not.toContain("p-ana");
+});
+
+test("presence marks a holder away, and says nothing when they are here", () => {
+  // BOTH DIRECTIONS. A marker that is always on and a marker that is never on
+  // both pass a one-sided check — the same shape that once produced two
+  // byte-identical screenshots named for opposite states.
+  const roster: Roster[] = [{ participantId: "p-ana", name: "Ana", role: "player" }];
+  const away = harness(tableWithActor(), { participants: [], roster });
+  const here = harness(tableWithActor(), {
+    participants: [{ participantId: "p-ana", displayName: "Ana" }], roster,
+  });
+
+  expect(away.node.querySelector(".control-actor .held .away")).not.toBeNull();
+  expect(here.node.querySelector(".control-actor .held .away")).toBeNull();
+});
+
+// The four rules the union actually has. Every fixture above derives the roster
+// FROM presence, so the two sets are identical and none of these rules is
+// exercised by any of them — the degenerate-fixture shape, where a mutant
+// survives at full line coverage because no input tells the arms apart.
+
+test("someone in presence but not yet on the roster can still be granted", () => {
+  // THE SHARE-LINK GUEST: they are on the wire before a refetched roster knows
+  // them. This is the whole reason the union has a second half, and without it
+  // the console would refuse to hand a character to somebody it can see.
+  const h = harness(tableWithActor(), {
+    roster: [],
+    participants: [{ participantId: "p-guest", displayName: "Robin" }],
+  });
+
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]')!;
+  const target = row.querySelector(".grant-target") as HTMLSelectElement;
+  expect(Array.from(target.options).map((o) => o.textContent))
+    .toEqual(["choose a participant", "Robin"]);
+});
+
+test("when the roster and presence disagree about a name, the roster wins", () => {
+  // The roster is identity; presence is whatever a client announced. Naming
+  // from presence would let the displayed name drift from the one the DM
+  // administers in "Who may do what" two panels down.
+  const h = harness(tableWithActor(), {
+    roster: [{ participantId: "p-ana", name: "Ana Marsh", role: "player" }],
+    participants: [{ participantId: "p-ana", displayName: "ana" }],
+  });
+
+  const row = h.node.querySelector('.control-actor[data-actor="act-warden"]')!;
+  expect(row.querySelector(".held-who")!.textContent).toBe("Ana Marsh");
+  expect(Array.from((row.querySelector(".grant-target") as HTMLSelectElement).options)
+    .map((o) => o.textContent)).toEqual(["choose a participant", "Ana Marsh"]);
+});
+
+test("an EMPTY roster name falls through to the one presence announced", () => {
+  // identity.CreateInvite does not validate the name, so `--name ""` is
+  // reachable. Nullish-coalescing would render a blank where a name belongs,
+  // which reads as nobody rather than as somebody unnamed.
+  const h = harness(tableWithActor(), {
+    roster: [{ participantId: "p-ana", name: "", role: "player" }],
+    participants: [{ participantId: "p-ana", displayName: "Ana" }],
+  });
+
+  expect(h.node.querySelector(".control-actor .held-who")!.textContent).toBe("Ana");
+});
+
+test("the grant list is sorted by name across BOTH sources", () => {
+  // Zoe comes from the roster and is inserted FIRST; Ana comes from presence
+  // and is inserted second. Insertion order would show Zoe first, so this is
+  // what makes the sort observable at all.
+  const h = harness(tableWithActor(), {
+    roster: [{ participantId: "p-z", name: "Zoe", role: "player" }],
+    participants: [{ participantId: "p-a", displayName: "Ana" }],
+  });
+
+  const target = h.node.querySelector(".grant-target") as HTMLSelectElement;
+  expect(Array.from(target.options).map((o) => o.textContent))
+    .toEqual(["choose a participant", "Ana", "Zoe"]);
+});
+
+test("two people sharing a display name are ordered by participant id", () => {
+  // Asserted on VALUE, not text: the tie-break is invisible in the labels, so a
+  // text assertion passes whichever way the comparator points.
+  const h = harness(tableWithActor(), {
+    roster: [
+      { participantId: "p-b", name: "Sam", role: "player" },
+      { participantId: "p-a", name: "Sam", role: "player" },
+    ],
+    participants: [],
+  });
+
+  const target = h.node.querySelector(".grant-target") as HTMLSelectElement;
+  expect(Array.from(target.options).map((o) => o.value)).toEqual(["", "p-a", "p-b"]);
+});
+
+test("a holder in neither the roster nor presence is marked away", () => {
+  // The one holder the console cannot name. They are also the person most
+  // certainly not at the table, so the marker matters most here — and a guard
+  // that skipped them left the uuid reading as somebody present.
+  const h = harness(tableWithActor(), { roster: [], participants: [] });
+
+  const held = h.node.querySelector(".control-actor .held")!;
+  expect(held.querySelector(".held-who")!.textContent).toBe("p-ana");
+  expect(held.querySelector(".away")).not.toBeNull();
+});
+
+test("a holder whose only name is empty falls back to the id, not to blank", () => {
+  // DISTINCT from the fall-through test above, and the distinction is the whole
+  // point: there the participant is ALSO in presence, so the union resolves the
+  // name before the display ever asks. Here the roster is the only source and
+  // its name is empty, which is the one state that reaches held-who's own
+  // fallback. A blank there reads as a character held by nobody — the exact
+  // misreading the uuid fallback exists to prevent.
+  const h = harness(tableWithActor(), {
+    roster: [{ participantId: "p-ana", name: "", role: "player" }],
+    participants: [],
+  });
+
+  expect(h.node.querySelector(".control-actor .held-who")!.textContent).toBe("p-ana");
 });

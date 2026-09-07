@@ -33,7 +33,7 @@ const shot = (name: string) => ({ path: `client/e2e/.artifacts/${name}.png`, ful
 async function expectNoRefusal(page: Page, step: string) {
   if ((await page.locator(".toast").count()) === 0) return;
   const text = (await page.locator(".toast").textContent()) ?? "";
-  throw new Error(`${step}: the server refused it — ${text}`);
+  throw new Error(`${step}: it was refused — ${text}`);
 }
 
 async function openAs(page: Page, role: keyof typeof tokens) {

@@ -208,6 +208,10 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .control-actor { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .control-name { font-weight: 600; }
 .held { display: inline-flex; gap: 4px; align-items: center; }
+/* Dim and small on purpose: away is a FACT ABOUT THE CONNECTION, not a
+   problem with the grant. Control outlives a connection, so this must not
+   read as a warning — the character is still theirs. */
+.held .away { font-size: 8px; color: var(--dim); font-style: italic; }
 
 /* The roster and the sharing panel (plan J6). Same flex-basis contract as
    .control-actor above, and for the same reason: without it every row is an

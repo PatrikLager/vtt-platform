@@ -145,6 +145,12 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   const row = dm.locator(".control-actor").first();
   await expect(row).toBeVisible({ timeout: 10_000 });
   await row.locator(".grant-target").selectOption({ label: "Robin" });
+  // Robin is a player character, and the grant has to SAY so — see the same
+  // step in handover.spec.ts for why the console refuses a kindless grant.
+  // THIS spec is the one where the omission hid: with no expectNoRefusal after
+  // the click, a locally-refused grant surfaced two beats later as a .held-who
+  // that never appeared.
+  await row.locator(".grant-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
   await row.locator(".grant").click();
   await expect(row.locator(".held-who")).toContainText("Robin", { timeout: 15_000 });
 
