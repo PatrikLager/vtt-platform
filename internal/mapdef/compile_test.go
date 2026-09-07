@@ -130,10 +130,11 @@ func TestCompileEmitsSceneThenOneTokenPlacedPerPlacement(t *testing.T) {
 // order" has no order to observe, and one TokenPlaced comes out whether
 // Compile ranges the slice or returns its first element.
 //
-// It also kills ARITHMETIC_BASE at compile.go:23:38 — the `1+len(m.Placements)`
-// capacity hint, mutated to `1-len(...)`. That mutant looks like the map
-// capacity hints adjudicated as equivalent in tools/mutation-equivalents.txt
-// (campaign.go:448), and it is NOT: those are maps, this is a slice, and gc
+// It also kills ARITHMETIC_BASE on the `1+len(m.Placements)` capacity hint
+// BuildSceneCreated preallocates with, mutated to `1-len(...)`. That mutant
+// looks like the map capacity hints adjudicated as equivalent in
+// tools/mutation-equivalents.txt (internal/gateway's sortedSceneIDsUnion entry
+// and internal/adventure's load.go entry), and it is NOT: those are maps, this is a slice, and gc
 // panics on a negative slice capacity where it tolerates a negative map hint
 // ("makeslice: cap out of range", verified). So the mutation is observable
 // from two placements up — and survived only because nothing compiled two.
@@ -598,12 +599,12 @@ func TestASingleWarningCarriesNoCountAtAll(t *testing.T) {
 
 // TestOneMissingArtNameCostsOneWarningNoMatterHowManySquares is spec §4's
 // "the DM is told... once", and it is a size limit as much as a tidiness rule.
-// Measured on campaigns/example/maps/cellar.json before deduplication landed:
-// four missing art names over 90 squares produced 96 warnings and 6840 bytes,
-// which client/src/app.ts joins into a single untruncated toast; the same
-// shape at MaxWireTiles is roughly 270 KB in one CommandResult, over the
-// 200 KiB read limit Go clients set — so the frame would not arrive at all and
-// a DM would see a dropped connection rather than a warning.
+// The limit is per ADVENTURE: adventure.Compile concatenates every scene's
+// warnings onto a single CommandResult and nothing caps how many scenes a
+// bundle declares, so a bundle whose art/ did not travel is the case that
+// overruns. CORRECTED 2026-09-07 — the "96 warnings and 6840 bytes… roughly
+// 270 KB at MaxWireTiles, over the 200 KiB read limit" this used to cite does
+// not reproduce (4917 for those 96, and one map stays under the limit).
 //
 // The COUNT is asserted, not just the collapse: "not installed" without "how
 // much of the map went plain" leaves a DM unable to tell one stray square from

@@ -230,13 +230,14 @@ func ResolveObjectArt(idx int, o Object, artDir string) (string, []string, error
 
 // WARNINGS NAME THE ART, NEVER THE SQUARE, and that is what makes
 // BuildSceneCreated able to tell a DM about a missing piece ONCE (spec §4)
-// instead of once per square. Measured on the shipped campaigns/example
-// cellar.json before this changed: four missing art names produced 96
-// warnings and 6840 bytes, which the client joins into one untruncated toast;
-// at MaxWireTiles the same shape is ~270 KB in a single CommandResult, over
-// the 200 KiB read limit Go clients set. Deduplication needs identical
-// strings, so the square key cannot be in them — compile.go appends the count
-// instead, which is the number a DM can act on anyway.
+// instead of once per square. Deduplication needs identical strings, so the
+// square key cannot be in them — compile.go appends the count instead, which
+// is the number a DM can act on anyway. What makes the collapse load-bearing
+// is a bound per ADVENTURE rather than per map: adventure.Compile puts every
+// scene's warnings on one CommandResult and nothing caps the scene count.
+// CORRECTED 2026-09-07 — the "6840 bytes, ~270 KB at MaxWireTiles, over the
+// 200 KiB read limit" this used to cite does not reproduce, and at the real
+// rate one map stays under that limit. See warningTally in compile.go.
 //
 // NOR DOES ANY OF THEM NAME A PATH. A warning rides back on an ok=true
 // CommandResult to whoever issued the command, exactly as an error does, so

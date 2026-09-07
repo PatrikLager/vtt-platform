@@ -245,15 +245,26 @@ func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, er
 // ONCE, with the number of things it happened to — spec §4's "The DM is told
 // which references did not resolve, once, as a warning on the load".
 //
-// THE PROBLEM IT SOLVES IS A REAL MEASUREMENT, not a tidiness preference.
-// campaigns/example/maps/cellar.json names four art pieces across 90 squares;
-// with none of them installed the un-deduplicated version produced 96
-// warnings and 6840 bytes, and the client (client/src/app.ts) joins them into
-// one untruncated toast. A map at MaxWireTiles would put roughly 270 KB in a
-// single CommandResult, over the 200 KiB read limit Go clients set
-// (internal/harness/client.go's readLimit) — so the frame would not arrive at
-// all, and the failure would present as a torn-down connection rather than as
-// a warning nobody wanted.
+// THE PROBLEM IT SOLVES IS A REAL BOUND, not a tidiness preference — and the
+// bound is per ADVENTURE, not per map.
+//
+// CORRECTED 2026-09-07, and the correction reverses the argument rather than
+// tidying it. This paragraph used to say the un-deduplicated form put 6840
+// bytes on the shipped cellar.json and "roughly 270 KB" at MaxWireTiles, over
+// the 200 KiB read limit Go clients set (internal/harness/client.go's
+// readLimit). The 6840 does not reproduce — those 96 warnings measure 4917 —
+// and at the honest rate a map at MaxWireTiles lands UNDER that limit. So the
+// threshold this type was said to exist for is one a single map never crosses,
+// and a reader re-deriving the design from that sentence would conclude the
+// collapse is unnecessary.
+//
+// THE BOUND THAT HOLDS: adventure.Compile concatenates EVERY scene's warnings
+// into ONE CommandResult (scene-qualified in its scene loop, handed to a single
+// frame by internal/gateway's handleLoadAdventure). MaxWireTiles caps a SCENE
+// and nothing caps the scene count, so this collapse is the only thing standing
+// between a bundle whose art/ did not travel and a result too large to arrive —
+// which would deliver no warning at the moment every one of them was true.
+// Do not restore a byte figure here. State the invariant.
 //
 // GROUPING IS BY THE EXACT STRING, which is why resolve.go's warnings name the
 // art and never the square: two squares missing masonry-1 must produce the

@@ -812,26 +812,21 @@ green and reviewed.
 
 > **AMENDED 2026-09-06 — DO NOT RE-EXECUTE THIS TASK AS WRITTEN.** Patrik:
 > *"We never used the platform, there is no need for a migration route. We
-> talked about this before."* The refusal below and its `"package"` sibling both
-> put MIGRATION INSTRUCTIONS in the error message, and so did the adventure
-> bundle's `tiles/pack.json` refusal added under Task 7. All three were deleted:
-> nothing has ever shipped, `contract/RELEASED` does not exist, every campaign
-> that has ever existed is in this repository, and Step 3 of this very task
-> already rewrote all fourteen fixtures that declared a pack.
+> talked about this before."* There is no migration route: not in the refusal
+> below, not in its `"package"` sibling, and not in the adventure bundle's
+> `tiles/pack.json` refusal Task 7 once carried.
 >
-> **What survives, unchanged, is that a map declaring `"pack"` is REFUSED** —
-> `mapdef.loadAs` decodes through `decodeStrict`'s `DisallowUnknownFields`, so
-> the two arms below could only ever be reached by a decoder that had already
-> accepted the field. The assertion that says so is
-> `TestAMapDeclaringAPackOrAPackageIsStillRefused`, which pins
-> `json: unknown field "pack"` rather than the migration text. The bundle
-> refusal has no successor: an adventure shipping `tiles/pack.json` loads, and
-> its unresolved art degrades and warns exactly as a bundle with no `art/`
-> already did.
+> **The rule is that a map declaring `"pack"` is REFUSED** — `mapdef.loadAs`
+> decodes through `decodeStrict`'s `DisallowUnknownFields`, so the two arms
+> below could only ever be reached by a decoder that had already accepted the
+> field. `TestAMapDeclaringAPackOrAPackageIsStillRefused` pins
+> `json: unknown field "pack"`. An adventure bundle shipping `tiles/pack.json`
+> loads, with its unresolved art degraded and warned about under design spec §4,
+> exactly as a bundle with no `art/` already was.
 >
 > The Step-1 test body below therefore asserts `art/`, which nothing produces
 > any more. It is kept as the record of what Task 5 did, not as an instruction.
-> Design spec §7 carries the same amendment.
+> Design spec §7 carries the rule.
 
 **Files:**
 - Modify: `internal/mapdef/format.go` (delete `Map.Pack`), `internal/mapdef/load.go`

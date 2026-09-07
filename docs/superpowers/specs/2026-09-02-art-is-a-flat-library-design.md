@@ -243,12 +243,36 @@ references did not resolve, once, as a warning on the load — not an error, and
 not silence.
 
 **Once means once per art NAME, not once per square.** Measured 2026-09-03 on
-the shipped `cellar.json`: the per-square form produced 96 warnings and 6840
-bytes over 4 distinct names, and the client joins them into a single toast — at
-`MaxWireTiles` that is roughly 270 KB in one `CommandResult`, above the read
-limit the test connections set. Four facts buried in 96 near-identical sentences
-is a channel a DM stops reading, which is the silence this section exists to
-prevent, arrived at from the other direction.
+the shipped `cellar.json`: the per-square form produced 96 warnings — 90
+squares over four art names, plus six objects over four more — and the client
+joins them into a single toast. Eight facts buried in 96 near-identical
+sentences is a channel a DM stops reading, which is the
+silence this section exists to prevent, arrived at from the other direction.
+
+***Amended 2026-09-06 — this rule was reversed and restored the same day, and
+the round trip is the argument.*** *Patrik first ruled the opposite: "We should
+report each square that uses the bad art", on the ground that a count sends a DM
+to grep the map file for the half they can act on. Per-square naming was built,
+and then withdrawn by the same person for a reason the payload arithmetic had
+missed — ONE SQUARE CAN CARRY MANY THINGS. Objects are keyed by their anchor, so
+four crates stacked on one square render that coordinate four times; a list that
+repeats one place four times is not locality, it is noise wearing locality's
+clothes. The count survives because it states magnitude without pretending to
+state position.*
+
+*A second reason surfaced in review and outlives the first: `adventure.Compile`
+concatenates EVERY scene's warnings into one `CommandResult`. A per-square list
+is bounded per scene by `MaxWireTiles` and not bounded at all per adventure, so a
+bundle whose `art/` did not travel could outgrow that frame on load —
+delivering no warning at the exact moment every one of them was true. Once per
+art name is what bounds it.*
+
+*The kind mismatch keeps its squares, capped. It collapses per distinct
+SENTENCE rather than per art name — the sentence carries the square's kind, so
+one art mismatched onto a wall and onto a floor is two lines, and bounded either
+way:
+its remedy is one of two opposite things — a deliberate illusory wall, or the
+wrong art pasted onto a square — and only the square tells them apart.*
 
 **That channel does not exist yet and this design adds it.** `mapdef.Compile`
 and `mapdef.Resolve` already return a `warnings` slice, and nothing carries it any
@@ -402,23 +426,14 @@ of `campaigns/example/` and any scenario fixture, not a compatibility layer.
 field "pack"`, and the same for the field under any rename. Silently ignoring it
 would load a map whose art references were written against a namespace that no
 longer exists, and draw the wrong thing.
+`TestAMapDeclaringAPackOrAPackageIsStillRefused` (`internal/mapdef/load_test.go`)
+is what keeps the refusal honest.
 
-***Amended 2026-09-06 — THE MIGRATION ROUTE IS DELETED, the refusal is not.***
-*Patrik: "We never used the platform, there is no need for a migration route. We
-talked about this before." This section originally specified three refusals that
-carried migration INSTRUCTIONS in their messages: a map declaring `"pack"`, the
-same map declaring `"package"`, and an adventure bundle still shipping
-`tiles/pack.json`. All three were built for an audience of nobody —
-`contract/RELEASED` does not exist, nothing has ever shipped, every campaign
-that has ever existed is in this repository, and Task 5 of the plan had already
-rewritten all fourteen fixtures that declared a pack. The two map arms are gone and
-`json: unknown field "pack"` is what a declaring map gets, which is adequate for
-the only people who will ever read it; the bundle refusal is gone outright, and
-a bundle shipping `tiles/pack.json` now loads with that art unresolved, the same
-answer a bundle with no `art/` already gets under §4 — degraded, and warned
-about to whoever issues `load_adventure`.
-`TestAMapDeclaringAPackOrAPackageIsStillRefused` is what keeps the refusal
-honest.*
+**No migration route accompanies that refusal**, and none is written later.
+Nothing has ever shipped and every campaign that has ever existed is in this
+repository, so a message written to walk somebody through the change has no
+reader. A human migrating a map by hand is served by `docs/map-format.md`, which
+carries the instructions and is where a reader looks anyway.
 
 `contract/RELEASED` does not exist, so ADR-007 reports rather than enforces
 (CLAUDE.md rule 3). This design is not additive, and that is only permissible
@@ -458,8 +473,7 @@ Tasks 8 and 9 write their tests from, so a reader working forward from a stale
 §8 writes the wrong test and then "fixes" working code to match it.)*
 
 **A map declaring `"pack"` is refused** — by strict decoding, naming the field
-as `unknown field "pack"`. *(Amended 2026-09-06 with §7: the message said more
-than that until the migration route was deleted.)*
+as `unknown field "pack"`.
 
 **Two art pieces cannot collide**, which is not a test of platform code but of
 the claim in §3.3. It is asserted by a test that tries to construct the

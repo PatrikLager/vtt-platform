@@ -53,9 +53,10 @@ const errNoMapsAvailable = "gateway: no maps available"
 // sidecar taking the whole boot down — art that is installed and cannot be
 // used (all of those, that sub-project's design spec §4). Each is reported
 // ONCE per distinct message with the number of squares
-// or objects it affected, because the un-deduplicated version put 96 warnings
-// and 6840 bytes on one result for the shipped cellar map — see
-// mapdef.BuildSceneCreated's warningTally. This handler carries them onto the
+// or objects it affected. The collapse is a size bound, and the bound is per
+// ADVENTURE, where every scene's warnings ride one CommandResult — see
+// mapdef.BuildSceneCreated's warningTally, and do not restore the byte figure
+// this sentence used to carry, which did not reproduce. This handler carries them onto the
 // ok=true CommandResult it
 // returns (CommandResult.warnings, field 5, added by
 // 2026-09-02-art-is-a-flat-library's Task 2) — the channel this doc comment
