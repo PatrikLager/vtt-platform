@@ -11,7 +11,8 @@ import {
   TokenRemovedSchema, ActorRemovedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
-import { renderSpectator, describe as describeEvent, CELL, boardCamera } from "../src/view/spectator";
+import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
+  DEFAULT_PANE_W, DEFAULT_PANE_H } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
@@ -546,6 +547,13 @@ function fakeCtx(calls: string[]): CanvasRenderingContext2D {
     restore() {},
     translate() {},
     rotate() {},
+    // Added 2026-09-05 with the device-pixel-ratio scale renderGrid applies once
+    // per frame. Recorded rather than a no-op so a test can assert the ratio
+    // reached the context at all — canvas.test.ts's own recorder makes the same
+    // point at length: a call this double swallows is a decision nothing sees.
+    scale(x: number, y: number) {
+      calls.push(`scale:${x},${y}`);
+    },
     beginPath() {},
     moveTo() {},
     lineTo() {},
@@ -672,6 +680,11 @@ function recordingCtx(calls: string[]): CanvasRenderingContext2D {
     drawImage() { calls.push("drawImage"); },
     fillRect() { calls.push("fillRect"); },
     stroke() { calls.push("stroke"); },
+    // The per-frame device-pixel-ratio scale (2026-09-05). Recorded, not a
+    // no-op: this double's whole job is the ORDER of what reaches the context,
+    // and a scale applied after the first drawImage would be a board drawn at
+    // two different sizes in one frame.
+    scale(x: number, y: number) { calls.push(`scale:${x},${y}`); },
   } as unknown as CanvasRenderingContext2D;
 }
 
@@ -694,6 +707,11 @@ test("renderSpectator paints terrain, strokes the grid, and strokes it AFTER the
   // AND the stroke comes after the LAST terrain draw — the ordering defect
   // that once shipped (grid drawn first, then painted over by every tile).
   expect(strokeIndex).toBeGreaterThan(lastDrawImage);
+  // AND THE DEVICE-PIXEL SCALE COMES FIRST OF ALL (2026-09-05). It is a
+  // CUMULATIVE transform on the context, so anything drawn before it is drawn at
+  // a different size than everything after it — one board, two scales, with the
+  // seam falling wherever the call happens to sit.
+  expect(calls[0]).toBe("scale:1,1");
 });
 
 test("with no seam supplied the board asks the canvas itself for a 2d context", () => {
@@ -1597,4 +1615,135 @@ test("no perch supplied, no control at all", () => {
   renderSpectator(root, party(), [], "connected");
   expect(root.querySelector(".perch")).toBeNull();
   expect(root.textContent).not.toContain("Perched on");
+});
+
+// --- the pane follows the WINDOW (2026-09-05) --------------------------------
+//
+// PANE_W = 640 / PANE_H = 480 were constants, and that was the actual gap —
+// not cell_px. The architecture already anticipated this: planScene, planGrid
+// and planFog all take viewW/viewH as arguments, and only the call site fed
+// them literals.
+//
+// THE CONSTANT REPLACED A REAL DEFECT AND MUST NOT COME BACK (backlog T1/#19):
+// the board was gridWidth*CELL px tall — 1408 for a 32x32 scene — so the page
+// grew with the map and the controls sat ~1450px down it, below every laptop
+// fold. The fix here is the third option neither of the first two took: the
+// size follows the CONTAINER, not the scene and not a constant.
+//
+// DETERMINISM. happy-dom reports clientWidth/clientHeight as 0 for every
+// element (measured), so every test in this file — including all the geometry
+// assertions above, which derive their expectations through boardCamera —
+// keeps seeing the documented fallback and the exact same numbers as before.
+// That is not luck: paneSize falls back whenever a measurement is not a usable
+// positive size, and the tests below drive both halves of that explicitly.
+
+test("with nothing measurable the pane is the documented fallback, so the board is deterministic", () => {
+  // The whole suite's geometry rests on this. If a measurement of 0 were taken
+  // literally, fitCamera would divide by zero and every expectation in this
+  // file would become NaN.
+  expect(paneSize(null)).toEqual({ w: DEFAULT_PANE_W, h: DEFAULT_PANE_H });
+  const bare = document.createElement("div");
+  expect(paneSize(bare)).toEqual({ w: DEFAULT_PANE_W, h: DEFAULT_PANE_H });
+});
+
+test("a measured container is what the pane becomes, in both axes independently", () => {
+  // Both axes from ONE measurement, and asserted apart: a paneSize that read
+  // clientWidth for both would pass a square fixture and letterbox every real
+  // window, which is not a shape any assertion in this file would notice.
+  const sized = document.createElement("div");
+  Object.defineProperty(sized, "clientWidth", { value: 1000, configurable: true });
+  Object.defineProperty(sized, "clientHeight", { value: 300, configurable: true });
+  expect(paneSize(sized)).toEqual({ w: 1000, h: 300 });
+});
+
+test("a container measurable in only one axis falls back in BOTH, never to a zero", () => {
+  // A half-measured element is a laid-out-but-hidden one, and a pane 1000 wide
+  // and 0 tall is a division by zero inside fitCamera. All or nothing.
+  const halfW = document.createElement("div");
+  Object.defineProperty(halfW, "clientWidth", { value: 1000, configurable: true });
+  Object.defineProperty(halfW, "clientHeight", { value: 0, configurable: true });
+  expect(paneSize(halfW)).toEqual({ w: DEFAULT_PANE_W, h: DEFAULT_PANE_H });
+
+  const halfH = document.createElement("div");
+  Object.defineProperty(halfH, "clientWidth", { value: 0, configurable: true });
+  Object.defineProperty(halfH, "clientHeight", { value: 300, configurable: true });
+  expect(paneSize(halfH)).toEqual({ w: DEFAULT_PANE_W, h: DEFAULT_PANE_H });
+});
+
+test("boardCamera fits the scene into whatever viewport it is given, not into a constant", () => {
+  // The camera is what makes "always start seeing the whole map" true (spec §7),
+  // so a viewport it cannot be told about is a board that fits the wrong box. Two
+  // different viewports over one scene must produce two different fits, or the
+  // parameter is decoration.
+  const wide = boardCamera(6, 4, 1200, 300);
+  const small = boardCamera(6, 4, 640, 480);
+  expect(wide.scale).not.toBe(small.scale);
+  // 6x4 at CELL 44 is 264x176. Into 1200x300 the HEIGHT binds: 300/176.
+  expect(wide.scale).toBeCloseTo(300 / 176, 6);
+  // And the default arguments are the documented fallback, which is what every
+  // other test in this file relies on.
+  expect(boardCamera(6, 4)).toEqual(small);
+});
+
+test("the canvas backing store follows devicePixelRatio, and the CSS size does not", () => {
+  // A canvas sized only in CSS pixels is SOFT on every retina display: the
+  // backing store has to be dpr times larger and the context scaled to match, or
+  // every line the grid draws is resampled. Neither half alone is correct — a
+  // backing store without the scale draws the whole board at a quarter size in
+  // the corner — so both are asserted together.
+  const original = globalThis.devicePixelRatio;
+  Object.defineProperty(globalThis, "devicePixelRatio", { value: 2, configurable: true });
+  const scales: number[] = [];
+  try {
+    const root = document.createElement("div");
+    renderSpectator(root, world(), [], "connected", {
+      getContext: (c) => {
+        const calls: string[] = [];
+        const ctx = fakeCtx(calls) as unknown as { scale: (x: number, y: number) => void };
+        ctx.scale = (x: number) => scales.push(x);
+        void c;
+        return ctx as unknown as CanvasRenderingContext2D;
+      },
+    });
+    const canvas = root.querySelector("canvas") as HTMLCanvasElement;
+    // The BACKING STORE is in device pixels.
+    expect(canvas.width).toBe(DEFAULT_PANE_W * 2);
+    expect(canvas.height).toBe(DEFAULT_PANE_H * 2);
+    // The CSS size stays in CSS pixels, or the element itself doubles on screen.
+    expect(canvas.style.width).toBe(`${DEFAULT_PANE_W}px`);
+    expect(canvas.style.height).toBe(`${DEFAULT_PANE_H}px`);
+    // And the context is scaled, exactly once, so every planner's CSS-pixel
+    // coordinates land where they mean to.
+    expect(scales).toEqual([2]);
+  } finally {
+    Object.defineProperty(globalThis, "devicePixelRatio", { value: original, configurable: true });
+  }
+});
+
+test("at devicePixelRatio 1 the backing store equals the CSS size", () => {
+  // The ordinary display, and the case every other test in this file runs in.
+  // Without it, a dpr that was hard-coded to 2 would pass the test above.
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", { getContext: () => null });
+  const canvas = root.querySelector("canvas") as HTMLCanvasElement;
+  expect(canvas.width).toBe(DEFAULT_PANE_W);
+  expect(canvas.height).toBe(DEFAULT_PANE_H);
+});
+
+test("the board draws through the size it was measured at, not through the fallback", () => {
+  // THE END TO END OF THE WHOLE CHANGE. renderSpectator measures the board of the
+  // PREVIOUS frame — which the browser has already re-laid-out by the time a
+  // resize repaints — so a second render into the same root uses that size for
+  // the camera, the canvas and every planner. Asserted on the canvas, because
+  // that is where a wrong pane is visible without a real layout engine.
+  const root = document.createElement("div");
+  renderSpectator(root, world(), [], "connected", { getContext: () => null });
+  const first = root.querySelector(".grid") as HTMLElement;
+  Object.defineProperty(first, "clientWidth", { value: 800, configurable: true });
+  Object.defineProperty(first, "clientHeight", { value: 200, configurable: true });
+
+  renderSpectator(root, world(), [], "connected", { getContext: () => null });
+  const canvas = root.querySelector("canvas") as HTMLCanvasElement;
+  expect(canvas.style.width).toBe("800px");
+  expect(canvas.style.height).toBe("200px");
 });

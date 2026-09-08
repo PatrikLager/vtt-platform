@@ -30,7 +30,9 @@
 github.com/PatrikLager/vtt-platform/cmd/vtt                          85.0
 github.com/PatrikLager/vtt-platform/internal/adventure               89.5
 github.com/PatrikLager/vtt-platform/internal/adventure/conformance   89.0
+github.com/PatrikLager/vtt-platform/internal/artlib                  99.0
 github.com/PatrikLager/vtt-platform/internal/campaign                85.5
+github.com/PatrikLager/vtt-platform/internal/campaigncfg             99.0
 github.com/PatrikLager/vtt-platform/internal/engine                  97.5
 github.com/PatrikLager/vtt-platform/internal/gateway                 88.5
 github.com/PatrikLager/vtt-platform/internal/harness                 85.0

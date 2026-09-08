@@ -43,6 +43,48 @@ TypeScript + bun for the client, Taskfile gates, gremlins + Stryker mutation.
 
 ---
 
+## Pre-flight finding: the adventure path, which the spec does not mention
+
+**Found by the pre-flight scan, 2026-09-03, before Task 1.** `internal/adventure`
+is a second consumer of everything this sub-project changes, and neither the spec
+nor the first draft of this plan named it:
+
+- `Adventure.Pack *mapdef.Pack` (`internal/adventure/format.go`) — an adventure
+  carries its OWN embedded art, loaded from `<adventure>/tiles/pack.json` by
+  `loadEmbeddedPack` (`internal/adventure/load.go`).
+- `internal/adventure/compile.go` calls `mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)`.
+- `internal/adventure/load.go` calls `BuildSceneCreated` again as a dry run.
+
+So spec §6's deletion of `mapdef.Pack` and `LoadPack` would remove how adventures
+ship art, and spec §3's flat `campaign/art/` says nothing about art that travels
+*inside* a bundle.
+
+**Ruling (controller, 2026-09-03): an adventure keeps its art self-contained, in
+its own flat `<adventure>/art/`, resolved by the SAME `artlib` rooted at the
+adventure directory.**
+
+*Why:* an adventure is a bundle you hand to someone, and its art must travel with
+it — that is what `loadEmbeddedPack` exists for and it should not be lost. The
+alternative, installing an adventure's art into `campaign/art/` on load, collides
+with the flat namespace by construction: two adventures shipping `masonry-1`
+would fight, and the DM never chose either name. Two roots and one mechanism
+keeps the flat rule intact inside each root, needs no namespace, and means
+`artlib` is the only art code in the tree.
+
+*What it costs if wrong:* the adventure format changes shape
+(`tiles/pack.json` → `art/`), which is breaking and touches `adventures/*/` on
+disk. Cheap to revisit while `contract/RELEASED` is absent; expensive after.
+
+**This is a spec gap, so under CLAUDE.md rule 7 the spec is amended at the merge
+gate and the amendment needs Patrik's approval.** Flagged to him at dispatch
+time rather than after.
+
+**Plan changes this forces:** Task 3 must update `internal/adventure`'s call
+sites or the tree will not compile, and Task 7 must replace the embedded pack
+rather than merely delete it. Both are written into those tasks below.
+
+---
+
 ## Design decision this plan settles
 
 **Spec §3.1 says a directory under `art/` is an error, and spec §3.6 says art
@@ -56,9 +98,27 @@ boot-time load this design exists to remove, just moved.
   `<dir>/<id>.png` directly. **No `ReadDir`, no cache, no registry.** This is
   what a map load uses, and it is what makes "the filename IS the identity"
   literally true rather than merely enforced.
-- `artlib.Validate(dir)` — one `ReadDir`, no file contents. Refuses a
-  subdirectory and a sidecar with no picture. Called by `vtt art install` and
-  once at server start.
+- `artlib.Validate(dir)` — one `ReadDir` plus a read of each SIDECAR (not of
+  any picture). Refuses a subdirectory, a symlink, a filename that is not a
+  legal art id, and a sidecar whose named pictures are missing. Called by
+  `vtt art install` and once at server start.
+
+  *(That list was incomplete when first written — it named only the
+  subdirectory and missing-picture cases. Corrected 2026-09-03 after the fixer
+  checked it against the tree rather than against this sentence.)*
+
+  **Amended 2026-09-03, Task 1 fix round.** This said "no file contents" until
+  C1 proved that impossible: a door names its two pictures INSIDE its sidecar
+  (`cellar-door-open.png`, `cellar-door-closed.png`, and no `cellar-door.png`),
+  so checking that a sidecar's pictures exist requires reading the sidecar.
+  `Validate` now resolves each sidecar through `Lookup` itself, so install and
+  map-load cannot diverge on what is legal. The consequence is real and is
+  accepted: **a malformed sidecar now fails server start.** Spec §5 already
+  asks for exactly that ("an unreadable sidecar, an unsupported
+  `format_version`" are named as loader refusals), and a LOUD boot failure on
+  broken data is not the defect sub-project 15 shipped — that one was a SILENT
+  gate on one directory suppressing the load of another. Pictures are still
+  never read.
 
 The boot call is a **shape check, not a load**: it reads no art, caches nothing,
 and a missing `art/` passes. So it cannot reproduce sub-project 15's boot-order
@@ -370,7 +430,7 @@ git commit -m "Art is found by its filename, not by a registry"
 
 ### Task 2: Warnings reach the client
 
-The channel spec §4 depends on does not exist: `mapdef.Load` returns warnings and
+The channel spec §4 depends on does not exist: `mapdef.Compile`/`Resolve` return warnings and
 no contract message carries them, so today a warning dies in Go. This is the one
 additive contract change (ADR-007).
 
@@ -459,8 +519,25 @@ degrade path exists and is exercised. This task routes the *unresolvable* case
 into it.
 
 **Files:**
-- Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`
-- Test: `internal/mapdef/resolve_test.go`
+- Modify: `internal/mapdef/resolve.go`, `internal/mapdef/compile.go`,
+  `internal/adventure/compile.go`, `internal/adventure/load.go`,
+  `internal/gateway/map.go`, `internal/mapdef/installed.go`
+- Test: `internal/mapdef/resolve_test.go`, `internal/adventure/compile_test.go`
+
+**`internal/gateway/map.go` and `internal/mapdef/installed.go` are on this list
+because they CALL `mapdef.Compile`** (added 2026-09-03 after Task 2's review
+found the omission). Changing `Resolve`/`Compile`'s signature without them
+leaves the tree non-compiling until Task 4, and this task's own commit step
+stages `internal/mapdef/` alone. Stage everything that must compile together.
+
+**The adventure path compiles or nothing does.** `internal/adventure/compile.go`
+calls `mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)` and
+`internal/adventure/load.go` calls it again as a dry run. Changing `Resolve` and
+`BuildSceneCreated` breaks both immediately. For THIS task, pass the adventure's
+art directory (`<adventure>/art/`) as the art root; the embedded pack itself is
+replaced in Task 7. If that directory does not exist yet, every override in an
+adventure scene degrades and warns — which is correct and temporary, and Task 8
+installs the files.
 
 **Interfaces:**
 - Consumes: `artlib.Lookup`, `artlib.ErrNotFound` (Task 1).
@@ -572,6 +649,16 @@ git commit -m "A missing picture is a plain square, not a refused map"
 
 - [ ] **Step 1: Write the failing tests**
 
+**Carry the assertion Task 2 had to retire.** Task 2's brief drove `load_map`
+with a map naming absent art and asserted `ok=true` plus warnings naming the
+reference. Task 3 had not landed, so on that tree absent art still refused, and
+Task 2 correctly substituted a kind-mismatch fixture instead. That means the
+POSITIVE end-to-end §4 case — a map naming absent art loads, succeeds, and
+names the dropped reference — is tested nowhere and was scheduled nowhere until
+this line. It belongs here, because this task already builds the fixture it
+needs (`composeServer` plus a real `art/`). Add it alongside the negative case
+below; the negative one alone would pass on a server that never warns at all.
+
 ```go
 func TestArtInstalledAfterBootIsFoundWithoutARestart(t *testing.T) {
 	// The defect sub-project 15 shipped, inverted into a requirement. This
@@ -638,11 +725,120 @@ git commit -m "Art is read when the map is loaded, not once at boot"
 
 ---
 
+
+---
+
+## Execution order changed 2026-09-04 — delete the pack NEXT, not seventh
+
+**Patrik:** *"Some times it is better to delete the old solution before building
+the new. Our decision to keep the old packs while building the new only create
+challenges unnecessarily since no one is using the product."*
+
+He is right and the cost is measurable. This plan ordered the pack's deletion
+LAST, copying `create_scene`'s removal in sub-project 15 — build the
+replacement, prove it, then remove. That caution was correct there and wrong
+here, and the difference was never checked: `create_scene` was a **contract
+command** with five completeness gates and live clients, so removing it early
+would have left a hole on the wire. Packs are **internal Go types with no
+external consumer and no released contract**, and the product has no users. The
+same caution bought nothing.
+
+What it cost across Tasks 1-5: `Map.Pack` stayed live so every task threaded a
+dying type (Task 3 reached 22 files, Task 5 reached 32); `metadata.go` kept
+serving `packRefJSON` until Task 5 deleted it as "rubble from this deletion";
+14 fixtures were MIGRATED off `"pack"` when deleting the pack would have had
+them rewritten once, in Task 8, where they were going anyway; and a false
+`cellPx` cost comment existed only because `packRefJSON` was still alive to be
+mourned — it would have misdirected Task 6.
+
+**New order: 5 → 7 → 4b → 6 → 8 → 9.** Task 7 runs next. Then Task 6 builds
+`GET /api/art/{file}` into a tree with no `GET /api/packs/{pack}/{file}` beside
+it to work around, and Task 8's migration is a rewrite rather than a
+reconciliation.
+
+**No gap is created by moving it.** Nothing serves art bytes today, and
+`campaigns/example/art/` does not exist until Task 8 — so deleting the pack
+route removes a capability nothing is currently using.
+
+**The test for next time is not "is this a removal?" but "who is standing on it
+while I take it away?"** Here the answer was nobody.
+
+---
+### Task 4b: A corrupt sidecar degrades; a newer format still refuses
+
+Patrik's ruling, 2026-09-04. Added after Task 4's review measured that one
+corrupt sidecar named by one committed map **stops the server booting** — exit
+status 1, with every other map fine — because `composeServer` turns any
+map-load error into a refusal to start.
+
+It is deliberately its own task rather than a rider on Task 4: it changes
+behaviour, it amends the spec (§4, §5, criterion 5), and Task 4 was already
+green and reviewed.
+
+**Files:**
+- Modify: `internal/mapdef/resolve.go` (the artlib-error arm in `Resolve` and
+  `ResolveObjectArt`), `internal/artlib/artlib.go` (a sentinel the caller can
+  branch on)
+- Test: `internal/mapdef/resolve_test.go`, `internal/artlib/artlib_test.go`,
+  `cmd/vtt/maps_e2e_test.go`
+
+**Interfaces:**
+- Produces: a way for `Resolve` to tell "cannot be read" from "declares a format
+  I do not understand". `artlib.ErrNotFound` and `artlib.ErrArtDirUnreadable`
+  already exist; this needs a third, e.g. `artlib.ErrFormatVersion`.
+
+- [ ] **Step 1: Write the failing tests.** A map naming art whose sidecar is
+  corrupt JSON loads, that square draws plain, and the warning names the piece
+  AND the cause — never the not-installed sentence, for §3.4's reason. A map
+  naming art whose sidecar declares `format_version: 99` is still refused, and
+  the refusal names both versions. A campaign holding the corrupt file **boots**.
+
+- [ ] **Step 2: Run them RED.** Behavioural, not compile-failure: today both
+  cases refuse, so the corrupt one fails on the refusal and the boot one fails
+  on exit status 1.
+
+- [ ] **Step 3: Split the arm.** Only artlib errors, and only in `Resolve` /
+  `ResolveObjectArt`. A structurally broken MAP — an unknown tile name, a square
+  with no tile — must still refuse; this ruling is about art, not about maps.
+
+- [ ] **Step 4: Run the suites**, including `cmd/vtt`, which is where the boot
+  behaviour is observable.
+
+- [ ] **Step 5: Commit.**
+
+---
+
 ### Task 5: A map declaring "pack" is refused
+
+> **AMENDED 2026-09-06 — DO NOT RE-EXECUTE THIS TASK AS WRITTEN.** Patrik:
+> *"We never used the platform, there is no need for a migration route. We
+> talked about this before."* There is no migration route: not in the refusal
+> below, not in its `"package"` sibling, and not in the adventure bundle's
+> `tiles/pack.json` refusal Task 7 once carried.
+>
+> **The rule is that a map declaring `"pack"` is REFUSED** — `mapdef.loadAs`
+> decodes through `decodeStrict`'s `DisallowUnknownFields`, so the two arms
+> below could only ever be reached by a decoder that had already accepted the
+> field. `TestAMapDeclaringAPackOrAPackageIsStillRefused` pins
+> `json: unknown field "pack"`. An adventure bundle shipping `tiles/pack.json`
+> loads, with its unresolved art degraded and warned about under design spec §4,
+> exactly as a bundle with no `art/` already was.
+>
+> The Step-1 test body below therefore asserts `art/`, which nothing produces
+> any more. It is kept as the record of what Task 5 did, not as an instruction.
+> Design spec §7 carries the rule.
 
 **Files:**
 - Modify: `internal/mapdef/format.go` (delete `Map.Pack`), `internal/mapdef/load.go`
 - Test: `internal/mapdef/load_test.go`
+
+**Before you start: one existing test WILL go red here, and the cheap fix is
+wrong.** `internal/gateway/map_test.go`'s `TestALoadMapWarningReachesTheIssuer`
+(Task 2) uses a fixture declaring `"pack":"cellar-basics"` to produce a
+kind-mismatch warning. This task makes that declaration a refusal. **Migrate it
+to a sidecar-based kind mismatch; do not delete it.** It is the only test on the
+branch that proves a warning traverses the whole channel to the issuer, and
+deleting a test deletes coverage nothing will shout about.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -732,7 +928,60 @@ func TestArtInstallValidatesTheSidecarAtInstallRatherThanAtTheTable(t *testing.T
 
 - [ ] **Step 3: Implement.** `campaigncfg.Load` returns `Config{CellPx: 64}` when
 the file is absent. `packRefJSON` is deleted; metadata reports `cellPx` directly.
-Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`. `vtt art install <path>...`
+Route `GET /api/art/{file}` over `os.OpenRoot(artDir)`.
+
+**An unresolved OBJECT paints a magenta checkerboard, and the spec says it is
+"drawn from its kind". Fix that here.** Found by Task 4b's review, 2026-09-05,
+by checking the CLIENT rather than the server. `objectImage` returns `tile:` for
+an empty `Art` and `canvas.ts`'s `paint` sends that to `drawMissingTile` — a 2x2
+checkerboard — while spec §4 promises the object stays, drawn from its kind, and
+`ResolveObjectArt`'s own warning tells the DM exactly that.
+
+Tiles are fine and the asymmetry is the point: `tileImage` falls back to
+`std:<kind>/<material>`, so a degraded tile stays a wall and a degraded door
+stays a door for sight, movement and the door tool. **Objects have no such
+fallback.** Every argument this sub-project has made about degrading safely was
+verified on tiles and silently assumed for objects.
+
+`campaigns/example/maps/cellar.json` names four object arts — `barrel`,
+`brazier`, `crate-wood`, `pillar-stone` — so once Task 8 installs them, one
+corrupt `pillar-stone.json` boots the server and paints checkerboards where the
+pillars are. This is a CLAUDE.md rule 7 deviation: delivered behaviour
+contradicts a spec sentence the code quotes. The spec is right; the code is
+wrong.
+
+**Task 7 deleted seven security proofs along with the pack route, and this task
+owes every one of them back.** The pack route's tests for path traversal,
+symlink escape, the content-type allowlist, SVG exclusion, the unknown-file 404
+and end-to-end bytes are gone. Nothing regresses today because no route serves
+bytes — but the ruling now survives only as prose in
+`internal/gateway/metadata.go`, and `internal/artlib` pins the symlink half at
+the LOOKUP layer, never at a route. Re-establish each at the new route.
+
+**And one requirement has no pack precedent to copy — but NOT for the reason
+this paragraph originally gave.** It claimed the pack route was saved from
+serving a nested file by net/http's single-segment `{file}` wildcard. **Measured
+2026-09-05 and false:** the wildcard rejects the literal form
+(`/api/art/a/x.png` → 404) and passes the ENCODED one —
+`/api/art/pack-ish%2Fx.png` arrives at the handler with
+`PathValue("file") == "pack-ish/x.png"`, because the mux decodes `%2F` into the
+value after matching. So the pattern's independent contribution against a
+determined request is **zero**, and the pack route had the identical hole; it
+was never protected by its shape.
+
+The real guard is the name check, and it must be explicit. `art/` being flat
+does not make a subdirectory unreachable — only refusing a name that is not a
+plain art filename does.
+
+**The route MUST NOT serve a file inside a subdirectory**, and `os.OpenRoot`
+alone does not stop it: a root CONFINES but does not FLATTEN, and `fs.ValidPath`
+rejects only `..`, so `art/pack-ish/x.png` is legitimately inside the root. Two
+things keep a subdirectory inert and this task must keep at least one: the
+pattern stays `{file}` — net/http's single-segment wildcard does not match
+across `/`, which is what the pack route already relied on — and/or the handler
+runs `isPictureName` on the name. Test it directly: the spec's whole
+no-subfolders rule (§3.1, §3.3) rests on nothing inside `art/pack-ish/` being
+reachable, and this route is the only place that could make it reachable. `vtt art install <path>...`
 copies files in, refuses a directory, refuses an existing stem without `--force`,
 and runs `artlib.Lookup` on each installed stem so a malformed sidecar is caught
 at install rather than at the table.
@@ -759,18 +1008,40 @@ assertion — no `mapdef.Pack`, no `LoadPack`, no `WithPackFiles`.
 
 - [ ] **Step 2: Run it RED.**
 
-- [ ] **Step 3: Delete**, outward-in: `cmd/vtt/maps.go`'s pack walk and the
+- [ ] **Step 3: Replace the adventure's embedded pack FIRST**, because it is the
+one caller that needs something rather than nothing. `Adventure.Pack *mapdef.Pack`
+becomes an art directory rooted at the adventure, and `loadEmbeddedPack` is
+deleted in favour of `artlib` reading `<adventure>/art/`. An adventure with no
+`art/` is legal, exactly as `tiles/pack.json` was optional — its scenes then draw
+from the built-in vocabulary and warn, which is spec §4 applied to the same
+mechanism rather than a second one.
+
+- [ ] **Step 4: Delete**, outward-in: `cmd/vtt/maps.go`'s pack walk and the
 `os.Stat(mapsDir)` guard in `serve_compose.go` (the guard's whole reason was that
 `loadMapsDir` failed on a missing `maps/`; make the maps walk tolerate absence the
 way the pack walk already did, then the guard has nothing left to do);
 `Server.packs`, `Server.packFS`, `WithPackFiles`; `ErrPackNotLoaded` and its arm
 in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
 
-- [ ] **Step 4: Run everything** — `go build ./... && go test ./... -count=1 && bun test client/test contract`.
+- [ ] **Step 5: Run everything** — `go build ./... && go test ./... -count=1 && bun test client/test contract`.
 
-- [ ] **Step 5: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
+- [ ] **Step 6: Commit** — `git commit -m "The pack leaves, and takes a boot-order defect with it"`
 
 ---
+
+**Before you install real sidecars, close one inherited defect.** Found by Task
+6's review, 2026-09-05, in Task 3's code: a sidecar declaring
+`"format_version": 0` returns `artlib.ErrFormatVersion`, so `mapdef.Resolve`
+**refuses the map** — and `composeServer` refuses the BOOT when a committed map
+names it. The message is neutral so no operator is misdirected, but a typo'd `0`
+is not "content newer than this server", and §4 reserves the one surviving
+refusal for exactly that case.
+
+It is the same absent-versus-zero shape fixed twice already — `mapJSON.Pack`
+(Task 5) and `campaigncfg`'s two fields (Task 6) — one directory over, and it
+has been harmless only because no real sidecar existed. **This task is what
+makes real sidecars exist.** Fix it here, with the `*int32` precedent both
+earlier fixes used.
 
 ### Task 8: Migrate the fixtures and the generator
 
@@ -778,7 +1049,7 @@ in `map.go`; finally `mapdef.Pack`, `PackTile`, `LoadPack`.
 - Create: `campaigns/example/art/*`, `campaigns/example/campaign.json`
 - Delete: `campaigns/example/packs/`
 - Modify: `campaigns/example/maps/cellar.json`, `scenarios/`, `scenarios/goldens/`,
-  `tools/genmappack/`
+  `tools/genmappack/`, `adventures/*/` (each `tiles/pack.json` becomes `art/`)
 
 - [ ] **Step 1:** Rewrite `campaigns/example/` — every pack tile and object
 becomes `art/<stem>.png` plus, for tile art, `art/<stem>.json`. File stems become
@@ -788,6 +1059,16 @@ because they were already the art names.
 
 - [ ] **Step 2:** `tools/genmappack` emits the flat layout and takes `cell_px`
 as its own flag rather than writing it into a pack.
+
+- [ ] **Step 2b: Carry the assertion Tasks 4 and 8 pass between them.** Nothing
+tests that the SHIPPED campaign's art reaches the wire —
+`TestLoadMapProducesBatchCarryingTilesAndObjects` loads the real `cellar.json`
+but resolves it against a synthetic art directory. Task 4 correctly judged the
+fixture could not exist before this task creates `campaigns/example/art/`, and
+left a note in `cellarArtDir`'s doc comment. That note is in
+`internal/gateway/map_test.go`, which this task does not otherwise open — so it
+is written here too, where an implementer actually looks. Assert the shipped
+campaign's own art resolves and reaches a seat.
 
 - [ ] **Step 3:** Regenerate goldens where art metadata reaches the wire. Goldens
 have **no `-update` flag** by design; a changed golden is re-derived by hand and

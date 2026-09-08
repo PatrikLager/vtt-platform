@@ -210,10 +210,19 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		{"scene-tile-missing", []string{"cellar.json", "field \"tiles[\\\"0,0\\\"]\"", "no tile named for this square"}},
 		{"scene-placement-in-wall", []string{"cellar.json", `field "placements[0]"`, "inside a wall"}},
 		// An override can pass every shape/bounds check above and still not
-		// RESOLVE (no pack given, or the pack does not define the named
-		// art) — checked at LOAD, not deferred to Compile (adventure-format
-		// spec §7: fail loud at boot, not at the table).
-		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "needs a pack to resolve"}},
+		// RESOLVE — checked at LOAD, not deferred to Compile
+		// (adventure-format spec §7: fail loud at boot, not at the table).
+		//
+		// The fixture is art that EXISTS in the adventure's own art/ and
+		// declares a format_version this server does not understand, which is
+		// the only kind of unresolvable art left that refuses anything. It
+		// used to name art no pack defined, and that case began degrading the
+		// one square at 2026-09-02-art-is-a-flat-library Task 3 (spec §4);
+		// every OTHER unreadable sidecar joined it at Task 4b (Patrik,
+		// 2026-09-04), so a fixture built on a missing brace would now pin a
+		// load that SUCCEEDS. The directory keeps its name because
+		// "unresolvable" is still exactly what the fixture is.
+		{"scene-override-unresolvable", []string{"cellar.json", `field "overrides"`, "declares 99"}},
 		// Patrik's ruling (2026-08-13): tiles is optional, but overrides
 		// with no tiles at all is incoherent (mirrors mapdef's own
 		// CheckOverridesRequireTiles, reused here the same way every other
@@ -357,6 +366,65 @@ func TestLoadRejectsMissingFormatVersion(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to contain %q", err.Error(), want)
 		}
+	}
+}
+
+// TestABundlesTilesDirectoryIsNotReadAtAll pins what an adventure's old art
+// directory costs now, which is nothing: Load walks adventure.json, actors/,
+// art/, scenes/ and notes/, and a tiles/ directory beside them — with or
+// without the pack.json manifest that used to be its point — is neither read
+// nor complained about.
+//
+// IT USED TO BE A REFUSAL, and TestAnAdventureShippingAPackIsRefusedByName
+// stood here to pin the message. Patrik's ruling of 2026-09-06 deleted the
+// migration route across the platform — "We never used the platform, there is
+// no need for a migration route" — and this bundle is the one place the route
+// still had a foothold. What that refusal bought is genuinely gone: a bundle
+// handed over with tiles/pack.json in it loads, and every square its scenes
+// override draws plain unless the pictures were also installed into the
+// bundle's own art/. That is the SAME answer a bundle with no art/ at all
+// already gets — resolution degrades and nothing refuses (art-is-a-flat-library
+// design spec §4, Patrik's ruling 2026-09-04) — so the refusal was a second,
+// louder answer to a question the platform had already settled the other way,
+// aimed at operators who do not exist.
+//
+// WHERE THE WARNING GOES, precisely, because "it warns" is too loose to act on:
+// Compile's second return carries one per unresolved reference and
+// handleLoadAdventure puts it on the CommandResult, so a DM issuing
+// load_adventure is told. Load — this function, the BOOT path — discards them
+// (its own dry-run comment says so, and says compile.go does the same). That
+// asymmetry predates this change and is untouched by it.
+//
+// The empty-tiles/ case is kept from that test's own boundary half: whatever
+// this directory means, an adventure that merely HAS one must keep loading.
+func TestABundlesTilesDirectoryIsNotReadAtAll(t *testing.T) {
+	for _, tc := range []struct{ name, manifest string }{
+		{"no manifest", ""},
+		// The shape that was refused until 2026-09-06, written the way a real
+		// pre-migration bundle wrote it.
+		{"a pack manifest still in it", `{
+			"format_version": 1, "id": "brace-yard-art", "name": "Brace Yard Art", "cell_px": 64,
+			"tiles": [{"name":"masonry-1","file":"masonry_1.png","kind":"wall","material":"stone"}]
+		}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rs := loadFixtureRuleset(t)
+			dir := copyFixtureDirExcluding(t, "testdata/valid")
+			if err := os.MkdirAll(filepath.Join(dir, "tiles"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if tc.manifest != "" {
+				if err := os.WriteFile(filepath.Join(dir, "tiles", "pack.json"),
+					[]byte(tc.manifest), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if _, err := adventure.Load(dir, rs); err != nil {
+				t.Fatalf("Load: %v — a tiles/ directory is not part of this format and "+
+					"is not read; the art an adventure ships lives in its own art/", err)
+			}
+		})
 	}
 }
 

@@ -4,7 +4,6 @@
   "name": "The Cellar",
   "grid_width": 3,
   "grid_height": 3,
-  "pack": "mossy-keep",
   "bogus_field": true,
 
   "tiles": {

@@ -24,9 +24,11 @@ import { renderDMConsole } from "./view/dm";
 import { setViewpoint } from "./commands";
 import { joinSecretFrom, requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
-import { loadPackImages, loadStandardPackImages } from "./view/pack-assets";
+import { loadStandardPackImages } from "./view/pack-assets";
+import { artNamesInScene, loadArtImages } from "./view/art-assets";
 import type { ImageMap } from "./view/canvas";
-import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import type { State } from "./state";
+import type { ClientCommand, CommandResult } from "../../contract/gen/ts/vtt/v1/commands_pb";
 
 function gatewayURL(): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -216,12 +218,49 @@ function startSession(root: HTMLElement, token: string): Session {
       // trailing .catch below.
     });
 
-  const loadedPacks = new Set<string>();
-  const loadMapPacks = (maps: MapMeta[]) => {
-    for (const m of maps) {
-      if (!m.pack || loadedPacks.has(m.pack.id)) continue;
-      loadedPacks.add(m.pack.id);
-      void loadPackImages(location.origin, token, m.pack.id).then((imgs) => {
+  // THE CAMPAIGN'S OWN ART, fetched off the FOLDED SCENE rather than off a
+  // listing (2026-09-02-art-is-a-flat-library design spec §3.6/§6).
+  //
+  // WHAT STOOD HERE was loadMapPacks, which walked GET /api/maps and loaded
+  // every configured map's pack, because the wire gave no way to correlate a
+  // live scene back to the map it came from and a pack id was the only handle a
+  // client had. Task 5 of that plan deleted mapdef.Map.Pack and the pack
+  // reference went off /api/maps with it, so the loop ran and found nothing on
+  // every boot; Task 7 deleted the route it would have called. Neither showed,
+  // because no shipped map's art resolved and every TileRef.art was empty.
+  //
+  // THERE IS NOTHING TO CORRELATE NOW. A Tile.Art is a filename stem in one flat
+  // directory, so the scene the table is looking at names its own art, and
+  // art-assets.ts asks GET /api/art/{file} for exactly those ids.
+  //
+  // ONE SET, KEYED BY ART ID, and deliberately not a second one keyed by scene.
+  // A draft carried a scannedScenes guard beside this so a scene's squares were
+  // walked only once; removing it left the whole suite green, because
+  // requestedArt already gives the property that matters — a piece is fetched
+  // once, however many squares or scenes name it. The scan it was avoiding is
+  // the same shape planScene already does on every frame (view/scene-plan.ts's
+  // nested loops over the visible scene), over a table's handful of scenes. A
+  // guard no test can observe, standing in front of a cost of that size, is
+  // machinery — so it went.
+  const requestedArt = new Set<string>();
+  const loadSceneArt = (st: State) => {
+    for (const sc of Object.values(st.Scenes)) {
+      const names = artNamesInScene(sc).filter((n) => !requestedArt.has(n));
+      // THE GUARD BELOW IS KEPT, and the one above was not, because THIS one has
+      // an observable and a cost. Without it a scene with nothing left to fetch
+      // still calls loadArtImages with an empty list: no request goes out, so no
+      // fetch assertion can see it — and the promise still resolves, still
+      // spreads an empty ImageMap and still calls paint(). One extra full
+      // repaint per scene per event, for both shipped adventures, which carry no
+      // art overrides at all. app.test.ts's "a scene naming no art repaints once,
+      // not twice" counts the repaint; the TS mutation gate is what found that
+      // nothing counted it before (2026-09-05).
+      if (names.length === 0) continue;
+      for (const n of names) requestedArt.add(n);
+      // Fired and not awaited: art arriving late repaints, and a slow piece must
+      // not hold up the frame the table is already looking at. loadArtImages
+      // never rejects (its own doc comment), so there is no .catch to write.
+      void loadArtImages(location.origin, token, names).then((imgs) => {
         images = { ...images, ...imgs };
         paint();
       });
@@ -360,12 +399,28 @@ function startSession(root: HTMLElement, token: string): Session {
   // does: the door and role commands produce no event, so an HTTP re-read
   // issued beside the command races it on a different transport and can repaint
   // the panel with the state the command was about to change.
-  const act = (cmd: ClientCommand): Promise<void> =>
+  //
+  // RESOLVES TO THE CommandResult ITSELF, not void. A command that SUCCEEDED
+  // can still carry non-fatal facts — CommandResult.warnings, which load_map
+  // fills when a map names art the loader could not resolve
+  // (2026-09-02-art-is-a-flat-library Task 2/3). Before this, `act`'s own
+  // return type erased that field before it reached dm.ts's `send` prop
+  // (client/src/view/dm.ts), which declared Promise<void> — an MCP agent's
+  // tool result carries a CommandResult verbatim and genuinely sees a
+  // warning, but the DM's browser threw it away one frame short of the
+  // person the warning exists for. Widened together with dm.ts's `send`.
+  const act = (cmd: ClientCommand): Promise<CommandResult> =>
     session.send(cmd).then((res) => {
-      // The result is shown verbatim on failure. A player who is told "not
-      // authorized" can act on that; a silent no-op looks like a broken UI.
-      toast = res.ok ? "" : `refused: ${res.error}`;
+      // The result is shown verbatim on failure, and now on a warning too: a
+      // player told "not authorized" can act on that, and a DM told which
+      // art reference did not resolve can go fix it — a silent no-op and a
+      // silently plain square are the same failure, "looks like a broken
+      // UI", wearing two different causes. `warnings` is empty on an
+      // ordinary ok=true result, so `[].join(...)` reproduces the prior ""
+      // exactly and the toast stays hidden (`toast || undefined` below).
+      toast = res.ok ? res.warnings.join("; ") : `refused: ${res.error}`;
       paint();
+      return res;
     });
 
   /**
@@ -585,7 +640,30 @@ function startSession(root: HTMLElement, token: string): Session {
     });
   });
 
-  session.onChange(paint);
+  // THE WINDOW IS AN INPUT TO THE BOARD, and nothing on the wire ever mentions
+  // it. renderSpectator measures the board's container and draws to that size
+  // (view/spectator.ts's paneSize), but a DM who maximises the window produces
+  // no event at all — so without this the board keeps its old size until the
+  // next token moves, which at a quiet table is minutes.
+  //
+  // OBSERVING root, NOT THE BOARD. The tree is rebuilt wholesale on every paint,
+  // so an observer on the board itself would be replaced once per event and the
+  // old ones leaked; root is the one element that outlives every frame. It is
+  // also the element whose width the board's own width follows, since .grid is
+  // `width: 100%` (style.css).
+  //
+  // NOT DISCONNECTED ANYWHERE, deliberately: root lives as long as the page, and
+  // an observer on a live element is not a leak. boot() is called once.
+  new ResizeObserver(() => paint()).observe(root);
+
+  session.onChange(() => {
+    // ART BEFORE PAINT, so a scene that has just arrived starts fetching in the
+    // same tick it becomes visible. loadSceneArt issues no request at all once
+    // every id it can see has been asked for, which is every frame but the ones
+    // a new scene arrives on.
+    loadSceneArt(session.state);
+    paint();
+  });
 
   paint();
 
@@ -621,11 +699,6 @@ function startSession(root: HTMLElement, token: string): Session {
     .then((fetched) => {
       maps = fetched;
       paint();
-      // Kicks off pack loading; does NOT block on it (loadMapPacks fires
-      // fetches and returns immediately) — a slow or large pack must not
-      // hold up anything else in this chain, and each pack's own images
-      // arrive on their own schedule via the .then inside loadMapPacks.
-      loadMapPacks(fetched);
     })
     .catch(() => {
       // Metadata being unavailable degrades the client to spectator-shaped:

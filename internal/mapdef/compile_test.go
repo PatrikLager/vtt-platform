@@ -2,6 +2,7 @@ package mapdef_test
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,11 +38,7 @@ func TestASceneCreatedCarriesEverySquare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	envs, _, err := mapdef.Compile(m, p)
+	envs, _, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +62,7 @@ func TestASceneCreatedCarriesArtAndObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	envs, _, err := mapdef.Compile(m, p)
+	envs, _, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +99,7 @@ func TestCompileEmitsSceneThenOneTokenPlacedPerPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	envs, _, err := mapdef.Compile(m, p)
+	envs, _, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,10 +130,11 @@ func TestCompileEmitsSceneThenOneTokenPlacedPerPlacement(t *testing.T) {
 // order" has no order to observe, and one TokenPlaced comes out whether
 // Compile ranges the slice or returns its first element.
 //
-// It also kills ARITHMETIC_BASE at compile.go:23:38 — the `1+len(m.Placements)`
-// capacity hint, mutated to `1-len(...)`. That mutant looks like the map
-// capacity hints adjudicated as equivalent in tools/mutation-equivalents.txt
-// (campaign.go:448), and it is NOT: those are maps, this is a slice, and gc
+// It also kills ARITHMETIC_BASE on the `1+len(m.Placements)` capacity hint
+// BuildSceneCreated preallocates with, mutated to `1-len(...)`. That mutant
+// looks like the map capacity hints adjudicated as equivalent in
+// tools/mutation-equivalents.txt (internal/gateway's sortedSceneIDsUnion entry
+// and internal/adventure's load.go entry), and it is NOT: those are maps, this is a slice, and gc
 // panics on a negative slice capacity where it tolerates a negative map hint
 // ("makeslice: cap out of range", verified). So the mutation is observable
 // from two placements up — and survived only because nothing compiled two.
@@ -158,10 +148,6 @@ func TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Appended rather than replaced, so the fixture's own placement stays
 	// first and declaration order is a claim about THIS slice's order.
 	m.Placements = append(m.Placements,
@@ -169,7 +155,7 @@ func TestCompileEmitsEveryPlacementOfAMapThatDeclaresMoreThanOne(t *testing.T) {
 		mapdef.Placement{TokenID: "tok-cleric", ActorID: "act-cleric", X: 1, Y: 2},
 	)
 
-	envs, _, err := mapdef.Compile(m, p)
+	envs, _, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,14 +226,14 @@ func fullyTiledMap(w, h int32) *mapdef.Map {
 func TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable(t *testing.T) {
 	t.Run("a fully tiled map at the ceiling still compiles", func(t *testing.T) {
 		m := fullyTiledMap(60, 60) // 3600 tiles: 153.6 KiB compact, 160.6 KiB spaced
-		if _, _, err := mapdef.BuildSceneCreated(m, nil); err != nil {
+		if _, _, err := mapdef.BuildSceneCreated(m, ""); err != nil {
 			t.Fatalf("a 60x60 map is inside the stated ceiling and must compile: %v", err)
 		}
 	})
 
 	t.Run("one tile past the ceiling is refused", func(t *testing.T) {
 		m := fullyTiledMap(61, 61) // 3721 tiles
-		_, _, err := mapdef.BuildSceneCreated(m, nil)
+		_, _, err := mapdef.BuildSceneCreated(m, "")
 		if err == nil {
 			t.Fatal("a map too large to reach any client compiled without complaint")
 		}
@@ -261,81 +247,93 @@ func TestASceneTooLargeForTheWireIsRefusedAtCompileRatherThanAtTheTable(t *testi
 	t.Run("a grid far past the ceiling that declares no tiles is fine", func(t *testing.T) {
 		// The tiles-optional case. 40000 squares, zero wire cost.
 		m := &mapdef.Map{ID: "outdoor", Name: "Outdoor", GridW: 200, GridH: 200}
-		if _, _, err := mapdef.BuildSceneCreated(m, nil); err != nil {
+		if _, _, err := mapdef.BuildSceneCreated(m, ""); err != nil {
 			t.Fatalf("a tile-less scene costs nothing on the wire and must compile: %v", err)
 		}
 	})
 }
 
 // TestCompilePropagatesAResolveFailure pins that Compile does not swallow a
-// Resolve error (an override naming an art the pack does not define, say):
-// the whole call must fail loud rather than silently emitting a SceneCreated
-// with a hole in its Tiles map.
+// Resolve error: the whole call must fail loud rather than silently emitting
+// a SceneCreated with a hole in its Tiles map.
+//
+// The fixture has had to narrow twice. It used to be an override naming art
+// the pack did not define, and that stopped being an error at Task 3 — art
+// that is not installed degrades one square and warns (spec §4). Art that was
+// installed and could not be read replaced it, and that stopped being an error
+// at Task 4b (Patrik, 2026-09-04). What is left, and so what this is driven
+// with, is a sidecar declaring a format_version this server does not
+// understand: the last thing a Resolve failure can be.
 func TestCompilePropagatesAResolveFailure(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Overrides["1,1"] = "no-such-tile"
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := mapdef.Compile(m, p); err == nil {
+	artDir := cellarArtDir(t)
+	writeArt(t, artDir, "from-the-future", `{"format_version":99,"kind":"floor"}`)
+	m.Overrides["1,1"] = "from-the-future"
+	if _, _, err := mapdef.Compile(m, artDir); err == nil {
 		t.Fatal("want an error compiling a map whose override does not resolve")
 	}
 }
 
-// TestCompileRefusesAnObjectWhoseArtDoesNotResolve is whole-branch-review
-// finding I1's exact reproduction: p.Objects was loaded by LoadPack and read
-// by nothing in Go, so a typo'd object art (the reviewer's own proof: copy
-// maps/cellar, misspell "pillar-stone" as "pillar-stoen") passed every check
-// this package ran and produced an INVISIBLE BARRIER — the object still
-// blocks its square (blocks_move survives untouched), but nothing draws
-// there and nothing at load time said why. Mirrors
-// TestCompilePropagatesAResolveFailure's shape exactly, one layer over:
-// an override's bad art fails through Resolve; an object's bad art must
-// fail the identical way through the new ResolveObjectArt.
-func TestCompileRefusesAnObjectWhoseArtDoesNotResolve(t *testing.T) {
+// TestCompileDegradesAnObjectWhoseArtIsNotInstalled is what became of
+// TestCompileRefusesAnObjectWhoseArtDoesNotResolve, and the inversion is
+// deliberate rather than a loosening. Whole-branch-review finding I1 was that
+// an object's art was checked against NOTHING: Pack.Objects was loaded and
+// read by no Go code, so the reviewer's typo (copy maps/cellar, misspell
+// "pillar-stone" as "pillar-stoen") produced an INVISIBLE BARRIER — the
+// object still blocks its square, nothing draws there, and nothing at load
+// time said why. Spec §4 now rules that the object STAYS ("an object is a
+// thing in the world before it is a picture"), so the barrier is no longer
+// the defect; the silence was. What this pins is that the name is read and
+// the DM is told.
+func TestCompileDegradesAnObjectWhoseArtIsNotInstalled(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.Objects[0].Art = "pillar-stoen" // the reviewer's exact typo, one letter transposed
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
+	envs, warnings, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("compile: %v — the object stays, it just loses its picture", err)
 	}
-	_, _, err = mapdef.Compile(m, p)
-	if err == nil {
-		t.Fatal("want an error compiling a map whose object art does not resolve — " +
-			"this is I1's invisible barrier: the object still blocks its square, " +
-			"but nothing would ever be drawn there")
+	sc := firstSceneCreated(t, envs)
+	if len(sc.GetObjects()) != 1 {
+		t.Fatalf("Objects = %v, want the object still there", sc.GetObjects())
 	}
-	if !strings.Contains(err.Error(), "pillar-stoen") {
-		t.Fatalf("error should name the unresolved art, got: %v", err)
+	got := sc.GetObjects()[0]
+	if got.GetArt() != "" {
+		t.Fatalf("art is %q, want empty: there is no picture to draw", got.GetArt())
+	}
+	if !got.GetBlocksMove() || !got.GetBlocksSight() {
+		t.Fatalf("object = %v, want its blocking behaviour intact (spec §4)", got)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "pillar-stoen") {
+		t.Fatalf("warnings = %v, want exactly one naming the unresolved art", warnings)
 	}
 }
 
-// TestCompileRefusesAnObjectArtWithNoPackGiven pins the OTHER half of
-// Resolve's own nil-pack guard (see its doc comment), now applied to
-// objects: a map whose only art comes from an object (no tile overrides at
-// all) must still refuse to compile against p == nil, exactly as it would if
-// the same art sat in overrides instead. Without this, a map with zero
-// overrides but one object could compile "successfully" against a
-// completely missing pack — the object's art silently never resolving to
-// anything, which is the invisible-barrier bug the WHOLE task exists to
-// close, reached through the one path TestCompileWithNilPackResolvesStandardOnlyTiles
-// deliberately does NOT exercise (that test clears m.Objects specifically so
-// it stays about tiles).
-func TestCompileRefusesAnObjectArtWithNoPackGiven(t *testing.T) {
+// TestCompileDegradesAnObjectArtWithNoArtDirectoryAtAll pins the object half
+// of "a campaign that has installed no art still loads": a map whose ONLY art
+// comes from an object (no tile overrides at all) compiles against an empty
+// art root, keeps its object, and warns. It is the successor to
+// TestCompileRefusesAnObjectArtWithNoPackGiven, which pinned the refusal this
+// task replaced, and it exercises the one path
+// TestCompileWithNoArtDirectoryResolvesStandardOnlyTiles deliberately does
+// NOT (that test clears m.Objects so it stays about tiles).
+func TestCompileDegradesAnObjectArtWithNoArtDirectoryAtAll(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Overrides = nil // no tile art needs a pack; the OBJECT's art still does
-	if _, _, err := mapdef.Compile(m, nil); err == nil {
-		t.Fatal("want an error compiling a map whose object names art but gives Compile no pack to resolve it against")
+	m.Overrides = nil // the OBJECT's art is the only art left
+	_, warnings, err := mapdef.Compile(m, "")
+	if err != nil {
+		t.Fatalf("compile with no art directory: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "boulder-mossy-2") {
+		t.Fatalf("warnings = %v, want exactly one naming the object's art", warnings)
 	}
 }
 
@@ -351,17 +349,14 @@ func TestCompileIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	first, _, err := mapdef.Compile(m, p)
+	artDir := cellarArtDir(t)
+	first, _, err := mapdef.Compile(m, artDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for round := 1; round < 10; round++ {
-		got, _, err := mapdef.Compile(m, p)
+		got, _, err := mapdef.Compile(m, artDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -387,7 +382,7 @@ func TestBuildSceneCreatedWithNoTilesHasNoTerrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envs, _, err := mapdef.Compile(m, nil)
+	envs, _, err := mapdef.Compile(m, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,52 +396,329 @@ func TestBuildSceneCreatedWithNoTilesHasNoTerrain(t *testing.T) {
 }
 
 // TestWarningsSurfaceInRowMajorOrder proves BuildSceneCreated's row-major
-// grid walk (y outer, x inner) is load-bearing, not cosmetic: two mismatched
-// overrides on the same map must produce their warnings in the SAME order
-// every time (0,0 before 2,2 — row-major visits y=0's whole row before
-// y=2's), which only holds if the square loop walks the grid directly
-// rather than ranging m.Tiles (whose iteration order Go re-randomizes).
+// grid walk (y outer, x inner) is load-bearing, not cosmetic: two DIFFERENT
+// unresolved art names on the same map must produce their warnings in the
+// SAME order every time (0,0's before 2,2's — row-major visits y=0's whole
+// row before y=2's), which only holds if the square loop walks the grid
+// directly rather than ranging m.Tiles (whose iteration order Go
+// re-randomizes). warningTally preserves first-encounter order, so the walk
+// is still what decides it.
 // Confirmed by fault injection: swapping the nested y/x loop for `for key
 // := range m.Tiles` makes this test flake across repeated runs (verified
 // with `go test -run WarningsSurfaceInRowMajorOrder -count=20`, reverted).
+//
+// TWO DIFFERENT ART NAMES, not one on two squares, and the change is forced:
+// warnings are deduplicated by exact string since art-is-a-flat-library Task
+// 3's fix round, so the same art on two squares now collapses to ONE line and
+// has no order to observe. Two names give two lines and the same proof.
 func TestWarningsSurfaceInRowMajorOrder(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// planks-split-3 is a floor tile (spec: pack advisory kind "floor");
-	// both 0,0 and 2,2 are stone-wall squares, so both mismatch.
-	m.Overrides["0,0"] = "planks-split-3"
-	m.Overrides["2,2"] = "planks-split-3"
-	p, err := mapdef.LoadPack("testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Both 0,0 and 2,2 are stone-wall squares; neither name is installed, so
+	// each produces its own not-installed line.
+	m.Overrides["0,0"] = "absent-alpha"
+	m.Overrides["2,2"] = "absent-omega"
 
-	_, warnings, err := mapdef.Compile(m, p)
+	_, warnings, err := mapdef.Compile(m, cellarArtDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(warnings) != 2 {
 		t.Fatalf("warnings = %v, want exactly 2", warnings)
 	}
-	if !strings.Contains(warnings[0], "square 0,0") || !strings.Contains(warnings[1], "square 2,2") {
-		t.Fatalf("warnings = %v, want square 0,0 before square 2,2 (row-major order)", warnings)
+	if !strings.Contains(warnings[0], "absent-alpha") || !strings.Contains(warnings[1], "absent-omega") {
+		t.Fatalf("warnings = %v, want 0,0's art before 2,2's (row-major order)", warnings)
 	}
 }
 
-// TestCompileWithNilPackResolvesStandardOnlyTiles pins that a map using only
-// standard tiles (no overrides) compiles with p == nil — the common case for
-// a map that names no custom pack at all, and the same nil-tolerance
-// Resolve itself documents. m.Objects is cleared alongside m.Overrides,
-// deliberately, now that ResolveObjectArt exists (whole-branch-review I1):
-// cellar.json's one object still names art ("boulder-mossy-2"), and unlike a
-// tile an object has no standard fallback, so it would ALSO need a pack —
-// leaving it in place would make this test assert something no longer true
-// and fail for a reason unrelated to what it is actually pinning. The
-// object-specific case (an object's art with no pack to resolve it against)
-// has its own test: TestCompileRefusesAnObjectArtWithNoPackGiven.
-func TestCompileWithNilPackResolvesStandardOnlyTiles(t *testing.T) {
+// TestAKindMismatchNamesItsSquares is the exception to "warnings name the art,
+// never the square". Three of the four warning kinds are actionable on the art
+// name alone — install the file, write the sidecar, fix the directory — so
+// collapsing them loses nothing. A kind mismatch is different: its remedy is
+// one of two opposite things, "this is a deliberate illusory wall" (spec §3.2,
+// the whole reason it warns instead of refusing) or "I put the wrong art on
+// this square", and NOTHING BUT THE SQUARE tells them apart. A DM with one
+// deliberate illusion and one typo sharing an art name would otherwise get a
+// single line and no way to act on it.
+// maxListedSquaresForTest mirrors compile.go's unexported maxListedSquares.
+// Deliberately a separate literal: importing the constant would make the test
+// agree with whatever the code says, and the number is the thing under test.
+const maxListedSquaresForTest = 4
+
+// TestTheSquareListStopsAtTheCap pins the cap itself, which nothing did.
+//
+// FOUND BY THE MUTATION GATE, not by review: compile.go's
+// `len(t.at[w]) < maxListedSquares` -> `<=` SURVIVED with every package green.
+// Under it the tally collects five squares instead of four, and because render
+// only appends the ellipsis when the count EXCEEDS the list, a five-square
+// mismatch silently prints all five and no ellipsis — the cap quietly becomes
+// five. Two reviews checked this boundary by hand and both got the right
+// answer; neither left a test behind, so the suite could not tell four from
+// five. That evidence lived in a review, which is where evidence goes to die.
+//
+// Five mismatched squares is the smallest fixture that separates the two: at
+// four the mutant and the original agree exactly.
+func TestTheSquareListStopsAtTheCap(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// planks-split-3 is floor art. testdata/valid/cellar.json is 3x3 with six
+	// stone-wall squares; five of them is one more than the list can hold.
+	walls := []string{"0,0", "0,2", "1,0", "1,2", "2,0"}
+	for _, sq := range walls {
+		m.Overrides[sq] = "planks-split-3"
+	}
+
+	_, warnings, err := mapdef.Compile(m, cellarArtDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	w := warnings[0]
+	if !strings.Contains(w, "5 squares") {
+		t.Errorf("warning = %q, want it to count all 5 squares even though it lists fewer", w)
+	}
+	if !strings.Contains(w, "…") {
+		t.Errorf("warning = %q, want an ellipsis: 5 squares mismatched and the list holds 4, "+
+			"so the DM must be told the list is cut", w)
+	}
+	// EXACTLY four of the five are named. Asserted by counting rather than by
+	// naming a particular square, because which four survive is the tally's
+	// walk order and that is not this test's business — the CAP is.
+	named := 0
+	for _, sq := range walls {
+		if strings.Contains(w, sq) {
+			named++
+		}
+	}
+	if named != maxListedSquaresForTest {
+		t.Errorf("warning = %q names %d of the 5 mismatched squares, want %d: "+
+			"one more than the cap mismatched, so exactly the cap should be listed "+
+			"and the rest elided", w, named, maxListedSquaresForTest)
+	}
+}
+
+func TestAKindMismatchNamesItsSquares(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/cellar.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// planks-split-3 is floor art; 0,0 and 2,2 are both stone-wall squares.
+	m.Overrides["0,0"] = "planks-split-3"
+	m.Overrides["2,2"] = "planks-split-3"
+
+	_, warnings, err := mapdef.Compile(m, cellarArtDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1 — one art name, one line", warnings)
+	}
+	// The ellipsis is a PROMISE that there are more squares than listed, and
+	// nothing pinned its absence: `n > len(places)` -> `n >= len(places)` keeps
+	// internal/mapdef AND internal/gateway green while every mismatch gains a
+	// "…" naming squares that do not exist — including the "(1 squares: 0,0, …)"
+	// shape TestASingleWarningCarriesNoCountAtAll was written to prevent one
+	// field over. Both squares are listed here, so there is nothing to elide.
+	if strings.Contains(warnings[0], "…") {
+		t.Errorf("warning = %q, want no ellipsis: every square it counts is listed, "+
+			"so a \"…\" promises squares that do not exist", warnings[0])
+	}
+	for _, want := range []string{"planks-split-3", "0,0", "2,2"} {
+		if !strings.Contains(warnings[0], want) {
+			t.Errorf("warning = %q, want it to contain %q", warnings[0], want)
+		}
+	}
+}
+
+// TestAKindMismatchOnManySquaresStopsListingAndCounts pins the cap: listing
+// every square would rebuild the unbounded output deduplication exists to
+// remove, so past a handful the count carries the scale and an ellipsis says
+// the list was cut. Mismatches are rare by construction, so this is the
+// unusual case rather than the normal one.
+func TestAKindMismatchOnManySquaresStopsListingAndCounts(t *testing.T) {
+	tiles := make(map[string]string, 9)
+	overrides := make(map[string]string, 9)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 3; x++ {
+			key := strconv.Itoa(x) + "," + strconv.Itoa(y)
+			tiles[key] = "stone-wall"
+			overrides[key] = "planks-split-3" // floor art on nine wall squares
+		}
+	}
+	m := &mapdef.Map{ID: "wall", Name: "Wall", GridW: 3, GridH: 3,
+		Tiles: tiles, Overrides: overrides}
+
+	_, warnings, err := mapdef.Compile(m, cellarArtDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	if !strings.Contains(warnings[0], "9 squares") || !strings.Contains(warnings[0], "…") {
+		t.Fatalf("warning = %q, want the full count and an ellipsis marking the cut list",
+			warnings[0])
+	}
+	// Row-major, so the listed keys are 0,0 1,0 2,0 0,1 — the last square the
+	// walk reaches must NOT be in the message, which is what proves the list
+	// was cut rather than merely decorated with an ellipsis.
+	if strings.Contains(warnings[0], "2,2") {
+		t.Fatalf("warning = %q, want at most a handful of squares listed", warnings[0])
+	}
+}
+
+// TestASingleWarningCarriesNoCountAtAll kills a mutant that survived the first
+// version of warningTally: `n > 1` mutated to `n > 0` left internal/mapdef and
+// internal/gateway entirely green, and every single-square warning would then
+// have read "… (1 squares)" — ungrammatical text, on the shipped campaign, in
+// front of a DM. A count is only worth saying when there is more than one thing
+// to count.
+func TestASingleWarningCarriesNoCountAtAll(t *testing.T) {
+	m := &mapdef.Map{ID: "hall", Name: "Hall", GridW: 1, GridH: 1,
+		Tiles:     map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "absent-once"}}
+
+	_, warnings, err := mapdef.Compile(m, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", warnings)
+	}
+	if strings.Contains(warnings[0], "(") {
+		t.Fatalf("warning = %q — one square needs no count, and \"(1 squares)\" is text a "+
+			"DM would read on the shipped campaign", warnings[0])
+	}
+}
+
+// TestOneMissingArtNameCostsOneWarningNoMatterHowManySquares is spec §4's
+// "the DM is told... once", and it is a size limit as much as a tidiness rule.
+// The limit is per ADVENTURE: adventure.Compile concatenates every scene's
+// warnings onto a single CommandResult and nothing caps how many scenes a
+// bundle declares, so a bundle whose art/ did not travel is the case that
+// overruns. CORRECTED 2026-09-07 — the "96 warnings and 6840 bytes… roughly
+// 270 KB at MaxWireTiles, over the 200 KiB read limit" this used to cite does
+// not reproduce (4917 for those 96, and one map stays under the limit).
+//
+// The COUNT is asserted, not just the collapse: "not installed" without "how
+// much of the map went plain" leaves a DM unable to tell one stray square from
+// a whole floor.
+func TestOneMissingArtNameCostsOneWarningNoMatterHowManySquares(t *testing.T) {
+	tiles := make(map[string]string, 9)
+	overrides := make(map[string]string, 9)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 3; x++ {
+			key := strconv.Itoa(x) + "," + strconv.Itoa(y)
+			tiles[key] = "stone-wall"
+			overrides[key] = "absent-everywhere"
+		}
+	}
+	m := &mapdef.Map{ID: "wall", Name: "Wall", GridW: 3, GridH: 3,
+		Tiles: tiles, Overrides: overrides}
+
+	_, warnings, err := mapdef.Compile(m, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1 for one art name across 9 squares", warnings)
+	}
+	if !strings.Contains(warnings[0], "absent-everywhere") || !strings.Contains(warnings[0], "9 squares") {
+		t.Fatalf("warning = %q, want it to name the art and how many squares went plain", warnings[0])
+	}
+}
+
+// TestACorruptSidecarAlsoCostsOneWarningNoMatterHowManySquares is the same
+// size limit for the one degrade sentence that carries an artlib ERROR inside
+// it (mapdef's artCannotBeUsed, added 2026-09-04). The other three sentences
+// interpolate an art NAME and nothing else, so their collapse is obvious from
+// reading them; this one collapses only because artlib's errors are a function
+// of the FILE rather than of the lookup.
+//
+// If that ever stops being true — a path, a byte offset, an errno that varies
+// per call — every square gets its own sentence and the measurement in the
+// test above comes straight back, as a dropped connection rather than a
+// warning. Nothing else in the tree would notice: the map still loads, the
+// squares still draw, and the frame simply never arrives.
+//
+// FAULT-INJECTION PROOF (this assertion is after-the-fact, per CLAUDE.md rule
+// 1). Adding ` @%p` on err to artCannotBeUsed's format string — one token, and
+// the smallest thing that makes the sentence vary per LOOKUP rather than per
+// file — gives nine warnings here instead of one. Measured 2026-09-05, Task 4b.
+func TestACorruptSidecarAlsoCostsOneWarningNoMatterHowManySquares(t *testing.T) {
+	artDir := t.TempDir()
+	writeArt(t, artDir, "half-copied", `{"format_version":1,"kind":"wa`)
+	tiles := make(map[string]string, 9)
+	overrides := make(map[string]string, 9)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 3; x++ {
+			key := strconv.Itoa(x) + "," + strconv.Itoa(y)
+			tiles[key] = "stone-wall"
+			overrides[key] = "half-copied"
+		}
+	}
+	m := &mapdef.Map{ID: "wall", Name: "Wall", GridW: 3, GridH: 3,
+		Tiles: tiles, Overrides: overrides}
+
+	_, warnings, err := mapdef.Compile(m, artDir)
+	if err != nil {
+		t.Fatalf("Compile: %v — a corrupt sidecar degrades its squares", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1 for one broken piece across 9 squares",
+			warnings)
+	}
+	if !strings.Contains(warnings[0], "half-copied") || !strings.Contains(warnings[0], "9 squares") {
+		t.Fatalf("warning = %q, want it to name the art and how many squares went plain",
+			warnings[0])
+	}
+}
+
+// TestSquaresAndObjectsAreTalliedSeparately pins that the same missing art
+// name reaching both layers is reported as two facts, not summed into one
+// number a DM cannot map onto anything: a floor drawn plain and a barrel drawn
+// plain are different things to go and look at.
+func TestSquaresAndObjectsAreTalliedSeparately(t *testing.T) {
+	m := &mapdef.Map{ID: "hall", Name: "Hall", GridW: 1, GridH: 1,
+		Tiles:     map[string]string{"0,0": "stone-wall"},
+		Overrides: map[string]string{"0,0": "shared-name"},
+		Objects: []mapdef.Object{
+			{ID: "o1", Kind: "barrel", Art: "shared-name"},
+			{ID: "o2", Kind: "barrel", Art: "shared-name"},
+		}}
+	_, warnings, err := mapdef.Compile(m, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2 (one for the square layer, one for the objects)", warnings)
+	}
+	if !strings.Contains(warnings[0], "drawing it plain") {
+		t.Fatalf("warnings[0] = %q, want the square line first", warnings[0])
+	}
+	if !strings.Contains(warnings[1], "2 objects") {
+		t.Fatalf("warnings[1] = %q, want the object line to count objects, not squares", warnings[1])
+	}
+}
+
+// TestCompileWithNoArtDirectoryResolvesStandardOnlyTiles pins that a map
+// using only standard tiles (no overrides) compiles with no art root at all —
+// the common case for a map that names no custom art, and the reason the
+// built-in vocabulary is the layer everything else degrades TO.
+//
+// m.Objects is cleared alongside m.Overrides so this stays a test about
+// tiles: cellar.json's one object names art ("boulder-mossy-2"), which
+// against an empty art root now degrades and WARNS rather than refusing, and
+// a stray warning here would be a second thing this test was silently also
+// asserting. That object case has its own test:
+// TestCompileDegradesAnObjectArtWithNoArtDirectoryAtAll.
+func TestCompileWithNoArtDirectoryResolvesStandardOnlyTiles(t *testing.T) {
 	m, err := mapdef.Load("testdata/valid/cellar.json")
 	if err != nil {
 		t.Fatal(err)
@@ -454,7 +726,7 @@ func TestCompileWithNilPackResolvesStandardOnlyTiles(t *testing.T) {
 	m.Overrides = nil // no art overrides left: nothing needs a pack
 	m.Objects = nil   // ditto for the one object's own art (see doc comment above)
 
-	envs, _, err := mapdef.Compile(m, nil)
+	envs, _, err := mapdef.Compile(m, "")
 	if err != nil {
 		t.Fatal(err)
 	}

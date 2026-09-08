@@ -165,6 +165,7 @@ there is, that is what its parent's number means.
 | `internal/harness` | 2 | 32 | <4m | **blocked, argued** |
 | `cmd/vtt` | **never measured** | unknown | unknown | **unresolvable + symlink** |
 | `tools/toolgen` | 0 | — | ~1s | **unresolvable (above)** |
+| `tools/genmappack` | **never measured** | unknown | unknown | **unresolvable (above)** |
 
 `cmd/vtt`'s row held "0 of 77 evaluated" until 2026-08-05. It was retracted, not
 recomputed: every run of it so far has been a constant-KILLED oracle, by one of
@@ -190,6 +191,46 @@ never made it measurable; it removed one of two reasons it was not.
 That `internal/adventure/conformance` was gated while `internal/adventure` was
 not, for as long as it was, remains the signature of how the list was
 originally assembled — from whatever happened to have been measured.
+
+### `tools/genmappack` — recorded 2026-09-06, still unmeasured
+
+It has the shape this file opens with: `package main` in a directory not named
+`main`, so gremlins resolves the bare module path and scores every mutant a
+false KILL in milliseconds. That is the same blocker `tools/toolgen` was removed
+from the gated set for on 2026-08-04. Adding it to `PACKAGES` would not
+reproduce that lie a third time — `check-mutation.py`'s `unresolvable_packages`
+guard refuses such a package outright — so what is missing is a way to MEASURE
+it, not a guard against measuring it wrongly.
+
+**What is new is not the blocker, it is that nobody had written it down.** It
+was in neither `check-mutation.py`'s `PACKAGES` nor this file — the exact state
+`internal/mapdef` was in when the maps-as-geometry review found it, and the
+state this file exists to make impossible. Found by the Task 8 review of
+`2026-09-02-art-is-a-flat-library`.
+
+**What is unguarded meanwhile.** `main.go` grew by 293 lines against 96 removed
+in that task — a flag layer (`-out`, `-std-out`, `-cell-px`) with an exit-code
+contract now testable through `run(args, stdout, stderr) int`, a package-level
+mutable `size` that every drawing primitive bounds its loops by, and one
+refusal path (`checkCellPx`, which rejects a non-positive size because
+`png.Encode` writes a 0x0 picture that every reader accepts and no board can
+draw). The only pressure on any of it is the coverage floor,
+`tools/coverage-thresholds.txt`'s 90.0 for this package.
+
+**`size` being a package-level `var` is an order-dependence hazard, not a
+defect.** Both tests that set it restore it with `t.Cleanup`
+(`TestRunRefusesAnUndrawableCellSizeBeforeWritingAnything` and
+`TestRunWritesBothSetsAtTheSizeItWasGiven`), and `go test -shuffle=on` on the
+package was green three times running on 2026-09-06. **`-shuffle=on` is what
+would catch a third test forgetting to, and no gate here runs it** — neither
+`check:coverage` nor `check:race` passes the flag (grep the Taskfile). A
+mutation gate would not catch it either: gremlins mutates SOURCE, and a test
+that leaks `size` is a defect in the test. So this hazard is guarded by hand or
+not at all, which is why it is written down rather than left as a habit.
+
+**Whether it is measurable by `toolgen`'s route is untested.** `toolgen`'s 0
+came from a renamed, symlink-free worktree copy; nobody has tried that here, so
+"never measured" above means never measured, not measured-and-unresolvable.
 
 ### `internal/adventure` — worked down and gated 2026-08-04
 
@@ -408,6 +449,57 @@ mutant on the stated principle that *"there is no excuse for the gate to know
 less than its own input"*, then silently discards NOT COVERED, which gremlins
 names in the same output. Same category of unmeasured mutant, opposite
 treatment.
+
+### A guard written as a `switch` is NOT COVERED even at 100% line coverage
+
+Measured 2026-09-03 while gating `internal/artlib`. Its first run reported
+**14 NOT COVERED out of 51 mutants** against a suite with 100.0% statement
+coverage, and nine of the fourteen sat on the character comparisons inside
+`isArtID` — the package's traversal guard, the one function most worth
+measuring.
+
+The cause is positional. Go's cover tool starts a counted block at a `case`
+BODY, not at the case's own expression, so a mutant whose position is a case
+expression falls outside every covered block and gremlins scores it NOT COVERED
+without running anything. Written as `if`/`else if` the identical logic is
+measured normally: rewriting that one loop took the package from 36 killed /
+1 lived / 14 not covered to 46 / 0 / 5, with no test added for that step.
+
+**It is not only the expression-less form.** Measured the same day on a
+purpose-built probe (`Tagged`/`Bare`/`Chain`, four functions, one table test
+covering every arm):
+
+| shape | mutant | verdict |
+|---|---|---|
+| `switch n + 1 {` — the TAG of a tagged switch | `ARITHMETIC_BASE` | **KILLED** |
+| `case n > 1:` — condition in an expression-less switch | `CONDITIONALS_*` | **NOT COVERED** |
+| `case 1 + 1:` — value in a TAGGED switch | `ARITHMETIC_BASE` | **NOT COVERED** |
+| `case -1:` — value in a TAGGED switch | `INVERT_NEGATIVES`, `ARITHMETIC_BASE` | **NOT COVERED** |
+| `if n > 1 {` / `if n == 1+1 {` / `if n == -1 {` | the same mutators | **KILLED** |
+
+So the tag is measured and everything to the right of a `case` is not,
+whichever switch form it is. A case value that is a bare literal is not
+affected, because gremlins generates no mutant for one at all — the effect only
+becomes visible when a case value carries an expression, which is exactly when
+it is worth measuring.
+
+`internal/artlib` now stands at **46 killed / 0 lived / 4 not covered**. The
+four are named rather than tolerated: two on a `const` declaration
+(`maxArtIDLen`), which is never an executable statement and so can never be
+covered by anything, and two on `case err == nil:` arms of error-triage
+switches in `lookupIn` and `statPicture`. All four were hand-injected and each
+reds that package's suite, so nothing about them is unknown — but the gate did
+not do it.
+
+A fifth sat on `Validate`'s symlink refusal — the security guard of that
+package — until review pointed out that the remedy below was being recommended
+and not applied. Converting it to an `if` moved it from NOT COVERED to
+`KILLED CONDITIONALS_NEGATION`, which is the whole argument in one line.
+
+The general rule: **line coverage does not predict mutant coverage**, and a
+package can sit at 100% while a quarter of its mutants are never evaluated.
+When a guard matters, write it as `if`/`else` and let the gate measure it; when
+a switch genuinely reads better, hand-inject its case expressions and say so.
 
 ## Some of the gated packages' "kills" are timeouts, not evaluated detections
 

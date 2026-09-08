@@ -73,6 +73,40 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    enforce it — every citation resolves to exactly one anchor, no
    duplicates, no orphans — is available but unbuilt.
 
+9. **Look at RPTool before you design.** Patrik's ruling, 2026-09-05. Before
+   brainstorming, planning or implementing anything in an area a virtual
+   tabletop already has to solve, the FIRST question is: how does MapTool do
+   this (`~/dev/RPTool`), can we borrow the design, or does what they have
+   suggest functionality that fits our shape? Answer it in writing — in the
+   spec's own prose during brainstorming, and in the plan before a task is
+   dispatched — not after the code exists.
+   **Why it is a rule and not advice.** It is twenty years of a working
+   product sitting on this machine, and we have already paid for skipping it.
+   The client hardcoded a 640x480 pane while `planScene`, `planGrid` and
+   `planFog` all took `viewW, viewH` as parameters — the seam was built and
+   then fed constants, and it was logged as backlog rather than finished.
+   (Fixed the same day by 2026-09-02-art-is-a-flat-library Task 6, which is
+   why the constants are no longer greppable: `spectator.ts` now measures its
+   container and keeps `DEFAULT_PANE_W`/`DEFAULT_PANE_H` only as the fallback
+   a headless test sees. The rule is kept in the past tense on purpose — the
+   scar is the argument, and a rule whose example has been repaired still has
+   to say what went wrong.) MapTool has had zoom, pan and a viewport that follows the window
+   since 2005, and its renderer is one line: `gridSize * zoneScale.getScale()`,
+   source size times zoom, every frame. We also put `cell_px` on the campaign;
+   MapTool puts grid size on the **Zone**, per map, because that is where it
+   varies. Both were avoidable by looking first.
+   **What to borrow and what not to.** Take the geometry, the coordinate
+   model, the unit split between source pixels and screen pixels, the
+   vocabulary. Do NOT take the distribution model: every MapTool client
+   receives the whole campaign including the GM layer, and visibility is a UI
+   filter rather than a boundary — the opposite of this platform's premise
+   (ADR-era ruling; see `internal/gateway/seat.go`). Their answer to "what
+   does a seat SEE" is wrong for us; their answer to "how does a square map
+   onto pixels" is right and proven.
+   Record the answer even when it is "MapTool does not solve this" or "their
+   answer does not fit, because X" — a checked-and-rejected precedent is worth
+   as much as a borrowed one, and it stops the next person re-asking.
+
 ## Layout
 
 `contract/` wire constitution (protobuf, vtt.v1) · `internal/store` append-only

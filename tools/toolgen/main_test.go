@@ -38,6 +38,14 @@ func TestToolsMatchGolden(t *testing.T) {
 // message that appears as a ClientCommand oneof variant — the latter IS the
 // command registry now that commands are imperative-named (RemoveToken, not
 // RemoveTokenRequest) and dispatched through ClientCommand's oneof.
+//
+// The sentence above exists to say the "Request" suffix is NOT how a command is
+// named, so the name it contrasts with must NOT resolve to anything.
+// tools/check-citations.py cannot tell a deliberate negative from a
+// fabrication, which is what the hatch below adjudicates. It sits last because
+// gofmt moves a directive comment there.
+//
+//citations:ok RemoveTokenRequest is a counter-example and must not exist
 func TestManifestCoversAllCommandMessages(t *testing.T) {
 	msgs := vttv1.File_vtt_v1_commands_proto.Messages()
 	for i := 0; i < msgs.Len(); i++ {

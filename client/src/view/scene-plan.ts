@@ -31,6 +31,16 @@ export interface DrawOp {
    * everything) is meant not to leave lying around.
    */
   rot: number;
+  /**
+   * Set ONLY on an object whose art did not resolve, and then it holds that
+   * object's KIND — see objectImage below for the ruling.
+   *
+   * Absent on every tile and on every resolved object, and that absence is what
+   * keeps `image` missing from the ImageMap meaning what it has always meant: a
+   * picture WAS asked for and has not arrived (or never will), which canvas.ts
+   * marks. `plain` says the opposite thing — nothing was ever asked for.
+   */
+  plain?: string;
 }
 
 /**
@@ -109,6 +119,11 @@ function planObjects(
 
     ops.push({
       image: objectImage(obj),
+      // ITS KIND, only when its art did not resolve. Empty Art is exactly the
+      // condition mapdef.ResolveObjectArt reports as "the object stays, drawn
+      // from its kind" (spec §4), and this is the half of that sentence the
+      // client owes.
+      ...(obj.Art === "" ? { plain: obj.Kind } : {}),
       sx,
       sy,
       sw,
@@ -304,17 +319,34 @@ function tileImage(tile: Tile, open: boolean): string {
 }
 
 /**
- * objectImage resolves a SceneObject's Art. Unlike a tile, an object has no
- * standard vocabulary to fall back to (spec §4.2's pack manifest declares
- * objects separately, with no platform-known kind/material pair for them) --
- * every object's art must resolve in its scene's pack, so it is always
- * "tile:<name>". Validation (mapdef, §4.4) refuses an object whose art does
- * not resolve before this code ever runs; an empty Art reaching here would
- * be a bug upstream, not something this function can repair, and letting a
- * plain "tile:" key through to canvas.ts's missing-tile marker (spec §7,
- * built 2026-08-16 — canvas.ts's drawMissingTile, not a forward reference
- * to a task that was never written) is the honest, fail-loud answer.
+ * objectImage resolves a SceneObject's Art to an ImageMap key, or to the empty
+ * string when there is no art to ask for.
+ *
+ * AN OBJECT HAS NO STANDARD VOCABULARY TO FALL BACK TO, and that asymmetry with
+ * tileImage is the whole of this function. A tile that loses its art still
+ * resolves to `std:<kind>/<material>`, so a degraded wall stays a wall and a
+ * degraded door stays a door for sight, movement and the door tool. An object's
+ * kind is an OPEN descriptive label -- the contract says so of SceneObject.kind
+ * in as many words, "no behaviour may be inferred from it" -- so there is no
+ * std picture for "pillar" and there is never going to be one.
+ *
+ * THIS RETURNED `tile:${obj.Art}` UNCONDITIONALLY until 2026-09-05, and its own
+ * doc comment argued that an empty Art "would be a bug upstream" and that
+ * letting a bare "tile:" key through to canvas.ts's magenta missing-tile marker
+ * was "the honest, fail-loud answer". BOTH HALVES ARE NOW FALSE. Task 3 of
+ * 2026-09-02-art-is-a-flat-library made unresolvable object art an ordinary
+ * DEGRADE rather than a refusal, so an empty Art is a state the server produces
+ * on purpose and warns about -- mapdef.ResolveObjectArt's own sentence is "the
+ * object stays, drawn from its kind" -- and that plan's design spec §4 says the
+ * same: "Object art that does not resolve leaves the object in place, with its
+ * blocking behaviour intact, drawn from its kind. An object is a thing in the
+ * world before it is a picture."
+ *
+ * A checkerboard says "this art is broken" to a DM looking at art that is merely
+ * not installed, and it says it once per pillar. The empty key says "nothing was
+ * asked for", and planObjects sends the KIND along beside it (DrawOp.plain) so
+ * canvas.ts can draw the object plainly and label it with what it is.
  */
 function objectImage(obj: SceneObject): string {
-  return `tile:${obj.Art}`;
+  return obj.Art === "" ? "" : `tile:${obj.Art}`;
 }

@@ -103,6 +103,20 @@ PACKAGES = [
     # Ascending by runtime: the gate fails as fast as it can.
     "./internal/identity/",                # ~16s
     "./internal/adventure/conformance/",   # ~19s
+    # internal/artlib (art-is-a-flat-library): pure path and format validation
+    # over a directory, and the package every art read in the tree goes
+    # through -- exactly what a mutation gate is best at, and gated from its
+    # FIRST commit rather than after a review found it missing, which is what
+    # happened to internal/mapdef below.
+    "./internal/artlib/",                  # ~30s
+    # internal/campaigncfg (art-is-a-flat-library Task 6): one file reader whose
+    # whole body is a chain of decisions about what a hand-written JSON file may
+    # and may not say — absent, present-and-broken, a version this server does
+    # not understand, a cell size that is not a positive whole number. That is
+    # exactly what a mutation gate is best at, and it is gated from its FIRST
+    # commit rather than after a review finds it missing, which is what happened
+    # to internal/mapdef below.
+    "./internal/campaigncfg/",             # ~13s
     # internal/mapdef (maps-as-geometry): the arc's core package, and pure
     # validation logic — exactly what a mutation gate is best at. It was in
     # NEITHER this list nor mutation-scope.md, whose stated job is to publish

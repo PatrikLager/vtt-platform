@@ -148,6 +148,19 @@ no gain.
 A sidecar with no matching picture is an error. A picture with no sidecar is
 object art.
 
+**When a picture with no sidecar is named as TILE art, that square degrades and
+warns — it does not refuse.** Amended 2026-09-03 on Patrik's ruling, after Task
+3's review measured the cost of the stricter reading: because `composeServer`
+turns any boot-walk error into a refusal to start, a single sidecar-less PNG
+named on a tile took the whole campaign down for everyone. That is the mistake
+this very section teaches — §3.4 celebrates dropping a PNG in and using it as
+furniture, and naming one on a tile is the natural next move — and §4's own
+posture says a campaign that will not load beats one that loads slightly plain
+exactly backwards. The warning must be its OWN sentence, not the not-installed
+one, because the file is sitting right there: *"has a picture but no sidecar;
+drawing it plain — write `art/<id>.json`"*. This also removes an asymmetry: the
+mirror half-install, a sidecar with no picture, already degraded.
+
 ### 3.5 A map names art directly
 
 ```json
@@ -189,6 +202,36 @@ boot-time art load to order.
 **A missing or unreadable art reference drops that ONE square (or object) to the
 built-in vocabulary. The map loads.**
 
+**Art that cannot be READ degrades; art that declares a FORMAT THIS SERVER DOES
+NOT UNDERSTAND refuses** (Patrik, 2026-09-04). These share one code path today
+and must be split.
+
+A corrupt sidecar — a missing brace, a truncated copy — degrades that square
+with its own sentence naming the piece and the cause. Until this ruling it
+refused the map, and because `composeServer` turns any map-load error into a
+refusal to start, **one bad file stopped the server booting** while every other
+map sat there fine; measured 2026-09-03, exit status 1. That is the same shape
+ruled against three times already — the sidecar-less PNG, the unopenable art
+root, and boot-time `Validate` — and it survived only because nobody re-asked
+after the warning channel existed to carry the information a refusal used to
+carry.
+
+`format_version` is the opposite case and keeps its refusal. It does not mean
+the file is broken; it means the CONTENT IS NEWER THAN THE SERVER. Degrading it
+would turn a whole v2 art set into hundreds of plain squares and a wall of
+warnings, which reads as "my art is broken" when the true diagnosis is "this
+server is too old". One refusal naming the version says that; ninety warnings
+do not.
+
+**An art DIRECTORY that cannot be opened is strict at boot and lenient at
+request time** (Patrik, 2026-09-03). At boot the operator is at a terminal and
+can act on a filesystem path, so the server refuses to start and names the
+directory. At request time a DM cannot act on that path from a browser, and a
+campaign that worked five minutes ago should not stop working — so an unopenable
+art root is treated exactly like an absent one: the map loads, art draws plain,
+one warning. Before this ruling both readers got the same answer and one of them
+could not use it.
+
 Today a missing pack refuses the whole map. That was always wrong given the
 layering: `tiles` already describes every square without art, and a map with no
 `overrides` at all is legal and renders. The information needed to draw a
@@ -199,8 +242,41 @@ plays. The square renders from its `kind` and `material`. The DM is told which
 references did not resolve, once, as a warning on the load — not an error, and
 not silence.
 
-**That channel does not exist yet and this design adds it.** `mapdef.Load`
-already returns a `warnings` slice, and nothing carries it any further: no
+**Once means once per art NAME, not once per square.** Measured 2026-09-03 on
+the shipped `cellar.json`: the per-square form produced 96 warnings — 90
+squares over four art names, plus six objects over four more — and the client
+joins them into a single toast. Eight facts buried in 96 near-identical
+sentences is a channel a DM stops reading, which is the
+silence this section exists to prevent, arrived at from the other direction.
+
+***Amended 2026-09-06 — this rule was reversed and restored the same day, and
+the round trip is the argument.*** *Patrik first ruled the opposite: "We should
+report each square that uses the bad art", on the ground that a count sends a DM
+to grep the map file for the half they can act on. Per-square naming was built,
+and then withdrawn by the same person for a reason the payload arithmetic had
+missed — ONE SQUARE CAN CARRY MANY THINGS. Objects are keyed by their anchor, so
+four crates stacked on one square render that coordinate four times; a list that
+repeats one place four times is not locality, it is noise wearing locality's
+clothes. The count survives because it states magnitude without pretending to
+state position.*
+
+*A second reason surfaced in review and outlives the first: `adventure.Compile`
+concatenates EVERY scene's warnings into one `CommandResult`. A per-square list
+is bounded per scene by `MaxWireTiles` and not bounded at all per adventure, so a
+bundle whose `art/` did not travel could outgrow that frame on load —
+delivering no warning at the exact moment every one of them was true. Once per
+art name is what bounds it.*
+
+*The kind mismatch keeps its squares, capped. It collapses per distinct
+SENTENCE rather than per art name — the sentence carries the square's kind, so
+one art mismatched onto a wall and onto a floor is two lines, and bounded either
+way:
+its remedy is one of two opposite things — a deliberate illusory wall, or the
+wrong art pasted onto a square — and only the square tells them apart.*
+
+**That channel does not exist yet and this design adds it.** `mapdef.Compile`
+and `mapdef.Resolve` already return a `warnings` slice, and nothing carries it any
+further: no
 contract message has a warnings field, so today a warning dies in Go. The
 `load_map` result gains a repeated string field for them. That is an additive
 contract change (ADR-007) and the only one this sub-project makes.
@@ -235,6 +311,33 @@ early validation.
 **The loader is the backstop that cannot be bypassed**, and it is where the
 rules actually bind: a subdirectory in `art/`, a sidecar with no picture, an
 unreadable sidecar, an unsupported `format_version`.
+
+**"Binds" means the FILE is named, not that anything is refused.** Amended
+2026-09-03 and corrected twice on 2026-09-04, because the first amendment
+repeated a sentence that five Go files had already retired: *"each broken piece
+is then refused individually the moment a map names it."* That is false, and it
+is false in a way no amount of care about wording would have fixed — **a
+`Validate` finding does not predict what a map load does with it.** The symlink
+arm spans two outcomes and the subdirectory arm two different routes to the
+same one, because a load is decided by what `Lookup` finds at `<stem>.json` and
+`<stem>.png`, not by which arm reported the entry. `art/pack-ish/` degrades as
+ABSENT art and `art/masonry-1.png/` degrades as art that cannot be read — two
+different sentences to the DM, out of one `Validate` arm. A relative in-root
+symlink renders; a dangling symlinked sidecar degrades.
+
+*The second correction of 2026-09-04 is the ruling in §4. Those last two
+sentences read "`art/masonry-1.png/` refuses" and "a dangling symlinked sidecar
+refuses" until it landed, and both went the other way with the class: neither
+declares a `format_version`, so neither is the one thing that still refuses.
+Nothing else in this section moved — a `Validate` finding still predicts
+nothing.*
+
+At boot every problem is reported and the server starts. `vtt art install`
+refuses outright, because there the operator is holding the file. A subdirectory is the mildest
+case of all: art ids must be plain filenames, so nothing inside `art/pack-ish/`
+is reachable by any map — the tree is inert, and the boot warning exists to stop
+a DM wondering why art they installed does nothing. Refusing to start over an
+inert folder would take a campaign down for a mistake that cannot affect play.
 
 ---
 
@@ -273,6 +376,39 @@ Making it campaign-level rather than per-art is deliberate: a grid is uniform,
 and art pieces at differing native resolutions on the same board is a rendering
 problem, not a capability. One number per campaign says that plainly.
 
+**Amended 2026-09-05 on Patrik's ruling: `cell_px` is a property of the MAP, and
+the campaign's value is the DEFAULT a map inherits by declaring none.** Taken
+from how MapTool solves the same problem — grid size lives on the Zone, not the
+campaign (`Grid.size`, clamped `MIN_GRID_SIZE` 9 to `MAX_GRID_SIZE` 350). The
+paragraph above is right about the reason and wrong about the scope: a grid is
+uniform across ONE MAP, and grid size is exactly what differs between an art set
+drawn at 64 and one drawn at 128 — so the first time a DM installs both, a
+campaign-wide number is wrong for one of them. A map file may now declare
+`"cell_px"`, bounded 8..1024 and **refused rather than clamped** outside that
+(0 and 100000 are not smaller and larger squares, they are a file that cannot
+mean what it says); `GET /api/maps` reports each entry's resolved value beside
+the campaign default.
+
+**The bounds differ from MapTool's 9..350 deliberately.** The floor is
+essentially theirs — the same judgement that below about a dozen pixels a square
+carries no tile detail — and 8 is only the power of two every export dialog
+offers. The ceiling is the real divergence: theirs is a RENDERING bound, because
+MapTool draws at `gridSize * zoom` every frame, and nothing here draws at native
+size, so 1024 exists to catch a typo rather than to police resolution. If this
+client ever gains zoom, that reasoning expires and their 350 stops being a
+divergence and starts being data. `internal/mapdef`'s `MinCellPx` carries the
+full argument. This is additive to the map format and needs no contract
+change — `cell_px` never crosses the protobuf wire.
+
+**Also amended 2026-09-05: what `cell_px` is FOR.** It has one reader,
+`vtt art install`, which warns when an installed picture is not a whole multiple
+of the campaign's default — with the operator holding the file, which is the only
+place anyone can act on it. It is deliberately NOT read by the renderer:
+`client/src/view/spectator.ts`'s `CELL` is a SCREEN size and `cell_px` a SOURCE
+size, and `drawImage` scales one to the other whatever they are. The board's own
+size is a separate question, answered by the container it sits in — see the
+amendment to §9 below.
+
 **Renamed:** `GET /api/packs/{pack}/{file}` becomes `GET /api/art/{file}`. The
 route serves one flat directory, so it takes one segment. It must remain
 symlink-safe: `os.OpenRoot` over `art/`, not `os.DirFS`, for the reason the pack
@@ -286,9 +422,18 @@ Campaigns in this repo are the only ones that exist, so migration is a rewrite
 of `campaigns/example/` and any scenario fixture, not a compatibility layer.
 
 **There is no compatibility layer**, and none is added later. A map carrying a
-`"pack"` field is refused with a message naming the field and pointing at
-`art/`. Silently ignoring it would load a map whose art references were written
-against a namespace that no longer exists, and draw the wrong thing.
+`"pack"` field is refused, by `mapdef.Load`'s strict decoding — `json: unknown
+field "pack"`, and the same for the field under any rename. Silently ignoring it
+would load a map whose art references were written against a namespace that no
+longer exists, and draw the wrong thing.
+`TestAMapDeclaringAPackOrAPackageIsStillRefused` (`internal/mapdef/load_test.go`)
+is what keeps the refusal honest.
+
+**No migration route accompanies that refusal**, and none is written later.
+Nothing has ever shipped and every campaign that has ever existed is in this
+repository, so a message written to walk somebody through the change has no
+reader. A human migrating a map by hand is served by `docs/map-format.md`, which
+carries the instructions and is where a reader looks anyway.
 
 `contract/RELEASED` does not exist, so ADR-007 reports rather than enforces
 (CLAUDE.md rule 3). This design is not additive, and that is only permissible
@@ -309,10 +454,34 @@ test never went through `composeServer`.
 
 **A subdirectory under `art/` is refused**, with the directory named.
 
-**Object art with no sidecar loads**, and tile art with no sidecar is refused.
-These are the two halves of §3.4's asymmetry and neither is safe to assume.
+**Object art with no sidecar loads**, and tile art with no sidecar **degrades
+that square with its own warning** — not the not-installed one, because the file
+is sitting right there. These are the two halves of §3.4's asymmetry and neither
+is safe to assume.
 
-**A map declaring `"pack"` is refused** with a message naming the field.
+**A campaign holding a corrupt sidecar BOOTS**, and that is a boot-level test
+rather than a `Resolve` one: the whole cost of the refusal it replaces was that
+`composeServer` turned it into `exit status 1` for every map in the campaign, and
+a unit test on one square cannot see that. Its companion is the other half of the
+split — **a sidecar declaring a `format_version` LATER than this server's still
+refuses, naming both versions**, and refuses at that same boot. *(Added
+2026-09-04 with §4's ruling. **Amended 2026-09-07**: this said "a `format_version`
+this server does not understand", which reads as `!=`. The guard is
+`*version > FormatVersion` in `artlib`'s `pieceFromSidecar` (reached from
+`Lookup` via `lookupIn`) and has been since `035248e`
+narrowed it; a version BELOW this server's degrades like any other broken
+sidecar. The direction is written out here because this section is the one a
+task's tests get written from, and `artlib.ErrFormatVersion`'s own doc records
+what the `!=` reading cost: a whole campaign's boot refused, for every seat, over
+a mistyped digit.)*
+
+*(Amended 2026-09-03 with §3.4 and exit criterion 6. This paragraph said
+"is refused" until Task 3's re-review caught the contradiction: §8 is the list
+Tasks 8 and 9 write their tests from, so a reader working forward from a stale
+§8 writes the wrong test and then "fixes" working code to match it.)*
+
+**A map declaring `"pack"` is refused** — by strict decoding, naming the field
+as `unknown field "pack"`.
 
 **Two art pieces cannot collide**, which is not a test of platform code but of
 the claim in §3.3. It is asserted by a test that tries to construct the
@@ -323,6 +492,34 @@ Per CLAUDE.md rule 1 the deletion tests come first and run RED, and any
 after-the-fact assertion carries fault-injection proof.
 
 ---
+
+### 6.1 The board follows the window
+
+*(Added 2026-09-05 with §6's amendment, on Patrik's ruling.)*
+
+`cell_px` was mistaken for the answer to "the board is a fixed 640x480". It is
+not: `client/src/view/spectator.ts` hard-coded `PANE_W`/`PANE_H`, and that was
+the whole of it. The renderer's own architecture already anticipated the fix —
+`planScene`, `planGrid` and `planFog` all take `viewW`/`viewH` as arguments, and
+only the call site fed them literals.
+
+**The board's size follows its CONTAINER: neither the scene nor a constant.**
+Both of the other answers have been shipped and both were wrong. Sized by the
+SCENE, the board was `gridWidth * CELL` px tall — 1408 for a 32x32 map — so the
+page grew with the map and the controls sat below every laptop fold (backlog
+T1/#19). Sized by a CONSTANT, a 200x200 outdoor map and a 10x10 room laid out
+identically, which was the point, and a 27-inch display drew the same postage
+stamp as a laptop, which was not.
+
+The stylesheet gives the board `width: 100%` and a height clamped against the
+VIEWPORT, so it can never grow the page again; the renderer measures what that
+produced, sizes the canvas backing store by `devicePixelRatio` so it is not soft
+on a high-DPI display, and re-plans on resize. A deterministic fallback keeps
+every existing render test asserting the same geometry it always did.
+
+**Zoom and pan are still absent and are not this.** MapTool multiplies grid size
+by a zoom scale every frame; this client has a fit-once camera and no way to move
+it. That is a real gap and its own sub-project.
 
 ## 9. What could go wrong
 
@@ -345,6 +542,56 @@ expensive part.
 
 ---
 
+### Carried forward: author-controlled bytes are not bounded on the way to a client
+
+*Added 2026-09-07 at the merge gate, from the whole-branch review. Patrik: this
+one is important and gets done — it is recorded here rather than in a review
+transcript so it survives the branch.*
+
+`artlib.clip` bounds a fragment of author-controlled sidecar text to 40
+characters, and it is called from **one** place: the `format_version` arm. Every
+other interpolation of sidecar bytes into a message passes them through whole —
+the strict-decode `%w`, the door-name `%q`, and the kind-mismatch `%q` on
+`sc.Kind` — and those messages become `CommandResult.warnings` entries.
+`mapdef`'s own `decodeStrict` `%w` and `fieldErr` callers do the same onto
+`CommandResult.error`; that half predates this sub-project.
+
+**The scope is EVERY such interpolation, deliberately not a number.** Naming a
+count invites bounding that many and stopping: the three artlib sites above are
+the ones this review named, `internal/mapdef/resolve.go` adds six more and
+`load.go`'s `decodeStrict` another, and `artCannotBeUsed`'s own doc comment
+already says "THAT IS TWO OF THE EIGHT SENTENCES THE ART PATH CAN PRODUCE". The
+invariant is what to work to: no author-controlled bytes reach a
+`CommandResult` unbounded.
+
+**Why it matters, and why the bar is lower than it looks.** Warnings collapse per
+art NAME within a scene, but `adventure.Compile` scene-QUALIFIES them, so they do
+not collapse across scenes. The total is what has to cross a read limit, not any
+single value: twenty scenes x five bad art names x a couple of KB of interpolated
+sidecar text gets there. Past `internal/harness`'s `readLimit`, `handleLoadMap`
+has already committed and broadcast the scene when the frame is built — so every
+other seat's board changes, and the ISSUER's socket closes with `message too
+big`, reconnects into a campaign that silently changed, and is never told why.
+Go clients only: the MCP agent seat and `cmd/vtt`. A browser has no read limit
+and renders the block instead, which §4's toast bound now contains.
+
+**Not remotely triggerable.** `load_map` is gated to DM and agent by
+`internal/gateway/authz.go`, and no route writes map or art files. This is a
+broken-content and third-party-bundle footgun, not a denial of service. It is
+carried rather than fixed at this gate because routing seven interpolation sites
+through a shared bound deserves its own tests, not a patch written at a merge.
+
+**What done looks like:** every author-controlled interpolation reaching a
+`CommandResult` passes through one bound; a test drives an oversized sidecar
+value through `load_map` AND through `load_adventure` (the aggregating path) and
+asserts the frame stays inside `readLimit`; and `clip`'s doc comment loses the
+sentence "no one has re-surveyed the tree" (mid-comment, not its last line),
+which is true today and is
+exactly what stops being true when this is done. That sentence is the marker for
+this item — it was left deliberately, and it should not outlive the work.
+
+---
+
 ## 10. Exit criteria
 
 1. `art/` is flat, the filename is the id, and no art declares an id anywhere.
@@ -353,9 +600,27 @@ expensive part.
    built-in vocabulary, warning once per unresolved reference.
 4. Art installed or overwritten while the server runs takes effect on the next
    `load_map`, with no restart and no message suggesting one.
-5. A subdirectory under `art/`, a sidecar with no picture, and a map declaring
-   `"pack"` are each refused with a message naming the thing that is wrong.
-6. Object art needs no sidecar; tile art without one is refused.
+5. **Every malformed thing is NAMED at boot**, and some of them RENDER anyway.
+   Those are the two claims that survive every arm, and they are deliberately
+   the only ones stated: three earlier drafts of this criterion tried to
+   enumerate outcomes by kind and each was measurably wrong, because a
+   `Validate` finding does not predict a load (see §5). The rendering cases are
+   a resolvable in-root symlink, and a wrong-cased filename on a
+   case-insensitive filesystem — for those, the boot report is the only notice
+   anyone gets. **Exactly one malformed thing stops the boot on its own**: an
+   art root that cannot be opened. **Exactly one stops a MAP**: a sidecar
+   declaring a `format_version` NUMBER **later than this server's** — and
+   that one stops the boot as well, whenever a committed map names it. A
+   `format_version` that is absent, that holds something which is not a version
+   number at all, **or that is below this server's**, is a broken file and
+   degrades with them. *(The direction was added 2026-09-07; this criterion
+   previously said "does not understand", which reads as `!=` and is not what
+   `pieceFromSidecar`'s `*version > FormatVersion` does — see §8.)* *(Both sentences
+   were added 2026-09-04 with §4's ruling; before it, every unreadable sidecar
+   did both.)*
+6. Object art needs no sidecar. Tile art without one **degrades that square
+   with its own warning** (amended 2026-09-03 — see §3.4; the original criterion
+   said "is refused", which in practice refused the whole server).
 7. No `pack` identifier survives in platform code, enforced by a gate in the
    shape of `check-no-create-scene.py`.
 8. `task check` green, both mutation gates included.

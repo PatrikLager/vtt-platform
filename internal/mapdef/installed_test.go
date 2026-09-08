@@ -59,7 +59,7 @@ func TestLoadInstalledLoadsTheMapNamedByItsFile(t *testing.T) {
 	mapsDir := filepath.Join(t.TempDir(), "maps")
 	writeInstalled(t, mapsDir, "level-2.json", validMapJSON("level-2"))
 
-	m, err := mapdef.LoadInstalled(mapsDir, "level-2", nil)
+	m, err := mapdef.LoadInstalled(mapsDir, "level-2", "")
 	if err != nil {
 		t.Fatalf("LoadInstalled: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestLoadInstalledRefusesAFilenameThatDisagreesWithTheID(t *testing.T) {
 	mapsDir := filepath.Join(t.TempDir(), "maps")
 	writeInstalled(t, mapsDir, "sunken-cellar.json", validMapJSON("cellar"))
 
-	_, err := mapdef.LoadInstalled(mapsDir, "sunken-cellar", nil)
+	_, err := mapdef.LoadInstalled(mapsDir, "sunken-cellar", "")
 	if err == nil {
 		t.Fatal("want a filename/id mismatch refused")
 	}
@@ -125,7 +125,7 @@ func TestLoadInstalledRefusesAnIDThatIsNotAPlainFilename(t *testing.T) {
 	}
 
 	for _, id := range []string{"../elsewhere", "sub/level-2", "", ".", ".."} {
-		_, err := mapdef.LoadInstalled(mapsDir, id, nil)
+		_, err := mapdef.LoadInstalled(mapsDir, id, "")
 		if err == nil {
 			t.Fatalf("id %q was accepted; a map id is one plain filename in maps/", id)
 		}
@@ -147,7 +147,7 @@ func TestLoadInstalledReportsAMapThatIsNotInstalledAsNotExist(t *testing.T) {
 	mapsDir := filepath.Join(t.TempDir(), "maps")
 	writeInstalled(t, mapsDir, "keep.json", validMapJSON("keep"))
 
-	_, err := mapdef.LoadInstalled(mapsDir, "nowhere", nil)
+	_, err := mapdef.LoadInstalled(mapsDir, "nowhere", "")
 	if err == nil {
 		t.Fatal("want an error for a map that is not installed")
 	}
@@ -157,34 +157,38 @@ func TestLoadInstalledReportsAMapThatIsNotInstalledAsNotExist(t *testing.T) {
 	}
 }
 
-// TestLoadInstalledRefusesAnOverrideThatDoesNotResolveAgainstItsPack is the
-// §12 anti-divergence proof at this level: loading on demand runs the SAME
+// TestLoadInstalledRefusesAnOverrideNamingArtFromALaterFormat is the §12
+// anti-divergence proof at this level: loading on demand runs the SAME
 // mapdef.Compile dry run boot does (cmd/vtt's
-// TestLoadMapsDirFailsLoudWhenOverridesDoNotResolveAgainstThePack pins the
-// boot side), resolving the map's pack by the map's own declared Pack id.
-// Without it, a map whose art does not exist would boot-fail but reload
-// cleanly — the exact inversion the spec warns about.
-func TestLoadInstalledRefusesAnOverrideThatDoesNotResolveAgainstItsPack(t *testing.T) {
-	mapsDir := filepath.Join(t.TempDir(), "maps")
+// TestLoadMapsDirFailsLoudWhenArtDeclaresAFormatItDoesNotUnderstand pins the
+// boot side), against the same art directory. Without it, a map naming art
+// written for a later format would boot-fail but reload cleanly — the exact
+// inversion the spec warns about.
+//
+// THE FIXTURE HAS BEEN NARROWED TWICE, and each narrowing was a ruling rather
+// than a preference. It was art the pack did not define until
+// 2026-09-02-art-is-a-flat-library Task 3 made an absent reference degrade one
+// square and warn (spec §4). It was any art that existed and could not be read
+// until Task 4b, when Patrik's ruling of 2026-09-04 made those degrade too.
+// What is left is the one art failure that still refuses anything: a sidecar
+// declaring a format_version this server does not understand.
+func TestLoadInstalledRefusesAnOverrideNamingArtFromALaterFormat(t *testing.T) {
+	root := t.TempDir()
+	mapsDir := filepath.Join(root, "maps")
+	artDir := filepath.Join(root, "art")
 	writeInstalled(t, mapsDir, "shrine.json", `{"format_version":1,
 		"id":"shrine","name":"Obsidian Shrine","grid_width":1,"grid_height":1,
-		"pack":"mossy-keep","tiles":{"0,0":"stone"},
-		"overrides":{"0,0":"wood-planks-split-3"}}`)
+		"tiles":{"0,0":"stone"},"overrides":{"0,0":"wood-planks-split-3"}}`)
+	writeInstalled(t, artDir, "wood-planks-split-3.json", `{"format_version":99}`)
+	writeInstalled(t, artDir, "wood-planks-split-3.png", "fake-png")
 
-	// A pack that exists and is valid but does NOT define the art the map
-	// overrides with — so the only thing that can fail is the resolution.
-	packs := map[string]*mapdef.Pack{"mossy-keep": {
-		FormatVersion: 1, ID: "mossy-keep", Name: "Mossy Keep", CellPx: 64,
-		Tiles: map[string]mapdef.PackTile{"some-other-tile": {File: "x.png"}},
-	}}
-
-	_, err := mapdef.LoadInstalled(mapsDir, "shrine", packs)
+	_, err := mapdef.LoadInstalled(mapsDir, "shrine", artDir)
 	if err == nil {
-		t.Fatal("an override naming art the pack does not define loaded cleanly; " +
+		t.Fatal("an override naming art written for a later format loaded cleanly; " +
 			"boot refuses it, and on demand must refuse it identically")
 	}
 	if !strings.Contains(err.Error(), "wood-planks-split-3") {
-		t.Fatalf("error = %q, want it to name the unresolved art", err)
+		t.Fatalf("error = %q, want it to name the art it refused", err)
 	}
 }
 
@@ -219,10 +223,7 @@ func TestNoLoadInstalledErrorNamesTheDirectoryItRead(t *testing.T) {
 	writeInstalled(t, mapsDir, "future.json", `{"format_version":9,"id":"future","name":"A Place",
 		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"}}`)
 	writeInstalled(t, mapsDir, "art.json", `{"format_version":1,"id":"art","name":"A Place",
-		"grid_width":1,"grid_height":1,"pack":"mossy-keep","tiles":{"0,0":"stone"},
-		"overrides":{"0,0":"wood-planks-split-3"}}`)
-	writeInstalled(t, mapsDir, "nopack.json", `{"format_version":1,"id":"nopack","name":"A Place",
-		"grid_width":1,"grid_height":1,"pack":"not-loaded","tiles":{"0,0":"stone"},
+		"grid_width":1,"grid_height":1,"tiles":{"0,0":"stone"},
 		"overrides":{"0,0":"wood-planks-split-3"}}`)
 	// A DIRECTORY where a map file should be: os.Open succeeds and the
 	// first read fails, so this exercises the decode side of decodeStrict
@@ -231,10 +232,12 @@ func TestNoLoadInstalledErrorNamesTheDirectoryItRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	packs := map[string]*mapdef.Pack{"mossy-keep": {
-		FormatVersion: 1, ID: "mossy-keep", Name: "Mossy Keep", CellPx: 64,
-		Tiles: map[string]mapdef.PackTile{"some-other-tile": {File: "x.png"}},
-	}}
+	// Art that exists and cannot be read: the one art-side failure that is
+	// still a refusal, and the art directory sits under root so a leak of
+	// EITHER path fails this test.
+	artDir := filepath.Join(root, "art")
+	writeInstalled(t, artDir, "wood-planks-split-3.json", `{"format_version":99}`)
+	writeInstalled(t, artDir, "wood-planks-split-3.png", "fake-png")
 
 	for _, tc := range []struct{ name, id string }{
 		{"not installed", "nowhere"},
@@ -242,12 +245,11 @@ func TestNoLoadInstalledErrorNamesTheDirectoryItRead(t *testing.T) {
 		{"filename disagrees with id", "mismatch"},
 		{"tile name typo", "typo"},
 		{"format this server does not understand", "future"},
-		{"art the pack does not define", "art"},
-		{"pack not loaded", "nopack"},
+		{"art that cannot be read", "art"},
 		{"a directory where a map should be", "adir"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := mapdef.LoadInstalled(mapsDir, tc.id, packs)
+			_, err := mapdef.LoadInstalled(mapsDir, tc.id, artDir)
 			if err == nil {
 				t.Fatalf("id %q loaded cleanly; this fixture is broken and must be refused", tc.id)
 			}
@@ -261,54 +263,31 @@ func TestNoLoadInstalledErrorNamesTheDirectoryItRead(t *testing.T) {
 	}
 }
 
-// TestLoadInstalledSaysWhichPackIsNotLoaded is the I2 fix: a map naming a
-// pack the caller did not hand over used to fail with mapdef's bare "no
-// pack was given to resolve it", which is true of the CALL and false about
-// the world — at request time the pack may be installed, valid, and one
-// restart away. The refusal now names the pack and carries
-// ErrPackNotLoaded, which is how internal/gateway's mapByID knows it may
-// add the half only a running server can claim (that restarting picks it
-// up). Boot must NOT say that, which is exactly why the sentence is split.
-func TestLoadInstalledSaysWhichPackIsNotLoaded(t *testing.T) {
-	mapsDir := filepath.Join(t.TempDir(), "maps")
-	writeInstalled(t, mapsDir, "level-5.json", `{"format_version":1,"id":"level-5",
-		"name":"A Place","grid_width":1,"grid_height":1,"pack":"cave-basics",
-		"tiles":{"0,0":"stone"},"overrides":{"0,0":"cave-floor-1"}}`)
-
-	_, err := mapdef.LoadInstalled(mapsDir, "level-5", nil)
-	if err == nil {
-		t.Fatal("a map naming an unloaded pack loaded cleanly")
-	}
-	if !errors.Is(err, mapdef.ErrPackNotLoaded) {
-		t.Fatalf("error = %v, want it to carry ErrPackNotLoaded so a caller that "+
-			"knows WHY the pack is absent can say so", err)
-	}
-	for _, want := range []string{`declares pack "cave-basics"`, "not among the ones loaded"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q, want it to contain %q", err, want)
-		}
-	}
-}
-
-// TestAMapDeclaringNoPackDoesNotClaimAPackIsMissing is the other side of
-// the same rule, and the reason the branch tests m.Pack rather than just a
-// nil pack: a map that names no pack at all is not waiting on one, so
-// blaming a missing pack would send its author looking for something that
-// was never referenced. Such a map can still fail Compile — an override
-// naming art has nowhere to resolve from — and that error must stay
-// ErrPackNotLoaded-free.
-func TestAMapDeclaringNoPackDoesNotClaimAPackIsMissing(t *testing.T) {
-	mapsDir := filepath.Join(t.TempDir(), "maps")
+// TestAMapWhoseArtIsEntirelyUninstalledStillLoads is spec §8's keystone at
+// the level both load paths share: "A map loads with every art reference
+// unresolvable, and every square renders from its kind. This is §4's whole
+// claim and it is the keystone: it fails if anything in the load path still
+// treats art as required."
+//
+// It replaces TestLoadInstalledSaysWhichPackIsNotLoaded and
+// TestAMapDeclaringNoPackDoesNotClaimAPackIsMissing, which between them
+// pinned the two halves of the refusal this task removed: that a map naming
+// an unloaded pack said WHICH pack, and that a map naming no pack was not
+// blamed for one. Neither sentence has a subject any more — nothing declares
+// a container — and the answer they were shaping is now "it loads".
+func TestAMapWhoseArtIsEntirelyUninstalledStillLoads(t *testing.T) {
+	root := t.TempDir()
+	mapsDir := filepath.Join(root, "maps")
 	writeInstalled(t, mapsDir, "bare.json", `{"format_version":1,"id":"bare",
 		"name":"A Place","grid_width":1,"grid_height":1,
 		"tiles":{"0,0":"stone"},"overrides":{"0,0":"cave-floor-1"}}`)
 
-	_, err := mapdef.LoadInstalled(mapsDir, "bare", nil)
-	if err == nil {
-		t.Fatal("an override with no pack to resolve against loaded cleanly")
+	m, err := mapdef.LoadInstalled(mapsDir, "bare", filepath.Join(root, "art"))
+	if err != nil {
+		t.Fatalf("LoadInstalled: %v — a map whose art is not installed still loads (spec §4)", err)
 	}
-	if errors.Is(err, mapdef.ErrPackNotLoaded) {
-		t.Fatalf("error = %v, want no missing-pack claim for a map that names no pack", err)
+	if m.ID != "bare" {
+		t.Fatalf("loaded map = %+v, want the map called bare", m)
 	}
 }
 
@@ -328,7 +307,7 @@ func TestTheBootWalksOwnUnusableIdsAreRefusedByFilename(t *testing.T) {
 		{"..", "...json"},
 	} {
 		writeInstalled(t, mapsDir, tc.file, validMapJSON("x"))
-		_, err := mapdef.LoadInstalled(mapsDir, tc.id, nil)
+		_, err := mapdef.LoadInstalled(mapsDir, tc.id, "")
 		if err == nil {
 			t.Fatalf("id %q was accepted", tc.id)
 		}

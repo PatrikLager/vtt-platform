@@ -65,10 +65,26 @@ h3 { margin: 0 0 2px; font-size: 14px; }
    only the scene, so the two agree only when the offset happens to be a whole
    multiple of the step, and the CSS one draws squares out in the letterboxed
    margin where the map has none. */
+/* THE BOARD FOLLOWS THE WINDOW, and neither the scene nor a constant
+   (2026-09-05). Read backlog T1/#19 before changing either line:
+
+   - Sized by the SCENE (the original), the board was gridWidth*CELL px tall —
+     1408 for a 32x32 map — so the page grew with the map and the controls sat
+     ~1450px down it, below every laptop fold. That is the defect, and it must
+     not come back.
+   - Sized by a CONSTANT (640x480, its replacement), a 200x200 outdoor map and a
+     10x10 room laid out identically, which was the point, and a 27-inch display
+     drew the same postage stamp as a laptop, which was not.
+
+   So: the WIDTH follows the container, and the HEIGHT follows the VIEWPORT —
+   never the content. clamp() is what makes the second half safe: 60vh grows the
+   board on a large display and can never exceed the window, so no scene of any
+   size can push the controls below the fold again. view/spectator.ts's paneSize
+   measures whatever this produces; the camera fits the scene into it. */
 .grid {
   position: relative;
-  width: 640px;
-  height: 480px;
+  width: 100%;
+  height: clamp(320px, 60vh, 900px);
   max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -134,6 +150,17 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: #3a1f1f; border: 1px solid #6b3535; color: #ffd7d7;
   padding: 8px 14px; border-radius: 6px;
+  /* BOUNDED BECAUSE WARNINGS ARE A LIST, not a sentence. app.ts joins every
+     CommandResult.warnings entry into one toast, and adventure.Compile
+     scene-qualifies them so they do not collapse across scenes — an eight-scene
+     bundle whose art/ did not travel measured 40 warnings and 732px of toast
+     against a 768px window. position:fixed means the overflow goes off the TOP
+     edge, out of reach of any scroll, so the bound has to be here rather than
+     left to the page. overflow-y keeps the rest reachable: bounding the box
+     without it would trade an unreadable message for a truncated one. */
+  max-width: min(720px, 90vw);
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 /* The spectator's perch (visibility spec §3.1.1).
@@ -192,6 +219,10 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .control-actor { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .control-name { font-weight: 600; }
 .held { display: inline-flex; gap: 4px; align-items: center; }
+/* Dim and small on purpose: away is a FACT ABOUT THE CONNECTION, not a
+   problem with the grant. Control outlives a connection, so this must not
+   read as a warning — the character is still theirs. */
+.held .away { font-size: 8px; color: var(--dim); font-style: italic; }
 
 /* The roster and the sharing panel (plan J6). Same flex-basis contract as
    .control-actor above, and for the same reason: without it every row is an

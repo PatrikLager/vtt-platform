@@ -212,12 +212,17 @@ message ActorControlRevoked {
 
 // TileRef is one square, resolved at LOAD from a tile name into the facts the
 // engine needs plus the art name the renderer needs. Resolved rather than
-// referenced so the log never depends on a pack file being present at replay
+// referenced so the log never depends on an art file being present at replay
 // (maps-as-geometry spec §5).
 message TileRef {
   string kind = 1;      // "wall" | "floor" | "door" — spatial, closed set
   string material = 2;  // OPAQUE. The ruleset's business, never the platform's.
-  string art = 3;       // pack tile name; empty means the standard picture
+  // art is one art id — a filename stem in the campaign's flat art/ directory
+  // (2026-09-02-art-is-a-flat-library design spec §3.2). Empty means the
+  // standard picture. It read "pack tile name" until Task 5 of that plan,
+  // which deleted the map field naming a pack and refuses any map file that
+  // still declares one.
+  string art = 3;
 }
 
 // SceneObject is SCENERY. Anything that acts, moves or holds state is an actor
@@ -292,15 +297,18 @@ message SceneCreated {
   // spaced — the `,"art":""` scaffolding plus the name — so a 7-character name
   // takes a 3600-tile scene to 209.8 / 220.4 KiB and an 11-character one to
   // 223.9 / 234.4. SHIPPED TILE NAMES RUN 7 TO 11 CHARACTERS, and that range
-  // needs its definition attached or it drifts: it means the names in a pack
-  // that mapdef.LoadPack actually loads and Resolve consults. Exactly one
-  // shipped map declares one — campaigns/example/maps/cellar.json names
-  // cellar-basics (campaigns/example/packs/cellar-basics/pack.json), whose
-  // four TILE names are earth-1, masonry-1, flagstone-1 and cellar-door.
-  // That path was maps/cellar/map.json until 2026-09-02, when Task 5 of
-  // 2026-09-01-create-scene-leaves dissolved the per-map directory.
+  // needs its definition attached or it drifts: it means the art ids a shipped
+  // map's overrides actually name. Exactly one shipped map overrides anything
+  // — campaigns/example/maps/cellar.json, whose four TILE art ids are earth-1,
+  // masonry-1, flagstone-1 and cellar-door. That path was maps/cellar/map.json
+  // until 2026-09-02, when Task 5 of 2026-09-01-create-scene-leaves dissolved
+  // the per-map directory. The definition USED TO read "the names in a pack
+  // that mapdef.LoadPack loads and Resolve consults", naming cellar-basics as
+  // the one pack a shipped map declared; no map declares a pack any more (Task
+  // 5 of 2026-09-02-art-is-a-flat-library refuses one that does) and the four
+  // ids are unchanged by the move, so the range is not.
   // client/public/std-pack is NOT in that set: it is a client-side rendering
-  // manifest served as static files, never a mapdef.Pack. Nor are that pack's
+  // manifest served as static files, never art the server resolves. Nor are
   // OBJECT names, which travel in SceneObject.art rather than TileRef.art.
   // internal/mapdef.MaxWireTiles caps the tile COUNT at 3600, which refuses
   // 69x69 but admits that overridden 60x60, so the cap and the limit do not

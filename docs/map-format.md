@@ -9,6 +9,112 @@ If you take one sentence away, take this one: **art never decides nature.**
 A wall drawn to look like floorboards is still a wall. Everything below
 follows from that.
 
+> **CORRECTION, 2026-09-04 — everything this document says about PACKS and
+> about a map's own DIRECTORY is out of date, and following it will produce
+> art the platform does not load.** Recorded here rather than rewritten; the
+> rewrite is named as debt at this sub-project's merge gate, and the table
+> below is what to trust until it happens.
+>
+> **THE WORKED EXAMPLE NOW EXISTS** (Task 8 of the `art-is-a-flat-library`
+> plan): [`campaigns/example/`](../campaigns/example/) is a complete campaign in
+> the current format — `campaign.json`, `maps/cellar.json`, and an `art/`
+> directory holding one of each shape the flat format has:
+>
+> - **tile art** — a picture plus a sidecar beside it, which tile art requires:
+>   `masonry-1.png` and `masonry-1.json`.
+> - **a door** — a sidecar naming TWO pictures, and no `<id>.png` of its own:
+>   `cellar-door.json`, `cellar-door-open.png`, `cellar-door-closed.png`.
+> - **object art** — a bare picture with no sidecar at all: `pillar-stone.png`.
+>
+> Those three shapes are §3 of
+> [the design spec](superpowers/specs/2026-09-02-art-is-a-flat-library-design.md),
+> **not** §3 of this document, which is the standard tile vocabulary and is a
+> different subject entirely. Read that directory rather than §0, §4, §5 or §8
+> here, and generate art of your own with `go run ./tools/genmappack`.
+>
+> Four things changed under it:
+>
+> 1. **A map is a flat FILE, not a directory.** `<campaign>/maps/<id>.json`,
+>    and the filename IS the id (2026-09-01-create-scene-leaves Task 3/6).
+>    §0's `maps/cellar/map.json` layout, and everything about a `tiles/`
+>    directory beside it, is gone.
+> 2. **Packs no longer exist anywhere in the platform**
+>    (`docs/superpowers/specs/2026-09-02-art-is-a-flat-library-design.md`).
+>    No `pack.json` is read by anything, no route serves one, and a map file
+>    carrying a top-level `"pack"` is REFUSED at load, by name.
+> 3. **Art is one flat `<campaign>/art/` directory**, and a picture's
+>    FILENAME STEM is its id, in kebab-case. `overrides` values and object
+>    `art` names do not change — they were already art ids — but the
+>    PICTURE FILES must be renamed so each stem is exactly the id that names
+>    it (`masonry_1.png` → `masonry-1.png`), and each TILE picture needs a
+>    sidecar `art/<id>.json` beside it carrying its kind and material.
+>    Object art needs no sidecar. A name that resolves to nothing costs its
+>    square's picture and one warning, never the map.
+> 4. **A DOOR IS THE ONE EXCEPTION to "the stem is the id".** A door has TWO
+>    pictures and no third: `cellar-door.json` names `cellar-door-open.png`
+>    and `cellar-door-closed.png` through its own `open` and `closed` fields,
+>    and **`cellar-door.png` must not exist**. A door sidecar that declares
+>    only kind and material does not resolve — `a door declares both "open"
+>    and "closed"` — and that square draws plain with one warning naming the
+>    piece and the cause. The demo campaign ships a door (`cellar-door`), so
+>    this is the ordinary case, not a corner.
+>
+>    *This paragraph said the map was REFUSED until 2026-09-04. It was, and
+>    the cost was measured: because `composeServer` turns any map-load error
+>    into a refusal to start, one such file stopped the whole server booting.
+>    Patrik ruled that art which cannot be READ degrades; only art declaring a
+>    `format_version` this server does not understand still refuses, because
+>    that says the content is newer than the server rather than that the file
+>    is broken.*
+>
+> **Section by section, so you know what to trust:**
+>
+> | Section | Status |
+> |---|---|
+> | §1, §2, §3, §6, §9, §11, §12 | correct, unaffected |
+> | §7 | the door RULE is correct — one tile name, two pictures, every door starts closed. **Point 2's mechanism is wrong**: it says a *pack's* door entry "(§5.1)" supplies `file_closed`/`file_open`. There is no pack, and there has never been a §5.1. A door's two pictures are named by its own sidecar's `open` and `closed` fields |
+> | §10 | correct, including the `"pack"` refusal |
+> | art failures generally | **only one refuses a map**: a sidecar declaring a `format_version` this server does not understand. Absent art, an unopenable `art/` at request time, a picture with no sidecar, and a sidecar that cannot be read all draw that square plain and warn (2026-09-04) |
+> | §0 | **wrong** — the directory layout and the `tiles/` pack |
+> | §4 | values correct; **"resolution has exactly two levels … first against the map's own pack" is wrong** — there is one flat `art/` and any map may name any piece |
+> | §5 | object shape correct; **"you cannot place a single object without shipping a pack of your own" is wrong** — install the picture into `art/`, no manifest and no sidecar needed for object art |
+> | §8 | first third (what a pack IS, where it lives, how it is served) **wrong**; the paragraphs from *"A map file may no longer name a pack"* to *"…refused exactly like any other `pack`"* are **correct, and the door paragraph among them is the part that matters for the demo campaign — except where it says a bad door refuses the map, which point 4 above corrects** |
+>
+> **`vtt art install` EXISTS as of 2026-09-05** (Task 6 of
+> `docs/superpowers/plans/2026-09-02-art-is-a-flat-library.md`), and so does
+> `GET /api/art/{file}`, which is how the web client fetches a campaign's
+> pictures. Installing is still just copying files into `<campaign>/art/`; the
+> command adds the checks an operator holding the file can act on:
+>
+> ```
+> vtt art install --campaign my-campaign masonry-1.png masonry-1.json
+> ```
+>
+> It refuses a directory, refuses a filename no map could spell, refuses one
+> already installed unless you pass `--force`, and validates every sidecar
+> before it lands — all or nothing, so a refusal leaves `art/` exactly as it
+> was.
+>
+> **A MAP FILE MAY DECLARE `"cell_px"`** (added 2026-09-05) — how many pixels one
+> grid square of THIS map's art occupies, a whole number between 8 and 1024,
+> refused by name rather than clamped if it is outside that. Leave it out and the
+> map inherits the campaign's default, which is what every map in this repo does.
+> The default lives in an OPTIONAL `<campaign>/campaign.json` holding
+> `{"format_version": 1, "cell_px": 64}`, and `vtt art install` warns when an
+> installed picture is not a whole number of those squares.
+>
+> HOW TO AUTHOR A MAP FROM THIS DOCUMENT TODAY: author `tiles`, `overrides`,
+> `objects` and `placements` as §2, §3, §6 and §9 describe; read §4, §5 and §7
+> for SHAPE and RULES only, never for where a picture comes from; put the map at
+> `<campaign>/maps/<id>.json`; write no `"pack"` line; and install each piece of
+> art named by an override or an object into `<campaign>/art/` under the exact
+> name that names it.
+>
+> *This paragraph ended "expect overridden squares to draw from the standard
+> vocabulary until the art directory exists" until 2026-09-05. The directory
+> exists, and the demo campaign's own overrides resolve —
+> `TestTheShippedCampaignResolvesItsOwnArt` is what says so.*
+
 ## 0. Where the file goes, and what it is called
 
 A map is a **directory**, not a loose file. The server is pointed at a maps
@@ -316,23 +422,54 @@ Both are served the same way over HTTP, alongside the images — a pack is
 content, never something written into the campaign's event log, so nothing
 about it is frozen the way the wire contract is.
 
-**A pack is always your own, and there is no registry of shared packs.** The
-top-level `pack` field in a map file does not look anything up: it names the
-pack sitting in that map's own `tiles/` directory, and it exists so that a
-mismatch is caught rather than silently drawing the wrong pictures. If it is
-set, it must equal the `id` inside your own `tiles/pack.json`. You cannot
-name a pack you do not ship, and no map can borrow another map's art.
+**A map file may no longer name a pack, and the field is REFUSED.** A
+top-level `"pack"` is rejected at load — `json: unknown field "pack"`, from the
+strict decoder, which refuses any key this server has no field for
+(2026-09-02-art-is-a-flat-library design spec §7: *"There is no compatibility
+layer, and none is added later."*). It used to name the pack in that map's own
+`tiles/` directory, so that a mismatch was caught rather than silently drawing
+the wrong pictures.
+
+*The refusal carried migration instructions in its message until 2026-09-06,
+when Patrik ruled the route out: nothing has ever shipped, and every campaign
+that has ever existed is in this repository. The instructions live here now, in
+the paragraphs below, which is where a reader looks anyway.*
+
+Art now resolves by FILENAME inside one flat `art/` directory per campaign, and
+any map may name any installed piece — so there is no container left to
+mismatch. **Your `overrides` values and object `art` names do not change**:
+they were already the art ids. Removing the `"pack"` line and moving the
+pictures into the campaign's `art/` is most of the migration — but the move is a
+RENAME: with no manifest left, a picture's filename stem IS its art id, so
+`masonry_1.png` has to become `masonry-1.png` (the name your `overrides` already
+use, in kebab-case), and each TILE picture needs a sidecar `art/<id>.json`
+beside it declaring its kind and material. Object art needs no sidecar. A
+picture whose stem is not the id, or tile art with no sidecar, resolves to
+nothing and draws plain.
+
+**A DOOR MIGRATES DIFFERENTLY, and the difference is not cosmetic.** A door
+keeps its two pictures and gains no third: the pack entry's `file_open` and
+`file_closed` become the sidecar's own `open` and `closed` fields, so
+`cellar-door.json` names `cellar-door-open.png` and `cellar-door-closed.png`,
+and **there is no `cellar-door.png`**. Write a door sidecar with only kind and
+material and it does not resolve (`a door declares both "open" and "closed"`):
+that square draws plain and the load carries one warning naming the piece and
+the cause.
+
+*This said the door was REFUSED, and the map with it, until 2026-09-04. That
+was true and it was expensive — because `composeServer` turns any map-load
+error into a refusal to start, one such file stopped the server booting for
+every map in the campaign. Patrik ruled that art which cannot be READ degrades;
+the only art that still refuses a map is a sidecar declaring a `format_version`
+this server does not understand, which says the content is newer than the
+server rather than that the file is broken.*
 
 **The standard tile vocabulary (§3) is not a pack and is never named.** It is
 built into the platform, which is why `stone`, `wood-door` and the rest work
 with no `pack`, no `tiles/` directory, and no `overrides` at all. If you have
 seen a manifest with `"id": "std"`, that is the client's own bundle of
 pictures for those standard names — it is not something a map file
-references, and writing `"pack": "std"` will not reach it.
-
-`pack` is only ever consulted when you use `overrides` (§4), since overrides
-are the only thing that names pack art for a tile. A map with no overrides
-never has its `pack` field read.
+references, and `"pack": "std"` is refused exactly like any other `"pack"`.
 
 ```json
 {
@@ -368,7 +505,7 @@ never has its `pack` field read.
 
 | field | meaning |
 |---|---|
-| `id` | the pack's own identifier — this is what a map's top-level `"pack"` field names |
+| `id` | the pack's own identifier |
 | `name` | a display name for the pack |
 | `cell_px` | the pixel size each image is drawn at (images should be square, this size) |
 | `tiles` | an array of named tile pictures — see below |
@@ -401,11 +538,11 @@ telling the reader something).
 
 ```json
 {
+  "format_version": 1,
   "id": "shrine",
   "name": "Obsidian Shrine",
   "grid_width": 3,
   "grid_height": 3,
-  "pack": "mossy-keep",
 
   "tiles": {
     "0,0": "stone-wall", "1,0": "stone-wall", "2,0": "stone-wall",
@@ -430,41 +567,58 @@ telling the reader something).
 
 | field | meaning |
 |---|---|
+| `format_version` | REQUIRED, and currently `1`. A map declares the format it is written in; a file that omits it is refused rather than assumed to be any version. |
 | `id` | the map's own identifier — also becomes the scene's id when the map is loaded into a campaign |
 | `name` | a display name |
 | `grid_width`, `grid_height` | the grid's size in squares |
-| `pack` | the id of the pack `overrides` and `objects[].art` resolve against. May be omitted (or empty) for a map that uses only standard tiles and no objects with art. |
 | `tiles` | see §1, §3 |
 | `overrides` | see §1, §4 |
 | `objects` | see §5 |
 | `placements` | see §6 |
 
-Beside `shrine.json`'s directory sits its pack:
-`maps/shrine/tiles/pack.json` (§8), and the images it names.
+**There is no `pack` field, and writing one is refused** — see §8. The art that
+`overrides` and `objects[].art` name lives in the campaign's own flat `art/`
+directory and resolves by filename.
 
 ## 10. What gets refused, and why
 
 A map is validated fully before it is ever served to a table — never at the
 table. In order, roughly:
 
-1. `grid_width` and `grid_height` must each be at least `1`.
-2. If `tiles` is non-empty, **every** square in the grid must have an entry
+1. The file must contain **no key this server does not know**, and a `pack`
+   field is the one worth calling out: any way of writing it is refused —
+   `"pack": "cellar-basics"`, `"pack": ""`, and `"pack": null` alike, and the
+   same for the field under any rename. It is the PRESENCE of the key that is
+   refused, not its value, and it is refused by the JSON decoder, so this
+   happens before every check below it. Deleting the line is the whole fix;
+   your `overrides` and `objects[].art` values do not change — see §8 for
+   where the pictures go.
+2. `format_version` must be present and must be a version this server
+   understands.
+3. `grid_width` and `grid_height` must each be at least `1`.
+4. If `tiles` is non-empty, **every** square in the grid must have an entry
    (§1) — no missing squares, and no extra entries naming a square outside
    the grid.
-3. Every `tiles` value must be a known standard tile name (§3) — a typo, or
+5. Every `tiles` value must be a known standard tile name (§3) — a typo, or
    a name that does not exist, is refused with the offending square and
    name named directly.
-4. Every `overrides` key must name a square inside the grid. `overrides`
+6. Every `overrides` key must name a square inside the grid. `overrides`
    with a non-empty `tiles` needs no further check here; a non-empty
    `overrides` against an **empty** `tiles` is refused outright — there is
    no nature for the art to attach to.
-5. Every object's full **footprint** (not just its anchor square) must lie
+7. Every object's full **footprint** (not just its anchor square) must lie
    inside the grid, and its `size` must be at least `[1, 1]`.
-6. Every `placements` entry must name a square inside the grid, and that
+8. Every `placements` entry must name a square inside the grid, and that
    square must not currently be a wall or a closed door.
-7. (Once a pack is involved) every `overrides` value and every `objects[].art`
-   must actually name something the pack declares.
-8. `tiles` must hold no more than **3600** entries — see §12.
+9. `tiles` must hold no more than **3600** entries — see §12.
+
+**Art that does not resolve is NOT in this list, and that is deliberate.** An
+`overrides` value or an `objects[].art` naming a picture that is not installed
+costs that square its picture and produces one warning to whoever loaded the
+map — never the map, and never the table. The square keeps its nature, which
+comes from `tiles` and never from art. This entry used to read "every
+`overrides` value and every `objects[].art` must actually name something the
+pack declares", and that stopped being true when art moved out of packs.
 
 Every refusal names the offending file, field, and (where relevant) the
 exact square — so a fix is a matter of reading the message, not guessing.

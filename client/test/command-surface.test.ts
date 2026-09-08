@@ -1,7 +1,8 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
 import { test, expect } from "bun:test";
-import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { create } from "@bufbuild/protobuf";
+import { ClientCommandSchema, CommandResultSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import * as commands from "../src/commands";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -266,14 +267,18 @@ function dmFixture(open: boolean): HTMLElement {
   return renderDMConsole({
     st,
     adventures: [{ id: "adv-1", name: "Adventure" }],
-    maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4 }],
+    maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4, cellPx: 64 }],
     guideFor: async () => null,
     participants: [{ participantId: "p-me", displayName: "Hero's Player" }],
     joinLink: { open: false, secret: "s3cret" },
     roster: [{ participantId: "p-watch", name: "Watcher", role: "spectator" }],
     origin: "https://table.example",
     refreshSharing: () => {},
-    send: async () => {},
+    // ok=true, not void: renderDMConsole's send field resolves to a real
+    // CommandResult since 2026-09-02-art-is-a-flat-library Task 2
+    // (client/src/view/dm.ts) — this fixture only cares that a command
+    // FORM renders and dispatches, never what the server would answer.
+    send: async () => create(CommandResultSchema, { ok: true }),
     notify: () => {},
     confirm: () => true,
     doorsArmed: false,

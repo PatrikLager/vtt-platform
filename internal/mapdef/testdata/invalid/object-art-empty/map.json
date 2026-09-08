@@ -4,7 +4,6 @@
   "name": "The Cellar",
   "grid_width": 3,
   "grid_height": 3,
-  "pack": "mossy-keep",
 
   "tiles": {
     "0,0": "stone-wall", "1,0": "stone-wall", "2,0": "stone-wall",

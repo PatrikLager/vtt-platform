@@ -1859,11 +1859,21 @@ func (x *PromoteParticipant) GetRole() string {
 }
 
 type CommandResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Ok            bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
-	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
-	Sequence      int64                  `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Ok        bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error     string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	Sequence  int64                  `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// Non-fatal facts about a command that SUCCEEDED. load_map fills it today
+	// only for a kind mismatch — an override's art disagreeing with its
+	// square's tile kind (2026-08-12-maps-as-geometry design spec §3.2) —
+	// and, from Task 3 of 2026-09-02-art-is-a-flat-library onward, also when
+	// a map names art that is not installed: that square renders from its
+	// tiles kind and material instead (that sub-project's own design spec
+	// §4), and this says which references were dropped. Without the second
+	// case, §4 is a silence — the map goes plain and nobody learns why —
+	// which is strictly worse than the refusal it replaces.
+	Warnings      []string `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1924,6 +1934,13 @@ func (x *CommandResult) GetSequence() int64 {
 		return x.Sequence
 	}
 	return 0
+}
+
+func (x *CommandResult) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
 }
 
 // CatchUpHead is sent ONCE, first, on every connection: the highest sequence
@@ -2394,13 +2411,14 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\x0eparticipant_id\x18\x02 \x01(\tR\rparticipantId\"O\n" +
 	"\x12PromoteParticipant\x12%\n" +
 	"\x0eparticipant_id\x18\x01 \x01(\tR\rparticipantId\x12\x12\n" +
-	"\x04role\x18\x02 \x01(\tR\x04role\"p\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\"\x8c\x01\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1a\n" +
-	"\bsequence\x18\x04 \x01(\x03R\bsequence\"2\n" +
+	"\bsequence\x18\x04 \x01(\x03R\bsequence\x12\x1a\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"2\n" +
 	"\vCatchUpHead\x12#\n" +
 	"\rhead_sequence\x18\x01 \x01(\x03R\fheadSequence\"\xbb\x02\n" +
 	"\vServerFrame\x12/\n" +

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -15,16 +14,24 @@ import (
 // match the spec's JSON examples exactly; Go-side validation and the
 // friendlier Map/Object/Placement shapes live in format.go and below.
 type mapJSON struct {
-	FormatVersion int32             `json:"format_version"`
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	GridWidth     int32             `json:"grid_width"`
-	GridHeight    int32             `json:"grid_height"`
-	Pack          string            `json:"pack"`
-	Tiles         map[string]string `json:"tiles"`
-	Overrides     map[string]string `json:"overrides"`
-	Objects       []ObjectJSON      `json:"objects"`
-	Placements    []placementJSON   `json:"placements"`
+	FormatVersion int32  `json:"format_version"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	GridWidth     int32  `json:"grid_width"`
+	GridHeight    int32  `json:"grid_height"`
+	// CellPx is a json.RawMessage because PRESENCE is what decides. A plain
+	// int32 cannot tell an absent cell_px from an explicit {"cell_px": 0}, so
+	// "an undeclared map inherits the campaign default" and "zero pixels is
+	// refused" would be one branch pretending to be two — and a *int32 only
+	// moves the hole, since JSON null unmarshals into a pointer as nil and would
+	// read as absent. A bare json.RawMessage is nil ONLY when the key is truly
+	// absent: `null` arrives as the four bytes "null". Raw bytes decide nothing
+	// until loadAs decides.
+	CellPx     json.RawMessage   `json:"cell_px"`
+	Tiles      map[string]string `json:"tiles"`
+	Overrides  map[string]string `json:"overrides"`
+	Objects    []ObjectJSON      `json:"objects"`
+	Placements []placementJSON   `json:"placements"`
 }
 
 // ObjectJSON is the on-disk shape of one object entry (spec §4.1): an anchor
@@ -78,10 +85,21 @@ type FieldErrFunc func(field, msg string) error
 // Load reads and fully validates the map file at path: strict JSON decoding
 // (no unknown fields tolerated, matching internal/adventure/load.go's
 // decodeStrict), then every check spec §4.4 requires that this package can
-// perform without a pack manifest (art and pack-tile-name resolution are
-// Task 3). Every error names the offending file and field; Load returns
+// perform without an art directory (resolving an art name against one is
+// Resolve's job, resolve.go). Every error names the offending file and field; Load returns
 // (nil, err) as soon as the first violation is found, matching adventure's
 // fail-loud-at-load posture (spec §7).
+//
+// THE STRICTNESS IS LOAD-BEARING AND NOT MERELY TIDY. It is the whole of what
+// refuses a map authored before 2026-09-02-art-is-a-flat-library — one carrying
+// a `"pack"` container, or that container under any rename — whose overrides
+// values were written against a namespace that no longer exists and would
+// otherwise draw the wrong thing with nobody told. Two loadAs arms carried that
+// refusal with migration instructions attached until 2026-09-06, when Patrik
+// ruled the route out (nothing has ever shipped, and every campaign that has
+// ever existed is in this repository). What is left is
+// TestAMapDeclaringAPackOrAPackageIsStillRefused, which drives the file through
+// Load rather than trusting this sentence.
 //
 // Checks run in an order chosen so the FIRST error a broken file produces is
 // the most useful one to fix: grid sanity gates everything else (there is no
@@ -120,6 +138,26 @@ func loadAs(path, display string) (*Map, error) {
 	if raw.FormatVersion != MapFormatVersion {
 		return nil, fieldErr(display, "format_version", fmt.Sprintf(
 			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
+	}
+
+	// cell_px, when the map declares one (art-is-a-flat-library design spec §6 as
+	// amended 2026-09-05). Checked HERE, after format_version and before the
+	// geometry, because it is a property of the whole map rather than of any
+	// square — and refused rather than clamped, for the reason MinCellPx's own
+	// doc comment gives.
+	var cellPx int32
+	if raw.CellPx != nil {
+		if err := json.Unmarshal(raw.CellPx, &cellPx); err != nil {
+			return nil, fieldErr(display, "cell_px", fmt.Sprintf(
+				"must be a whole number of pixels between %d and %d: %v",
+				MinCellPx, MaxCellPx, err))
+		}
+		if cellPx < MinCellPx || cellPx > MaxCellPx {
+			return nil, fieldErr(display, "cell_px", fmt.Sprintf(
+				"is %d; one grid square of art is between %d and %d pixels. Leave the field out "+
+					"to use the campaign's own cell_px (campaign.json), which is what every map "+
+					"that declares nothing does", cellPx, MinCellPx, MaxCellPx))
+		}
 	}
 
 	if raw.GridWidth < 1 {
@@ -172,7 +210,7 @@ func loadAs(path, display string) (*Map, error) {
 		Name:          raw.Name,
 		GridW:         raw.GridWidth,
 		GridH:         raw.GridHeight,
-		Pack:          raw.Pack,
+		CellPx:        cellPx,
 		Tiles:         raw.Tiles,
 		Overrides:     raw.Overrides,
 		Objects:       objects,
@@ -305,15 +343,17 @@ func CheckTilesInsideGrid(tiles map[string]string, w, h int32, errf FieldErrFunc
 // vocabulary. Callers run this after CheckEverySquarePresent and
 // CheckTilesInsideGrid have proven every grid square has an entry and no
 // entry lies outside the grid, so walking the tiles map here (rather than
-// the grid again) covers exactly the same squares. Overrides values
-// (pack-declared art names) are NOT checked here — that needs a *Pack, which
-// neither Load nor this function ever takes as an argument; Resolve
-// (resolve.go) does that check per square instead.
+// the grid again) covers exactly the same squares. Overrides values (art ids)
+// are NOT checked here — that needs an art directory, which neither Load nor
+// this function ever takes as an argument; Resolve (resolve.go) does that
+// check per square instead, and since
+// 2026-09-02-art-is-a-flat-library Task 3 a name that does not resolve costs
+// its square's picture and a warning rather than the map.
 func CheckTileNamesKnown(tiles map[string]string, errf FieldErrFunc) error {
 	for key, name := range tiles {
 		if _, _, ok := StandardTile(name); !ok {
 			return errf(fmt.Sprintf("tiles[%q]", key),
-				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; pack tiles resolve in a later step)", name))
+				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; art names resolve in a later step)", name))
 		}
 	}
 	return nil
@@ -322,9 +362,10 @@ func CheckTileNamesKnown(tiles map[string]string, errf FieldErrFunc) error {
 // CheckOverridesInsideGrid validates that every overrides KEY names a square
 // the grid actually contains. Overrides is sparse (spec §4.1), so unlike
 // tiles there is no completeness rule — only a bounds rule. The VALUE is not
-// inspected: it is an opaque pack tile name that only Resolve (resolve.go),
-// given a *Pack, can validate — neither Load nor this function has a pack
-// argument to check it against.
+// inspected: it is an opaque art id that only Resolve (resolve.go), given an
+// art directory, can look up — neither Load nor this function has one to
+// check it against, and since 2026-09-02-art-is-a-flat-library Task 3 a value
+// that looks up to nothing is a warning rather than a refusal anyway.
 func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf FieldErrFunc) error {
 	for key := range overrides {
 		x, y, ok := parseSquareKey(key)
@@ -349,11 +390,15 @@ func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf Fiel
 // author-supplied JSON, and `at:2147483647, size:1` wraps a naive int32 sum
 // negative, which is also less than w and so also wrongly passes. This
 // function's own job stops at GEOMETRY — an object's ART is checked
-// separately, split across two functions by what each can prove without a
-// *Pack: CheckObjectArtDeclared (below) proves a name was declared at all;
+// separately, split across two functions by what each can prove without an art
+// directory: CheckObjectArtDeclared (below) proves a name was declared at all;
 // ResolveObjectArt (resolve.go) proves a declared name actually resolves
-// against the map's pack, run by BuildSceneCreated (compile.go) during the
-// same dry run that already catches an unresolvable tile override.
+// against the campaign's flat art/ directory, run by BuildSceneCreated
+// (compile.go) during the same dry run that already catches an unresolvable
+// tile override. It said "against the map's pack" until Task 5 of
+// 2026-09-02-art-is-a-flat-library, which deleted the field a map named one
+// with; Task 3 of the same plan had already moved the resolution itself, and
+// Task 7 deleted mapdef.Pack.
 func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 	for i, o := range objs {
 		field := fmt.Sprintf("objects[%d]", i)
@@ -371,24 +416,27 @@ func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 
 // CheckObjectArtDeclared validates that every object names non-empty art —
 // the one part of spec §4.4's "every `art` name resolves" that Load can
-// prove without a *Pack (whole-branch-review finding I1: object art was
-// resolved NOWHERE before this function and ResolveObjectArt existed —
-// Pack.Objects was loaded by LoadPack and read by nothing in Go). A tile's
+// prove without an art directory (whole-branch-review finding I1: object art
+// was resolved NOWHERE before this function and ResolveObjectArt existed — the
+// objects half of a pack manifest was loaded and read by nothing in Go; the
+// manifest itself left at 2026-09-02-art-is-a-flat-library Task 7). A tile's
 // own art may legally be empty (it falls back to the standard vocabulary —
 // CheckTileNamesKnown / StandardTile), but an object has no such fallback:
-// the standard pack declares tiles only, never objects
-// (tools/genmappack/std_pack.go, whose own test says so outright: "objects
-// have no standard fallback"). So an object with empty art can never draw,
-// at any pack, under any circumstances — exactly the invisible-barrier
-// defect spec §1.3 exists to prevent (a blocks_move object with nothing
-// telling a player why their square is blocked), and unlike a merely WRONG
-// art name (which resolves the moment the map's pack is fixed), an EMPTY
-// one is unfixable by any pack at all — so it is refused here, at Load,
-// rather than deferred to whichever caller happens to have a pack in hand.
+// the client's bundled baseline covers the eleven standard tile natures only,
+// never objects (tools/genmappack/std_pack.go, whose own test says so
+// outright: "objects have no standard fallback"). So an object with empty art can never draw,
+// under any circumstances — exactly the invisible-barrier defect spec §1.3
+// exists to prevent (a blocks_move object with nothing telling a player why
+// their square is blocked), and unlike a merely WRONG art name (which starts
+// drawing the moment the right file is installed under that name), an EMPTY
+// one names nothing that could ever be installed — so it is refused here, at
+// Load, rather than deferred to whichever caller happens to have an art
+// directory in hand.
 //
-// Whether a non-empty name actually resolves against the map's own pack is
-// a separate, pack-dependent question this function has no way to answer —
-// see ResolveObjectArt (resolve.go).
+// Whether a non-empty name is actually installed is a separate question this
+// function has no way to answer, and since
+// 2026-09-02-art-is-a-flat-library Task 3 the answer "no" is a warning on one
+// object rather than a refusal — see ResolveObjectArt (resolve.go).
 func CheckObjectArtDeclared(objs []Object, errf FieldErrFunc) error {
 	for i, o := range objs {
 		if o.Art == "" {
@@ -452,110 +500,14 @@ func parseSquareKey(key string) (x, y int32, ok bool) {
 	return int32(xi), int32(yi), true
 }
 
-// packJSON is the on-disk shape of a pack manifest (design spec §4.2):
-// pack.json beside the images it names. Tiles and Objects share one JSON
-// shape (packTileJSON) because a pack.json entry looks identical whichever
-// array it sits in — mirrored in Go by PackTile itself (format.go) being the
-// one exported type for both.
-type packJSON struct {
-	FormatVersion int32          `json:"format_version"`
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	CellPx        int32          `json:"cell_px"`
-	Tiles         []packTileJSON `json:"tiles"`
-	Objects       []packTileJSON `json:"objects"`
-}
-
-type packTileJSON struct {
-	Name       string `json:"name"`
-	Kind       string `json:"kind"`
-	Material   string `json:"material"`
-	File       string `json:"file"`
-	FileOpen   string `json:"file_open"`
-	FileClosed string `json:"file_closed"`
-	Desc       string `json:"desc"`
-}
-
-// LoadPack reads and validates the pack manifest at dir/pack.json: strict
-// JSON decoding (decodeStrict, the same shape Load uses), then a
-// format_version check against PackFormatVersion (format.go) — refused,
-// two-step, exactly mirroring Load's own format_version check for maps, but
-// judged against PackFormatVersion rather than MapFormatVersion since a
-// pack moves independently — then keys Tiles and Objects by name so Resolve
-// (resolve.go) gets an O(1) lookup per square. LoadPack never reads a *Map —
-// a pack is reusable across many maps (spec §4.3's "load standalone"
-// principle applied to art), so it takes only a directory.
-func LoadPack(dir string) (*Pack, error) {
-	path := filepath.Join(dir, "pack.json")
-	var raw packJSON
-	if err := decodeStrict(path, path, &raw); err != nil {
-		return nil, err
-	}
-
-	if raw.FormatVersion == 0 {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf(
-			"required: this server understands %d, and an undeclared format is not "+
-				"assumed to be any of them", PackFormatVersion))
-	}
-	if raw.FormatVersion != PackFormatVersion {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf(
-			"declares %d; this server understands %d", raw.FormatVersion, PackFormatVersion))
-	}
-
-	tiles, err := packTileMap(path, "tiles", raw.Tiles)
-	if err != nil {
-		return nil, err
-	}
-	objects, err := packTileMap(path, "objects", raw.Objects)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Pack{
-		FormatVersion: raw.FormatVersion,
-		ID:            raw.ID,
-		Name:          raw.Name,
-		CellPx:        raw.CellPx,
-		Tiles:         tiles,
-		Objects:       objects,
-	}, nil
-}
-
-// packTileMap keys a pack.json array by its own entries' Name, refusing
-// (rather than silently keeping the last one) an empty or a repeated name:
-// a map author's override references a pack tile by name alone, so a name
-// that cannot uniquely address one entry would let two authored pictures
-// collide, with whichever JSON array element decoded last winning silently
-// and the other becoming permanently unreferenceable. Field names which
-// array ("tiles" or "objects") an error came from, matching this package's
-// existing fieldErr convention of naming the offending JSON path.
-func packTileMap(path, field string, items []packTileJSON) (map[string]PackTile, error) {
-	out := make(map[string]PackTile, len(items))
-	for i, it := range items {
-		loc := fmt.Sprintf("%s[%d].name", field, i)
-		if it.Name == "" {
-			return nil, fieldErr(path, loc, "must not be empty")
-		}
-		if _, dup := out[it.Name]; dup {
-			return nil, fieldErr(path, loc, fmt.Sprintf("duplicate name %q", it.Name))
-		}
-		// packTileJSON and PackTile share field order and types exactly (kept
-		// in lockstep deliberately), so this is a straight conversion rather
-		// than a literal that would drift silently if a field were ever
-		// added to one and not the other.
-		out[it.Name] = PackTile(it)
-	}
-	return out, nil
-}
-
 // decodeStrict decodes the JSON file at path into v with unknown fields
 // disallowed — reused shape from internal/adventure/load.go, so a map
 // author gets the same quality of "you misspelled a field" error an
 // adventure author already gets.
 //
 // display is the name the ERROR carries, held separate from the path
-// OPENED so a caller can name a file the way its reader knows it. Load and
-// LoadPack pass the path itself and read exactly as they always did;
+// OPENED so a caller can name a file the way its reader knows it. Load
+// passes the path itself and reads exactly as it always did;
 // LoadInstalled passes "maps/<id>.json", because its errors travel to a
 // client over the wire and an absolute server path is not that client's
 // business (2026-09-01-create-scene-leaves Task 6, fix round 1).

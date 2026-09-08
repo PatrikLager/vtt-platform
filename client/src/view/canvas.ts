@@ -51,6 +51,24 @@ export type ImageMap = Record<string, CanvasImageSource>;
 export const missingTileColors: readonly [string, string] = ["#ff00ff", "#1a1a1a"];
 
 /**
+ * plainObjectColors is the OTHER answer to "no picture", and it has to look
+ * nothing like the one above.
+ *
+ * A muted slate block and a near-white label: present, obviously not a
+ * photograph of anything, and readable over every earth/stone/wood/metal tone
+ * genmappack ships — but calm, because the state it reports is calm. An object
+ * whose art has not been installed is an ordinary, warned-about state
+ * (art-is-a-flat-library design spec §4: "the object stays, drawn from its
+ * kind"), while missingTileColors reports a picture that WAS asked for and did
+ * not arrive. A DM shown "broken" about art that is merely absent goes hunting
+ * for a corrupt file, once per pillar.
+ *
+ * Exported so a test can assert the exact pair rather than "something was
+ * drawn", the same reason missingTileColors is.
+ */
+export const plainObjectColors: readonly [string, string] = ["#5b6472", "#eef1f5"];
+
+/**
  * drawMissingTile fills op's rect with a 2x2 checkerboard in
  * missingTileColors, called from inside paint()'s own save/translate/rotate
  * block — (x, y) is ALREADY relative to the rect's centre (the same frame
@@ -66,6 +84,48 @@ function drawMissingTile(ctx: CanvasRenderingContext2D, sw: number, sh: number):
       ctx.fillRect(-sw / 2 + gx * cw, -sh / 2 + gy * chh, cw, chh);
     }
   }
+}
+
+/**
+ * drawPlainObject fills op's rect with a plain block and letters it with the
+ * object's KIND — art-is-a-flat-library design spec §4, in the same words the
+ * server's own warning uses: "the object stays, drawn from its kind. An object
+ * is a thing in the world before it is a picture, and dropping it because its
+ * picture is missing would change what the room is."
+ *
+ * THE KIND IS DRAWN BECAUSE THERE IS NOTHING ELSE TO DRAW IT FROM. A tile that
+ * loses its art falls back to std:<kind>/<material>, one of the eleven standard
+ * natures the client's own bundle ships. An object's kind is an OPEN label — the contract
+ * says of SceneObject.kind that "no behaviour may be inferred from it" — so
+ * there is no picture for "pillar" anywhere and there is not going to be one.
+ * A silhouette alone would say "an object", which is not what §4 promises; the
+ * word is the only thing that can carry which object.
+ *
+ * Called from inside paint's own save/translate/rotate block, exactly as
+ * drawMissingTile is, so (0, 0) is already the rect's CENTRE and this function
+ * needs sw/sh and nothing else. The label rides the rotation with the block, so
+ * a rotated crate is lettered along its own footprint rather than across it.
+ *
+ * The size comes from the SHORTER side, which is the only one that can clip a
+ * centred line vertically, with a floor so a small footprint is still legible;
+ * fillText's own maxWidth then squeezes a long kind horizontally rather than
+ * letting it run out of its square. That bound is ROUNDED, because 48 * 0.8 is
+ * 38.400000000000006 in binary floating point and a text-fitting width has no
+ * use for the tail.
+ */
+function drawPlainObject(
+  ctx: CanvasRenderingContext2D,
+  sw: number,
+  sh: number,
+  kind: string,
+): void {
+  ctx.fillStyle = plainObjectColors[0];
+  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.fillStyle = plainObjectColors[1];
+  ctx.font = `${Math.max(8, Math.round(Math.min(sw, sh) / 3))}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(kind, 0, 0, Math.round(sw * 0.8));
 }
 
 /**
@@ -90,6 +150,12 @@ export function paint(ctx: CanvasRenderingContext2D, ops: DrawOp[], images: Imag
     ctx.rotate(op.rot);
     if (image) {
       ctx.drawImage(image, -op.sw / 2, -op.sh / 2, op.sw, op.sh);
+    } else if (op.plain !== undefined) {
+      // NO PICTURE WAS EVER ASKED FOR, which is a different fact from the one
+      // below and must look different. Only an object whose art did not resolve
+      // carries `plain` (scene-plan.ts's objectImage), and spec §4 promises it
+      // stays, drawn from its kind, rather than being marked broken.
+      drawPlainObject(ctx, op.sw, op.sh, op.plain);
     } else {
       // Not a silent visibility decision (spec §7's whole point) — planScene
       // already decided this op belongs on screen; an ImageMap that has not

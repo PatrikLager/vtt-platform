@@ -7,22 +7,87 @@
 // an adventure directory, followed here as the sibling pattern to match.
 //
 // A square's own tile name (Map.Tiles) resolves only against the STANDARD
-// vocabulary (standard.go) — that never needs a pack. A square's ART, when
-// overridden, resolves against its own pack manifest (Pack/PackTile,
-// resolve.go's Resolve); this package owns that manifest format directly
-// rather than importing one, because a pack is content (design spec §4.2)
-// with no engine behaviour riding on it — nothing about Kind/Material ever
-// comes from a pack (see Resolve's doc comment for why that boundary is
-// load-bearing). Compiling a loaded Map into wire events is compile.go's job
+// vocabulary (standard.go) — that needs nothing else. A square's ART, when
+// overridden, resolves by FILENAME inside the campaign's one flat art/
+// directory, through internal/artlib (resolve.go's Resolve, and
+// 2026-09-02-art-is-a-flat-library design spec §3.2). Nothing about
+// Kind/Material ever comes from art — see Resolve's doc comment for why that
+// boundary is load-bearing.
+//
+// A MAP THAT DECLARES A PACK IS REFUSED, by Load, through decodeStrict's
+// DisallowUnknownFields — `json: unknown field "pack"`, and the same for any
+// rename. Map has no Pack field, mapJSON has none either since 2026-09-06 (the
+// two it kept solely to word a migration message went with the route Patrik
+// ruled out), and since Task 7 of the art-is-a-flat-library plan there is no
+// Pack, PackTile or LoadPack in this package at all. Nothing here reads a
+// manifest of any kind: the only art code in the tree is internal/artlib, and it
+// looks a piece up by filename.
+//
+// Compiling a loaded Map into wire events is compile.go's job
 // (Task 4, spec §5) — the one and only reason this package depends on
 // contract/gen/go/vtt/v1 at all; nothing in format.go, load.go, standard.go,
 // or resolve.go touches it.
 package mapdef
 
 // MapFormatVersion is the map format this server understands. A map declares
-// its own, and a mismatch is refused by name rather than guessed at — see
-// LoadPack's PackFormatVersion for why the two version independently.
+// its own, and a mismatch is refused by name rather than guessed at.
+//
+// It used to be one of two independent version numbers, the other being
+// PackFormatVersion — a pack was shared by many maps, so a single shared
+// number would have forced every pack on disk to be rewritten the first time
+// the map format moved. Packs left at 2026-09-02-art-is-a-flat-library Task 7.
+// The successor split lives in internal/artlib, whose sidecars carry their own
+// format_version for the same reason: one picture is named by many maps.
 const MapFormatVersion int32 = 1
+
+// MinCellPx and MaxCellPx bound a map's declared cell_px — how many pixels one
+// grid square of this map's art occupies.
+//
+// BORROWED FROM MapTool, which solves the same problem on the same object: grid
+// size lives on its Zone, clamped MIN_GRID_SIZE 9 to MAX_GRID_SIZE 350. The
+// bounds exist here for the reason theirs do — 0 and 100000 are not smaller and
+// larger squares, they are a file that cannot mean what it says.
+//
+// THE NUMBERS DELIBERATELY DIFFER FROM THEIRS, 8..1024 against 9..350, and the
+// divergence is written down so the next reader comparing the two does not
+// assume one is a typo:
+//
+//   - THE FLOOR IS ESSENTIALLY THEIRS. 8 against 9 is the same judgement about
+//     the same thing — below roughly a dozen pixels a square carries no tile
+//     detail at all — and 8 is chosen only because it is the power of two every
+//     art tool's export dialog already offers. Nothing rests on the one-pixel
+//     difference; either would refuse the same files.
+//   - THE CEILING IS THREE TIMES THEIRS, AND THAT IS THE REAL DIVERGENCE.
+//     MapTool's 350 is a RENDERING bound: it draws at gridSize * zoom every
+//     frame, so an enormous grid size is a real cost in a real window. Nothing
+//     in this renderer draws at native size — client/src/view/spectator.ts fits
+//     the whole scene into the pane and lets drawImage scale each piece — so a
+//     1024px art set costs a decode and nothing else. Our ceiling is therefore
+//     not doing MapTool's job; it exists to catch a typo (a stray zero, a value
+//     in some other unit) while leaving every resolution anyone actually ships
+//     art at comfortably inside. 1024 is four times the 256 high-DPI sets use
+//     and sixteen times the 64 default.
+//
+// IF THIS CLIENT EVER GAINS ZOOM AND DRAWS AT NATIVE SIZE, that reasoning
+// expires and the ceiling becomes a rendering bound like theirs — which is the
+// point at which their 350 stops being a divergence and starts being data.
+//
+// A VALUE OUTSIDE THEM IS REFUSED, NEVER CLAMPED INTO RANGE. Silently serving
+// 1024 to a file that says 100000 is the "ignore it and load anyway" answer this
+// format refuses everywhere else — see decodeStrict's DisallowUnknownFields
+// (load.go), which refuses a key this server has no field for rather than
+// dropping it, on the same argument: a file meaning something other than it says
+// draws the wrong thing with nobody told.
+//
+// DUPLICATED IN internal/campaigncfg, which bounds the campaign-wide default by
+// the same pair and may not import this package (it is self-only, and a settings
+// reader has no business knowing the map format). cmd/vtt imports both and is
+// the one place that can see them at once: its
+// TestTheCellPxConstantsAgreeAcrossThePackagesThatCarryThem is the guard.
+const (
+	MinCellPx int32 = 8
+	MaxCellPx int32 = 1024
+)
 
 // Map is one fully-loaded, fully-validated map file (spec §4.1's two-layer
 // shape). Tiles and Overrides are BOTH keyed "x,y" (column then row; a comma
@@ -30,7 +95,9 @@ const MapFormatVersion int32 = 1
 // same granularity, so each layer can be read independently of the other.
 type Map struct {
 	// FormatVersion is the format this map file declares itself written in
-	// (design spec §7, "Format versions, on maps and on packs separately").
+	// (design spec §7, "Format versions, on maps and on packs separately" —
+	// the pack half of that sentence left at art-is-a-flat-library Task 7; an
+	// art sidecar carries its own version now, see internal/artlib).
 	// Load refuses a file that omits it or names one this server does not
 	// understand — see Load's own checks immediately after decodeStrict —
 	// so by the time a *Map exists, FormatVersion is always
@@ -41,12 +108,26 @@ type Map struct {
 	ID, Name     string
 	GridW, GridH int32
 
-	// Pack names the custom pack Overrides values resolve against (spec
-	// §4.2). Load does not read the pack file itself — LoadPack and Resolve
-	// (resolve.go) do that, separately, since a map names its pack by ID
-	// rather than embedding it — so Pack is carried through unvalidated by
-	// Load; it may legally be empty for a map that uses only standard tiles.
-	Pack string
+	// CellPx is how many pixels one grid square of THIS MAP's art occupies,
+	// bounded by MinCellPx..MaxCellPx above.
+	//
+	// ZERO MEANS UNDECLARED, and that is the field's most important state
+	// rather than a defensive default: every map in this repo declares none, and
+	// a caller holding the campaign-wide default (campaign.json's cell_px, via
+	// internal/campaigncfg) needs to know which maps are asking to inherit it.
+	// Load never invents a number here — an absent field stays 0, and only a
+	// declared one is carried.
+	//
+	// IT WAS A CAMPAIGN-LEVEL SETTING AND ONLY THAT until 2026-09-05
+	// (art-is-a-flat-library design spec §6, amended that day on Patrik's
+	// ruling). The original argument — "a grid is uniform... One number per
+	// campaign says that plainly" — is true of one MAP and false of a campaign:
+	// grid size is exactly what differs between an art set drawn at 64 and one
+	// drawn at 128, so the first time a DM installs both, a campaign-wide number
+	// is wrong for one of them. MapTool puts it on the Zone for the same reason.
+	// The campaign value stays, as the default a map inherits by declaring
+	// nothing.
+	CellPx int32
 
 	// Tiles declares the NATURE of every square: what it structurally IS,
 	// enforced by the engine (spec §3.2).
@@ -67,10 +148,12 @@ type Map struct {
 
 	// Overrides is sparse and optional: it changes a square's PICTURE only,
 	// never its nature. Deleting the entire map renders and plays
-	// identically in every way that matters (spec §4.1). Values are pack
-	// tile names, carried opaque by Load — resolving one against a *Pack is
-	// Resolve's job (resolve.go), not Load's: Load never takes a pack
-	// argument, and per-square resolution needs one.
+	// identically in every way that matters (spec §4.1). Values are ART IDS
+	// — one kebab-case filename stem in the campaign's art/ — carried opaque
+	// by Load: resolving one is Resolve's job (resolve.go), not Load's, since
+	// Load never takes an art directory and per-square resolution needs one.
+	// A value that resolves to nothing costs its square's picture and one
+	// warning, never the map.
 	Overrides map[string]string
 
 	Objects    []Object
@@ -108,47 +191,4 @@ type Object struct {
 type Placement struct {
 	TokenID, ActorID string
 	X, Y             int32
-}
-
-// PackTile is one named entry from a pack manifest (spec §4.2) — a tile
-// picture or an object picture; the two share this shape because a
-// pack.json entry looks identical whichever list it sits in, and neither
-// list needs a different one. Kind and Material here are ADVISORY: authoring
-// metadata a human or an LLM uses to pick a tile deliberately (spec §1.5),
-// carrying no authority over a square's actual nature — Resolve (resolve.go)
-// never reads them as fact, only m.Tiles does.
-type PackTile struct {
-	Name, Kind, Material       string
-	File, FileOpen, FileClosed string
-	Desc                       string
-}
-
-// PackFormatVersion is the pack format this server understands, and it
-// moves INDEPENDENTLY of MapFormatVersion. A pack is shared (design spec §7,
-// "Format versions, on maps and on packs separately") — one tileset backs
-// many maps — so a single shared version number would force every pack on
-// disk to be rewritten the first time the map format moved. LoadPack
-// (load.go) refuses a pack that omits format_version or names one this
-// server does not understand, mirroring Load's own two-step refusal for
-// maps.
-const PackFormatVersion int32 = 1
-
-// Pack is one loaded pack manifest (spec §4.2), keyed by tile/object name
-// for the O(1) lookup Resolve needs per square. LoadPack never touches a
-// Map: a pack is reusable content, not bound to any one map, mirroring spec
-// §4.3's "load standalone" principle applied to art rather than geometry.
-type Pack struct {
-	// FormatVersion is the format this pack manifest declares itself
-	// written in (design spec §7, "Format versions, on maps and on packs
-	// separately"). LoadPack refuses a file that omits it or names one this
-	// server does not understand — see LoadPack's own checks immediately
-	// after decodeStrict — so by the time a *Pack exists, FormatVersion is
-	// always PackFormatVersion; it is carried through anyway so a caller
-	// can name the fact rather than assume it.
-	FormatVersion int32
-
-	ID, Name string
-	CellPx   int32
-	Tiles    map[string]PackTile
-	Objects  map[string]PackTile
 }

@@ -204,6 +204,36 @@ test("two in-flight commands resolve to their own results, not each other's", as
   }
 });
 
+// 2026-09-02-art-is-a-flat-library Task 2: CommandResult.warnings (field 5)
+// carries non-fatal facts about a command that SUCCEEDED — load_map fills it
+// when a map names art that is not installed (art design spec §4). Wire
+// resolves send()'s promise with the decoded CommandResult verbatim (see
+// handleFrame's "result" case), so this pins that a field added to the proto
+// reaches the caller through that same generic path, with no per-field
+// plumbing of its own needed in this file.
+test("a result's warnings reach whoever awaited send()", async () => {
+  const gw = fakeGateway((ws, raw) => {
+    const cmd = JSON.parse(raw);
+    ws.send(JSON.stringify({
+      result: { requestId: cmd.requestId, ok: true, sequence: "1", warnings: ["square 0,0 names art \"absent-art\", which is not installed"] },
+    }));
+  });
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    await wire.connect(0n);
+
+    const res = await wire.send(create(ClientCommandSchema, {
+      command: { case: "startSession", value: { name: "S" } },
+    }));
+
+    expect(res.ok).toBe(true);
+    expect(res.warnings).toEqual(["square 0,0 names art \"absent-art\", which is not installed"]);
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 test("every command is given a request id when the caller omits one", async () => {
   // Without one the result is uncorrelatable and send could never resolve.
   let seenID = "";

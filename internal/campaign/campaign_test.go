@@ -253,7 +253,9 @@ func writeFile(t *testing.T, path, content string) {
 // TestOpenTakesACampaignDirectory pins the new contract (spec
 // 2026-09-01-create-scene-leaves-design.md §3): Open takes a DIRECTORY and
 // creates the log inside it, so the same directory can go on to hold maps/
-// and packs/ (Task 5+) without a second top-level path for the campaign.
+// and art/ (Task 5+) without a second top-level path for the campaign. It
+// said "maps/ and packs/" until 2026-09-02-art-is-a-flat-library Task 7
+// deleted the pack; Open's own refusal message names the same two.
 func TestOpenTakesACampaignDirectory(t *testing.T) {
 	dir := t.TempDir()
 	c, err := campaign.Open(dir)

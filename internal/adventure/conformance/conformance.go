@@ -86,7 +86,14 @@ func Run(adventureDir, rulesetsRoot string) error {
 		return fmt.Errorf("conformance: %s: %w", adventureDir, err)
 	}
 
-	envs, err := adventure.Compile(adv, engine.NewState())
+	// Warnings are discarded here on purpose: this checker's contract is a
+	// single error, and its goldens pin the ENVELOPES an adventure compiles to.
+	// An unresolved art reference is a fact about a campaign's installation
+	// rather than about the bundle's conformance — and it is not invisible, it
+	// reaches whoever issues load_adventure (internal/gateway's
+	// handleLoadAdventure). What WOULD be caught here is the consequence: a
+	// degraded square ships an empty art field, which the golden compares.
+	envs, _, err := adventure.Compile(adv, engine.NewState())
 	if err != nil {
 		return fmt.Errorf("conformance: %s: compile: %w", adventureDir, err)
 	}

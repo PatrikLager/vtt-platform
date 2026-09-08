@@ -78,7 +78,7 @@ func (s *Server) handleLoadAdventure(requestID string, cmd *vttv1.LoadAdventure,
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: fmt.Sprintf("gateway: unknown adventure %q", cmd.GetAdventureId())}
 	}
 
-	envs, err := adventure.Compile(adv, st)
+	envs, warnings, err := adventure.Compile(adv, st)
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
@@ -104,5 +104,12 @@ func (s *Server) handleLoadAdventure(requestID string, cmd *vttv1.LoadAdventure,
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
+	// The warnings ride back to whoever issued load_adventure and nowhere else,
+	// exactly as handleLoadMap's do (map.go): a warning is for the issuer, not
+	// for the table, so nothing here broadcasts them. An adventure's art lives
+	// in its own bundle (<adventure>/art, Adventure.ArtDir), so an unresolved
+	// reference is the bundle author's to fix, and before this existed the
+	// whole class was compiled away in silence — see adventure.Compile's own
+	// doc comment for what that cost.
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq, Warnings: warnings}
 }

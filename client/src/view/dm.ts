@@ -11,7 +11,7 @@ import type { State } from "../state";
 import type { Participant } from "../session";
 import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
-import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
+import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, placeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
@@ -231,8 +231,14 @@ export interface DMDeps {
    * beside the command races it on a different transport, and losing that race
    * repaints the panel with exactly the state the command was changing — with
    * nothing left to correct it.
+   *
+   * Resolves to the CommandResult, not void: this used to declare Promise<void>,
+   * which erased CommandResult.warnings at this exact boundary — app.ts's `act`
+   * (the function every caller here is actually given) already carries a
+   * warning into the toast, but nothing calling through THIS field's old type
+   * could have read one back (2026-09-02-art-is-a-flat-library Task 2).
    */
-  send: (c: ClientCommand) => Promise<void>;
+  send: (c: ClientCommand) => Promise<CommandResult>;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
   /**
@@ -470,6 +476,36 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   // The DM's half of spec §3.1: a campaign starts with nobody holding
   // anything, and characters are assigned afterwards. Without this the whole
   // control feature is reachable only by an agent over MCP.
+  // WHO EXISTS, from BOTH sources, because neither alone is the answer
+  // (Patrik's ruling 2026-09-06). Control is durable — it lives in the log as
+  // controllerIds and outlives any connection — while presence is
+  // connection-scoped and in-memory. Reading people from presence alone is
+  // what made a held character render as a raw participant id and made it
+  // impossible to hand one to somebody who had not dialled in, which is what
+  // session prep IS.
+  //
+  // The ROSTER is authoritative for names and covers people who are away. But
+  // it is a FETCH, so it is null before it lands and stale after somebody joins
+  // by share link — and that person is in presence and not yet on the books.
+  // Taking the union keeps both cases: the DM can grant to anyone on the
+  // roster or anyone they can see. Keyed by participant id, so the two sources
+  // agreeing about a person yields one entry, with the roster's name winning
+  // because it is the authoritative one.
+  const known = new Map<string, { name: string; present: boolean }>();
+  for (const r of d.roster ?? []) known.set(r.participantId, { name: r.name, present: false });
+  for (const p of d.participants) {
+    const had = known.get(p.participantId);
+    // `||`, not `??`: an EMPTY roster name must fall through to the presence
+    // one. identity.CreateInvite does not validate the name, so `--name ""` is
+    // reachable, and nullish-coalescing would render a blank where a name goes.
+    known.set(p.participantId, { name: had?.name || p.displayName, present: true });
+  }
+  // Sorted by NAME, ties broken on id: the console is rebuilt on every event,
+  // and a list that reshuffles as people come and go is unreadable and
+  // untestable. Same rule session.participants already applies to presence.
+  const knownSorted = [...known.entries()].sort(([ai, a], [bi, b]) =>
+    a.name === b.name ? (ai < bi ? -1 : 1) : (a.name < b.name ? -1 : 1));
+
   const controlRows: HTMLElement[] = [];
   for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
     const row = el("div", "control-actor");
@@ -482,9 +518,25 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     // so someone can hold a character while away and the DM still needs to see
     // it — otherwise the character reads as unowned and gets handed out twice.
     for (const id of a.controllerIds) {
-      const who = d.participants.find((p) => p.participantId === id);
+      // Named from `known`, so a holder who is away still has a NAME. Falling
+      // back to the raw id is kept for the one case that earns it: somebody
+      // holding a character who is in neither the roster nor presence, where an
+      // id is all there is. Before this the fallback fired for anyone merely
+      // offline, and a uuid where a name belongs reads as a broken console
+      // rather than as a player who stepped away.
+      const who = known.get(id);
       const held = el("span", "held");
-      held.appendChild(el("span", "held-who", who ? who.displayName : id));
+      // The id is the last resort, and an empty name falls back to it too: a
+      // blank where a holder's name belongs is worse than a uuid, because it
+      // reads as nobody holding it rather than as somebody unnamed.
+      held.appendChild(el("span", "held-who", who?.name || id));
+      // PRESENCE KEEPS EXACTLY ONE JOB: here or away. It no longer decides who
+      // can hold a character or what they are called.
+      // `!who?.present`, so a holder in NEITHER source is marked away too.
+      // They are the person most certainly not at the table, and the earlier
+      // `who && !who.present` left them the only holder with no marker at all
+      // — which reads as "here".
+      if (!who?.present) held.appendChild(el("span", "away", "away"));
       const off = document.createElement("button");
       off.className = "chip revoke";
       off.textContent = "Revoke";
@@ -504,10 +556,10 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     blank.value = "";
     blank.textContent = "choose a participant";
     target.appendChild(blank);
-    for (const p of d.participants) {
+    for (const [id, who] of knownSorted) {
       const o = document.createElement("option");
-      o.value = p.participantId;
-      o.textContent = p.displayName;
+      o.value = id;
+      o.textContent = who.name;
       target.appendChild(o);
     }
     // Remembered ACROSS RE-RENDERS, exactly like the text inputs above and for

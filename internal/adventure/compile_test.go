@@ -28,7 +28,7 @@ func TestASceneWithNoTilesLoadsAndCompilesWithNoTerrain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	got, err := adventure.Compile(adv, engine.NewState())
+	got, _, err := adventure.Compile(adv, engine.NewState())
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 	}
 	st := engine.NewState()
 
-	got, err := adventure.Compile(adv, st)
+	got, _, err := adventure.Compile(adv, st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,8 +168,18 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 // adventure must produce byte-identical scene events, or the two formats
 // will drift and only one of them will ever be tested. testdata/cellar-adv's
 // single scene carries the same tiles/overrides/objects/placements as
-// internal/mapdef/testdata/valid/cellar.json, and its tiles/pack.json is the
-// same pack (mossy-keep) as internal/mapdef/testdata/packs/mossy-keep.
+// internal/mapdef/testdata/valid/cellar.json.
+//
+// BOTH PATHS ARE POINTED AT THE SAME ART ROOT, testdata/cellar-adv/art, and
+// they have to be or the comparison means nothing: since
+// 2026-09-02-art-is-a-flat-library Task 3 an art name that is not installed
+// degrades to a plain square, so two paths reading two different (or two
+// empty) art directories would agree perfectly on a scene with no art in it
+// at all. The adventure side reaches that directory the only way it can —
+// adventure.Load derives <dir>/art itself — and the standalone side is handed
+// it explicitly. The fixture's .png files hold the string "fake-png" rather
+// than image bytes, because internal/artlib confirms a picture exists and
+// never reads one.
 //
 // This test lives HERE rather than in internal/mapdef (where the maps-as-
 // geometry task brief's own draft placed it) deliberately: it must import
@@ -178,7 +188,10 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 // §4.3) — adventure, which already may depend on mapdef, is the one
 // direction that needs no arch-lint exception to host a genuine two-path
 // test. It is also not two calls into the same helper: mapdef.Compile
-// (called via mapdef.Load+LoadPack) and adventure.Compile (called via
+// (called via mapdef.Load, then Compile against the art directory — it read
+// "mapdef.Load+LoadPack" until 2026-09-02-art-is-a-flat-library Task 7 deleted
+// that loader, which contradicted this file's own fixture doc below) and
+// adventure.Compile (called via
 // adventure.Load) are two independently-invoked public entry points that
 // happen to share ONE construction site inside (mapdef.BuildSceneCreated,
 // internal/mapdef/compile.go) — this test is what proves that sharing is
@@ -188,11 +201,7 @@ func TestBothLoadPathsEmitIdenticalSceneEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := mapdef.LoadPack("../mapdef/testdata/packs/mossy-keep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	standalone, _, err := mapdef.Compile(m, p)
+	standalone, _, err := mapdef.Compile(m, "testdata/cellar-adv/art")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +211,7 @@ func TestBothLoadPathsEmitIdenticalSceneEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	embedded, err := adventure.Compile(adv, engine.NewState())
+	embedded, _, err := adventure.Compile(adv, engine.NewState())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,12 +277,12 @@ func TestCompileIsDeterministic(t *testing.T) {
 	}
 	st := engine.NewState()
 
-	first, err := adventure.Compile(adv, st)
+	first, _, err := adventure.Compile(adv, st)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for round := 1; round < 10; round++ {
-		got, err := adventure.Compile(adv, st)
+		got, _, err := adventure.Compile(adv, st)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +308,7 @@ func TestCompileDoesNotMutateState(t *testing.T) {
 	st := engine.NewState()
 	before := st.Snapshot()
 
-	if _, err := adventure.Compile(adv, st); err != nil {
+	if _, _, err := adventure.Compile(adv, st); err != nil {
 		t.Fatal(err)
 	}
 	after := st.Snapshot()
@@ -359,7 +368,7 @@ func TestCompileCollisions(t *testing.T) {
 			st := engine.NewState()
 			c.seed(st)
 
-			envs, err := adventure.Compile(adv, st)
+			envs, _, err := adventure.Compile(adv, st)
 			if err == nil {
 				t.Fatal("want error, got nil")
 			}
@@ -461,7 +470,7 @@ func TestCompileHandlesLopsidedAdventureShapes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.adv.ID, tc.adv.Name = "adv", "Adv"
 			tc.adv.OpeningNarration = "it begins"
-			got, err := adventure.Compile(tc.adv, engine.NewState())
+			got, _, err := adventure.Compile(tc.adv, engine.NewState())
 			if err != nil {
 				t.Fatalf("Compile: unexpected error: %v", err)
 			}

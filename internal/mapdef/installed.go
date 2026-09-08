@@ -1,32 +1,38 @@
 package mapdef
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 )
 
-// ErrPackNotLoaded marks the one failure whose remedy depends on WHO is
-// asking: a map that names a pack the caller did not hand over. At boot
-// (cmd/vtt's loadMapsDir) that means the pack is not installed, and the
-// operator installs it. At request time (internal/gateway's mapByID) it
-// can also mean the pack IS installed, was put there after the server
-// started, and is not loaded yet — packs are still boot-time only, because
-// the 2026-09-01-create-scene-leaves design spec §5 asks for maps on
-// demand and is silent about packs.
-//
-// Wrapped rather than described in prose so the on-demand caller can add
-// the half only it knows to be true (restarting picks the pack up) without
-// the boot caller saying the same thing, where it would be wrong.
-var ErrPackNotLoaded = errors.New("that pack is not among the ones loaded")
+// ErrPackNotLoaded is gone, and its absence is the point. It marked the one
+// failure whose remedy depended on WHO was asking — a map naming a pack the
+// caller had not handed over, which at boot meant "not installed" and at
+// request time could also mean "installed since we started, and packs are
+// read once". Nothing can produce that failure any more: art is read from a
+// directory at load time, per art-is-a-flat-library design spec §3.6, so
+// there is no boot-time art load for a piece to arrive after. Its two
+// callers' handling went with it (internal/gateway's mapByID added the
+// restart sentence; this function named the pack).
 
 // LoadInstalled loads and fully validates the ONE map installed as
 // <mapsDir>/<id>.json: the file is read, every check Load makes runs, the
-// filename and the map's own declared id must agree, and the map is
-// dry-run compiled against the pack it names (packs[m.Pack] — a map that
-// declares no pack looks up packs[""], a legal zero-value read, and Compile
-// accepts the nil *Pack that comes back). The returned *Map has passed
-// everything a map must pass before it can be put in front of a table.
+// filename and the map's own declared id must agree, and the map is dry-run
+// compiled against artDir, the campaign's flat art/ directory. The returned
+// *Map has passed everything a map must pass before it can be put in front
+// of a table.
+//
+// A map whose art is not installed PASSES (art-is-a-flat-library design spec
+// §4): the dry run degrades those squares and warns, and this function
+// discards the warnings because it answers with a *Map rather than with a
+// load result — the live Compile call the caller makes next returns the same
+// warnings, computed against the same directory, and that is the one that
+// reaches whoever asked. Art that exists and CANNOT BE READ degrades the same
+// way as of Patrik's ruling of 2026-09-04; the one art failure still fatal
+// here is a sidecar declaring a format_version LATER than this server
+// understands (see Resolve's own doc comment for why those two go opposite
+// ways; a version BELOW it is a typo and degrades). An empty
+// artDir is legal and means no art resolves.
 //
 // This function exists because there are two ways into a campaign's maps
 // and they must not disagree. cmd/vtt's loadMapsDir calls it once per file
@@ -55,7 +61,7 @@ var ErrPackNotLoaded = errors.New("that pack is not among the ones loaded")
 // fs.ErrNotExist (through loadAs' own decodeStrict), so a caller can tell
 // "nothing is installed under that name" from "something is installed and
 // it is broken" without matching on message text.
-func LoadInstalled(mapsDir, id string, packs map[string]*Pack) (*Map, error) {
+func LoadInstalled(mapsDir, id, artDir string) (*Map, error) {
 	file := id + ".json"
 	if !idIsAFilename(id) {
 		return nil, fmt.Errorf(
@@ -85,23 +91,14 @@ func LoadInstalled(mapsDir, id string, packs map[string]*Pack) (*Map, error) {
 			display, m.ID)
 	}
 
-	// Dry run: proves every override and every object's art actually
-	// resolves (kind/material from the standard vocabulary, art from the
-	// pack) before this map is considered loadable at all. Compile itself,
-	// not a bespoke second check — the same "one construction site"
-	// discipline internal/adventure/load.go's loadScenes follows.
-	pack := packs[m.Pack]
-	if _, _, err := Compile(m, pack); err != nil {
-		// A map naming a pack that was not handed over fails Compile for
-		// art it cannot resolve, and that error says only that the art
-		// needs a pack. Which pack, and the fact that it is not loaded, is
-		// knowledge only this function has; WHY it is not loaded is
-		// knowledge only the caller has, so that half is left to the
-		// caller through ErrPackNotLoaded (above).
-		if pack == nil && m.Pack != "" {
-			return nil, fmt.Errorf("map %q (%s) declares pack %q: %w — %w",
-				m.ID, display, m.Pack, ErrPackNotLoaded, err)
-		}
+	// Dry run: proves every square's nature resolves against the standard
+	// vocabulary, and that no art this map names was written for a format LATER
+	// than this server understands, before the map is considered loadable at
+	// all. Compile itself, not a bespoke second check — the same "one
+	// construction site" discipline internal/adventure/load.go's loadScenes
+	// follows, and the reason boot and on-demand cannot drift apart on what a
+	// loadable map is.
+	if _, _, err := Compile(m, artDir); err != nil {
 		return nil, fmt.Errorf("map %q (%s): %w", m.ID, display, err)
 	}
 	return m, nil

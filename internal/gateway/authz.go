@@ -5,8 +5,9 @@
 // This doc used to end "it does no I/O — Task 5 wires this core to a real
 // WebSocket server", from when the package was a pure core with no server
 // around it. Both halves have since stopped being true, and the second one
-// first: the WebSocket server, the static bundle and pack-file serving all
-// live here now. As of 2026-09-01-create-scene-leaves Task 6 the package
+// first: the WebSocket server and the static bundle both live here now (so did
+// raw pack-file serving, until 2026-09-02-art-is-a-flat-library Task 7 deleted
+// it with the pack). As of 2026-09-01-create-scene-leaves Task 6 the package
 // also READS one file — map.go's mapByID probes the campaign's maps/ when
 // load_map names a map the set does not hold, because that plan's design
 // spec §5 assigns the probe to the server on purpose. Authorization itself

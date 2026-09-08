@@ -1,14 +1,32 @@
-// Command genmappack generates TWO packs: campaigns/example/packs/cellar-
-// basics, the starter pack Task 10 of the maps-as-geometry arc ships as
-// campaigns/example/maps/cellar.json's own art (design spec §4.2, §1.5's "a
-// pack manifest, with no other help") — moved under campaigns/example/ by
-// Task 5 of the 2026-09-01-create-scene-leaves plan, once maps stopped
-// being server-wide --maps-dir content and became a campaign's own — and
-// (added for review finding C2, 2026-08-16) client/public/std-pack, a
-// baseline picture for every one of internal/mapdef/standard.go's eleven
-// standard natures — see std_pack.go's own header comment for why a square
-// with no art override needs this at all, and why it ships from a different
-// place than the cellar pack does.
+// Command genmappack generates TWO sets of art: the cellar starter art that
+// campaigns/example/maps/cellar.json's overrides name, into the campaign's own
+// flat art/ directory, and (added for review finding C2, 2026-08-16)
+// client/public/std-pack, a baseline picture for every one of
+// internal/mapdef/standard.go's eleven standard natures — see std_pack.go's own
+// header comment for why a square with no art override needs this at all, and
+// why it ships from a different place than the cellar art does.
+//
+// THE TWO HALVES NOW WRITE DIFFERENT FORMATS, and that is the design rather
+// than a migration left half done. The cellar half writes what
+// internal/artlib reads (2026-09-02-art-is-a-flat-library design spec §3): one
+// picture per file, a sidecar beside each TILE picture and none beside an
+// object's, and kebab-case stems that ARE the art ids — no manifest, because
+// nothing declares an id. The std half keeps its pack.json, because its reader
+// is client/src/view/pack-assets.ts, which fetches a manifest out of the
+// client's own bundle and never goes through artlib at all.
+//
+// THE NAME genmappack IS NOW HALF WRONG and is kept anyway: renaming the
+// directory would move every citation to it in this tree for a tool that still
+// generates one pack. Whoever renames it should do it on its own.
+//
+// WHAT THE FLAT FORMAT COSTS THIS TOOL: the per-piece `desc` strings below have
+// nowhere on disk to go. A sidecar's fields are fixed by artlib's strict decode
+// (format_version, kind, material, open, closed) and no route lists art, so a
+// description reaches nobody — where pack.json carried it to a model choosing
+// tiles (design spec §1.5's test was an LLM authoring a map from the document
+// and a manifest alone). They stay here as this catalogue's own documentation
+// and as what the std half still ships; giving them a reader again is a format
+// change and belongs to whoever wants one.
 //
 // WHY GENERATED RATHER THAN DRAWN OR FETCHED. Patrik's ruling: copy no
 // image, fetch art from nowhere else on the web (fantasymapbuilder.com's
@@ -18,10 +36,11 @@
 // this repo already builds with Go, and Pillow was checked and rejected for
 // exactly that reason — buys three things at once: provenance is
 // unambiguous (every pixel traces to the code below, not to a URL), the
-// pack is RE-TUNABLE rather than an opaque binary (change a colour, rerun,
-// diff the PNGs), and this file doubles as a worked example of what a pack
-// author must actually produce — pack.json plus images beside it, in the
-// exact shape internal/mapdef/load.go's LoadPack expects.
+// art is RE-TUNABLE rather than an opaque binary (change a colour, rerun,
+// diff the PNGs), and this file doubles as a worked example of what an art
+// author must actually produce — which, after Task 8 of the art-is-a-flat-
+// library plan, is the flat layout internal/artlib reads rather than the
+// manifest below.
 //
 // Deliberately simple: flat colour fields, per-pixel noise, and a few lines
 // or a filled circle. "Simple textured surfaces... and a handful of object
@@ -29,8 +48,8 @@
 // good art, only to be UNAMBIGUOUS art — a wall reads as a wall, a crate
 // reads as a crate, at 64px in a browser tile.
 //
-// Run: go run ./tools/genmappack [-out campaigns/example/packs/cellar-basics] [-std-out client/public/std-pack]
-// Both packs are (re)written on every run — there is no flag to write only one.
+// Run: go run ./tools/genmappack [-out campaigns/example/art] [-std-out client/public/std-pack] [-cell-px 64]
+// Both sets are (re)written on every run — there is no flag to write only one.
 package main
 
 import (
@@ -40,17 +59,33 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
 )
 
-// size is the pack's cell_px (design spec §4.2's pack.json field): every
-// image this tool emits is size x size. 64, per the Task 10 brief — "Keep
-// the images small — a few KB each, 64px is plenty" — big enough to read as
-// a distinct texture at typical camera scale, small enough that the whole
-// pack stays a handful of KB on disk and over the wire.
-const size = 64
+// size is how many pixels of art one grid square gets: every image this tool
+// emits is size x size. It is what campaign.json's cell_px DECLARES about a
+// campaign's art (design spec §6), and it stopped being a pack field when the
+// pack left — hence -cell-px below, which sets it.
+//
+// A var rather than a const, and set once from a flag before anything draws:
+// every drawing primitive in this file bounds its loops by it. Nothing writes
+// it after generate begins.
+//
+// 64 by default, per the Task 10 brief — "Keep the images small — a few KB
+// each, 64px is plenty" — big enough to read as a distinct texture at typical
+// camera scale, small enough that the whole set stays a handful of KB on disk
+// and over the wire. campaigns/example/campaign.json declares the same number
+// as its cell_px, which is what makes the shipped art and the shipped settings
+// agree; the pair is checked from both ends
+// (TestTheCommittedArtIsDrawnAtThisToolsOwnDefault here, and cmd/vtt's
+// TestTheShippedCampaignDeclaresTheCellSizeItsArtWasDrawnAt through
+// campaigncfg, which this tool may not import).
+var size = defaultCellPx
+
+const defaultCellPx = 64
 
 // seed is fixed so a rerun with unchanged code reproduces byte-identical
 // PNGs — REPRODUCIBLE, this file's own header comment's second promise. A
@@ -60,9 +95,60 @@ const size = 64
 // discover that every other file also moved.
 const seed = 20260812
 
+// --- art/'s on-disk shape (design spec §3) ---------------------------------
+//
+// A piece of art is a PICTURE, and for tile art a SIDECAR beside it carrying
+// what a picture cannot say. Nothing declares an id: the filename stem is the
+// id, so artOut.ID is what every filename below is built from and there is no
+// second place for the two to disagree.
+
+// sidecarOut is <id>.json, the file internal/artlib's own sidecar type decodes.
+//
+// ITS KEYS ARE artlib's, NOT A SUPERSET: that decode runs
+// DisallowUnknownFields, so one extra key here would make every piece this tool
+// writes unreadable. That is why `desc` is absent (see this file's header for
+// what the flat format costs) and why omitempty is load-bearing rather than
+// tidy — artlib refuses "open"/"closed" on anything whose kind is not a door.
+//
+// Written WITHOUT importing internal/artlib, for the reason packOut below is
+// its own type: this is a content tool, and a shape it writes into a campaign
+// directory should not pull it into the server's internals. What keeps the two
+// honest is genmappack_test.go, which runs artlib.Validate and artlib.Lookup
+// over what this writes — a stronger check than a shared struct, because it
+// exercises the reader rather than agreeing with it by construction.
+type sidecarOut struct {
+	FormatVersion int32  `json:"format_version"`
+	Kind          string `json:"kind"`
+	Material      string `json:"material"`
+	Open          string `json:"open,omitempty"`
+	Closed        string `json:"closed,omitempty"`
+}
+
+// artFormatVersion mirrors artlib.FormatVersion (1) without importing it, the
+// same way packFormatVersion mirrors what its own reader wanted. The test above
+// is what stops the two drifting.
+const artFormatVersion int32 = 1
+
+// artOut is one piece this tool wrote into art/: what it is, and every file it
+// put on disk for it. Returned by generate so a test can walk the pieces
+// instead of re-deriving the filenames it would be checking.
+//
+// Kind and Material are EMPTY FOR OBJECT ART, which has no sidecar at all
+// (spec §3.4's asymmetry) — a bare picture is complete, because the map's own
+// object entry already says what the thing does.
+type artOut struct {
+	ID       string
+	Kind     string
+	Material string
+	Desc     string
+	Sidecar  string
+	Pictures []string
+}
+
 // --- pack.json's on-disk shape --------------------------------------------
 //
-// Mirrors internal/mapdef/load.go's packTileJSON/packJSON field-for-field
+// Mirrored internal/mapdef/load.go's packTileJSON/packJSON field-for-field
+// until art-is-a-flat-library Task 7 deleted both
 // (same JSON keys: name, kind, material, file, file_open, file_closed,
 // desc, cell_px) WITHOUT importing that package. That loader type is
 // unexported and shaped for DECODING (no omitempty — a decoder does not
@@ -86,8 +172,9 @@ type packOut struct {
 	// a bare literal (packFormatVersion below), not an import of that
 	// constant, for the same reason this whole type exists unimported: see
 	// the "pack.json's on-disk shape" section comment above packTileOut.
-	// LoadPack (internal/mapdef/load.go) refuses any pack.json omitting
-	// this field, so every pack this tool writes must carry it.
+	// LoadPack (internal/mapdef/load.go) refused any pack.json omitting
+	// this field, so every pack this tool writes carries it; that loader is
+	// gone and nothing reads the result today (see this file's header).
 	FormatVersion int32         `json:"format_version"`
 	ID            string        `json:"id"`
 	Name          string        `json:"name"`
@@ -96,25 +183,99 @@ type packOut struct {
 	Objects       []packTileOut `json:"objects"`
 }
 
-// packFormatVersion mirrors internal/mapdef.PackFormatVersion's current
-// value (1) without importing that package (see the "pack.json's on-disk
+// packFormatVersion mirrored internal/mapdef.PackFormatVersion's value (1)
+// without importing that package, and outlives it (see the "pack.json's on-disk
 // shape" section comment above packTileOut for why packOut/packTileOut are
 // their own encoding-shaped types).
 const packFormatVersion int32 = 1
 
 func main() {
-	out := flag.String("out", "campaigns/example/packs/cellar-basics", "directory to write the cellar starter pack's pack.json and images into")
-	stdOut := flag.String("std-out", "client/public/std-pack",
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// defaultOut and defaultStdOut are the two COMMITTED directories this tool
+// writes, named as constants so a test can say that a plain run targets exactly
+// what the repository ships.
+//
+// THAT IS THE WHOLE JOB OF A DEFAULT HERE: a run with no flags must rewrite the
+// art this repository ships, so `git diff` is the check on whether the generator
+// and the committed bytes still agree. -out pointed at
+// campaigns/example/packs/cellar-basics until art-is-a-flat-library Task 8 — a
+// directory Task 7 had deleted — so a plain run resurrected the deleted pack as
+// UNTRACKED files, and the next `git add -A` would have re-committed what Task 7
+// removed. Nothing said so, because a default is not a value any test had ever
+// looked at; TestAPlainRunTargetsExactlyWhatIsCommitted is that test.
+const (
+	defaultOut    = "campaigns/example/art"
+	defaultStdOut = "client/public/std-pack"
+)
+
+// run is main's whole body, with its arguments and its two streams passed in.
+//
+// SPLIT OUT FOR THE SAME REASON generate IS: main owns the process and this owns
+// the behaviour. Here the behaviour worth owning is the flag layer itself — the
+// defaults, and the refusal of a cell size that would write pictures nothing can
+// draw — which os.Exit inside main put permanently out of reach of a test.
+//
+// It returns an exit code rather than calling os.Exit so that a test can see it.
+// 2 for a flag error, matching what flag.ExitOnError would have produced;
+// flag.ContinueOnError has already printed the message and the usage to stderr
+// by then.
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("genmappack", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	out := fs.String("out", defaultOut,
+		"directory to write the cellar starter art into, as the flat layout "+
+			"internal/artlib reads: <id>.png per picture, <id>.json beside each tile picture")
+	stdOut := fs.String("std-out", defaultStdOut,
 		"directory to write the standard-vocabulary baseline pack's pack.json and images into "+
-			"(see std_pack.go's header comment for why this ships from the client bundle, not a "+
-			"GET /api/packs/{pack}/... route)")
-	flag.Parse()
+			"(see std_pack.go's header comment for why this ships from the client bundle rather "+
+			"than an authenticated art route)")
+	cellPx := fs.Int("cell-px", defaultCellPx,
+		"pixels per grid square: every picture written is this many pixels on a side. "+
+			"It is what a campaign's campaign.json declares as cell_px (bounded 8..1024 there), "+
+			"and it was a pack.json field until the pack left")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	if err := checkCellPx(*cellPx); err != nil {
+		fmt.Fprintf(stderr, "genmappack: %v\n", err)
+		return 1
+	}
+	size = *cellPx
 
 	cellar, std := generate(*out, *stdOut)
-	fmt.Printf("genmappack: wrote %d tile(s), %d object(s) and pack.json into %s\n",
-		len(cellar.Tiles), len(cellar.Objects), *out)
-	fmt.Printf("genmappack: wrote %d standard tile(s) and pack.json into %s\n",
+	fmt.Fprintf(stdout, "genmappack: wrote %d piece(s) of art at %dpx into %s\n",
+		len(cellar), size, *out)
+	fmt.Fprintf(stdout, "genmappack: wrote %d standard tile(s) and pack.json into %s\n",
 		len(std.Tiles), *stdOut)
+	return 0
+}
+
+// checkCellPx refuses a size that would write pictures nothing can draw.
+//
+// IT IS DELIBERATELY NOT THE CAMPAIGN FORMAT'S BOUND. cell_px is bounded 8..1024
+// where it is READ — campaigncfg.MinCellPx and mapdef.MinCellPx carry the
+// numbers and the reasoning — and a campaign.json outside that is refused by
+// name at boot, with an operator holding the file. Repeating those two numbers
+// here would put a third copy in a package that is not allowed to import either
+// (.go-arch-lint.yml), so nothing could compare them; a run at 2000 wastes a
+// regeneration and is then refused loudly, which is a cost worth paying to keep
+// one authority.
+//
+// ZERO IS THE CASE THAT IS SILENT, and the only one this must catch itself:
+// image.NewRGBA accepts an empty rectangle and png.Encode writes it, so the
+// campaign would ship pictures every reader accepts and no board can draw.
+//
+// SPLIT OUT OF main SO IT CAN BE TESTED, like generate below: main owns flags
+// and exit codes, this owns the decision.
+func checkCellPx(v int) error {
+	if v < 1 {
+		return fmt.Errorf("-cell-px %d: a picture is at least one pixel on a side "+
+			"(the campaign format bounds cell_px 8..1024 where it is read)", v)
+	}
+	return nil
 }
 
 // generate writes both packs and returns their manifests.
@@ -127,57 +288,51 @@ func main() {
 // drifts silently from its source the moment somebody retouches a PNG or edits
 // a description, and the licensing argument for this art only holds while the
 // committed bytes really are this program's output.
-func generate(out, stdOut string) (packOut, packOut) {
+func generate(out, stdOut string) ([]artOut, packOut) {
 	mustMkdirAll(out)
 
 	// #nosec G404 -- math/rand is REQUIRED here, not a shortcut. The seed is a
 	// fixed constant so this generator is REPRODUCIBLE: re-running it must emit
 	// byte-identical images, or every regeneration would dirty the repo and the
-	// committed pack could never be verified against its source. crypto/rand
+	// committed art could never be verified against its source. crypto/rand
 	// would make the output different every run, which is the opposite of what
 	// a committed asset generator needs. Nothing here is a secret.
 	rng := rand.New(rand.NewSource(seed))
 
-	tiles := []packTileOut{
-		writeTile(out, rng, "masonry-1", "wall", "stone", "masonry_1.png",
-			"coursed stone blockwork, the standard wall face for the cellar pack",
+	// THE ORDER OF THESE DRAWS IS LOAD-BEARING and outlives the pack: one rng
+	// runs through the cellar art and on into the standard pack below, so
+	// inserting, removing or reordering a draw here changes every std-pack PNG
+	// too. The ids and the drawings are the same ones the pack shipped, with
+	// snake_case filenames rewritten to the kebab-case stems that ARE the art
+	// ids — so these pictures are byte-identical to
+	// campaigns/example/packs/cellar-basics' own, renamed.
+	art := []artOut{
+		writeArtTile(out, rng, "masonry-1", "wall", "stone",
+			"coursed stone blockwork, the standard wall face for the cellar art",
 			drawMasonry),
-		writeTile(out, rng, "earth-1", "floor", "earth", "earth_1.png",
+		writeArtTile(out, rng, "earth-1", "floor", "earth",
 			"packed dirt floor, uneven and speckled with small stones",
 			drawEarth),
-		writeTile(out, rng, "flagstone-1", "floor", "stone", "flagstone_1.png",
+		writeArtTile(out, rng, "flagstone-1", "floor", "stone",
 			"cut flagstone paving, mortared in irregular slabs",
 			drawFlagstone),
-	}
-	tiles = append(tiles, writeDoor(out, rng, "cellar-door", "wood", "cellar_door_closed.png", "cellar_door_open.png",
-		"a banded wooden door; closed and open pictures are the SAME nature (spec §3.3) — "+
-			"opening it changes only which of these two files the renderer picks, never the tile's kind",
-		drawDoorClosed, drawDoorOpen))
-
-	objects := []packTileOut{
-		writeObject(out, rng, "pillar-stone", "pillar_stone.png",
+		writeArtDoor(out, rng, "cellar-door", "wood",
+			"a banded wooden door; closed and open pictures are the SAME nature (spec §3.4) — "+
+				"opening it changes only which of these two files the renderer picks, never the tile's kind",
+			drawDoorClosed, drawDoorOpen),
+		writeArtObject(out, rng, "pillar-stone",
 			"a round stone column, wide enough to block a square's line of sight and passage",
 			drawPillar),
-		writeObject(out, rng, "crate-wood", "crate_wood.png",
+		writeArtObject(out, rng, "crate-wood",
 			"a stacked wooden shipping crate — good cover, or just clutter, depending on how it is placed",
 			drawCrate),
-		writeObject(out, rng, "barrel", "barrel.png",
+		writeArtObject(out, rng, "barrel",
 			"an upright wine barrel, banded in iron",
 			drawBarrel),
-		writeObject(out, rng, "brazier", "brazier.png",
+		writeArtObject(out, rng, "brazier",
 			"a standing iron brazier, coals lit — decorative: it blocks neither sight nor movement",
 			drawBrazier),
 	}
-
-	manifest := packOut{
-		FormatVersion: packFormatVersion,
-		ID:            "cellar-basics",
-		Name:          "Cellar Basics",
-		CellPx:        size,
-		Tiles:         tiles,
-		Objects:       objects,
-	}
-	writeManifest(out, manifest)
 
 	// The standard-vocabulary baseline pack (review finding C2, std_pack.go's
 	// own header comment for the full why/where). rng is NOT re-seeded here —
@@ -185,7 +340,7 @@ func generate(out, stdOut string) (packOut, packOut) {
 	// the WHOLE tool is what the fixed seed reproduces byte-identically, not
 	// just one half of it in isolation.
 	stdManifest := writeStandardPack(stdOut, rng)
-	return manifest, stdManifest
+	return art, stdManifest
 }
 
 // mustMkdirAll creates dir (and any missing parents), or exits loudly.
@@ -211,54 +366,112 @@ func colorRGBA(r, g, b uint8) color.RGBA {
 	return color.RGBA{R: r, G: g, B: b, A: 0xff}
 }
 
+// drawPicture draws one canvas via draw and PNG-encodes it to out/file.
+//
+// rng is threaded through from generate's single seeded source rather than
+// re-seeded per call, so the WHOLE run — not just one texture in isolation — is
+// what a fixed seed reproduces. Every picture either half of this tool emits
+// goes through here, which is what keeps that thread unbroken.
+func drawPicture(out string, rng *rand.Rand, file string, canvas *image.RGBA, draw func(*image.RGBA, *rand.Rand)) {
+	draw(canvas, rng)
+	writePNG(filepath.Join(out, file), canvas)
+}
+
+// writeArtTile writes one plain (non-door) piece of TILE art: the picture
+// <id>.png, and the sidecar <id>.json beside it that a tile is REQUIRED to have
+// (design spec §3.4) because kind and material are what the engine acts on and
+// a picture cannot say them.
+func writeArtTile(out string, rng *rand.Rand, id, kind, material, desc string, draw func(*image.RGBA, *rand.Rand)) artOut {
+	picture := id + ".png"
+	drawPicture(out, rng, picture, newCanvas(), draw)
+	sidecar := writeSidecar(out, id, sidecarOut{
+		FormatVersion: artFormatVersion, Kind: kind, Material: material,
+	})
+	return artOut{ID: id, Kind: kind, Material: material, Desc: desc,
+		Sidecar: sidecar, Pictures: []string{picture}}
+}
+
+// writeArtDoor writes the one piece whose pictures are not named after it: a
+// door has an open one and a closed one and NO <id>.png (design spec §3.4), so
+// its sidecar is the only thing that says which file is which.
+//
+// The picture stems are <id>-open and <id>-closed, which makes them ordinary
+// object art to anything that goes looking — a bare picture with no sidecar
+// resolves, and nothing in artlib objects to art nobody names. That is
+// deliberate: it keeps every filename in art/ a legal art id, so the directory
+// has no entries that only make sense from inside another file.
+func writeArtDoor(out string, rng *rand.Rand, id, material, desc string, drawClosed, drawOpen func(*image.RGBA, *rand.Rand)) artOut {
+	closed, open := id+"-closed.png", id+"-open.png"
+	drawPicture(out, rng, closed, newCanvas(), drawClosed)
+	drawPicture(out, rng, open, newCanvas(), drawOpen)
+	sidecar := writeSidecar(out, id, sidecarOut{
+		FormatVersion: artFormatVersion, Kind: "door", Material: material,
+		Open: open, Closed: closed,
+	})
+	return artOut{ID: id, Kind: "door", Material: material, Desc: desc,
+		Sidecar: sidecar, Pictures: []string{closed, open}}
+}
+
+// writeArtObject writes one scenery glyph and NO SIDECAR, which is spec §3.4's
+// asymmetry made real: the map's own object entry already carries blocks_sight,
+// blocks_move, kind, size and rot, so a bare picture is complete. This is the
+// improvisation case the spec celebrates — drop a PNG in, name it from a map.
+//
+// ON A TRANSPARENT CANVAS (newObjectCanvas, not newCanvas) — unlike a tile, an
+// object does not cover its whole square in the real world, so the floor tile
+// underneath should show through the corners canvas.ts's drawImage composites
+// against whatever was drawn first (planTiles runs before planObjects in
+// scene-plan.ts's planScene).
+func writeArtObject(out string, rng *rand.Rand, id, desc string, draw func(*image.RGBA, *rand.Rand)) artOut {
+	picture := id + ".png"
+	drawPicture(out, rng, picture, newObjectCanvas(), draw)
+	return artOut{ID: id, Desc: desc, Pictures: []string{picture}}
+}
+
+// writeSidecar writes <id>.json and returns its filename.
+func writeSidecar(out, id string, sc sidecarOut) string {
+	name := id + ".json"
+	mustWriteJSON(filepath.Join(out, name), sc)
+	return name
+}
+
 // writeTile draws one plain (non-door) tile via draw, PNG-encodes it to
 // out/file, and returns the packTileOut entry pack.json should carry for
-// it. rng is threaded through from main's single seeded source rather than
-// re-seeded per call, so the WHOLE run — not just one texture in
-// isolation — is what a fixed seed reproduces.
+// it. THE STANDARD PACK IS ITS ONLY CALLER since art-is-a-flat-library Task 8
+// — the cellar half writes art/, not a manifest — and std_pack.go's header
+// says why that half keeps a pack at all.
 func writeTile(out string, rng *rand.Rand, name, kind, material, file, desc string, draw func(*image.RGBA, *rand.Rand)) packTileOut {
-	img := newCanvas()
-	draw(img, rng)
-	writePNG(filepath.Join(out, file), img)
+	drawPicture(out, rng, file, newCanvas(), draw)
 	return packTileOut{Name: name, Kind: kind, Material: material, File: file, Desc: desc}
 }
 
-// writeDoor draws BOTH of a door tile's pictures (design spec §3.3: one
-// nature, two pictures — file_open/file_closed, no plain file) and returns
-// the single packTileOut carrying both filenames.
+// writeDoor draws BOTH of a door tile's pictures (one nature, two pictures)
+// and returns the single packTileOut carrying both filenames. Standard-pack
+// only, like writeTile.
 func writeDoor(out string, rng *rand.Rand, name, material, closedFile, openFile, desc string, drawClosed, drawOpen func(*image.RGBA, *rand.Rand)) packTileOut {
-	closed := newCanvas()
-	drawClosed(closed, rng)
-	writePNG(filepath.Join(out, closedFile), closed)
-
-	open := newCanvas()
-	drawOpen(open, rng)
-	writePNG(filepath.Join(out, openFile), open)
-
+	drawPicture(out, rng, closedFile, newCanvas(), drawClosed)
+	drawPicture(out, rng, openFile, newCanvas(), drawOpen)
 	return packTileOut{Name: name, Kind: "door", Material: material, FileClosed: closedFile, FileOpen: openFile, Desc: desc}
 }
 
-// writeObject draws one scenery glyph ON A TRANSPARENT CANVAS (newObjectCanvas,
-// not newCanvas) — unlike a tile, an object does not cover its whole square
-// in the real world, so the floor tile underneath should show through the
-// corners canvas.ts's drawImage composites against whatever was drawn
-// first (planTiles runs before planObjects in scene-plan.ts's planScene).
-func writeObject(out string, rng *rand.Rand, name, file, desc string, draw func(*image.RGBA, *rand.Rand)) packTileOut {
-	img := newObjectCanvas()
-	draw(img, rng)
-	writePNG(filepath.Join(out, file), img)
-	return packTileOut{Name: name, File: file, Desc: desc}
+func writeManifest(out string, p packOut) {
+	mustWriteJSON(filepath.Join(out, "pack.json"), p)
 }
 
-func writeManifest(out string, p packOut) {
-	b, err := json.MarshalIndent(p, "", "  ")
+// mustWriteJSON writes one indented JSON file with a trailing newline, or exits
+// loudly. ONE construction site for both of this tool's JSON outputs — a
+// sidecar and a pack manifest — so the two cannot drift on indentation or on
+// the trailing newline, and so the pair of failure branches neither of them can
+// exercise is written once rather than twice.
+func mustWriteJSON(path string, v any) {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genmappack: encode pack.json: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genmappack: encode %s: %v\n", path, err)
 		os.Exit(1)
 	}
 	b = append(b, '\n')
-	if err := os.WriteFile(filepath.Join(out, "pack.json"), b, 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "genmappack: write pack.json: %v\n", err)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "genmappack: write %s: %v\n", path, err)
 		os.Exit(1)
 	}
 }

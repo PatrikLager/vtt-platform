@@ -27,11 +27,19 @@ import (
 // Compile carries no internal state and its only iteration over adv is
 // positional (slices, in Load order) — it never ranges a Go map to decide
 // output order — so two calls with the same (adv, st) always produce
-// deep-equal results.
-func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, error) {
+// deep-equal results, warnings included.
+//
+// THE SECOND RETURN IS EVERY WARNING mapdef.BuildSceneCreated produced for any
+// scene, each prefixed with the scene that produced it. handleLoadAdventure
+// (internal/gateway/adventure.go) puts them on its CommandResult, the same
+// channel handleLoadMap uses — spec §4's "the DM is told which references did
+// not resolve, once, as a warning on the load — not an error, and not
+// silence". Nothing else in this package interprets them.
+func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, []string, error) {
 	if err := checkCollisions(adv, st); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	var warnings []string
 
 	envs := make([]*vttv1.Envelope, 0, 1+len(adv.Scenes)+len(adv.Actors)+countPlacements(adv)+len(adv.Notes)+1)
 
@@ -45,12 +53,28 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, error) {
 		// Delegated, not built here: mapdef.BuildSceneCreated is the ONE
 		// construction site a SceneCreated comes from, shared with the
 		// standalone maps/ load path — see that function's own doc comment
-		// (internal/mapdef/compile.go). Any Resolve warning is discarded
-		// (the `_`) — surfacing it is deliberately out of scope for this
-		// arc (maps-as-geometry implementation plan, self-review notes).
-		created, _, err := mapdef.BuildSceneCreated(sc.asMap(), adv.Pack)
+		// (internal/mapdef/compile.go).
+		//
+		// ITS WARNINGS ARE CARRIED NOW, and the `_` that used to sit here was
+		// a real silence rather than a tidy omission. Art-is-a-flat-library
+		// Task 3 turned unresolvable art from a refusal into a warning — and
+		// Task 4b widened that to every sidecar this server cannot read — so
+		// from that moment an adventure whose art/ was unopenable compiled
+		// with err == nil, every square plain, and NOTHING said so anywhere —
+		// which that design spec §4 names as the outcome strictly worse than
+		// the refusal it replaced. Neither shipped adventure declares an
+		// override or an object today, so nothing triggers it yet; Tasks 7-8
+		// are building toward adventure art, and a silence that only appears
+		// once the feature is used is the worst possible time to find it.
+		created, w, err := mapdef.BuildSceneCreated(sc.asMap(), adv.ArtDir)
 		if err != nil {
-			return nil, fmt.Errorf("adventure: compile: scene %q: %w", sc.ID, err)
+			return nil, warnings, fmt.Errorf("adventure: compile: scene %q: %w", sc.ID, err)
+		}
+		// Scene-qualified: mapdef deduplicates per SCENE, and an adventure
+		// compiles several, so two scenes missing the same art would otherwise
+		// produce two identical lines with nothing to tell them apart.
+		for _, one := range w {
+			warnings = append(warnings, fmt.Sprintf("scene %q: %s", sc.ID, one))
 		}
 		envs = append(envs, &vttv1.Envelope{
 			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: created},
@@ -90,7 +114,7 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, error) {
 		}},
 	})
 
-	return envs, nil
+	return envs, warnings, nil
 }
 
 func countPlacements(adv *Adventure) int {
