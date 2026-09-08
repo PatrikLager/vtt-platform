@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 )
 
 // MaxWireTiles is the largest number of tiles one SceneCreated may carry, and
@@ -180,13 +181,26 @@ func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, er
 			m.ID, len(m.Tiles), MaxWireTiles, MaxWireTiles)
 	}
 
+	// ONE SNAPSHOT FOR THE WHOLE LOAD. artlib.Open reads the art directory, and
+	// this walk resolves every overridden square and every object — opening per
+	// piece would be one directory scan per square. Taking it once also fixes
+	// the load's MEANING: every square resolves against the art directory as it
+	// stood when the load began, rather than against whatever it happens to be
+	// part-way through. Art installed during a load appears at the next one.
+	// Opened UNCONDITIONALLY, including for a map with no overrides and no
+	// objects, which pays one ReadDir it never uses. Measured negligible — the
+	// all-hit path is flat against the pre-snapshot version — and a conditional
+	// would mean a nil Library reaching resolveWith, which is a nil-receiver
+	// question in exchange for microseconds on a map that resolves nothing.
+	lib := artlib.Open(artDir)
+
 	tiles := make(map[string]*vttv1.TileRef, len(m.Tiles))
 	var squareWarnings, objectWarnings warningTally
 	if len(m.Tiles) > 0 {
 		for y := int32(0); y < m.GridH; y++ {
 			for x := int32(0); x < m.GridW; x++ {
 				key := squareKey(x, y)
-				res, w, err := Resolve(m, artDir, key)
+				res, w, err := resolveWith(m, lib, key)
 				if err != nil {
 					return nil, squareWarnings.render("square"), err
 				}
@@ -220,7 +234,7 @@ func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, er
 		// It reports rather than refuses now: art returns empty and w carries
 		// the warning when the piece is not installed, because the object
 		// stays in the world either way (art-is-a-flat-library spec §4).
-		art, w, err := ResolveObjectArt(i, o, artDir)
+		art, w, err := resolveObjectArtWith(i, o, lib)
 		if err != nil {
 			return nil, allWarnings(squareWarnings, objectWarnings), err
 		}

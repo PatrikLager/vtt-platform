@@ -689,3 +689,74 @@ func TestASquareWithNoOverrideIsUnchanged(t *testing.T) {
 			got, warnings, err)
 	}
 }
+
+// TestACaseOnlyMismatchTellsTheDMTheFilenameItFound is the actionable half of
+// the exact-name rule artlib.Library enforces.
+//
+// A DM on macOS installs Masonry-1.png, and the square degrades — correctly,
+// because that filename is not the id and would resolve on their machine and
+// nowhere else. But "art "masonry-1" is not installed" is a sentence they read
+// while looking straight at the file in the directory, and it sends them to
+// check a path that is fine. The remedy is a rename, and nothing says so.
+func TestACaseOnlyMismatchTellsTheDMTheFilenameItFound(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Masonry-1.png"), []byte("p"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &mapdef.Map{ID: "hall", Name: "Hall", GridW: 1, GridH: 1,
+		Tiles:     map[string]string{"0,0": "stone"},
+		Overrides: map[string]string{"0,0": "masonry-1"}}
+
+	_, warnings, err := mapdef.Compile(m, dir)
+	if err != nil {
+		t.Fatalf("Compile: %v — a case-only mismatch degrades, it does not refuse", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", warnings)
+	}
+	// THE FILENAME ON DISK, so the DM can see what to rename.
+	if !strings.Contains(warnings[0], "Masonry-1.png") {
+		t.Errorf("warning = %q, want it to name the file the directory actually holds — "+
+			"a DM told only 'not installed' is looking right at it", warnings[0])
+	}
+	// And still the degrade warning, so the existing arm's behaviour is intact.
+	if !strings.Contains(warnings[0], "masonry-1") {
+		t.Errorf("warning = %q, want it to name the art the map asked for", warnings[0])
+	}
+}
+
+// TestAnObjectsCaseMismatchNamesTheFileToo is the object half of the same arm.
+//
+// The split is written out TWICE, here and in Resolve, and nothing forces the
+// two switches to agree — ResolveObjectArt's own doc says so. The first version
+// of the case-mismatch arm existed only on the tile side, so an object degraded
+// with the plain "is not installed" while the DM looked at the file. Objects are
+// where a hand-copied picture most often lands, so this is the side that needs
+// the filename most.
+func TestAnObjectsCaseMismatchNamesTheFileToo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Crate-Wood.png"), []byte("p"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &mapdef.Map{ID: "hall", Name: "Hall", GridW: 1, GridH: 1,
+		Tiles: map[string]string{"0,0": "stone"},
+		Objects: []mapdef.Object{{
+			ID: "obj-1", Kind: "crate", X: 0, Y: 0, W: 1, H: 1, Art: "crate-wood",
+		}}}
+
+	_, warnings, err := mapdef.Compile(m, dir)
+	if err != nil {
+		t.Fatalf("Compile: %v — a miscased object picture degrades, it does not refuse", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", warnings)
+	}
+	if !strings.Contains(warnings[0], "Crate-Wood.png") {
+		t.Errorf("warning = %q, want it to name the file on disk — the tile side "+
+			"says it and the object side used to not", warnings[0])
+	}
+	// And the object still stays, which is the object arm's own promise.
+	if !strings.Contains(warnings[0], "the object stays") {
+		t.Errorf("warning = %q, want it to keep the object's own sentence", warnings[0])
+	}
+}

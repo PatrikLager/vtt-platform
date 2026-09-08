@@ -1,10 +1,8 @@
 // Package artlib reads art out of a campaign's flat art/ directory.
 //
 // THE FILENAME IS THE IDENTITY. Nothing declares an id, so nothing can
-// disagree with one (design spec §3.2). That is why Lookup does no ReadDir:
-// knowing the id IS knowing the path, and a scan would only be a slower way to
-// arrive at the same filename — while quietly becoming the boot-time load this
-// design exists to delete.
+// disagree with one (design spec §3.2). Knowing the id is very nearly knowing
+// the path — but only very nearly, which is what the snapshot below is for.
 //
 // AN ART ID IS KEBAB-CASE, and that is enforced here rather than assumed. Spec
 // §3.2 says stems are kebab-case; leaving it advisory made "nothing can
@@ -14,22 +12,31 @@
 //
 // The ID half is closed on every platform: restricted to lowercase letters,
 // digits and single hyphens, an id has no case for a filesystem to fold.
-// The DISK half is closed by Validate, which refuses a name no map could ever
-// spell — but only when Validate runs. Between two runs, a Masonry-1.png
-// dropped in by hand still resolves for "masonry-1" on macOS and hands the
-// renderer a filename Linux does not have. Closing that inside Lookup needs a
-// ReadDir, which is the boot-time load this design exists to delete, so the
-// residual stands: it is the same cp-after-boot window spec §5 already accepts,
-// and `vtt art install` is what catches it.
 //
-// THE NEXT BOOT NO LONGER CATCHES IT, and this sentence said it did until
-// 2026-09-03 (review finding F1). Since art-is-a-flat-library Task 4,
-// composeServer runs Validate at start and REPORTS what it finds rather than
-// refusing (Patrik's severity ruling that day), so a Masonry-1.png dropped in
-// by hand is now NAMED in the boot log and then renders anyway on this machine
-// — handing the renderer masonry-1.png, which is not on disk — while the same
-// campaign draws that square plain on a case-sensitive server. A boot that
-// mentions a defect is not a boot that closes it.
+// THE DISK HALF IS CLOSED HERE NOW, and until 2026-09-08 it was not. These
+// paragraphs used to record the gap as an ACCEPTED RESIDUAL: Validate refuses a
+// name no map could ever spell, but only when it runs, and between two runs a
+// Masonry-1.png dropped in by hand still resolved for "masonry-1" on macOS and
+// handed the renderer a filename Linux does not have. Closing it was judged to
+// need a ReadDir — "the boot-time load this design exists to delete" — so the
+// residual stood, with `vtt art install` named as what catches it. Validate
+// REPORTS rather than refuses (Patrik's severity ruling 2026-09-03), so a boot
+// named the defect and rendered anyway; a boot that mentions a defect is not a
+// boot that closes it.
+//
+// What the accounting missed is that the ReadDir is per LOAD, not per lookup.
+// Library takes one snapshot of the directory and every name below the id gate
+// is checked against it — the sidecar, the picture the sidecar names, and a
+// door's open and closed pictures. mapdef.BuildSceneCreated opens it once for a
+// whole map, so a 3600-square load pays one scan rather than 3600, and Validate
+// (which had been calling the single-shot Lookup per sidecar, quadratically)
+// shares the same one. A case-insensitive volume now answers as a
+// case-sensitive one does, and one campaign draws one way everywhere.
+//
+// The first attempt at this gated only the ID and left every read below it
+// folding, which resolved a correct sidecar beside a miscased picture and the
+// shipped cellar-door shape. That is why the check is at every name and not
+// at the entrance.
 //
 // UNIQUENESS IS THE FILESYSTEM'S (spec §3.3), which is why art/ is flat.
 // art/a/x.png and art/b/x.png coexist happily, and the moment they can,
@@ -157,6 +164,14 @@ const (
 // sends someone hunting for a file that is sitting in art/. Only notFound
 // wraps it.
 var ErrNotFound = errors.New("artlib: no such art")
+
+// ErrCaseMismatch marks the one not-installed reason a DM is looking straight
+// at while they read it: the directory holds a file whose name differs from the
+// requested id only in case. Wrapped ALONGSIDE ErrNotFound rather than instead
+// of it, so every arm switching on ErrNotFound behaves identically and only a
+// caller wanting to say something more specific needs to know this exists.
+// mapdef.Resolve is that caller; nothing else has to change.
+var ErrCaseMismatch = errors.New("artlib: art filename differs only in case")
 
 // ErrArtDirUnreadable marks the one failure that is about the art ROOT rather
 // than about any piece in it: art/ exists, and this process cannot open it —
@@ -294,6 +309,31 @@ type sidecar struct {
 // differently.
 func notFound(id, why string) error {
 	return fmt.Errorf("artlib: art %q %s: %w", id, why, ErrNotFound)
+}
+
+// CaseMismatch is notFound with the file the DM can SEE attached, so a caller
+// can name it rather than parse it back out of a sentence. That is the whole
+// difference between a warning somebody can act on and one that sends them to
+// check a path which is fine.
+//
+// It reports as BOTH ErrNotFound and ErrCaseMismatch: every existing arm
+// switching on ErrNotFound keeps firing unchanged, and only a caller that wants
+// to say something sharper needs to know the second one exists.
+type CaseMismatch struct {
+	ID   string // the id the map asked for
+	Real string // the filename the directory actually holds
+	why  string
+}
+
+func (e *CaseMismatch) Error() string {
+	return fmt.Sprintf("artlib: art %q %s", e.ID, e.why)
+}
+
+// Unwrap returns both sentinels; errors.Is walks the whole tree since Go 1.20.
+func (e *CaseMismatch) Unwrap() []error { return []error{ErrCaseMismatch, ErrNotFound} }
+
+func caseMismatch(id, onDisk, why string) error {
+	return &CaseMismatch{ID: id, Real: onDisk, why: why}
 }
 
 // unsupportedFormat is the ONLY place ErrFormatVersion is wrapped, for the
@@ -502,43 +542,197 @@ func IsArtFileName(name string) bool {
 	return isArtNameWithExt(name, pictureExt) || isArtNameWithExt(name, sidecarExt)
 }
 
-// Lookup resolves id to a Piece. It reads <dir>/<id>.json when there is one
-// and confirms every picture the piece names is installed; it does no ReadDir,
-// and it opens nothing outside dir. See the package doc for why both are
-// load-bearing rather than oversights.
-func Lookup(dir, id string) (Piece, error) {
+// Library is a SNAPSHOT of the real filenames in an art directory, taken once
+// so that many lookups can be answered without asking the filesystem to match
+// a name for us — because on this platform it will match one we did not mean.
+//
+// APFS is case-insensitive by default, as is every HFS-descended volume. Open
+// on a case-insensitive volume resolves "masonry-1.png" to a file named
+// "Masonry-1.png", so Lookup used to RETURN A PIECE for an id no directory
+// entry carries, with Piece.File set to a name that does not exist. The id
+// reaches the client, /api/art/masonry-1.png resolves the same forgiving way,
+// and the campaign draws correctly on the Mac it was authored on — then loses
+// every one of those squares to plain terrain on Linux or in CI, silently,
+// because from the server's side the piece resolved.
+//
+// THE DESIGN MAKES THE FILESYSTEM THE UNIQUENESS RULE (spec §3.2), and that is
+// only a rule if it means the same thing everywhere. Comparing against real
+// entry names is what makes it mean the same thing: a case-insensitive volume
+// now behaves exactly as a case-sensitive one does, and one campaign draws one
+// way. Validate reports these filenames at boot, but it REPORTS and the server
+// starts anyway (Patrik's ruling 2026-09-03) and it runs only at boot, so art
+// installed while the table is running never meets it at all.
+//
+// The snapshot is deliberately not refreshed: a load is a picture of the art
+// directory as it was when the load began. Art installed DURING one appears at
+// the next load, which is the same rule the map set already follows.
+// The ZERO VALUE is safe but answers "not installed" for everything: reads of a
+// nil map are legal and return the zero value, so has() is false throughout. No
+// production path constructs one — Resolve and ResolveObjectArt always Open —
+// but the type is exported, so this says what happens rather than leaving a
+// reader to find out.
+type Library struct {
+	dir   string
+	names map[string]struct{}
+	// folded maps a lowercased entry name to the real one, for entries whose
+	// name is not already lowercase — the only ones that can be a case-only
+	// near-miss, since an art id is lowercase by isArtID's rule.
+	folded map[string]string
+	// err is the directory's own failure, carried rather than returned so that
+	// every Lookup reports it the way a single-shot Lookup always has — the
+	// arms below are the ones mapdef.Resolve switches on, and a Library that
+	// failed to open must not quietly answer "not installed" instead.
+	err error
+}
+
+// Open snapshots dir. It never fails: a directory that cannot be read is
+// recorded and surfaced by each Lookup, because "there is no art directory" is
+// an ordinary campaign state and not an error at the moment of opening.
+func Open(dir string) *Library {
+	l := &Library{dir: dir, names: make(map[string]struct{}), folded: make(map[string]string)}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		l.err = err
+		return l
+	}
+	for _, e := range entries {
+		name := e.Name()
+		l.names[name] = struct{}{}
+		// FOLDED ONCE, so a miss costs a map lookup rather than a scan of every
+		// entry. Scanning was measured at 3x HEAD on a miss-heavy load against a
+		// thousand-piece library, which is the shape a big campaign has.
+		//
+		// Lowest name wins a collision, which only a case-SENSITIVE volume can
+		// produce. Go map iteration is randomised, so picking arbitrarily made
+		// the reported filename differ run to run — and compile.go groups
+		// warnings by exact string, so the aggregate itself flaked.
+		if k := strings.ToLower(name); k != name {
+			// FIRST WINS, and that is deterministic without a comparison because
+			// os.ReadDir returns entries SORTED BY FILENAME — so the first entry
+			// folding to k is the lexicographically smallest, which is what a
+			// collision needs to resolve to if the warning naming the file is to
+			// read the same on every run. compile.go groups warnings by exact
+			// string, so a nondeterministic choice would make the aggregate itself
+			// flake.
+			//
+			// The comparison this replaces (`!ok || name < prev`) said the same
+			// thing and could not be tested: two entries fold to one key only on a
+			// case-SENSITIVE volume, which the machine this is developed on cannot
+			// produce, so both its mutants survived the gate unkillably. Leaning on
+			// ReadDir's documented order removes the branch rather than adjudicating
+			// something no observable here can distinguish.
+			if _, seen := l.folded[k]; !seen {
+				l.folded[k] = name
+			}
+		}
+	}
+	return l
+}
+
+// caseOnlyMatch reports the real entry that differs from name only in case, if
+// there is one. It exists to make the refusal ACTIONABLE: a DM who installed
+// Masonry-1.png is told that filename and the rule, rather than being told the
+// art they can see in the directory is not installed.
+func (l *Library) caseOnlyMatch(name string) (string, bool) {
+	got, ok := l.folded[strings.ToLower(name)]
+	return got, ok && got != name
+}
+
+// has reports whether the directory holds EXACTLY this name. Every read below
+// the id gate goes through it, because the gate alone was not enough: it
+// established that something exists under the id, and then every subsequent
+// open — the sidecar, the picture it names, a door's open and closed pictures —
+// went back through the case-folding filesystem. A correctly-named sidecar
+// beside a miscased picture resolved clean, and so did the shipped cellar-door
+// shape, whose sidecar names two pictures of its own.
+func (l *Library) has(name string) bool {
+	_, ok := l.names[name]
+	return ok
+}
+
+// Lookup resolves id against the snapshot, then reads it.
+func (l *Library) Lookup(id string) (Piece, error) {
 	if !isArtID(id) {
 		return Piece{}, notFound(id, "is not an art id: an art id is one kebab-case "+
 			"filename in art/ — lowercase letters and digits joined by single hyphens "+
 			"(design spec §3.2)")
 	}
-	root, err := os.OpenRoot(dir)
+	if l.err != nil {
+		if errors.Is(l.err, fs.ErrNotExist) {
+			return Piece{}, notFound(id, "is not installed: there is no art directory")
+		}
+		return Piece{}, artDirUnreadable(l.err)
+	}
+	sidecar, picture := id+sidecarExt, id+pictureExt
+	_, hasSidecar := l.names[sidecar]
+	_, hasPicture := l.names[picture]
+	if !hasSidecar && !hasPicture {
+		// A NAME THAT DIFFERS ONLY IN CASE is the one worth naming, because the
+		// DM is looking at the file while being told it is not installed.
+		if onDisk, ok := l.caseOnlyMatch(picture); ok {
+			return Piece{}, caseMismatch(id, onDisk, fmt.Sprintf(
+				"is not installed: the directory holds %q, which differs only in case — "+
+					"an art filename is lowercase and IS the id a map names, and matching "+
+					"it loosely would draw one picture here and none on a case-sensitive "+
+					"filesystem (design spec §3.2)", onDisk))
+		}
+		if onDisk, ok := l.caseOnlyMatch(sidecar); ok {
+			return Piece{}, caseMismatch(id, onDisk, fmt.Sprintf(
+				"is not installed: the directory holds %q, which differs only in case — "+
+					"an art filename is lowercase and IS the id a map names (design spec §3.2)", onDisk))
+		}
+		return Piece{}, notFound(id, fmt.Sprintf("has no picture %q installed", picture))
+	}
+	root, err := os.OpenRoot(l.dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// A campaign that has installed no art at all is ordinary, and its
-			// maps still load and draw plain.
 			return Piece{}, notFound(id, "is not installed: there is no art directory")
 		}
 		return Piece{}, artDirUnreadable(err)
 	}
 	defer root.Close()
-	return lookupIn(root, id)
+	return l.lookupIn(root, id)
+}
+
+// Lookup is the single-shot form, for a caller with one id to resolve. A load
+// resolving many should Open once — see BuildSceneCreated.
+// Lookup resolves id to a Piece against a one-shot snapshot of dir. It reads
+// <dir>/<id>.json when there is one, confirms every picture the piece names is
+// installed UNDER EXACTLY THAT NAME, and opens nothing outside dir.
+//
+// It reads the directory, which the pre-snapshot version deliberately did not —
+// see Library for the case-folding bug that bought. A caller resolving MANY ids
+// must Open once instead: this form is one ReadDir per call, and calling it in a
+// loop is what made Validate quadratic before it took a Library.
+func Lookup(dir, id string) (Piece, error) {
+	return Open(dir).Lookup(id)
 }
 
 // lookupIn is Lookup's body with the root already open — the guard and the
 // root read as one step, the resolution as another.
 //
-// Validate reaches this logic through the public Lookup, not through here, so
-// it pays one os.OpenRoot per sidecar. That is deliberate: Validate is the rare
-// path (install and boot), and the property worth having is that install and a
-// map load run the SAME function rather than two that could disagree — the
-// divergence hazard mapdef.LoadInstalled's own doc comment was written about.
-// A shared root would save an openat per entry and buy nothing else.
-func lookupIn(root *os.Root, id string) (Piece, error) {
+// Validate reaches this logic through a SHARED Library since 2026-09-08, and
+// this paragraph said the opposite until then: that Validate went through the
+// public Lookup and so paid one os.OpenRoot per sidecar, deliberately, because
+// "a shared root would save an openat per entry and buy nothing else". Once
+// Lookup took a snapshot that stopped being true — the package-level form does
+// a full ReadDir, so calling it per sidecar made Validate quadratic, measured
+// at 773ms for 800 pieces against 25ms before. Validate now Opens once and
+// hands the same Library to every entry. The property the old sentence was
+// protecting is intact and was never in tension with sharing: install and a map
+// load still run the SAME resolution rather than two that could disagree, which
+// is the divergence hazard mapdef.LoadInstalled's own doc was written about.
+func (l *Library) lookupIn(root *os.Root, id string) (Piece, error) {
+	// THE SIDECAR IS A NAME TOO. Reading it without asking the snapshot let a
+	// correctly-named picture pair with a miscased sidecar and come back as a
+	// different KIND — a door where the map had a wall.
+	if !l.has(id + sidecarExt) {
+		return l.pictureOnly(root, id)
+	}
 	raw, err := root.ReadFile(id + sidecarExt)
 	switch {
 	case err == nil:
-		return pieceFromSidecar(root, id, raw)
+		return l.pieceFromSidecar(root, id, raw)
 	case errors.Is(err, fs.ErrNotExist):
 		// Two different facts arrive as ErrNotExist and must not collapse:
 		// nothing is there (object art, if the picture is), versus an entry
@@ -549,7 +743,7 @@ func lookupIn(root *os.Root, id string) (Piece, error) {
 				"artlib: art/%s%s: exists but does not resolve to a file", id, sidecarExt)
 		}
 		file := id + pictureExt
-		if err := statPicture(root, id, file); err != nil {
+		if err := l.statPicture(root, id, file); err != nil {
 			return Piece{}, err
 		}
 		return Piece{ID: id, File: file}, nil
@@ -559,6 +753,23 @@ func lookupIn(root *os.Root, id string) (Piece, error) {
 		// this message already builds is the only one a client may see.
 		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, bareCause(err))
 	}
+}
+
+// pictureOnly is the no-sidecar piece: a picture whose kind the map supplies.
+//
+// Reached when the snapshot holds no sidecar named EXACTLY id.json, which now
+// includes the case where it holds one differing only in case. That is the
+// behaviour a case-sensitive filesystem already had, and matching it is the
+// whole point: the piece comes back without a sidecar, and mapdef says so.
+// A dangling symlink named exactly id.json does NOT come here — os.ReadDir
+// lists it, so the snapshot has it and lookupIn's Lstat arm still tells the two
+// apart, which is what keeps a broken link from reading as "no sidecar".
+func (l *Library) pictureOnly(root *os.Root, id string) (Piece, error) {
+	file := id + pictureExt
+	if err := l.statPicture(root, id, file); err != nil {
+		return Piece{}, err
+	}
+	return Piece{ID: id, File: file}, nil
 }
 
 // pieceFromSidecar turns a sidecar's bytes into a Piece, refusing anything it
@@ -598,7 +809,7 @@ func lookupIn(root *os.Root, id string) (Piece, error) {
 // map format and the sidecar format together, not to a version pre-pass.
 // TestTrailingBytesAfterASidecarAreIgnoredAsTheyAlwaysWere is the guard.
 // (Review finding F2, 2026-09-05.)
-func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
+func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	var declared declaredFormat
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&declared); err != nil {
 		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
@@ -689,7 +900,7 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 				id, sidecarExt, sc.Kind)
 		}
 		p.File = id + pictureExt
-		if err := statPicture(root, id, p.File); err != nil {
+		if err := l.statPicture(root, id, p.File); err != nil {
 			return Piece{}, err
 		}
 		return p, nil
@@ -752,7 +963,7 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 					"as GET /api/art/{file})",
 				id, sidecarExt, named.field, named.name, pictureExt)
 		}
-		if err := statPicture(root, id, named.name); err != nil {
+		if err := l.statPicture(root, id, named.name); err != nil {
 			return Piece{}, err
 		}
 	}
@@ -764,7 +975,24 @@ func pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 // is absence — the whole piece degrades, because half-installed art draws a
 // square nothing can serve. Any OTHER stat failure is NOT absence: discarding
 // it made a symlink loop indistinguishable from a missing file.
-func statPicture(root *os.Root, id, name string) error {
+// statPicture requires the snapshot to hold name EXACTLY before it will trust
+// the filesystem's answer. Without this the id gate was the only exact check,
+// and everything it let through — the sidecar, the picture the sidecar names, a
+// door's two pictures — was still matched case-insensitively by the platform.
+func (l *Library) statPicture(root *os.Root, id, name string) error {
+	if !l.has(name) {
+		if onDisk, ok := l.caseOnlyMatch(name); ok {
+			return caseMismatch(id, onDisk, fmt.Sprintf(
+				"names picture %q, but the directory holds %q, which differs only in case — "+
+					"a filename IS the id a map names, and matching it loosely would draw "+
+					"here and on no case-sensitive filesystem (design spec §3.2)", name, onDisk))
+		}
+		return notFound(id, fmt.Sprintf("has no picture %q installed", name))
+	}
+	return l.statPictureOnDisk(root, id, name)
+}
+
+func (l *Library) statPictureOnDisk(root *os.Root, id, name string) error {
 	info, err := root.Stat(name)
 	switch {
 	case err == nil:
@@ -852,6 +1080,7 @@ func statPicture(root *os.Root, id, name string) error {
 // (cmd/vtt's artRootIsOpenable, which REFUSES the boot on it — an unopenable
 // root is every piece failing, not one).
 func Validate(dir string) error {
+	lib := Open(dir)
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -867,7 +1096,7 @@ func Validate(dir string) error {
 	}
 	var problems []error
 	for _, e := range entries {
-		if problem := entryProblem(dir, e); problem != nil {
+		if problem := entryProblem(lib, dir, e); problem != nil {
 			problems = append(problems, problem)
 		}
 	}
@@ -886,7 +1115,12 @@ func Validate(dir string) error {
 // last arm fall through into it, silently, with no gate able to see it (review
 // finding F4, 2026-09-03). The count an operator reads is the number of files
 // to go and fix, and it stays that way by construction.
-func entryProblem(dir string, e fs.DirEntry) error {
+// entryProblem takes the library rather than the directory so Validate reads
+// the directory ONCE. Calling the package-level Lookup here did a full ReadDir
+// per sidecar, making Validate quadratic in the number of pieces — measured at
+// 25ms for 800 pieces before the snapshot existed and 773ms after, paid at every
+// boot and by every `vtt art install`.
+func entryProblem(lib *Library, dir string, e fs.DirEntry) error {
 	name := e.Name()
 	// Type() is the entry's OWN type, not its target's, which is the point:
 	// a symlink to a directory answers IsDir() == false, so `ln -s` walked
@@ -934,7 +1168,7 @@ func entryProblem(dir string, e fs.DirEntry) error {
 	if ext == sidecarExt {
 		// Resolved through Lookup itself, not a second check that could
 		// disagree with it: what install accepts, a map load accepts.
-		if _, lookupErr := Lookup(dir, stem); lookupErr != nil {
+		if _, lookupErr := lib.Lookup(stem); lookupErr != nil {
 			return fmt.Errorf("artlib: art dir %s: %w", dir, lookupErr)
 		}
 	}

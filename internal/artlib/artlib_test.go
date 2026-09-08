@@ -1382,3 +1382,311 @@ func TestTheShippedArtResolvesThroughThisPackage(t *testing.T) {
 // package under test: artlib's own kindDoor is unexported, and an external test
 // asserting the on-disk word should not be able to move with the code it checks.
 const kindDoorLiteral = "door"
+
+// TestAnIdOnlyMatchesAFileNamedExactlyThat is the one property this whole
+// sub-project rests on, tested on the filesystem that quietly breaks it.
+//
+// The design makes the FILESYSTEM the uniqueness rule: art/ is flat, the
+// filename stem IS the id, and there is no registry to disagree with. That is
+// only a rule if it means the same thing everywhere, and it does not. APFS is
+// case-insensitive by default and so is every HFS-descended volume, so
+// `Masonry-1.png` and `masonry-1.png` are ONE file on the machine a DM works
+// on and TWO on the Linux box or CI runner their campaign eventually meets.
+//
+// MEASURED before this test existed: Lookup(dir, "masonry-1") with only
+// Masonry-1.png and Masonry-1.json on disk RETURNED A PIECE, with File set to
+// "masonry-1.png" — a name no directory entry has. That id then reaches the
+// client, which fetches /api/art/masonry-1.png, which resolves the same
+// forgiving way. The campaign draws correctly on the Mac it was authored on and
+// loses every one of those squares to plain terrain on Linux, with no warning
+// anywhere, because from the server's point of view the piece resolved.
+//
+// Validate does catch the filename — but it REPORTS and the server starts
+// anyway (Patrik's ruling 2026-09-03), and it runs at BOOT, so art installed
+// while the table is running is never seen by it at all.
+//
+// So the fix belongs at the lookup: an id resolves only to a file named exactly
+// that. Then the Mac behaves like the Linux box — the square degrades, the DM
+// gets the ordinary not-installed warning, and one campaign draws one way.
+func TestAnIdOnlyMatchesAFileNamedExactlyThat(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "Masonry-1.png", "picture bytes")
+	writeFile(t, dir, "Masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+
+	// Guard the fixture: on a case-INSENSITIVE volume this open succeeds, and
+	// that is the whole reason the test exists. On a case-sensitive one it
+	// fails and the assertion below passes trivially — so say which regime ran.
+	if _, err := os.Stat(filepath.Join(dir, "masonry-1.png")); err == nil {
+		t.Log("case-INSENSITIVE volume: the lookup below is a real test")
+	} else {
+		t.Log("case-sensitive volume: the lookup below passes by construction")
+	}
+
+	_, err := artlib.Lookup(dir, "masonry-1")
+	if !errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("Lookup(masonry-1) = %v, want ErrNotFound: only Masonry-1.* is on "+
+			"disk, and an id must match a filename exactly or the same campaign "+
+			"draws differently on a case-insensitive volume than on a case-sensitive one", err)
+	}
+}
+
+// TestEveryNameBelowTheIdGateIsExactToo is the half the first version of the
+// exact-name rule missed, and it missed it in the shape this repository ships.
+//
+// Requiring the ID to match an entry exactly established only that SOMETHING
+// exists under it. Every read after that — the sidecar, the picture the sidecar
+// names, and a door's open and closed pictures — went straight back through the
+// case-folding filesystem. So a correctly-named sidecar beside a miscased
+// picture still resolved, and so did a correct cellar-door.json naming
+// Cellar-Door-Open.png. The gate looked like the fix and covered one case of
+// three; caught in review by measurement, not by reading.
+func TestEveryNameBelowTheIdGateIsExactToo(t *testing.T) {
+	onCaseInsensitive := func(t *testing.T, dir string) bool {
+		t.Helper()
+		writeFile(t, dir, "Probe.marker", "x")
+		_, err := os.Stat(filepath.Join(dir, "probe.marker"))
+		return err == nil
+	}
+
+	t.Run("a correct sidecar naming a miscased picture", func(t *testing.T) {
+		dir := t.TempDir()
+		if !onCaseInsensitive(t, dir) {
+			t.Skip("case-sensitive volume: the filesystem already refuses this")
+		}
+		writeFile(t, dir, "masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+		writeFile(t, dir, "Masonry-1.png", "picture bytes")
+
+		_, err := artlib.Lookup(dir, "masonry-1")
+		if !errors.Is(err, artlib.ErrNotFound) {
+			t.Fatalf("Lookup = %v, want ErrNotFound: the sidecar is exact but the "+
+				"picture it resolves to is not, and Piece.File would name a file "+
+				"no directory entry carries", err)
+		}
+	})
+
+	t.Run("a miscased sidecar beside a correct picture is picture-only", func(t *testing.T) {
+		dir := t.TempDir()
+		if !onCaseInsensitive(t, dir) {
+			t.Skip("case-sensitive volume: the filesystem already refuses this")
+		}
+		// The miscased sidecar declares a DOOR. Read loosely, the piece comes
+		// back as a door where the map asked for a wall — a different KIND, not
+		// merely a different picture.
+		writeFile(t, dir, "Masonry-1.json", `{"format_version":1,"kind":"door","open":"a.png","closed":"b.png"}`)
+		writeFile(t, dir, "masonry-1.png", "picture bytes")
+
+		p, err := artlib.Lookup(dir, "masonry-1")
+		if err != nil {
+			t.Fatalf("Lookup = %v, want the ordinary picture-only piece", err)
+		}
+		if p.HasSidecar || p.Kind != "" {
+			t.Errorf("piece = %+v, want no sidecar and no kind: the only sidecar on "+
+				"disk is not named masonry-1.json, so this is exactly the "+
+				"picture-only piece a case-sensitive filesystem returns", p)
+		}
+	})
+
+	t.Run("a door whose named pictures are miscased", func(t *testing.T) {
+		dir := t.TempDir()
+		if !onCaseInsensitive(t, dir) {
+			t.Skip("case-sensitive volume: the filesystem already refuses this")
+		}
+		// The shipped cellar-door shape: a correct sidecar naming two pictures.
+		writeFile(t, dir, "cellar-door.json",
+			`{"format_version":1,"kind":"door","open":"cellar-door-open.png","closed":"cellar-door-closed.png"}`)
+		writeFile(t, dir, "cellar-door.png", "picture bytes")
+		writeFile(t, dir, "Cellar-Door-Open.png", "picture bytes")
+		writeFile(t, dir, "Cellar-Door-Closed.png", "picture bytes")
+
+		_, err := artlib.Lookup(dir, "cellar-door")
+		if !errors.Is(err, artlib.ErrNotFound) {
+			t.Fatalf("Lookup = %v, want ErrNotFound: the door's own pictures are "+
+				"miscased, so this door opens on a Mac and on nothing else", err)
+		}
+		// And the refusal names the file, since that is the whole remedy.
+		var mismatch *artlib.CaseMismatch
+		if !errors.As(err, &mismatch) || mismatch.Real != "Cellar-Door-Open.png" {
+			t.Errorf("err = %v, want it to name Cellar-Door-Open.png so the DM "+
+				"knows which of the four files to rename", err)
+		}
+	})
+}
+
+// TestASidecarOnlyPieceReportsItsCaseMismatchToo covers the branch that reports
+// a miscased SIDECAR when no picture is involved at all.
+//
+// It was written with the picture branch and then never reached: deleting it
+// left artlib, mapdef, gateway and cmd/vtt all green, because both other tests
+// write a picture and the picture branch matches first. A live branch no test
+// enters is a survivor the mutation gate will find, and worse, a message
+// nobody has read.
+func TestASidecarOnlyPieceReportsItsCaseMismatchToo(t *testing.T) {
+	dir := t.TempDir()
+	// A sidecar and NO picture anywhere, miscased.
+	writeFile(t, dir, "Masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+
+	_, err := artlib.Lookup(dir, "masonry-1")
+	var mismatch *artlib.CaseMismatch
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("Lookup = %v, want a CaseMismatch naming the sidecar", err)
+	}
+	if mismatch.Real != "Masonry-1.json" {
+		t.Errorf("mismatch.Real = %q, want the sidecar filename: it is the only "+
+			"file in the directory and the only thing to rename", mismatch.Real)
+	}
+	if !errors.Is(err, artlib.ErrNotFound) {
+		t.Errorf("err = %v, want it to still satisfy ErrNotFound so mapdef degrades", err)
+	}
+}
+
+// TestArtThatVanishesBetweenTheSnapshotAndTheRead pins what the snapshot does
+// when the directory changes under it.
+//
+// The snapshot is what makes an id resolve only to an exactly-named file, and
+// it also creates a window that did not exist before: between Open and the read
+// somebody can edit art/. The library is deliberately not refreshed — a load is
+// a picture of the directory as it was when the load began — so these paths are
+// reachable ONLY this way, and before this test they were reachable by nothing,
+// which is what dropped the package under its coverage floor.
+//
+// None of the three may panic, and none may invent an answer. Each degrades to
+// something a DM can read, which is the same contract the rest of the package
+// keeps.
+func TestArtThatVanishesBetweenTheSnapshotAndTheRead(t *testing.T) {
+	install := func(t *testing.T) (string, *artlib.Library) {
+		t.Helper()
+		dir := t.TempDir()
+		writeFile(t, dir, "masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+		writeFile(t, dir, "masonry-1.png", "picture bytes")
+		return dir, artlib.Open(dir)
+	}
+
+	t.Run("the sidecar goes: the piece becomes picture-only", func(t *testing.T) {
+		dir, lib := install(t)
+		if err := os.Remove(filepath.Join(dir, "masonry-1.json")); err != nil {
+			t.Fatal(err)
+		}
+		p, err := lib.Lookup("masonry-1")
+		if err != nil {
+			t.Fatalf("Lookup = %v, want the picture-only piece: the picture is still there", err)
+		}
+		if p.HasSidecar {
+			t.Errorf("piece = %+v, want HasSidecar false — the sidecar is gone", p)
+		}
+	})
+
+	t.Run("the picture goes: not installed, naming the file", func(t *testing.T) {
+		dir, lib := install(t)
+		if err := os.Remove(filepath.Join(dir, "masonry-1.png")); err != nil {
+			t.Fatal(err)
+		}
+		_, err := lib.Lookup("masonry-1")
+		if !errors.Is(err, artlib.ErrNotFound) {
+			t.Fatalf("Lookup = %v, want ErrNotFound", err)
+		}
+		if !strings.Contains(err.Error(), "masonry-1.png") {
+			t.Errorf("err = %v, want it to name the picture that went missing", err)
+		}
+	})
+
+	t.Run("the whole directory goes: not installed, not unreadable", func(t *testing.T) {
+		dir, lib := install(t)
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+		_, err := lib.Lookup("masonry-1")
+		// ErrNotFound, NOT ErrArtDirUnreadable: a campaign with no art directory
+		// is ordinary and degrades, where an unreadable one is an operator fault
+		// mapdef reports differently. The distinction is the degrade-vs-refuse
+		// split, so a race must not quietly cross it.
+		if !errors.Is(err, artlib.ErrNotFound) {
+			t.Fatalf("Lookup = %v, want ErrNotFound", err)
+		}
+		if errors.Is(err, artlib.ErrArtDirUnreadable) {
+			t.Errorf("err = %v, want it NOT to read as an unreadable art dir — "+
+				"a directory that is gone is not one that cannot be read", err)
+		}
+	})
+}
+
+// TestACaseMismatchSaysWhatToRenameAndWhy reads the message itself, which
+// nothing did — the type carried the filename for mapdef and its own Error()
+// went unexercised. A message no test reads is a message nobody has read.
+func TestACaseMismatchSaysWhatToRenameAndWhy(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "Masonry-1.png", "picture bytes")
+
+	_, err := artlib.Lookup(dir, "masonry-1")
+	got := err.Error()
+	for _, want := range []string{
+		`"masonry-1"`,      // what the map asked for
+		`"Masonry-1.png"`,  // what is on disk, which is the thing to rename
+		"differs only in case",
+		"case-sensitive",   // WHY it is refused rather than quietly accepted
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Error() = %q, missing %q", got, want)
+		}
+	}
+}
+
+// TestTheArtDirectoryTurningUnreadableMidLoad covers the other half of the
+// snapshot window: the directory does not vanish, it stops being a directory.
+//
+// A campaign with no art/ is ORDINARY and degrades (ErrNotFound); an art/ that
+// exists and cannot be opened is an operator fault mapdef reports differently
+// (ErrArtDirUnreadable). The window between Open and the read must not blur the
+// two, because that line is the degrade-versus-refuse split.
+//
+// A plain FILE where art/ belongs, rather than a permission bit: a chmod
+// fixture passes trivially for a process running as root, and CI containers
+// often are. Same shape internal/gateway's own fixture uses.
+func TestTheArtDirectoryTurningUnreadableMidLoad(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "art")
+	writeFile(t, dir, "masonry-1.png", "picture bytes")
+	lib := artlib.Open(dir)
+
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, []byte("a plain file where art/ belongs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := lib.Lookup("masonry-1")
+	if !errors.Is(err, artlib.ErrArtDirUnreadable) {
+		t.Fatalf("Lookup = %v, want ErrArtDirUnreadable: art/ is no longer a "+
+			"directory, which is an operator fault and not a campaign that "+
+			"simply has no art", err)
+	}
+}
+
+// TestBothHalvesOfAPieceVanishingMidLoad reaches the picture check through the
+// sidecar path: the snapshot still lists both names, the sidecar read fails
+// because the file is gone rather than because it is a broken link, and the
+// picture it would have fallen back to is gone too.
+func TestBothHalvesOfAPieceVanishingMidLoad(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "masonry-1.json", `{"format_version":1,"kind":"wall"}`)
+	writeFile(t, dir, "masonry-1.png", "picture bytes")
+	lib := artlib.Open(dir)
+
+	for _, name := range []string{"masonry-1.json", "masonry-1.png"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := lib.Lookup("masonry-1")
+	if !errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("Lookup = %v, want ErrNotFound: both files are gone", err)
+	}
+	// NOT the broken-symlink sentence, which is what the Lstat arm one line up
+	// exists to tell apart — a file that was deleted is not a link that does
+	// not resolve, and conflating them once turned tile art into furniture.
+	if strings.Contains(err.Error(), "does not resolve to a file") {
+		t.Errorf("err = %v, want the not-installed sentence rather than the "+
+			"broken-link one", err)
+	}
+}

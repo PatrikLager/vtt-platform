@@ -98,7 +98,15 @@ type Resolved struct{ Kind, Material, Art string }
 // be true of the world rather than of the call — is honoured by the degrade
 // warning below, which says the art is not installed rather than that no art
 // directory was handed in.
+// Resolve is the single-square form. A load resolving MANY squares must not
+// call it: artlib.Open reads the art directory, so one call per square is one
+// directory scan per square. BuildSceneCreated opens the library once and uses
+// resolveWith below; this wrapper exists for callers with one square to answer.
 func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
+	return resolveWith(m, artlib.Open(artDir), square)
+}
+
+func resolveWith(m *Map, lib *artlib.Library, square string) (Resolved, []string, error) {
 	base, ok := m.Tiles[square]
 	if !ok {
 		return Resolved{}, nil, fmt.Errorf("mapdef: square %s has no tile", square)
@@ -111,8 +119,15 @@ func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
 	if !hasArt {
 		return Resolved{Kind: kind, Material: material}, nil, nil
 	}
-	piece, err := artlib.Lookup(artDir, art)
+	piece, err := lib.Lookup(art)
+	var mismatch *artlib.CaseMismatch
 	switch {
+	// BEFORE the plain ErrNotFound arm, which this error also satisfies. A
+	// case-only mismatch degrades identically; the whole difference is in what
+	// the DM is told, and they are told it while looking straight at the file.
+	case errors.As(err, &mismatch):
+		return Resolved{Kind: kind, Material: material},
+			[]string{artCaseMismatch(art, mismatch.Real)}, nil
 	case errors.Is(err, artlib.ErrNotFound):
 		// DEGRADE, not refuse (spec §4). The nature is already in hand from
 		// m.Tiles, which is the whole reason this is safe: the square keeps
@@ -206,13 +221,29 @@ func Resolve(m *Map, artDir, square string) (Resolved, []string, error) {
 // stays a refusal while an unresolvable name became a warning because the two
 // are different facts: an object that names no art at all is a map file with a
 // hole in it, not a picture that is missing.
+// ResolveObjectArt is the single-object form; see Resolve on why a load uses
+// the library-taking variant instead.
 func ResolveObjectArt(idx int, o Object, artDir string) (string, []string, error) {
+	return resolveObjectArtWith(idx, o, artlib.Open(artDir))
+}
+
+func resolveObjectArtWith(idx int, o Object, lib *artlib.Library) (string, []string, error) {
 	if o.Art == "" {
 		return "", nil, fmt.Errorf(
 			"mapdef: objects[%d] has no art (objects have no standard art fallback — only tiles do)", idx)
 	}
-	_, err := artlib.Lookup(artDir, o.Art)
+	_, err := lib.Lookup(o.Art)
+	var mismatch *artlib.CaseMismatch
 	switch {
+	// THE SAME ARM Resolve has, and it has to be written twice because this
+	// switch is written twice — see this function's own doc on why nothing
+	// forces the two to agree. Objects are where a DM most often drops a
+	// hand-copied file, so this is the side that needs the filename most.
+	case errors.As(err, &mismatch):
+		return "", []string{fmt.Sprintf(
+			"art %q is not installed, but the art directory holds %q, which differs only "+
+				"in case; rename it — the object stays, drawn from its kind",
+			o.Art, mismatch.Real)}, nil
 	case errors.Is(err, artlib.ErrNotFound):
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed; the object stays, drawn from its kind", o.Art)}, nil
@@ -256,6 +287,17 @@ const artDirUnreadableWarning = "the art directory cannot be read; drawing it pl
 // compile.go's aggregation groups by exact string.
 func artNotInstalled(art string) string {
 	return fmt.Sprintf("art %q is not installed; drawing it plain", art)
+}
+
+// artCaseMismatch names the file the directory holds, because "not installed"
+// is a sentence a DM reads while looking straight at it. The remedy is a rename
+// and nothing else says so — art ids are lowercase by rule (artlib's isArtID),
+// so the fix is always "make the filename match the id the map names".
+func artCaseMismatch(art, onDisk string) string {
+	return fmt.Sprintf("art %q is not installed, but the art directory holds %q, which "+
+		"differs only in case; rename it — a filename IS the id a map names, and matching "+
+		"it loosely would draw here and on no case-sensitive filesystem; drawing it plain",
+		art, onDisk)
 }
 
 // artCannotBeUsed is the sentence for art that IS installed and does not

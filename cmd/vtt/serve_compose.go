@@ -279,8 +279,13 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	// 2026-09-03, and that is false in four of the five arms (review finding
 	// F1, widened by Patrik's ruling of 2026-09-04): a sidecar that cannot be
 	// parsed, an orphan sidecar or a subdirectory all draw the square PLAIN,
-	// and a relative symlink or a wrong-cased filename RENDERS with nothing
-	// objecting. Only a declared format_version LATER than this server
+	// and a relative symlink RENDERS with nothing objecting. A WRONG-CASED
+	// FILENAME NO LONGER DOES, as of 2026-09-08: artlib.Library checks every
+	// name it reads against a snapshot of the real directory entries, so a
+	// miscased piece degrades to a plain square with a warning naming the file,
+	// on a case-insensitive volume exactly as on a case-sensitive one. This
+	// sentence listed it among the silent ones until then.
+	// Only a declared format_version LATER than this server
 	// understands still refuses the map — a typo'd 0 stopped refusing at
 	// art-is-a-flat-library Task 8. artlib.Validate's own doc comment carries the
 	// measured per-arm table; do not restate it here,
@@ -299,7 +304,7 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		slog.Warn(fmt.Sprintf(
 			"vtt serve: art dir %s has problems; the server is starting anyway. Do not "+
 				"assume a map load will stop them: some refuse the map, some draw the "+
-				"square plain, and a symlink or a wrong-cased name renders regardless:\n%v",
+				"square plain, and a symlink renders regardless:\n%v",
 			artDir, problems))
 	}
 
