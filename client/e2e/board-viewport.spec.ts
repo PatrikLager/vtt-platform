@@ -248,3 +248,100 @@ test.describe("on a high-DPI display", () => {
     await page.screenshot(shot("12-board-high-dpi"));
   });
 });
+
+// THE WARNING CHANNEL IS ONLY AS GOOD AS THE SURFACE IT LANDS ON, and that
+// surface is the one thing happy-dom cannot judge — it has no layout engine, so
+// a box that swallows the window measures the same there as one that does not.
+//
+// This is the delivery half of the only contract change sub-project 16 made.
+// CommandResult.warnings exists so a DM learns WHICH art did not resolve, and
+// app.ts puts the whole list into one `.toast` on an ok=true result. That list
+// is not small in the case it was designed for: missing art degrades rather
+// than refusing (design spec §4), and while warnings collapse per art NAME
+// within a scene, adventure.Compile scene-QUALIFIES them, so they do not
+// collapse across scenes — an eight-scene bundle whose art/ did not travel
+// yields one line per art name per scene.
+//
+// MEASURED against the unbounded stylesheet, 40 such warnings at 1366x768:
+// a 732px border box against a 768px window, with scrollHeight equal to
+// clientHeight at 730 (the two boxes differ by the 1px borders) —
+// so it buries the console it is reporting on and cannot be scrolled to read
+// the rest. `.toast` is position:fixed, so a narrower window wraps the same
+// text taller and pushes the first lines past the top edge, where fixed
+// positioning puts them beyond the reach of any scroll. A feature that reports
+// which picture is missing and then hides the answer has not shipped.
+//
+// The STYLESHEET is what is under test, so the toast is written into the DOM
+// directly rather than provoked through a load. Making a real eight-scene
+// bundle with absent art would exercise app.ts's path to the toast, which
+// client/test/app.test.ts already pins; it would not make the browser any
+// better at laying out an unbounded box, which is the claim at issue.
+test("a long warning list stays inside the window and stays scrollable", async ({ page }) => {
+  const VW = 1366;
+  await openTableAsDM(page);
+
+  // TWO WINDOW HEIGHTS, because a single roomy one flatters the stylesheet.
+  // At 768 the unbounded box measures 732 and still FITS — every edge
+  // assertion passes there whatever the CSS says, and only the height bound
+  // objects. 400 is the shape a DM actually meets on a short window or a
+  // split screen, where unbounded the box starts 348px above the top of the
+  // screen. Both heights are asserted so the bound is proved against a
+  // proportion of the viewport rather than against one convenient number.
+  const measure = async (VH: number) => {
+    await page.setViewportSize({ width: VW, height: VH });
+    return page.evaluate(() => {
+    const lines: string[] = [];
+    for (let s = 1; s <= 8; s++) {
+      for (let a = 1; a <= 5; a++) {
+        lines.push(`scene "chamber-${s}": art "masonry-${a}" is not installed; drawing it plain (12 squares)`);
+      }
+    }
+      document.querySelectorAll(".toast").forEach((n) => n.remove());
+      const el = document.createElement("div");
+      el.className = "toast";
+      el.textContent = lines.join("; ");
+      document.body.appendChild(el);
+      const r = el.getBoundingClientRect();
+      return {
+        top: r.top, bottom: r.bottom, width: r.width, height: r.height,
+        scrollH: el.scrollHeight, clientH: el.clientHeight,
+        overflowY: getComputedStyle(el).overflowY,
+        chars: (el.textContent || "").length,
+      };
+    });
+  };
+
+  for (const VH of [768, 400]) {
+    const box = await measure(VH);
+
+    // The fixture's own size, asserted so a shrunken list cannot quietly make
+    // every assertion below vacuous.
+    expect(box.chars, `${VH}: fixture`).toBeGreaterThan(3000);
+
+    // INSIDE THE WINDOW, both edges — a GUARD, not the primary. Against the
+    // unbounded stylesheet the height bound below fails first at both heights,
+    // so these two never get the chance to; what they cover is the other
+    // regression, a future change that bounds the height and breaks the
+    // placement. Unbounded at 400 the box does start 348px above the top of
+    // the screen, and position:fixed means no scroll ever reaches those lines
+    // — which is why the pair is worth keeping even though height catches this
+    // particular fault first.
+    expect(box.top, `${VH}: top edge`).toBeGreaterThanOrEqual(0);
+    expect(box.bottom, `${VH}: bottom edge`).toBeLessThanOrEqual(VH);
+
+    // And LEAVING THE CONSOLE VISIBLE. This is what the unbounded stylesheet
+    // fails at 768: 732 of 768 pixels is not a notification, it is a takeover.
+    expect(box.height, `${VH}: height`).toBeLessThanOrEqual(VH * 0.5);
+
+    // AND STILL READABLE: content taller than the box has to be reachable,
+    // which is the difference between bounding the box and losing the message.
+    expect(box.scrollH, `${VH}: scrollable`).toBeGreaterThan(box.clientH);
+    expect(["auto", "scroll"], `${VH}: overflow`).toContain(box.overflowY);
+  }
+
+  // WIDTH IS NOT ASSERTED, and that is deliberate rather than an omission. For
+  // `position:fixed; left:50%` with no width, the shrink-to-fit ceiling is
+  // 50vw, so an unbounded box measures 683 at VW=1366 and `min(720px, 90vw)`
+  // does not bind until VW >= 1441. An assertion here would pass against both
+  // stylesheets and read as coverage it does not have.
+});

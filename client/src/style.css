@@ -150,6 +150,17 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: #3a1f1f; border: 1px solid #6b3535; color: #ffd7d7;
   padding: 8px 14px; border-radius: 6px;
+  /* BOUNDED BECAUSE WARNINGS ARE A LIST, not a sentence. app.ts joins every
+     CommandResult.warnings entry into one toast, and adventure.Compile
+     scene-qualifies them so they do not collapse across scenes — an eight-scene
+     bundle whose art/ did not travel measured 40 warnings and 732px of toast
+     against a 768px window. position:fixed means the overflow goes off the TOP
+     edge, out of reach of any scroll, so the bound has to be here rather than
+     left to the page. overflow-y keeps the rest reachable: bounding the box
+     without it would trade an unreadable message for a truncated one. */
+  max-width: min(720px, 90vw);
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 /* The spectator's perch (visibility spec §3.1.1).

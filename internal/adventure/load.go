@@ -321,11 +321,19 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 // sceneJSON mirrors mapdef's own mapJSON shape for Tiles/Overrides/Objects
 // (maps-as-geometry spec §4.1) — a scene IS a map (spec §4.3) — so the two
 // formats decode identically field-for-field, with one deliberate difference:
-// a scene has no "pack" key at all, where mapJSON keeps one solely so a map
-// declaring it can be refused by name. A scene never needed one — an
+// a scene has no "pack" key at all. Neither does mapJSON any more: 66ef637
+// deleted that field along with the arm that named it, and what refuses a map
+// declaring one now is decodeStrict's DisallowUnknownFields, as
+// TestAMapDeclaringAPackOrAPackageIsStillRefused pins by asserting on
+// `json: unknown field "pack"`. A scene never needed the key either — an
 // adventure's art was embedded once for the whole bundle, never named per
-// scene — so there is no per-scene declaration to refuse. The bundle-level
-// refusal is in Load above.
+// scene.
+//
+// THIS PARAGRAPH CARRIED TWO CLAIMS THAT HAD STOPPED BEING TRUE, corrected
+// 2026-09-07: that mapJSON still kept a pack key for the refusal, and that a
+// bundle-level refusal sat in Load. Both were true when written and both died
+// with 66ef637; TestABundlesTilesDirectoryIsNotReadAtAll pins that a bundle
+// shipping tiles/pack.json now loads with the directory unread.
 type sceneJSON struct {
 	ID         string              `json:"id"`
 	Name       string              `json:"name"`

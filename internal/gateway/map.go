@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
@@ -123,6 +124,37 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 
 	firstSeq, err := s.campaign.AppendBatch(envs)
 	if err != nil {
+		// THE ONE REFUSAL A DM REACHES BY ORDINARY USE, so it is the one that
+		// gets translated. Art that is not installed degrades the square and
+		// lets the load COMMIT (design spec §4), so a mistyped override or a
+		// map copied ahead of its pictures is warned about, not refused — and
+		// the map is in the log. Installing the picture and loading again is
+		// the obvious next move and cannot work, because the first load took
+		// the scene id. The fold's own sentence names a layer the DM does not
+		// work in and a word they never typed, and does not hint at the remedy.
+		//
+		// IT SAYS "SCENE ID", NOT "MAP", because that is all the sentinel
+		// knows, and the difference is reachable with the content this repo
+		// ships. adventures/cellar-rats declares a scene id of "cellar" and
+		// campaigns/example/maps/cellar.json declares a map id of "cellar", so
+		// load_adventure then load_map refuses a map that was never loaded. A
+		// first draft of this message said "map %q is already loaded" and was
+		// therefore FALSE on shipped content — a refusal that misdiagnoses is
+		// worse than one that is merely opaque, because the DM checks
+		// /api/maps, sees the map absent, and has nothing to reconcile.
+		// The remedy clause survives the correction: a map's scene id is its
+		// own id, so a copy under a new id does load.
+		//
+		// Matched on the SENTINEL, never on the fold's prose, and deliberately
+		// narrow — every other AppendBatch failure keeps its own message, which
+		// TestANonCollisionFailureKeepsItsOwnMessage pins.
+		if errors.Is(err, engine.ErrSceneExists) {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: fmt.Sprintf(
+				"gateway: load_map: scene id %q is already in play — a map's scene id is its "+
+					"own id, and a loaded adventure can claim one too; to load this map as "+
+					"well, install a copy under a new id and load that",
+				cmd.GetMapId())}
+		}
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq, Warnings: warnings}

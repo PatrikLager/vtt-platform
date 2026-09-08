@@ -44,12 +44,31 @@ type Adventure struct {
 	// ArtDir is the adventure's own flat art directory (dir/art), the root
 	// every scene's Overrides and object art resolve against through
 	// internal/artlib. It is the successor to the embedded tiles/pack.json
-	// Task 7 of that plan deleted (Load refuses a bundle that still ships one,
-	// by name) and the reason an adventure stays self-contained: art travels
-	// inside the bundle rather
+	// Task 7 of that plan deleted, and the reason an adventure stays
+	// self-contained: art travels inside the bundle rather
 	// than being installed into the campaign's art/, where two adventures
 	// shipping the same filename would fight (controller's ruling,
-	// 2026-09-03; art-is-a-flat-library plan, pre-flight finding). The
+	// 2026-09-03; art-is-a-flat-library plan, pre-flight finding).
+	//
+	// THIS SAID "Load refuses a bundle that still ships one, by name" until
+	// 2026-09-07. It did, until 66ef637 deleted that refusal along with the
+	// rest of the migration route; TestABundlesTilesDirectoryIsNotReadAtAll
+	// now pins the opposite — a bundle still shipping tiles/pack.json loads,
+	// and the directory is simply not read.
+	//
+	// WHAT IS BUILT HERE IS THE RESOLVING HALF ONLY, and a reader should not
+	// take this field for a finished feature. ArtDir's single consumer is the
+	// mapdef.BuildSceneCreated call in Compile, and the wire carries a bare art
+	// id: TileRef.art and SceneObject.art name no root. The only route serving
+	// art bytes is GET /api/art/{file}, whose handleArtFile opens the CAMPAIGN's
+	// art directory, so a piece resolved from here is fetchable by no client —
+	// it resolves with no warning and every browser draws the square plain,
+	// which §4 of the design spec calls worse than the refusal it replaced. No
+	// shipped adventure reaches this (neither declares an override or an object
+	// and neither ships art/), and docs/map-format.md §9 points authors at the
+	// campaign's art/ instead. Serving it needs a decision — an adventure-scoped
+	// route beside GET /api/adventures/{id}/guide, or a documented install step
+	// — not a patch. The
 	// directory need not exist — an adventure with no art is legal and its
 	// scenes draw from the built-in vocabulary, warning once per reference.
 	ArtDir string

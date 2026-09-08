@@ -11,6 +11,22 @@ import (
 
 var ErrUnknownVariant = errors.New("engine: unknown event variant")
 
+// ErrSceneExists is the duplicate-scene refusal, given a name so a CALLER can
+// recognise it without matching on prose. The fold remains the only thing that
+// catches the collision — internal/gateway's handleLoadMap does no pre-check,
+// deliberately, because TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned
+// exists to prove this backstop engages for the standalone-map path and a
+// pre-check would quietly retire that proof. What the sentinel buys is a
+// gateway able to say something a DM can act on, without reading this string.
+//
+// THE SENTINEL IS THE TAIL, not the whole sentence, so the wrap below still
+// reads `engine: scene "cellar" already exists` exactly as it did before it had
+// a name. That is deliberate: internal/gateway/project.go quotes this format
+// string, and client/src/wire.ts and client/test/app.test.ts carry it as dated
+// measurements. Giving the sentinel the full text would have reformatted the
+// message and made all four quotations false in the same commit that added it.
+var ErrSceneExists = errors.New("already exists")
+
 // Size/anchor limits for the world layer (spec §4): a size posture, not a
 // scripting surface — no game-system meaning, just wire-frame bounds.
 const (
@@ -63,7 +79,7 @@ func Apply(st *State, env *vttv1.Envelope) error {
 	case *vttv1.Envelope_SceneCreated:
 		sc := p.SceneCreated
 		if _, dup := st.Scenes[sc.SceneId]; dup {
-			return fmt.Errorf("engine: scene %q already exists", sc.SceneId)
+			return fmt.Errorf("engine: scene %q %w", sc.SceneId, ErrSceneExists)
 		}
 		// Translate the wire terrain into the engine's own Tile/SceneObject
 		// (state.go): Tiles/Objects may be empty here — an old-style

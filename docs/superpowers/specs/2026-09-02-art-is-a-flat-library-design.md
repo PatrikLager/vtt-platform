@@ -463,9 +463,17 @@ is safe to assume.
 rather than a `Resolve` one: the whole cost of the refusal it replaces was that
 `composeServer` turned it into `exit status 1` for every map in the campaign, and
 a unit test on one square cannot see that. Its companion is the other half of the
-split — **a sidecar declaring a `format_version` this server does not understand
-still refuses, naming both versions**, and refuses at that same boot. *(Added
-2026-09-04 with §4's ruling.)*
+split — **a sidecar declaring a `format_version` LATER than this server's still
+refuses, naming both versions**, and refuses at that same boot. *(Added
+2026-09-04 with §4's ruling. **Amended 2026-09-07**: this said "a `format_version`
+this server does not understand", which reads as `!=`. The guard is
+`*version > FormatVersion` in `artlib`'s `pieceFromSidecar` (reached from
+`Lookup` via `lookupIn`) and has been since `035248e`
+narrowed it; a version BELOW this server's degrades like any other broken
+sidecar. The direction is written out here because this section is the one a
+task's tests get written from, and `artlib.ErrFormatVersion`'s own doc records
+what the `!=` reading cost: a whole campaign's boot refused, for every seat, over
+a mistyped digit.)*
 
 *(Amended 2026-09-03 with §3.4 and exit criterion 6. This paragraph said
 "is refused" until Task 3's re-review caught the contradiction: §8 is the list
@@ -534,6 +542,56 @@ expensive part.
 
 ---
 
+### Carried forward: author-controlled bytes are not bounded on the way to a client
+
+*Added 2026-09-07 at the merge gate, from the whole-branch review. Patrik: this
+one is important and gets done — it is recorded here rather than in a review
+transcript so it survives the branch.*
+
+`artlib.clip` bounds a fragment of author-controlled sidecar text to 40
+characters, and it is called from **one** place: the `format_version` arm. Every
+other interpolation of sidecar bytes into a message passes them through whole —
+the strict-decode `%w`, the door-name `%q`, and the kind-mismatch `%q` on
+`sc.Kind` — and those messages become `CommandResult.warnings` entries.
+`mapdef`'s own `decodeStrict` `%w` and `fieldErr` callers do the same onto
+`CommandResult.error`; that half predates this sub-project.
+
+**The scope is EVERY such interpolation, deliberately not a number.** Naming a
+count invites bounding that many and stopping: the three artlib sites above are
+the ones this review named, `internal/mapdef/resolve.go` adds six more and
+`load.go`'s `decodeStrict` another, and `artCannotBeUsed`'s own doc comment
+already says "THAT IS TWO OF THE EIGHT SENTENCES THE ART PATH CAN PRODUCE". The
+invariant is what to work to: no author-controlled bytes reach a
+`CommandResult` unbounded.
+
+**Why it matters, and why the bar is lower than it looks.** Warnings collapse per
+art NAME within a scene, but `adventure.Compile` scene-QUALIFIES them, so they do
+not collapse across scenes. The total is what has to cross a read limit, not any
+single value: twenty scenes x five bad art names x a couple of KB of interpolated
+sidecar text gets there. Past `internal/harness`'s `readLimit`, `handleLoadMap`
+has already committed and broadcast the scene when the frame is built — so every
+other seat's board changes, and the ISSUER's socket closes with `message too
+big`, reconnects into a campaign that silently changed, and is never told why.
+Go clients only: the MCP agent seat and `cmd/vtt`. A browser has no read limit
+and renders the block instead, which §4's toast bound now contains.
+
+**Not remotely triggerable.** `load_map` is gated to DM and agent by
+`internal/gateway/authz.go`, and no route writes map or art files. This is a
+broken-content and third-party-bundle footgun, not a denial of service. It is
+carried rather than fixed at this gate because routing seven interpolation sites
+through a shared bound deserves its own tests, not a patch written at a merge.
+
+**What done looks like:** every author-controlled interpolation reaching a
+`CommandResult` passes through one bound; a test drives an oversized sidecar
+value through `load_map` AND through `load_adventure` (the aggregating path) and
+asserts the frame stays inside `readLimit`; and `clip`'s doc comment loses the
+sentence "no one has re-surveyed the tree" (mid-comment, not its last line),
+which is true today and is
+exactly what stops being true when this is done. That sentence is the marker for
+this item — it was left deliberately, and it should not outlive the work.
+
+---
+
 ## 10. Exit criteria
 
 1. `art/` is flat, the filename is the id, and no art declares an id anywhere.
@@ -551,10 +609,13 @@ expensive part.
    case-insensitive filesystem — for those, the boot report is the only notice
    anyone gets. **Exactly one malformed thing stops the boot on its own**: an
    art root that cannot be opened. **Exactly one stops a MAP**: a sidecar
-   declaring a `format_version` NUMBER this server does not understand — and
+   declaring a `format_version` NUMBER **later than this server's** — and
    that one stops the boot as well, whenever a committed map names it. A
-   `format_version` that is absent, or that holds something which is not a
-   version number at all, is a broken file and degrades with them. *(Both sentences
+   `format_version` that is absent, that holds something which is not a version
+   number at all, **or that is below this server's**, is a broken file and
+   degrades with them. *(The direction was added 2026-09-07; this criterion
+   previously said "does not understand", which reads as `!=` and is not what
+   `pieceFromSidecar`'s `*version > FormatVersion` does — see §8.)* *(Both sentences
    were added 2026-09-04 with §4's ruling; before it, every unreadable sidecar
    did both.)*
 6. Object art needs no sidecar. Tile art without one **degrades that square

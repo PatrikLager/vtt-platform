@@ -721,8 +721,13 @@ func TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 	if r2.Ok {
 		t.Fatalf("want ok=false on a second load of the same map (scene id collision), got %+v", r2)
 	}
-	if !strings.Contains(r2.Error, "already exists") {
-		t.Fatalf("error = %q, want it to name a collision", r2.Error)
+	// The DM-FACING TRANSLATION of engine.ErrSceneExists. handleLoadMap emits
+	// this sentence only on errors.Is against that sentinel, and only the fold
+	// produces it — so asserting the translated wording still pins that the
+	// BACKSTOP refused, which is what this test exists to prove, rather than
+	// merely that something somewhere said no.
+	if !strings.Contains(r2.Error, "already in play") {
+		t.Fatalf("error = %q, want the collision refusal", r2.Error)
 	}
 
 	// Campaign not poisoned: an ordinary follow-up command still succeeds.
@@ -888,7 +893,8 @@ func TestAnInstalledButBrokenMapIsRefusedAndStaysUnloaded(t *testing.T) {
 // can see it: two seats issue load_map for the same freshly installed map at
 // once. Whichever order they arrive in, exactly one puts the scene in the
 // world and the other is cleanly refused for the reason a second load is
-// always refused — the scene id already exists — never a torn connection, a
+// always refused — the scene id is taken, surfaced to the DM as "already in
+// play" by handleLoadMap's engine.ErrSceneExists arm — never a torn connection, a
 // crash, or two scenes for one place.
 //
 // The insert-once property itself is pinned in map_internal_test.go, which
@@ -919,7 +925,7 @@ func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
 			continue
 		}
 		refused++
-		if !strings.Contains(res.Error, "already exists") {
+		if !strings.Contains(res.Error, "already in play") {
 			t.Errorf("the losing load was refused with %q, want the ordinary "+
 				"scene-collision refusal", res.Error)
 		}
@@ -1389,5 +1395,120 @@ func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "masonry-1") {
 		t.Fatalf("warnings %q must name the reference that mismatched", res.Warnings)
+	}
+}
+
+// TestASecondLoadTellsTheDMTheMapIsLoadedAndHowToReload is the message half of
+// the collision TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned proves
+// the mechanics of. The refusal is correct and stays correct; what this pins is
+// that it is ADDRESSED TO A DM.
+//
+// The path that makes this matter is ordinary, not exotic. Art that is not
+// installed DEGRADES the square and lets the load commit (design spec §4), so a
+// DM who mistypes an override, or copies a map before its pictures, gets a
+// warning rather than a refusal — and the map is now in the log. Installing the
+// picture and loading again is the obvious next move, and it cannot work: the
+// scene id is taken, by that same first load. Handing them
+// `engine: scene "cellar" already exists` at that moment names a layer they do
+// not work in and a word ("scene") they did not type, while the thing they
+// changed was art. The remedy — load a copy under a new map id — is not
+// guessable from it.
+//
+// Asserted on the DM-facing sentence rather than on any substring the engine
+// happens to share, so that a future change to the fold's own wording cannot
+// quietly make this pass while the DM reads something else.
+func TestASecondLoadTellsTheDMTheMapIsLoadedAndHowToReload(t *testing.T) {
+	f := newMapFixture(t, true)
+	conn := f.dial(f.dmToken, 0)
+
+	// The cellar map places a token for this actor, and engine.Apply refuses a
+	// TokenPlaced naming an actor the world does not have — so the FIRST load
+	// only succeeds once the actor exists.
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "seed-fighter",
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		}},
+	})
+	if r0 := readResult(t, conn); !r0.Ok {
+		t.Fatalf("seed AddActor act-fighter: %s", r0.Error)
+	}
+
+	sendCommand(t, conn, loadMapCmdFor("cellar"))
+	if r1 := readResult(t, conn); !r1.Ok {
+		t.Fatalf("want the first load to succeed, got %+v", r1)
+	}
+	// Drain the first load's own broadcast; see the double-load test above for
+	// why an un-drained batch would starve the next CommandResult.
+	for i := 0; i < 2; i++ {
+		readEvent(t, conn)
+	}
+
+	sendCommand(t, conn, loadMapCmdFor("cellar"))
+	r2 := readResult(t, conn)
+	if r2.Ok {
+		t.Fatalf("want ok=false on a second load of the same map, got %+v", r2)
+	}
+	// THE MAP ID, because that is what the DM typed and what they will look for.
+	if !strings.Contains(r2.Error, `"cellar"`) {
+		t.Errorf("error = %q, want it to name the map the DM asked for", r2.Error)
+	}
+	// THE REMEDY. A refusal a DM cannot act on sends them hunting a duplicate
+	// that does not exist.
+	if !strings.Contains(r2.Error, "already in play") {
+		t.Errorf("error = %q, want it to say the scene id is already in play", r2.Error)
+	}
+	// AND NOT OVER-CLAIM. The sentinel knows a scene id is taken; it does not
+	// know a MAP was loaded, and a loaded adventure can claim a scene id too —
+	// adventures/cellar-rats and campaigns/example/maps/cellar.json both use
+	// "cellar", so a first draft of this message was false on shipped content.
+	if strings.Contains(r2.Error, "map \"cellar\" is already loaded") {
+		t.Errorf("error = %q claims the MAP was loaded, which the sentinel does "+
+			"not establish — a loaded adventure can take the scene id", r2.Error)
+	}
+	if !strings.Contains(r2.Error, "new id") {
+		t.Errorf("error = %q, want it to name the remedy: load a copy under a new id", r2.Error)
+	}
+	// NOT the fold's internal phrasing. "scene" is a word the DM never typed.
+	if strings.Contains(r2.Error, "engine:") {
+		t.Errorf("error = %q, leaks the fold's own wording to a DM", r2.Error)
+	}
+}
+
+// TestANonCollisionFailureKeepsItsOwnMessage is the discriminating half of
+// handleLoadMap's engine.ErrSceneExists arm, and without it that arm is pinned
+// only to fire — never to STOP firing.
+//
+// Measured with the arm mutated to `errors.Is(...) || err != nil`: the whole
+// repository still passes. Nothing observed the difference, and check:mutation
+// cannot: gremlins has no mutator for a bare boolean call in an `if`, the same
+// blind spot that once hid fourteen mutants behind 100% line coverage.
+//
+// What the gap costs is a misdirection at the worst moment. A poisoned
+// campaign, a store write that failed, or an actor collision inside the map's
+// own batch would all reach the DM as "install a copy under a new id" — sending
+// them to duplicate a map over a disk error.
+//
+// The vehicle is the cellar map's own TokenPlaced, which names act-fighter.
+// Loading without seeding that actor makes engine.Apply refuse for a reason
+// that has nothing to do with scene ids, on the same AppendBatch call.
+func TestANonCollisionFailureKeepsItsOwnMessage(t *testing.T) {
+	f := newMapFixture(t, true)
+	conn := f.dial(f.dmToken, 0)
+
+	sendCommand(t, conn, loadMapCmdFor("cellar"))
+	r := readResult(t, conn)
+	if r.Ok {
+		t.Fatalf("want ok=false: the map places a token for an actor nobody added, got %+v", r)
+	}
+	// The fold's OWN sentence, untranslated.
+	if !strings.Contains(r.Error, "unknown actor") {
+		t.Errorf("error = %q, want the fold's own reason for this failure", r.Error)
+	}
+	// And emphatically not the scene-collision translation.
+	if strings.Contains(r.Error, "already in play") || strings.Contains(r.Error, "new id") {
+		t.Errorf("error = %q translates a NON-collision failure into the "+
+			"scene-id refusal, sending a DM to copy a map over an unrelated fault", r.Error)
 	}
 }
