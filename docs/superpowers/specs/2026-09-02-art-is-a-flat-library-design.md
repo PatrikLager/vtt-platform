@@ -557,10 +557,46 @@ first with* `websocket: message too big: read limited at 204801 bytes`.
 ***NOT closed, and this section claimed otherwise for one round.*** *The first
 version of this note said "every interpolation that can reach a CommandResult".
 Review found that false the same day. Still unbounded, and still carried:*
-`internal/adventure`*'s scene-id prefix and collision refusals,*
+`internal/adventure`*'s collision refusals for an ACTOR id and a TOKEN id — the
+other two arms of* `checkCollisions` *are bounded now, a scene id by*
+`maxIDBytes` *and a note key by* `maxNoteKeyBytes`*,*
 `mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/engine`*'s
 terrain kind reaching a `move_token` refusal through* `internal/gateway`*, and*
 `internal/rules`*' ability and resource names reaching a `use_ability` result.*
+
+***Scene-id prefix: closed 2026-09-09.*** *`loadScenes` now refuses a scene id
+over `maxIDBytes` (128). It is the MULTIPLYING one — not the last unbounded
+string in a bundle, and the first version of this note said "the same door every
+other author-controlled string already had", which review found false the same
+day. Four were already bounded (`opening_narration`, note `key`, note `title`,
+note `text`); the manifest's `id` and `name`, a scene's `name`, an actor's
+`actor_id` and `name`, and a placement's `token_id` are still non-empty-only.
+None of them multiplies BY WARNINGS, which is the multiplier that matters here
+and why the id went first. Two of them do recur — an `actor_id` and a
+`token_id`, once per placement in `TokenPlaced` — but that count is bounded by
+the placements an author wrote, not by how many warnings a scene produces. The
+adventure-format spec §4 now carries the same distinction, in the same words.*
+
+*Two author-controlled strings are in NEITHER list and belong in the inventory:
+a scene override's VALUE and an object's* `art`*. Neither is load-bounded —*
+`CheckOverridesInsideGrid` *validates the KEY and says outright that the value
+is not inspected — and both reach warnings once per scene, so they multiply
+exactly the way a scene id did. What holds them is clipping at emit time,*
+`mapdef`*'s* `name()` *=* `artlib.Clip(art, artlib.MaxFragment)`*, and that does
+not cover every arm:* `artCannotBeUsed` *interpolates its* `art` *raw at both
+call sites. Pre-existing and outside the scene-id change, but an implementer
+reading these lists as the inventory of open work would not find it.*
+
+*The prefix was the multiplier rather than a single long value:*
+`adventure.Compile` *stamps* `scene %q:` *onto EVERY warning a scene produces
+and they do not collapse across scenes, so one oversized id was paid once per
+warning per scene. Bounding at the loader is what makes that arithmetic finite,
+and it binds the* `%w` *error path in* `Compile` *as well — the same id goes
+into* `adventure: compile: scene %q` *a few lines above the warning append.*
+
+*`TestLoadAcceptsValuesExactlyOnEveryLimit` holds the direction — an id of
+exactly the limit is legal — because a `>=` here would tell an author their id
+"must be at most 128 bytes" while reporting "got 128".*
 
 ***The mistake worth keeping.*** *Two clips on one path make both mutants
 unkillable — that part is true. But `artlib` bounding an id inside ITS error and
@@ -581,6 +617,8 @@ value. The fixture, not the assertion, decided what the test could see.*
 work findable.*
 
 ### Carried forward (closed): author-controlled bytes are not bounded on the way to a client
+
+`[anchor:author-controlled-bytes-unbounded]`
 
 *Added 2026-09-07 at the merge gate, from the whole-branch review. Patrik: this
 one is important and gets done — it is recorded here rather than in a review

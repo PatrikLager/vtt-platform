@@ -1,0 +1,16 @@
+{
+  "actor_id": "brace-guard",
+  "name": "Brace Guard",
+  "kind": "non_party",
+  "attributes": {
+    "vim": 10,
+    "vigor": 10,
+    "brace": 14
+  },
+  "resources": {
+    "focus": {
+      "current": 10,
+      "max": 10
+    }
+  }
+}

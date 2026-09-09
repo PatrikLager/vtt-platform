@@ -230,6 +230,14 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		// "overrides" alone would coincidentally match this fixture's own
 		// directory name.
 		{"scene-override-without-tiles", []string{"cellar.json", "declares overrides but tiles is empty"}},
+		// A SCENE ID IS THE PREFIX ON EVERY WARNING THE BUNDLE PRODUCES.
+		// adventure.Compile writes `scene %q: ` in front of each one and
+		// warnings do not collapse across scenes, so an unbounded id multiplies
+		// by scenes times warnings — the shape that made load_adventure the
+		// sharper of the two read-limit cases. It was checked for non-empty and
+		// for uniqueness and nothing else: not against its filename the way a
+		// map id is, and not for length the way opening_narration is.
+		{"scene-id-too-long", []string{"cellar.json", `field "id"`, "at most 128 bytes, got 200"}},
 	}
 
 	rs := loadFixtureRuleset(t)
@@ -277,6 +285,7 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"note-key-empty", "note-text-empty",
 		"scene-tile-missing", "scene-placement-in-wall", "scene-override-unresolvable",
 		"scene-override-without-tiles",
+		"scene-id-too-long",
 		"actor-kind-missing", "actor-kind-unknown",
 	}
 	if len(want) != len(onDisk) {
@@ -474,16 +483,30 @@ func copyFixtureDirExcluding(t *testing.T, srcDir string, skip ...string) string
 // TestLoadAcceptsValuesExactlyOnEveryLimit pins that every limit load.go
 // checks is INCLUSIVE. testdata/at-every-boundary sits exactly on all of them
 // at once — 8192-byte narration and note text, a 128-byte note key, a
-// 256-byte title, a 1x1 grid, a placement at (0,0), and a resource with max 0
-// and a non-zero current — and every one of those is legal.
+// 256-byte title, a 128-byte scene id, a 1x1 grid, a placement at (0,0), and a
+// resource with max 0 and a non-zero current — and every one of those is legal.
 //
-// One fixture rather than seven because the limits share a failure mode:
-// loosen any single comparison by one character (`>` to `>=`, `<` to `<=`) and
-// this adventure stops loading. A fixture one byte UNDER each limit would load
-// either way and pin nothing, which is how all seven boundaries came to be
-// unpinned in the first place.
+// The fixture is the pin and this list is its description, so the list is
+// stated as an invariant rather than a count: every BYTE CAP load.go checks has
+// a value here sitting exactly on it, plus the grid, placement and resource
+// cases named above. A count would rot the first time a limit was added — and
+// it did, when maxIDBytes arrived and left a comment saying "seven" three
+// times.
 //
-// The placement at (0,0) is NOT one of the seven -- `p.X < 0` and `p.Y < 0`
+// Not "every inclusive comparison in the loader", which an earlier draft of
+// this comment claimed: `rv.Current > rv.Max` is inclusive too, and this
+// fixture cannot reach it, because `max: 0` short-circuits the `rv.Max > 0`
+// guard in front of it. testdata/valid pins that one (brace-guard has focus
+// 10/10). Naming the wrong pin is worse than naming none — it sends the next
+// reader to a file that does not hold the coverage.
+//
+// One fixture rather than one per limit, because the limits share a failure
+// mode: loosen any single comparison by one character (`>` to `>=`, `<` to
+// `<=`) and this adventure stops loading. A fixture one byte UNDER each limit
+// would load either way and pin nothing, which is how these boundaries came to
+// be unpinned in the first place.
+//
+// The placement at (0,0) is NOT one of them -- `p.X < 0` and `p.Y < 0`
 // were already killed by testdata/valid/scenes/gate.json, which has had a
 // (0,0) placement all along. It is kept as a deliberate redundant pin, so that
 // the lower bound does not depend on a single fixture the way the upper bound
@@ -507,6 +530,27 @@ func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	}
 	if len(adv.Scenes) != 1 || adv.Scenes[0].GridW != 1 || adv.Scenes[0].GridH != 1 {
 		t.Fatalf("want one 1x1 scene, got %+v", adv.Scenes)
+	}
+	// A scene id of exactly maxIDBytes is legal: the limit is the longest id an
+	// author MAY write, so landing on it is not landing over it. The refusal
+	// side (testdata/invalid/scene-id-too-long) uses 200 bytes and so cannot
+	// tell `>` from `>=` -- measured, the CONDITIONALS_BOUNDARY mutant on that
+	// comparison survived the whole package until pin.json's id grew to 128.
+	//
+	// What kills that mutant is the FIXTURE, not this assertion: under `>=` a
+	// 128-byte id is refused, Load returns an error, and the test has already
+	// died at the t.Fatalf above without ever reaching this line. The assertion
+	// does a different job — it LOCKS the id at 128, so nobody can shorten it
+	// back and silently retire the kill. Worth saying plainly, because a
+	// maintainer who reads the coverage as living here would delete a JSON file
+	// and take a mutant with it.
+	//
+	// maxIDBytes and maxNoteKeyBytes are both 128, so this fixture cannot tell
+	// the two checks apart if someone ever swaps the constants between them.
+	// Nothing here can: each value has to sit exactly on its OWN limit, and
+	// those limits coincide.
+	if got := len(adv.Scenes[0].ID); got != 128 {
+		t.Errorf("scene id = %d bytes, want 128 (exactly maxIDBytes)", got)
 	}
 	if len(adv.Scenes[0].Placements) != 1 || adv.Scenes[0].Placements[0].X != 0 || adv.Scenes[0].Placements[0].Y != 0 {
 		t.Errorf("want one placement at (0,0), got %+v", adv.Scenes[0].Placements)
