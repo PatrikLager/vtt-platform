@@ -2,7 +2,9 @@ package mapdef
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrPackNotLoaded is gone, and its absence is the point. It marked the one
@@ -71,6 +73,23 @@ func LoadInstalled(mapsDir, id, artDir string) (*Map, error) {
 	}
 	// The name every error below carries. NOT the path opened: see this
 	// function's own doc comment.
+	// THE FILENAME THE DIRECTORY ACTUALLY HOLDS, not the filesystem's idea of a
+	// match. The path here is built FROM the id, and a case-insensitive volume
+	// (APFS by default) resolves Cellar.json for "cellar" — the declared-id
+	// check below then passes too, because that file declares "cellar". The map
+	// loads on the machine it was authored on and 404s on a Linux server.
+	//
+	// loadMapsDir's own doc rests on this being exact: "a map's declared id is
+	// always exactly its filename minus .json, and a filesystem cannot hold two
+	// entries of the same name, so the duplicate-id collision cannot arise here
+	// by construction". That holds only under an exact comparison. Boot was
+	// already safe — it derives the id from the REAL entry name — so what this
+	// closes is a map installed AFTER boot, the case install-then-load exists
+	// for. Same hole artlib.Library closed for art the same day.
+	if err := refuseCaseOnlyMatch(mapsDir, file); err != nil {
+		return nil, err
+	}
+
 	display := "maps/" + file
 
 	m, err := loadAs(filepath.Join(mapsDir, file), display)
@@ -132,4 +151,50 @@ func LoadInstalled(mapsDir, id, artDir string) (*Map, error) {
 // is ".", which is not "".
 func idIsAFilename(id string) bool {
 	return id != "." && id != ".." && filepath.Base(id) == id
+}
+
+// refuseCaseOnlyMatch reports a directory entry differing from file only in
+// case, and says nothing otherwise.
+//
+// A directory that cannot be read, and a file genuinely absent, both return nil
+// deliberately: loadAs reports those in the messages every caller already
+// expects, and repeating them here would be a second thing to keep in
+// agreement. This adds exactly one refusal, for the one state the platform
+// could not otherwise see.
+//
+// ONE ReadDir PER CALL, and that is quadratic at boot on purpose: loadMapsDir
+// calls LoadInstalled once per entry, so a campaign of n maps costs n scans of
+// n names. Measured 2026-09-08 — 10 maps 1ms, 100 maps 12ms, 400 maps 88ms —
+// against a boot that happens once, so the snapshot-threading artlib needed is
+// not earned here. artlib's Validate was the opposite call: 773ms at 800
+// pieces, on a path `vtt art install` runs repeatedly. Measure before copying
+// either answer.
+//
+// ToLower rather than strings.EqualFold, matching artlib for the same reason:
+// EqualFold applies Unicode simple folding, so it calls "maſonry-1" a case-only
+// match for "masonry-1" and would name a file whose rename fixes nothing.
+func refuseCaseOnlyMatch(mapsDir, file string) error {
+	// The error is DISCARDED, not tested-and-ignored, and the difference is
+	// what golangci-lint's nilerr objects to in the tested form. A directory
+	// that cannot be read has nothing to say about case: loadAs reports it in
+	// the message every caller already expects. os.ReadDir returns what it
+	// managed to read alongside any error, so a partial listing still answers
+	// the only question asked here, and an empty one falls through to nil.
+	entries, _ := os.ReadDir(mapsDir)
+	for _, e := range entries {
+		if e.Name() == file {
+			return nil
+		}
+	}
+	want := strings.ToLower(file)
+	for _, e := range entries {
+		if strings.ToLower(e.Name()) == want {
+			return fmt.Errorf(
+				"mapdef: maps/%s: the directory holds %q, which differs only in case — "+
+					"a map's filename IS its id, and matching it loosely would load this "+
+					"map here and on no case-sensitive filesystem; rename it to %q",
+				file, e.Name(), file)
+		}
+	}
+	return nil
 }

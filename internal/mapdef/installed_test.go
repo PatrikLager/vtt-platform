@@ -317,3 +317,49 @@ func TestTheBootWalksOwnUnusableIdsAreRefusedByFilename(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadInstalledRefusesAFilenameThatDiffersOnlyInCase closes the map layer's
+// half of the same hole artlib.Library closed for art on 2026-09-08.
+//
+// LoadInstalled builds its path FROM the id — `file := id + ".json"` — and opens
+// it. On a case-insensitive volume, which APFS is by default, that resolves
+// Cellar.json for the id "cellar", and the declared-id check one line down
+// passes because the FILE declares "cellar" too. Measured before this test: the
+// map loaded. On Linux the same campaign 404s.
+//
+// The argument in cmd/vtt/maps.go's loadMapsDir doc rests on exactly this —
+// "a map's declared id is always exactly its filename minus .json, and a
+// filesystem cannot hold two entries of the same name, so the duplicate-id
+// collision cannot arise here by construction". That is only true if the
+// filename comparison is exact, and it was not. The same sentence was true of
+// art and had the same hole.
+//
+// BOOT ALREADY CATCHES THIS, which is why it is not the art bug's equal:
+// loadMapsDir derives the id from the REAL entry name, so Cellar.json is asked
+// for as "Cellar", its declared "cellar" disagrees, and the server refuses to
+// start naming both. The window is a map installed AFTER boot, which is the
+// case the whole install-then-load design exists to serve.
+func TestLoadInstalledRefusesAFilenameThatDiffersOnlyInCase(t *testing.T) {
+	mapsDir := filepath.Join(t.TempDir(), "maps")
+	writeInstalled(t, mapsDir, "Cellar.json", validMapJSON("cellar"))
+
+	// Say which regime ran, so a case-sensitive CI machine cannot report this as
+	// evidence it did not gather — there the open simply fails.
+	if _, err := os.Stat(filepath.Join(mapsDir, "cellar.json")); err == nil {
+		t.Log("case-INSENSITIVE volume: this is a real test")
+	} else {
+		t.Log("case-sensitive volume: the filesystem already refuses this")
+	}
+
+	_, err := mapdef.LoadInstalled(mapsDir, "cellar", "")
+	if err == nil {
+		t.Fatal("LoadInstalled succeeded: the only file is Cellar.json, and a map " +
+			"that loads here and 404s on a case-sensitive server is the same " +
+			"campaign drawing two ways")
+	}
+	// The refusal has to NAME the file, because the remedy is a rename and the
+	// DM is looking at a directory that appears to contain the map.
+	if !strings.Contains(err.Error(), "Cellar.json") {
+		t.Errorf("err = %v, want it to name the file on disk", err)
+	}
+}
