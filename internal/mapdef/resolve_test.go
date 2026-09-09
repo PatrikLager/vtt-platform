@@ -844,3 +844,184 @@ func TestNoWarningCarriesUnboundedAuthorBytes(t *testing.T) {
 		})
 	}
 }
+
+// TestACannotBeUsedWarningStopsGrowingWithTheArtName pins the one warning in
+// resolve.go that renders artlib's error instead of composing its own sentence
+// from name(). Every other warning here clips the art name to MaxFragment;
+// artCannotBeUsed did not, at either of its two call sites, and it renders an
+// artlib error that carries the id a second time — artlib stamps
+// `artlib: art/<id>.json` with the id unclipped as well. Two copies of an
+// author-controlled string in the sentence a DM reads.
+//
+// It was never UNBOUNDED: isArtID refuses an id over maxArtIDLen (250, being
+// NAME_MAX minus the sidecar suffix), and an id that fails that check is
+// ErrNotFound, which is a different arm and already clipped. The exposure was
+// a sentence running 592..850 depending on which of artlib's eight messages
+// composed it, against siblings of 84, 102, 105, 212, 433 and 523 at the same
+// 250-byte id — so 1.62x the largest at worst, on a path that multiplies per
+// scene. It is 178..366 now. Not one of any size, and not the "six times" a
+// first draft asserted nor the flat "592" its correction did.
+//
+// The assertion is the invariant rather than a byte count, because a count
+// would pin the sentence's wording as well as its bound: past the clip point
+// the warning must STOP GROWING. Two ids that differ by 150 bytes and both
+// exceed MaxFragment must produce warnings of exactly equal length. That fails
+// if either copy of the id is unclipped, which is why one test covers both.
+func TestACannotBeUsedWarningStopsGrowingWithTheArtName(t *testing.T) {
+	// ONE SHAPE PER artlib MESSAGE THAT CAN REACH THIS ARM, because artlib
+	// composes them in eight different places and clipping one taught nothing
+	// about the others. Review measured that after the first fix seven still
+	// shipped 228 bytes of the id, and that ten of the thirteen clips had no
+	// test observing them at all — reverting those ten left every suite green.
+	// A shape here is the behavioural RED for one of them.
+	shapes := []struct {
+		name    string
+		install func(t *testing.T, dir, id string)
+	}{
+		{"decode", sidecar(`{"format_version":1,"kind":"bo`)},
+		{"version-required", sidecar(`{"kind":"wall"}`)},
+		{"version-not-a-number", sidecar(`{"format_version":"2","kind":"wall"}`)},
+		{"version-zero", sidecar(`{"format_version":0,"kind":"wall"}`)},
+		{"door-fields-on-a-wall", sidecar(`{"format_version":1,"kind":"wall","open":"x-open.png"}`)},
+		{"door-declares-one", sidecar(`{"format_version":1,"kind":"door","open":"x-open.png"}`)},
+		{"not-a-picture", sidecar(`{"format_version":1,"kind":"door","open":"NOT OK","closed":"y.png"}`)},
+		// A THIRD author-controlled string, and not the art name: strict
+		// decoding names the unknown FIELD, and that name comes out of the
+		// sidecar. It is what makes artCannotBeUsed's own BoundErr observable —
+		// artlib bounds the decode error, this bounds artlib's message around
+		// it. The other shapes execute that call but cannot observe it.
+		{"unknown-field", sidecar(`{"format_version":1,"kind":"wall","` +
+			strings.Repeat("z", 300) + `":1}`)},
+		{"picture-is-a-directory", func(t *testing.T, dir, id string) {
+			t.Helper()
+			if err := os.WriteFile(filepath.Join(dir, id+".json"),
+				[]byte(`{"format_version":1,"kind":"wall"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(dir, id+".png"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"sidecar-is-a-directory", func(t *testing.T, dir, id string) {
+			t.Helper()
+			if err := os.Mkdir(filepath.Join(dir, id+".json"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, id+".png"), []byte("p"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+
+	warn := func(t *testing.T, install func(*testing.T, string, string), n int, object bool) string {
+		t.Helper()
+		id := strings.Repeat("a", n)
+		artDir := t.TempDir()
+		install(t, artDir, id)
+
+		var warnings []string
+		var err error
+		if object {
+			_, warnings, err = mapdef.ResolveObjectArt(
+				0, mapdef.Object{ID: "o-1", Art: id}, artDir)
+		} else {
+			m := &mapdef.Map{
+				Tiles:     map[string]string{"0,0": "stone-wall"},
+				Overrides: map[string]string{"0,0": id},
+			}
+			_, warnings, err = mapdef.Resolve(m, artDir, "0,0")
+		}
+		if err != nil {
+			t.Fatalf("want a degrade, got a refusal: %v", err)
+		}
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "cannot be used") {
+			t.Fatalf("warnings = %q, want the one installed-but-broken sentence", warnings)
+		}
+		return warnings[0]
+	}
+
+	for _, arm := range []struct {
+		name   string
+		object bool
+	}{
+		{"tile", false},
+		{"object", true},
+	} {
+		for _, sh := range shapes {
+			t.Run(arm.name+"/"+sh.name, func(t *testing.T) {
+				short := warn(t, sh.install, 100, arm.object)
+				long := warn(t, sh.install, 250, arm.object)
+				if len(short) != len(long) {
+					t.Errorf("a 100-byte id gives a %d-byte warning and a 250-byte id gives %d: "+
+						"past MaxFragment the sentence must stop growing with the name\n  %s",
+						len(short), len(long), long)
+				}
+				if strings.Contains(long, strings.Repeat("a", artlib.MaxFragment+1)) {
+					t.Errorf("the warning carries more than MaxFragment (%d) of the art name; "+
+						"some copy of it is unclipped:\n  %s", artlib.MaxFragment, long)
+				}
+				// A CEILING on the whole sentence: it must be a function of
+				// artlib's declared constants — MaxFragment for the name,
+				// MaxMessage for the rendered error — plus a fixed frame of
+				// English, never of what an author wrote.
+				//
+				// IT DOES PIN artCannotBeUsed's own BoundErr, which an earlier
+				// draft of this comment denied. Delete that call and
+				// object/unknown-field measures 428 against this 408 and reds.
+				// The margin is 20 bytes and it rests on this fixture's
+				// 300-byte field name and on the object tail being the longer
+				// of the two, so it is thin — but "thin" is not "absent", and
+				// the earlier note calling the bound unobservable would have
+				// talked someone into deleting a guard the gate catches.
+				if limit := artlib.MaxFragment + artlib.MaxMessage + 128; len(long) > limit {
+					t.Errorf("warning is %d bytes, over the %d its constants allow "+
+						"(MaxFragment %d + MaxMessage %d + frame):\n  %s",
+						len(long), limit, artlib.MaxFragment, artlib.MaxMessage, long)
+				}
+			})
+		}
+	}
+}
+
+// sidecar installs a piece whose sidecar is exactly the given JSON, for shapes
+// that differ only in that file's contents.
+func sidecar(json string) func(*testing.T, string, string) {
+	return func(t *testing.T, dir, id string) {
+		t.Helper()
+		writeArt(t, dir, id, json)
+	}
+}
+
+// TestTheRefusalPathBoundsTheArtNameToo covers the one artlib message on this
+// path that mapdef never renders: a sidecar declaring a LATER format refuses
+// rather than degrades (Patrik, 2026-09-04), so unsupportedFormat's error
+// travels out through Resolve to the gateway as an error, and nothing
+// downstream bounds it — internal/gateway has no Clip. artCannotBeUsed's
+// BoundErr never sees it. Its own clip is the only bound there is, and until
+// this test nothing drove it.
+func TestTheRefusalPathBoundsTheArtNameToo(t *testing.T) {
+	msg := func(t *testing.T, n int) string {
+		t.Helper()
+		id := strings.Repeat("a", n)
+		artDir := t.TempDir()
+		writeArt(t, artDir, id, `{"format_version":99,"kind":"wall"}`)
+		m := &mapdef.Map{
+			Tiles:     map[string]string{"0,0": "stone-wall"},
+			Overrides: map[string]string{"0,0": id},
+		}
+		_, _, err := mapdef.Resolve(m, artDir, "0,0")
+		if err == nil {
+			t.Fatal("art written for a later format must refuse, not degrade")
+		}
+		return err.Error()
+	}
+	short, long := msg(t, 100), msg(t, 250)
+	if len(short) != len(long) {
+		t.Errorf("a 100-byte id gives a %d-byte refusal and a 250-byte id gives %d: "+
+			"the refusal must stop growing with the name too\n  %s", len(short), len(long), long)
+	}
+	if strings.Contains(long, strings.Repeat("a", artlib.MaxFragment+1)) {
+		t.Errorf("the refusal carries more than MaxFragment (%d) of the art name:\n  %s",
+			artlib.MaxFragment, long)
+	}
+}

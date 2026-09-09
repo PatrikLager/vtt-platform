@@ -363,7 +363,7 @@ func caseMismatch(id, onDisk, why string) error {
 func unsupportedFormat(id string, declared int32) error {
 	return fmt.Errorf(
 		"artlib: art/%s%s: field \"format_version\": declares %d; this server understands %d: %w",
-		id, sidecarExt, declared, FormatVersion, ErrFormatVersion)
+		Clip(id, MaxFragment), sidecarExt, declared, FormatVersion, ErrFormatVersion)
 }
 
 // clip bounds a fragment of author-controlled sidecar text before it is
@@ -754,7 +754,7 @@ func (l *Library) Lookup(id string) (Piece, error) {
 				"is not installed: the directory holds %q, which differs only in case — "+
 					"an art filename is lowercase and IS the id a map names (design spec §3.2)", onDisk))
 		}
-		return Piece{}, notFound(id, fmt.Sprintf("has no picture %q installed", picture))
+		return Piece{}, notFound(id, fmt.Sprintf("has no picture %q installed", Clip(picture, MaxFragment)))
 	}
 	root, err := os.OpenRoot(l.dir)
 	if err != nil {
@@ -813,7 +813,7 @@ func (l *Library) lookupIn(root *os.Root, id string) (Piece, error) {
 		// read as "no sidecar" and silently turned tile art into furniture.
 		if _, lstatErr := root.Lstat(id + sidecarExt); lstatErr == nil {
 			return Piece{}, fmt.Errorf(
-				"artlib: art/%s%s: exists but does not resolve to a file", id, sidecarExt)
+				"artlib: art/%s%s: exists but does not resolve to a file", Clip(id, MaxFragment), sidecarExt)
 		}
 		file := id + pictureExt
 		if err := l.statPicture(root, id, file); err != nil {
@@ -824,7 +824,7 @@ func (l *Library) lookupIn(root *os.Root, id string) (Piece, error) {
 		// bareCause, not err: this is the READ phase, and Root.ReadFile's error
 		// after a successful open carries the ABSOLUTE path. The relative name
 		// this message already builds is the only one a client may see.
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, bareCause(err))
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", Clip(id, MaxFragment), sidecarExt, bareCause(err))
 	}
 }
 
@@ -885,7 +885,7 @@ func (l *Library) pictureOnly(root *os.Root, id string) (Piece, error) {
 func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	var declared declaredFormat
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&declared); err != nil {
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, BoundErr(err))
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", Clip(id, MaxFragment), sidecarExt, BoundErr(err))
 	}
 	if len(declared.FormatVersion) == 0 {
 		// NO SENTINEL, on purpose: an absent field does not assert that the
@@ -895,7 +895,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 		return Piece{}, fmt.Errorf(
 			"artlib: art/%s%s: field \"format_version\": required: this server understands "+
 				"%d, and an undeclared format is not assumed to be any of them",
-			id, sidecarExt, FormatVersion)
+			Clip(id, MaxFragment), sidecarExt, FormatVersion)
 	}
 	// A POINTER, so an explicit null is told apart from a number: JSON null
 	// unmarshals into any pointer as nil without erroring, so a plain int32
@@ -912,7 +912,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 		// arm catches is the case the refusal exists for.
 		return Piece{}, fmt.Errorf(
 			"artlib: art/%s%s: field \"format_version\": %s is not a version number; this "+
-				"server understands %d", id, sidecarExt, clip(declared.FormatVersion), FormatVersion)
+				"server understands %d", Clip(id, MaxFragment), sidecarExt, clip(declared.FormatVersion), FormatVersion)
 	}
 	// TWO ARMS RATHER THAN ONE `!= FormatVersion`, and here the DIRECTION
 	// decides the verdict rather than only the sentence — which is what makes
@@ -948,7 +948,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 		return Piece{}, fmt.Errorf(
 			"artlib: art/%s%s: field \"format_version\": declares %d; this server understands "+
 				"%d, and %d is not a format anything ever wrote — check the file",
-			id, sidecarExt, *version, FormatVersion, *version)
+			Clip(id, MaxFragment), sidecarExt, *version, FormatVersion, *version)
 	}
 
 	var sc sidecar
@@ -961,7 +961,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 	// carrying "pack", the word spec §7 refuses in a map file.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&sc); err != nil {
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, BoundErr(err))
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", Clip(id, MaxFragment), sidecarExt, BoundErr(err))
 	}
 
 	p := Piece{ID: id, Kind: sc.Kind, Material: sc.Material, HasSidecar: true}
@@ -970,7 +970,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 			return Piece{}, fmt.Errorf(
 				"artlib: art/%s%s: fields \"open\" and \"closed\" belong to a door, and this "+
 					"declares kind %q — two pictures are what a door has",
-				id, sidecarExt, Clip(sc.Kind, MaxFragment))
+				Clip(id, MaxFragment), sidecarExt, Clip(sc.Kind, MaxFragment))
 		}
 		p.File = id + pictureExt
 		if err := l.statPicture(root, id, p.File); err != nil {
@@ -981,7 +981,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 
 	if sc.Open == "" || sc.Closed == "" {
 		return Piece{}, fmt.Errorf(
-			"artlib: art/%s%s: a door declares both \"open\" and \"closed\"", id, sidecarExt)
+			"artlib: art/%s%s: a door declares both \"open\" and \"closed\"", Clip(id, MaxFragment), sidecarExt)
 	}
 	// A DOOR MAY NAME THE SAME PICTURE TWICE, and that is a ruling rather than
 	// a gap (art-is-a-flat-library Task 8 review, finding F4). Nothing below
@@ -1034,7 +1034,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 				"artlib: art/%s%s: field %q: %q is not a picture in art/ — one kebab-case "+
 					"name ending %s, because this string becomes a path (spec §6 serves it "+
 					"as GET /api/art/{file})",
-				id, sidecarExt, named.field, Clip(named.name, MaxFragment), pictureExt)
+				Clip(id, MaxFragment), sidecarExt, named.field, Clip(named.name, MaxFragment), pictureExt)
 		}
 		if err := l.statPicture(root, id, named.name); err != nil {
 			return Piece{}, err
@@ -1060,7 +1060,7 @@ func (l *Library) statPicture(root *os.Root, id, name string) error {
 					"a filename IS the id a map names, and matching it loosely would draw "+
 					"here and on no case-sensitive filesystem (design spec §3.2)", name, onDisk))
 		}
-		return notFound(id, fmt.Sprintf("has no picture %q installed", name))
+		return notFound(id, fmt.Sprintf("has no picture %q installed", Clip(name, MaxFragment)))
 	}
 	return l.statPictureOnDisk(root, id, name)
 }
@@ -1070,17 +1070,19 @@ func (l *Library) statPictureOnDisk(root *os.Root, id, name string) error {
 	switch {
 	case err == nil:
 		if info.IsDir() {
-			return fmt.Errorf("artlib: art/%s: picture %s is a directory", id, name)
+			return fmt.Errorf("artlib: art/%s: picture %s is a directory",
+				Clip(id, MaxFragment), Clip(name, MaxFragment))
 		}
 		return nil
 	case errors.Is(err, fs.ErrNotExist):
-		return notFound(id, fmt.Sprintf("has no picture %q installed", name))
+		return notFound(id, fmt.Sprintf("has no picture %q installed", Clip(name, MaxFragment)))
 	default:
 		// Root.Stat's own error is already relative; bareCause is applied
 		// anyway so the rule is "every os error in this package", which is one
 		// a reader can check by grepping rather than one that needs the
 		// per-method table in bareCause's doc comment to be re-derived.
-		return fmt.Errorf("artlib: art/%s: picture %s cannot be read: %w", id, name, bareCause(err))
+		return fmt.Errorf("artlib: art/%s: picture %s cannot be read: %w",
+			Clip(id, MaxFragment), Clip(name, MaxFragment), bareCause(err))
 	}
 }
 

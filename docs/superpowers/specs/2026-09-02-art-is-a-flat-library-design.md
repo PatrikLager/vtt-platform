@@ -578,14 +578,51 @@ the placements an author wrote, not by how many warnings a scene produces. The
 adventure-format spec §4 now carries the same distinction, in the same words.*
 
 *Two author-controlled strings are in NEITHER list and belong in the inventory:
-a scene override's VALUE and an object's* `art`*. Neither is load-bounded —*
+a scene override's VALUE and an object's* `art`*. Neither is bounded at LOAD —*
 `CheckOverridesInsideGrid` *validates the KEY and says outright that the value
-is not inspected — and both reach warnings once per scene, so they multiply
-exactly the way a scene id did. What holds them is clipping at emit time,*
-`mapdef`*'s* `name()` *=* `artlib.Clip(art, artlib.MaxFragment)`*, and that does
-not cover every arm:* `artCannotBeUsed` *interpolates its* `art` *raw at both
-call sites. Pre-existing and outside the scene-id change, but an implementer
-reading these lists as the inventory of open work would not find it.*
+is not inspected — and both reach warnings once per scene, so they multiply the
+way a scene id did. Two things hold them instead, and it matters which:*
+`artlib`*'s* `isArtID` *refuses an id over* `maxArtIDLen` *(250, NAME_MAX minus
+the sidecar suffix) so an over-long value is ErrNotFound, and* `mapdef`*'s*
+`name()` *=* `artlib.Clip(art, artlib.MaxFragment)` *clips what the warnings
+render.*
+
+***`artCannotBeUsed`: closed 2026-09-09.*** *It was the one warning in*
+`resolve.go` *rendering* `artlib`*'s error instead of composing its own, and it
+clipped neither half — its* `art` *went in raw at both call sites, and the error
+carried the id a SECOND time because* `artlib` *stamped* `artlib: art/<id>.json`
+*unclipped as well. Measured on the tile arm before the fix: a 100-byte id gave
+a 292-byte warning and a 250-byte id gave 592, growing by twice the excess.*
+
+***The first version of this entry called it unbounded. It never was*** *—*
+`isArtID` *capped it at 250 all along, and an id failing that check lands in a
+different, already-clipped arm. Nor was it "six times its siblings", which the
+first draft of this entry also said. It is a RANGE, because* `artlib` *composes
+eight messages behind this one arm: it ran 592..850 and runs 178..366 now,
+against siblings of 84, 102, 105, 212, 433 and 523 at the same 250-byte id. So
+1.62x the largest sibling at worst. Two corrections were needed to get there —
+"six times" was invented, and the figure that replaced it quoted the mildest
+shape as though it were the arm.*
+
+***Still open, and now the largest:*** *the two case-mismatch sentences (523
+tile, 433 object) interpolate* `mismatch.Real` *and* `onDisk` *whole. Those are
+real directory entries, so they are operator-controlled and NAME_MAX-bounded
+rather than written by a campaign file — a smaller worry than an override value,
+which is why they are listed rather than fixed. They were missing from this
+inventory because* `artCannotBeUsed`*'s own doc counted eight sentences when
+there are ten, omitting exactly these two. Nothing pins them: the test below
+guards the closed item, not this one.*
+
+***What holds the closed one.***
+*`TestACannotBeUsedWarningStopsGrowingWithTheArtName` asserts that two
+over-long ids differing by 150 bytes produce warnings of EQUAL length — an
+invariant rather than a byte count, so it survives a rewording — and it fails
+if either copy is left unclipped. It runs one shape per* `artlib` *message that
+can reach the arm, because review found seven still shipping 228 bytes of the
+id after the first fix, and ten of the thirteen clips with no test observing
+them at all.* `TestTheRefusalPathBoundsTheArtNameToo` *covers the one message
+mapdef never renders:* `unsupportedFormat` *travels out as an error, and its
+own clip is the only bound there is.*
 
 *The prefix was the multiplier rather than a single long value:*
 `adventure.Compile` *stamps* `scene %q:` *onto EVERY warning a scene produces
