@@ -113,7 +113,8 @@ func resolveWith(m *Map, lib *artlib.Library, square string) (Resolved, []string
 	}
 	kind, material, ok := StandardTile(base)
 	if !ok {
-		return Resolved{}, nil, fmt.Errorf("mapdef: square %s names unknown tile %q", square, base)
+		return Resolved{}, nil, fmt.Errorf("mapdef: square %s names unknown tile %q",
+			square, base)
 	}
 	art, hasArt := m.Overrides[square]
 	if !hasArt {
@@ -164,7 +165,7 @@ func resolveWith(m *Map, lib *artlib.Library, square string) (Resolved, []string
 	if !piece.HasSidecar {
 		return Resolved{Kind: kind, Material: material}, []string{fmt.Sprintf(
 			"art %q has a picture but no sidecar; drawing it plain — write art/%s.json "+
-				"to say what kind of square it is (design spec §3.4)", art, art)}, nil
+				"to say what kind of square it is (design spec §3.4)", name(art), name(art))}, nil
 	}
 	var warnings []string
 	// piece.Kind is advisory and OPTIONAL (artlib's sidecar decoder requires
@@ -174,7 +175,8 @@ func resolveWith(m *Map, lib *artlib.Library, square string) (Resolved, []string
 	// which is noise the one warning channel must stay free of.
 	if piece.Kind != "" && piece.Kind != kind {
 		warnings = append(warnings, fmt.Sprintf(
-			"art %q is drawn for %s but the square under it is a %s", art, piece.Kind, kind))
+			"art %q is drawn for %s but the square under it is a %s",
+			name(art), artlib.Clip(piece.Kind, artlib.MaxFragment), kind))
 	}
 	return Resolved{Kind: kind, Material: material, Art: art}, warnings, nil
 }
@@ -243,10 +245,10 @@ func resolveObjectArtWith(idx int, o Object, lib *artlib.Library) (string, []str
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed, but the art directory holds %q, which differs only "+
 				"in case; rename it — the object stays, drawn from its kind",
-			o.Art, mismatch.Real)}, nil
+			name(o.Art), mismatch.Real)}, nil
 	case errors.Is(err, artlib.ErrNotFound):
 		return "", []string{fmt.Sprintf(
-			"art %q is not installed; the object stays, drawn from its kind", o.Art)}, nil
+			"art %q is not installed; the object stays, drawn from its kind", name(o.Art))}, nil
 	case errors.Is(err, artlib.ErrArtDirUnreadable):
 		return "", []string{artDirUnreadableWarning +
 			"; the object stays, drawn from its kind"}, nil
@@ -286,7 +288,7 @@ const artDirUnreadableWarning = "the art directory cannot be read; drawing it pl
 // Resolve is not the only thing that has to produce it byte-identically:
 // compile.go's aggregation groups by exact string.
 func artNotInstalled(art string) string {
-	return fmt.Sprintf("art %q is not installed; drawing it plain", art)
+	return fmt.Sprintf("art %q is not installed; drawing it plain", name(art))
 }
 
 // artCaseMismatch names the file the directory holds, because "not installed"
@@ -297,7 +299,7 @@ func artCaseMismatch(art, onDisk string) string {
 	return fmt.Sprintf("art %q is not installed, but the art directory holds %q, which "+
 		"differs only in case; rename it — a filename IS the id a map names, and matching "+
 		"it loosely would draw here and on no case-sensitive filesystem; drawing it plain",
-		art, onDisk)
+		name(art), onDisk)
 }
 
 // artCannotBeUsed is the sentence for art that IS installed and does not
@@ -343,5 +345,21 @@ func artCaseMismatch(art, onDisk string) string {
 // lookup, so ninety squares naming one broken piece produce ninety identical
 // sentences and one line with a count.
 func artCannotBeUsed(art string, err error, tail string) string {
-	return fmt.Sprintf("art %q is installed but cannot be used (%v); %s", art, err, tail)
+	return fmt.Sprintf("art %q is installed but cannot be used (%v); %s",
+		art, err, tail)
 }
+
+// name bounds an art name on its way into one of this file's warnings.
+//
+// EVERY WARNING BELOW COMPOSES ITS OWN SENTENCE from the art name rather than
+// rendering artlib's error, so artlib bounding the id inside ITS message does
+// nothing for these — they are different paths, not two bounds on one path.
+// That distinction was got wrong once: both clips looked redundant because no
+// test drove this side, and deleting mapdef's left an override value of any
+// length reaching a CommandResult. Measured then: 20,041 bytes, and the socket
+// closed with "message too big".
+//
+// An override value is whatever the map file said. CheckOverridesInsideGrid
+// validates the KEY and says outright that the value is not inspected, so
+// nothing upstream has bounded it by the time it arrives here.
+func name(art string) string { return artlib.Clip(art, artlib.MaxFragment) }

@@ -1614,15 +1614,27 @@ func TestArtThatVanishesBetweenTheSnapshotAndTheRead(t *testing.T) {
 // went unexercised. A message no test reads is a message nobody has read.
 func TestACaseMismatchSaysWhatToRenameAndWhy(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "Masonry-1.png", "picture bytes")
+	// A LONG-BUT-LEGAL id, not a short one. CaseMismatch.Error bounds the id it
+	// carries, and with a nine-character fixture that bound is never exercised —
+	// measured: its mutant survived the whole suite. An art id is lowercase and
+	// capped by isArtID, so this is the longest a real one gets.
+	long := strings.Repeat("m", 120) + "-1"
+	writeFile(t, dir, strings.ToUpper(long[:1])+long[1:]+".png", "picture bytes")
 
+	_, errLong := artlib.Lookup(dir, long)
+	if n := len(errLong.Error()); n > 2*artlib.MaxMessage {
+		t.Errorf("Error() is %d bytes for a legal id — the type bounds what it "+
+			"carries, or it does not", n)
+	}
+
+	writeFile(t, dir, "Masonry-1.png", "picture bytes")
 	_, err := artlib.Lookup(dir, "masonry-1")
 	got := err.Error()
 	for _, want := range []string{
-		`"masonry-1"`,      // what the map asked for
-		`"Masonry-1.png"`,  // what is on disk, which is the thing to rename
+		`"masonry-1"`,     // what the map asked for
+		`"Masonry-1.png"`, // what is on disk, which is the thing to rename
 		"differs only in case",
-		"case-sensitive",   // WHY it is refused rather than quietly accepted
+		"case-sensitive", // WHY it is refused rather than quietly accepted
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Error() = %q, missing %q", got, want)
@@ -1688,5 +1700,97 @@ func TestBothHalvesOfAPieceVanishingMidLoad(t *testing.T) {
 	if strings.Contains(err.Error(), "does not resolve to a file") {
 		t.Errorf("err = %v, want the not-installed sentence rather than the "+
 			"broken-link one", err)
+	}
+}
+
+// TestNoMessageCarriesUnboundedAuthorBytes pins the invariant at THIS package's
+// boundary, which is where it has to hold: artlib does not know whether its
+// caller will wrap the error in another bound, render it into a warning, or
+// return it whole.
+//
+// It exists because the gateway-level boundary tests do NOT pin it. Measured:
+// removing the clip from the kind interpolation left both of them green, because
+// mapdef's artCannotBeUsed wraps the whole artlib error in a second bound. That
+// outer bound is real and it is not this package's to rely on — a caller added
+// later, or an arm that returns the error unwrapped, would carry the file's
+// bytes straight to a CommandResult.
+//
+// A table over the sites rather than one case per file, so a NEW interpolation
+// added below is a row somebody has to think about rather than a silence.
+func TestNoMessageCarriesUnboundedAuthorBytes(t *testing.T) {
+	const huge = 20000
+	big := strings.Repeat("A", huge)
+
+	for _, tc := range []struct{ name, sidecar string }{
+		{"a kind that disagrees with the door fields beside it",
+			`{"format_version":1,"kind":%q,"open":"a.png","closed":"b.png"}`},
+		{"a door naming a picture that is not one",
+			`{"format_version":1,"kind":"door","open":%q,"closed":"b.png"}`},
+		{"a format_version that is not a number",
+			`{"format_version":%q,"kind":"wall"}`},
+		{"an unknown field",
+			`{"format_version":1,"kind":"wall",%q:1}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "w-1.png", "picture bytes")
+			writeFile(t, dir, "w-1.json", fmt.Sprintf(tc.sidecar, big))
+
+			_, err := artlib.Lookup(dir, "w-1")
+			if err == nil {
+				t.Fatal("want an error: this sidecar is broken")
+			}
+			// The bound, not a smaller number: MaxMessage plus room for the
+			// platform's own sentence around it. 20 KB in must not come out.
+			if n := len(err.Error()); n > 4*artlib.MaxMessage {
+				t.Errorf("error is %d bytes from a %d-byte value — the file's bytes "+
+					"are reaching the caller substantially whole", n, huge)
+			}
+			// And still useful: it has to name the piece, or bounding has traded
+			// one unreadable message for another.
+			if !strings.Contains(err.Error(), "w-1") {
+				t.Errorf("error = %q, want it to still name the piece", err.Error())
+			}
+		})
+	}
+}
+
+// TestAnOversizedArtIdIsBoundedToo covers the arm the id-bound exists for: a
+// map's overrides can name anything at all, and that string reaches Lookup
+// before isArtID has had a chance to reject it.
+//
+// Everywhere else id has already passed isArtID and is short by rule, which is
+// what made this easy to miss — every existing test uses a well-formed id, so
+// nothing entered the arm where the value is still the file's.
+func TestAnOversizedArtIdIsBoundedToo(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "w-1.png", "picture bytes")
+
+	_, err := artlib.Lookup(dir, strings.Repeat("A", 20000))
+	if !errors.Is(err, artlib.ErrNotFound) {
+		t.Fatalf("Lookup = %v, want ErrNotFound: that is not an art id", err)
+	}
+	if n := len(err.Error()); n > 4*artlib.MaxMessage {
+		t.Errorf("error is %d bytes — a map's overrides can name anything, and the "+
+			"string it named is reaching the caller whole", n)
+	}
+}
+
+// TestBoundErrKeepsIdentityWhileBoundingText is the contract mapdef relies on,
+// and the reason a clipped STRING could not be used at a %w site: replacing the
+// wrap with text broke errors.Is(err, fs.ErrNotExist), which is the sentinel
+// that tells "not installed" from "installed and broken".
+func TestBoundErrKeepsIdentityWhileBoundingText(t *testing.T) {
+	if got := artlib.BoundErr(nil); got != nil {
+		t.Errorf("BoundErr(nil) = %v, want nil: a caller must be able to pass its "+
+			"error through without testing it first", got)
+	}
+	inner := fmt.Errorf("sentinel wrapper: %w: %s", fs.ErrNotExist, strings.Repeat("A", 20000))
+	b := artlib.BoundErr(inner)
+	if !errors.Is(b, fs.ErrNotExist) {
+		t.Error("BoundErr lost the chain — errors.Is can no longer reach the sentinel")
+	}
+	if n := len(b.Error()); n > 2*artlib.MaxMessage {
+		t.Errorf("BoundErr text is %d bytes, want it bounded", n)
 	}
 }

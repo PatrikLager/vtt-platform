@@ -14,6 +14,9 @@ package gateway_test
 // (task-12-4-brief.md).
 
 import (
+	"fmt"
+	"os"
+
 	"context"
 	"net/http/httptest"
 	"net/url"
@@ -582,4 +585,80 @@ func TestALoadAdventureWarningReachesTheIssuer(t *testing.T) {
 			"mapdef deduplicates per scene, so two scenes missing the same art would "+
 			"otherwise be indistinguishable", res.GetWarnings())
 	}
+}
+
+// TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit is the aggregating
+// half of the bound, and the sharper of the two.
+//
+// mapdef collapses warnings per art NAME within one scene, but adventure.Compile
+// SCENE-QUALIFIES them, so they do not collapse across scenes at all: the total
+// is scenes times names, and a bundle is the one artifact that carries many
+// scenes. Unbounded, a handful of broken pieces repeated across a handful of
+// rooms clears the client's read limit on its own — and handleLoadAdventure has
+// already appended and broadcast every scene by the time the result is built, so
+// the issuer's socket closes on a campaign that has already changed.
+//
+// The map-side twin is TestBrokenArtCannotPushAResultPastTheReadLimit in
+// map_test.go; this one exists because bounding the per-scene message would look
+// like enough while the per-bundle total still crossed.
+func TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit(t *testing.T) {
+	const scenes, pieces, valueBytes = 6, 6, 20000
+
+	artDir := t.TempDir()
+	huge := strings.Repeat("A", valueBytes)
+	for i := 0; i < pieces; i++ {
+		id := fmt.Sprintf("piece-%02d", i)
+		if err := os.WriteFile(filepath.Join(artDir, id+".png"), []byte("p"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// No door fields — see bigSidecarArtDir in map_test.go for why their
+		// presence made the fixture prove a different bound than the one meant.
+		body := fmt.Sprintf(`{"format_version":1,"kind":%q}`, huge)
+		if err := os.WriteFile(filepath.Join(artDir, id+".json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	adv := &adventure.Adventure{ID: "broken", Name: "Broken", ArtDir: artDir,
+		OpeningNarration: "Six rooms, every picture in them broken the same way."}
+	for s := 0; s < scenes; s++ {
+		sc := adventure.AdventureScene{
+			ID: fmt.Sprintf("room-%02d", s), Name: "Room",
+			GridW: int32(pieces), GridH: 1,
+			Tiles: map[string]string{}, Overrides: map[string]string{},
+		}
+		for i := 0; i < pieces; i++ {
+			key := fmt.Sprintf("%d,0", i)
+			sc.Tiles[key] = "stone-wall"
+			sc.Overrides[key] = fmt.Sprintf("piece-%02d", i)
+		}
+		adv.Scenes = append(adv.Scenes, sc)
+	}
+
+	f := newAdventureFixtureWith(t, true,
+		map[string]*adventure.Adventure{"broken": adv}, nil)
+	conn := f.dial(f.dmToken, 0)
+
+	sendCommand(t, conn, loadAdventureCmdFor("broken"))
+	// Reading at all is the assertion: unbounded this is 36 warnings carrying
+	// 20 KB apiece, and the connection is torn down instead.
+	r := readResult(t, conn)
+
+	if !r.Ok {
+		t.Fatalf("want ok=true — broken art degrades, it does not refuse: %s", r.Error)
+	}
+	total := 0
+	for _, w := range r.Warnings {
+		total += len(w)
+	}
+	if len(r.Warnings) < scenes {
+		t.Errorf("warnings = %d, want at least one per scene: they are scene-qualified "+
+			"and must not collapse into silence", len(r.Warnings))
+	}
+	if total > 64*1024 {
+		t.Errorf("warnings total %d bytes across %d scenes — the per-bundle total is "+
+			"still substantially unbounded", total, scenes)
+	}
+	t.Logf("%d warnings, %d bytes (unbounded this was ~%d)",
+		len(r.Warnings), total, scenes*pieces*valueBytes)
 }

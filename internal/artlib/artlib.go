@@ -307,8 +307,17 @@ type sidecar struct {
 // absence it is, because "not installed", "no art directory" and "not a name
 // any art could have" all degrade the same square and a DM fixes them
 // differently.
+// THE ID IS BOUNDED HERE because this message can be rendered whole. On most
+// paths id has already passed isArtID and is short by rule — but the
+// is-not-an-art-id arm is reached with whatever the map's overrides said, and a
+// map file can say twenty thousand characters.
+//
+// mapdef bounds the same id AGAIN on its own side, and that is not a duplicate:
+// its warnings compose their own sentences and never render this error, so the
+// two clips sit on different paths. Treating them as redundant deleted the
+// mapdef one for a day — see Clip's own doc for what that cost.
 func notFound(id, why string) error {
-	return fmt.Errorf("artlib: art %q %s: %w", id, why, ErrNotFound)
+	return fmt.Errorf("artlib: art %q %s: %w", Clip(id, MaxFragment), why, ErrNotFound)
 }
 
 // CaseMismatch is notFound with the file the DM can SEE attached, so a caller
@@ -326,7 +335,7 @@ type CaseMismatch struct {
 }
 
 func (e *CaseMismatch) Error() string {
-	return fmt.Sprintf("artlib: art %q %s", e.ID, e.why)
+	return fmt.Sprintf("artlib: art %q %s", Clip(e.ID, MaxFragment), e.why)
 }
 
 // Unwrap returns both sentinels; errors.Is walks the whole tree since Go 1.20.
@@ -376,14 +385,33 @@ func unsupportedFormat(id string, declared int32) error {
 // load_map answer never arrives at all. Both are handled below by the same
 // call, run twice.
 //
-// DO NOT READ THIS AS "THE ONLY SITE THAT INTERPOLATES RAW CAMPAIGN BYTES",
-// which an earlier draft of this comment claimed and then had to retract. The
-// second site it named — mapdef's `raw.Pack != nil` arm, which put a map file's
-// own bytes into an error reaching CommandResult.error, the same proto3 string
-// rule on the other channel, neither bounded nor validated — was DELETED on
-// 2026-09-06 with the whole migration route, so the retraction's example is
-// gone. The retraction itself stands: a comment claiming uniqueness is how the
-// next such site stops being looked for, and no one has re-surveyed the tree.
+// THE ART AND MAP PATHS HAVE BEEN SURVEYED, and only those. This paragraph
+// replaced "no one has re-surveyed the tree" on 2026-09-09, and the first
+// version of the replacement claimed the whole tree — which was false on the
+// day it was written. Every interpolation reaching a CommandResult from
+// internal/artlib and internal/mapdef now passes through Clip or BoundErr,
+// proven by the invariant tests each package carries and by two boundary tests
+// that read a frame rather than assert a number.
+//
+// STILL UNBOUNDED, found by review after that claim was made, and outstanding:
+// internal/adventure's scene-id prefix and its collision refusals,
+// mapdef.LoadInstalled's use of the file's own declared id, engine's terrain
+// kind reaching a move_token refusal through internal/gateway, and
+// internal/rules' ability and resource names reaching a use_ability result.
+// A campaign file reaches a client through those too. They are named here
+// rather than in a transcript so the next reader inherits the list instead of
+// the impression that this is finished.
+//
+// ONE BOUND PER PATH — AND "PATH" IS THE WORD THAT WAS GOT WRONG. Two clips on
+// one path do make both mutants unkillable, and that is real. But artlib
+// bounding an id inside ITS error and mapdef bounding the same id inside ITS
+// warning are two paths, not two bounds: mapdef composes its own sentence and
+// never renders artlib's. Reading the surviving mutants as redundancy deleted
+// the only bound on the warning side, and an override value of any length went
+// straight to a client — measured at 20,041 bytes, with the socket closing on
+// "message too big". A surviving mutant means no test drives the path. Look for
+// the missing test before concluding the guard is spare.
+//
 // TWO ToValidUTF8 PASSES AND NO HAND-ROLLED SCAN, which is the shape the
 // mutation gate argued this into. The first draft backed up over continuation
 // bytes with `for cut > 0 && !utf8.RuneStart(s[cut]) { cut-- }`, and the gate
@@ -393,14 +421,59 @@ func unsupportedFormat(id string, declared int32) error {
 // second pass says the same thing with no boundary to get wrong — a cut that
 // splits a rune leaves bytes that are not valid UTF-8, and an EMPTY
 // replacement drops exactly those.
-func clip(raw []byte) string {
-	const limit = 40
-	s := strings.ToValidUTF8(string(raw), "\uFFFD")
+// MaxFragment bounds ONE interpolated value — a kind, a picture name, a tile
+// key. Forty characters is enough to recognise what you typed and far too few
+// to matter on the wire.
+//
+// MaxMessage bounds a whole message whose own text embeds author bytes, which
+// is what a wrapped decode error is: `json: unknown field "…"` quotes a field
+// name straight out of the file. Clipping such an error to MaxFragment would
+// throw away the part that says what went wrong, so it gets its own, larger
+// bound — enough for the platform's sentence plus a recognisable fragment.
+const (
+	MaxFragment = 40
+	MaxMessage  = 240
+)
+
+// Clip bounds author-controlled text before it is interpolated into a message,
+// and makes it safe to put on the wire. See the package doc and clip below for
+// why both halves are load-bearing.
+//
+// IT LIVES HERE, in the lowest package of the two that need it, because
+// internal/mapdef already imports internal/artlib and the alternative was a new
+// package with its own architecture entry, coverage floor and mutation-gate
+// registration — gate work, which is paused. One implementation is the point;
+// its address is not.
+func Clip(s string, limit int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	if len(s) <= limit {
 		return s
 	}
 	return strings.ToValidUTF8(s[:limit], "") + "…"
 }
+
+// BoundErr bounds an error's TEXT while leaving its identity intact, for the
+// `%w` sites — which is every site whose error is returned rather than rendered.
+//
+// Replacing `%w` with a clipped string was the first attempt and it silently
+// broke the chain: internal/mapdef's own
+// TestLoadInstalledReportsAMapThatIsNotInstalledAsNotExist caught that
+// errors.Is(err, fs.ErrNotExist) had stopped answering, and that sentinel is
+// what tells "not installed" from "installed and broken" — the degrade-versus-
+// refuse split reads it. So the wrapper keeps Unwrap and bounds only Error().
+func BoundErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return boundedErr{err}
+}
+
+type boundedErr struct{ err error }
+
+func (b boundedErr) Error() string { return Clip(b.err.Error(), MaxMessage) }
+func (b boundedErr) Unwrap() error { return b.err }
+
+func clip(raw []byte) string { return Clip(string(raw), MaxFragment) }
 
 // bareCause strips the path out of an os error, keeping only the syscall
 // failure underneath: "permission denied", "is a directory", "not a
@@ -812,7 +885,7 @@ func (l *Library) pictureOnly(root *os.Root, id string) (Piece, error) {
 func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece, error) {
 	var declared declaredFormat
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&declared); err != nil {
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, BoundErr(err))
 	}
 	if len(declared.FormatVersion) == 0 {
 		// NO SENTINEL, on purpose: an absent field does not assert that the
@@ -888,7 +961,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 	// carrying "pack", the word spec §7 refuses in a map file.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&sc); err != nil {
-		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, err)
+		return Piece{}, fmt.Errorf("artlib: art/%s%s: %w", id, sidecarExt, BoundErr(err))
 	}
 
 	p := Piece{ID: id, Kind: sc.Kind, Material: sc.Material, HasSidecar: true}
@@ -897,7 +970,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 			return Piece{}, fmt.Errorf(
 				"artlib: art/%s%s: fields \"open\" and \"closed\" belong to a door, and this "+
 					"declares kind %q — two pictures are what a door has",
-				id, sidecarExt, sc.Kind)
+				id, sidecarExt, Clip(sc.Kind, MaxFragment))
 		}
 		p.File = id + pictureExt
 		if err := l.statPicture(root, id, p.File); err != nil {
@@ -961,7 +1034,7 @@ func (l *Library) pieceFromSidecar(root *os.Root, id string, raw []byte) (Piece,
 				"artlib: art/%s%s: field %q: %q is not a picture in art/ — one kebab-case "+
 					"name ending %s, because this string becomes a path (spec §6 serves it "+
 					"as GET /api/art/{file})",
-				id, sidecarExt, named.field, named.name, pictureExt)
+				id, sidecarExt, named.field, Clip(named.name, MaxFragment), pictureExt)
 		}
 		if err := l.statPicture(root, id, named.name); err != nil {
 			return Piece{}, err

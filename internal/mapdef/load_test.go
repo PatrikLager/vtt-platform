@@ -2,6 +2,7 @@ package mapdef_test
 
 import (
 	"fmt"
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"os"
 	"path/filepath"
 	"strings"
@@ -648,5 +649,43 @@ func TestTheBoundsThemselvesAreAccepted(t *testing.T) {
 		if m.CellPx != v {
 			t.Errorf("CellPx = %d, want %d", m.CellPx, v)
 		}
+	}
+}
+
+// TestNoMapMessageCarriesUnboundedAuthorBytes is artlib's invariant on this
+// side of the seam: a map file's own bytes must not reach a caller whole.
+//
+// These go to CommandResult.ERROR rather than .warnings — handleLoadMap's
+// refusal arm — and that half predates the art sub-project entirely. A map is
+// author-controlled in the same way a sidecar is: its keys, its tile names and
+// its token ids are all typed by whoever wrote the file.
+func TestNoMapMessageCarriesUnboundedAuthorBytes(t *testing.T) {
+	const huge = 20000
+	big := strings.Repeat("A", huge)
+
+	for _, tc := range []struct{ name, body string }{
+		{"an unknown field", `{"format_version":1,"id":"m","name":"M","grid_width":1,` +
+			`"grid_height":1,"tiles":{"0,0":"stone-wall"},%q:1}`},
+		{"a tile name nothing knows", `{"format_version":1,"id":"m","name":"M","grid_width":1,` +
+			`"grid_height":1,"tiles":{"0,0":%q}}`},
+		{"a square key outside the grid", `{"format_version":1,"id":"m","name":"M","grid_width":1,` +
+			`"grid_height":1,"tiles":{"0,0":"stone-wall"},"overrides":{%q:"x"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mapsDir := filepath.Join(t.TempDir(), "maps")
+			writeInstalled(t, mapsDir, "m.json", fmt.Sprintf(tc.body, big))
+
+			_, err := mapdef.LoadInstalled(mapsDir, "m", "")
+			if err == nil {
+				t.Fatal("want an error: this map file is broken")
+			}
+			if n := len(err.Error()); n > 4*artlib.MaxMessage {
+				t.Errorf("error is %d bytes from a %d-byte value — the file's bytes "+
+					"are reaching the caller substantially whole", n, huge)
+			}
+			if !strings.Contains(err.Error(), "maps/m.json") {
+				t.Errorf("error = %q, want it to still name the file", err.Error())
+			}
+		})
 	}
 }

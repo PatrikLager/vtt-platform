@@ -1,6 +1,7 @@
 package mapdef_test
 
 import (
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"os"
 	"path/filepath"
 	"strings"
@@ -758,5 +759,88 @@ func TestAnObjectsCaseMismatchNamesTheFileToo(t *testing.T) {
 	// And the object still stays, which is the object arm's own promise.
 	if !strings.Contains(warnings[0], "the object stays") {
 		t.Errorf("warning = %q, want it to keep the object's own sentence", warnings[0])
+	}
+}
+
+// TestNoWarningCarriesUnboundedAuthorBytes is the invariant on the WARNING side
+// of mapdef, which is the side that reaches a client on an ok=true result.
+//
+// It did not exist when the bounding work was first called done, and its absence
+// is why that claim was false. The artlib-side table asserts what artlib's own
+// errors carry; every warning below composes its OWN sentence from the map's
+// values and never renders artlib's error, so nothing artlib does bounds them.
+//
+// Each row drives a different arm. That matters more than the count: two of
+// these arms had bounds that looked redundant and were deleted, precisely
+// because no test drove them.
+func TestNoWarningCarriesUnboundedAuthorBytes(t *testing.T) {
+	const huge = 20000
+	big := strings.Repeat("A", huge)
+
+	install := func(t *testing.T, files map[string]string) string {
+		t.Helper()
+		dir := t.TempDir()
+		for n, b := range files {
+			if err := os.WriteFile(filepath.Join(dir, n), []byte(b), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		build func(art string) *mapdef.Map
+	}{
+		{"an override naming art that is not installed", map[string]string{},
+			func(a string) *mapdef.Map {
+				return &mapdef.Map{ID: "m", Name: "M", GridW: 1, GridH: 1,
+					Tiles: map[string]string{"0,0": "stone-wall"}, Overrides: map[string]string{"0,0": big}}
+			}},
+		{"an object naming art that is not installed", map[string]string{},
+			func(a string) *mapdef.Map {
+				return &mapdef.Map{ID: "m", Name: "M", GridW: 1, GridH: 1,
+					Tiles:   map[string]string{"0,0": "stone-wall"},
+					Objects: []mapdef.Object{{ID: "o", Kind: "crate", W: 1, H: 1, Art: big}}}
+			}},
+		{"a picture with no sidecar", map[string]string{},
+			func(a string) *mapdef.Map { return nil }},
+		{"a sidecar whose kind disagrees with the square", map[string]string{
+			"w-2.png":  "p",
+			"w-2.json": `{"format_version":1,"kind":"` + strings.Repeat("A", huge) + `"}`},
+			func(a string) *mapdef.Map {
+				return &mapdef.Map{ID: "m", Name: "M", GridW: 1, GridH: 1,
+					Tiles: map[string]string{"0,0": "stone-wall"}, Overrides: map[string]string{"0,0": "w-2"}}
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := install(t, tc.files)
+			m := tc.build(dir)
+			if m == nil { // the no-sidecar arm needs a picture named by a long id
+				long := strings.Repeat("a", 200) // a legal art id, at the length rule allows
+				if err := os.WriteFile(filepath.Join(dir, long+".png"), []byte("p"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				m = &mapdef.Map{ID: "m", Name: "M", GridW: 1, GridH: 1,
+					Tiles: map[string]string{"0,0": "stone-wall"}, Overrides: map[string]string{"0,0": long}}
+			}
+
+			_, warnings, err := mapdef.Compile(m, dir)
+			if err != nil {
+				t.Fatalf("Compile: %v — every one of these degrades", err)
+			}
+			total := 0
+			for _, w := range warnings {
+				total += len(w)
+			}
+			if total == 0 {
+				t.Fatal("no warning at all: bounding must shorten the message, not silence it")
+			}
+			if total > 4*artlib.MaxMessage {
+				t.Errorf("warnings total %d bytes from a %d-byte value — the map file's "+
+					"bytes are reaching a CommandResult substantially whole", total, huge)
+			}
+		})
 	}
 }

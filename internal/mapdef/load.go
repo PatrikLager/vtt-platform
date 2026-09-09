@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 )
 
 // mapJSON is the on-disk shape of a map file (design spec §4.1). Field names
@@ -293,7 +295,7 @@ func RequireEverySquarePresent(tiles map[string]string, w, h int32, errf FieldEr
 		for x := int32(0); x < w; x++ {
 			key := squareKey(x, y)
 			if _, ok := tiles[key]; !ok {
-				return errf(fmt.Sprintf("tiles[%q]", key), "no tile named for this square")
+				return errf(fmt.Sprintf("tiles[%q]", artlib.Clip(key, artlib.MaxFragment)), "no tile named for this square")
 			}
 		}
 	}
@@ -333,7 +335,7 @@ func CheckTilesInsideGrid(tiles map[string]string, w, h int32, errf FieldErrFunc
 	for key := range tiles {
 		x, y, ok := parseSquareKey(key)
 		if !ok || x < 0 || x >= w || y < 0 || y >= h {
-			return errf(fmt.Sprintf("tiles[%q]", key), "names a square outside the grid")
+			return errf(fmt.Sprintf("tiles[%q]", artlib.Clip(key, artlib.MaxFragment)), "names a square outside the grid")
 		}
 	}
 	return nil
@@ -352,8 +354,8 @@ func CheckTilesInsideGrid(tiles map[string]string, w, h int32, errf FieldErrFunc
 func CheckTileNamesKnown(tiles map[string]string, errf FieldErrFunc) error {
 	for key, name := range tiles {
 		if _, _, ok := StandardTile(name); !ok {
-			return errf(fmt.Sprintf("tiles[%q]", key),
-				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; art names resolve in a later step)", name))
+			return errf(fmt.Sprintf("tiles[%q]", artlib.Clip(key, artlib.MaxFragment)),
+				fmt.Sprintf("unknown tile %q (not in the standard vocabulary; art names resolve in a later step)", artlib.Clip(name, artlib.MaxFragment)))
 		}
 	}
 	return nil
@@ -370,7 +372,7 @@ func CheckOverridesInsideGrid(overrides map[string]string, w, h int32, errf Fiel
 	for key := range overrides {
 		x, y, ok := parseSquareKey(key)
 		if !ok || x < 0 || x >= w || y < 0 || y >= h {
-			return errf(fmt.Sprintf("overrides[%q]", key), "names a square outside the grid")
+			return errf(fmt.Sprintf("overrides[%q]", artlib.Clip(key, artlib.MaxFragment)), "names a square outside the grid")
 		}
 	}
 	return nil
@@ -522,7 +524,7 @@ func parseSquareKey(key string) (x, y int32, ok bool) {
 func decodeStrict(path, display string, v any) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
+		return fmt.Errorf("mapdef: %s: %w", display, artlib.BoundErr(unpath(err)))
 	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
@@ -532,7 +534,7 @@ func decodeStrict(path, display string, v any) error {
 		// path whose entry is a directory opens fine and fails on the
 		// first read, with an *fs.PathError of its own ("read /abs/x:
 		// is a directory").
-		return fmt.Errorf("mapdef: %s: %w", display, unpath(err))
+		return fmt.Errorf("mapdef: %s: %w", display, artlib.BoundErr(unpath(err)))
 	}
 	return nil
 }
@@ -558,5 +560,17 @@ func unpath(err error) error {
 // fieldErr builds a load error naming both the offending file and field —
 // reused shape from internal/adventure/load.go's fieldErr.
 func fieldErr(path, field, msg string) error {
-	return fmt.Errorf("mapdef: %s: field %q: %s", path, field, msg)
+	// A BACKSTOP, not the bound. Each caller clips the value it interpolates,
+	// which keeps the platform's own sentence intact — clipping the whole msg
+	// here instead truncated from the END, so a DM got 240 characters of the
+	// file's garbage and lost "(not in the standard vocabulary…)", the half
+	// telling them where to look.
+	//
+	// It stays because internal/adventure builds its own errf over these same
+	// mapdef.Check* functions, and a caller added later is likelier to forget a
+	// clip than to route round this. If its mutant survives the gate, that is
+	// what a backstop is and it gets adjudicated rather than deleted — deleting
+	// a guard because no test could distinguish it is exactly the mistake this
+	// round is repairing.
+	return fmt.Errorf("mapdef: %s: field %q: %s", path, field, artlib.Clip(msg, artlib.MaxMessage))
 }

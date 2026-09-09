@@ -542,7 +542,45 @@ expensive part.
 
 ---
 
-### Carried forward: author-controlled bytes are not bounded on the way to a client
+### DONE 2026-09-09 for the art and map paths; the rest is still carried
+
+***Closed for internal/artlib and internal/mapdef.*** *Every interpolation
+reaching a `CommandResult` from those two packages now passes through
+`artlib.Clip` or `artlib.BoundErr`. Measured: a 20 KB sidecar `kind` produced
+20,191 bytes of warnings and now 234; an unknown map field 20,043 and now 264;
+an oversized tile name 20,128 and now 171, still carrying "(not in the standard
+vocabulary…)", which a whole-message bound had truncated away. Two boundary
+tests state it as a frame a client can read —* `TestBrokenArtCannotPushAResultPastTheReadLimit`
+*and* `TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit` *— both red
+first with* `websocket: message too big: read limited at 204801 bytes`.
+
+***NOT closed, and this section claimed otherwise for one round.*** *The first
+version of this note said "every interpolation that can reach a CommandResult".
+Review found that false the same day. Still unbounded, and still carried:*
+`internal/adventure`*'s scene-id prefix and collision refusals,*
+`mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/engine`*'s
+terrain kind reaching a `move_token` refusal through* `internal/gateway`*, and*
+`internal/rules`*' ability and resource names reaching a `use_ability` result.*
+
+***The mistake worth keeping.*** *Two clips on one path make both mutants
+unkillable — that part is true. But `artlib` bounding an id inside ITS error and
+`mapdef` bounding the same id inside ITS warning are two PATHS: mapdef composes
+its own sentence and never renders artlib's. Reading the surviving mutants as
+redundancy deleted the only bound on the warning side, and an override value of
+any length reached a client — 20,041 bytes, socket closed. A surviving mutant
+means no test drives that path. Look for the missing test before concluding the
+guard is spare.*
+
+***And a fixture that proved the wrong thing.*** *The first boundary fixture wrote
+`open` and `closed` beside the huge `kind`, which routed it into artlib's
+already-bounded door error. Without those two fields the kind travels out as
+`Piece.Kind` and mapdef renders it whole — 234 bytes versus 20,057 from the same
+value. The fixture, not the assertion, decided what the test could see.*
+
+*The original text follows, unchanged, because its reasoning is what made the
+work findable.*
+
+### Carried forward (closed): author-controlled bytes are not bounded on the way to a client
 
 *Added 2026-09-07 at the merge gate, from the whole-branch review. Patrik: this
 one is important and gets done — it is recorded here rather than in a review

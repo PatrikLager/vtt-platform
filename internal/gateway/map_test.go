@@ -23,6 +23,7 @@ package gateway_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1511,4 +1512,95 @@ func TestANonCollisionFailureKeepsItsOwnMessage(t *testing.T) {
 		t.Errorf("error = %q translates a NON-collision failure into the "+
 			"scene-id refusal, sending a DM to copy a map over an unrelated fault", r.Error)
 	}
+}
+
+// bigSidecarArtDir installs n pieces whose sidecars each carry an oversized
+// author-controlled value, in the shape that reaches CommandResult.warnings:
+// a kind that disagrees with the door fields beside it, which artlib reports by
+// quoting the kind back.
+func bigSidecarArtDir(t *testing.T, n, valueBytes int) string {
+	t.Helper()
+	dir := t.TempDir()
+	huge := strings.Repeat("A", valueBytes)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("piece-%02d", i)
+		if err := os.WriteFile(filepath.Join(dir, id+".png"), []byte("p"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// NO DOOR FIELDS. With them the huge kind takes artlib's door-mismatch
+		// arm, which was already bounded — so the fixture proved the bound it
+		// happened to route through rather than the one under test. Without
+		// them the sidecar decodes cleanly and the kind travels out as
+		// Piece.Kind, which resolve.go renders into its own sentence.
+		body := fmt.Sprintf(`{"format_version":1,"kind":%q}`, huge)
+		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// TestBrokenArtCannotPushAResultPastTheReadLimit is the boundary this whole
+// bounding exercise exists for, and it is stated as a frame the client can
+// actually read rather than as a byte count in a comment.
+//
+// artlib.clip bounds author-controlled sidecar text to forty characters, and it
+// was called from ONE place: the format_version arm. Every other interpolation
+// passed the file's bytes through whole — measured, a single 20 KB `kind` value
+// produced 20,191 bytes of warnings. Warnings collapse per art NAME, so twelve
+// broken pieces is twelve of those, and adventure.Compile does not collapse them
+// across scenes at all.
+//
+// WHAT GOES WRONG IS WORSE THAN A BIG MESSAGE. handleLoadMap has already
+// committed and broadcast the scene by the time the result is built, so every
+// other seat's board changes and the ISSUER's socket closes with "message too
+// big" — reconnecting into a campaign that silently changed, never told why.
+// Go clients only: the MCP agent seat and cmd/vtt, which set
+// internal/harness's readLimit. A browser sets none and renders the block.
+//
+// Not remotely triggerable: authz.go gates load_map to DM and agent, and no
+// route writes map or art files. This is a broken-content and third-party-bundle
+// footgun, which is why it is a bound rather than a refusal.
+func TestBrokenArtCannotPushAResultPastTheReadLimit(t *testing.T) {
+	const pieces, valueBytes = 12, 20000 // ~240 KB unbounded, against a 200 KiB limit
+	f := newMapFixtureAt(t, false, true, bigSidecarArtDir(t, pieces, valueBytes))
+	conn := f.dial(f.dmToken, 0)
+
+	tiles := make([]string, 0, pieces)
+	overrides := make([]string, 0, pieces)
+	for i := 0; i < pieces; i++ {
+		tiles = append(tiles, fmt.Sprintf(`"%d,0":"stone-wall"`, i))
+		overrides = append(overrides, fmt.Sprintf(`"%d,0":"piece-%02d"`, i, i))
+	}
+	installMap(t, f.mapsDir, "wide", fmt.Sprintf(
+		`{"format_version":1,"id":"wide","name":"Wide","grid_width":%d,"grid_height":1,`+
+			`"tiles":{%s},"overrides":{%s}}`,
+		pieces, strings.Join(tiles, ","), strings.Join(overrides, ",")))
+
+	sendCommand(t, conn, loadMapCmdFor("wide"))
+	// The assertion IS that this read succeeds. Unbounded, the frame exceeds the
+	// client's own read limit and the connection is torn down instead — which is
+	// the failure a DM cannot see, because the scene has already been broadcast.
+	r := readResult(t, conn)
+
+	// Every square degrades and the map still loads: bounding the message must
+	// not turn a degrade into a refusal.
+	if !r.Ok {
+		t.Fatalf("want ok=true — broken art degrades, it does not refuse: %s", r.Error)
+	}
+	if len(r.Warnings) == 0 {
+		t.Fatal("want the DM told which pieces failed; bounding must not silence them")
+	}
+	total := 0
+	for _, w := range r.Warnings {
+		total += len(w)
+	}
+	// A real bound, not merely "smaller": twelve warnings that each still name
+	// their piece cost a few hundred bytes apiece, nowhere near the limit.
+	if total > 32*1024 {
+		t.Errorf("warnings total %d bytes from %d pieces — author bytes are still "+
+			"passing through substantially unbounded", total, pieces)
+	}
+	t.Logf("%d warnings, %d bytes total (unbounded this was ~%d)",
+		len(r.Warnings), total, pieces*valueBytes)
 }
