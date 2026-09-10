@@ -26,6 +26,43 @@ const (
 	maxNoteKeyBytes   = 128
 	maxNoteTitleBytes = 256
 	maxTextBytes      = 8192 // shared by note text AND opening narration, exactly as engine's maxTextBytes is shared by note text and NarrationAdded.text
+
+	// maxIDBytes is the one constant in this block with NO engine twin: the
+	// three above mirror internal/engine/apply.go and TestSizeCapsMirrorEngine
+	// pins them to it, but engine has no scene-id cap to mirror, so there is
+	// nothing to re-sync and that test deliberately says nothing about this.
+	//
+	// It bounds a SCENE ID, and it earns its place by arithmetic rather than
+	// tidiness. adventure.Compile prefixes every warning it produces with
+	// `scene %q: `, and warnings do not collapse across scenes — so an id of
+	// any length multiplies by scenes times warnings on one CommandResult, on
+	// the path TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit calls
+	// the aggregating half of the bound and the sharper of the two. "Sharper" is
+	// that test's argument from shape — a bundle is the one artifact carrying
+	// many scenes — not a measurement of one path against the other.
+	//
+	// A scene id was checked for non-empty and for uniqueness and nothing else.
+	// Unlike a map id it is not tied to its filename, so the filesystem's own
+	// 255 was never bounding it either. 128 matches maxNoteKeyBytes, the
+	// codebase's existing answer for "an identifier a human types".
+	//
+	// It is a bound on THIS loader, not a bound on the platform: a scene id can
+	// also arrive through mapdef.LoadInstalled, where the id IS the filename and
+	// the ceiling is the filesystem's ~255 — looser than this. That path does
+	// not scene-qualify its warnings, so it does not multiply, which is why it
+	// is left alone rather than tightened to match.
+	//
+	// The value is pinned exactly, but INDIRECTLY, and the indirection is worth
+	// knowing: its three neighbours are held by TestSizeCapsMirrorEngine naming
+	// the constant, while 128 here is held by an expected error-message
+	// substring — TestLoadInvalidFixtures' scene-id-too-long row wants
+	// "at most 128 bytes, got 200". Change the constant and that row goes red
+	// (measured: 150 fails it), but the failure names a fixture and a message,
+	// not this constant, so the next reader is one step further from the cause.
+	//
+	// "128 matches maxNoteKeyBytes" is a reason for choosing the number, not an
+	// assertion about it; nothing compares the two.
+	maxIDBytes = 128
 )
 
 // supportedFormatVersions is the set of format_version values Load accepts
@@ -392,6 +429,10 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 		}
 		if raw.ID == "" {
 			return nil, fieldErr(path, "id", "must not be empty")
+		}
+		if len(raw.ID) > maxIDBytes {
+			return nil, fieldErr(path, "id",
+				fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
 		}
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")

@@ -557,10 +557,144 @@ first with* `websocket: message too big: read limited at 204801 bytes`.
 ***NOT closed, and this section claimed otherwise for one round.*** *The first
 version of this note said "every interpolation that can reach a CommandResult".
 Review found that false the same day. Still unbounded, and still carried:*
-`internal/adventure`*'s scene-id prefix and collision refusals,*
-`mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/engine`*'s
-terrain kind reaching a `move_token` refusal through* `internal/gateway`*, and*
-`internal/rules`*' ability and resource names reaching a `use_ability` result.*
+`internal/adventure`*'s collision refusals for an ACTOR id and a TOKEN id — the
+other two arms of* `checkCollisions` *are bounded now, a scene id by*
+`maxIDBytes` *and a note key by* `maxNoteKeyBytes`*,*
+`mapdef.LoadInstalled`*'s use of a map's own declared id, and*
+`internal/rules`*' ability and resource names reaching a `use_ability` result.
+The terrain kind that stood between those two was closed 2026-09-10; see below.*
+
+***Scene-id prefix: closed 2026-09-09.*** *`loadScenes` now refuses a scene id
+over `maxIDBytes` (128). It is the MULTIPLYING one — not the last unbounded
+string in a bundle, and the first version of this note said "the same door every
+other author-controlled string already had", which review found false the same
+day. Four were already bounded (`opening_narration`, note `key`, note `title`,
+note `text`); the manifest's `id` and `name`, a scene's `name`, an actor's
+`actor_id` and `name`, and a placement's `token_id` are still non-empty-only.
+None of them multiplies BY WARNINGS, which is the multiplier that matters here
+and why the id went first. Two of them do recur — an `actor_id` and a
+`token_id`, once per placement in `TokenPlaced` — but that count is bounded by
+the placements an author wrote, not by how many warnings a scene produces. The
+adventure-format spec §4 now carries the same distinction, in the same words.*
+
+*Two author-controlled strings are in NEITHER list and belong in the inventory:
+a scene override's VALUE and an object's* `art`*. Neither is bounded at LOAD —*
+`CheckOverridesInsideGrid` *validates the KEY and says outright that the value
+is not inspected — and both reach warnings once per scene, so they multiply the
+way a scene id did. Two things hold them instead, and it matters which:*
+`artlib`*'s* `isArtID` *refuses an id over* `maxArtIDLen` *(250, NAME_MAX minus
+the sidecar suffix) so an over-long value is ErrNotFound, and* `mapdef`*'s*
+`name()` *=* `artlib.Clip(art, artlib.MaxFragment)` *clips what the warnings
+render.*
+
+***`artCannotBeUsed`: closed 2026-09-09.*** *It was the one warning in*
+`resolve.go` *rendering* `artlib`*'s error instead of composing its own, and it
+clipped neither half — its* `art` *went in raw at both call sites, and the error
+carried the id a SECOND time because* `artlib` *stamped* `artlib: art/<id>.json`
+*unclipped as well. Measured on the tile arm before the fix: a 100-byte id gave
+a 292-byte warning and a 250-byte id gave 592, growing by twice the excess.*
+
+***The first version of this entry called it unbounded. It never was*** *—*
+`isArtID` *capped it at 250 all along, and an id failing that check lands in a
+different, already-clipped arm. Nor was it "six times its siblings", which the
+first draft of this entry also said. It is a RANGE, because* `artlib` *composes
+eight messages behind this one arm: it ran 592..850 and runs 178..366 now,
+against siblings of 84, 102, 105, 212, 433 and 523 at the same 250-byte id. So
+1.62x the largest sibling at worst. Two corrections were needed to get there —
+"six times" was invented, and the figure that replaced it quoted the mildest
+shape as though it were the arm.*
+
+***The case-mismatch pair: closed 2026-09-09, the same day it was found.***
+*Fixing* `artCannotBeUsed` *promoted these two to largest — 523 tile and 433
+object — because they still rendered* `CaseMismatch.Real`*, the filename the
+directory actually holds, whole. That is a real directory entry, so it is
+operator-controlled and NAME_MAX-bounded rather than written by a campaign
+file; but a case-only difference preserves length, so a 250-byte id bought a
+250-byte filename in the sentence beside it.
+`TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk` holds both arms and
+they are 312 and 222 now.*
+
+*They had been missing from the inventory because* `artCannotBeUsed`*'s own doc
+counted eight sentences when there are ten, omitting exactly these two — the
+count was the reason the gap existed, not merely a description of it.*
+
+***Every sentence* `resolve.go` *emits is bounded by* `artlib`*'s constants*,
+*which is not the same as saying none varies with author input: each still
+grows with what an author wrote until that input passes* `MaxFragment`*, then
+stops. Measured at a 250-byte id, the eight that carry an art name run 84 and
+105 (not-installed), 102..140 (kind mismatch, the range being a short kind
+against a long one), 212 (no sidecar), 222 and 312 (case-mismatch), and 345
+and 366 (*`artCannotBeUsed`*'s two arms at their worst shape). The
+unreadable-root pair is a constant, 50 and 89.*
+
+*This does NOT close the section. Still carried, from the list above:*
+`mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/rules`*'
+ability and resource names, and* `internal/adventure`*'s collision refusals for
+an actor id and a token id.*
+
+***Scenery kind: closed 2026-09-10.*** *A map file's* `objects[].kind` *is free
+text —* `mapdef.Load` *checks that object's footprint and its art and never
+looks at* `kind` *— and* `engine/terrain.go` *returns a blocked move's reason
+as* `"scenery: " + o.Kind`*, which* `describeBlockage` *renders into*
+`something (a <kind>) is in the way` *on* `CommandResult.Error`*. Measured
+before the fix: a 4-byte kind gave a 32-byte reason and 5000 gave 5028; over
+the wire, 159 against 5059. It is bounded at* `describeBlockage`*, the seam
+that function's own doc already describes as the consuming side of this list,
+and*
+`TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind` *drives the real
+move_token rather than the helper.*
+
+***Why it was not bounded with the art warnings, and why that was right.*** *It
+is an ERROR, not a warning: one* `move_token` *yields one refusal, so it never
+scene-qualifies and never accumulates the way* `adventure.Compile`*'s warnings
+do. The read-limit arithmetic that justified the art work does not apply — the
+cost here was a player bumping into a crate and reading a wall of text, which is
+a table problem rather than a socket one. Ranked and fixed on that basis, not on
+the size of the number.* A first draft of this
+paragraph said the only remaining strings were the six non-empty-only bundle
+fields, which contradicted this section's own list fifty lines above — the
+third time this entry has over-claimed a scope, and the reason the paragraph
+that opens it exists.*
+
+***What is bounded is the SENTENCE, not the field.*** `sceneSeenFor` *puts the
+same* `o.Kind` *on a* `SceneSeen` *projection whole, and the client letters the
+object with it — so a player who can see the square well enough to be refused
+for it already holds the full string. That is deliberate and stays: the
+projection carries* `TileRef.Kind`*,* `TileRef.Art` *and* `SceneObject.Art` *raw
+for the same reason, clipping there would change what is DRAWN, and* `fillText`
+*bounds the label geometrically. The distinction is the one this section drew
+for an override value: a string is bounded where it is interpolated into prose,
+and carried as itself where it is a structured field.*
+
+***Rule 9, answered.*** *MapTool has nothing to borrow here. Its movement
+blocking is geometric —* `ZoneWalker` *and VBL decide passability and the client
+will not path into the cell — so no server-to-client message names the
+obstruction, and there is no sentence to bound. Structurally there could not be:
+every MapTool client receives the whole campaign, so it has no per-message
+budget to protect. A checked-and-rejected precedent, recorded so the next person
+does not re-ask.*
+
+***What holds the closed one.***
+*`TestACannotBeUsedWarningStopsGrowingWithTheArtName` asserts that two
+over-long ids differing by 150 bytes produce warnings of EQUAL length — an
+invariant rather than a byte count, so it survives a rewording — and it fails
+if either copy is left unclipped. It runs one shape per* `artlib` *message that
+can reach the arm, because review found seven still shipping 228 bytes of the
+id after the first fix, and ten of the thirteen clips with no test observing
+them at all.* `TestTheRefusalPathBoundsTheArtNameToo` *covers the one message
+mapdef never renders:* `unsupportedFormat` *travels out as an error, and its
+own clip is the only bound there is.*
+
+*The prefix was the multiplier rather than a single long value:*
+`adventure.Compile` *stamps* `scene %q:` *onto EVERY warning a scene produces
+and they do not collapse across scenes, so one oversized id was paid once per
+warning per scene. Bounding at the loader is what makes that arithmetic finite,
+and it binds the* `%w` *error path in* `Compile` *as well — the same id goes
+into* `adventure: compile: scene %q` *a few lines above the warning append.*
+
+*`TestLoadAcceptsValuesExactlyOnEveryLimit` holds the direction — an id of
+exactly the limit is legal — because a `>=` here would tell an author their id
+"must be at most 128 bytes" while reporting "got 128".*
 
 ***The mistake worth keeping.*** *Two clips on one path make both mutants
 unkillable — that part is true. But `artlib` bounding an id inside ITS error and
@@ -581,6 +715,8 @@ value. The fixture, not the assertion, decided what the test could see.*
 work findable.*
 
 ### Carried forward (closed): author-controlled bytes are not bounded on the way to a client
+
+`[anchor:author-controlled-bytes-unbounded]`
 
 *Added 2026-09-07 at the merge gate, from the whole-branch review. Patrik: this
 one is important and gets done — it is recorded here rather than in a review

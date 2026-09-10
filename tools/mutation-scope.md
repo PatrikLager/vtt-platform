@@ -249,6 +249,14 @@ fix below. The fixture's placement at (0,0) is a deliberate redundant pin, not
 one of the seven: `p.X < 0` and `p.Y < 0` were already killed by
 `testdata/valid/scenes/gate.json`.)
 
+**The count above is history, the list is not.** Seven is what fell in that run
+and stays written as such. But the fixture has grown since — on 2026-09-09 its
+scene id became 128 bytes to kill the `CONDITIONALS_BOUNDARY` mutant on
+`maxIDBytes` — so the inventory in that paragraph no longer describes the file.
+The live inventory is the fixture's own `guide.md`, which is a table beside the
+comparison each value pins; this paragraph is a record of one gating run and is
+not maintained as a description of the fixture.
+
 **A trap worth recording, because the answer is the opposite of the neighbour
 entry.** `compile.go:35` carries five `ARITHMETIC_BASE` mutants on a slice
 capacity hint, and `tools/mutation-equivalents.txt` already holds four

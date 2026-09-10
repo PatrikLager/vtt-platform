@@ -48,8 +48,8 @@ adventures/<id>/
   adventure.json   manifest: id, name, format_version "1",
                    ruleset (required ruleset id), opening_narration
                    (text, ≤ 8 KiB — becomes a NarrationAdded)
-  scenes/*.json    scene id, name, grid, and token placements
-                   [{token_id, actor_id, x, y}]
+  scenes/*.json    scene id (≤ 128 bytes), name, grid, and token
+                   placements [{token_id, actor_id, x, y}]
   actors/*.json    complete statblock instances (actor_id, name,
                    attributes, resources, kind — "party_member" or
                    "non_party", REQUIRED; no controller, ever — control
@@ -71,11 +71,50 @@ versioning escape hatch load-bearing); **every actor must declare a
 rejected** (amended 2026-08-24, see below); statblock attribute/resource
 names must be declared by the ruleset (defenses valued in attributes
 per the v2 convention); resource current ≤ max when max > 0; note
-keys/titles/texts and narration within the world layer's byte caps; all
+keys/titles/texts and narration within the world layer's byte caps;
+**a scene `id` at most 128 bytes** (amended 2026-09-09, see below); all
 placement actor_ids resolve within the adventure; scene/token/actor/
 note ids must NOT collide with existing campaign state at load time
 (checked against the live snapshot before the batch — rejection, not
 overwrite).
+
+**AMENDED 2026-09-09: a scene `id` is length-bounded.** The list above said
+byte caps applied to notes and narration, and an author reading it to learn
+what boot will reject would not have found this one. `loadScenes` now refuses
+an id over `maxIDBytes` (128), joining the caps already applied to note
+keys, titles, texts and narration.
+
+**Why this field and not the others beside it.** A manifest `id` and `name`, a
+scene `name`, an actor's `actor_id` and `name`, and a placement's `token_id`
+remain non-empty-only, and that is deliberate rather than pending. A scene id is
+the one that MULTIPLIES: `adventure.Compile` prefixes every warning a scene
+produces with `scene %q: `, and warnings do not collapse across scenes, so an
+oversized id is paid once per warning per scene on a single `CommandResult` —
+the aggregating path already identified as the sharper of the two read-limit
+cases by `TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit`.
+
+None of the others multiplies BY WARNINGS, which is the multiplier that matters
+here. Two of them do recur — an `actor_id` and a `token_id`, once per
+placement in `TokenPlaced` — but that count is bounded by the placements an
+author wrote, not by how many warnings a scene happens to produce. See
+`[anchor:author-controlled-bytes-unbounded]` in the art-is-a-flat-library spec
+for the rest of that list, which is still open.
+
+**The limit is inclusive**, like every other cap `load.go` checks: an id of
+exactly 128 bytes loads. That is not a claim about caps in general — it is what
+`testdata/at-every-boundary` is for, a bundle carrying a value sitting exactly
+on each byte cap at once, held by `TestLoadAcceptsValuesExactlyOnEveryLimit`.
+(Not literally every inclusive comparison in the loader: `rv.Current > rv.Max`
+is inclusive too, and that fixture's `max: 0` short-circuits it — the
+`current == max` case is pinned by `testdata/valid` instead.) The
+direction matters because the alternative refuses an author's legal id while
+telling them it "must be at most 128 bytes, got 128".
+
+Note this bounds the ADVENTURE loader, not the platform. A scene id arriving via
+`mapdef.LoadInstalled` IS a filename — `id + ".json"` — so its ceiling is
+`NAME_MAX` minus that suffix, about 250 bytes, looser than the 128 imposed here.
+That path does not scene-qualify its warnings, so it does not multiply, which is
+why it is left as it is rather than tightened to match.
 
 **AMENDED 2026-08-24: actors declare a required `kind`.** Until now this
 format could not say whether a creature was a player character or a monster,

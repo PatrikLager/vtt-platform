@@ -245,7 +245,7 @@ func resolveObjectArtWith(idx int, o Object, lib *artlib.Library) (string, []str
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed, but the art directory holds %q, which differs only "+
 				"in case; rename it — the object stays, drawn from its kind",
-			name(o.Art), mismatch.Real)}, nil
+			name(o.Art), name(mismatch.Real))}, nil
 	case errors.Is(err, artlib.ErrNotFound):
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed; the object stays, drawn from its kind", name(o.Art))}, nil
@@ -295,11 +295,16 @@ func artNotInstalled(art string) string {
 // is a sentence a DM reads while looking straight at it. The remedy is a rename
 // and nothing else says so — art ids are lowercase by rule (artlib's isArtID),
 // so the fix is always "make the filename match the id the map names".
+// BOTH HALVES ARE CLIPPED, and the second one was not until 2026-09-09: onDisk
+// is a real directory entry, so it is operator-controlled and NAME_MAX-bounded
+// rather than campaign-file-controlled, but a case-only difference preserves
+// length, so a 250-byte id bought a 250-byte filename in the sentence beside
+// it. That made this the largest warning the file emitted, at 523 bytes.
 func artCaseMismatch(art, onDisk string) string {
 	return fmt.Sprintf("art %q is not installed, but the art directory holds %q, which "+
 		"differs only in case; rename it — a filename IS the id a map names, and matching "+
 		"it loosely would draw here and on no case-sensitive filesystem; drawing it plain",
-		name(art), onDisk)
+		name(art), name(onDisk))
 }
 
 // artCannotBeUsed is the sentence for art that IS installed and does not
@@ -321,13 +326,63 @@ func artCaseMismatch(art, onDisk string) string {
 // a parameter rather than two functions because the two callers must not drift
 // apart on the first half, which is the half a DM reads.
 //
-// err IS SAFE TO INTERPOLATE, and this helper is the only thing in this file
-// that interpolates one. THAT IS TWO OF THE EIGHT SENTENCES THE ART PATH CAN
-// PRODUCE, not one: Resolve and ResolveObjectArt each call this, from switches
-// that nothing forces to agree. The other six are the two not-installed
-// sentences, the no-sidecar sentence, the kind mismatch, and the
-// unreadable-root pair — of which the first four carry an art name and the
-// last two are a constant carrying nothing at all.
+// BOTH HALVES ARE BOUNDED HERE rather than at the two call sites, for the same
+// reason tail is a parameter: the callers must not drift. It was neither, until
+// 2026-09-09 — `art` went in raw while every other warning in this file clipped
+// it through name(), and the rendered error carried the id a SECOND time,
+// because artlib stamped `artlib: art/<id>.json` unclipped as well. Measured on
+// the tile arm: a 100-byte id gave a 292-byte warning and a 250-byte id gave
+// 592, growing by twice the excess. Both copies are clipped now, and
+// TestACannotBeUsedWarningStopsGrowingWithTheArtName holds it by asserting the
+// two lengths are EQUAL rather than asserting a byte count, so the pin survives
+// a rewording of the sentence.
+//
+// IT WAS NEVER UNBOUNDED, and overstating that would misplace the next reader's
+// attention: isArtID refuses an id over maxArtIDLen (250, NAME_MAX minus the
+// sidecar suffix), and an id failing that check is ErrNotFound — a different
+// arm, already clipped.
+//
+// NOR WAS IT "six times its siblings", which an earlier draft of this comment
+// claimed. At a 250-byte id the sentences this file emits run 84 (tile
+// not-installed), 102 (kind mismatch), 105 (object not-installed), 212 (no
+// sidecar), 433 (object case-mismatch) and 523 (tile case-mismatch).
+//
+// THIS ARM IS A RANGE, NOT A NUMBER, which is what made both earlier attempts
+// at the figure wrong: artlib composes eight different messages behind it, so
+// it ran 592..850 depending on which one, and runs 178..366 now. The first
+// draft said "six times"; the correction said 592 and called it 1.13x the
+// largest sibling, which quoted the mildest shape and understated in the
+// other direction. The worst was 850, 1.62x. Quote the range or name the
+// shape; a single number here has been wrong twice.
+//
+// FIXING IT PROMOTED THE NEXT ONE, which is worth knowing about this kind of
+// work: the two case-mismatch sentences became the largest the file could
+// produce, at 523 and 433, because they still rendered CaseMismatch.Real —
+// the filename on disk — whole. They were closed the same day
+// (TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk) and are 312 and
+// 222 now. Every sentence this file emits is bounded by artlib's constants:
+// measured at a 250-byte id they run 84, 102, 105, 212, 222, 312, 345, 366,
+// and none of them grows with anything an author or an operator wrote.
+//
+// BoundErr rather than Clip on the error is a shape choice, not a functional
+// one, and the honest version of that is worth writing down: this helper
+// returns a string and the wrapper is consumed by %v in the same expression, so
+// Unwrap is unreachable by construction and artlib.Clip(err.Error(),
+// artlib.MaxMessage) would be byte-identical. BoundErr is kept because it is
+// the right shape the day this returns an error instead, and because artlib's
+// own doc records what replacing a %w with a clipped string cost last time.
+//
+// err IS SAFE TO INTERPOLATE — safe meaning it leaks no path, which is a
+// separate question from how long it is — and this helper is the only thing in
+// this file that interpolates one. THAT IS TWO OF THE TEN SENTENCES THE ART
+// PATH CAN PRODUCE, not one: Resolve and ResolveObjectArt each call this, from
+// switches that nothing forces to agree. The other eight are the two
+// not-installed sentences, the two case-mismatch sentences, the no-sidecar
+// sentence, the kind mismatch, and the unreadable-root pair — of which six
+// carry an art name and the last two are a constant carrying nothing at all.
+// This read "eight" and "the other six" until 2026-09-09, omitting both
+// case-mismatch sentences, which is how the largest warning in the file stayed
+// off its own inventory.
 //
 // Every artlib error that can arrive here either never named a path or had it
 // stripped by that package's bareCause, which matters because these warnings
@@ -338,6 +393,21 @@ func artCaseMismatch(art, onDisk string) string {
 // review measured (2026-09-05) that appending artDir to only the object tail
 // left every gateway path test green while the unit test caught it.
 //
+// CLIPPING TRADES ONE THING AWAY, and it is worth naming rather than
+// discovering: two DIFFERENT broken pieces whose ids share their first
+// MaxFragment bytes now render the identical sentence and collapse into one
+// tallied line, so a DM is told about one file when two are broken. That is
+// not new to this file — it is what name() does, and the rule is easier to hold
+// than the tally that kept rotting here: EVERY sentence that renders a clipped
+// author string can collapse with another whose string shares its first
+// MaxFragment bytes. The unreadable-root pair renders no author string at all,
+// so it sits outside that rule rather than being an exception to it. The
+// case-mismatch sentences joined the rule on 2026-09-09, when the filename on
+// disk started being clipped too — before that, their onDisk half kept them
+// apart. The alternative is a warning that grows with a name the author chose.
+// Art ids are kebab-case and a 40-byte shared prefix is unlikely, but
+// "unlikely" is the honest word, not "impossible".
+//
 // IT STILL DEDUPLICATES, which is not obvious once an error is inside the
 // string: compile.go's warningTally groups by the exact sentence, so anything
 // varying per SQUARE would put the 96-warning measurement spec §4 records
@@ -346,7 +416,7 @@ func artCaseMismatch(art, onDisk string) string {
 // sentences and one line with a count.
 func artCannotBeUsed(art string, err error, tail string) string {
 	return fmt.Sprintf("art %q is installed but cannot be used (%v); %s",
-		art, err, tail)
+		name(art), artlib.BoundErr(err), tail)
 }
 
 // name bounds an art name on its way into one of this file's warnings.

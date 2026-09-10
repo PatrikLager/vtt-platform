@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
@@ -632,6 +633,15 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 // directory into this fixture to prove something map_test.go already proves.
 func (f *gwFixture) seedCellar(t *testing.T) int64 {
 	t.Helper()
+	return f.seedCellarWithSceneryKind(t, "boulder")
+}
+
+// seedCellarWithSceneryKind is seedCellar with the boulder's KIND chosen by the
+// caller, which only a test about the refusal's own text needs: that string is
+// author-written in a map file, nothing on the way to engine.State validates
+// it, and it is interpolated into what a blocked player reads.
+func (f *gwFixture) seedCellarWithSceneryKind(t *testing.T, kind string) int64 {
+	t.Helper()
 	mustAppend(t, f.campaign, "seed-cellar", &vttv1.Envelope_SceneCreated{
 		SceneCreated: &vttv1.SceneCreated{
 			SceneId: "cellar", Name: "Cellar", GridWidth: 3, GridHeight: 3,
@@ -642,7 +652,7 @@ func (f *gwFixture) seedCellar(t *testing.T) int64 {
 			},
 			Objects: []*vttv1.SceneObject{
 				{
-					ObjectId: "boulder-1", Kind: "boulder", At: &vttv1.GridPosition{X: 1, Y: 1},
+					ObjectId: "boulder-1", Kind: kind, At: &vttv1.GridPosition{X: 1, Y: 1},
 					Width: 1, Height: 1, BlocksMove: true,
 				},
 			},
@@ -2279,5 +2289,66 @@ func lastPresenceStateFor(t *testing.T, conn *websocket.Conn, id string, d time.
 		if pc := frame.GetPresenceChanged(); pc != nil && pc.GetParticipantId() == id {
 			state = pc.GetState()
 		}
+	}
+}
+
+// TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind pins the one
+// author-written string that reaches a player through a move_token refusal.
+//
+// A map file's objects[].kind is free text — mapdef.Load checks that object's
+// footprint and its art and never looks at kind at all — and engine's
+// terrain.go returns the blocking reason as "scenery: " + o.Kind, which
+// describeBlockage renders into "something (a <kind>) is in the way" on
+// CommandResult.Error. Measured before this test existed: a 4-byte kind gave a
+// 32-byte refusal, 5000 gave 5028. One-for-one, with nothing bounding it.
+//
+// IT IS AN ERROR, NOT A WARNING, which is why it was left when the art
+// warnings were bounded and why it is worth saying here: one move_token
+// produces one refusal, so it does not scene-qualify and does not accumulate
+// the way adventure.Compile's warnings do. The damage is at the table rather
+// than at the socket — a player bumps into a crate and gets a wall of text
+// where they expected a short sentence naming it.
+//
+// The invariant is the same one the art path uses, for the same reason: past
+// the clip point the sentence must stop growing, which survives a rewording
+// where a byte count would not.
+func TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind(t *testing.T) {
+	refusal := func(t *testing.T, kind string) string {
+		t.Helper()
+		f := newGWFixture(t)
+		after := f.seedCellarWithSceneryKind(t, kind)
+		playerConn := f.dial(f.playerToken, after)
+		sendCommand(t, playerConn, &vttv1.ClientCommand{
+			RequestId: "r-scenery",
+			Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+				TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 1, Y: 1},
+			}},
+		})
+		res := readResult(t, playerConn)
+		if res.Ok {
+			t.Fatal("a player walked onto blocking scenery")
+		}
+		return res.Error
+	}
+
+	short, long := refusal(t, strings.Repeat("k", 100)), refusal(t, strings.Repeat("k", 5000))
+	if len(short) != len(long) {
+		t.Errorf("a 100-byte kind gives a %d-byte refusal and a 5000-byte kind gives %d: "+
+			"past the clip the sentence must stop growing with what a map file wrote",
+			len(short), len(long))
+	}
+	if strings.Contains(long, strings.Repeat("k", artlib.MaxFragment+1)) {
+		t.Errorf("the refusal carries more than MaxFragment (%d) of the scenery kind",
+			artlib.MaxFragment)
+	}
+	// AND THAT IT CARRIES THE KIND AT ALL. Without this the test is satisfied by
+	// any refusal of constant length, and two sit ahead of the Blocked call on
+	// this exact path — authorize's, and the sight arm's "you cannot see that
+	// square", whose own comment says the order is the whole point. The
+	// assertions above only say the kind is not carried too FAR.
+	if !strings.Contains(long, strings.Repeat("k", artlib.MaxFragment)) {
+		t.Errorf("the refusal does not carry the scenery kind at all — this move was "+
+			"refused by something else, and the length invariant above would hold for "+
+			"any constant refusal:\n  %s", long)
 	}
 }
