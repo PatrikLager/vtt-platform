@@ -1025,3 +1025,80 @@ func TestTheRefusalPathBoundsTheArtNameToo(t *testing.T) {
 			artlib.MaxFragment, long)
 	}
 }
+
+// TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk is the same
+// invariant as TestACannotBeUsedWarningStopsGrowingWithTheArtName, on the two
+// sentences that were left carrying an unclipped string when that one was
+// fixed. Measured at a 250-byte id: 523 bytes on the tile arm and 433 on the
+// object arm, which made them the LARGEST warnings resolve.go emits and put
+// them on the same per-scene multiplying path.
+//
+// The unclipped half here is not the art name — both sites already run that
+// through name(). It is the filename the directory actually holds, which
+// artlib hands back as CaseMismatch.Real. That is a real directory entry, so
+// it is operator-controlled and NAME_MAX-bounded rather than written by a
+// campaign file; it is also exactly as long as the id the map named, because a
+// case-only difference preserves length. So a long id still buys a long
+// sentence, one copy of it rather than two.
+func TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk(t *testing.T) {
+	warn := func(t *testing.T, n int, object bool) string {
+		t.Helper()
+		id := strings.Repeat("a", n)
+		artDir := t.TempDir()
+		// The directory holds the SAME name in a different case, which is the
+		// whole condition: lowercase is the rule (artlib's isArtID), so the id
+		// a map names can never be what is on disk here.
+		if err := os.WriteFile(filepath.Join(artDir, strings.ToUpper(id)+".png"),
+			[]byte("fake-png"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var warnings []string
+		var err error
+		if object {
+			_, warnings, err = mapdef.ResolveObjectArt(
+				0, mapdef.Object{ID: "o-1", Art: id}, artDir)
+		} else {
+			m := &mapdef.Map{
+				Tiles:     map[string]string{"0,0": "stone-wall"},
+				Overrides: map[string]string{"0,0": id},
+			}
+			_, warnings, err = mapdef.Resolve(m, artDir, "0,0")
+		}
+		if err != nil {
+			t.Fatalf("a case-only mismatch degrades, it does not refuse: %v", err)
+		}
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "differs only in case") {
+			t.Fatalf("warnings = %q, want the case-mismatch sentence", warnings)
+		}
+		return warnings[0]
+	}
+
+	for _, arm := range []struct {
+		name   string
+		object bool
+	}{
+		{"tile", false},
+		{"object", true},
+	} {
+		t.Run(arm.name, func(t *testing.T) {
+			short, long := warn(t, 100, arm.object), warn(t, 250, arm.object)
+			if len(short) != len(long) {
+				t.Errorf("a 100-byte id gives a %d-byte warning and a 250-byte id gives %d: "+
+					"past MaxFragment the sentence must stop growing\n  %s",
+					len(short), len(long), long)
+			}
+			// The on-disk name is the UPPERCASE half, so it is distinguishable
+			// from the art name in the same sentence — this fails only if
+			// CaseMismatch.Real went in whole.
+			if strings.Contains(long, strings.Repeat("A", artlib.MaxFragment+1)) {
+				t.Errorf("the warning carries more than MaxFragment (%d) of the filename on "+
+					"disk; CaseMismatch.Real is unclipped:\n  %s", artlib.MaxFragment, long)
+			}
+			// No ceiling assertion here, deliberately. Neither of these two
+			// sentences renders a MaxMessage-bounded value — both halves are
+			// MaxFragment clips around a literal — so a limit spelled
+			// MaxFragment+MaxMessage would be a derivation that is not one,
+			// and the two assertions above already carry the invariant.
+		})
+	}
+}

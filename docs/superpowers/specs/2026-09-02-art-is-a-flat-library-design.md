@@ -604,14 +604,38 @@ against siblings of 84, 102, 105, 212, 433 and 523 at the same 250-byte id. So
 "six times" was invented, and the figure that replaced it quoted the mildest
 shape as though it were the arm.*
 
-***Still open, and now the largest:*** *the two case-mismatch sentences (523
-tile, 433 object) interpolate* `mismatch.Real` *and* `onDisk` *whole. Those are
-real directory entries, so they are operator-controlled and NAME_MAX-bounded
-rather than written by a campaign file — a smaller worry than an override value,
-which is why they are listed rather than fixed. They were missing from this
-inventory because* `artCannotBeUsed`*'s own doc counted eight sentences when
-there are ten, omitting exactly these two. Nothing pins them: the test below
-guards the closed item, not this one.*
+***The case-mismatch pair: closed 2026-09-09, the same day it was found.***
+*Fixing* `artCannotBeUsed` *promoted these two to largest — 523 tile and 433
+object — because they still rendered* `CaseMismatch.Real`*, the filename the
+directory actually holds, whole. That is a real directory entry, so it is
+operator-controlled and NAME_MAX-bounded rather than written by a campaign
+file; but a case-only difference preserves length, so a 250-byte id bought a
+250-byte filename in the sentence beside it.
+`TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk` holds both arms and
+they are 312 and 222 now.*
+
+*They had been missing from the inventory because* `artCannotBeUsed`*'s own doc
+counted eight sentences when there are ten, omitting exactly these two — the
+count was the reason the gap existed, not merely a description of it.*
+
+***Every sentence* `resolve.go` *emits is bounded by* `artlib`*'s constants*,
+*which is not the same as saying none varies with author input: each still
+grows with what an author wrote until that input passes* `MaxFragment`*, then
+stops. Measured at a 250-byte id, the eight that carry an art name run 84 and
+105 (not-installed), 102..140 (kind mismatch, the range being a short kind
+against a long one), 212 (no sidecar), 222 and 312 (case-mismatch), and 345
+and 366 (*`artCannotBeUsed`*'s two arms at their worst shape). The
+unreadable-root pair is a constant, 50 and 89.*
+
+*This does NOT close the section. Still carried, from the list above:*
+`internal/engine`*'s terrain kind reaching a* `move_token` *refusal through*
+`internal/gateway`*,* `mapdef.LoadInstalled`*'s use of a map's own declared id,*
+`internal/rules`*' ability and resource names, and* `internal/adventure`*'s
+collision refusals for an actor id and a token id. A first draft of this
+paragraph said the only remaining strings were the six non-empty-only bundle
+fields, which contradicted this section's own list fifty lines above — the
+third time this entry has over-claimed a scope, and the reason the paragraph
+that opens it exists.*
 
 ***What holds the closed one.***
 *`TestACannotBeUsedWarningStopsGrowingWithTheArtName` asserts that two

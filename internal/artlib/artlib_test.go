@@ -1616,12 +1616,28 @@ func TestACaseMismatchSaysWhatToRenameAndWhy(t *testing.T) {
 	dir := t.TempDir()
 	// A LONG-BUT-LEGAL id, not a short one. CaseMismatch.Error bounds the id it
 	// carries, and with a nine-character fixture that bound is never exercised —
-	// measured: its mutant survived the whole suite. An art id is lowercase and
-	// capped by isArtID, so this is the longest a real one gets.
-	long := strings.Repeat("m", 120) + "-1"
+	// measured: its mutant survived the whole suite.
+	//
+	// THE LENGTH IS THE ACTUAL MAXIMUM, and it said "the longest a real one
+	// gets" while using 122 until 2026-09-09. isArtID's cap is 250 (NAME_MAX
+	// minus the sidecar suffix), and the 128 bytes between the two are what
+	// hid a second unclipped string: the message also carries the filename ON
+	// DISK, through the why it is built with, and at 122 the whole sentence
+	// stayed under this ceiling either way. At the real maximum it does not —
+	// reverting those clips takes it past 2*MaxMessage.
+	long := strings.Repeat("m", 248) + "-1"
 	writeFile(t, dir, strings.ToUpper(long[:1])+long[1:]+".png", "picture bytes")
 
 	_, errLong := artlib.Lookup(dir, long)
+	// PIN THE BRANCH before measuring it: without this, an id that stopped
+	// reaching the case-mismatch arm would produce a short error and pass this
+	// check silently, and the comment above would still claim the bound was
+	// exercised.
+	var longMismatch *artlib.CaseMismatch
+	if !errors.As(errLong, &longMismatch) {
+		t.Fatalf("Lookup = %v, want a CaseMismatch — this fixture is a case-only "+
+			"difference at the longest legal id and nothing else", errLong)
+	}
 	if n := len(errLong.Error()); n > 2*artlib.MaxMessage {
 		t.Errorf("Error() is %d bytes for a legal id — the type bounds what it "+
 			"carries, or it does not", n)
@@ -1792,5 +1808,76 @@ func TestBoundErrKeepsIdentityWhileBoundingText(t *testing.T) {
 	}
 	if n := len(b.Error()); n > 2*artlib.MaxMessage {
 		t.Errorf("BoundErr text is %d bytes, want it bounded", n)
+	}
+}
+
+// TestEveryCaseMismatchMessageStopsGrowingWithTheFilenameOnDisk covers the two
+// branches TestACaseMismatchSaysWhatToRenameAndWhy cannot reach, and it uses a
+// different instrument on purpose.
+//
+// That test bounds Error() against 2*MaxMessage, which catches the picture
+// branch and CANNOT catch these: measured at the longest legal id, the sidecar
+// branch renders 460 bytes unclipped, under the 480-byte ceiling, so a bigger
+// fixture does not help — the ceiling is the wrong instrument, not a
+// mis-tuned one. The equal-length invariant is instrument-independent: past
+// MaxFragment the message must stop growing, whatever it happens to weigh.
+//
+// The three branches build their `why` separately and nothing forces them to
+// agree, which is the same reason mapdef's two arms each need driving. Measured
+// 2026-09-09: reverting the sidecar clip or the statPicture clip left the whole
+// module green.
+//
+// None of this text reaches a client — mapdef matches errors.As(&CaseMismatch)
+// before the arm that renders an artlib error, so these are operator-local
+// (cmd/vtt's install verification and Validate at boot). It is a rule 1 gap
+// rather than a wire-size one.
+func TestEveryCaseMismatchMessageStopsGrowingWithTheFilenameOnDisk(t *testing.T) {
+	// Legal under isArtID at both lengths: lowercase, no leading, doubled or
+	// trailing hyphen. The longest is maxArtIDLen, which is NAME_MAX minus the
+	// sidecar suffix.
+	id := func(n int) string { return strings.Repeat("m", n-2) + "-1" }
+	upper := func(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
+
+	cases := []struct {
+		name    string
+		install func(t *testing.T, dir, id string)
+	}{
+		{"sidecar-only", func(t *testing.T, dir, id string) {
+			t.Helper()
+			// No picture anywhere, so the sidecar is the only thing to rename.
+			writeFile(t, dir, upper(id)+".json", `{"format_version":1,"kind":"wall"}`)
+		}},
+		{"sidecar-names-a-miscased-picture", func(t *testing.T, dir, id string) {
+			t.Helper()
+			writeFile(t, dir, id+".json", `{"format_version":1,"kind":"wall"}`)
+			writeFile(t, dir, upper(id)+".png", "picture bytes")
+		}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msg := func(n int) string {
+				t.Helper()
+				dir := t.TempDir()
+				c.install(t, dir, id(n))
+				_, err := artlib.Lookup(dir, id(n))
+				var mismatch *artlib.CaseMismatch
+				if !errors.As(err, &mismatch) {
+					t.Fatalf("Lookup = %v, want a CaseMismatch: this fixture is a "+
+						"case-only difference and nothing else", err)
+				}
+				return err.Error()
+			}
+			short, long := msg(100), msg(250)
+			if len(short) != len(long) {
+				t.Errorf("a 100-byte id gives a %d-byte message and a 250-byte id gives %d: "+
+					"past MaxFragment the message must stop growing with what is on disk\n  %s",
+					len(short), len(long), long)
+			}
+			if strings.Contains(long, strings.Repeat("m", artlib.MaxFragment+1)) {
+				t.Errorf("the message carries more than MaxFragment (%d) of the name:\n  %s",
+					artlib.MaxFragment, long)
+			}
+		})
 	}
 }

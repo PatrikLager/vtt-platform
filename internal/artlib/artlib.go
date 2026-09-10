@@ -747,12 +747,13 @@ func (l *Library) Lookup(id string) (Piece, error) {
 				"is not installed: the directory holds %q, which differs only in case — "+
 					"an art filename is lowercase and IS the id a map names, and matching "+
 					"it loosely would draw one picture here and none on a case-sensitive "+
-					"filesystem (design spec §3.2)", onDisk))
+					"filesystem (design spec §3.2)", Clip(onDisk, MaxFragment)))
 		}
 		if onDisk, ok := l.caseOnlyMatch(sidecar); ok {
 			return Piece{}, caseMismatch(id, onDisk, fmt.Sprintf(
 				"is not installed: the directory holds %q, which differs only in case — "+
-					"an art filename is lowercase and IS the id a map names (design spec §3.2)", onDisk))
+					"an art filename is lowercase and IS the id a map names (design spec §3.2)",
+				Clip(onDisk, MaxFragment)))
 		}
 		return Piece{}, notFound(id, fmt.Sprintf("has no picture %q installed", Clip(picture, MaxFragment)))
 	}
@@ -1058,7 +1059,8 @@ func (l *Library) statPicture(root *os.Root, id, name string) error {
 			return caseMismatch(id, onDisk, fmt.Sprintf(
 				"names picture %q, but the directory holds %q, which differs only in case — "+
 					"a filename IS the id a map names, and matching it loosely would draw "+
-					"here and on no case-sensitive filesystem (design spec §3.2)", name, onDisk))
+					"here and on no case-sensitive filesystem (design spec §3.2)",
+				Clip(name, MaxFragment), Clip(onDisk, MaxFragment)))
 		}
 		return notFound(id, fmt.Sprintf("has no picture %q installed", Clip(name, MaxFragment)))
 	}

@@ -245,7 +245,7 @@ func resolveObjectArtWith(idx int, o Object, lib *artlib.Library) (string, []str
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed, but the art directory holds %q, which differs only "+
 				"in case; rename it — the object stays, drawn from its kind",
-			name(o.Art), mismatch.Real)}, nil
+			name(o.Art), name(mismatch.Real))}, nil
 	case errors.Is(err, artlib.ErrNotFound):
 		return "", []string{fmt.Sprintf(
 			"art %q is not installed; the object stays, drawn from its kind", name(o.Art))}, nil
@@ -295,11 +295,16 @@ func artNotInstalled(art string) string {
 // is a sentence a DM reads while looking straight at it. The remedy is a rename
 // and nothing else says so — art ids are lowercase by rule (artlib's isArtID),
 // so the fix is always "make the filename match the id the map names".
+// BOTH HALVES ARE CLIPPED, and the second one was not until 2026-09-09: onDisk
+// is a real directory entry, so it is operator-controlled and NAME_MAX-bounded
+// rather than campaign-file-controlled, but a case-only difference preserves
+// length, so a 250-byte id bought a 250-byte filename in the sentence beside
+// it. That made this the largest warning the file emitted, at 523 bytes.
 func artCaseMismatch(art, onDisk string) string {
 	return fmt.Sprintf("art %q is not installed, but the art directory holds %q, which "+
 		"differs only in case; rename it — a filename IS the id a map names, and matching "+
 		"it loosely would draw here and on no case-sensitive filesystem; drawing it plain",
-		name(art), onDisk)
+		name(art), name(onDisk))
 }
 
 // artCannotBeUsed is the sentence for art that IS installed and does not
@@ -350,12 +355,14 @@ func artCaseMismatch(art, onDisk string) string {
 // other direction. The worst was 850, 1.62x. Quote the range or name the
 // shape; a single number here has been wrong twice.
 //
-// WHICH LEAVES THE TWO CASE-MISMATCH SENTENCES as the largest this file can
-// produce, on the same per-scene multiplying path. They interpolate
-// mismatch.Real and onDisk, real directory entries — operator-controlled and
-// NAME_MAX-bounded rather than written by a campaign file — so they are a
-// smaller worry than this one was, and they are recorded on the art spec's
-// open list rather than fixed here.
+// FIXING IT PROMOTED THE NEXT ONE, which is worth knowing about this kind of
+// work: the two case-mismatch sentences became the largest the file could
+// produce, at 523 and 433, because they still rendered CaseMismatch.Real —
+// the filename on disk — whole. They were closed the same day
+// (TestACaseMismatchWarningStopsGrowingWithTheFilenameOnDisk) and are 312 and
+// 222 now. Every sentence this file emits is bounded by artlib's constants:
+// measured at a 250-byte id they run 84, 102, 105, 212, 222, 312, 345, 366,
+// and none of them grows with anything an author or an operator wrote.
 //
 // BoundErr rather than Clip on the error is a shape choice, not a functional
 // one, and the honest version of that is worth writing down: this helper
@@ -390,15 +397,16 @@ func artCaseMismatch(art, onDisk string) string {
 // discovering: two DIFFERENT broken pieces whose ids share their first
 // MaxFragment bytes now render the identical sentence and collapse into one
 // tallied line, so a DM is told about one file when two are broken. That is
-// not new to this file — name() has done it to four other sentences since they
-// were written (the two not-installed sentences, the no-sidecar one and the
-// kind mismatch). Not to the two case-mismatch sentences: those also carry
-// onDisk or mismatch.Real, which differs between two such pieces, so they stay
-// apart — and the alternative is a warning that grows with a name
-// the author chose. Art ids are kebab-case and a 40-byte shared prefix is
-// unlikely, but "unlikely" is the honest word, not "impossible". It applies to
-// the warnings that render name(), not to the unreadable-root pair, which is a
-// constant.
+// not new to this file — it is what name() does, and the rule is easier to hold
+// than the tally that kept rotting here: EVERY sentence that renders a clipped
+// author string can collapse with another whose string shares its first
+// MaxFragment bytes. The unreadable-root pair renders no author string at all,
+// so it sits outside that rule rather than being an exception to it. The
+// case-mismatch sentences joined the rule on 2026-09-09, when the filename on
+// disk started being clipped too — before that, their onDisk half kept them
+// apart. The alternative is a warning that grows with a name the author chose.
+// Art ids are kebab-case and a 40-byte shared prefix is unlikely, but
+// "unlikely" is the honest word, not "impossible".
 //
 // IT STILL DEDUPLICATES, which is not obvious once an error is inside the
 // string: compile.go's warningTally groups by the exact sentence, so anything
