@@ -560,9 +560,9 @@ Review found that false the same day. Still unbounded, and still carried:*
 `internal/adventure`*'s collision refusals for an ACTOR id and a TOKEN id — the
 other two arms of* `checkCollisions` *are bounded now, a scene id by*
 `maxIDBytes` *and a note key by* `maxNoteKeyBytes`*,*
-`mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/engine`*'s
-terrain kind reaching a `move_token` refusal through* `internal/gateway`*, and*
-`internal/rules`*' ability and resource names reaching a `use_ability` result.*
+`mapdef.LoadInstalled`*'s use of a map's own declared id, and*
+`internal/rules`*' ability and resource names reaching a `use_ability` result.
+The terrain kind that stood between those two was closed 2026-09-10; see below.*
 
 ***Scene-id prefix: closed 2026-09-09.*** *`loadScenes` now refuses a scene id
 over `maxIDBytes` (128). It is the MULTIPLYING one — not the last unbounded
@@ -628,14 +628,51 @@ and 366 (*`artCannotBeUsed`*'s two arms at their worst shape). The
 unreadable-root pair is a constant, 50 and 89.*
 
 *This does NOT close the section. Still carried, from the list above:*
-`internal/engine`*'s terrain kind reaching a* `move_token` *refusal through*
-`internal/gateway`*,* `mapdef.LoadInstalled`*'s use of a map's own declared id,*
-`internal/rules`*' ability and resource names, and* `internal/adventure`*'s
-collision refusals for an actor id and a token id. A first draft of this
+`mapdef.LoadInstalled`*'s use of a map's own declared id,* `internal/rules`*'
+ability and resource names, and* `internal/adventure`*'s collision refusals for
+an actor id and a token id.*
+
+***Scenery kind: closed 2026-09-10.*** *A map file's* `objects[].kind` *is free
+text —* `mapdef.Load` *checks that object's footprint and its art and never
+looks at* `kind` *— and* `engine/terrain.go` *returns a blocked move's reason
+as* `"scenery: " + o.Kind`*, which* `describeBlockage` *renders into*
+`something (a <kind>) is in the way` *on* `CommandResult.Error`*. Measured
+before the fix: a 4-byte kind gave a 32-byte reason and 5000 gave 5028; over
+the wire, 159 against 5059. It is bounded at* `describeBlockage`*, the seam
+that function's own doc already describes as the consuming side of this list,
+and*
+`TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind` *drives the real
+move_token rather than the helper.*
+
+***Why it was not bounded with the art warnings, and why that was right.*** *It
+is an ERROR, not a warning: one* `move_token` *yields one refusal, so it never
+scene-qualifies and never accumulates the way* `adventure.Compile`*'s warnings
+do. The read-limit arithmetic that justified the art work does not apply — the
+cost here was a player bumping into a crate and reading a wall of text, which is
+a table problem rather than a socket one. Ranked and fixed on that basis, not on
+the size of the number.* A first draft of this
 paragraph said the only remaining strings were the six non-empty-only bundle
 fields, which contradicted this section's own list fifty lines above — the
 third time this entry has over-claimed a scope, and the reason the paragraph
 that opens it exists.*
+
+***What is bounded is the SENTENCE, not the field.*** `sceneSeenFor` *puts the
+same* `o.Kind` *on a* `SceneSeen` *projection whole, and the client letters the
+object with it — so a player who can see the square well enough to be refused
+for it already holds the full string. That is deliberate and stays: the
+projection carries* `TileRef.Kind`*,* `TileRef.Art` *and* `SceneObject.Art` *raw
+for the same reason, clipping there would change what is DRAWN, and* `fillText`
+*bounds the label geometrically. The distinction is the one this section drew
+for an override value: a string is bounded where it is interpolated into prose,
+and carried as itself where it is a structured field.*
+
+***Rule 9, answered.*** *MapTool has nothing to borrow here. Its movement
+blocking is geometric —* `ZoneWalker` *and VBL decide passability and the client
+will not path into the cell — so no server-to-client message names the
+obstruction, and there is no sentence to bound. Structurally there could not be:
+every MapTool client receives the whole campaign, so it has no per-message
+budget to protect. A checked-and-rejected precedent, recorded so the next person
+does not re-ask.*
 
 ***What holds the closed one.***
 *`TestACannotBeUsedWarningStopsGrowingWithTheArtName` asserts that two

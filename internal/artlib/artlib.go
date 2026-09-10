@@ -394,13 +394,23 @@ func unsupportedFormat(id string, declared int32) error {
 // that read a frame rather than assert a number.
 //
 // STILL UNBOUNDED, found by review after that claim was made, and outstanding:
-// internal/adventure's scene-id prefix and its collision refusals,
-// mapdef.LoadInstalled's use of the file's own declared id, engine's terrain
-// kind reaching a move_token refusal through internal/gateway, and
-// internal/rules' ability and resource names reaching a use_ability result.
+// mapdef.LoadInstalled's use of the file's own declared id, internal/rules'
+// ability and resource names reaching a use_ability result, and
+// internal/adventure's collision refusals for an ACTOR id and a TOKEN id.
 // A campaign file reaches a client through those too. They are named here
 // rather than in a transcript so the next reader inherits the list instead of
 // the impression that this is finished.
+//
+// THREE ENTRIES LEFT THIS LIST, and it did not notice two of them. It read
+// "internal/adventure's scene-id prefix and its collision refusals" until
+// 2026-09-10, when the prefix had been bounded by maxIDBytes since 2026-09-09
+// and two of checkCollisions' four arms with it; and it named engine's terrain
+// kind reaching a move_token refusal, which describeBlockage bounded on
+// 2026-09-10. Both commits edited this file and updated only the art spec's
+// copy of the same inventory. A list stated twice is two things that can
+// disagree, no gate reads either, and this one was wrong for a day before a
+// review caught it — which is the argument for the spec's copy being the one
+// that carries the reasoning and this one being kept short.
 //
 // ONE BOUND PER PATH — AND "PATH" IS THE WORD THAT WAS GOT WRONG. Two clips on
 // one path do make both mutants unkillable, and that is real. But artlib

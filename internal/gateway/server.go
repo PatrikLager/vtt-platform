@@ -18,6 +18,7 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/adventure"
+	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
@@ -1041,9 +1042,46 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 // touch internal/engine) — this list has to be kept in sync by hand if
 // Blocked's reasons ever change, which is the cost of the fix living on the
 // consuming side instead.
+//
+// THE KIND IS BOUNDED HERE, and it is the only author-written string this
+// function RENDERS — the unknown-scene arm receives one too and discards it.
+// A map file's objects[].kind is free text: mapdef.Load checks that object's
+// footprint and its art and never looks at kind, so terrain.go's
+// "scenery: " + o.Kind carried whatever the file said, one-for-one, into what
+// a blocked player reads.
+//
+// Measured 2026-09-10 before the clip, and the two pairs are DIFFERENT SHAPES,
+// which an earlier draft of this comment ran together: as a Blocked reason, a
+// 4-byte kind gave 32 bytes and a 5000-byte one gave 5028. Over the wire, where
+// answerCommand prefixes "gateway: cannot move there — ", the test's own two
+// shapes — 100 and 5000 — gave 159 and 5059. A 4-byte kind over the wire is 63,
+// and a reader re-deriving the sentence as written would get that and conclude
+// the numbers were invented.
+//
+// It is an ERROR rather than a warning, which is why it was not bounded
+// alongside the art warnings and why the reasoning belongs here rather than
+// being inferred: one move_token yields one refusal, so it never
+// scene-qualifies and never accumulates the way adventure.Compile's warnings
+// do. The cost was a player bumping into a crate and reading a wall of text,
+// not a socket closing.
+//
+// THE PASSTHROUGH ARM IS NOT BOUNDED and does not need to be TODAY: every
+// other reason terrain.go returns is a literal it wrote itself ("a wall", "a
+// closed door", "outside the grid"), and the unknown-scene arm is rewritten to
+// a constant above.
+// A reason that ever interpolates something a map file wrote needs the same
+// treatment, and will not get it by sitting in that arm.
+// RULE 9, ANSWERED: MapTool has nothing to borrow here, and the reason is
+// structural rather than an oversight. Its movement blocking is geometric —
+// ZoneWalker and VBL decide passability and the client simply will not path
+// into the cell — so no server-to-client message names the obstruction, and
+// there is no sentence to bound. It could not have one worth copying anyway:
+// every MapTool client receives the whole campaign, which is the distribution
+// model CLAUDE.md says explicitly not to take, so it has no per-message budget
+// to protect in the first place.
 func describeBlockage(why string) string {
 	if kind, ok := strings.CutPrefix(why, "scenery: "); ok {
-		return "something (a " + kind + ") is in the way"
+		return "something (a " + artlib.Clip(kind, artlib.MaxFragment) + ") is in the way"
 	}
 	if strings.HasPrefix(why, "unknown scene ") {
 		return "that destination is not part of any scene this table has created"
