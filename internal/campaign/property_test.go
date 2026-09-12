@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"testing"
 
-	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/eventgen"
 )
 
 const (
@@ -37,7 +37,7 @@ const (
 //
 // The single-seed form is not a convenience: once seeds vary, a failure report
 // naming seed 37 is only reproducible if seed 37 can be re-run on its own, and
-// propMust's doc records that reproducing from the output alone is a spec
+// applyDrawn's doc records that reproducing from the output alone is a spec
 // requirement. A sweep-only knob would have quietly broken it. If BOTH are set,
 // VTT_PROPERTY_SEED wins — it is checked first, and naming one seed is the more
 // specific request.
@@ -84,309 +84,31 @@ func propertySeeds(t *testing.T) (seeds []int64, guardEachWalk, guardEnsemble bo
 	return []int64{defaultPropertySeed}, true, false
 }
 
-// propModel tracks just enough campaign shape to generate only valid
-// forward actions: which scenes/actors/tokens exist (so place/move never
-// reference something that isn't there), which sequences have been appended
-// (so a narration can anchor to a real one), and whether a session is
-// currently open.
-//
-// EVERY ACTION IT GENERATES IS FORWARD, and since 2026-08-31 that is not a
-// property of the model but of the platform: it drew an undo until then, and
-// tracked a retracted set to keep from offering the same sequence twice. The
-// every-50-events close/reopen checkpoint in TestRebuildEqualsLiveProperty
-// still doubles as a corruption detector — a file that will not reopen fails
-// there.
-type propModel struct {
-	scenes []string
-	actors []string
-
-	tokenIDs   []string
-	tokenScene map[string]string
-	tokenPos   map[string][2]int32
-
-	allSeqs []int64
-
-	sessionOpen bool
-
-	sceneN, actorN, tokenN, noteN int
-
-	// noteKeys tracks keys the model believes are CURRENTLY present (world-
-	// layer Task 3): doUpsertNote appends a fresh key or re-upserts an
-	// existing one (last-write-wins exercised); doDeleteNote removes a
-	// tracked key on success. Deliberately NOT unioned into allSeqs — see
-	// doAddNarration/doUpsertNote/doDeleteNote's doc comments: narration/
-	// note events are exercised as their own action kind, not folded into
-	// the pool a narration anchors into, keeping this task's addition minimal
-	// and independently verifiable against the pre-existing action mix.
-	noteKeys []string
-}
-
-func newPropModel() *propModel {
-	return &propModel{
-		tokenScene: map[string]string{},
-		tokenPos:   map[string][2]int32{},
-	}
-}
-
-func (m *propModel) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.actors) > 0 }
-func (m *propModel) canMoveToken() bool  { return len(m.tokenIDs) > 0 }
-
-// propMust appends env and fails the test with the failing action index and
-// seed on error (spec requirement: failures must be reproducible from the
-// output alone). The seed reaches the message through the subtest's NAME,
-// which TestRebuildEqualsLiveProperty formats as "seed=N".
-func propMust(t *testing.T, c *campaign.Campaign, env *vttv1.Envelope, idx int, kind string) int64 {
-	t.Helper()
-	seq, err := c.Append(env)
-	if err != nil {
-		t.Fatalf("property test (%s): action #%d (%s) failed: %v", t.Name(), idx, kind, err)
-	}
-	return seq
-}
-
-// doSceneCreated appends one SceneCreated straight to the log.
-//
-// NAMED FOR THE EVENT, unlike doAddActor/doPlaceToken beside it, and the
-// inconsistency is deliberate: it was doCreateScene until 2026-09-02, when
-// create_scene left the platform (Patrik's ruling, 2026-09-01) and there was
-// no longer a command of that name for the label to mean. This model appends
-// EVENTS — it never issues a command at all, which is why the rename costs
-// nothing here — and SceneCreated is what it appends. Its siblings keep their
-// command-shaped names because those commands still exist.
-func (m *propModel) doSceneCreated(t *testing.T, c *campaign.Campaign, idx int) {
-	t.Helper()
-	m.sceneN++
-	id := fmt.Sprintf("prop-scn-%d", m.sceneN)
-	seq := propMust(t, c, cenv(nextID(), &vttv1.SceneCreated{
-		SceneId: id, Name: id, GridWidth: 20, GridHeight: 20,
-	}), idx, "sceneCreated")
-	m.scenes = append(m.scenes, id)
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-func (m *propModel) doAddActor(t *testing.T, c *campaign.Campaign, idx int) {
-	t.Helper()
-	m.actorN++
-	id := fmt.Sprintf("prop-actor-%d", m.actorN)
-	seq := propMust(t, c, cenv(nextID(), &vttv1.ActorAdded{
-		Actor: &vttv1.Actor{ActorId: id, Name: id, ModuleId: "prop-module"},
-	}), idx, "addActor")
-	m.actors = append(m.actors, id)
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-func (m *propModel) doPlaceToken(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int) {
-	t.Helper()
-	m.tokenN++
-	id := fmt.Sprintf("prop-tok-%d", m.tokenN)
-	scene := m.scenes[rng.Intn(len(m.scenes))]
-	actor := m.actors[rng.Intn(len(m.actors))]
-	x, y := int32(rng.Intn(50)), int32(rng.Intn(50))
-	seq := propMust(t, c, cenv(nextID(), &vttv1.TokenPlaced{
-		TokenId: id, SceneId: scene, ActorId: actor,
-		Position: &vttv1.GridPosition{X: x, Y: y},
-	}), idx, "placeToken")
-	m.tokenIDs = append(m.tokenIDs, id)
-	m.tokenScene[id] = scene
-	m.tokenPos[id] = [2]int32{x, y}
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-// doMoveToken uses the model's last known position as From. Nothing can make
-// that tracked position stale now that every action is forward — it could
-// until 2026-08-31, when an undo could retract an earlier move the model had
-// already recorded — and it would not matter if something did: engine.Apply
-// never validates From against current position, only that the token exists
-// and To is set. A stale From cannot turn this into an invalid action; it
-// only means From/To are not always contiguous.
-func (m *propModel) doMoveToken(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int) {
-	t.Helper()
-	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]
-	from := m.tokenPos[id]
-	to := [2]int32{int32(rng.Intn(50)), int32(rng.Intn(50))}
-	seq := propMust(t, c, cenv(nextID(), &vttv1.TokenMoved{
-		TokenId: id, SceneId: m.tokenScene[id],
-		From: &vttv1.GridPosition{X: from[0], Y: from[1]},
-		To:   &vttv1.GridPosition{X: to[0], Y: to[1]},
-	}), idx, "moveToken")
-	m.tokenPos[id] = to
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-func (m *propModel) doStartSession(t *testing.T, c *campaign.Campaign, idx int) {
-	t.Helper()
-	seq := propMust(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "prop-session"}), idx, "startSession")
-	m.sessionOpen = true
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-func (m *propModel) doEndSession(t *testing.T, c *campaign.Campaign, idx int) {
-	t.Helper()
-	seq := propMust(t, c, cenv(nextID(), &vttv1.SessionEnded{}), idx, "endSession")
-	m.sessionOpen = false
-	m.allSeqs = append(m.allSeqs, seq)
-}
-
-// doAddNarration appends a NarrationAdded event, mixing anchored and
-// unanchored draws (world-layer Task 3, spec §4): roughly half of every
-// draw with at least two prior sequences on record attempts an anchor
-// pointing at two ALREADY-RECORDED sequences (never a future one —
-// respecting the spec's backward-only anchor rule) drawn from allSeqs, which
-// is every sequence this walk has appended and is now the only thing that pool
-// is for — doUndo drew its retraction targets from it until retraction left on
-// 2026-08-31. Both anchored and unanchored draws are expected to succeed
-// unconditionally — this exercises both code paths.
-//
-// FORMERLY a known bug here (P11 Task 3's original report): campaign.Append
-// used to validate the caller's envelope directly while its Sequence was
-// still 0 (the store assigns the real value strictly AFTER the validating
-// Apply call), so engine.Apply's anchor check `AnchorToSeq >= env.Sequence`
-// always compared against 0 — every anchored narration was rejected
-// regardless of validity. FIXED by the controller-authorized follow-up in
-// this same task (internal/campaign/campaign.go's Append now validates a
-// proto.Clone stamped with the provisional sequence c.head+1 — the same
-// fix AppendBatch already applied for its own sequence-dependent folds;
-// see Append's doc comment and append_sequence_validation_test.go for the
-// full proof). Anchored draws here are no longer expected to fail.
-func (m *propModel) doAddNarration(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
-	t.Helper()
-	na := &vttv1.NarrationAdded{Text: fmt.Sprintf("narration entry #%d", idx)}
-	if len(m.allSeqs) >= 2 && rng.Float64() < 0.5 {
-		from := m.allSeqs[rng.Intn(len(m.allSeqs))]
-		to := m.allSeqs[rng.Intn(len(m.allSeqs))]
-		if from > to {
-			from, to = to, from
-		}
-		na.AnchorFromSeq = from
-		na.AnchorToSeq = to
-	}
-	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: na}}
-	propMust(t, c, env, idx, "addNarration")
-	counts["addNarration"]++
-}
-
-// doUpsertNote appends a NoteUpserted event (world-layer Task 3): about
-// 30% of draws with an existing tracked key re-upsert it (last-write-wins
-// exercised — the SAME key, a new title/text, no rejection expected),
-// the rest mint a fresh key.
-func (m *propModel) doUpsertNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
-	t.Helper()
-	var key string
-	if len(m.noteKeys) > 0 && rng.Float64() < 0.30 {
-		key = m.noteKeys[rng.Intn(len(m.noteKeys))]
-	} else {
-		m.noteN++
-		key = fmt.Sprintf("prop-note-%d", m.noteN)
-		m.noteKeys = append(m.noteKeys, key)
-	}
-	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NoteUpserted{
-		NoteUpserted: &vttv1.NoteUpserted{
-			Key: key, Title: fmt.Sprintf("Note %s", key), Text: fmt.Sprintf("text for %s at action #%d", key, idx),
-		},
-	}}
-	propMust(t, c, env, idx, "upsertNote")
-	counts["upsertNote"]++
-}
-
-// doDeleteNote appends a NoteDeleted event (world-layer Task 3): about 30%
-// of draws (or any draw with no tracked key at all) target an absent key
-// deliberately — deleteNote's own rejection posture (matches condition
-// removal, spec §3) — counted as deleteNoteRejected, not a test failure. The
-// rest delete a real tracked key and untrack it.
-func (m *propModel) doDeleteNote(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
-	t.Helper()
-	absent := len(m.noteKeys) == 0 || rng.Float64() < 0.30
-	var key string
-	if absent {
-		key = fmt.Sprintf("prop-note-absent-%d", idx)
-	} else {
-		i := rng.Intn(len(m.noteKeys))
-		key = m.noteKeys[i]
-		m.noteKeys = append(m.noteKeys[:i], m.noteKeys[i+1:]...)
-	}
-	env := &vttv1.Envelope{EventId: nextID(), Payload: &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{Key: key}}}
-	_, err := c.Append(env)
-	if err != nil {
-		if !absent {
-			t.Fatalf("property test (%s): action #%d (deleteNote) failed unexpectedly for a tracked key %q: %v", t.Name(), idx, key, err)
-		}
-		counts["deleteNoteRejected"]++
-		return
-	}
-	if absent {
-		t.Fatalf("property test (%s): action #%d (deleteNote) unexpectedly succeeded for an absent key %q", t.Name(), idx, key)
-	}
-	counts["deleteNote"]++
-}
-
-// step picks one random VALID action given the current model and applies it.
-// The bands are the thresholds below, on one uniform draw, in order: create
-// scene [0, 0.05), add actor [0.05, 0.15), place token [0.15, 0.28) when a
-// scene and an actor exist, move token [0.28, 0.68) when a token exists, add
-// narration [0.68, 0.84) (mix of anchored and unanchored, both expected to
-// succeed — see doAddNarration's doc comment for the anchor-validation fix
-// that made anchored draws reliably succeed), upsert note [0.84, 0.90),
-// delete note [0.90, 0.94) (absent-key rejections counted, not failures), and
-// the remainder start/end session (start if none open; end if one is open,
-// gated further to rand<0.15 so sessions stay open across most of the run).
-//
-// A BAND IS NOT A SHARE, and this comment carried percentages until 2026-08-31
-// that read as though it were. Any bucket whose precondition is not met falls
-// through to the next check on the SAME draw, so early in a walk — before a
-// scene and an actor exist — the place and move bands land on narration
-// instead. The session bucket's own "session open, but the 0.15 gate didn't
-// fire" branch falls back to addActor, always valid, so every iteration
-// guarantees forward progress toward the requested event count. Each walk logs
-// the counts it actually drew; read those rather than the bands.
-//
-// NARRATION ABSORBED UNDO'S BAND on 2026-08-31 rather than the thresholds
-// being redrawn. Undo held [0.68, 0.76); removing the arm hands that draw to
-// the next bucket down and leaves every other band exactly where it was.
-// Redrawing them instead would have changed every walk this file has ever run,
-// for no reason connected to retraction leaving.
-func (m *propModel) step(t *testing.T, c *campaign.Campaign, rng *rand.Rand, idx int, counts map[string]int) {
-	t.Helper()
-	r := rng.Float64()
-	switch {
-	case r < 0.05:
-		m.doSceneCreated(t, c, idx)
-		counts["sceneCreated"]++
-	case r < 0.15:
-		m.doAddActor(t, c, idx)
-		counts["addActor"]++
-	case r < 0.28 && m.canPlaceToken():
-		m.doPlaceToken(t, c, rng, idx)
-		counts["placeToken"]++
-	case r < 0.68 && m.canMoveToken():
-		m.doMoveToken(t, c, rng, idx)
-		counts["moveToken"]++
-	case r < 0.84:
-		m.doAddNarration(t, c, rng, idx, counts)
-	case r < 0.90:
-		m.doUpsertNote(t, c, rng, idx, counts)
-	case r < 0.94:
-		m.doDeleteNote(t, c, rng, idx, counts)
-	default:
-		switch {
-		case !m.sessionOpen:
-			m.doStartSession(t, c, idx)
-			counts["startSession"]++
-		case rng.Float64() < 0.15:
-			m.doEndSession(t, c, idx)
-			counts["endSession"]++
-		default:
-			m.doAddActor(t, c, idx)
-			counts["addActor"]++
-		}
-	}
-}
-
 // TestRebuildEqualsLiveProperty is the keystone property (spec §9): for a
 // long, varied, valid event history the state rebuilt from a full log replay
 // always equals the live, incrementally-folded projection. It's checked by
 // closing and reopening the campaign every 50 events (single-writer: the
 // SQLite file must be closed before it can be reopened) and comparing State()
 // before and after.
+// WHAT THIS ORACLE CAN SEE, AND WHAT IT CANNOT, measured rather than argued —
+// the paragraph moved here on 2026-09-12 when eventgen took the generator,
+// because it describes the ASSERTION and not the draws.
+//
+// Both sides run the same engine.Apply, so a wrong fold is wrong IDENTICALLY on
+// both and the comparison cancels it out. Three semantic faults injected into
+// engine.Apply left this GREEN: making ActorRemoved a no-op, deleting
+// delete(sc.OpenDoors, ...) from the DoorClosed arm, and making a control grant
+// prepend instead of append. Semantics are internal/engine's own tests to hold,
+// and reading a green run here as "the fold is correct" is the mistake this
+// paragraph exists to prevent.
+//
+// What it catches is REPLAY FIDELITY, and there it bites. Five store round-trip
+// faults were measured green before the four add/remove pairs were generated
+// and red after: DoorOpened.At dropped on read, DoorClosed skipped on read,
+// TokenRemoved skipped on read, ConditionApplied.Source dropped, and
+// ActorControlGranted.ParticipantId corrupted. That is the whole of what those
+// twelve event types buy by being drawn at all, and it is worth having — none
+// of them reached a generated walk before.
 func TestRebuildEqualsLiveProperty(t *testing.T) {
 	seeds, guardEachWalk, guardEnsemble := propertySeeds(t)
 
@@ -414,7 +136,7 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 	}
 }
 
-// assertActionCoverage refuses a VACUOUS run: a walk that never drew an action
+// assertKindCoverage refuses a VACUOUS run: a walk that never drew an action
 // kind proves nothing about it, however green it looks.
 //
 // THE SCOPE IS THE WHOLE POINT, AND IT CHANGED 2026-08-27 when the seed stopped
@@ -438,11 +160,54 @@ func TestRebuildEqualsLiveProperty(t *testing.T) {
 // once, where 500 walks draw it 910 times, so a regression that silences the
 // draw reds the sweep as surely as it reds the default, without the 132 red
 // walks that are merely narrow.
+// applyDrawn appends one drawn action and judges the response, which is the
+// half eventgen deliberately does not do: the model says what it drew and
+// whether the engine MUST refuse it, and this decides whether what came back
+// was the right answer.
+//
+// REPRODUCING FROM THE OUTPUT ALONE IS A SPEC REQUIREMENT, and this function is
+// where that is now recorded — propMust carried it until eventgen took the
+// generator on 2026-09-12. Every failure here names the action index and kind,
+// and the seed reaches the message through the subtest's own name, so a report
+// can be re-run with VTT_PROPERTY_SEED and walk the identical history.
+//
+// A REFUSAL IS COUNTED, NOT TOLERATED. An action the model aimed at an absent
+// key, an unknown scene or an actor still holding a token is required to fail —
+// succeeding is a test failure, not a shrug — and the reverse is the assertion
+// that matters more: a draw the model believes is legal must be accepted, so a
+// guard that starts refusing too much reds here rather than passing quietly.
+func applyDrawn(t *testing.T, c *campaign.Campaign, m *eventgen.Model, a eventgen.Action, idx int, counts map[string]int) {
+	t.Helper()
+	if a.Env == nil {
+		return // a draw with nothing legal to aim at; see eventgen's removeActor
+	}
+	seq, err := c.Append(a.Env)
+	if err != nil {
+		if !a.MustFail {
+			t.Fatalf("property test (%s): action #%d (%s) failed, and the model believes it "+
+				"is legal: %v", t.Name(), idx, a.Kind, err)
+		}
+		counts[a.Kind+"Rejected"]++
+		return
+	}
+	if a.MustFail {
+		t.Fatalf("property test (%s): action #%d (%s) was accepted, and the model aimed it at "+
+			"something engine.Apply is required to refuse", t.Name(), idx, a.Kind)
+	}
+	m.Accepted(a, seq)
+	counts[a.Kind]++
+}
+
 func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 	t.Helper()
 	for _, kind := range []string{
 		"sceneCreated", "addActor", "placeToken", "moveToken", "startSession", "endSession",
 		"addNarration", "upsertNote", "deleteNote",
+		// The four add/remove pairs. Listed here for the reason the originals
+		// are: a walk that never drew one proves nothing about it, however
+		// green it looks.
+		"openDoor", "closeDoor", "grantControl", "revokeControl",
+		"applyCondition", "removeCondition", "removeToken", "removeActor",
 	} {
 		if counts[kind] == 0 {
 			t.Errorf("property test (%s): action type %q was never exercised in %s",
@@ -450,9 +215,10 @@ func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 		}
 	}
 	// deleteNoteRejected (absent-key) is EXPECTED to be non-zero too — see
-	// doDeleteNote's doc comment — but a zero count there is not itself a
-	// failure (a different seed/mix could legitimately avoid drawing it);
-	// the actual counts are logged either way.
+	// eventgen's deleteNote, which aims at an absent key about 30% of the time
+	// — but a zero count there is not itself a failure (a different seed or mix
+	// could legitimately avoid drawing it); the actual counts are logged either
+	// way.
 }
 
 // runPropertyWalk is one seed's walk: propertyEventCount model-driven actions
@@ -460,7 +226,7 @@ func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 // to check that the state rebuilt from the log equals the state held live.
 //
 // Returns its action counts so the caller can judge coverage at the right
-// scope — see assertActionCoverage.
+// scope — see assertKindCoverage.
 func runPropertyWalk(t *testing.T, seed int64) map[string]int {
 	t.Helper()
 	rng := rand.New(rand.NewSource(seed))
@@ -478,11 +244,11 @@ func runPropertyWalk(t *testing.T, seed int64) map[string]int {
 		}
 	})
 
-	m := newPropModel()
+	m := eventgen.New()
 	counts := map[string]int{}
 
 	for i := 0; i < propertyEventCount; i++ {
-		m.step(t, c, rng, i, counts)
+		applyDrawn(t, c, m, m.Step(rng, i), i, counts)
 
 		if (i+1)%propertyCheckEvery == 0 {
 			snapshot := c.State()

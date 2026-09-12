@@ -41,6 +41,24 @@ components:
   store:    { in: internal/store }
   engine:   { in: internal/engine }
   campaign: { in: internal/campaign }
+  # eventgen draws valid campaign histories for property tests. It is a real
+  # package rather than a _test.go helper for one reason: a _test.go file
+  # cannot be imported, so internal/campaign's rebuild-equals-live property was
+  # the only thing that could ever use the generator inside it.
+  #
+  # BOTH DRIVE IT NOW. campaign's TestRebuildEqualsLiveProperty folds the log
+  # twice; gateway's TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer
+  # folds what a Projector chose to send a seat against what the server holds.
+  # This comment said "ONLY campaign drives it today" and that gateway had no
+  # edge below, which was true when it was written on 2026-09-12 and false one
+  # commit later — the edge and the test arrived together, as it said they
+  # would, and the sentence describing the wait outlived the wait.
+  #
+  # IT DEPENDS ON contract AND NOTHING ELSE, deliberately: it emits envelopes
+  # and never applies them, so it needs no engine, no store and no campaign.
+  # That is about keeping an emitter an emitter — gateway may already depend on
+  # all three, so no dependency is being avoided here.
+  eventgen: { in: internal/eventgen }
   toolgen:  { in: tools/toolgen }
   # tools/genmappack (maps-as-geometry Task 10): generates the standard tile
   # pack's images and manifest. A GENERATOR rather than committed-and-forgotten
@@ -113,7 +131,14 @@ components:
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
-  campaign: { mayDependOn: [contract, store, engine, campaign] }
+  campaign: { mayDependOn: [contract, store, engine, campaign, eventgen] }
+  # eventgen lists ITSELF for the reason store, engine and campaign do: its
+  # tests are an external package (eventgen_test) so they exercise only the
+  # exported surface, and that import reads to go-arch-lint as a component
+  # depending on itself. Without it the gate fails with "Component eventgen
+  # shouldn't depend on .../internal/eventgen" — which is a true statement
+  # about a line that is entirely correct.
+  eventgen: { mayDependOn: [contract, eventgen] }
   toolgen:  { mayDependOn: [contract] }
   # genmappack may read mapdef, and ONLY for the reason its own test states:
   # the standard pack must cover EXACTLY internal/mapdef's standard vocabulary,
@@ -176,7 +201,7 @@ deps:
   # os.OpenRoot confines without flattening. Predicted in writing by artlib's own
   # components: entry above, which names the gateway among the callers that would
   # add the edge INTO artlib; artlib stays self-only, so no cycle is expressible.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight, artlib] }
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight, artlib, eventgen] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
