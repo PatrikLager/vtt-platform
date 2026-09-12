@@ -34,6 +34,7 @@ github.com/PatrikLager/vtt-platform/internal/artlib                  99.0
 github.com/PatrikLager/vtt-platform/internal/campaign                85.5
 github.com/PatrikLager/vtt-platform/internal/campaigncfg             99.0
 github.com/PatrikLager/vtt-platform/internal/engine                  97.5
+github.com/PatrikLager/vtt-platform/internal/eventgen                98.0
 github.com/PatrikLager/vtt-platform/internal/gateway                 88.5
 github.com/PatrikLager/vtt-platform/internal/harness                 85.0
 github.com/PatrikLager/vtt-platform/internal/identity                92.1

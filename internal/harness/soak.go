@@ -870,7 +870,8 @@ func (h *soakHistories) waitAllCaughtUp(names []string, seq int64, timeout time.
 // sequence retracted only after campaign.Undo returned success — and that is a
 // RECORD rather than a live cross-reference: the action and the method left
 // with retraction on 2026-08-31, and no sibling in that file replaces it
-// (doDeleteNote untracks its key BEFORE appending, which is the opposite).
+// (eventgen's deleteNote untracks its key BEFORE emitting, which is the
+// opposite).
 type soakStep struct {
 	issuer     string
 	cmd        *vttv1.ClientCommand
@@ -879,11 +880,12 @@ type soakStep struct {
 	apply      func(seq int64)
 }
 
-// soakModel tracks just enough shape of the world (mirroring
-// internal/campaign/property_test.go's propModel, adapted for the soak's
-// fixed 4-participant roster and role-aware ownership) to generate only
+// soakModel tracks just enough shape of the world to generate only
 // forward-valid commands: which scenes/actors/tokens exist, which actor (if
-// any) each player controls, and current session-open state.
+// any) each player controls, and current session-open state. It mirrors
+// internal/eventgen's Model — which was internal/campaign/property_test.go's
+// propModel until 2026-09-12 — adapted for the soak's fixed 4-participant
+// roster and role-aware ownership.
 type soakModel struct {
 	scenes []string
 	actors []string

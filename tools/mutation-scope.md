@@ -188,6 +188,21 @@ gateable** — `package main` in a directory named `vtt` still resolves to the
 bare module path and scores every mutant a false kill. Fixing one blocker
 never made it measurable; it removed one of two reasons it was not.
 
+**`internal/eventgen` is NOT gated, deliberately, as of 2026-09-12.** It is the
+generator the property tests draw histories from — it emits envelopes and
+applies none, so there is no product behaviour behind it to mutate. Its own
+failure mode is a WEAKER WALK rather than a wrong answer: a broken draw makes
+the properties explore less while still passing, which its own tests are aimed
+at (`TestTheSameSeedDrawsTheSameWalk`, `TestAWalkDrawsEveryKind`,
+`TestBothSidesOfEveryRefusalAreDrawn`) and which a mutation score would not
+express. It carries a 98.0 coverage floor.
+
+That reason is written down because the alternative is what happened to
+`internal/mapdef`, recorded above: absent from both this file and PACKAGES, so
+silently ungated rather than deliberately excluded, and found only by a
+whole-branch review. Gating it later is a decision someone may reasonably take —
+it is cheap, about 5s — and it is being left rather than overlooked.
+
 That `internal/adventure/conformance` was gated while `internal/adventure` was
 not, for as long as it was, remains the signature of how the list was
 originally assembled — from whatever happened to have been measured.

@@ -41,6 +41,21 @@ components:
   store:    { in: internal/store }
   engine:   { in: internal/engine }
   campaign: { in: internal/campaign }
+  # eventgen draws valid campaign histories for property tests. It is a real
+  # package rather than a _test.go helper for one reason: a _test.go file
+  # cannot be imported, so internal/campaign's rebuild-equals-live property was
+  # the only thing that could ever use the generator inside it.
+  #
+  # ONLY campaign DRIVES IT TODAY. The per-seat property it was extracted for
+  # lives in internal/gateway and does not exist yet; gateway has no eventgen
+  # edge below, and adding one is part of writing that test rather than
+  # something this entry should promise in advance.
+  #
+  # IT DEPENDS ON contract AND NOTHING ELSE, deliberately: it emits envelopes
+  # and never applies them, so it needs no engine, no store and no campaign.
+  # That is about keeping an emitter an emitter — gateway may already depend on
+  # all three, so no dependency is being avoided here.
+  eventgen: { in: internal/eventgen }
   toolgen:  { in: tools/toolgen }
   # tools/genmappack (maps-as-geometry Task 10): generates the standard tile
   # pack's images and manifest. A GENERATOR rather than committed-and-forgotten
@@ -113,7 +128,14 @@ components:
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
-  campaign: { mayDependOn: [contract, store, engine, campaign] }
+  campaign: { mayDependOn: [contract, store, engine, campaign, eventgen] }
+  # eventgen lists ITSELF for the reason store, engine and campaign do: its
+  # tests are an external package (eventgen_test) so they exercise only the
+  # exported surface, and that import reads to go-arch-lint as a component
+  # depending on itself. Without it the gate fails with "Component eventgen
+  # shouldn't depend on .../internal/eventgen" — which is a true statement
+  # about a line that is entirely correct.
+  eventgen: { mayDependOn: [contract, eventgen] }
   toolgen:  { mayDependOn: [contract] }
   # genmappack may read mapdef, and ONLY for the reason its own test states:
   # the standard pack must cover EXACTLY internal/mapdef's standard vocabulary,
