@@ -56,6 +56,34 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
 	case *vttv1.AdventureLoaded:
 		e.Payload = &vttv1.Envelope_AdventureLoaded{AdventureLoaded: p}
+	case *vttv1.DoorOpened:
+		e.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: p}
+	case *vttv1.DoorClosed:
+		e.Payload = &vttv1.Envelope_DoorClosed{DoorClosed: p}
+	case *vttv1.ActorControlGranted:
+		e.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
+	case *vttv1.ActorControlRevoked:
+		e.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
+	case *vttv1.TokenRemoved:
+		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.ActorRemoved:
+		e.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
+	default:
+		// AN UNHANDLED PAYLOAD USED TO RETURN A NIL-PAYLOAD ENVELOPE, and the
+		// failure then surfaced as "unknown event variant" — which reads as a
+		// missing ARM in the fold rather than a missing case in a test helper.
+		// Measured 2026-09-12: the property walk gained four add/remove pairs
+		// and this switch gained SIX cases for them (two were already here),
+		// and every engine arm was present the whole time.
+		//
+		// THE ERROR DOES NOT COME FROM engine.Apply, which a first draft of
+		// this comment said: a nil payload never reaches it. campaign.Append
+		// returns engine.ErrUnknownVariant from its own env.Payload == nil
+		// guard before folding, and AppendBatch does the same in its pre-loop.
+		// The text a reader sees is identical either way, which is exactly how
+		// the wrong thing gets blamed — the failure this comment is about.
+		panic(fmt.Sprintf("cenv: no case for payload %T — add one; a nil-payload "+
+			"envelope fails later and blames the engine", payload))
 	}
 	return e
 }
