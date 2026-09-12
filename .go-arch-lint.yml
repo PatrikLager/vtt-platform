@@ -46,10 +46,13 @@ components:
   # cannot be imported, so internal/campaign's rebuild-equals-live property was
   # the only thing that could ever use the generator inside it.
   #
-  # ONLY campaign DRIVES IT TODAY. The per-seat property it was extracted for
-  # lives in internal/gateway and does not exist yet; gateway has no eventgen
-  # edge below, and adding one is part of writing that test rather than
-  # something this entry should promise in advance.
+  # BOTH DRIVE IT NOW. campaign's TestRebuildEqualsLiveProperty folds the log
+  # twice; gateway's TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer
+  # folds what a Projector chose to send a seat against what the server holds.
+  # This comment said "ONLY campaign drives it today" and that gateway had no
+  # edge below, which was true when it was written on 2026-09-12 and false one
+  # commit later — the edge and the test arrived together, as it said they
+  # would, and the sentence describing the wait outlived the wait.
   #
   # IT DEPENDS ON contract AND NOTHING ELSE, deliberately: it emits envelopes
   # and never applies them, so it needs no engine, no store and no campaign.
@@ -198,7 +201,7 @@ deps:
   # os.OpenRoot confines without flattening. Predicted in writing by artlib's own
   # components: entry above, which names the gateway among the callers that would
   # add the edge INTO artlib; artlib stays self-only, so no cycle is expressible.
-  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight, artlib] }
+  gateway:  { mayDependOn: [contract, campaign, engine, identity, gateway, rules, adventure, mapdef, sight, artlib, eventgen] }
   # The P1 rule: the harness proves a client can drive a live table using
   # only the wire constitution — store/campaign/gateway/identity are
   # forbidden dependencies, enforced here (task-1-brief.md's binding rule).
