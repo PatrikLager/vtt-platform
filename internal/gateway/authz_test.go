@@ -1,6 +1,8 @@
 package gateway_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -448,7 +450,7 @@ var authzCases = []authzCase{
 	// door same as they may move a token — spectator FALSE, same shape as
 	// every other command. The player cells are TRUE here only because
 	// commandFor's open_door/close_door target a door adjacent to
-	// ownershipFixture's t1 (mayWorkDoor, wired below in Authorize's switch);
+	// ownershipFixture's t1 (mayWorkDoor, wired in through playerRules);
 	// TestAuthorizePlayerMayNotWorkDistantDoor proves the OTHER direction —
 	// a row that only ever says yes is not a guard, the same argument the
 	// revoke_actor_control comment above already makes for its own player
@@ -1158,5 +1160,80 @@ func TestEveryClientCommandHasRoleCells(t *testing.T) {
 				t.Fatalf("%q has no row in commandRoles, so no role may issue it", name)
 			}
 		})
+	}
+}
+
+// TestEveryPlayerCommandHasARule diffs the two halves of the authorization
+// policy against each other, which nothing did until 2026-09-12.
+//
+// commandRoles says which ROLES may issue a command; playerRules says what a
+// player additionally has to own, control or stand next to. The second used to
+// be a switch with no default, falling through to `return nil` — so a command
+// that granted a player cell and had no ownership arm was permitted
+// unconditionally. TestEveryClientCommandHasRoleCells cannot see that: it asks
+// whether a command has a role row, not whether a player row was ruled on.
+//
+// THE ARM THAT NOW REFUSES IS THE FIX. This test is the consistency half, and
+// measured, it is not the only thing that would catch a forgotten rule — the
+// 88-cell matrix beside it catches one too, by flipping that cell to denied.
+// What this adds is the two cases the matrix cannot reach: a player cell with
+// no matrix row, and a rule outliving the cell it was written for.
+//
+// SEVEN COMMANDS GRANT A PLAYER CELL AND SIX RESTRICTED THEM. The seventh,
+// add_narration, was deliberate and its reasoning was written on commandRoles'
+// own row — but the reasoning was the only thing standing between "decided" and
+// "forgotten", and a comment is not a gate. It is an entry in playerRules now,
+// spelled unrestricted, so the next command to want that answer has to say it
+// in the same place as the six that do not.
+func TestEveryPlayerCommandHasARule(t *testing.T) {
+	players := gateway.PlayerCommandsForTest()
+	ruled := gateway.PlayerRuleCommandsForTest()
+
+	has := map[string]bool{}
+	for _, name := range ruled {
+		has[name] = true
+	}
+	for _, name := range players {
+		if !has[name] {
+			t.Errorf("commandRoles lets a player issue %q and playerRules does not decide it — "+
+				"the player half now refuses what it cannot rule on, so this command is "+
+				"unusable rather than unguarded, but it is one or the other", name)
+		}
+	}
+
+	// AND THE REVERSE, because a rule for a command no player may issue is
+	// either a leftover or a role cell somebody removed and forgot to follow.
+	allowed := map[string]bool{}
+	for _, name := range players {
+		allowed[name] = true
+	}
+	for _, name := range ruled {
+		if !allowed[name] {
+			t.Errorf("playerRules decides %q and commandRoles does not let a player issue it — "+
+				"a rule with nothing to rule on", name)
+		}
+	}
+}
+
+// TestAPlayerCommandNobodyRuledOnIsRefused drives the arm the fix added.
+//
+// It cannot be reached through Authorize while the two tables agree — which
+// TestEveryPlayerCommandHasARule requires — so without this the refusal would
+// be a guard nobody drives, the shape this repo has been bitten by before.
+func TestAPlayerCommandNobodyRuledOnIsRefused(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	err := gateway.AuthorizeUndecidedForTest(p, "a_command_nobody_ruled_on")
+	if err == nil {
+		t.Fatal("a player command with no rule was permitted — the fall-through this " +
+			"replaced is exactly the leak direction: allowed by default")
+	}
+	if !errors.Is(err, gateway.ErrUnauthorized) {
+		t.Errorf("refusal is %v, want it to read as ErrUnauthorized so the gateway maps it "+
+			"to the same CommandResult every other refusal produces", err)
+	}
+	// The name must appear: a refusal that does not say what was refused sends
+	// whoever reads the log looking through every command in the table.
+	if !strings.Contains(err.Error(), "a_command_nobody_ruled_on") {
+		t.Errorf("refusal %q does not name the command", err)
 	}
 }

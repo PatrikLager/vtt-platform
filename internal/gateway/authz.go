@@ -24,12 +24,14 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// commandRoles is THE authorization policy (spec §4). Player MoveToken has an
-// additional ownership check in Authorize; everything not listed is denied.
+// commandRoles is THE authorization policy (spec §4): it says which roles may
+// issue a command, and everything not listed here is denied. Six of the seven
+// commands a player may issue carry an additional ownership check on top, in
+// playerRules below.
 var commandRoles = map[string]map[identity.Role]bool{
-	"move_token":   {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"add_actor":    {identity.RoleDM: true, identity.RoleAgent: true},
-	"place_token":  {identity.RoleDM: true, identity.RoleAgent: true},
+	"move_token":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"add_actor":   {identity.RoleDM: true, identity.RoleAgent: true},
+	"place_token": {identity.RoleDM: true, identity.RoleAgent: true},
 	// remove_token (retraction-leaves Task 8, spec §5.1: "takes a piece off
 	// the board"). SAME ROLE SET AS place_token, deliberately — see
 	// authz_test.go's authzCases comment on this row for the reasoning:
@@ -100,7 +102,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 	// players, free for DM"). Same role set as move_token: dm/agent/player
 	// may all issue it, spectator may not. The additional adjacency check —
 	// "a player may work a door only if a token they control is adjacent to
-	// it" — is mayWorkDoor, below, wired into Authorize's switch (Task 6).
+	// it" — is mayWorkDoor, below, wired in through playerRules (Task 6).
 	"open_door":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"close_door": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	// set_viewpoint (visibility spec §3.1.1). SPECTATOR ONLY, and it is the
@@ -148,7 +150,7 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	//
 	// Above the player-only section deliberately. Every other additional check
 	// in this function is a rule about players; this one is a rule about
-	// spectators, and the switch below is unreachable for them.
+	// spectators, and playerRules below is unreachable for them.
 	if name == "set_viewpoint" {
 		if err := MayPerch(p, cmd.GetSetViewpoint().GetActorId(), st); err != nil {
 			return err
@@ -158,24 +160,108 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	if p.Role != identity.RolePlayer {
 		return nil
 	}
-	switch name {
-	case "move_token":
+	return authorizePlayer(p, cmd, st, name)
+}
+
+// authorizePlayer is the player half, split out so a test can reach the
+// missing-rule arm through the REAL code path. A hook that re-decided it
+// alongside would prove only that the hook works: measured 2026-09-12, a first
+// version of AuthorizeUndecidedForTest called errUndecided itself, and reverting
+// this arm to the old `return nil` left its test green.
+// CALLERS MUST PASS commandName(cmd). Inside the old inline switch that was
+// structural — name was derived two lines above and nothing else could reach it
+// — and as a package-level function it is a convention instead. It is what
+// keeps each rule's cmd.GetX() matched to the key it is filed under; pass a
+// mismatched pair and a command would be judged by another's rule. Authorize is
+// the only production caller and derives both together.
+func authorizePlayer(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State, name string) error {
+	rule, decided := playerRules[name]
+	if !decided {
+		// FAIL CLOSED, the way commandRoles above already does. This switch was
+		// a switch with no default until 2026-09-12, falling through to a bare
+		// `return nil`: a command that granted a player cell and had no
+		// ownership arm was allowed unconditionally, and nothing anywhere
+		// noticed. add_narration relied on that fall-through deliberately —
+		// every future one would have inherited it by accident.
+		return errUndecided(p, name)
+	}
+	return rule(p, cmd, st)
+}
+
+// playerRule decides whether THIS player may issue this command, after
+// commandRoles has already decided their role may issue it at all.
+type playerRule func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error
+
+// playerRules is the second half of the authorization policy, and it is a table
+// rather than a switch so that it can be COMPARED against the first half.
+//
+// commandRoles says which roles may issue a command; this says what a player
+// additionally has to own, control or stand next to.
+//
+// THE SECURITY FIX IS THE MISSING-RULE ARM, NOT THE TABLE, and an earlier draft
+// of this comment blurred the two. A `default:` on the switch this replaced
+// would close the same leak: an unruled player command is refused either way.
+// The table is not what makes a forgotten rule visible either — measured, the
+// 88-cell matrix (TestAuthorizeTableAllCommandsAllRoles) catches a deleted
+// entry on its own, by flipping that cell to denied.
+//
+// WHAT BEING DATA ACTUALLY BUYS is two checks a switch cannot support, both in
+// TestEveryPlayerCommandHasARule, and both about a command going quietly
+// UNUSABLE or a rule going stale rather than about the leak direction:
+//
+//   - a command given a player cell but no matrix row. The reflection gate
+//     demands a ROLE row, not a matrix row, so that command would be refused by
+//     the arm above with nothing red to say so.
+//   - a rule left behind after a player cell is removed. A switch cannot be
+//     enumerated, so no test over one can ask this at all.
+//
+// AN ENTRY IS A DECISION, INCLUDING unrestricted. There is no nil value and no
+// exemption list beside the table: a command that genuinely needs no ownership
+// rule says so in the same place as one that does, because an absence cannot be
+// told from an oversight.
+var playerRules = map[string]playerRule{
+	"move_token": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		return authorizeTokenOwnership(p, cmd.GetMoveToken(), st)
-	case "use_ability":
+	},
+	"use_ability": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		return authorizeActorOwnership(p, cmd.GetUseAbility().GetActorId(), st)
-	case "remove_condition":
+	},
+	"remove_condition": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		return authorizeActorOwnership(p, cmd.GetRemoveCondition().GetActorId(), st)
-	case "revoke_actor_control":
+	},
+	"revoke_actor_control": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		return authorizeSelfRevoke(p, cmd.GetRevokeActorControl(), st)
-	case "open_door":
+	},
+	"open_door": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		od := cmd.GetOpenDoor()
 		return mayWorkDoor(p, st, od.GetSceneId(), od.GetAt())
-	case "close_door":
+	},
+	"close_door": func(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 		cd := cmd.GetCloseDoor()
 		return mayWorkDoor(p, st, cd.GetSceneId(), cd.GetAt())
-	}
-	return nil
+	},
+	// NARRATION IS NOT SCOPED TO AN ACTOR, so there is nothing for a player to
+	// own here — everyone at the table narrates (spec §5, and commandRoles'
+	// own note on this row). It was the only command relying on the old
+	// fall-through, and writing it out is the point: the decision is now in the
+	// table beside the six that do restrict, rather than being the shape of a
+	// missing case.
+	"add_narration": unrestricted,
 }
+
+// errUndecided is the refusal the missing-rule arm produces. It is a function so
+// that a test can reach the arm at all: with every player cell ruled on, the
+// path is unreachable through Authorize, and an unreachable guard is one nobody
+// has read.
+func errUndecided(p *identity.Participant, name string) error {
+	return fmt.Errorf("%w: role %q may issue %q and no player rule decides it",
+		ErrUnauthorized, p.Role, name)
+}
+
+// unrestricted is the rule for a player command that has no ownership
+// condition. It exists so that "no rule applies" is something the table SAYS
+// rather than something a reader infers from a name not being there.
+func unrestricted(*identity.Participant, *vttv1.ClientCommand, *engine.State) error { return nil }
 
 // mayWorkDoor enforces the player-only adjacency rule for open_door/
 // close_door (maps-as-geometry Task 6, spec §6: "hard for players, free for
