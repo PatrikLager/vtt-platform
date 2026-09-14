@@ -365,13 +365,98 @@ func (s *Server) historySnapshot() ([]*vttv1.Envelope, int64) {
 	return out, s.lastSeq
 }
 
-// handlerFor returns the ONE generic tool handler shape used for every
-// command tool: fd identifies which ClientCommand oneof field this tool
-// name maps to (from buildDispatch), and everything else — building the
-// submessage, unmarshaling arguments into it, wiring it into the oneof,
-// sending it, and shaping the result — is identical regardless of WHICH
-// command this is. There is deliberately no per-command switch (self-review
-// requirement, task-1-brief.md): grep this file for "switch" to confirm.
+// commandFromArgs turns an agent's raw tool arguments into the ClientCommand
+// the tool names. It is the trust boundary of the COMMAND surface: past it is
+// an ordinary command, before it is bytes somebody else wrote.
+//
+// NOT OF THE WHOLE MCP SURFACE, which a first version of this said. The read
+// tools decode their own arguments with encoding/json and never come through
+// here — read_tools.go's get_state and get_events_since, and
+// adventure_guide_tool.go. Each has its own strict decoder. The overclaim
+// matters because this sentence is what a later reader uses to decide this is
+// the one place to look.
+//
+// SPLIT OUT SO IT CAN BE FUZZED. Inside handlerFor it needed a live client and
+// a connected wire to reach, so arbitrary arguments could only be driven
+// through a whole session. The decode and the oneof assignment need neither.
+//
+// THE INVARIANT WORTH HOLDING is not merely that this does not panic. The
+// command it returns must be the one the tool NAMED: internal/gateway decides
+// authorization by reading which oneof arm is populated (commandName, and
+// authorizePlayer's precondition that its name argument matches), so a tool
+// whose arguments could produce a DIFFERENT arm than its own descriptor would
+// be judged by another command's rule — a use_ability judged by open_door's,
+// say, both of which have player rules.
+//
+// THAT INVARIANT CANNOT FAIL THROUGH THIS CODE AS WRITTEN, and
+// FuzzToolArgumentsBecomeTheCommandTheyName says so rather than implying it
+// hunts something live: protojson is handed a message of fd's own type and
+// holds no reference to ClientCommand, so it cannot address another arm; Set on
+// a oneof member replaces the wrapper whole. Review ran all 22 arms against 30
+// hostile seeds — 660 pairs, zero violations. The target is a tripwire
+// against future edits to this function, which is worth having and is a
+// smaller claim than hunting something live.
+func commandFromArgs(fd protoreflect.FieldDescriptor, args []byte) (*vttv1.ClientCommand, error) {
+	mt, err := protoregistry.GlobalTypes.FindMessageByName(fd.Message().FullName())
+	if err != nil {
+		// Would mean vttv1 itself doesn't register a type the SAME vttv1
+		// build's descriptor just named — an internal inconsistency, not a
+		// caller mistake.
+		return nil, fmt.Errorf("mcp: no registered Go type for %s: %w", fd.Message().FullName(), err)
+	}
+	sub := mt.New().Interface()
+
+	// AN ABSENT ARGUMENT OBJECT IS AN EMPTY ONE, not an error: a tool whose
+	// fields are all optional is legitimately called with nothing, and a real
+	// MCP client may omit "arguments" entirely. Every existing call site in this
+	// package passes an empty map, which marshals to "{}", so the old suite
+	// never exercised this line — TestAToolCalledWithNoArgumentsGetsAnEmptyObject
+	// does.
+	//
+	// WHAT protojson DOES WITH null IS WORTH KNOWING HERE: a null for any field
+	// that is not a google.protobuf.Value is discarded and decoding CONTINUES,
+	// so {"tokenId":null} is accepted and yields an empty token_id rather than a
+	// refusal. Validation of empty ids is the gateway's, not this seam's.
+	if len(args) == 0 {
+		args = []byte("{}")
+	}
+	// WHAT KEEPS THIS BOUNDED IS THE CONTRACT, and no gate asserts either half,
+	// so both are written here rather than assumed. Measured 2026-09-14 through
+	// add_actor, the deepest arm:
+	//
+	//	depth 1000    6 KB     1ms   accepted
+	//	depth 9000   54 KB    16ms   accepted
+	//	depth 20000  120 KB   12ms   refused, max recursion depth
+	//	depth 200000 1.2 MB   11ms   refused
+	//
+	//   - NO google.protobuf.Any ANYWHERE IN THE CONTRACT. Only struct.proto
+	//     and timestamp.proto are imported, which is what keeps the decoder off
+	//     the path CVE-2024-24786 made an infinite loop.
+	//   - Nesting is bounded by protowire's recursion limit, decremented per
+	//     message, so a hostile blob is refused in milliseconds rather than
+	//     overflowing a stack — which Go does not recover from.
+	//
+	// Add an Any to a command arm, or a deeper recursive type, and both
+	// guarantees change materially.
+	if err := protojson.Unmarshal(args, sub); err != nil {
+		return nil, fmt.Errorf("mcp: invalid arguments for %s: %w", fd.Name(), err)
+	}
+
+	cmd := &vttv1.ClientCommand{}
+	cmd.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(sub.ProtoReflect()))
+	return cmd, nil
+}
+
+// handlerFor returns the ONE generic tool handler shape used for every command
+// tool: fd identifies which ClientCommand oneof field this tool name maps to
+// (from buildDispatch), and everything else — turning the arguments into that
+// command, sending it, and shaping the result — is identical regardless of
+// WHICH command this is. There is deliberately no per-command switch
+// (self-review requirement): grep this file for "switch" to confirm.
+//
+// THE ARGUMENT HALF LIVES IN commandFromArgs since 2026-09-14, so it can be
+// fuzzed without a live client and a connected wire. This function is what
+// remains: the parts that genuinely need a session.
 func (s *Server) handlerFor(fd protoreflect.FieldDescriptor) mcpsdk.ToolHandler {
 	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		client := s.currentClient()
@@ -379,25 +464,10 @@ func (s *Server) handlerFor(fd protoreflect.FieldDescriptor) mcpsdk.ToolHandler 
 			return nil, fmt.Errorf("mcp: not connected to the gateway (wire is down)")
 		}
 
-		mt, err := protoregistry.GlobalTypes.FindMessageByName(fd.Message().FullName())
+		cmd, err := commandFromArgs(fd, []byte(req.Params.Arguments))
 		if err != nil {
-			// Would mean vttv1 itself doesn't register a type the SAME
-			// vttv1 build's descriptor just named — an internal
-			// inconsistency, not a caller mistake.
-			return nil, fmt.Errorf("mcp: no registered Go type for %s: %w", fd.Message().FullName(), err)
+			return nil, err
 		}
-		sub := mt.New().Interface()
-
-		args := []byte(req.Params.Arguments)
-		if len(args) == 0 {
-			args = []byte("{}")
-		}
-		if err := protojson.Unmarshal(args, sub); err != nil {
-			return nil, fmt.Errorf("mcp: invalid arguments for %s: %w", fd.Name(), err)
-		}
-
-		cmd := &vttv1.ClientCommand{}
-		cmd.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(sub.ProtoReflect()))
 
 		result, err := client.SendCommand(ctx, cmd)
 		if err != nil {
