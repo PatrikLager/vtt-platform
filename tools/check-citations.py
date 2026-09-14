@@ -89,9 +89,12 @@ one that admits a hole:
     together or the two halves will disagree. A struct FIELD is covered only
     through its wire name (WIRE_RE), not by its Go spelling.
 
-NOT WIRED INTO `task check`. Gate wiring is apparatus work and Patrik paused
-that on 2026-08-27; Task 9 of the art-is-a-flat-library plan owns gates. This
-lands the script so the next apparatus block has something to switch on.
+WIRED INTO `task check` ON 2026-09-14, by check:new-prose, which runs this over
+the whole tree and then keeps only findings on lines the change ADDED. Until
+then this said "NOT WIRED INTO `task check`" and pointed at Task 9 of the
+art-is-a-flat-library plan: gate wiring was apparatus work, and Patrik paused
+that on 2026-08-27. Run directly it still only reports, over whatever root it
+is given; the SCOPING is the wrapper's, not this file's.
 
 Run: python3 tools/check-citations.py [root] [--show-historical]
 """
@@ -361,7 +364,12 @@ def scan(root=".", oracle=git_knows):
     fabricated, historical, verdict = [], [], {}
     for path in paths:
         lines = comment_text(path.read_text(encoding="utf-8"))
-        hatched = {b for _, t, b in lines if HATCH in t}
+        # OPENS the comment, not merely appears in it. `HATCH in t` silenced
+        # every citation in the block for any line that MENTIONED the hatch --
+        # and prose about adjudication is among the likelier sentences in this
+        # tree, this file's own report() included. check-doc-owner.py has always
+        # used the narrow form; this is now the same shape.
+        hatched = {b for _, t, b in lines if t.strip().startswith(HATCH)}
         for line_no, text, block in lines:
             if block in hatched:
                 continue

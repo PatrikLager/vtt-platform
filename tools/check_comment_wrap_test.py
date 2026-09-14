@@ -98,6 +98,27 @@ class CheckCommentWrap(unittest.TestCase):
         got = flags("// a trailing short comment\n")
         self.assertEqual([], got)
 
+    # The hatch arrived when check:new-prose promoted these findings to a gate
+    # for added lines: a line can now be correct AND flagged, so it needs a way
+    # to say so in the source.
+    HATCHABLE = ("// A first line of a perfectly ordinary and unremarkable width here,\n"
+                 "// %s\n"
+                 "// and the block then continues afterwards with another line of width.\n")
+
+    def test_a_hatched_line_is_adjudicated(self):
+        self.assertEqual([], flags(self.HATCHABLE % "wrap:ok deliberately short"))
+
+    def test_the_same_line_without_the_hatch_is_flagged(self):
+        # The control. Without it the test above passes for a fixture that was
+        # never going to be flagged at all.
+        got = flags(self.HATCHABLE % "deliberately short, but unadjudicated")
+        self.assertEqual(1, len(got), got)
+
+    def test_a_line_that_merely_mentions_the_hatch_is_still_flagged(self):
+        # `startswith`, not `in`: prose about the hatch is not an adjudication.
+        got = flags(self.HATCHABLE % "adjudicate it with a wrap:ok line")
+        self.assertEqual(1, len(got), got)
+
 
 if __name__ == "__main__":
     unittest.main()

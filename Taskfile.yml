@@ -43,6 +43,7 @@ tasks:
       - task: check:breaking
       - task: check:invariants
       - task: check:doc-owner
+      - task: check:new-prose
       - task: check:no-retraction
       - task: check:no-create-scene
       - task: check:no-pack
@@ -206,14 +207,17 @@ tasks:
       and lint), plus tiers 2-4 of the suite. Enumerated 2026-09-01, so nobody
       has to diff the two by hand: test:cross, test:external, check:coverage,
       check:ts-coverage, client:typecheck, check:drift, check:breaking,
-      check:invariants, check:doc-owner, check:no-retraction,
-      check:no-create-scene, check:no-pack, check:arch, check:race,
-      check:mutation and check:ts-mutation. The list read
+      check:invariants, check:doc-owner, check:new-prose,
+      check:no-retraction, check:no-create-scene, check:no-pack, check:arch,
+      check:race, check:mutation and check:ts-mutation. The list read
       "test:cross, test:external, check:coverage, check:mutation, check:drift,
       check:breaking, check:arch and check:invariants" until 2026-09-01 and
       omitted six, check:no-retraction among them -- which `ac307d5` had added
       to `check:` in the same commit. The invariant is the first sentence; the
-      names are the convenience, and they are what rots.
+      names are the convenience, and they are what rots. It rotted again on
+      2026-09-14: check:new-prose went into `check:` and not into this list, in
+      the very change that reads this warning. Caught by review, not by a gate —
+      there is no gate for this, which is what the sentence above is about.
     cmds:
       - go vet ./...
       - task: lint
@@ -808,6 +812,89 @@ tasks:
     cmds:
       - python3 tools/check_doc_owner_test.py -q
       - python3 tools/check-doc-owner.py .
+
+  check:new-prose:
+    desc: >
+      Hold the prose a change ADDS to the two checkers nothing was running.
+
+      tools/check-citations.py and tools/check-comment-wrap.py both existed,
+      both had unit tests, and neither was named in this file or .lefthook.yml.
+      They were tools, not gates — which is how a citation to a name the tree
+      never declared, and a comment spliced without reflowing, both ship green.
+
+      SCOPED TO ADDED LINES, and that is the whole design. Each checker reports
+      findings over the tree today, so wiring either as-is would red on the
+      first run; wiring one in a mode that never fails would read like
+      enforcement while enforcing nothing, which is worse. Scoping to FILES
+      would red on somebody else's older finding the moment a change touched
+      their file — internal/gateway/authz_test.go carries wrap findings older
+      than this gate. A change is answerable for the lines it adds, and no more.
+
+      WHAT IS IN SCOPE IS NARROWER THAN "PROSE". The wrap half covers .go and
+      .ts, because its `^\s*(//+|\*|#)` is a comment marker in those two
+      languages and something else everywhere else — a Markdown heading, the
+      first star of **bold**, a CSS id selector, a shell shebang. The citations
+      half is narrower still: it harvests only from Go comments, and its own
+      refusal says so ("no Go files under <root>"). Generated and vendored trees
+      are excluded, the set check-citations.py already skips — 113 findings
+      live there (measured 2026-09-14), 47 from protoc-gen-go's "Types that are
+      valid to be assigned to" blocks and 66 from protoc-gen-es's `@generated
+      from` lines in the .ts. Adding one event (the only contract change rule 3
+      permits) adds a line to both, with no legal remedy since a
+      hand-edit under contract/gen is overwritten by task generate:contract and
+      then fails check:drift. Markdown, shell, CSS and Python prose — these
+      tools' own docstrings included — are held by NEITHER half.
+
+      The findings already in the tree are NOT cleaned by this and stay visible
+      to anyone running either checker directly. They stop growing. CLAUDE.md
+      rule 8 says the same about citations already in the tree: the rule binds
+      prose written from here on.
+
+      COST: the citations half scans the whole tree and is then filtered to
+      added lines, tens of seconds, because check-citations.py takes one root
+      and ignores further arguments — a directory per changed file would scan
+      the first and silently skip the rest — and because only a whole-tree scan
+      resolves a citation to a name this same change declares elsewhere. A
+      change with no .go file skips that scan entirely, not as a sample but
+      because every finding it can produce lands at a .go path. That cost is
+      why this is not in .lefthook.yml: pre-commit's whole budget is about seven
+      seconds. `task check` is the gate (rule 2); a pre-push seat is a separate
+      call to make.
+
+      ADJUDICATION. Each checker owns its hatch and skips it: `citations:ok
+      <reason>` for a citation that is correct as written, `wrap:ok <reason>`
+      for a line deliberately off the band. The hatch must OPEN the comment
+      body — prose that merely mentions one is not an adjudication. This task
+      additionally exempts a line opening with another checker's hatch from the
+      wrap band, since an adjudication is an annotation rather than prose.
+
+      Rule 9 mandates citing MapTool's names, which this repository will never
+      declare, but most such citations never reach the citations half at all:
+      its needles are Test[A-Z]..., pkg.Ident for a real package directory, and
+      three-or-more camel segments, so `ZoneRenderer` and `removeOwner` produce
+      no candidate while `getZoneRenderer` does. Reach for the hatch when it
+      actually fires, not pre-emptively.
+
+      The base ref resolves as a LOCAL branch first, then origin/ — the ladder
+      check:breaking uses, and its comment records why: actions/checkout creates
+      a local branch only for the ref it checks out, so on a pull request main
+      exists solely as refs/remotes/origin/main. That gate hard-failed on this
+      repository's first pull request. This one has never run in CI at all.
+    cmds:
+      # All three suites, because this gate's verdict now depends on all three
+      # tools. check_comment_wrap_test.py and check_citations_test.py were named
+      # by no task and no hook before 2026-09-14: two checkers whose tests
+      # nothing ran. Running them would NOT have caught either hatch defect
+      # fixed that day — check_citations_test.py's hatch test asserts only the
+      # silencing direction and stays green against the substring bug (measured:
+      # 29 tests, all OK against the defective tool), and check-comment-wrap.py
+      # had no hatch at all to get wrong. Review found both. The reason to wire
+      # them is that an unrun test rots, and these two now gate a merge. The two
+      # added suites cost 0.05s; the scan below is what makes this task slow.
+      - python3 tools/check_new_prose_test.py -q
+      - python3 tools/check_comment_wrap_test.py -q
+      - python3 tools/check_citations_test.py -q
+      - python3 tools/check-new-prose.py main
 
   check:no-retraction:
     desc: >

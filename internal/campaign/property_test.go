@@ -214,7 +214,10 @@ func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 				t.Name(), kind, scope)
 		}
 	}
-	// deleteNoteRejected (absent-key) is EXPECTED to be non-zero too — see
+	// The "…Rejected" counter for an absent key is EXPECTED to be non-zero too.
+	// It is no longer a literal anywhere: applyDrawn composes it as
+	// a.Kind+"Rejected" since eventgen took the generator, so citing the old
+	// spelling pointed at a name the tree had stopped declaring — see
 	// eventgen's deleteNote, which aims at an absent key about 30% of the time
 	// — but a zero count there is not itself a failure (a different seed or mix
 	// could legitimately avoid drawing it); the actual counts are logged either
