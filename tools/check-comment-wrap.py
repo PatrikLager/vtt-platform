@@ -20,13 +20,21 @@ has to start a line of its own, and the line before it is short for that reason
 rather than from a splice. Any line whose successor leads with a token longer
 than the slack is therefore allowed to be short.
 
-NOT A GATE. It reports; it does not fail a build. The band is a convention, not
-a rule, and this repo has legitimate long lines (tables, quoted errors, URLs).
-Run it over a diff, read what it says, and use judgement — the point is that the
-judgement is applied to a short list rather than to every comment in the repo.
+NOT A GATE BY ITSELF, and that changed by half on 2026-09-14. Run directly it
+still only reports: the band is a convention, not a rule, and this repo has
+legitimate long lines (tables, quoted errors, URLs), so the whole tree's
+findings are a list to read with judgement rather than a build to fail.
+
+But check:new-prose now promotes this output to a FAILING gate for the lines a
+change ADDS, in .go and .ts outside the generated trees. Within that scope a
+finding here costs something, which is why HATCH below exists: a line can be
+correct and flagged at once, and rewording prose that was right is the wrong
+way out.
 
 Usage:  python3 tools/check-comment-wrap.py <file>...
         git diff --name-only main...HEAD | xargs python3 tools/check-comment-wrap.py
+        (that three-dot range is the by-hand idiom; the gate scopes to added
+        LINES instead, so an older finding in a touched file is not yours)
 """
 
 import re
@@ -53,6 +61,25 @@ DIAGRAM = re.compile(r"\S {2,}\S")
 # A line that ends a paragraph or a sentence is allowed to be short.
 ENDS = (".", ":", ";", ")", "]", "|", "-", ">", "—")
 
+# ADJUDICATION. Same annotation as check-doc-owner.py and check-citations.py --
+# `startswith` on the comment body, so prose ABOUT a hatch is not one. (Theirs
+# was a substring test over a whole block until the same day this arrived, and
+# silenced every citation in a block that merely MENTIONED the hatch.)
+#
+# SCOPED TO THE LINE, where theirs cover a contiguous BLOCK, and the difference
+# is deliberate rather than an oversight: their finding is about what a block
+# SAYS, so one reason covers the paragraph, while a finding here is about one
+# line's WIDTH and the line beside it is a separate fact. A `wrap:ok` above a
+# five-line paragraph therefore adjudicates one line, not five.
+# The band is a convention and this tree holds lines that are deliberately off
+# it -- a quoted error, a URL, another checker's hatch. Until check:new-prose
+# promoted this tool's output to a gate for added lines, a finding here cost
+# nothing and needed no escape; now a line can be correct AND flagged, so it
+# needs a way to say so in the source rather than by rewording prose that was
+# right. Opens the comment body, not merely appears in it: an exemption is a
+# clean verdict, so it takes the narrow test.
+HATCH = "wrap:ok"
+
 
 def leading_token(text):
     """The first whitespace-delimited token, which may be unsplittable."""
@@ -62,7 +89,8 @@ def leading_token(text):
 
 def check(path):
     try:
-        lines = open(path, encoding="utf-8").read().split("\n")
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().split("\n")
     except (OSError, UnicodeDecodeError):
         return []
 
@@ -74,6 +102,8 @@ def check(path):
         body = m.group(2).strip()
         if not body:
             continue  # a bare `//` separator is a paragraph break, not an orphan
+        if body.startswith(HATCH):
+            continue  # adjudicated in the source, by a reader who looked
         near = [m.group(2)]
         for j in (i - 1, i + 1):
             if 0 <= j < len(lines):

@@ -458,5 +458,32 @@ class ExitCodeTests(unittest.TestCase):
             shutil.rmtree(d)
 
 
+    # The hatch silenced a whole BLOCK for any line that merely MENTIONED it,
+    # and prose about adjudication is among the likelier sentences in this tree
+    # — this file's own report() writes one.
+    HATCH_BLOCK = ("package pkg\n"
+                   "// %s\n"
+                   "// B is pinned by TestNothingHasEverDeclaredThisAtAll\n"
+                   "func B() {}\n")
+
+    def hatch_fab(self, first_line):
+        d = tree(**{"pkg__a.go": self.HATCH_BLOCK % first_line})
+        try:
+            _, fab, _ = cc.scan(d, oracle=ORACLE_BLIND)
+            return [n for _, _, n in fab]
+        finally:
+            shutil.rmtree(d)
+
+    def test_prose_that_merely_mentions_the_hatch_does_not_silence_the_block(self):
+        got = self.hatch_fab("You would adjudicate it with a citations:ok line")
+        self.assertEqual(["TestNothingHasEverDeclaredThisAtAll"], got, got)
+
+    def test_a_hatch_that_opens_the_comment_still_silences_the_block(self):
+        # The control: without it the test above passes for a fixture whose
+        # citation was never going to be reported at all.
+        got = self.hatch_fab("citations:ok a deliberate counter-example")
+        self.assertEqual([], got, got)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
