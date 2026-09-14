@@ -3,10 +3,25 @@
 **Sub-project 14.** The visibility arc was *one log, many views*. This is the
 other answer: many logs, one apiece, written when the seeing happened.
 
-**Prerequisite: sub-project 13**, retraction leaving the platform. This design
-assumes no `EventsRetracted` exists. Several of its decisions — carrying a world
-sequence as provenance, above all — are only safe once nothing can delete by
-sequence number.
+**Prerequisite: sub-project 13**, retraction leaving the platform — SATISFIED.
+The contract forgot how to retract in `59542e1`, and `campaign.Undo` went in
+`133e896`. No `EventsRetracted` survives as live code; what remains in
+`internal/campaign` and `internal/harness` are dated obituaries, plus one live
+structural guard in those two packages — `internal/campaign/forward_only_test.go`
+asserts that no EXPORTED method on `*Campaign` matches undo or retract, exported
+being the word that test keeps and that reflection over a concrete type enforces.
+`check:no-retraction` reports a `retract` identifier found in the source
+extensions it scans, outside the enforcement sites its own EXEMPT list names;
+its KNOWN LIMITS record what it does not read, YAML and shell among them, and
+`undo` is not its needle.
+
+Which leaves one gap, stated rather than implied: an UNEXPORTED
+`func (c *Campaign) undoRange()` is outside the guard, because reflection does
+not see it, and outside the gate, because `undo` is not the needle. Nothing
+caught it when this was written; the rule binds because it is the rule.
+Several of this design's decisions — carrying a world sequence as provenance,
+above all — are only safe once nothing can delete by sequence number, and that
+is now true rather than assumed.
 
 ---
 
@@ -37,12 +52,34 @@ The lesson generalises past retraction: **a derived, per-viewer artifact must
 not borrow an identifier that something else owns.** Give the artifact its own
 log and its own sequence, and the whole class is gone.
 
-**And a blind spot found on the way out, which this design closes.** No test in
-this repo has ever folded a projected seat's stream. Every fold in the suite
-runs on participant 0, which is the DM in all nine files under `scenarios/`;
-`runSoakCheckpoint` observes `soakDM`; the golden corpus captures
-`Participants[0]`. A projected catch-up that could not fold was therefore
-invisible to a green suite.
+**And a blind spot found on the way out, which this design closes.** Every
+whole-session fold `internal/harness` performs runs on participant 0. The
+scenario runner folds `history[sc.Participants[0].Name]` and says so in its own
+comment; the soak run folds `soakObserverName`, which is `soakDM`; and `cmd/vtt`'s
+golden capture takes `sc.Participants[0].Name`. Participant 0 is `dm` in all nine
+files under `scenarios/`. So the machinery that drives a scripted session end to
+end has never folded anything but the DM, and a character's catch-up that
+degrades over a long session is invisible to it.
+
+That is the bounded claim, and it took three attempts to write one that holds.
+Until 2026-09-14 this paragraph said "no test in this repo has ever folded a
+projected seat's stream", which was false when it was written. The first
+correction said "no SCENARIO", which is false as well. All three of these are
+true and were found by looking:
+
+  - the gateway's own tests fold player and spectator seats;
+  - `scenarios/goldens/*/projections/` holds player and spectator streams, which
+    `walkKeystone` folds at every prefix and `client/test/projection-parity.test.ts`
+    folds again through `client/src/fold.ts`;
+  - `TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer` walks
+    `internal/eventgen` over six seeds and builds a DM, an agent and two player
+    seats — the DM and agent arms are the identity projection, so the two player
+    seats are the projected ones it folds.
+
+The lesson is the one this repository already learned once: a sweeping negative
+needs the search that bounds it, and narrowing a false claim by one word just
+produces a smaller false claim. What survives here is a statement about
+`internal/harness`, because `internal/harness` is what was actually measured.
 
 ---
 
@@ -254,10 +291,11 @@ plus event plus character in, perceive-or-not out. It is the piece §3.3 makes
 unrepairable, so it carries the heaviest coverage in the arc, including the
 fail-closed direction — an unclear answer writes nothing.
 
-**A leak test that cannot pass vacuously.** Sub-project 12 found that no test in
-this repo had ever folded a projected seat's stream. Every scenario here folds
-each character's log, not participant 0's, and the corpus gains a scenario in
-which a character is present for some of a session and absent for the rest.
+**A leak test that cannot pass vacuously.** §1 records what the harness has and
+has not folded: every whole-session fold it performs runs on participant 0.
+Every scenario here folds each character's log as well, and the corpus gains a
+scenario in which a character is present for some of a session and absent for
+the rest.
 
 **Fan-out atomicity** is tested by killing the process between the two writes
 and asserting neither landed.
