@@ -1,0 +1,270 @@
+{
+  "Actors": {
+    "act-brawler": {
+      "actor_id": "act-brawler",
+      "name": "Brawler",
+      "attributes": {
+        "brawn": 3,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-brawler",
+      "controller_ids": [
+        "p-brawler"
+      ],
+      "kind": 1
+    },
+    "act-patron": {
+      "actor_id": "act-patron",
+      "name": "Patron",
+      "attributes": {
+        "brawn": 1,
+        "footing": 0,
+        "grit": 0
+      },
+      "resources": {
+        "drink": {
+          "current": 1,
+          "max": 3
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-patron",
+      "controller_ids": [
+        "p-patron"
+      ],
+      "kind": 1
+    }
+  },
+  "Conditions": {
+    "act-patron": []
+  },
+  "Notes": {},
+  "Scenes": {
+    "scn-tavern": {
+      "ID": "scn-tavern",
+      "Name": "The Rusty Flagon",
+      "GridWidth": 5,
+      "GridHeight": 5,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "0,1": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "0,2": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "0,3": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "0,4": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "1,1": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "1,2": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "1,3": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "1,4": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "2,1": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "2,2": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "2,3": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "2,4": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "3,0": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "3,1": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "3,2": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "3,3": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "3,4": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,0": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,1": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,2": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,3": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,4": {
+          "Kind": "floor",
+          "Material": "wood",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {},
+      "Explored": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "4,0": true,
+        "4,1": true,
+        "4,2": true,
+        "4,3": true,
+        "4,4": true
+      },
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "4,0": true,
+        "4,1": true,
+        "4,2": true,
+        "4,3": true,
+        "4,4": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Toy Brawl",
+      "StartSeq": 1,
+      "EndSeq": 13
+    }
+  ],
+  "Tokens": {
+    "tok-brawler": {
+      "ID": "tok-brawler",
+      "SceneID": "scn-tavern",
+      "ActorID": "act-brawler",
+      "X": 0,
+      "Y": 0
+    },
+    "tok-patron": {
+      "ID": "tok-patron",
+      "SceneID": "scn-tavern",
+      "ActorID": "act-patron",
+      "X": 1,
+      "Y": 0
+    }
+  },
+  "headSequence": 13
+}

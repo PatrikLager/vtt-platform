@@ -1,0 +1,119 @@
+{
+  "Actors": {
+    "act-latecomer": {
+      "actor_id": "act-latecomer",
+      "name": "Latecomer",
+      "attributes": {
+        "brawn": 1,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-latecomer",
+      "controller_ids": [
+        "p-latecomer"
+      ],
+      "kind": 1
+    },
+    "act-watcher": {
+      "actor_id": "act-watcher",
+      "name": "Watcher",
+      "attributes": {
+        "brawn": 2,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-watcher",
+      "controller_ids": [
+        "p-watcher"
+      ],
+      "kind": 1
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "door-hall": {
+      "ID": "door-hall",
+      "Name": "The Door Hall",
+      "GridWidth": 7,
+      "GridHeight": 1,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,0": {
+          "Kind": "door",
+          "Material": "wood",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {},
+      "Explored": {
+        "0,0": true,
+        "1,0": true,
+        "2,0": true,
+        "3,0": true
+      },
+      "Visible": {
+        "0,0": true,
+        "1,0": true,
+        "2,0": true,
+        "3,0": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Door Watch",
+      "StartSeq": 1,
+      "EndSeq": 18
+    }
+  ],
+  "Tokens": {
+    "tok-latecomer": {
+      "ID": "tok-latecomer",
+      "SceneID": "door-hall",
+      "ActorID": "act-latecomer",
+      "X": 1,
+      "Y": 0
+    },
+    "tok-watcher": {
+      "ID": "tok-watcher",
+      "SceneID": "door-hall",
+      "ActorID": "act-watcher",
+      "X": 0,
+      "Y": 0
+    }
+  },
+  "headSequence": 18
+}

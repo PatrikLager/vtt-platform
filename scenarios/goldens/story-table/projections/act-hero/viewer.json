@@ -1,0 +1,7 @@
+{
+  "seat": "act-hero",
+  "participantId": "oracle",
+  "role": "spectator",
+  "viewpoint": "act-hero",
+  "why": "Perched on act-hero (Lera), the only party member in scn-table. This is the narration-and-notes seat: steps 7-10 add four narrations, including one anchored to Lera's own move and one spoken 'as' a goblin, and steps 11-14 upsert and delete DM notes (step 15 is a re-delete that is refused). Narration is forwarded unconditionally \u2014 everyone at the table is at the same table \u2014 and notes are withheld unconditionally, they are the DM's own record. So this log should carry every narration and not one note. Steps 15-17 are refusals and reach no log at all.\n\nBefore this actor enters the world it has no eyes, so no scene, token, move or door reaches this seat. The party ROSTER still does, and so does the sitting where a golden has one (adventure-night has no session at all). Narration would too -- classify forwards it unconditionally -- but NO golden in this corpus has a narration before a party member is added, so nothing here demonstrates it. Roster-gated exposure is recorded by sub-project 14's plan as a product question rather than a sight leak.\n\nThis directory is also that plan's ORACLE for this character: what its log must contain once the projection moves to write time. It records today's code, and the port is checked against it."
+}

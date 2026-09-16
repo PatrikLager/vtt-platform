@@ -1,0 +1,761 @@
+{
+  "Actors": {
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "controller_id": "p-player",
+      "controller_ids": [
+        "p-player"
+      ],
+      "kind": 1
+    },
+    "act-ursus": {
+      "actor_id": "act-ursus",
+      "name": "Ursus",
+      "kind": 2
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-exit": {
+      "ID": "scn-exit",
+      "Name": "Exit Hall",
+      "GridWidth": 10,
+      "GridHeight": 10,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "0,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "4,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "6,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "7,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "8,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,1": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,2": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,3": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,4": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,5": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,6": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,7": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,8": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "9,9": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {},
+      "Explored": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "0,5": true,
+        "0,6": true,
+        "0,7": true,
+        "0,8": true,
+        "0,9": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "1,5": true,
+        "1,6": true,
+        "1,7": true,
+        "1,8": true,
+        "1,9": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "2,5": true,
+        "2,6": true,
+        "2,7": true,
+        "2,8": true,
+        "2,9": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "3,5": true,
+        "3,6": true,
+        "3,7": true,
+        "3,8": true,
+        "3,9": true,
+        "4,0": true,
+        "4,1": true,
+        "4,2": true,
+        "4,3": true,
+        "4,4": true,
+        "4,5": true,
+        "4,6": true,
+        "4,7": true,
+        "4,8": true,
+        "4,9": true,
+        "5,0": true,
+        "5,1": true,
+        "5,2": true,
+        "5,3": true,
+        "5,4": true,
+        "5,5": true,
+        "5,6": true,
+        "5,7": true,
+        "5,8": true,
+        "5,9": true,
+        "6,0": true,
+        "6,1": true,
+        "6,2": true,
+        "6,3": true,
+        "6,4": true,
+        "6,5": true,
+        "6,6": true,
+        "6,7": true,
+        "6,8": true,
+        "6,9": true,
+        "7,0": true,
+        "7,1": true,
+        "7,2": true,
+        "7,3": true,
+        "7,4": true,
+        "7,5": true,
+        "7,6": true,
+        "7,7": true,
+        "7,8": true,
+        "7,9": true,
+        "8,0": true,
+        "8,1": true,
+        "8,2": true,
+        "8,3": true,
+        "8,4": true,
+        "8,5": true,
+        "8,6": true,
+        "8,7": true,
+        "8,8": true,
+        "8,9": true,
+        "9,0": true,
+        "9,1": true,
+        "9,2": true,
+        "9,3": true,
+        "9,4": true,
+        "9,5": true,
+        "9,6": true,
+        "9,7": true,
+        "9,8": true,
+        "9,9": true
+      },
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "0,5": true,
+        "0,6": true,
+        "0,7": true,
+        "0,8": true,
+        "0,9": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "1,5": true,
+        "1,6": true,
+        "1,7": true,
+        "1,8": true,
+        "1,9": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "2,5": true,
+        "2,6": true,
+        "2,7": true,
+        "2,8": true,
+        "2,9": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "3,5": true,
+        "3,6": true,
+        "3,7": true,
+        "3,8": true,
+        "3,9": true,
+        "4,0": true,
+        "4,1": true,
+        "4,2": true,
+        "4,3": true,
+        "4,4": true,
+        "4,5": true,
+        "4,6": true,
+        "4,7": true,
+        "4,8": true,
+        "4,9": true,
+        "5,0": true,
+        "5,1": true,
+        "5,2": true,
+        "5,3": true,
+        "5,4": true,
+        "5,5": true,
+        "5,6": true,
+        "5,7": true,
+        "5,8": true,
+        "5,9": true,
+        "6,0": true,
+        "6,1": true,
+        "6,2": true,
+        "6,3": true,
+        "6,4": true,
+        "6,5": true,
+        "6,6": true,
+        "6,7": true,
+        "6,8": true,
+        "6,9": true,
+        "7,0": true,
+        "7,1": true,
+        "7,2": true,
+        "7,3": true,
+        "7,4": true,
+        "7,5": true,
+        "7,6": true,
+        "7,7": true,
+        "7,8": true,
+        "7,9": true,
+        "8,0": true,
+        "8,1": true,
+        "8,2": true,
+        "8,3": true,
+        "8,4": true,
+        "8,5": true,
+        "8,6": true,
+        "8,7": true,
+        "8,8": true,
+        "8,9": true,
+        "9,0": true,
+        "9,1": true,
+        "9,2": true,
+        "9,3": true,
+        "9,4": true,
+        "9,5": true,
+        "9,6": true,
+        "9,7": true,
+        "9,8": true,
+        "9,9": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Exit Scenario",
+      "StartSeq": 1,
+      "EndSeq": 10
+    }
+  ],
+  "Tokens": {
+    "tok-lera": {
+      "ID": "tok-lera",
+      "SceneID": "scn-exit",
+      "ActorID": "act-lera",
+      "X": 2,
+      "Y": 2
+    },
+    "tok-ursus": {
+      "ID": "tok-ursus",
+      "SceneID": "scn-exit",
+      "ActorID": "act-ursus",
+      "X": 5,
+      "Y": 5
+    }
+  },
+  "headSequence": 10
+}

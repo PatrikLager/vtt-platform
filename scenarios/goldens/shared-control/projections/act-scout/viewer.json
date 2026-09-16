@@ -1,0 +1,7 @@
+{
+  "seat": "act-scout",
+  "participantId": "oracle",
+  "role": "spectator",
+  "viewpoint": "act-scout",
+  "why": "Perched on act-scout, who is added at step 6 and NEVER PLACED. No token means no eyes, for the whole scenario \u2014 so this seat is the degenerate case the corpus would otherwise lack: a party member whose log contains not one square, token or move. What it SHOULD contain is the session, and the roster and control traffic about act-warden, because knows() passes on party membership rather than on sight. If this stream turns out to carry anything of scn-keep, the sight gating is wrong.\n\nBefore this actor enters the world it has no eyes, so no scene, token, move or door reaches this seat. The party ROSTER still does, and so does the sitting where a golden has one (adventure-night has no session at all). Narration would too -- classify forwards it unconditionally -- but NO golden in this corpus has a narration before a party member is added, so nothing here demonstrates it. Roster-gated exposure is recorded by sub-project 14's plan as a product question rather than a sight leak.\n\nThis directory is also that plan's ORACLE for this character: what its log must contain once the projection moves to write time. It records today's code, and the port is checked against it."
+}

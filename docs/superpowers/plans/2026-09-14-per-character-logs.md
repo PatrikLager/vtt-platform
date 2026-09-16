@@ -189,6 +189,14 @@ right oracle: for `RoleSpectator`, `Projector.eyes` returns
 
 **Interfaces:** none. This task produces DATA.
 
+**`characterOracles(t)` MUST key on `viewer.json`, never on the directory name.**
+After this task `projections/` holds more directories than it has character
+oracles, and the difference is not visible from the path. `session-zero/projections/player` is a `RolePlayer` seat whose eyes are
+the union of two actors in two scenes — no character log can ever equal it — and
+`session-zero/projections/spectator` IS `act-healer`'s oracle but is not named
+for it. Select on `role == "spectator"` plus a non-empty `viewpoint`; keying on
+the path picks up a false oracle and misses a real one.
+
 **THERE IS NO `-update` FLAG, and there must not be one.**
 `cmd/vtt/scenario_goldens_test.go` records the rule and the reason: the original
 plan for that task generated its corpus behind a switch and it was rejected —
@@ -248,15 +256,38 @@ Patrik alongside the other two knowingly-moved behaviours — it is a product
 decision (what does a late joiner learn about the party's past?), not a porting
 one.
 
-**THE CORPUS IS EIGHT GOLDENS, NOT NINE SCENARIOS.** `scenarios/` holds nine
-files; `scenarios/goldens/` holds eight. `goblin-fight` is deliberately excluded
-because a miss emits fewer events than a hit, so no masking makes its stream
-comparable. An oracle can only be captured where a committed world `stream.json`
-exists.
+**NOT EVERY SCENARIO HAS A GOLDEN, so not every scenario can carry an oracle.**
+`goblin-fight` is deliberately excluded because a miss emits fewer events than a
+hit, so no masking makes its stream comparable. An oracle can only be captured
+where a committed world `stream.json` exists — check `scenarios/goldens/` rather
+than `scenarios/`, and state the invariant rather than a count, which rots.
+
+- [ ] **Step 0: Measure what the corpus can and cannot exercise, and CLOSE THE GAPS**
+
+An oracle that does not reach a behaviour cannot prove a port kept it, and Task 4
+Step 4 says so: an injection that does not red means the corpus needs a scenario
+before that task is done. Measure first, per behaviour, counting SYNTHESIZED
+entries (no `eventId`) rather than events of that kind — a forwarded door event
+exercises `classify`, not `doorTransitions`, and counting the first while meaning
+the second is how this step was got wrong once already.
+
+Measured before door-watch existed: zero synthesized door corrections, zero
+synthesized grants, zero synthesized conditions, and no scene ever reporting a
+second `sceneSeen`. Four of Task 4's six injections could not have red.
+
+`scenarios/door-watch.json` was built to close them, and the shape it needed is
+worth keeping: a NON-PARTY actor granted and conditioned while out of sight, so
+its introduction arrives by sight and must replay both behind it; and TWO doors,
+the far one opened while invisible so the near one's opening forces a
+correction. A single door cannot work — a viewer that can always see the door
+can never hold a stale belief about it.
+
+**Prove each closure by injection, not by counting.** Break the behaviour, run
+the gate, confirm the seat reds, restore.
 
 - [ ] **Step 1: Enumerate the seats, and measure the corpus you actually have**
 
-For each of the eight goldens, list every actor `isPartyMember` admits, and note
+For each golden that has a committed world `stream.json`, list every actor `isPartyMember` admits, and note
 the world sequence at which each first qualifies. Measured at HEAD this yields
 nine seats across six goldens — `denials` and `smoke` have no party member at
 all, so they contribute none. Record the real shape in the task report; Task 3's
@@ -1229,7 +1260,7 @@ will not catch a stale bundle. Run both test and typecheck: `bun test` accepts
 `internal/harness` performs runs on participant 0 — the scenario runner folds
 `history[sc.Participants[0].Name]`, soak folds `soakObserverName` (`soakDM`), and
 `cmd/vtt`'s golden capture takes `sc.Participants[0].Name`. Participant 0 is `dm`
-in all nine scenarios. After this task the harness folds each character's log as
+in every scenario in the library. After this task the harness folds each character's log as
 well, and the DM fold stays — the DM log IS the world.
 
 - [ ] **Step 1: The TS invariant** — every character log folds at every prefix,
@@ -1256,7 +1287,7 @@ task, and expect it to be the bulk of the work.
 diff before accepting it: a golden re-blessed unread has stopped asserting.
 
 - [ ] **Step 6: Commit** — message
-`Nine scenarios folded the DM's log; now they fold everyone's`.
+`The corpus folded the DM's log; now it folds everyone's`.
 
 ---
 

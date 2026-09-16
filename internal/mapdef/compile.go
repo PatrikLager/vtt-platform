@@ -139,9 +139,13 @@ func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 // nothing in this package would say so: TestBothLoadPathsEmitIdenticalSceneEvents
 // holds the map path against the adventure path, and BOTH of those come through
 // this function, so it cannot see the redacted builder at all. The corpus's
-// reach is narrow too — scenarios/goldens/session-zero is the only scenario
-// carrying projections/*/state.json, so its player and spectator are the only
-// projected seats anything folds.
+// reach WAS narrow too — until 2026-09-16 scenarios/goldens/session-zero was
+// the only scenario carrying projections/*/state.json, so its player and
+// spectator were the only projected seats anything folded. Sub-project 14's
+// Task 1 widened that to a character oracle per party member across most of the
+// corpus, so the gap this paragraph describes is now narrower than it was; the
+// argument above it, that this function cannot see the redacted builder, is
+// unchanged.
 //
 // artDir may be empty, name a directory that does not exist, or name one this
 // process cannot open: a campaign that has installed no art is ordinary, and

@@ -1,0 +1,32 @@
+{
+  "Actors": {
+    "act-scout": {
+      "actor_id": "act-scout",
+      "name": "Scout",
+      "kind": 1
+    },
+    "act-warden": {
+      "actor_id": "act-warden",
+      "name": "Warden",
+      "controller_id": "p-bo",
+      "controller_ids": [
+        "p-bo",
+        "p-cy"
+      ],
+      "kind": 1
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {},
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Shared Control",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {},
+  "headSequence": 13
+}

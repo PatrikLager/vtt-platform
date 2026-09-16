@@ -1,0 +1,149 @@
+[
+  {
+    "actorRole": "dm",
+    "eventId": "evt-1",
+    "participantId": "p-dm",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "sessionStarted": {
+      "name": "Door Watch"
+    }
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-watcher",
+        "attributes": {
+          "brawn": 2,
+          "grit": 1
+        },
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Watcher",
+        "resources": {
+          "drink": {
+            "max": 4
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        }
+      }
+    },
+    "sequence": "3"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-watcher",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-watcher"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-4",
+    "participantId": "p-dm",
+    "sequence": "4",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-latecomer",
+        "attributes": {
+          "brawn": 1,
+          "grit": 1
+        },
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Latecomer",
+        "resources": {
+          "drink": {
+            "max": 4
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        }
+      }
+    },
+    "sequence": "15"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-latecomer",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-latecomer"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-16",
+    "participantId": "p-dm",
+    "sequence": "16",
+    "sessionId": "sess-1"
+  },
+  {
+    "sceneCreated": {
+      "gridHeight": 1,
+      "gridWidth": 7,
+      "name": "The Door Hall",
+      "sceneId": "door-hall"
+    },
+    "sequence": "17"
+  },
+  {
+    "sequence": "17",
+    "tokenPlaced": {
+      "actorId": "act-latecomer",
+      "position": {
+        "x": 1
+      },
+      "sceneId": "door-hall",
+      "tokenId": "tok-latecomer"
+    }
+  },
+  {
+    "sequence": "17",
+    "tokenPlaced": {
+      "actorId": "act-watcher",
+      "position": {},
+      "sceneId": "door-hall",
+      "tokenId": "tok-watcher"
+    }
+  },
+  {
+    "sceneSeen": {
+      "sceneId": "door-hall",
+      "tiles": {
+        "0,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,0": {
+          "kind": "door",
+          "material": "wood"
+        }
+      },
+      "visible": [
+        "0,0",
+        "1,0",
+        "2,0",
+        "3,0"
+      ]
+    },
+    "sequence": "17"
+  },
+  {
+    "actorRole": "dm",
+    "eventId": "evt-18",
+    "participantId": "p-dm",
+    "sequence": "18",
+    "sessionEnded": {},
+    "sessionId": "sess-1"
+  }
+]

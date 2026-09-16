@@ -1,0 +1,7 @@
+{
+  "seat": "act-fighter",
+  "participantId": "oracle",
+  "role": "spectator",
+  "viewpoint": "act-fighter",
+  "why": "Perched on act-fighter, who reaches the world through loadAdventure rather than addActor + placeToken. This is the only golden with NO startSession and NO endSession, so it is the seat that proves a character log needs neither. Most of it arrives through the transition walk as the adventure's scenes and tokens become visible -- 8 of its 11 entries are synthesized; the other 3 are forwarded world events (narration evt-10, abilityUsed evt-11, resourceChanged evt-12). AdventureLoaded itself is withheld \u2014 a character never learns that an adventure was loaded, only what of it they can see. Step 5's useAbility targets act-fighter itself, so it should forward.\n\nBefore this actor enters the world it has no eyes, so no scene, token, move or door reaches this seat. The party ROSTER still does, and so does the sitting where a golden has one (adventure-night has no session at all). Narration would too -- classify forwards it unconditionally -- but NO golden in this corpus has a narration before a party member is added, so nothing here demonstrates it. Roster-gated exposure is recorded by sub-project 14's plan as a product question rather than a sight leak.\n\nThis directory is also that plan's ORACLE for this character: what its log must contain once the projection moves to write time. It records today's code, and the port is checked against it."
+}

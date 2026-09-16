@@ -1,0 +1,294 @@
+{
+  "name": "Door Watch",
+  "ruleset": "tavern-brawl",
+  "maps": "scenarios/maps",
+  "participants": [
+    {
+      "name": "dm",
+      "role": "dm"
+    },
+    {
+      "name": "watcher",
+      "role": "player"
+    },
+    {
+      "name": "hidden",
+      "role": "player"
+    },
+    {
+      "name": "latecomer",
+      "role": "player"
+    }
+  ],
+  "steps": [
+    {
+      "by": "dm",
+      "command": {
+        "startSession": {
+          "name": "Door Watch"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "loadMap": {
+          "mapId": "door-hall"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "addActor": {
+          "actor": {
+            "actorId": "act-watcher",
+            "name": "Watcher",
+            "kind": "ACTOR_KIND_PARTY_MEMBER",
+            "attributes": {
+              "brawn": 2,
+              "grit": 1
+            },
+            "resources": {
+              "drink": {
+                "current": 0,
+                "max": 4
+              },
+              "stamina": {
+                "current": 2,
+                "max": 2
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "grantActorControl": {
+          "actorId": "act-watcher",
+          "participantId": "{{id:watcher}}",
+          "kind": "ACTOR_KIND_PARTY_MEMBER"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "placeToken": {
+          "tokenId": "tok-watcher",
+          "sceneId": "door-hall",
+          "actorId": "act-watcher",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "addActor": {
+          "actor": {
+            "actorId": "act-hidden",
+            "name": "Hidden",
+            "kind": "ACTOR_KIND_NON_PARTY",
+            "attributes": {
+              "brawn": 1,
+              "grit": 0,
+              "footing": 0
+            },
+            "resources": {
+              "drink": {
+                "current": 0,
+                "max": 3
+              },
+              "stamina": {
+                "current": 2,
+                "max": 2
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "grantActorControl": {
+          "actorId": "act-hidden",
+          "participantId": "{{id:hidden}}",
+          "kind": "ACTOR_KIND_NON_PARTY"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "placeToken": {
+          "tokenId": "tok-hidden",
+          "sceneId": "door-hall",
+          "actorId": "act-hidden",
+          "position": {
+            "x": 6,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "useAbility": {
+          "actorId": "act-hidden",
+          "abilityId": "fists",
+          "targetIds": [
+            "act-hidden"
+          ]
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "openDoor": {
+          "sceneId": "door-hall",
+          "at": {
+            "x": 5,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "openDoor": {
+          "sceneId": "door-hall",
+          "at": {
+            "x": 3,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "closeDoor": {
+          "sceneId": "door-hall",
+          "at": {
+            "x": 3,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "addActor": {
+          "actor": {
+            "actorId": "act-latecomer",
+            "name": "Latecomer",
+            "kind": "ACTOR_KIND_PARTY_MEMBER",
+            "attributes": {
+              "brawn": 1,
+              "grit": 1
+            },
+            "resources": {
+              "drink": {
+                "current": 0,
+                "max": 4
+              },
+              "stamina": {
+                "current": 2,
+                "max": 2
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "grantActorControl": {
+          "actorId": "act-latecomer",
+          "participantId": "{{id:latecomer}}",
+          "kind": "ACTOR_KIND_PARTY_MEMBER"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "placeToken": {
+          "tokenId": "tok-latecomer",
+          "sceneId": "door-hall",
+          "actorId": "act-latecomer",
+          "position": {
+            "x": 1,
+            "y": 0
+          }
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "by": "dm",
+      "command": {
+        "endSession": {}
+      },
+      "expect": {
+        "ok": true
+      }
+    }
+  ]
+}

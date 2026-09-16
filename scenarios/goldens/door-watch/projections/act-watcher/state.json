@@ -1,0 +1,171 @@
+{
+  "Actors": {
+    "act-hidden": {
+      "actor_id": "act-hidden",
+      "name": "Hidden",
+      "attributes": {
+        "brawn": 1,
+        "footing": 0,
+        "grit": 0
+      },
+      "resources": {
+        "drink": {
+          "current": 1,
+          "max": 3
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-hidden",
+      "controller_ids": [
+        "p-hidden"
+      ],
+      "kind": 2
+    },
+    "act-latecomer": {
+      "actor_id": "act-latecomer",
+      "name": "Latecomer",
+      "attributes": {
+        "brawn": 1,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-latecomer",
+      "controller_ids": [
+        "p-latecomer"
+      ],
+      "kind": 1
+    },
+    "act-watcher": {
+      "actor_id": "act-watcher",
+      "name": "Watcher",
+      "attributes": {
+        "brawn": 2,
+        "grit": 1
+      },
+      "resources": {
+        "drink": {
+          "max": 4
+        },
+        "stamina": {
+          "current": 2,
+          "max": 2
+        }
+      },
+      "controller_id": "p-watcher",
+      "controller_ids": [
+        "p-watcher"
+      ],
+      "kind": 1
+    }
+  },
+  "Conditions": {
+    "act-hidden": [
+      {
+        "ID": "dazed-by-ale",
+        "Source": "threshold:drink",
+        "AppliedSeq": 13
+      }
+    ]
+  },
+  "Notes": {},
+  "Scenes": {
+    "door-hall": {
+      "ID": "door-hall",
+      "Name": "The Door Hall",
+      "GridWidth": 7,
+      "GridHeight": 1,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "2,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "3,0": {
+          "Kind": "door",
+          "Material": "wood",
+          "Art": ""
+        },
+        "4,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "5,0": {
+          "Kind": "door",
+          "Material": "wood",
+          "Art": ""
+        },
+        "6,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {
+        "5,0": true
+      },
+      "Explored": {
+        "0,0": true,
+        "1,0": true,
+        "2,0": true,
+        "3,0": true,
+        "4,0": true,
+        "5,0": true,
+        "6,0": true
+      },
+      "Visible": {
+        "0,0": true,
+        "1,0": true,
+        "2,0": true,
+        "3,0": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Door Watch",
+      "StartSeq": 1,
+      "EndSeq": 18
+    }
+  ],
+  "Tokens": {
+    "tok-latecomer": {
+      "ID": "tok-latecomer",
+      "SceneID": "door-hall",
+      "ActorID": "act-latecomer",
+      "X": 1,
+      "Y": 0
+    },
+    "tok-watcher": {
+      "ID": "tok-watcher",
+      "SceneID": "door-hall",
+      "ActorID": "act-watcher",
+      "X": 0,
+      "Y": 0
+    }
+  },
+  "headSequence": 18
+}

@@ -1,0 +1,476 @@
+[
+  {
+    "actorRole": "dm",
+    "eventId": "evt-1",
+    "participantId": "p-dm",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "sessionStarted": {
+      "name": "Shared Control"
+    }
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-warden",
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Warden"
+      }
+    },
+    "sequence": "3"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-ana"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-4",
+    "participantId": "p-dm",
+    "sequence": "4",
+    "sessionId": "sess-1"
+  },
+  {
+    "sceneCreated": {
+      "gridHeight": 8,
+      "gridWidth": 8,
+      "name": "The Keep",
+      "sceneId": "scn-keep"
+    },
+    "sequence": "5"
+  },
+  {
+    "sequence": "5",
+    "tokenPlaced": {
+      "actorId": "act-warden",
+      "position": {
+        "x": 1,
+        "y": 1
+      },
+      "sceneId": "scn-keep",
+      "tokenId": "tok-warden"
+    }
+  },
+  {
+    "sceneSeen": {
+      "sceneId": "scn-keep",
+      "tiles": {
+        "0,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "4,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "6,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "7,7": {
+          "kind": "floor",
+          "material": "stone"
+        }
+      },
+      "visible": [
+        "0,0",
+        "0,1",
+        "0,2",
+        "0,3",
+        "0,4",
+        "0,5",
+        "0,6",
+        "0,7",
+        "1,0",
+        "1,1",
+        "1,2",
+        "1,3",
+        "1,4",
+        "1,5",
+        "1,6",
+        "1,7",
+        "2,0",
+        "2,1",
+        "2,2",
+        "2,3",
+        "2,4",
+        "2,5",
+        "2,6",
+        "2,7",
+        "3,0",
+        "3,1",
+        "3,2",
+        "3,3",
+        "3,4",
+        "3,5",
+        "3,6",
+        "3,7",
+        "4,0",
+        "4,1",
+        "4,2",
+        "4,3",
+        "4,4",
+        "4,5",
+        "4,6",
+        "4,7",
+        "5,0",
+        "5,1",
+        "5,2",
+        "5,3",
+        "5,4",
+        "5,5",
+        "5,6",
+        "5,7",
+        "6,0",
+        "6,1",
+        "6,2",
+        "6,3",
+        "6,4",
+        "6,5",
+        "6,6",
+        "6,7",
+        "7,0",
+        "7,1",
+        "7,2",
+        "7,3",
+        "7,4",
+        "7,5",
+        "7,6",
+        "7,7"
+      ]
+    },
+    "sequence": "5"
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-scout",
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Scout"
+      }
+    },
+    "sequence": "6"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-scout",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-dee"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-7",
+    "participantId": "p-dm",
+    "sequence": "7",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-bo"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-8",
+    "participantId": "p-dm",
+    "sequence": "8",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-bo"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-9",
+    "participantId": "p-dm",
+    "sequence": "9",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlRevoked": {
+      "actorId": "act-warden",
+      "participantId": "p-ana"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-10",
+    "participantId": "p-dm",
+    "sequence": "10",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlRevoked": {
+      "actorId": "act-warden",
+      "participantId": "p-cy"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-11",
+    "participantId": "p-dm",
+    "sequence": "11",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-warden",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-cy"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-12",
+    "participantId": "p-dm",
+    "sequence": "12",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorControlRevoked": {
+      "actorId": "act-scout",
+      "participantId": "p-dee"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-13",
+    "participantId": "p-dm",
+    "sequence": "13",
+    "sessionId": "sess-1"
+  }
+]

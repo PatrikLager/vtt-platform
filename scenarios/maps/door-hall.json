@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "id": "door-hall",
+  "name": "The Door Hall",
+  "grid_width": 7,
+  "grid_height": 1,
+  "tiles": {
+    "0,0": "stone",
+    "1,0": "stone",
+    "2,0": "stone",
+    "3,0": "wood-door",
+    "4,0": "stone",
+    "5,0": "wood-door",
+    "6,0": "stone"
+  }
+}

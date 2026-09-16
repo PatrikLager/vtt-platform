@@ -19,9 +19,9 @@ directory inside it. See **Projected seats** below.
 ## Where a scene comes from
 
 Nowhere in this corpus does a scenario CREATE a scene. Since 2026-09-02 every
-scene arrives from a file: eight of the nine scenarios get theirs from a map
+scene arrives from a file: almost every scenario gets theirs from a map
 under `scenarios/maps/`, loaded by a `load_map` step, and `adventure-night`
-gets its one from the adventure it loads. (Seven of those eight have a golden
+gets its one from the adventure it loads. (Most of those have a golden
 here; `goblin-fight` is the one that does not, for the reason at the bottom of
 this file.) `create_scene` LEFT the platform on 2026-09-02
 (`docs/superpowers/specs/2026-09-01-create-scene-leaves-design.md` — the kernel
@@ -278,15 +278,17 @@ entry in the fixture.
 
 ## Coverage
 
-Eight scenarios, covering a subset of the contract's command types, **not
-all of them.** "All fifteen" stood here until 2026-08-25: it was true when
+The goldens cover a subset of the contract's command types, **not all of
+them.** "All fifteen" stood here until 2026-08-25: it was true when
 fifteen WAS the whole contract, and stayed on the page as the contract grew
-past it, turning a corpus statistic into a false completeness claim. Door,
-viewpoint, join-link and participant-promotion commands are among those
-with no golden today — examples, not the complete list. (`map` stood in that
-list until 2026-09-02. `load_map` is now in seven of the eight goldens, because
+past it, turning a corpus statistic into a false completeness claim. Viewpoint,
+join-link and participant-promotion commands are among those with no golden
+today — examples, not the complete list. (`door` left that list on 2026-09-16
+when `door-watch` arrived, whose map `door-hall` is the only one carrying door squares at all and
+therefore its second sight blocker after `ambush`'s wall.) (`map` stood in that
+list until 2026-09-02. `load_map` is in almost every golden, because
 every scene a scenario puts in the world arrives that way; `adventure-night` is
-the eighth and gets its scene through `load_adventure` instead.) `retract_events` was
+the exception and gets its scene through `load_adventure` instead.) `retract_events` was
 listed here beside them for the days between sub-project 13 deleting the
 corpus's last retraction step and the same sub-project deleting the command
 itself: it is not a gap now, because it is not a command. Derive the current
@@ -295,7 +297,7 @@ gap by diffing the scenarios' command keys against
 which is how this sentence went wrong in the first place.
 
 `session-zero` was added 2026-08-22 with the visibility arc's keystone. It is
-the only scenario in the corpus with a sight blocker, the only one with two
+the only scenario in the corpus with a WALL, the only one with two
 scenes, and the only one whose player controls two actors standing in different
 ones — which is what makes its spectator seat (perched on the actor in `camp`)
 see a strictly smaller world than its player seat rather than the same one
@@ -317,7 +319,7 @@ grants too, because an actor is now born unowned without exception) as well as
 onto a shared one, and revokes the set's HEAD so the mirror has to slide. Idempotent re-grant, revoking a non-controller, and
 revoking the last controller back to unowned are all in the same stream.
 
-`adventure-night` and `toy-brawl` roll dice, and are here because their event
+`adventure-night`, `toy-brawl` and `door-watch` roll dice, and are here because their event
 streams are shape-STABLE: **the same events in the same order every run, with
 only the roll values differing.** That invariant is the claim; a line count is
 not, and one used to stand here as if it were ("208 = 208 and 178 = 178",

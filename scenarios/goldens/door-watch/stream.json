@@ -1,0 +1,313 @@
+[
+  {
+    "eventId": "evt-1",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionStarted": {
+      "name": "Door Watch"
+    }
+  },
+  {
+    "eventId": "evt-2",
+    "sequence": "2",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sceneCreated": {
+      "sceneId": "door-hall",
+      "name": "The Door Hall",
+      "gridWidth": 7,
+      "gridHeight": 1,
+      "tiles": {
+        "0,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,0": {
+          "kind": "door",
+          "material": "wood"
+        },
+        "4,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "5,0": {
+          "kind": "door",
+          "material": "wood"
+        },
+        "6,0": {
+          "kind": "floor",
+          "material": "stone"
+        }
+      }
+    }
+  },
+  {
+    "eventId": "evt-3",
+    "sequence": "3",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-watcher",
+        "name": "Watcher",
+        "attributes": {
+          "brawn": 2,
+          "grit": 1
+        },
+        "resources": {
+          "drink": {
+            "max": 4
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        },
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
+      }
+    }
+  },
+  {
+    "eventId": "evt-4",
+    "sequence": "4",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-watcher",
+      "participantId": "p-watcher",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-watcher",
+      "sceneId": "door-hall",
+      "actorId": "act-watcher",
+      "position": {}
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-hidden",
+        "name": "Hidden",
+        "attributes": {
+          "brawn": 1,
+          "footing": 0,
+          "grit": 0
+        },
+        "resources": {
+          "drink": {
+            "max": 3
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        },
+        "kind": "ACTOR_KIND_NON_PARTY"
+      }
+    }
+  },
+  {
+    "eventId": "evt-7",
+    "sequence": "7",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-hidden",
+      "participantId": "p-hidden",
+      "kind": "ACTOR_KIND_NON_PARTY"
+    }
+  },
+  {
+    "eventId": "evt-8",
+    "sequence": "8",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-hidden",
+      "sceneId": "door-hall",
+      "actorId": "act-hidden",
+      "position": {
+        "x": 6
+      }
+    }
+  },
+  {
+    "eventId": "evt-9",
+    "sequence": "9",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "abilityUsed": {
+      "actorId": "act-hidden",
+      "abilityId": "fists",
+      "targetIds": [
+        "act-hidden"
+      ],
+      "rolls": [
+        {
+          "expression": "1d20 + @caster.brawn",
+          "results": [
+            12
+          ],
+          "total": 13
+        }
+      ],
+      "outcomeSummary": "Fists on act-hidden: hit (13 vs 0)"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "resourceChanged": {
+      "actorId": "act-hidden",
+      "resource": "drink",
+      "delta": 1,
+      "newValue": 1,
+      "reason": "ability:fists:hit"
+    }
+  },
+  {
+    "eventId": "evt-11",
+    "sequence": "11",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "conditionApplied": {
+      "actorId": "act-hidden",
+      "conditionId": "dazed-by-ale",
+      "source": "threshold:drink"
+    }
+  },
+  {
+    "eventId": "evt-12",
+    "sequence": "12",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "doorOpened": {
+      "sceneId": "door-hall",
+      "at": {
+        "x": 5
+      }
+    }
+  },
+  {
+    "eventId": "evt-13",
+    "sequence": "13",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "doorOpened": {
+      "sceneId": "door-hall",
+      "at": {
+        "x": 3
+      }
+    }
+  },
+  {
+    "eventId": "evt-14",
+    "sequence": "14",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "doorClosed": {
+      "sceneId": "door-hall",
+      "at": {
+        "x": 3
+      }
+    }
+  },
+  {
+    "eventId": "evt-15",
+    "sequence": "15",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-latecomer",
+        "name": "Latecomer",
+        "attributes": {
+          "brawn": 1,
+          "grit": 1
+        },
+        "resources": {
+          "drink": {
+            "max": 4
+          },
+          "stamina": {
+            "current": 2,
+            "max": 2
+          }
+        },
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
+      }
+    }
+  },
+  {
+    "eventId": "evt-16",
+    "sequence": "16",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-latecomer",
+      "participantId": "p-latecomer",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
+  },
+  {
+    "eventId": "evt-17",
+    "sequence": "17",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "tokenPlaced": {
+      "tokenId": "tok-latecomer",
+      "sceneId": "door-hall",
+      "actorId": "act-latecomer",
+      "position": {
+        "x": 1
+      }
+    }
+  },
+  {
+    "eventId": "evt-18",
+    "sequence": "18",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "sessionEnded": {}
+  }
+]

@@ -1,0 +1,322 @@
+[
+  {
+    "actorRole": "dm",
+    "eventId": "evt-1",
+    "participantId": "p-dm",
+    "sequence": "1",
+    "sessionId": "sess-1",
+    "sessionStarted": {
+      "name": "Session Zero"
+    }
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-fighter",
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Asme"
+      }
+    },
+    "sequence": "4"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-fighter",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-player"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-5",
+    "participantId": "p-dm",
+    "sequence": "5",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-healer",
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "name": "Ilva"
+      }
+    },
+    "sequence": "6"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-healer",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-player"
+    },
+    "actorRole": "dm",
+    "eventId": "evt-7",
+    "participantId": "p-dm",
+    "sequence": "7",
+    "sessionId": "sess-1"
+  },
+  {
+    "sceneCreated": {
+      "gridHeight": 9,
+      "gridWidth": 20,
+      "name": "Ambush Corridor",
+      "sceneId": "ambush"
+    },
+    "sequence": "9"
+  },
+  {
+    "sequence": "9",
+    "tokenPlaced": {
+      "actorId": "act-fighter",
+      "position": {
+        "x": 1,
+        "y": 4
+      },
+      "sceneId": "ambush",
+      "tokenId": "tok-fighter"
+    }
+  },
+  {
+    "sceneSeen": {
+      "sceneId": "ambush",
+      "tiles": {
+        "0,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "0,8": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "1,8": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,0": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,1": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,2": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,3": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,4": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,5": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,6": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,7": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "2,8": {
+          "kind": "floor",
+          "material": "stone"
+        },
+        "3,0": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,1": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,2": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,3": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,4": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,5": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,6": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,7": {
+          "kind": "wall",
+          "material": "stone"
+        },
+        "3,8": {
+          "kind": "wall",
+          "material": "stone"
+        }
+      },
+      "visible": [
+        "0,0",
+        "0,1",
+        "0,2",
+        "0,3",
+        "0,4",
+        "0,5",
+        "0,6",
+        "0,7",
+        "0,8",
+        "1,0",
+        "1,1",
+        "1,2",
+        "1,3",
+        "1,4",
+        "1,5",
+        "1,6",
+        "1,7",
+        "1,8",
+        "2,0",
+        "2,1",
+        "2,2",
+        "2,3",
+        "2,4",
+        "2,5",
+        "2,6",
+        "2,7",
+        "2,8",
+        "3,0",
+        "3,1",
+        "3,2",
+        "3,3",
+        "3,4",
+        "3,5",
+        "3,6",
+        "3,7",
+        "3,8"
+      ]
+    },
+    "sequence": "9"
+  },
+  {
+    "actorRole": "player",
+    "eventId": "evt-12",
+    "participantId": "p-player",
+    "sequence": "12",
+    "sessionId": "sess-1",
+    "tokenMoved": {
+      "from": {
+        "x": 1,
+        "y": 4
+      },
+      "sceneId": "ambush",
+      "to": {
+        "x": 2,
+        "y": 4
+      },
+      "tokenId": "tok-fighter"
+    }
+  },
+  {
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-goblin-archer",
+        "kind": "ACTOR_KIND_NON_PARTY",
+        "name": "Goblin Archer"
+      }
+    },
+    "sequence": "13"
+  },
+  {
+    "sequence": "13",
+    "tokenPlaced": {
+      "actorId": "act-goblin-archer",
+      "position": {
+        "x": 2,
+        "y": 8
+      },
+      "sceneId": "ambush",
+      "tokenId": "tok-goblin-archer"
+    }
+  },
+  {
+    "sequence": "14",
+    "tokenHidden": {
+      "tokenId": "tok-goblin-archer"
+    }
+  },
+  {
+    "actorRole": "dm",
+    "eventId": "evt-15",
+    "participantId": "p-dm",
+    "sequence": "15",
+    "sessionEnded": {},
+    "sessionId": "sess-1"
+  }
+]

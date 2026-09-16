@@ -1,0 +1,7 @@
+{
+  "seat": "act-patron",
+  "participantId": "oracle",
+  "role": "spectator",
+  "viewpoint": "act-patron",
+  "why": "Perched on act-patron, the other half of the brawl. It is not a mirror of act-brawler: the patron is the TARGET of step 9's ability and the SUBJECT of step 12's condition removal, so this log should carry the same two events from the receiving side. Keeping both seats is what would catch a rule that forwards to an actor's own log and not to those who can see it, or the reverse.\n\nBefore this actor enters the world it has no eyes, so no scene, token, move or door reaches this seat. The party ROSTER still does, and so does the sitting where a golden has one (adventure-night has no session at all). Narration would too -- classify forwards it unconditionally -- but NO golden in this corpus has a narration before a party member is added, so nothing here demonstrates it. Roster-gated exposure is recorded by sub-project 14's plan as a product question rather than a sight leak.\n\nThis directory is also that plan's ORACLE for this character: what its log must contain once the projection moves to write time. It records today's code, and the port is checked against it."
+}
