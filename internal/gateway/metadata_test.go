@@ -493,15 +493,15 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 // TestMeSaysWhoYouAreAndNeverWhatYouControl is the deletion, pinned.
 //
 // Control is a fact about the LOG: Actor.controller_ids, written by
-// ActorControlGranted and read by authz.go's controls() and by eyes()'s player
-// arm. (The party roster and MayPerch used to read it too and no longer do —
-// 80dfa0e on this branch moved them onto Actor.kind, and since the migration
-// arm was deleted on 2026-08-24 isPartyMember does not touch controller_ids at
-// all.) /api/me used to answer
-// control a second time from a SQLite column nothing ever updated, so the
-// answer was a plausible-looking lie: a DM who invited somebody "controlling
-// Hollis" was told by this route that they controlled Hollis, while every rule
-// that decides anything said they did not.
+// ActorControlGranted and read by authz.go's controls() and by eyes()'s
+// player arm. (The party roster and MayPerch used to read it too and no
+// longer do — 80dfa0e on this branch moved them onto Actor.kind, and since
+// the migration arm was deleted on 2026-08-24 engine.IsPartyMember does not
+// touch controller_ids at all.) /api/me used to answer control a second
+// time from a SQLite column nothing ever updated, so the answer was a
+// plausible-looking lie: a DM who invited somebody "controlling Hollis" was
+// told by this route that they controlled Hollis, while every rule that
+// decides anything said they did not.
 //
 // The assertion is on the KEY, not on its value, and that is deliberate. An
 // empty list is the shape a wrong answer takes when nobody has been granted

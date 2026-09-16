@@ -3,63 +3,9 @@ package gateway
 import (
 	"fmt"
 
-	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
-
-// isPartyMember answers the ONE question spec §5's roster exception,
-// §3.1.1's perch and the spectator's eyes all ask: is this actor one the party
-// always knows about, whoever happens to hold it right now?
-//
-// IT LIVES IN ONE FUNCTION BECAUSE IT USED NOT TO. The same predicate was
-// transcribed FIVE times: three production call sites in two files, plus TWICE
-// into the keystone's oracle (visibleState and oracleEyes), which is why the
-// keystone agreed with the projection while both were wrong. Counted rather
-// than estimated — an earlier draft of this sentence said "a fourth time",
-// having looked at one of the oracle's two copies and not the other, which is
-// the same reading error the transcription itself is. Read it from here; do not
-// spell it out again.
-//
-// KIND, NEVER THE CONTROLLER (spec §5.1). Control is transient and what a
-// creature IS is not. `len(GetControllerIds()) > 0`, which this replaces,
-// published a monster's whole stat block to the party the moment a DM took
-// control of it — and the obvious repair, asking whether a CONTROLLER is a
-// player, gets both ordinary cases backwards: it drops a party member whose
-// player is offline and promotes a charmed monster handed to a player. It would
-// also make the projection reach into the identity store per actor per event.
-//
-// ANYTHING THAT IS NOT PARTY_MEMBER IS NOT ONE, so every value this enum grows
-// later — a neutral, a familiar, a summon — is excluded until something
-// deliberately says otherwise. That is the §4.4 direction: a player losing a
-// sighting is a bug, a player gaining one is the defect this arc exists to
-// prevent.
-//
-// AN ABSENT KIND IS NOT A PARTY MEMBER. ALWAYS. One rule, no second branch,
-// and nothing here reads controller_ids at all.
-//
-// There used to be a migration arm — absent + a controller meant party member —
-// and it existed for one reason: to keep logs written before the field existed
-// behaving as they had. DELETED 2026-08-24, Patrik's ruling, on the ground that
-// there are no such logs: no campaign exists outside this repo's own fixtures,
-// so the rule was protecting nothing while costing everything.
-//
-// AND THE COST WAS THE BUG. That arm is what could not tell "a log written
-// before kind existed" from "a grant issued today that forgot", and every leak
-// this arc chased lived in exactly that gap: control silently promoting a
-// monster, an add_actor conferring party membership nobody had declared. With
-// the arm gone the ambiguity has nowhere left to live, and the command-boundary
-// refusals (validateGrantActorControl, validateAddActor) become belt and braces
-// rather than the only thing standing between the table and the archer.
-//
-// So this is now a plain equality, and the fail-closed direction is total:
-// every value the enum grows later — a neutral, a familiar, a summon — and
-// UNSPECIFIED itself are all "not a party member" until something deliberately
-// says otherwise. Spec §4.4's direction: a player losing a sighting is a bug, a
-// player gaining one is the defect this arc exists to prevent.
-func isPartyMember(a *vttv1.Actor) bool {
-	return a.GetKind() == vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
-}
 
 // MayPerch reports whether p may ride actorID's shoulder — the spectator's
 // affordance, and the whole of visibility spec §3.1.1: "you as a spectator can
@@ -72,8 +18,9 @@ func isPartyMember(a *vttv1.Actor) bool {
 // second time, for one that arrives by some route this function never saw
 // (spec §8, defence in depth).
 //
-// WHAT IS ACTUALLY CHECKED IS isPartyMember, and it is the same predicate spec
-// §5's roster and Projector.eyes now run on — one rule, all three call sites.
+// WHAT IS ACTUALLY CHECKED IS engine.IsPartyMember, and it is the same
+// predicate spec §5's roster and Projector.eyes now run on — one rule, all
+// three call sites.
 // It used to be "has any controller", which was a DIFFERENT sentence from the
 // one the spec wrote: a DM who granted themselves the Goblin Archer made it
 // perchable, demonstrated in review and left flagged here for adjudication.
@@ -111,7 +58,7 @@ func MayPerch(p *identity.Participant, actorID string, st *engine.State) error {
 		return nil
 	}
 	a, ok := st.Actors[actorID]
-	if !ok || !isPartyMember(a) {
+	if !ok || !engine.IsPartyMember(a) {
 		// "not a party member" rather than the old "not a character a player
 		// controls": after §5.1 that sentence is no longer true of what is
 		// checked, and a refusal that misdescribes the rule teaches the reader

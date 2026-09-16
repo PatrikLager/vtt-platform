@@ -160,8 +160,8 @@ func TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt(t *testing.T) {
 	// hand-derived scenarios/goldens corpus would have to gain a kind field
 	// nobody ever wrote. Second, it decides for every future reader what
 	// absence means, permanently, in an append-only contract. The reading
-	// belongs to the readers (gateway.isPartyMember), and the fold's job is to
-	// keep the log's own words.
+	// belongs to the readers (engine.IsPartyMember, this package), and the
+	// fold's job is to keep the log's own words.
 	//
 	// Also the plainest statement that Go's Apply and client/src/fold.ts stay
 	// strict mirrors on this field: copyActor in fold.ts enumerates fields by
@@ -185,7 +185,7 @@ func TestTheFoldStoresAnActorsKindExactlyAsTheLogWroteIt(t *testing.T) {
 		// proves the fold does not quietly re-derive kind from control.
 		{"declared non-party but controlled", "dm-1", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		// Both silent shapes come back UNSPECIFIED: the log said nothing, so
-		// the state says nothing. The reader (gateway.isPartyMember) then
+		// the state says nothing. The reader (engine.IsPartyMember) then
 		// treats that as NOT a party member, always — there is no longer a
 		// second branch that reads control instead.
 		{"undeclared and controlled", "p-player", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED},

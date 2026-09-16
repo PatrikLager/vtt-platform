@@ -264,7 +264,7 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 }
 
 // oracleIsPartyMember is spec §5.1's rule, DERIVED FROM THE SPEC and not from
-// gateway.isPartyMember — the same independence every other line of this oracle
+// engine.IsPartyMember — the same independence every other line of this oracle
 // keeps, and the reason it is spelled out here rather than exported and shared.
 //
 // THIS FUNCTION IS THE ONE THAT MATTERS MOST IN THE FILE, because its absence
