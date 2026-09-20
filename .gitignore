@@ -18,7 +18,7 @@ client/e2e/.artifacts/
 client/e2e/.report/
 .tscov/
 .stryker-tmp/
-reports/
+/reports/
 
 # The CLI binary. `go build ./...` drops it in the repo root for any main
 # package -- `task build` and `go test` do not, so it only appears for whoever
