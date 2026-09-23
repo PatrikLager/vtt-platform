@@ -305,6 +305,30 @@ player's replay filters identically and the gaps are invisible to them.
   by `engine.Apply`, which validates nothing it replays. The redaction never
   travelled the command path and is unaffected.)
 
+**Exactly one code path introduces an actor.** An introduction is synthesized
+when the actor comes into view. The raw `ActorAdded` is never forwarded — not
+even for a party member whose existence the viewer is entitled to know under the
+roster rule in §5, because the roster promise is kept by the synthesis and not
+by the forward.
+
+Two paths would collide on every party-member addition, because the roster rule
+in §5 has the roster introduce a party member on the event it is added whatever
+its visibility; for anything else they would agree unless the actor is visible
+at the moment it is created. The cost of a collision is not a glitch.
+`engine.Apply` refuses a duplicate outright — `engine: actor %q already exists`
+— and a client that cannot fold holds its last good state: `Session.ingest`
+pushes the envelope onto the log BEFORE folding and never removes it when the
+fold throws, so every later event re-folds through the same poison. The player's
+board stops being true, silently, for the rest of the session, while the table
+plays on. No crash and no message on the board; they find out by acting on a
+position that moved ten minutes ago.
+
+Under the rule that a character log is the record of what that character
+experienced, the duplicate is also written down and never recomputed, so
+reconnecting does not clear it. That is the difference sub-project 14 makes to
+this rule: today the projection recomputes at read time and a redial gives a
+clean board; a character log does not.
+
 **Two different things, and they must not be confused.**
 
 **The scene you are IN gives you a board.** You receive its `scene_id`, name and
@@ -474,6 +498,13 @@ NPC actors are introduced only when first seen, with one explicit exception:
 when the rogue is two rooms away; you merely cannot see their token. Dropping a
 party member from your own roster because they turned a corner reads as a bug,
 not as fog.
+
+**A refusal of sight is not a refusal of the roster.** Sight is granted only to
+a party member — a viewpoint that is not one, or that does not yet exist in the
+world, sees nothing. The roster is filled outside that grant: such a viewpoint
+still names every party member. The two rules are independent, and collapsing
+them into one refusal is a real defect, because a character whose log begins
+before it enters the world would otherwise carry no party at all.
 
 ### 5.1 The exception is about WHAT an actor is, not who holds it
 

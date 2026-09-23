@@ -1,32 +1,110 @@
 # vtt-platform — Agent Way of Working
 
 LLM-native VTT platform. Event-sourced Go core, thin TS client (future),
-protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
-`docs/adr/` (all decisions), `README.md`.
+protobuf contract. Start here: `docs/superpowers/specs/` (tickets),
+`docs/specifications/` (decisions, present tense), `docs/adr/` (frozen
+evidence), `README.md`.
+## The process this project runs
+
+This project runs the `dev-cycle` package at project scope. How work is planned,
+reviewed, tested, broken on purpose, reported and landed lives THERE and is not
+restated here: a rule kept in two places drifts, and the copy is always the one
+that goes stale.
+
+Three rules left this file when the package arrived, and their numbers are left
+empty rather than closed up, because other files cite these by number. **1** was
+tests-before-code — the package says it, and adds the deliberate break
+afterwards. **6** was review-before-commit. **7** was specs-are-truth. Do not
+reuse the numbers.
+
+An improvement to the process itself is a TICKET raised to the process's own
+repository, developed there, and inherited here once it lands. This project
+never edits it.
+
+## How this project is built and checked
+
+Phase 1 of the cycle requires a project to have written this down. An agent that
+guesses at these runs gates that do not run.
+
+- **Build.** `go build ./...` for the Go core, `task build:client` for the TS
+  client. There is no single `task build`, and adding one is not this file's
+  decision to make.
+- **Tests.** `task check` runs them all. They are tiered by what they ARE, not
+  by runtime — 1 unit/area, 2 cross-layer, 3 external, 4 whole product — so a
+  slow unit test stays in tier 1. `task check:fast` is an inner-loop
+  convenience ONLY and never satisfies the gate.
+- **The gate.** `task check`, whole, and NO TRIGGER RUNS IT UNPROMPTED: CI
+  runs it only when a person dispatches the workflow by hand.
+  Three layers, and only the first two are automatic: the pre-commit hook runs
+  lint, vet, tier-1 tests, arch, vocabulary, doc-owner, secrets, typecheck and
+  the dev-cycle review gate (`review-gate` in `.lefthook.yml`, which refuses a
+  commit unless a review record matches the tree being committed or a
+  user-approved skip reason is given); pre-push runs tiers 2-3 and the contract
+  gates, drift and breaking; everything else — coverage, race, the prose gates
+  and both mutation gates — runs when somebody types `task check` and at no
+  other time.
+  So the cycle's "run the gate locally" is not a courtesy here: half these
+  gates run at no other time, and nothing downstream will notice if it is
+  skipped.
+  Run `task setup` once per clone (JS deps + git hooks); `task check` runs
+  `bun test` and node_modules is gitignored, so a fresh clone fails until it
+  does. An unhooked clone is not obvious from the inside — if hooks have never
+  fired for you, check `.git/hooks/pre-commit` exists.
+- **The exported surface, signatures without bodies.** `go doc <package>`.
+  Phase 4a hands this to an agent that may not open the source, so it is
+  extracted FOR that agent rather than browsed BY it.
+- **Where recorded decisions live.** `docs/specifications/`, numbered
+  `NNN-<slug>.md`, in the present tense: how one part of the system works now.
+  One file per decision — a decision somebody would otherwise re-open.
+- **Where tickets are kept.** `docs/superpowers/specs/`, named
+  `YYYY-MM-DD-<slug>-design.md`. THE NAME IS HISTORICAL AND THE FOLDER IS NOT
+  RENAMED: tracked files, `Taskfile.yml` and `.go-arch-lint.yml` among them,
+  reference the `docs/superpowers/` tree by path. What matters is the kind, and
+  these are
+  tickets — they carry the problem, the non-goals and the exit criteria.
+- **Where implementation plans are kept.** `docs/superpowers/plans/`, same
+  naming, same reason for the path.
+- **Where implementation reports are kept.** `docs/reports/`, one per arc for
+  the arcs that have one.
+  TWO STRAYS live in `docs/superpowers/reports/`, the mutation audit and the
+  enforcement layer; five references point at them and they have not been
+  moved.
+- **Where the requirements register lives.** `docs/requirements.md`. Its tag is
+  `VTT` and its header is `| Id | Requirement | Verified by |`. An id is
+  allocated by `requirement-id`, the dev-cycle package's dispenser, on the path
+  while the package is installed and otherwise at
+  `~/.claude/plugins/cache/patrik-process/dev-cycle/<version>/bin/`, and never
+  chosen by hand. How an id is allocated, cited and checked is SPEC-008 in
+  `docs/specifications/`. Nothing checks the chain here today.
+- **Where the blueprint is.** Nowhere. This project has none, so no
+  specification can honestly name the principles it serves. Writing one from a
+  single record would invent the principles, which is what a blueprint exists
+  to prevent.
+- **What `docs/adr/` is now.** Frozen evidence. Each ADR holds the road to a
+  decision — its context, the alternatives weighed, the scorecard. The present
+  tense moves out to a specification as each one is read; the file itself is
+  never rewritten.
+- **Where adjudications go.** Mutation survivors:
+  `tools/mutation-equivalents.txt` and `tools/ts-mutation-equivalents.txt`.
+  Phase 4a's QA adjudications HAVE NO HOME YET — the first QA run here has to
+  give them one, and saying so beats sending them somewhere they do not belong.
+- **The ONE file where escaped defects go.** `docs/verification-debt.md`, as a
+  RECIPE: the exact edit that puts the defect back, which gate should have
+  caught it, and why it did not. Recipes are cheap at the moment of escape and
+  near-worthless later, because the tree moves. That file also holds known
+  coverage gaps — written as a comment a gap explains one test, written there it
+  is a claim on future work.
 
 ## Non-negotiable rules
 
-1. **Airtight TDD (ADR-009).** Tests first, run RED before the solution
-   exists; behavioral RED over compile-failure RED wherever a stub can
-   compile; after-the-fact tests (keystone/scenario) need fault-injection
-   proof per load-bearing assertion; tests pin boundary behavior, never
-   internals. No impl-then-test, even with fully-specified interfaces.
-2. **`task check` is the single quality gateway.** All gates green before
-   any work is called done. Never weaken a gate to pass it; a gate change is
-   its own reviewed decision.
-   `task check:fast` (vet + lint + tier-1 tests) is an inner-loop
-   convenience ONLY -- it is not this gate and never satisfies it. Tests are
-   tiered by what they ARE, not by runtime: tier 1 unit/area, 2 cross-layer,
-   3 external, 4 whole product (`task check`). A slow unit test stays in
-   tier 1. See Taskfile.yml's tier comment.
-   Run `task setup` once per clone (JS deps + git hooks) — `task check`
-   runs `bun test`, and node_modules is gitignored, so a fresh clone fails
-   the gate until it does. Hooks enforce the first two tiers, but ONLY
-   after that install (.lefthook.yml):
-   pre-commit runs tier 1 plus lint/vet/arch/vocabulary/secrets in ~7s,
-   pre-push runs tiers 2-3 and the contract gates in ~40s. CI runs
-   `task check` whole. An unhooked clone is not obvious from the inside —
-   if hooks have never fired for you, check `.git/hooks/pre-commit` exists.
+These are this project's own. The process has nothing to say about any of them
+and would be wrong to.
+
+2. **`task check` is the gate, and it is never weakened to pass it.** A gate
+   change is its own reviewed decision, with its own reason. Lowering a threshold, widening an exemption or
+   narrowing a scope to get a green run is the one move that cannot be undone by
+   the next commit, because nothing afterwards remembers what the gate used to
+   catch. Which gate, and how it runs, is in the record above.
 3. **Contract evolution is additive only** (ADR-007). Generated code is
    committed; regenerate via `task generate:contract`. Commands are imperative
    (`LoadMap`), events past-tense (`SceneCreated`). That example named
@@ -41,11 +119,6 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    code that changes game state. Never add a second event-application loop.
 5. **No game-system vocabulary in platform code** (pillar P2/P4; semgrep
    enforces). Rules concepts live in rule-module data (sub-project 5+).
-6. **Review before commit.** Nothing lands unreviewed; the dev-cycle hook
-   enforces this. Spec/plan prose changes need Patrik's explicit approval.
-7. **Specs are truth.** If delivered behavior must deviate, the deviation is
-   adjudicated, documented where readers look, and the spec amended at the
-   merge gate — never silently.
 8. **Citations name durable things.** Cite a **name** — a function, a test,
    a constant, a named arm, a commit hash, a dated decision. For a target
    with no name of its own, place an `[anchor:kebab-name]` at it and cite
@@ -62,9 +135,18 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
      plan and a task within it is fine.
    - "this task" / "this same task". It names a workflow run that ended;
      the next reader has no way to find out which one.
-   Mutation-adjudication coordinates are the sole exception: `file:line:col`
-   is a mutant's identity, generated by the gate, and re-pointed in the
-   adjudication entry when the file moves.
+   THERE IS NO EXCEPTION. One stood here until 2026-09-17 and was withdrawn:
+   it said mutation-adjudication coordinates were exempt, because
+   `file:line:col` is a mutant's identity generated by the gate. The gate does
+   generate it; what we STORE need not be it. Every edit above a key moves the
+   key, so each entry below is re-pointed by hand or goes stale in silence —
+   and the adjudication files carry a long history of exactly that, including
+   re-points whose own notes claimed to have re-resolved what they had not.
+   Re-keying these on the statement text the gate already computes is agreed
+   and not started; until it lands, a mutant coordinate is still how the gate
+   NAMES a mutant, so the adjudication files keep writing them and keep paying
+   the re-point cost. That is deliberate, it is the one place a bare coordinate
+   is still written, and it ends when the re-keying does.
    A stale line number fails SILENTLY — it still looks valid while pointing
    at the wrong code. A deleted anchor fails LOUDLY, because grep returns
    nothing. A wrong answer becomes no answer.
@@ -72,7 +154,6 @@ protobuf contract. Start here: `docs/superpowers/specs/` (design specs),
    in the tree is NOT part of the rule's arrival, and the gate that would
    enforce it — every citation resolves to exactly one anchor, no
    duplicates, no orphans — is available but unbuilt.
-
 9. **Look at RPTool before you design.** Patrik's ruling, 2026-09-05. Before
    brainstorming, planning or implementing anything in an area a virtual
    tabletop already has to solve, the FIRST question is: how does MapTool do

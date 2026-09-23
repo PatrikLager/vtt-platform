@@ -34,6 +34,11 @@ pre-commit:
       run: task check:secrets:staged
     typecheck:
       run: task client:typecheck
+    review-gate:
+      # dev-cycle's Phase-4 gate: a commit needs a recorded review of this exact
+      # tree. The path carries the plugin version, so a version bump makes this
+      # line fail loudly (exit 126, "cannot execute") until it is moved.
+      run: exec "$HOME/.claude/plugins/cache/patrik-process/dev-cycle/0.4.0/githooks/pre-commit"
 
 pre-push:
   parallel: false
