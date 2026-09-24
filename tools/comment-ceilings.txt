@@ -173,10 +173,10 @@ internal/harness/soak_drain_internal_test.go  24.6
 internal/harness/soak_test.go  39.1
 internal/harness/states_equal_conditions_internal_test.go  17.3
 internal/harness/states_equal_notes_internal_test.go  16.2
-internal/identity/fault_internal_test.go  24.5
-internal/identity/identity.go  38.3
-internal/identity/identity_failure_test.go  29.2
-internal/identity/identity_test.go  22.8
+internal/identity/fault_internal_test.go  8.8
+internal/identity/identity.go  19.9
+internal/identity/identity_failure_test.go  6.9
+internal/identity/identity_test.go  4.0
 internal/identity/qa_joining_internal_test.go  12.7
 internal/mapdef/apidoc_test.go  30.0
 internal/mapdef/boundary_test.go  32.6

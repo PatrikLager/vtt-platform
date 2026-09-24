@@ -56,7 +56,11 @@ through `credentialGone`. Any other lookup error is operational:
 and the connection stays; the delivery and presence checks match
 `ErrInvalidToken` alone and let an operational failure through. The `/api/*`
 routes verify the bearer token on every request in `authed`, and answer an
-unknown and a revoked token identically.
+unknown and a revoked token identically. `identity.Verify` finds the row by
+equality on the credential's SHA-256 hash, which is not secret to anyone
+without the credential, and confirms the match with
+`subtle.ConstantTimeCompare`. A stored role that does not parse is refused by
+`Verify`, `Lookup` and `List`, never skipped or defaulted.
 
 **One shared link admits people; the DM promotes them afterwards.** `POST
 /join` is unauthenticated. It reads at most `maxJoinBody` bytes, refuses a
@@ -69,8 +73,11 @@ its SHA-256 hash. A participant who reconnects with that credential resolves to
 the same id, so they keep their name, their role and, through the log, their
 characters. The DM reads the secret, the door and the budget together from `GET
 /api/join-link`, open to the roles in `joinLinkRoles`; the secret is readable
-before the door is opened. `set_join_door` reaches `identity.SetJoinOpen` and
-is refused when it says neither open nor closed; `rotate_join_link` reaches
+before the door is opened. `JoinSecret` reads before it writes and `JoinBudget`
+never writes, so once the secret exists the console's poll takes no write lock
+on the file the log appends to; `JoinOpen` answers false when the database
+cannot be read. `set_join_door` reaches `identity.SetJoinOpen` and is refused when it
+says neither open nor closed; `rotate_join_link` reaches
 `identity.RotateJoinSecret` and its result carries no secret.
 
 **Every refusal the one read can decide is answered before anything is
@@ -97,13 +104,15 @@ body for a shut door, a wrong secret and a spent budget, and the same for an
 identity store that cannot answer.
 
 **Admission is bounded by a count, per opening.** `SetJoinOpen` resets the
-spent count on every call and coerces a non-positive limit to
-`identity.DefaultAdmitLimit`, because protojson omits zero values and an absent
-limit and a deliberate zero arrive as the same bytes. `RotateJoinSecret` resets
-the spent count and leaves the door and the limit as they are; on a campaign
-with no door row it writes a shut door with no budget, which is what an absent
-row already reads as. `migrateLocked` gives a door that stands open with no
-budget the default, keyed on that state and not on which column it added.
+spent count on every call, writes the limit on every call, a close included, so
+that `JoinBudget` reports it until the next `SetJoinOpen`, and coerces a non-positive
+limit to `identity.DefaultAdmitLimit`, because protojson omits zero values and
+an absent limit and a deliberate zero arrive as the same bytes.
+`RotateJoinSecret` resets the spent count and leaves the door and the limit as
+they are; on a campaign with no door row it writes a shut door with no budget,
+which is what an absent row already reads as. `migrateLocked` gives a door that
+stands open with no budget the default, keyed on that state and not on which
+column it added.
 
 **Promotion is a command.** `promote_participant` is ruled by `commandRoles`
 like every other command (`TestEveryClientCommandHasRoleCells` holds that no

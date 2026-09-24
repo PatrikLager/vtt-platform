@@ -9,23 +9,12 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/testdb"
 )
 
-// These are the arms that decide what happens when the database fails
-// MID-OPERATION, and until internal/testdb existed nothing could reach them.
-//
-// Closing a handle is not a substitute and the difference is the whole point:
-// a closed handle fails the FIRST statement, so a migration's BEGIN, its ALTER,
-// its COMMIT, and JoinAdmits' UPDATE all stay dark behind the SELECT that
-// failed ahead of them. Those later arms are exactly the interesting ones —
-// they are where a half-applied migration or an admission spent against a
-// failed write would come from.
-//
-// INTERNAL (package identity), because driverName is unexported. Each test
-// restores it, and none of these may run in parallel: the driver name and the
-// armed fault are both process-global.
+// Do not run these tests in parallel: driverName and the armed fault are both
+// process-global. Do not swap the fault driver for a closed handle: that fails
+// the first statement and leaves every later arm dark.
 
 var errDBDown = errors.New("testdb: injected failure")
 
-// withFaultDriver points Open at the fault-injecting wrapper for one test.
 func withFaultDriver(t *testing.T) {
 	t.Helper()
 	prev := driverName
@@ -33,8 +22,7 @@ func withFaultDriver(t *testing.T) {
 	t.Cleanup(func() { driverName = prev })
 }
 
-// preBudgetCampaign writes a campaign in the shape that shipped BEFORE the
-// admission budget, so opening it genuinely requires a migration.
+// Keep this pre-budget: the migration tests need something to migrate.
 func preBudgetCampaign(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "pre.db")
@@ -48,9 +36,8 @@ func preBudgetCampaign(t *testing.T) string {
 	if err := d.SetJoinOpen(true, 4); err != nil {
 		t.Fatal(err)
 	}
-	// Drop the budget columns back off. SQLite can drop a column, and this is
-	// closer to the real thing than hand-writing the old schema: the rest of
-	// the database is exactly what this code produces.
+	// Drop the columns rather than hand-write the old schema: the rest of the file
+	// must be exactly what this code produces.
 	for _, col := range []string{"admitted", "admit_limit"} {
 		if _, err := d.db.Exec(`ALTER TABLE join_access DROP COLUMN ` + col); err != nil {
 			t.Fatalf("dropping %s: %v", col, err)
@@ -60,50 +47,16 @@ func preBudgetCampaign(t *testing.T) string {
 	return path
 }
 
-// A withControlColumnCampaign fixture and FOUR tests over it used to sit here,
-// arming faults on the migration that dropped participants.controls: the DROP
-// itself, the participants PRAGMA before the lock, the same PRAGMA under it,
-// and a no-fault control proving the fixture's column really went. That
-// migration was removed on 2026-08-24 — no campaign is in use, so it guarded no
-// data while charging every existing campaign one writable open — and none of
-// those statements exists any more. Run unchanged against the removal, all four
-// failed: three on "the fault was never reached", the fourth because the column
-// is still selectable afterwards. There is nothing left for them to arm.
-//
-// The under-lock coverage they carried between them was the PARTICIPANTS shape
-// read's error arm, and it went with the code it guarded — so it cost nothing
-// that survives. Not to be confused with migrateLocked's join_access re-read,
-// which has an error arm of its own that was ALREADY uncovered at HEAD (profile
-// `287.16,289.3 1 0`) and has never been reachable through testdb at all, for
-// the reason stated at that arm.
-//
-// What this change DID cost on a surviving line came from identity_test.go
-// rather than from here, and it belonged to the joining-a-table arc:
-// TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign below re-pins it.
-
+// Arms the one fault on the migration's door-repair UPDATE, under the lock.
 func TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign(t *testing.T) {
-	// The door repair is the migration's one DATA write, and it is the arm that
-	// lost its witness on 2026-08-24: the only test that reached it was
-	// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen, deleted
-	// with the controls migration, which hit it by accident rather than on
-	// purpose. On read-only media BEGIN IMMEDIATE does not fail (SQLite defers
-	// the write lock) and that fixture already had both budget columns, so this
-	// UPDATE was the first statement that actually tried to write. Measured:
-	// identity.go's arm read `1 1` at HEAD and `1 0` after the deletion.
-	//
-	// It belongs to the joining-a-table arc, not to this one, which is why it is
-	// re-pinned deliberately instead of being left to the coverage floor's
-	// slack. Swallowing this error leaves an open door budgeted at 0, and 0
-	// admits nobody — the DM shares a link that reads open and turns everyone
-	// away, with no error anywhere to say why.
+	// Keep this test: swallowing the repair's error leaves an open door budgeted
+	// at 0, which admits nobody and says nothing.
 	withFaultDriver(t)
-	// A PRE-BUDGET campaign, so migrationPending answers yes on the missing
-	// column BEFORE its own budget SELECT, leaving the single armed fault
-	// unspent for the UPDATE under the lock.
+	// Keep it pre-budget, or no migration is pending and the repair never runs.
 	path := preBudgetCampaign(t)
 
-	// The UPDATE's own prefix. `WHERE open = 1 AND admit_limit = 0` would match
-	// migrationPending's SELECT first and spend the fault before the lock.
+	// Keep the armed text the UPDATE's own: testdb matches by substring, and the
+	// one fault must reach the statement under the lock.
 	tripped := testdb.Arm("UPDATE join_access SET admit_limit", errDBDown)
 	d, err := Open(path)
 	if !tripped() {
@@ -203,10 +156,8 @@ func TestAMigrationThatCannotReadTheBudgetStateRefusesTheCampaign(t *testing.T) 
 
 // VTT-045
 func TestAnAdmissionThatCannotBeSpentIsNotGranted(t *testing.T) {
-	// The arm that matters most in this file. The SELECT says there is room;
-	// the UPDATE that spends the slot fails. Returning true here would admit a
-	// participant whose admission was never recorded — so the budget would not
-	// move, and the door would mint without limit exactly as it did before #42.
+	// Keep this test: returning true here admits a participant whose admission
+	// was never recorded, so the budget never moves.
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "spend.db")
 	d, err := Open(path)
@@ -266,8 +217,7 @@ func TestTheDoorStateReadFailingIsNotAnAdmission(t *testing.T) {
 }
 
 func TestOpeningWithAnUnusableDriverIsReported(t *testing.T) {
-	// Open's own error arm, which nothing else reaches: sql.Open fails before
-	// any statement runs, so no fault can be armed for it.
+	// Do not arm a fault here: sql.Open fails before any statement runs.
 	prev := driverName
 	driverName = "no-such-driver-anywhere"
 	t.Cleanup(func() { driverName = prev })
@@ -279,12 +229,8 @@ func TestOpeningWithAnUnusableDriverIsReported(t *testing.T) {
 }
 
 func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
-	// The fixture above is load-bearing for FIVE tests: if DROP COLUMN quietly
-	// stopped working, they would all arm faults against a migration that had
-	// nothing to do, and all pass while proving nothing. (Four until
-	// 2026-08-24; the budget-repair test added that day made it five. The count
-	// is written out because it is the kind of number that rots silently — it
-	// already read four while five tests used the fixture.)
+	// Keep this control: if DROP COLUMN quietly stopped working, every test on
+	// preBudgetCampaign would arm a fault against a migration with nothing to do.
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
 
@@ -297,7 +243,6 @@ func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
 		t.Fatalf("the fixture produced a campaign that will not migrate: %v", err)
 	}
 	defer d.Close()
-	// It migrated, which means there WAS something to migrate.
 	admitted, limit, err := d.JoinBudget()
 	if err != nil {
 		t.Fatal(err)
@@ -310,17 +255,8 @@ func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
 
 // VTT-006
 func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
-	// The inertness property, and until internal/testdb existed there was no
-	// way to observe it. Spec §2's case against rate limiting is that a
-	// refused, anonymous, unauthenticated request performs NO WRITE — because
-	// even an UPDATE matching zero rows takes SQLite's write lock on the file
-	// internal/store appends events to, inside a transaction, on the one path a
-	// stranger controls.
-	//
-	// The mutation gate found it: `admitted >= budget` mutated to `>` gives the
-	// caller the identical answer (the UPDATE's own WHERE still refuses) while
-	// reaching for the write. Nothing could tell the difference, so nothing did.
-	// Here the fault is armed on the UPDATE and must NOT fire.
+	// Keep the fault on the UPDATE and require it NOT to fire: `admitted >= budget`
+	// mutated to `>` answers the same while reaching for the write lock.
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "spent.db")
 	d, err := Open(path)
@@ -354,9 +290,8 @@ func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
 
 // VTT-005
 func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
-	// The same property on the path a prober actually uses. Separate from the
-	// spent-budget case because they refuse for different reasons and a guard
-	// covering one says nothing about the other.
+	// Keep this separate from the spent-budget case: a guard covering one
+	// refusal says nothing about the other.
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "wrong.db")
 	d, err := Open(path)
@@ -384,10 +319,8 @@ func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
 
 // VTT-008
 func TestAShutDoorRefusesWithoutTouchingTheDatabase(t *testing.T) {
-	// The third refusal of the set the two above hold, on the same
-	// instrument: the fault is armed on the UPDATE and must NOT fire. The
-	// secret is right and the budget is untouched, so the door is the ONLY
-	// term refusing here — a guard that lost it reaches the write.
+	// Keep the secret right and the budget untouched, so the door is the only
+	// term refusing: a guard that lost it reaches the write.
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "shut.db")
 	d, err := Open(path)

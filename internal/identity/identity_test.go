@@ -58,10 +58,7 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	}
 }
 
-// TestTokenNotRecoverableFromDB proves the raw token is not stored anywhere
-// retrievable: it opens a second, independent SQLite handle on the same
-// file and reads the persisted token_hash directly, asserting it neither
-// equals the raw token bytes nor anything other than sha256(token).
+// Reads token_hash through a second raw handle on the same file.
 // VTT-041
 func TestTokenNotRecoverableFromDB(t *testing.T) {
 	d, path := openTemp(t)
@@ -161,14 +158,6 @@ func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	}
 }
 
-// TestVerifyUsesConstantTimeCompare is the white-box half of the
-// constant-time case: the hash lookup itself (SELECT ... WHERE token_hash = ?)
-// is fine as a plain indexed comparison because the hash is not
-// secret-timing-sensitive, but the final confirmation of a match must be
-// constant-time so no timing side channel on token bytes exists. That
-// correctness is exercised behaviorally above (round-trip, wrong-token,
-// revoked-token); this test enforces the documented implementation contract
-// itself.
 func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	src, err := os.ReadFile("identity.go")
 	if err != nil {
@@ -179,10 +168,6 @@ func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	}
 }
 
-// TestCoexistsWithStoreOnSameFile proves identity opens its own SQLite
-// handle independent of store.Store and that both handles operate
-// correctly against the same campaign file (spec: identity is deliberately
-// NOT event-sourced and lives beside, not inside, the event log).
 func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
@@ -198,7 +183,6 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Exercise the identity handle.
 	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +191,6 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Exercise the store handle on the SAME file.
 	env := &vttv1.Envelope{
 		EventId:   "e1",
 		SessionId: "sess-1",
@@ -227,29 +210,12 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 		t.Fatalf("ReadAfter: got %d events, want 1", len(got))
 	}
 
-	// And once more, prove identity is still independently usable.
 	if p, err := d.Verify(token); err != nil || p.Name != "Lera" {
 		t.Fatalf("Verify after store use: p=%v err=%v", p, err)
 	}
 }
 
-// --- the join door (joining-a-table T1) -------------------------------------
-
-// TestJoinIsClosedOnAnExistingCampaign is the test this task exists for, and
-// the first version of it was VACUOUS — deleting the entire join_access CREATE
-// left it green, because its "existing" campaign was built by the NEW schema.
-// It stood in for an upgrade that never met an un-upgraded database.
-//
-// This one builds the OLD schema by hand, through a raw handle, so the table
-// genuinely does not exist when identity.Open runs. That is what makes it able
-// to fail: Open() applies the schema with CREATE TABLE IF NOT EXISTS, so a new
-// COLUMN on participants would never reach an existing campaign — a new TABLE
-// does. Closed-by-default is the security property (spec §2), and getting it
-// wrong would open joining on exactly the campaigns that already have players.
-//
-// The JoinSecret() assertion in the middle is load-bearing: without it the test
-// passes whether the table was created or not, because JoinOpen() answers false
-// down its error path either way.
+// Builds the pre-door schema by hand, so Open really creates join_access.
 // VTT-015
 func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
@@ -258,7 +224,7 @@ func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The schema as it stood BEFORE this feature: participants only.
+	// Keep the old shape: participants only, no join_access.
 	if _, err := raw.Exec(`CREATE TABLE participants (
 		id TEXT PRIMARY KEY, display_name TEXT, role TEXT, controls TEXT,
 		token_hash BLOB UNIQUE, revoked INTEGER DEFAULT 0);`); err != nil {
@@ -282,7 +248,7 @@ func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
 	if d.JoinOpen() {
 		t.Fatal("an existing campaign must come up with the door CLOSED")
 	}
-	// Proves the table was actually CREATED, not merely absent.
+	// Keep this query: without it the test passes whether the table was created or not.
 	if _, err := d.JoinSecret(); err != nil {
 		t.Fatalf("the migration did not reach an existing campaign: %v", err)
 	}
@@ -316,8 +282,6 @@ func TestTheDoorOpensAndClosesAgain(t *testing.T) {
 }
 
 func TestTheDoorSurvivesAReopen(t *testing.T) {
-	// It is operational state, but it is PERSISTENT operational state: a DM
-	// who opens the door and restarts the server has not closed it.
 	d, path := openTemp(t)
 	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
@@ -337,8 +301,6 @@ func TestTheDoorSurvivesAReopen(t *testing.T) {
 
 // VTT-040
 func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
-	// Stable, because the DM shares it — a secret that changed per call would
-	// invalidate the link the moment anyone looked at it.
 	d, _ := openTemp(t)
 	first, err := d.JoinSecret()
 	if err != nil {
@@ -357,8 +319,6 @@ func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
 }
 
 func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
-	// The property spec §2 calls close to required: a leaked link must be
-	// closable WITHOUT re-inviting anyone already in.
 	d, _ := openTemp(t)
 	old, err := d.JoinSecret()
 	if err != nil {
@@ -382,8 +342,6 @@ func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
 
 // VTT-020
 func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
-	// The other half of the same property: rotating closes the door to
-	// NEWCOMERS and touches nobody already through it.
 	d, _ := openTemp(t)
 	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
 	if err != nil {
@@ -397,16 +355,6 @@ func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
 	}
 }
 
-// TestReadingTheLinkDoesNotOpenTheDoor pins the value the row is CREATED with,
-// which nothing above actually reached.
-//
-// The two closed-by-default tests pass while no join_access row exists at all:
-// JoinOpen's query finds nothing, errors, and fails closed. Correct, but it
-// means the STORED value was never exercised — injection proved it, flipping
-// both the column DEFAULT and the INSERT literal to 1 failed nothing.
-//
-// This is the shape a DM actually produces: look at the link (which mints the
-// row) before deciding to let anyone in. The door must still be shut.
 // VTT-016
 func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
 	d, _ := openTemp(t)
@@ -419,14 +367,6 @@ func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
 	}
 }
 
-// TestTheDoorRefusesWhenTheDatabaseIsUnusable covers the error paths, and they
-// are worth covering rather than merely counting: this is the case where
-// failing in the wrong direction is expensive.
-//
-// A closed handle stands in for "the database cannot be read" generally. Every
-// write must report the failure rather than pretend it worked, and JoinOpen
-// must answer FALSE — it gates an unauthenticated, row-minting endpoint, so a
-// database it cannot read must keep people OUT.
 // VTT-048 VTT-049
 func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	d, _ := openTemp(t)
@@ -457,13 +397,6 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	}
 }
 
-// TestRotatingTheSecretLeavesTheDoorAlone pins the independence of the two
-// controls. They are separate decisions and the code claims to keep them
-// separate; injection showed nothing was checking.
-//
-// The closed case is the security-relevant one: a DM who rotates a leaked link
-// while the table is shut must not thereby open it. The open case matters too —
-// rotating mid-session should not lock out the people still arriving.
 // VTT-043
 func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 	for _, open := range []bool{false, true} {
@@ -482,14 +415,6 @@ func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 	}
 }
 
-// TestTheDoorOpensOnACampaignThatAlreadyHasALink covers SetJoinOpen's CONFLICT
-// branch, which nothing reached: every SetJoinOpen(true, 100) in this file ran on a
-// database with no row, so `true` only ever exercised the INSERT.
-//
-// Measured by review: `DO UPDATE SET open = excluded.open` -> `SET open = 0`
-// passed the whole package. The failing input is the ordinary one — the DM
-// reads the link, THEN opens the door — and the door would never open again
-// for the life of that campaign.
 func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, err := d.JoinSecret(); err != nil { // mints the row, closed
@@ -498,20 +423,14 @@ func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 	if err := d.SetJoinOpen(true, 100); err != nil {
 		t.Fatal(err)
 	}
+	// Keep this test: it holds SetJoinOpen's CONFLICT branch, SQL text the
+	// mutation gate cannot mutate.
 	if !d.JoinOpen() {
 		t.Fatal("opening the door on a campaign that already has a link must work — " +
 			"reading the link first is the ordinary order, not an edge case")
 	}
 }
 
-// TestOpeningTheDoorFirstStillMintsARealSecret pins the secret SetJoinOpen
-// writes when it is the call that creates the row.
-//
-// Measured by review: `VALUES (1, ?, ?)` -> `VALUES (1, ”, ?)` survived the
-// whole suite, because every other secret assertion runs on a row minted by
-// ensureJoinRow. A DM who opens the door before ever looking at the link would
-// get an EMPTY secret — and the join endpoint would then compare an
-// attacker-suppliable "" against a stored "".
 func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	a, _ := openTemp(t)
 	if err := a.SetJoinOpen(true, 100); err != nil {
@@ -521,6 +440,8 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Keep this test: it holds the secret SetJoinOpen's INSERT branch mints, SQL
+	// text the mutation gate cannot mutate.
 	if secret == "" {
 		t.Fatal("opening the door must mint a real secret, not an empty one")
 	}
@@ -536,8 +457,6 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 		t.Fatal("two campaigns must not share a join secret")
 	}
 }
-
-// --- promotion (joining-a-table J3) ----------------------------------------
 
 func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
 	d, _ := openTemp(t)
@@ -560,8 +479,8 @@ func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
 
 // VTT-037
 func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
-	// A missing WHERE promotes the whole table, and the mutation gate cannot
-	// see SQL (#40), so this is guarded by hand or not at all.
+	// Keep this test: a missing WHERE promotes the whole table, and the mutation
+	// gate cannot see SQL.
 	d, _ := openTemp(t)
 	_, kim, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
@@ -596,8 +515,6 @@ func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
 }
 
 func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
-	// Silence here would let the DM console report a successful promotion of
-	// somebody who left, and the caller could never tell.
 	d, _ := openTemp(t)
 	if err := d.SetRole("p-nobody", identity.RolePlayer); err == nil {
 		t.Fatal("promoting an unknown participant must report it, not succeed quietly")
@@ -605,7 +522,6 @@ func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
 }
 
 func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
-	// A DM clicking twice is not an error.
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
 	if err != nil {
@@ -618,13 +534,6 @@ func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
 
 // VTT-029
 func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
-	// The token and the name belong to the person, not the role. A promotion
-	// that rewrote the credential would silently log them out.
-	//
-	// It used to assert that the promotion left `controls` alone too. That
-	// column is gone (2026-08-24) and the property it stood for is now
-	// structural rather than tested: what a promoted player holds lives in the
-	// log, which SetRole's single UPDATE against participants cannot reach.
 	d, _ := openTemp(t)
 	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
@@ -647,7 +556,6 @@ func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
 
 // VTT-030
 func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
-	// Promotion must not be a way back in for somebody who was thrown out.
 	d, _ := openTemp(t)
 	token, id, err := d.CreateInvite("Mallory", identity.RoleSpectator)
 	if err != nil {
@@ -662,12 +570,7 @@ func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
 	}
 }
 
-// --- live re-resolution (joining-a-table J4, spec §3.2) --------------------
-
 func TestLookupReflectsAPromotionImmediately(t *testing.T) {
-	// The property the whole of J4 exists for: authentication is a
-	// connection-time fact, authorization is a LIVE one. A promotion must be
-	// visible to the very next thing the participant does.
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
@@ -687,10 +590,6 @@ func TestLookupReflectsAPromotionImmediately(t *testing.T) {
 }
 
 func TestLookupRefusesARevokedParticipant(t *testing.T) {
-	// The serious half. Until this existed, `vtt revoke` removed nobody: the
-	// only Verify was at connect, so a revoked participant kept playing until
-	// they chose to disconnect. Throwing someone out did nothing without their
-	// cooperation.
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer)
 	if err != nil {
@@ -713,8 +612,8 @@ func TestLookupRefusesAnUnknownParticipant(t *testing.T) {
 }
 
 func TestLookupCarriesTheWholeParticipant(t *testing.T) {
-	// Not just the role: Authorize reads ID for ownership checks, so a partial
-	// lookup would silently change what authorization sees.
+	// Assert ID too: Authorize reads it for ownership, so a partial lookup would
+	// change what authorization sees.
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
 	if err != nil {
@@ -730,15 +629,6 @@ func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 }
 
 func TestLookupRefusesACorruptRow(t *testing.T) {
-	// A row whose role cannot be parsed must NOT resolve. It is unreachable
-	// through this package's own writers, which is exactly why it is worth
-	// asserting: if a row ever became malformed — a hand-edited database, a
-	// botched migration, a future writer with a bug — the failure must be a
-	// refusal, not a participant with a silently wrong authorization level.
-	//
-	// This used to be a two-case table; the second case fed unparseable JSON to
-	// participants.controls, a column deleted on 2026-08-24. Role is now the
-	// only stored field this decodes rather than reads.
 	d, path := openTemp(t)
 	if err := d.Close(); err != nil {
 		t.Fatal(err)
@@ -769,18 +659,8 @@ func TestLookupRefusesACorruptRow(t *testing.T) {
 
 // VTT-043
 func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
-	// RotateJoinSecret is an upsert, and its INSERT branch is reached only on a
-	// campaign whose join_access row does not exist yet — `vtt join-link rotate`
-	// as the very first thing anybody does, or an agent's rotate_join_link.
-	// Every other rotation test calls SetJoinOpen or JoinSecret first, so all of
-	// them reach DO UPDATE and none of them reaches this.
-	//
-	// Flip that branch's `open` literal from 0 to 1 and the whole repository
-	// stays green — the Go mutation gate cannot mutate SQL text, and the
-	// column's DEFAULT 0 is no backstop because both upserts write it
-	// explicitly. The two sibling literals carrying this same property ARE
-	// pinned; this was the one that was not, and the two statements sit forty
-	// lines apart and differ only in that value.
+	// Keep this test: flipping the INSERT branch's `open` literal to 1 stays green
+	// everywhere else, since the mutation gate cannot mutate SQL text.
 	d, _ := openTemp(t)
 
 	secret, err := d.RotateJoinSecret()
@@ -792,8 +672,6 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 			"the DM would be handed a live link by an operation that says nothing about " +
 			"letting anyone in")
 	}
-	// And the door is shut in the way that matters: the fresh secret does not
-	// get anybody in.
 	allowed, err := d.JoinAdmits(secret)
 	if err != nil {
 		t.Fatal(err)
@@ -803,9 +681,7 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 	}
 }
 
-// TestTheDoorNeedsBOTHTheFlagAndTheSecret walks all four cells. Three of them
-// refuse, and each refuses for its own reason: a guard that only ever says yes
-// is not a guard, and one that says no for the wrong reason is worse.
+// Walks all four cells; only the open-door, right-secret cell admits.
 // VTT-042
 func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 	d, _ := openTemp(t)
@@ -838,16 +714,6 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 	}
 }
 
-// TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo backs the DM console's
-// promote control.
-//
-// The console cannot answer "who is a spectator?" from presence: presence
-// frames carry a display name and a connection state, deliberately, because
-// presence is CONNECTION-scoped while a role is campaign-scoped. Putting the
-// role in a presence frame would make the answer go stale the moment somebody
-// was promoted without reconnecting — which is precisely what J4 made possible.
-//
-// So the console reads the source of truth (spec §3.1) instead.
 // VTT-034
 func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	d, _ := openTemp(t)
@@ -871,15 +737,9 @@ func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// REVOKED PARTICIPANTS ARE OMITTED. They cannot act and cannot connect, so
-	// a console listing them offers the DM promote buttons for people who are
-	// gone — and worse, makes a revoked name look like somebody still at the
-	// table.
 	if len(list) != 2 {
 		t.Fatalf("got %d participants, want 2 (the revoked one must not be listed): %+v", len(list), list)
 	}
-	// Sorted by display name, so the list does not reshuffle under the DM's
-	// cursor between renders.
 	if list[0].Name != "Ari" || list[1].Name != "Zoe" {
 		t.Fatalf("want Ari then Zoe, got %q then %q", list[0].Name, list[1].Name)
 	}
@@ -892,15 +752,8 @@ func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 }
 
 func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
-	// DUPLICATE DISPLAY NAMES ARE THIS FEATURE'S ORDINARY TRAFFIC, not an edge
-	// case: a shared link lets anybody type any name, and two strangers both
-	// answering "Kim" is a Tuesday. Without the id tie-break, SQLite may return
-	// them in either order between reads, and the roster reshuffles under the
-	// DM's cursor — the exact thing sorting is there to prevent.
-	//
-	// The names above are all distinct, so `ORDER BY display_name, id` could
-	// lose its second column and nothing would notice. Nothing else covers it
-	// either: the Go mutation gate cannot mutate SQL text.
+	// Keep the duplicate names and the id tie-break: `ORDER BY display_name, id`
+	// could lose its second column and no other test would notice.
 	d, _ := openTemp(t)
 	var ids []string
 	for range 4 {
@@ -912,8 +765,7 @@ func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
 	}
 	slices.Sort(ids)
 
-	// Read TWICE, and require both the documented order and that it is stable:
-	// a single read could match by luck.
+	// Read twice: a single read could match the order by luck.
 	for attempt := range 2 {
 		list, err := d.List()
 		if err != nil {
@@ -932,11 +784,6 @@ func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
 }
 
 func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
-	// Same posture as Lookup: an unparseable role must not become a
-	// participant whose authorization nobody can account for. Unreachable
-	// through this package's own writers, which is why it earns a test — a
-	// hand-edited database must fail loudly, not quietly show somebody as
-	// whatever Role("") happens to mean downstream.
 	d, path := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
@@ -956,12 +803,6 @@ func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 		t.Fatal("a stored role that is not a role must be an error, not a listed participant")
 	}
 
-	// A second case used to follow, feeding unparseable JSON to
-	// participants.controls — the OTHER column List decoded. That column was
-	// deleted on 2026-08-24 (it recorded control a second time and granted
-	// nothing), so role is the only stored field List can now fail to parse.
-	// The repaired row proves the refusal above was about the role and not
-	// about the row merely existing.
 	raw, err = sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -978,10 +819,6 @@ func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 }
 
 func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
-	// An OPERATIONAL failure, distinct from a corrupt row: the storage cannot
-	// answer at all. It must surface rather than come back as an empty table,
-	// because "nobody is here" is a perfectly ordinary answer and a DM reading
-	// it would have no reason to doubt it.
 	d, path := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
@@ -1006,26 +843,13 @@ func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestACampaignPredatingTheAdmissionBudgetStillWorks is the migration this
-// package had no mechanism for.
-//
-// The schema comment above join_access records WHY it is a separate table: on
-// a campaign that already has `participants`, CREATE TABLE IF NOT EXISTS is a
-// no-op, so a new COLUMN there would never appear. A new TABLE dodges that
-// because it exists nowhere yet. Adding admitted/admit_limit to join_access
-// walks straight back into it — every campaign whose door was ever touched
-// already HAS that table, so IF NOT EXISTS skips it and the columns never
-// arrive. The failure is silent and total: every join errors on a missing
-// column, on real campaigns only, and never on a fresh test database.
-//
-// So this builds the OLD shape by hand and opens it.
 func TestACampaignPredatingTheAdmissionBudgetStillWorks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The join_access schema EXACTLY as it shipped before the budget.
+	// Keep the pre-budget shape exactly: the migration must have something to do.
 	if _, err := raw.Exec(`
 CREATE TABLE participants (
   id           TEXT PRIMARY KEY,
@@ -1051,9 +875,8 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 	defer db.Close()
 
-	// It must ADMIT, not merely open: a migration that adds the columns with a
-	// budget of zero would satisfy "no error" while locking every existing
-	// campaign out of its own join link.
+	// Assert an admission, not just no error: columns added with a budget of zero
+	// would lock every existing campaign out of its link.
 	admitted, err := db.JoinAdmits("old-secret")
 	if err != nil {
 		t.Fatalf("JoinAdmits on a migrated campaign: %v", err)
@@ -1064,16 +887,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
-// TestOnlyOneJoinerTakesTheLastSlot is the whole point of a cap.
-//
-// A budget two concurrent joiners can both pass is not a budget, and this is
-// the classic shape: read "admitted < limit", both see room, both proceed. The
-// read in JoinAdmits is a FAST PATH ONLY — the increment re-states the whole
-// condition in its WHERE, so SQLite serialises the two writes and the loser
-// matches no row.
-//
-// Deliberately more goroutines than slots, released together, so the race is
-// contended rather than hypothetical.
+// More goroutines than slots, released together, so the race is contended.
 // VTT-023
 func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "race.db")
@@ -1090,12 +904,7 @@ func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ROUNDS, and the number is measured rather than chosen to look thorough.
-	// Review deleted `AND admitted < admit_limit` from the UPDATE — the single
-	// clause this test exists for — and a ONE-ROUND version passed five times
-	// running: detection was 9 in 40 at one round, 39 in 40 at ten, 40 in 40 at
-	// thirty. A cap that lets six racers through a budget of one would have
-	// shipped green on four CI runs in five.
+	// Keep rounds high: one round misses the race most of the time.
 	const (
 		racers = 16
 		rounds = 30
@@ -1137,12 +946,6 @@ func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 	}
 }
 
-// TestABudgetIsPerOpeningNotPerCampaign pins what "open the door again" means.
-//
-// A DM who opens the door twice means twice: the second opening is a fresh
-// decision about a fresh set of people, not the remainder of an old one. If
-// the count carried over, a campaign would silently run out of admissions
-// forever, and the only cure would be a database edit.
 // VTT-021
 func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
@@ -1175,9 +978,7 @@ func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
 	}
 }
 
-// TestAClosedDoorSpendsNothing keeps spec §2's inertness true for the new
-// column too: a refused anonymous request must not write, and "admitted" is
-// now a thing a refusal could plausibly touch.
+// Reads `admitted` through a raw handle after the refusals.
 // VTT-007
 func TestAClosedDoorSpendsNothing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shut.db")
@@ -1204,16 +1005,7 @@ func TestAClosedDoorSpendsNothing(t *testing.T) {
 		t.Fatal("a wrong secret must admit nobody")
 	}
 
-	// READ THE COUNTER, with NO SetJoinOpen in between.
-	//
-	// The first version of this re-opened the door and then counted five
-	// successful admissions — but SetJoinOpen resets `admitted` to 0
-	// unconditionally, so it wiped the very evidence it was about to read.
-	// Review injected "every refusal increments admitted" and all three suites
-	// stayed green. The shipped failure: a stranger POSTs a wrong secret eight
-	// times, the door is exhausted, the whole table is locked out — and each
-	// refusal takes SQLite's write lock on the file internal/store appends
-	// events to, which is the inertness §2 rests on.
+	// Read the counter with NO SetJoinOpen in between: it resets admitted to 0.
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -1229,10 +1021,6 @@ func TestAClosedDoorSpendsNothing(t *testing.T) {
 	}
 }
 
-// TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath guards the degenerate
-// compare on the function /join calls: ConstantTimeCompare("", "") returns 1
-// and a request body omitting the field decodes to "", so the degenerate row
-// would admit the world.
 // VTT-018
 func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.db")
@@ -1263,18 +1051,6 @@ func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 	}
 }
 
-// TestRotatingAfterASpentBudgetGivesAWorkingLink is the leak remedy, and
-// without it the remedy is worse than the leak.
-//
-// Rotating is what §2 tells a DM to do when a link escapes. Review measured
-// the state that left: open with a budget of 2, admit 2, rotate — and the new
-// secret admits NOBODY, because rotate replaced the secret and left `admitted`
-// spent. `vtt join-link show` says "door: open"; every legitimate player gets
-// the byte-identical stranger's 403; nothing on either end says why. That is
-// precisely the "cannot be debugged from either end" failure the spec argues
-// against for a zero default, reached by a different road.
-//
-// A new secret is a NEW OPENING. Nobody holding it has spent anything.
 // VTT-044
 func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rotate.db")
@@ -1304,20 +1080,11 @@ func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 		t.Fatalf("the freshly rotated link admits nobody (%v) — the documented cure for a "+
 			"leak hands the DM a door that reads open and refuses everyone", err)
 	}
-	// And the OLD secret is still locked out, which is the point of rotating.
 	if ok, _ := d.JoinAdmits(secret); ok {
 		t.Fatal("the old secret still admits — rotating did not close the leak")
 	}
 }
 
-// TestMigrationSurvivesConcurrentFirstOpens covers the one run where it
-// matters: the first open after an upgrade.
-//
-// The scan and the ALTERs are separate statements, so two processes opening the
-// same campaign together both see the columns missing and both add them. Review
-// measured 35 failures in 40 trials with four concurrent opens, dying on
-// `duplicate column name` — the server refusing to start, or a raw SQL error in
-// the DM's terminal, on the one run nobody will connect to the upgrade.
 func TestMigrationSurvivesConcurrentFirstOpens(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "concurrent.db")
 	raw, err := sql.Open("sqlite", path)
@@ -1363,38 +1130,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
-// TestUpgradingACampaignRemovesTheControlColumnAndKeepsThePeople and
-// TestAReadOnlyCampaignStillCarryingTheControlColumnWillNotOpen used to sit
-// here. They pinned the two halves of the migration that dropped
-// participants.controls, and that migration was removed on 2026-08-24: no
-// campaign is in use by anyone, so it protected no data, and the second test
-// existed only to record what it charged for the privilege.
-//
-// The first claimed the column is gone from a campaign that carried it. It is
-// not — nothing drops it now — and it does not need to be: no statement in this
-// package names it, and its "keeps the people" half still passed against the
-// removal (Verify, Lookup and List all resolved an old-shape row before the
-// column assertion failed), so an existing campaign keeps working with the
-// column inert.
-//
-// The second claimed such a campaign will NOT open on read-only media. Run
-// unchanged against the removal it failed with "a read-only campaign that still
-// carries participants.controls opened" — which is the measurement that the
-// cost is gone, and the reason the test cannot stay.
-//
-// IT WAS ALSO CARRYING SOMETHING THAT HAD NOTHING TO DO WITH CONTROL, found in
-// review rather than by hand: it was the only test reaching migrateLocked's
-// "budget an already-open door" error arm, which belongs to the joining-a-table
-// arc. Its fixture had both budget columns and BEGIN IMMEDIATE does not fail on
-// read-only media, so that UPDATE was the first statement to actually attempt a
-// write. That arm is re-pinned on purpose now, by
-// TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign in
-// fault_internal_test.go.
-
-// TestMigratingTwiceIsNotAnError pins idempotency. ALTER TABLE ADD COLUMN is an
-// error, not a no-op, on a column that is already there — so a regression in
-// the shape scan surfaces as `duplicate column name` on the SECOND open of
-// every real campaign, which the migration test alone would never see.
+// Opens the same fresh file three times.
 func TestMigratingTwiceIsNotAnError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "twice.db")
 	for i := range 3 {
@@ -1406,10 +1142,6 @@ func TestMigratingTwiceIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestJoinBudgetReportsWhatHasBeenSpent is what the DM console and `vtt
-// join-link show` render. It had ZERO coverage in this package when it landed:
-// the CLI test exercised it through a subprocess, which proves the wiring and
-// not the function.
 func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	d, err := identity.Open(path)
@@ -1418,8 +1150,7 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 	}
 	defer d.Close()
 
-	// A campaign whose door has never been touched has no row at all, and must
-	// answer rather than error — the console polls this before anything exists.
+	// Require zeros for no row, not an error: the console polls before anything exists.
 	admitted, limit, err := d.JoinBudget()
 	if err != nil {
 		t.Fatalf("a never-touched campaign errored: %v", err)
@@ -1447,7 +1178,6 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 			"reads does not follow the door", admitted, limit, err)
 	}
 
-	// Closing resets the spend, so a shut door never reports a stale number.
 	if err := d.SetJoinOpen(false, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -1456,11 +1186,6 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 	}
 }
 
-// TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting covers the error
-// arms, and the direction matters more than the coverage: every one of these
-// must fail CLOSED. A database that cannot answer must never be able to open a
-// door, and JoinAdmits returning (true, err) anywhere would admit a stranger on
-// a broken campaign.
 // VTT-046 VTT-049
 func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.db")
@@ -1475,8 +1200,7 @@ func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	if err := d.SetJoinOpen(true, 5); err != nil {
 		t.Fatal(err)
 	}
-	// The door is OPEN and the secret is RIGHT — so anything refusing below is
-	// refusing because the database is gone, not because the request was bad.
+	// Keep the door open and the secret right: only the dead database can refuse below.
 	d.Close()
 
 	if ok, err := d.JoinAdmits(secret); ok || err == nil {
@@ -1494,15 +1218,9 @@ func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	}
 }
 
-// TestOpeningAnUnreadableCampaignFailsLoudly covers migrate's error arms. A
-// campaign that cannot be migrated must not come up half-migrated: every join
-// would then fail on a missing column, which reads as "the link is broken"
-// rather than "this database could not be upgraded".
 func TestOpeningAnUnreadableCampaignFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "notadb.db")
-	// Not SQLite at all. Open must fail somewhere in schema-or-migrate and say
-	// so, rather than returning a handle nothing works against.
 	if err := os.WriteFile(path, []byte("this is not a database"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1512,15 +1230,6 @@ func TestOpeningAnUnreadableCampaignFailsLoudly(t *testing.T) {
 	}
 }
 
-// TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying covers migrate's
-// failure arms with a scenario that actually happens: a campaign file on
-// read-only media, or one whose permissions were tightened.
-//
-// The DIRECTION is the point. A migration that cannot write must not return a
-// usable handle, because every join would then fail on a missing column and
-// present as "the join link is broken" rather than "this campaign could not be
-// upgraded". The BEGIN IMMEDIATE wrapper also means a partial ALTER cannot be
-// left behind for the next open to trip over.
 func TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "readonly.db")
@@ -1528,7 +1237,7 @@ func TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The pre-budget shape, so a migration is genuinely required.
+	// Keep the pre-budget shape: a migration must be genuinely required.
 	if _, err := raw.Exec(`
 CREATE TABLE participants (
   id TEXT PRIMARY KEY, display_name TEXT, role TEXT,
@@ -1543,8 +1252,6 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 	raw.Close()
 
-	// The DIRECTORY too: SQLite needs to create -wal/-shm beside the file, so a
-	// writable directory leaves a path where the write still succeeds.
 	if err := os.Chmod(path, 0o444); err != nil {
 		t.Fatal(err)
 	}
@@ -1568,20 +1275,9 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
-// TestOpeningACurrentCampaignTakesNoWriteLock is the property, tested through
-// the consequence rather than by inspecting locks.
-//
-// migrate runs on EVERY Open, and its first draft wrapped everything in BEGIN
-// IMMEDIATE unconditionally — so opening an already-current campaign took
-// SQLite's write lock on a file internal/store writes to inside a transaction
-// on every event append. ensureJoinRow's own comment records what that costs:
-// with another handle holding a write txn, the blocked caller waits the full
-// busy_timeout(5000) and then fails SQLITE_BUSY.
-//
-// So: hold a write transaction open, and assert Open still returns promptly.
 func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "current.db")
-	d, err := identity.Open(path) // migrates once
+	d, err := identity.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1596,7 +1292,7 @@ func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A genuine WRITE, so the transaction actually holds the write lock.
+	// Keep a real write in the transaction: a deferred BEGIN alone takes no lock.
 	if _, err := tx.Exec(
 		`INSERT INTO join_access (id, secret, open) VALUES (1, 'held', 0)
 		 ON CONFLICT(id) DO UPDATE SET secret = excluded.secret`); err != nil {
@@ -1620,22 +1316,17 @@ func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
 				"migrate is taking the write lock when it has nothing to write", err)
 		}
 	case <-time.After(2 * time.Second):
-		// busy_timeout is 5s, so 2s of silence is already the wrong answer.
+		// Keep this under busy_timeout(5000): 2s of silence is already the wrong answer.
 		t.Fatal("opening a current campaign BLOCKED behind another handle's write " +
 			"transaction — migrate takes the write lock on every open, which is a lock a " +
 			"read-only user has no business taking")
 	}
 }
 
-// TestAnAlreadyMigratedReadOnlyCampaignStillOpens is the other half. A campaign
-// on read-only media, or one whose permissions were tightened, must still be
-// readable — `vtt state dump` against an archived campaign is the case. The
-// unconditional-transaction draft made this impossible: nothing needed writing
-// and it took the write lock anyway.
 func TestAnAlreadyMigratedReadOnlyCampaignStillOpens(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "archived.db")
-	d, err := identity.Open(path) // creates and migrates
+	d, err := identity.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1664,11 +1355,6 @@ func TestAnAlreadyMigratedReadOnlyCampaignStillOpens(t *testing.T) {
 	}
 }
 
-// TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne is the
-// never-touched case, and it is a security property rather than a coverage
-// one: the row does not exist until somebody opens the door or reads the link,
-// and an anonymous request must be answered from that absence WITHOUT minting
-// anything. Minting here is what the 2026-08-09 amendment was written about.
 func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "untouched.db")
 	d, err := identity.Open(path)
@@ -1696,10 +1382,6 @@ func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.
 	}
 }
 
-// TestCreateInviteRefusesARoleThatIsNotOne keeps the four roles the complete
-// set. A caller that can invent a role can invent one authz has no cell for,
-// and every commandRoles lookup for it would answer "not permitted" — which
-// looks like a permissions bug rather than a bad invite.
 func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord")); err == nil {
@@ -1707,10 +1389,6 @@ func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	}
 }
 
-// TestTheIdentityStoreReportsFailuresRatherThanPretending covers the write
-// paths' error arms. Same direction as the join path's: a database that cannot
-// answer must say so, never quietly succeed — a silent SetRole would leave a
-// promotion the DM believes happened and authz does not.
 func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gone.db")
 	d, err := identity.Open(path)
@@ -1743,14 +1421,6 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	}
 }
 
-// TestADoorOpenedWithNoStatedBudgetStillAdmits pins the coercion at the layer
-// that owns it. The gateway has the same test over the wire, but mutation runs
-// PER PACKAGE, so a gateway test cannot kill an identity mutant — and the
-// mutation gate duly found `admitLimit <= 0` mutated to `<` surviving here.
-//
-// A door opened with an explicit 0, or with the absent wire field that decodes
-// to one, must not admit nobody: the DM sees "open", every joiner sees the same
-// 403 a stranger sees, and nothing on either side distinguishes them.
 // VTT-022
 func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 	d, _ := openTemp(t)
@@ -1774,8 +1444,7 @@ func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 		t.Fatalf("an unstated budget became %d, want the default of %d", limit, identity.DefaultAdmitLimit)
 	}
 
-	// A NEGATIVE budget is the other non-positive value the wire's int32 can
-	// carry, and only this case holds the guard's `<= 0` against `== 0`.
+	// Keep the negative case: only it holds the guard's `<= 0` against `== 0`.
 	if err := d.SetJoinOpen(true, -1); err != nil {
 		t.Fatal(err)
 	}

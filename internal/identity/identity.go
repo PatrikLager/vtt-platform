@@ -1,7 +1,5 @@
 // Package identity manages participants, invite tokens, revocation and the
-// campaign's join door. It opens its OWN SQLite handle on the same campaign
-// file the store uses and is deliberately NOT event-sourced: revocation is not
-// undone by replaying the log (SPEC-009).
+// campaign's join door, in SQLite tables beside the event log (SPEC-009).
 package identity
 
 import (
@@ -18,13 +16,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// THERE IS NO `controls` COLUMN, and no statement in this package names one. A
-// campaign file still carrying it opens, and the column is inert
-// (TestJoinIsClosedOnAnExistingCampaign's fixture carries one). Do NOT add a
-// migration to drop it: a migration that dropped it would have to make
-// migrationPending answer yes for every campaign still carrying it, which takes
-// migrate to BEGIN IMMEDIATE on open, which read-only media cannot give.
-// Control is Actor.controller_ids in the log, read by gateway's authz.go.
+// Do not add a migration to drop the `controls` column an old campaign file
+// carries: every such open would then write, which read-only media refuses
+// (TestAnAlreadyMigratedReadOnlyCampaignStillOpens). No statement names it.
 const schema = `
 CREATE TABLE IF NOT EXISTS participants (
   id           TEXT PRIMARY KEY,
@@ -57,20 +51,13 @@ CREATE TABLE IF NOT EXISTS join_access (
   admit_limit INTEGER NOT NULL DEFAULT 0
 );`
 
-// migrate adds the columns the schema above cannot deliver on its own, and
-// budgets an already-open door the addition would otherwise strand.
-//
-// It runs on every Open and must stay idempotent: ALTER TABLE ADD COLUMN is an
-// error, not a no-op, on a column already there. The budget lives on the same
-// single row as `open` so that spending an admission is ONE conditional UPDATE
-// against ONE row. It touches only join_access.
+// Keep migrate idempotent: ALTER TABLE ADD COLUMN errors on a column already
+// there, and this runs on every Open. Keep the budget on join_access's one row,
+// so that spending an admission stays ONE conditional UPDATE.
 func migrate(db *sql.DB) error {
-	// READ FIRST, and take no write lock at all when there is nothing to do.
-	// This runs on EVERY Open, the file is shared with internal/store, which
-	// writes inside a transaction on every event append, and an unconditional
-	// BEGIN IMMEDIATE here takes the write lock on a read-only user's open
-	// (`vtt state dump`, the DM console's polling) and makes a campaign on
-	// read-only media impossible to open.
+	// Read first and take no write lock when nothing is pending: this runs on every
+	// Open, the file is shared with internal/store's append transaction, and a
+	// current campaign on read-only media must still open.
 	ctx := context.Background()
 	pending, err := migrationPending(ctx, db)
 	if err != nil {
@@ -80,16 +67,9 @@ func migrate(db *sql.DB) error {
 		return nil
 	}
 
-	// ONE PINNED CONNECTION, inside BEGIN IMMEDIATE. The scan and the ALTERs
-	// are separate statements, so two processes opening the same campaign at
-	// once both see the columns missing and both try to add them; the loser
-	// dies on `duplicate column name` unless it waits for the write lock and
-	// re-reads the shape under it, which migrateLocked does.
-	//
-	// IMMEDIATE and not db.Begin(), which is DEFERRED: a deferred transaction
-	// takes a read lock first and must UPGRADE it to write, and busy_timeout
-	// does not retry a lock upgrade, so the losers fail SQLITE_BUSY at once.
-	// IMMEDIATE takes the write lock up front and the losers wait on it.
+	// Keep BEGIN IMMEDIATE on one pinned connection, never db.Begin(): DEFERRED
+	// takes a read lock it must upgrade, busy_timeout does not retry an upgrade,
+	// and two openers racing must re-read the shape under the lock (migrateLocked).
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("identity: migrate: %w", err)
@@ -109,8 +89,7 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-// migrationPending reports whether anything needs writing: a missing column, or
-// an open door still carrying no budget. Reads only.
+// Keep migrationPending read-only: it decides whether the write lock is taken.
 func migrationPending(ctx context.Context, db *sql.DB) (bool, error) {
 	have, err := columnNames(ctx, db, joinAccessShape)
 	if err != nil {
@@ -128,14 +107,8 @@ func migrationPending(ctx context.Context, db *sql.DB) (bool, error) {
 	return stranded > 0, nil
 }
 
-// tableShape is a table the migration reads the column set of: the PRAGMA that
-// reads it, and the name that goes in the error when it cannot be read.
-//
-// ONE value carrying both, so a call site cannot pass a pragma and a label that
-// disagree and mislabel the one message an operator gets. The pragma is a
-// LITERAL rather than built from the name: SQLite will not accept a bind
-// parameter in a PRAGMA, so building it would mean interpolating into SQL.
-// Both callers must name the table identically.
+// Keep the pragma a literal: SQLite will not bind a parameter in a PRAGMA.
+// Both callers must name the table identically, so the label travels with it.
 type tableShape struct {
 	pragma string
 	name   string
@@ -143,18 +116,7 @@ type tableShape struct {
 
 var joinAccessShape = tableShape{`PRAGMA table_info(join_access)`, "join_access"}
 
-// columnNames reads a table's column set: query it, drain it, close it.
-//
-// ONE implementation for TWO call sites, migrationPending before the lock and
-// migrateLocked under it, so the two cannot name the table differently in the
-// one message an operator gets.
-//
-// The rows handle is closed by DEFER in exactly one place, and migrateLocked
-// must have it closed BEFORE its ALTER TABLE: SQLite will not alter a table
-// with an open cursor on it.
-//
-// r is *sql.DB when nothing is locked and *sql.Conn when the migration holds
-// the write lock; shapeReader is the narrowest interface serving both.
+// Do not narrow shapeReader: r is *sql.DB before the lock and *sql.Conn under it.
 func columnNames(ctx context.Context, r shapeReader, t tableShape) (map[string]bool, error) {
 	rows, err := r.QueryContext(ctx, t.pragma)
 	if err != nil {
@@ -164,9 +126,8 @@ func columnNames(ctx context.Context, r shapeReader, t tableShape) (map[string]b
 
 	have := map[string]bool{}
 	for rows.Next() {
-		// PRAGMA table_info yields cid, name, type, notnull, dflt_value, pk —
-		// in that order. dflt_value is NULL for a column with no default, so
-		// these are scanned as `any` rather than into typed variables.
+		// Scan as `any`: PRAGMA table_info yields cid, name, type, notnull,
+		// dflt_value, pk, and dflt_value is NULL for a column with no default.
 		var cid, name, typ, notnull, dfltValue, pk any
 		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
 			return nil, fmt.Errorf("identity: read %s shape: %w", t.name, err)
@@ -181,20 +142,15 @@ func columnNames(ctx context.Context, r shapeReader, t tableShape) (map[string]b
 	return have, nil
 }
 
-// shapeReader is whatever can run the PRAGMA: the pool before the migration
-// takes its lock, the pinned connection after.
 type shapeReader interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// migrateLocked does the work, with the write lock already held.
 func migrateLocked(ctx context.Context, conn *sql.Conn) error {
-	// RE-READ inside the transaction: a concurrent opener may have completed
-	// the whole migration while this one waited for the write lock, and ALTER
-	// TABLE ADD COLUMN is an error on a column already there. WRAPPED
-	// "migrate:", which the read in migrationPending is not, or an operator
-	// cannot tell which of the two failed. This error arm is unreachable
-	// through testdb; docs/verification-debt.md carries the gap.
+	// Re-read under the lock: a concurrent opener may have finished the migration
+	// while this one waited. Wrap "migrate:" here, or an operator cannot tell this
+	// read from migrationPending's. Unreachable through testdb:
+	// docs/verification-debt.md.
 	have, err := columnNames(ctx, conn, joinAccessShape)
 	if err != nil {
 		return fmt.Errorf("identity: migrate: %w", err)
@@ -213,14 +169,9 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 		}
 	}
 
-	// A door this campaign's DM left OPEN keeps working, on a fresh budget: the
-	// columns arrive defaulted to 0, and 0 admits nobody.
-	//
-	// KEYED ON THE STATE, never on which ALTER just ran: a database carrying
-	// admit_limit but not admitted would otherwise open cleanly, keep a budget
-	// of 0 and refuse every joiner at a door reading "open". The predicate
-	// below is exactly "an open door with no budget" and cannot match a
-	// legitimate row, because SetJoinOpen coerces every budget to at least 1.
+	// Key the repair on the state, never on which ALTER ran: a door left open
+	// before the budget existed arrives with admit_limit 0, which admits nobody;
+	// SetJoinOpen coerces every budget to at least 1, so no live row matches.
 	if _, err := conn.ExecContext(ctx,
 		`UPDATE join_access SET admit_limit = ?, admitted = 0
 		 WHERE open = 1 AND admit_limit = 0`, DefaultAdmitLimit); err != nil {
@@ -229,8 +180,7 @@ func migrateLocked(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
-// Role is a participant's authorization level. The four roles are the
-// complete set; ParseRole rejects everything else.
+// Role is a participant's authorization level, one of the four ParseRole accepts.
 type Role string
 
 const (
@@ -250,45 +200,39 @@ func ParseRole(s string) (Role, error) {
 	}
 }
 
-// Participant is a resolved identity: who this token belongs to, and at what
-// role. NOT what they control — that is Actor.controller_ids in the log, and
-// this type deliberately cannot answer it (see schema's note).
+// Participant is a resolved identity: who a token belongs to, and at what role.
+// Do not add what they control: that is Actor.controller_ids in the log (SPEC-009).
 type Participant struct {
 	ID   string
 	Name string
 	Role Role
 }
 
-// ErrInvalidToken is returned by Verify for a token that is unknown,
-// malformed, or revoked. It deliberately does not distinguish between the
-// three so callers cannot use error content to probe token validity.
+// ErrInvalidToken is Verify's answer for an unknown, malformed or revoked token,
+// and Lookup's for an unknown or revoked id. Keep it one error: a distinct
+// answer is a token-probing oracle.
 var ErrInvalidToken = errors.New("identity: invalid or revoked token")
 
-// DB is a handle on a campaign's participants table.
+// DB is a handle on a campaign's identity tables.
 type DB struct {
 	db *sql.DB
 }
 
-// driverName is "sqlite" in production. It is a variable only so that
-// internal/testdb can substitute a fault-injecting wrapper: this package's
-// error arms decide what happens when a database fails MID-OPERATION, and
-// closing a handle is no substitute, because that fails the FIRST statement
-// and leaves every later arm unreached. Set only by this package's internal
-// tests, each of which restores it in t.Cleanup.
+// Set driverName only from this package's internal tests, and restore it: it
+// exists so internal/testdb can fail a statement mid-operation, which closing
+// a handle cannot (that fails the first statement and reaches no later arm).
 var driverName = "sqlite"
 
-// Open opens (creating if necessary) the participants and join_access tables
-// on the SQLite file at path. This is an independent handle from store.Open;
-// both may be open on the same campaign file at once.
+// Open opens the campaign file's identity tables, creating them if necessary.
+// Keep it independent of store.Open; both are open on one file at once.
 func Open(path string) (*DB, error) {
-	// busy_timeout(5000): the same SQLITE_BUSY hardening as
-	// internal/store/store.go's Open.
+	// Keep busy_timeout(5000), the SQLITE_BUSY hardening internal/store's Open has.
 	db, err := sql.Open(driverName, path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("identity: open %s: %w", path, err)
 	}
 	if _, err := db.Exec(schema); err != nil {
-		_ = db.Close() // closing a handle whose schema init just failed
+		_ = db.Close()
 		return nil, fmt.Errorf("identity: init schema: %w", err)
 	}
 	if err := migrate(db); err != nil {
@@ -298,12 +242,9 @@ func Open(path string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
-// JoinOpen reports whether the shared join link currently admits anybody.
-//
-// FALSE on any error, deliberately. This answer gates an unauthenticated,
-// row-minting endpoint, so a database that cannot be read must refuse to let
-// people in rather than fail open — the one direction where being wrong is
-// expensive.
+// JoinOpen reports whether the door is open.
+// Answer false on any error: this gates an unauthenticated, row-minting
+// endpoint (VTT-048).
 func (d *DB) JoinOpen() bool {
 	var open int
 	err := d.db.QueryRow(`SELECT open FROM join_access WHERE id = 1`).Scan(&open)
@@ -313,18 +254,10 @@ func (d *DB) JoinOpen() bool {
 	return open == 1
 }
 
-// SetJoinOpen opens or closes the door and sets the admission budget for THIS
-// opening.
-//
-// admitted resets to 0 on EVERY call, a close included, so a shut door
-// reports nothing spent. The limit is written on every call too, so a limit
-// given when closing is stored and reported by JoinBudget until the next
-// opening overwrites it.
-//
-// A non-positive admitLimit becomes DefaultAdmitLimit rather than "admit
-// nobody": protojson omits zero values, so an absent field and a deliberate 0
-// arrive as the same bytes, and a door that admits no one cannot be debugged
-// from either end (SPEC-009).
+// SetJoinOpen opens or closes the door and sets this opening's admission budget.
+// Reset admitted on every call, a close included, so a shut door reports nothing
+// spent; write the limit on every call too, JoinBudget reports it. Coerce a
+// non-positive limit to DefaultAdmitLimit: protojson omits zero values (SPEC-009).
 func (d *DB) SetJoinOpen(open bool, admitLimit int) error {
 	v := 0
 	if open {
@@ -333,9 +266,8 @@ func (d *DB) SetJoinOpen(open bool, admitLimit int) error {
 	if admitLimit <= 0 {
 		admitLimit = DefaultAdmitLimit
 	}
-	// ONE upsert rather than ensure-then-update: atomic, one round trip, and
-	// it cannot leave the row half-made if a second statement fails.
-	secret := newSecret() // used only if the row does not exist yet
+	// Keep it one upsert: atomic, and it cannot leave the row half-made.
+	secret := newSecret()
 	if _, err := d.db.Exec(
 		`INSERT INTO join_access (id, secret, open, admitted, admit_limit)
 		 VALUES (1, ?, ?, 0, ?)
@@ -349,12 +281,9 @@ func (d *DB) SetJoinOpen(open bool, admitLimit int) error {
 	return nil
 }
 
-// JoinBudget reports how many admissions this opening has spent and allowed.
-//
-// Read-only, and it MINTS NOTHING: the DM console polls it, and a poll must
-// not take SQLite's write lock on the file internal/store appends events to.
-// Both zero on a campaign whose door has never been touched. On a shut door it
-// reports nothing spent and the limit the last SetJoinOpen wrote.
+// JoinBudget reports what this opening has spent and allowed.
+// Keep it read-only: the DM console polls it, and a poll must not take the
+// write lock on the file internal/store appends to.
 func (d *DB) JoinBudget() (admitted, limit int, err error) {
 	err = d.db.QueryRow(
 		`SELECT admitted, admit_limit FROM join_access WHERE id = 1`).Scan(&admitted, &limit)
@@ -368,47 +297,21 @@ func (d *DB) JoinBudget() (admitted, limit int, err error) {
 }
 
 // JoinSecret returns the current join secret, minting one on first use.
-//
-// STABLE until rotated: the DM shares it, so a value that changed per call
-// would invalidate the link the moment anyone looked at it.
+// Keep it stable between rotations: the DM shares it (VTT-040).
 func (d *DB) JoinSecret() (string, error) {
 	return d.ensureJoinRow()
 }
 
 // DefaultAdmitLimit is what a door opened without a stated budget allows.
-//
-// A number, not "unlimited": protojson omits zero values, so an absent field
-// and "admit nobody" are the same wire bytes, and the default has to be chosen
-// here rather than inferred from what arrived (SPEC-009).
+// Keep it a number, not "unlimited": protojson omits zero values, so an absent
+// field and "admit nobody" are the same bytes (SPEC-009).
 const DefaultAdmitLimit = 8
 
-// JoinAdmits reports whether this candidate may come through the door, AND
-// spends one admission if so. A refusal the read can decide writes NOTHING.
-//
-// The work is split deliberately, because a cap that two concurrent joiners
-// can both pass is not a cap:
-//
-//   - The SECRET is compared HERE, in Go, in constant time, and is never
-//     handed out of this package to be checked. An EMPTY STORED SECRET admits
-//     nobody, and the guard says so explicitly: ConstantTimeCompare("", "")
-//     returns 1, and a request body omitting the field decodes to "".
-//   - REFUSALS are decided here too, from the same read: wrong secret, shut
-//     door, budget spent. An UPDATE matching zero rows still takes SQLite's
-//     write lock on the file internal/store appends events to, on the one
-//     path a stranger controls, so every refusal the read can decide returns
-//     before the write (SPEC-009).
-//   - The INCREMENT re-states the door and the budget in its WHERE, so the
-//     read above is only a fast path for those. Two joiners racing for the
-//     last slot both reach the UPDATE; SQLite serialises them, the second
-//     matches no row, and RowsAffected says so.
-//
-// It does NOT re-check the secret, which stays in Go where the comparison is
-// constant-time; a RotateJoinSecret landing between the SELECT and the UPDATE
-// lets one in-flight holder of the old secret through. Accepted (SPEC-009).
-//
-// A CreateInvite failure after this returns true BURNS the slot. Do not add a
-// compensating decrement: a second write that can itself fail leaves the
-// budget wrong in the more dangerous direction.
+// JoinAdmits reports whether this candidate may come through the door and spends
+// one admission if so; a refusal the read can decide writes nothing.
+// Keep the compare here, in Go, constant-time: the secret is never handed out to
+// be checked, and an empty stored secret must refuse ("" matches ""). Keep every
+// refusal before the UPDATE: one matching no rows still takes the write lock.
 func (d *DB) JoinAdmits(candidate string) (bool, error) {
 	var (
 		secret                 string
@@ -418,7 +321,7 @@ func (d *DB) JoinAdmits(candidate string) (bool, error) {
 		`SELECT secret, open, admitted, admit_limit FROM join_access WHERE id = 1`,
 	).Scan(&secret, &open, &admitted, &budget)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Never touched, so closed — and answered without creating anything.
+		// No row means shut; answer without creating one (VTT-017).
 		return false, nil
 	}
 	if err != nil {
@@ -429,6 +332,9 @@ func (d *DB) JoinAdmits(candidate string) (bool, error) {
 		return false, nil
 	}
 
+	// Do not add a compensating decrement for a CreateInvite failure after this:
+	// a second write that can itself fail can only err toward admitting more
+	// (SPEC-009).
 	res, err := d.db.Exec(
 		`UPDATE join_access SET admitted = admitted + 1
 		 WHERE id = 1 AND open = 1 AND admitted < admit_limit`)
@@ -439,28 +345,18 @@ func (d *DB) JoinAdmits(candidate string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("identity: spend join admission: %w", err)
 	}
-	// Zero means a concurrent joiner took the last slot between the read and
-	// the update. Refused, and nothing was spent.
+	// Keep n == 0 a refusal: a concurrent joiner took the last slot between the
+	// read and the update, and nothing is spent (VTT-023).
 	return n == 1, nil
 }
 
-// RotateJoinSecret replaces the secret and returns the new one.
-//
-// This closes a leaked link to NEWCOMERS and touches nobody already through
-// it: participants keep their own tokens.
+// RotateJoinSecret replaces the secret and returns the new one; participants
+// already through keep their tokens (VTT-020).
 func (d *DB) RotateJoinSecret() (string, error) {
 	secret := newSecret()
-	// Upsert, same reasoning as SetJoinOpen. The DO UPDATE branch must NOT
-	// touch `open`: rotating says nothing about whether the door is open. The
-	// INSERT branch writes 0, which is not an exception: no row already means
-	// closed.
-	//
-	// admitted RESETS: a new secret is a NEW OPENING, and nobody holding it
-	// has spent anything. Without this, rotating a leaked link after its
-	// budget ran out hands the DM a door that reads OPEN and admits nobody.
-	//
-	// admit_limit is NOT touched, or rotating becomes a second way to set a
-	// budget.
+	// Keep the DO UPDATE off `open` and `admit_limit`: rotating says nothing about
+	// the door (VTT-043) or the budget. Reset admitted: a new secret is a new
+	// opening, or a link rotated after a spent budget admits nobody (VTT-044).
 	if _, err := d.db.Exec(
 		`INSERT INTO join_access (id, secret, open, admitted, admit_limit) VALUES (1, ?, 0, 0, 0)
 		 ON CONFLICT(id) DO UPDATE SET secret = excluded.secret, admitted = 0`, secret,
@@ -470,18 +366,12 @@ func (d *DB) RotateJoinSecret() (string, error) {
 	return secret, nil
 }
 
-// ensureJoinRow returns the secret, minting one if this campaign has never had
-// it. Reads first and falls through to an atomic upsert, so two callers racing
-// cannot leave two secrets live.
 func (d *DB) ensureJoinRow() (string, error) {
 	secret := newSecret()
 
-	// READ FIRST. The upsert below is a genuine write even on the conflict
-	// path, this file is shared with internal/store, which writes inside a
-	// transaction on every event append, and the DM console polls this: an
-	// unconditional upsert blocks for the full busy_timeout behind another
-	// handle's write transaction and then fails SQLITE_BUSY, where a SELECT
-	// answers at once.
+	// Read first: the upsert below writes even on the conflict path, and this file
+	// is shared with internal/store's append transaction. Unconditional, it blocks
+	// the DM console's poll for the full busy_timeout(5000), then fails SQLITE_BUSY.
 	var stored string
 	err := d.db.QueryRow(`SELECT secret FROM join_access WHERE id = 1`).Scan(&stored)
 	if err == nil {
@@ -491,11 +381,8 @@ func (d *DB) ensureJoinRow() (string, error) {
 		return "", fmt.Errorf("identity: read join secret: %w", err)
 	}
 
-	// No row yet: mint one. The upsert is atomic, so two callers racing here
-	// cannot leave two secrets live: the loser's RETURNING gives the winner's
-	// value. `SET secret = secret` is a no-op update whose only job is to make
-	// RETURNING fire on the conflict path; INSERT OR IGNORE returns NO ROW
-	// there.
+	// Keep `SET secret = secret`: a no-op whose only job is to make RETURNING fire
+	// on the conflict path, which INSERT OR IGNORE would not.
 	if err := d.db.QueryRow(
 		`INSERT INTO join_access (id, secret, open) VALUES (1, ?, 0)
 		 ON CONFLICT(id) DO UPDATE SET secret = secret
@@ -506,29 +393,18 @@ func (d *DB) ensureJoinRow() (string, error) {
 	return stored, nil
 }
 
-// newSecret mints 32 crypto/rand bytes, base64url: the same shape and strength
-// as an invite token, because it guards the same kind of door.
-//
-// NO error return: crypto/rand.Read never returns one; it fills the buffer
-// entirely or crashes the program.
+// Keep no error return: crypto/rand.Read never returns one; it fills the
+// buffer or crashes the program.
 func newSecret() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// SetRole changes a participant's authorization level.
-//
-// Role lives in participants.role beside the token and never in the log: the
-// fold has no Role, and putting it there would create a second place
-// authorization lives (SPEC-009).
-//
-// It changes ONLY the role. The token, the id and the display name belong to
-// the person and survive: a promotion that rewrote the credential would log
-// them out. The characters they hold live in the log, which SetRole cannot
-// reach.
-//
-// A revoked participant stays revoked. Promotion is not a way back in.
+// SetRole changes a participant's authorization level and nothing else.
+// Keep the role in participants.role, never in the log: the fold has no Role
+// (SPEC-009, VTT-039). Keep the token and id untouched, or a promotion logs
+// them out (VTT-029); leave revoked alone (VTT-030).
 func (d *DB) SetRole(id string, role Role) error {
 	if _, err := ParseRole(string(role)); err != nil {
 		return err
@@ -537,9 +413,7 @@ func (d *DB) SetRole(id string, role Role) error {
 	if err != nil {
 		return fmt.Errorf("identity: set role: %w", err)
 	}
-	// Reporting "no such participant" rather than succeeding silently: a DM
-	// console that says it promoted somebody who has already left, and a
-	// caller with no way to tell, is worse than an error.
+	// Report n == 0: silently promoting somebody who has left is worse than an error.
 	n, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("identity: set role: %w", err)
@@ -555,13 +429,9 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
-// CreateInvite mints a new participant and a one-time invite token: 32
-// random bytes (crypto/rand), base64url-encoded. The token is returned to
-// the caller exactly ONCE; only its SHA-256 hash is persisted, so it can
-// never be recovered from the database again.
-//
-// It takes NO list of actors: an invite says who you are and at what role,
-// and control of a character is an ActorControlGranted in the log.
+// CreateInvite mints a participant and a one-time invite token, returned exactly
+// once; only its SHA-256 hash is stored (VTT-041). Take no list of actors:
+// control is an ActorControlGranted in the log (SPEC-009).
 func (d *DB) CreateInvite(name string, role Role) (token string, id string, err error) {
 	if _, err := ParseRole(string(role)); err != nil {
 		return "", "", err
@@ -589,13 +459,10 @@ func (d *DB) CreateInvite(name string, role Role) (token string, id string, err 
 	return token, id, nil
 }
 
-// Verify resolves token to its Participant. The SQL lookup is
-// `WHERE token_hash = ?` on the SHA-256 hash, a plain indexed equality, and
-// that is safe although SQLite's comparison is not constant-time: the hash is
-// not secret in a timing-sensitive sense, since an attacker who can compute a
-// matching hash already holds the token. The confirmation below still uses
-// subtle.ConstantTimeCompare to make the contract explicit
-// (TestVerifyUsesConstantTimeCompare holds it).
+// Verify resolves token to its Participant.
+// Keep the lookup a plain equality on the SHA-256 hash (not secret to someone
+// without the token) and the confirmation subtle.ConstantTimeCompare
+// (TestVerifyUsesConstantTimeCompare).
 func (d *DB) Verify(token string) (*Participant, error) {
 	sum := sha256.Sum256([]byte(token))
 
@@ -630,16 +497,9 @@ func (d *DB) Verify(token string) (*Participant, error) {
 	return &Participant{ID: id, Name: name, Role: role}, nil
 }
 
-// Lookup resolves a participant by id, as they are NOW.
-//
-// This is the LIVE half of identity; Verify is the connection-time half. The
-// gateway re-resolves through here before every command, before the backlog
-// and each live event, and before the connect and departure announcements, so
-// a promotion and a revocation take effect on the very next action without a
-// reconnect (SPEC-009).
-//
-// A revoked participant does not resolve, and revoked and unknown share one
-// error: the posture Verify takes, for the same reason.
+// Lookup resolves a participant by id, as they are now.
+// Keep revoked and unknown one error, as Verify does; the gateway re-resolves
+// through here on every command and delivery (SPEC-009).
 func (d *DB) Lookup(id string) (*Participant, error) {
 	var (
 		name, roleStr string
@@ -659,27 +519,15 @@ func (d *DB) Lookup(id string) (*Participant, error) {
 	}
 	role, err := ParseRole(roleStr)
 	if err != nil {
-		// Named and wrapped like every other failure here. Verify says
-		// "stored role invalid" for the same row; a bare ParseRole error
-		// would be the one Lookup path that told an operator neither what
-		// went wrong nor whose row it was.
+		// Wrap it like every other failure here, naming whose row it was.
 		return nil, fmt.Errorf("identity: lookup %s: stored role invalid: %w", id, err)
 	}
 	return &Participant{ID: id, Name: name, Role: role}, nil
 }
 
-// List returns everyone who can still act at this table, ordered by display
-// name.
-//
-// It reads the one source of truth for roles rather than presence: presence
-// is CONNECTION-scoped and a role is campaign-scoped, so a role must NOT be
-// folded into a presence frame (SPEC-009).
-//
-// REVOKED PARTICIPANTS ARE OMITTED. They cannot connect and cannot act, so
-// listing them would offer a DM promote controls for people who are gone.
-//
-// Ordered in SQL by display_name, then id, a total order, so two consumers
-// cannot disagree about it.
+// List returns everyone who can still act at this table, ordered by display name.
+// Keep revoked participants out (VTT-034). Order in SQL by display_name then
+// id, a total order, so two consumers agree.
 func (d *DB) List() ([]*Participant, error) {
 	rows, err := d.db.Query(
 		`SELECT id, display_name, role FROM participants
@@ -697,10 +545,8 @@ func (d *DB) List() ([]*Participant, error) {
 		}
 		role, err := ParseRole(roleStr)
 		if err != nil {
-			// Refused, not skipped and not defaulted. A stored role that is
-			// not a role means this table's authorization data is wrong, and
-			// answering with a shorter list would hide that while a console
-			// quietly showed the wrong people.
+			// Refuse, never skip or default: a stored role that is not a role means the
+			// table's authorization data is wrong.
 			return nil, fmt.Errorf("identity: list %s: stored role invalid: %w", id, err)
 		}
 		out = append(out, &Participant{ID: id, Name: name, Role: role})
@@ -711,9 +557,8 @@ func (d *DB) List() ([]*Participant, error) {
 	return out, nil
 }
 
-// Revoke permanently flips the revoked flag for participant id. This is a
-// direct table mutation, not a logged event, and replaying the log does not
-// undo it (SPEC-009).
+// Revoke permanently flips the revoked flag for participant id; a table
+// mutation the log cannot undo (SPEC-009).
 func (d *DB) Revoke(id string) error {
 	res, err := d.db.Exec(`UPDATE participants SET revoked = 1 WHERE id = ?`, id)
 	if err != nil {
