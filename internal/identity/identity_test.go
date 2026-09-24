@@ -160,14 +160,14 @@ func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	}
 }
 
-// TestVerifyUsesConstantTimeCompare is the white-box half of the Step 1
-// "constant-time-shaped" case (task-3-brief.md, binding DESIGN NOTE): the
-// hash lookup itself (SELECT ... WHERE token_hash = ?) is fine as a plain
-// indexed comparison because the hash is not secret-timing-sensitive, but
-// the final confirmation of a match must be constant-time so no timing
-// side channel on token bytes exists. That correctness is exercised
-// behaviorally above (round-trip, wrong-token, revoked-token); this test
-// enforces the documented implementation contract itself.
+// TestVerifyUsesConstantTimeCompare is the white-box half of the
+// constant-time case: the hash lookup itself (SELECT ... WHERE token_hash = ?)
+// is fine as a plain indexed comparison because the hash is not
+// secret-timing-sensitive, but the final confirmation of a match must be
+// constant-time so no timing side channel on token bytes exists. That
+// correctness is exercised behaviorally above (round-trip, wrong-token,
+// revoked-token); this test enforces the documented implementation contract
+// itself.
 func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	src, err := os.ReadFile("identity.go")
 	if err != nil {
@@ -763,16 +763,6 @@ func TestLookupRefusesACorruptRow(t *testing.T) {
 	}
 }
 
-// TestCheckingTheDoorMintsNothing pins the claim spec §2 rests its whole
-// "therefore no rate limiting" argument on: with the door shut the link is
-// INERT, so there is nothing for a stranger to hammer.
-//
-// It was not inert. The join endpoint answered a guess through JoinSecret,
-// which mints the row when a campaign has never had one — so an anonymous,
-// unauthenticated, REFUSED request performed an INSERT, taking SQLite's write
-// lock on a file internal/store writes to inside a transaction on every event
-// append. That is the exact hazard ensureJoinRow's read-first path was
-// restructured to avoid for the DM console, on the one path a stranger drives.
 func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 	// RotateJoinSecret is an upsert, and its INSERT branch is reached only on a
 	// campaign whose join_access row does not exist yet — `vtt join-link rotate`
@@ -799,38 +789,12 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 	}
 	// And the door is shut in the way that matters: the fresh secret does not
 	// get anybody in.
-	allowed, err := d.JoinAllows(secret)
+	allowed, err := d.JoinAdmits(secret)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if allowed {
 		t.Fatal("a brand-new secret admitted somebody through a door that was never opened")
-	}
-}
-
-func TestCheckingTheDoorMintsNothing(t *testing.T) {
-	d, path := openTemp(t)
-
-	allowed, err := d.JoinAllows("a stranger's guess")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if allowed {
-		t.Fatal("a campaign whose door was never opened must refuse everyone")
-	}
-
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer raw.Close()
-	var n int
-	if err := raw.QueryRow(`SELECT count(*) FROM join_access`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatalf("a refused, anonymous join wrote %d row(s) — the closed door is not inert, "+
-			"and spec §2's case against rate limiting depends on it being inert", n)
 	}
 }
 
@@ -857,47 +821,13 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 		if err := d.SetJoinOpen(c.open, 100); err != nil {
 			t.Fatal(err)
 		}
-		got, err := d.JoinAllows(c.offer)
+		got, err := d.JoinAdmits(c.offer)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got != c.expect {
 			t.Fatalf("door open=%v, correct secret=%v: allowed=%v, want %v",
 				c.open, c.offer == right, got, c.expect)
-		}
-	}
-}
-
-// TestAnEmptyStoredSecretAdmitsNobody guards the degenerate compare.
-// subtle.ConstantTimeCompare("", "") returns 1, so a blank stored secret plus a
-// caller who sends no secret at all is a MATCH — and a request body that simply
-// omits the field decodes to "". Unreachable through this package's own
-// writers, which is exactly why it earns a test: a hand-edited database or a
-// future writer with a bug must fail CLOSED, not admit the world.
-func TestAnEmptyStoredSecretAdmitsNobody(t *testing.T) {
-	d, path := openTemp(t)
-	if err := d.SetJoinOpen(true, 100); err != nil {
-		t.Fatal(err)
-	}
-
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.Exec(`UPDATE join_access SET secret = '' WHERE id = 1`); err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, offer := range []string{"", "anything"} {
-		allowed, err := d.JoinAllows(offer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if allowed {
-			t.Fatalf("an empty stored secret must admit nobody, but %q got in", offer)
 		}
 	}
 }
@@ -1293,12 +1223,10 @@ func TestAClosedDoorSpendsNothing(t *testing.T) {
 	}
 }
 
-// TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath is the twin of the
-// JoinAllows test three functions up, pointed at the function /join actually
-// calls. Review deleted the `secret == ""` guard from JoinAdmits and every
-// suite stayed green: the existing test exercises JoinAllows, which handleJoin
-// no longer uses. ConstantTimeCompare("", "") returns 1 and a request body
-// omitting the field decodes to "", so the degenerate row admits the world.
+// TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath guards the degenerate
+// compare on the function /join calls: ConstantTimeCompare("", "") returns 1
+// and a request body omitting the field decodes to "", so the degenerate row
+// would admit the world.
 // VTT-018
 func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.db")
@@ -1549,9 +1477,6 @@ func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	}
 	if _, _, err := d.JoinBudget(); err == nil {
 		t.Fatal("JoinBudget on a closed database reported success")
-	}
-	if ok, err := d.JoinAllows(secret); ok || err == nil {
-		t.Fatalf("JoinAllows on a closed database returned (%v, %v)", ok, err)
 	}
 	if err := d.SetJoinOpen(true, 5); err == nil {
 		t.Fatal("SetJoinOpen on a closed database reported success")

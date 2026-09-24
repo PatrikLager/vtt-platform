@@ -111,10 +111,11 @@ nothing — and either default is wrong in a way that matters.
 
 `revoke_actor_control` requires both `actor_id` and `participant_id`.
 
-`set_join_door` carries `admit_limit`: how many people THIS OPENING may admit. A
-non-positive value means `identity.DefaultAdmitLimit`, because absent and 0
+`set_join_door` carries `admit_limit`: how many people THIS OPENING may admit.
+A non-positive value means `identity.DefaultAdmitLimit`, because absent and 0
 arrive identically under protojson and "admit nobody" is undebuggable rather
-than dangerous. It is ignored when closing.
+than dangerous. On a close it is stored, and `GET /api/join-link` reports it as
+the limit; a shut door admits nobody whatever it says.
 
 `promote_participant` accepts ONLY "player" or "spectator". A shared join link
 mints spectators, and letting promotion reach "dm" or "agent" would make that

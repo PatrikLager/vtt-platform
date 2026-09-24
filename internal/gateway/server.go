@@ -971,9 +971,6 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// removed nobody: a revoked participant kept playing until they chose
 		// to disconnect. Spec §3.2.
 		//
-		// Measured at 15.5µs against a 40-participant table, on a path that
-		// already folds state, appends to SQLite and writes a socket frame.
-		//
 		// THIS IS HALF OF IT. A spectator issues no commands at all, so the
 		// pump above re-resolves on DELIVERY for the same reason. Change one
 		// and you almost certainly mean to change the other.

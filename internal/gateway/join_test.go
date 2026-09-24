@@ -210,7 +210,7 @@ func TestARefusedJoinWritesNothingAtAll(t *testing.T) {
 	// Spec §2 rests its case against rate limiting entirely on the closed door
 	// leaving "no standing endpoint to hammer" — the link is INERT. That is a
 	// claim about writes, not just about credentials, and it has to be checked
-	// HERE rather than only in identity: identity.JoinAllows can be perfectly
+	// HERE rather than only in identity: a check in identity can be perfectly
 	// read-only while this handler still reaches the minting path. That seam
 	// is precisely the shape this plan was built around.
 	//
@@ -403,11 +403,10 @@ func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 // it exists because the registry-level tests cannot see it.
 //
 // Every identity test injects its own budget and calls JoinAdmits directly. If
-// handleJoin kept calling JoinAllows — which still exists, still compiles, and
-// still answers the same question WITHOUT spending anything — the cap would be
-// perfect in internal/identity and absent from the product. That is the exact
-// shape a review caught in this session's previous change: a feature dead in
-// production behind a fully green suite.
+// handleJoin called a check that answered the same question WITHOUT spending
+// anything, the cap would be perfect in internal/identity and absent from the
+// product. That is the shape of a feature dead in production behind a fully
+// green suite.
 // VTT-009 VTT-011
 func TestTheDoorStopsAdmittingWhenItsBudgetIsSpent(t *testing.T) {
 	f := newJoinFixture(t)

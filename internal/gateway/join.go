@@ -122,16 +122,16 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	// constant-time, and NOTHING IS WRITTEN. That last part is why this is not
 	// the two calls it used to be: JoinSecret mints the row on a campaign that
 	// has never had one, so a refused anonymous request performed an INSERT.
-	// See identity.JoinAllows.
+	// See identity.JoinAdmits.
 	//
 	// An error is refused the same way rather than reported: a database that
 	// cannot answer must not be able to open a door, and telling an anonymous
 	// caller that this campaign's identity store is unwell is not information
 	// they have any business having.
-	// JoinAdmits, not JoinAllows: it SPENDS an admission from this opening's
-	// budget as it answers, atomically, so two joiners racing for the last slot
-	// cannot both get through (spec §2, amended 2026-08-11). A budget checked
-	// separately from being spent is not a budget.
+	// JoinAdmits SPENDS an admission from this opening's budget as it answers,
+	// atomically, so two joiners racing for the last slot cannot both get
+	// through (spec §2, amended 2026-08-11). A budget checked separately from
+	// being spent is not a budget.
 	allowed, err := s.ids.JoinAdmits(req.Secret)
 	if err != nil || !allowed {
 		// Deliberately the same status and text for every refusal here —

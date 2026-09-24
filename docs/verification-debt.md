@@ -224,6 +224,15 @@ parameter that was never there, not an operator it can rewrite.
 
 ## Open debt
 
+**`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
+`migrateLocked` in `internal/identity` re-reads the table's shape under the
+write lock and wraps a failure there as `identity: migrate:`; nothing holds
+that arm. `testdb.Arm` is one-shot and substring-matched, and
+`migrationPending` runs the identical `PRAGMA` first, so the one armed fault is
+always spent before the re-read. Labels: `test data missing`, `outside the
+tool`. Closing it needs a fault that fires on the second matching statement.
+Recorded 2026-09-24, moved here from the comment at the arm.
+
 **A test that cites a row marked `OPEN` passes the chain gate.**
 `check:requirements-chain` refuses a citation with no row and an evidence entry
 that resolves to nothing; it does not notice a row whose evidence says no test
