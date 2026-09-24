@@ -9,12 +9,12 @@ tip before this ticket.
 
 ## The period, in commits
 
-git log --oneline 8ebb2b1..37a714c
+    git log --oneline 8ebb2b1..37a714c
 
-37a714c The arc's remaining rules are in the register, cited by their tests
-9920a67 identity.go says what its code cannot, and JoinAllows is gone 9c31031
-The three OPEN rows have their tests, and the fold's role-blindness has its own
-7537b7c The identity specification, and a defect writing it surfaced
+    37a714c The arc's remaining rules are in the register, cited by their tests
+    9920a67 identity.go says what its code cannot, and JoinAllows is gone
+    9c31031 The three OPEN rows have their tests, and the fold's role-blindness has its own
+    7537b7c The identity specification, and a defect writing it surfaced
 
 `git diff --stat 8ebb2b1..37a714c`: `19 files changed, 2034 insertions(+), 448
 deletions(-)`.
