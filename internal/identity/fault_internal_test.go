@@ -306,6 +306,7 @@ func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
 	}
 }
 
+// VTT-006
 func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	// The inertness property, and until internal/testdb existed there was no
 	// way to observe it. Spec §2's case against rate limiting is that a
@@ -349,6 +350,7 @@ func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	}
 }
 
+// VTT-005
 func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	// The same property on the path a prober actually uses. Separate from the
 	// spent-budget case because they refuse for different reasons and a guard

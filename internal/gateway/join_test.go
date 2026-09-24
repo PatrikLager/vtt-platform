@@ -105,6 +105,7 @@ func (f *joinFixture) post(secret, name string) (*http.Response, joinReply, stri
 	return resp, out, string(raw)
 }
 
+// VTT-010
 func TestJoiningThroughAnOpenDoorMintsASpectator(t *testing.T) {
 	f := newJoinFixture(t)
 	secret, err := f.ids.JoinSecret()
@@ -141,6 +142,7 @@ func TestJoiningThroughAnOpenDoorMintsASpectator(t *testing.T) {
 	}
 }
 
+// VTT-009
 func TestAClosedDoorAndAWrongSecretAreRefusedIDENTICALLY(t *testing.T) {
 	// The security property of this endpoint. A distinguishable refusal tells
 	// a prober which half they got right — whether the campaign exists and is
@@ -175,6 +177,7 @@ func TestAClosedDoorAndAWrongSecretAreRefusedIDENTICALLY(t *testing.T) {
 	}
 }
 
+// VTT-007 VTT-011
 func TestAClosedDoorMintsNobody(t *testing.T) {
 	// Not just refused — NO ROW. A refusal that still created a participant
 	// would make this unauthenticated endpoint a way for any stranger to fill
@@ -202,6 +205,7 @@ func TestAClosedDoorMintsNobody(t *testing.T) {
 	}
 }
 
+// VTT-017
 func TestARefusedJoinWritesNothingAtAll(t *testing.T) {
 	// Spec §2 rests its case against rate limiting entirely on the closed door
 	// leaving "no standing endpoint to hammer" — the link is INERT. That is a
@@ -227,6 +231,7 @@ func TestARefusedJoinWritesNothingAtAll(t *testing.T) {
 	}
 }
 
+// VTT-011 VTT-014
 func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
 	// The cap on the ONE surface an anonymous stranger controls, and it was
 	// exercised by nothing: raise maxJoinBody to a gigabyte and everything
@@ -258,6 +263,7 @@ func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
+// VTT-012 VTT-013
 func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	// It is what the whole table sees. Blank, or whitespace pretending to be
 	// blank, is not a name.
@@ -287,6 +293,7 @@ func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	}
 }
 
+// VTT-012
 func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 	// An UNAUTHENTICATED caller chooses this string, and every client at the
 	// table then renders it in every presence frame. Length and control
@@ -346,6 +353,7 @@ func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 	}
 }
 
+// VTT-024
 func TestTwoJoinersGetDistinctIdentities(t *testing.T) {
 	// The point of minting per person rather than sharing one credential: two
 	// people through the same link are two participants, separately revocable,
@@ -365,6 +373,7 @@ func TestTwoJoinersGetDistinctIdentities(t *testing.T) {
 	}
 }
 
+// VTT-019
 func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 	// The property spec §2 calls close to required: a leaked link is closable.
 	f := newJoinFixture(t)
@@ -399,6 +408,7 @@ func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 // perfect in internal/identity and absent from the product. That is the exact
 // shape a review caught in this session's previous change: a feature dead in
 // production behind a fully green suite.
+// VTT-009 VTT-011
 func TestTheDoorStopsAdmittingWhenItsBudgetIsSpent(t *testing.T) {
 	f := newJoinFixture(t)
 	secret, err := f.ids.JoinSecret()

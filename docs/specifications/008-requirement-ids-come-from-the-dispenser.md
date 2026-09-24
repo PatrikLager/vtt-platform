@@ -84,5 +84,4 @@ is held by a reading; the gate reads that the file carries the id.
 
 ## Requirements
 
-None allocated. The register has no rows; the first arc's ticket allocates the
-first.
+VTT-001, VTT-002, VTT-003, VTT-004.

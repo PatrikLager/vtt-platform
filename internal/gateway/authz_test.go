@@ -518,6 +518,7 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
+// VTT-028
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	if len(authzCases) != 88 {
 		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
@@ -1029,6 +1030,7 @@ func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
 
 // --- promotion may not reach dm or agent (spec §3.1a) -----------------------
 
+// VTT-025
 func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 	// The escalation path this guard exists to close: a shared join link mints
 	// SPECTATORS, so if promotion could reach dm or agent, that link would be
@@ -1054,6 +1056,7 @@ func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 	}
 }
 
+// VTT-025
 func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
 	// THE SAME GUARD AS THE TEST ABOVE, ASSERTED FOR THE ACTOR WHO MATTERS.
 	// Every requested-role REFUSAL in this file is issued by a DM, and
@@ -1101,6 +1104,7 @@ func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
 	}
 }
 
+// VTT-027
 func TestASpectatorCannotPromoteItself(t *testing.T) {
 	// NOT the same test as "a spectator cannot promote". The participant id in
 	// the COMMAND and the id on the CONNECTION are different fields, and

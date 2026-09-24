@@ -249,6 +249,7 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 // The JoinSecret() assertion in the middle is load-bearing: without it the test
 // passes whether the table was created or not, because JoinOpen() answers false
 // down its error path either way.
+// VTT-015
 func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 
@@ -289,6 +290,7 @@ func TestJoinIsClosedOnAnExistingCampaign(t *testing.T) {
 	}
 }
 
+// VTT-015
 func TestJoinIsClosedOnAFreshCampaign(t *testing.T) {
 	d, _ := openTemp(t)
 	if d.JoinOpen() {
@@ -376,6 +378,7 @@ func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
 	}
 }
 
+// VTT-020
 func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
 	// The other half of the same property: rotating closes the door to
 	// NEWCOMERS and touches nobody already through it.
@@ -402,6 +405,7 @@ func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
 //
 // This is the shape a DM actually produces: look at the link (which mints the
 // row) before deciding to let anyone in. The door must still be shut.
+// VTT-016
 func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, err := d.JoinSecret(); err != nil {
@@ -550,6 +554,7 @@ func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
 	}
 }
 
+// VTT-037
 func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
 	// A missing WHERE promotes the whole table, and the mutation gate cannot
 	// see SQL (#40), so this is guarded by hand or not at all.
@@ -607,6 +612,7 @@ func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
 	}
 }
 
+// VTT-029
 func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
 	// The token and the name belong to the person, not the role. A promotion
 	// that rewrote the credential would silently log them out.
@@ -635,6 +641,7 @@ func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
 	}
 }
 
+// VTT-030
 func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
 	// Promotion must not be a way back in for somebody who was thrown out.
 	d, _ := openTemp(t)
@@ -905,6 +912,7 @@ func TestAnEmptyStoredSecretAdmitsNobody(t *testing.T) {
 // was promoted without reconnecting — which is precisely what J4 made possible.
 //
 // So the console reads the source of truth (spec §3.1) instead.
+// VTT-034
 func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
@@ -1130,6 +1138,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 //
 // Deliberately more goroutines than slots, released together, so the race is
 // contended rather than hypothetical.
+// VTT-023
 func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "race.db")
 	d, err := identity.Open(path)
@@ -1198,6 +1207,7 @@ func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 // decision about a fresh set of people, not the remainder of an old one. If
 // the count carried over, a campaign would silently run out of admissions
 // forever, and the only cure would be a database edit.
+// VTT-021
 func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
 	d, err := identity.Open(path)
@@ -1232,6 +1242,7 @@ func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
 // TestAClosedDoorSpendsNothing keeps spec §2's inertness true for the new
 // column too: a refused anonymous request must not write, and "admitted" is
 // now a thing a refusal could plausibly touch.
+// VTT-007
 func TestAClosedDoorSpendsNothing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shut.db")
 	d, err := identity.Open(path)
@@ -1288,6 +1299,7 @@ func TestAClosedDoorSpendsNothing(t *testing.T) {
 // suite stayed green: the existing test exercises JoinAllows, which handleJoin
 // no longer uses. ConstantTimeCompare("", "") returns 1 and a request body
 // omitting the field decodes to "", so the degenerate row admits the world.
+// VTT-018
 func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.db")
 	d, err := identity.Open(path)
@@ -1806,6 +1818,7 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 // A door opened with an explicit 0, or with the absent wire field that decodes
 // to one, must not admit nobody: the DM sees "open", every joiner sees the same
 // 403 a stranger sees, and nothing on either side distinguishes them.
+// VTT-022
 func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 	d, _ := openTemp(t)
 	secret, err := d.JoinSecret()
@@ -1826,5 +1839,17 @@ func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 	}
 	if limit != identity.DefaultAdmitLimit {
 		t.Fatalf("an unstated budget became %d, want the default of %d", limit, identity.DefaultAdmitLimit)
+	}
+
+	// A NEGATIVE budget is the other non-positive value the wire's int32 can
+	// carry, and only this case holds the guard's `<= 0` against `== 0`.
+	if err := d.SetJoinOpen(true, -1); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := d.JoinAdmits(secret); !ok {
+		t.Fatalf("a door opened with a budget of -1 admitted nobody (%v)", err)
+	}
+	if _, limit, err := d.JoinBudget(); err != nil || limit != identity.DefaultAdmitLimit {
+		t.Fatalf("a negative budget became %d (%v), want the default of %d", limit, err, identity.DefaultAdmitLimit)
 	}
 }

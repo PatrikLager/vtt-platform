@@ -1396,6 +1396,7 @@ func TestDMPromotesASpectatorOverTheWire(t *testing.T) {
 	}
 }
 
+// VTT-025
 func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
 	// End to end, because the escalation guard lives in Authorize and a
 	// refactor could move the check past it.
@@ -1432,6 +1433,7 @@ func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
 // promotion only took effect on reconnect, a reconnect would sit on the
 // critical path of every single person who ever joins — making the shared link
 // more cumbersome than the per-person invites it replaces.
+// VTT-031
 func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 	f := newGWFixture(t)
 	watcher := f.dial(f.spectatorToken, 0)
@@ -1484,6 +1486,7 @@ func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 // participant kept playing — moving tokens, narrating — until they chose to
 // disconnect. Throwing someone out of a table did nothing without their
 // cooperation.
+// VTT-032
 func TestRevokingRemovesSomebodyWhoIsStillConnected(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.playerToken, 0)
@@ -1573,6 +1576,7 @@ func (f *gwFixture) head(t *testing.T) int64 {
 //
 // The precedent is already in handleCommand one screen below: a campaign that
 // cannot answer produces ok=false and leaves the connection open.
+// VTT-033
 func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.playerToken, 0)
@@ -1656,6 +1660,7 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 // DELIVERY is where a spectator meets the server, so delivery is where it has
 // to bite. Not on a timer and not on connect: on the next thing the table
 // would have shown them.
+// VTT-032
 func TestARevokedSpectatorStopsSeeingTheTable(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.spectatorToken, 0)
@@ -1818,6 +1823,7 @@ func TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt(t *testing.T) {
 	}
 }
 
+// VTT-020
 func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
 	// The property spec §2 calls close to required: a LEAKED link must be
 	// closable without re-inviting anyone already in.
@@ -1886,6 +1892,7 @@ func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
 // nobody left at the table can undo it — it takes host access and `vtt
 // invite`. AGENTS ARE AUTHORIZED to promote, which is the sharp end: an agent
 // having a bad day can lock every human out of their own campaign.
+// VTT-026
 func TestPromotionCannotUNMAKEADMOrAgent(t *testing.T) {
 	f := newGWFixture(t)
 	dmP, err := f.ids.Verify(f.dmToken)
@@ -2039,6 +2046,7 @@ func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 // The absence is asserted against a POSITIVE control on the same frame: an
 // unrevoked watcher must receive it. Without that, a broadcast that reached
 // nobody at all would pass.
+// VTT-032
 func TestARevokedWatcherIsNotEvenToldWhoElseArrives(t *testing.T) {
 	f := newGWFixture(t)
 

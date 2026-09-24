@@ -472,6 +472,10 @@ class RealTreeInjected(unittest.TestCase):
         m = re.search(r"^project:\s*(\S+)\s*$", cls.pristine, re.M)
         assert m, "the copied register declares no tag"
         cls.tag = m.group(1)
+        # An injected row must carry an id no row defines, or the gate refuses
+        # it as a duplicate and the test asserts the wrong reason.
+        taken = [int(n) for n in re.findall(r"^\| *`?\**%s-(\d+)" % re.escape(cls.tag), cls.pristine, re.M)]
+        cls.free = max(taken, default=0) + 1
 
     def tearDown(self):
         with open(self.register, "w", encoding="utf-8") as f:
@@ -531,7 +535,7 @@ class RealTreeInjected(unittest.TestCase):
     # TICKET item 3: "a row's evidence names a file that does not exist".
     def test_a_row_naming_a_missing_file_is_refused(self):
         missing = "internal/gateway/nowhere_test.go"
-        self.rows(row(self.id_(1), missing + "#TestNowhere"))
+        self.rows(row(self.id_(self.free), missing + "#TestNowhere"))
         code, out, err = run_checker(self.root)
         self.assertEqual(code, 1, err)
         self.assertIn(missing, err)
@@ -545,8 +549,8 @@ class RealTreeInjected(unittest.TestCase):
         with open(os.path.join(self.root, rel), encoding="utf-8") as f:
             body = f.read()
         self.assertIn("func %s(" % check, body)
-        self.assertNotIn(self.id_(1), body)
-        self.rows(row(self.id_(1), rel + "#" + check))
+        self.assertNotIn(self.id_(self.free), body)
+        self.rows(row(self.id_(self.free), rel + "#" + check))
         code, out, err = run_checker(self.root)
         self.assertEqual(code, 1, err)
         self.assertIn(rel, err)
@@ -561,17 +565,17 @@ class RealTreeInjected(unittest.TestCase):
 
     # TICKET item 3: "two rows share an id".
     def test_two_rows_sharing_the_projects_id_are_refused(self):
-        self.rows(row(self.id_(1), OPEN, "First"), row(self.id_(1), OPEN, "Second"))
+        self.rows(row(self.id_(self.free), OPEN, "First"), row(self.id_(self.free), OPEN, "Second"))
         code, out, err = run_checker(self.root)
         self.assertEqual(code, 1, err)
-        self.assertIn(self.id_(1), err)
+        self.assertIn(self.id_(self.free), err)
 
     # TICKET item 3: "an evidence cell is blank".
     def test_a_blank_evidence_cell_on_the_projects_register_is_refused(self):
-        self.rows(row(self.id_(1), ""))
+        self.rows(row(self.id_(self.free), ""))
         code, out, err = run_checker(self.root)
         self.assertEqual(code, 1, err)
-        self.assertIn(self.id_(1), err)
+        self.assertIn(self.id_(self.free), err)
 
 
 if __name__ == "__main__":

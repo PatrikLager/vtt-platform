@@ -75,6 +75,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # --- citations that resolve to nothing -----------------------------------
 
+    # VTT-001
     def test_a_test_citing_an_id_no_row_defines_is_refused(self):
         root = tree(**{
             "docs/requirements.md": register([]),
@@ -85,6 +86,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("alpha_test.go", err)
         self.assertIn("TT-999", err)
 
+    # VTT-001
     def test_a_specification_naming_an_id_no_row_defines_is_refused(self):
         root = tree(**{
             "docs/requirements.md": register([]),
@@ -98,6 +100,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # --- evidence that does not hold -----------------------------------------
 
+    # VTT-002
     def test_evidence_naming_a_missing_file_is_refused(self):
         root = tree(**{
             "docs/requirements.md": register(
@@ -109,6 +112,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("TT-001", err)
         self.assertIn("nowhere_test.go", err)
 
+    # VTT-002
     def test_evidence_naming_a_file_that_does_not_carry_the_id_is_refused(self):
         root = tree(**{
             "docs/requirements.md": register(
@@ -120,6 +124,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("TT-001", err)
         self.assertIn("does not carry", err)
 
+    # VTT-002
     def test_evidence_naming_a_check_that_is_not_in_the_file_is_refused(self):
         """Three languages, three shapes of a check's declaration."""
         for name, body in {
@@ -214,6 +219,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # --- the row's id ----------------------------------------------------------
 
+    # VTT-003
     def test_a_row_id_of_another_shape_is_refused(self):
         """A per-subject series is what the dispenser cannot see."""
         root = tree(**{
@@ -226,6 +232,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("TT-VIS-001", err)
         self.assertIn("not of the shape", err)
 
+    # VTT-003
     def test_a_row_numbered_zero_is_refused(self):
         """The dispenser counts from one; a hand-typed zero is not an allocation."""
         root = tree(**{
@@ -237,6 +244,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("TT-000", err)
 
+    # VTT-004
     def test_two_rows_sharing_an_id_are_refused(self):
         root = tree(**{
             "docs/requirements.md": register([
