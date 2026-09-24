@@ -5,8 +5,7 @@
 Accepted. Implemented by `tools/check-comments.py`, which `Taskfile.yml`'s
 `check:comments` step runs inside `task check`, and by
 `tools/comment-ceilings.txt`; pinned by `tools/check_comments_test.py` and,
-derived from this record alone, `tools/check_comments_qa_test.py`. `CLAUDE.md`
-does not yet carry rule 10.
+derived from this record alone, `tools/check_comments_qa_test.py`.
 
 ## Principles served
 
@@ -32,7 +31,7 @@ points at none of those: a date outside a `docs/` path is refused, a plan is
 not among the records a comment may point at, and neither is a commit hash. An
 `[anchor:kebab-name]` marker placed in code is a target for prose elsewhere,
 not a comment of any kind, and is allowed as a directive is. The narrowing is
-this record's decision.
+this record's decision, and rule 10 of `CLAUDE.md` says so.
 
 **Added lines are held by `check:comments`**, a step of `task check` that runs
 after `check:new-prose` and reads the comment lines a change adds against

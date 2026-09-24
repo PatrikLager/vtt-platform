@@ -41,8 +41,8 @@ guesses at these runs gates that do not run.
   commit unless a review record matches the tree being committed or a
   user-approved skip reason is given); pre-push runs tiers 2-3 and the contract
   gates, drift and breaking; everything else — coverage, race, the prose gates,
-  the requirements chain and both mutation gates — runs when somebody types
-  `task check` and at no other time.
+  the requirements chain, `check:comments` and both mutation gates — runs when
+  somebody types `task check` and at no other time.
   So the cycle's "run the gate locally" is not a courtesy here: half these
   gates run at no other time, and nothing downstream will notice if it is
   skipped.
@@ -188,6 +188,19 @@ and would be wrong to.
    Record the answer even when it is "MapTool does not solve this" or "their
    answer does not fit, because X" — a checked-and-rejected precedent is worth
    as much as a borrowed one, and it stops the next person re-asking.
+
+10. **A comment in code is a warning or a pointer.** Patrik's ruling,
+   2026-09-24. A comment under `internal/`, `cmd/` or `client/src` is an
+   imperative warning to whoever edits next, a pointer to a record (a
+   specification by number, a requirement by id, a test or symbol by name, a
+   report by its path), or the one-line doc sentence of an exported symbol.
+   History, measurements, arguments and descriptions of behaviour go to the
+   implementation report and the specification, never beside the code. This
+   narrows rule 8 for code comments: a date, a commit hash and a plan's task
+   are not things a comment points at. `check:comments` refuses the banned
+   terms and over-long blocks on added lines, and holds every file's comment
+   share to `tools/comment-ceilings.txt`, which only goes down; the rest is
+   the reading review's. SPEC-010 is the record.
 
 ## Layout
 
