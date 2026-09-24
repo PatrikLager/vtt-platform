@@ -192,6 +192,32 @@ where it is closed or recorded as open.
 
 ---
 
+## 2026-09-24 — the promotion nudge reaches a revoked participant who is still connected
+
+**What it is.** `announcePromotion` in `internal/gateway/server.go` sends a
+`PresenceChanged` frame to every connection through
+`presenceRegistry.announceIfPresent`, which takes no deny set. The connect and
+departure announcements pass `revoked()`; this one does not. A participant
+revoked while connected, who has sent no command and received no event since,
+receives the frame. VTT-032 says a revoked participant is refused on their next
+presence frame; this is the one presence frame that does not re-resolve. Found
+by the reading review of SPEC-009 on 2026-09-24, in the tree at `8ebb2b1`. Not
+closed here: a Phase 2 item for the joining-a-table arc's second ticket, or the
+next.
+
+**Labels:** `test data missing`, `outside the tool`.
+
+**Recipe.** It is in the tree; nothing puts it back. What closes it is passing
+`s.revoked()` through `announceIfPresent` the way `announcePresence` passes it
+to `broadcast`, and a test that revokes a connected watcher, promotes somebody
+else, and reads nothing on the watcher's socket.
+
+**Which gate should have caught it, and why it did not.** VTT-032's three tests
+exercise a command, a delivered event and an arrival announcement after
+revocation; none promotes anyone after revoking a connected watcher, so the
+frame is never read for. The mutation gate cannot reach it: the defect is a
+parameter that was never there, not an operator it can rewrite.
+
 ## Open debt
 
 **A test that cites a row marked `OPEN` passes the chain gate.**
