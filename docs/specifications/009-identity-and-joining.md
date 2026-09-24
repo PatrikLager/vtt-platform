@@ -8,8 +8,8 @@ Accepted. Implemented by `internal/identity/identity.go`,
 checks the rows under Requirements name, in
 `internal/identity/identity_test.go`,
 `internal/identity/fault_internal_test.go`, `internal/gateway/join_test.go`,
-`internal/gateway/authz_test.go`, `internal/gateway/server_test.go` and
-`internal/engine/role_test.go`.
+`internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
+`internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
 ## Principles served
 
