@@ -32,7 +32,7 @@ it: `check:fast`, `check:new-prose`, `check:doc-owner` and
    `internal/identity/fault_internal_test.go`, `internal/gateway/join_test.go`,
    `internal/gateway/authz_test.go`, `internal/gateway/server_test.go` and
    `tools/check_requirements_chain_test.py`; in each, the id sits on the last
-   comment line directly above the check, and the three checks holding two rows
+   comment line directly above the check, and the four checks holding two rows
    carry both ids on that line. The reading review checked placement
    mechanically in both directions.
 3. `[x]` `task check:requirements-chain` is a step of `task check`, between
@@ -62,8 +62,8 @@ it: `check:fast`, `check:new-prose`, `check:doc-owner` and
 
 ## What the rules became
 
-The ticket's four chain rules and its arc rules went through the `requirements`
-skill's sort after sign-off; the record of the sort, with what it refused and
+The ticket's three chain rules, which the sort made four, and its arc rules went
+through the `requirements` skill's sort after sign-off; the record of the sort, with what it refused and
 why, is below under "The sort". Thirty-seven rows:
 
 | Id | Rule, as the register states it | Holds |
@@ -112,11 +112,17 @@ column above abbreviates. The rows the sort refused, one line each, are in
 
 ## QA adjudications
 
+Phase 4a ran once, on the gate. It was skipped for the second commit: register
+rows, citations and a specification's section carry no behaviour to derive,
+and the one change to a test body in it, the negative-budget case, is itself a
+test.
+
 QA ran once, per `qa-prompt.md`, with the requirement, SPEC-008, the ticket and
 the checker's docstring; it never saw the checker's source or its self-test. It
 wrote 35 tests in `tools/check_requirements_chain_qa_test.py`, all passing, 33 of
 them shown red by injection, and listed sixteen underdetermined points. Each is
-ruled on here, one line per finding, in the shape `qa-prompt.md` gives. None
+ruled on here, one line per finding, in the shape `qa-prompt.md` gives, with a
+third class, consistent, for the points that were not failures. None
 escaped a gate into history: every ruling landed before the first commit, so
 `docs/verification-debt.md` carries no recipe for them, and the plan's step
 that asks for one had nothing to write.
@@ -135,7 +141,7 @@ that asks for one had nothing to write.
 - QA finding 12: consistent — a bare `**OPEN**` is refused; the dispenser's exact cell is the answer.
 - QA finding 13: consistent — a four-digit id passes, a one-digit id is refused; the dispenser pads to three and counts past 999.
 - QA finding 14: consistent — near-miss ids around a tag do not read as citations; `XQAX-999` and `QAX-99` are data.
-- QA finding 15: consistent — a trailing comma is refused as an entry naming no check; conservative.
+- QA finding 15: consistent — a trailing comma is refused, on the committed checker as a check name that ends in a comma; conservative.
 - QA finding 16: consistent — a second table after prose is not part of the rows; the table is the one under the header.
 - Reading review finding, after QA: a comma inside a TypeScript test's name split the evidence entry (283 client test names carry one) — entries now split on a comma that begins the next `path#Check`, a self-test case holds it, and SPEC-008 says so.
 - Reading review finding, after QA: QA's dispenser test hardcoded the plugin's cache path and skipped when it moved — it resolves `requirement-id` on the path first and keeps the cache path as the fallback.
@@ -147,11 +153,20 @@ that asks for one had nothing to write.
 |---|---|---|
 | Plan D8: QA's tests wired into the step. | Wired, and one of them dropped. | QA's test that ran `task check:requirements-chain` recursed without end once the step ran QA's file; first guarded through the environment, then dropped on the reading review's finding that the dry-run test already pins the wiring and `task check` runs the step. |
 | SPEC-008 and the checker's docstring each enumerate what is scanned and refused (plan Task 1 step 5). | SPEC-008 states the decisions and points at the docstring for the lists. | The reading review found the two already differing; one holds the lists, per Patrik's single-source-of-truth ruling. The docstring changes with the code and is what QA reads. |
-| Commit 2 changes comments and the register only. | `TestADoorOpenedWithNoStatedBudgetStillAdmits` gained a negative-budget case. | The reading review found VTT-022's "non-positive" held by nothing and the guard's `== 0` mutant surviving; Patrik chose the test case over narrowing the row. |
+| Commit 2 changes the register, the citations and SPEC-008's Requirements section, and nothing in a test's body (plan D9). | `TestADoorOpenedWithNoStatedBudgetStillAdmits` gained a negative-budget case. | The reading review found VTT-022's "non-positive" held by nothing and the guard's `== 0` mutant surviving; Patrik chose the test case over narrowing the row. |
 | Thirty-six rows, the sort's count. | Thirty-seven. | The review found VTT-029's second test held a rule its sentence did not state; Patrik chose to split it, VTT-037. |
-| VTT-033 and VTT-035 as the ticket worded them. | Reworded before landing. | "Only an invalid credential ends a connection" is a universal no test holds; "lives beside the credential" is how. Nothing was renumbered: no row had been committed. |
+| VTT-033 and VTT-035 as the ticket worded them. | Reworded before landing. | "Only an invalid credential ends a connection" is a universal no test holds; "lives beside the credential", the sort's wording for the ticket's "lives in `participants.role`", is how. Nothing was renumbered: no row had been committed. |
 | `task check` whole once, before commit 2 (plan D13). | Run, stopped at the mutation stage, run again. | The first run was over a tree the review's fixes then changed; a gate over a tree that moves proves nothing, so it was stopped and rerun over the final tree. |
 | QA's real-tree fixture injecting `<tag>-001`. | It injects the first free id. | With rows in the register the id was taken and the gate refused the injected row as a duplicate, the wrong reason for two of QA's tests. |
+
+## Starting state, measured before the first edit (plan Task 0), 2026-09-23
+
+Python 3.9.6. Free space on the temp volume 25 GiB, above the mutation gate's
+16 GiB guard. `python3 tools/check_doc_owner_test.py -q`, the convention the
+new tool copies, OK. `git status --short` printed the ticket and the plan and
+nothing else, at `ad68765`. lefthook 2.1.5, and the path in `.lefthook.yml`'s
+`review-gate` line present. On a scratchpad copy of the register, `requirement-id`
+allocated `VTT-001` and left no lock.
 
 ## What could not be established
 
@@ -163,15 +178,15 @@ that asks for one had nothing to write.
   a reflection over the Envelope's payload; "a promotion appends no event" a
   read of the log head across a promotion. Each is the second ticket's or
   later; none was tried here.
-- `gofmt -l internal/` names `internal/gateway/keepalive.go` and
-  `internal/gateway/scenario_test.go`, neither touched by this ticket; the lint
-  gate does not run gofmt. Left as found.
+- `gofmt -l internal/` named `internal/gateway/keepalive.go` and
+  `internal/gateway/scenario_test.go` on 2026-09-24, neither touched by this
+  ticket; the lint gate does not run gofmt. Left as found.
 
 ## What was deliberately left out, and where it went
 
 - The identity and joining specification, the sort of `identity.go`'s comments,
   the removal of `JoinAllows` and the shut-door test: the arc's second ticket.
-- Six rules tests hold that the ticket did not carry, named in "The sort": the
+- Seven rules tests hold that the ticket did not carry, named in "The sort": the
   second ticket.
 - A gate refusal for a test citing a row marked OPEN: `docs/verification-debt.md`,
   entry under Open debt, dated 2026-09-23.
@@ -258,7 +273,7 @@ shape D3 fixes, `path#Check`; the ids are allocated in Task 3, in this order.
 - A30. Revoked participants are not listed.
   `internal/identity/identity_test.go#TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo`
 - A31. No event carries a role.
-  OPEN (reworded in the reading review from "lives beside the credential", which was how, to the observable) — a gap worth recording; held today by a search of `internal/engine` and by nothing under `task check`.
+  OPEN (reworded in the reading review from "lives beside the credential", which was how, to the observable) — a gap worth recording; held, as of 2026-09-24, by a search of `internal/engine` and by nothing under `task check`.
 - A32. A promotion appends no event.
   OPEN — a gap worth recording; no test reads the log head across a promotion.
 
