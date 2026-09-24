@@ -31,8 +31,8 @@ import (
 
 // gwFixture is a real gateway.Server wired to a real campaign+identity DB
 // on a real httptest server, seeded with a small history: SessionStarted,
-// SceneCreated "scn1", ActorAdded "a1" (controlled by the player), and
-// TokenPlaced "t1" at (3,7) on scn1. Sequences 1-4.
+// SceneCreated "scn1", ActorAdded "a1", an ActorControlGranted handing a1 to
+// the player, and TokenPlaced "t1" at (3,7) on scn1. Sequences 1-5.
 type gwFixture struct {
 	t   *testing.T
 	srv *httptest.Server
@@ -1393,6 +1393,48 @@ func TestDMPromotesASpectatorOverTheWire(t *testing.T) {
 	if after.Role != identity.RolePlayer {
 		t.Fatalf("role = %q, want player — the command was accepted but changed nothing",
 			after.Role)
+	}
+}
+
+// VTT-036
+func TestAPromotionAppendsNoEvent(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+
+	watcher, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.head(t)
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "promote-no-event",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{
+				ParticipantId: watcher.ID, Role: string(identity.RolePlayer),
+			},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %q", res.GetError())
+	}
+	// The positive control: a promotion that was refused, or applied to
+	// nobody, would leave the head alone and pass the check below for the
+	// wrong reason.
+	after, err := f.ids.Verify(f.spectatorToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Role != identity.RolePlayer {
+		t.Fatalf("role = %q, want player — nothing was promoted, so the head says nothing",
+			after.Role)
+	}
+
+	if h := f.head(t); h != before {
+		t.Fatalf("a promotion appended to the log (head %d → %d) — a role lives beside "+
+			"the credential, and an event beside it is a second source of truth", before, h)
 	}
 }
 

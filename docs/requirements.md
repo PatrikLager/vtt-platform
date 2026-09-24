@@ -16,7 +16,7 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-005 | A join request carrying a secret that does not match the campaign's is refused, and the refusal writes nothing. | internal/identity/fault_internal_test.go#TestAWrongSecretRefusesWithoutTouchingTheDatabase |
 | VTT-006 | A join request arriving when the opening's admission budget is spent is refused, and the refusal writes nothing. | internal/identity/fault_internal_test.go#TestASpentBudgetRefusesWithoutTouchingTheDatabase |
 | VTT-007 | A join request arriving when the door is shut is refused. | internal/gateway/join_test.go#TestAClosedDoorMintsNobody, internal/identity/identity_test.go#TestAClosedDoorSpendsNothing |
-| VTT-008 | A join request refused at a shut door writes nothing. | **OPEN — no test yet** |
+| VTT-008 | A join request refused at a shut door writes nothing. | internal/identity/fault_internal_test.go#TestAShutDoorRefusesWithoutTouchingTheDatabase |
 | VTT-009 | A shut door, a wrong secret and a spent budget are refused with the same status and the same body. | internal/gateway/join_test.go#TestAClosedDoorAndAWrongSecretAreRefusedIDENTICALLY, internal/gateway/join_test.go#TestTheDoorStopsAdmittingWhenItsBudgetIsSpent |
 | VTT-010 | A participant minted through the join link is a spectator. | internal/gateway/join_test.go#TestJoiningThroughAnOpenDoorMintsASpectator |
 | VTT-011 | A refused join creates no participant. | internal/gateway/join_test.go#TestAClosedDoorMintsNobody, internal/gateway/join_test.go#TestTheDoorStopsAdmittingWhenItsBudgetIsSpent, internal/gateway/join_test.go#TestAnOversizedBodyIsRefusedBeforeItIsRead |
@@ -43,6 +43,8 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-032 | A revoked participant is refused on their next command, their next delivered event and their next presence frame, without a reconnect. | internal/gateway/server_test.go#TestRevokingRemovesSomebodyWhoIsStillConnected, internal/gateway/server_test.go#TestARevokedSpectatorStopsSeeingTheTable, internal/gateway/server_test.go#TestARevokedWatcherIsNotEvenToldWhoElseArrives |
 | VTT-033 | An identity store that cannot answer refuses the command, keeps the connection, and delivery continues. | internal/gateway/server_test.go#TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody |
 | VTT-034 | Revoked participants are not listed. | internal/identity/identity_test.go#TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo |
-| VTT-035 | No event carries a role. | **OPEN — no test yet** |
-| VTT-036 | A promotion appends no event. | **OPEN — no test yet** |
+| VTT-035 | WITHDRAWN 2026-09-24: No event carries a role. False as worded: `Envelope.actor_role` is a role field on every Envelope. Succeeded by VTT-038 and VTT-039. | **READING — verify-ticket check 5 of 2026-09-24; withdrawn, held by nothing** |
+| VTT-036 | A promotion appends no event. | internal/gateway/server_test.go#TestAPromotionAppendsNoEvent |
 | VTT-037 | Promoting one participant changes no other participant's role. | internal/identity/identity_test.go#TestSetRoleLeavesEVERYONEElseAlone |
+| VTT-038 | No event payload names a role. | internal/gateway/authz_test.go#TestNoEventPayloadNamesARole, internal/engine/qa_role_test.go#TestQANoEventPayloadNamesARole |
+| VTT-039 | Folding an event yields the same state whatever role its envelope carries. | internal/engine/role_test.go#TestTheFoldIgnoresTheEnvelopesRole, internal/engine/qa_role_test.go#TestQAFoldingIgnoresTheEnvelopesRole |

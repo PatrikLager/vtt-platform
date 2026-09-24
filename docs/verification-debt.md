@@ -190,6 +190,10 @@ database fault so the statement fails if it is reached, with a shut door in
 place of a wrong secret. Not closed here; the joining-a-table arc's ticket is
 where it is closed or recorded as open.
 
+**Closed by** `TestAShutDoorRefusesWithoutTouchingTheDatabase` in
+`internal/identity/fault_internal_test.go`, which reds on the recipe above
+(observed 2026-09-24).
+
 ---
 
 ## 2026-09-24 — the promotion nudge reaches a revoked participant who is still connected

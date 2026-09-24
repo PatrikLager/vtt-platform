@@ -8,11 +8,8 @@ Accepted. Implemented by `internal/identity/identity.go`,
 checks the rows under Requirements name, in
 `internal/identity/identity_test.go`,
 `internal/identity/fault_internal_test.go`, `internal/gateway/join_test.go`,
-`internal/gateway/authz_test.go` and `internal/gateway/server_test.go`. VTT-008
-and VTT-036 are `OPEN` in the register: the code holds them and no test does
-yet; the ticket
-`docs/superpowers/specs/2026-09-24-joining-record-and-code-design.md` carries
-their tests.
+`internal/gateway/authz_test.go`, `internal/gateway/server_test.go` and
+`internal/engine/role_test.go`.
 
 ## Principles served
 
@@ -33,10 +30,12 @@ issuer's role at the moment of the command, stamped by the gateway (`ToEvent`
 in `internal/gateway/convert.go` and the batch handlers beside it) and by
 `internal/eventgen`; nothing outside a test file in `internal/engine`,
 `internal/campaign` or `internal/store` reads it (`grep -rn ActorRole` over
-those three directories, test files aside). The door is a row in `join_access`
-and revocation is an update to `participants` through `identity.Revoke`, so
-replaying a campaign can neither reopen a door nor bring a revoked participant
-back.
+those three directories, test files aside). No message reachable from the
+Envelope's payload oneof has a field whose name contains `role`; whether a
+string field ever carries a role as its value is not decidable from the
+contract and is not claimed. The door is a row in `join_access` and revocation
+is an update to `participants` through `identity.Revoke`, so replaying a
+campaign can neither reopen a door nor bring a revoked participant back.
 
 **Authentication happens once; authorization happens continuously.** `handleWS`
 verifies the token against the plain HTTP request, before `websocket.Accept`; a
@@ -78,18 +77,20 @@ is refused when it says neither open nor closed; `rotate_join_link` reaches
 written.** `JoinAdmits` reads the row once, compares the secret with
 `subtle.ConstantTimeCompare` inside `internal/identity`, and answers a shut
 door, an empty stored secret, a wrong secret and a spent budget with a refusal
-before any statement writes; a campaign with no door row is refused without
-creating one. The empty-secret term is there because a constant-time compare of
-two empty strings is a match and an omitted JSON field decodes to the empty
-string. The admission is one `UPDATE` whose `WHERE` re-states the door and the
-budget, so two joiners racing for the last slot are serialised by the database
-and the one whose update matches no row is refused; that joiner, and one whose
-door was shut between the read and the write, is refused after taking the write
-lock, which only a caller holding the current secret at an open door with
-budget left can reach. The secret is not re-checked in that `UPDATE`: a
-rotation landing between the read and the write admits one in-flight holder of
-the old secret. A `CreateInvite` failure after an admission leaves the slot
-spent; there is no compensating decrement.
+before any statement writes, and the refusing path runs that one `SELECT` and
+no other statement, so it takes no write lock and opens no write transaction; a
+campaign with no door row is refused without creating one. The empty-secret
+term is there because a constant-time compare of two empty strings is a match
+and an omitted JSON field decodes to the empty string. The admission is one
+`UPDATE` whose `WHERE` re-states the door and the budget, so two joiners racing
+for the last slot are serialised by the database and the one whose update
+matches no row is refused; that joiner, and one whose door was shut between the
+read and the write, is refused after taking the write lock, which only a caller
+holding the current secret at an open door with budget left can reach. The
+secret is not re-checked in that `UPDATE`: a rotation landing between the read
+and the write admits one in-flight holder of the old secret. A `CreateInvite`
+failure after an admission leaves the slot spent; there is no compensating
+decrement.
 
 **The three refusals give one answer.** `handleJoin` writes one status and one
 body for a shut door, a wrong secret and a spent budget, and the same for an
@@ -166,4 +167,5 @@ minted out of band, by `vtt invite`.
 VTT-005, VTT-006, VTT-007, VTT-008, VTT-009, VTT-010, VTT-011, VTT-012,
 VTT-013, VTT-014, VTT-015, VTT-016, VTT-017, VTT-018, VTT-019, VTT-020,
 VTT-021, VTT-022, VTT-023, VTT-024, VTT-025, VTT-026, VTT-027, VTT-028,
-VTT-029, VTT-030, VTT-031, VTT-032, VTT-033, VTT-034, VTT-036, VTT-037.
+VTT-029, VTT-030, VTT-031, VTT-032, VTT-033, VTT-034, VTT-036, VTT-037,
+VTT-038, VTT-039.

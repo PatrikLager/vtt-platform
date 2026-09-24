@@ -36,6 +36,11 @@ excludeFiles:
   # import a test-only driver, which is exactly the dependency this rule
   # exists to forbid.
   - internal/identity/fault_internal_test\.go$
+  # The independent QA stage's identity tests (2026-09-24) drive JoinAdmits
+  # through the same testdb seam for the same reason, in their own file so the
+  # diff shows which tests came from which stage. Same exception, same shape:
+  # the file is excluded, identity's mayDependOn is not widened.
+  - internal/identity/qa_joining_internal_test\.go$
 components:
   contract: { in: contract/gen/go/** }
   store:    { in: internal/store }

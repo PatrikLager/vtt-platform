@@ -379,3 +379,38 @@ func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
 		t.Fatalf("a wrong secret answered (%v, %v), want (false, nil)", ok, err)
 	}
 }
+
+// VTT-008
+func TestAShutDoorRefusesWithoutTouchingTheDatabase(t *testing.T) {
+	// The third refusal of the set the two above hold, on the same
+	// instrument: the fault is armed on the UPDATE and must NOT fire. The
+	// secret is right and the budget is untouched, so the door is the ONLY
+	// term refusing here — a guard that lost it reaches the write.
+	withFaultDriver(t)
+	path := filepath.Join(t.TempDir(), "shut.db")
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(false, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
+	ok, err := d.JoinAdmits(secret)
+	if reached() {
+		t.Fatal("a shut door reached the UPDATE — a refused request must not take " +
+			"SQLite's write lock on the file internal/store appends events to")
+	}
+	if ok || err != nil {
+		t.Fatalf("a shut door answered (%v, %v), want (false, nil)", ok, err)
+	}
+}

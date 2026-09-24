@@ -9,6 +9,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 // moveTokenCmd builds a MoveToken ClientCommand targeting tokenID.
@@ -1164,6 +1165,45 @@ func TestEveryClientCommandHasRoleCells(t *testing.T) {
 				t.Fatalf("%q has no row in commandRoles, so no role may issue it", name)
 			}
 		})
+	}
+}
+
+// VTT-038
+func TestNoEventPayloadNamesARole(t *testing.T) {
+	// Walks every message reachable from the payload oneof, recursively, and
+	// refuses any field whose name contains "role". The Envelope's own fields
+	// are NOT walked: actor_role sits there on purpose, a stamp about the
+	// issuer that nothing folding an event reads.
+	oneof := (&vttv1.Envelope{}).ProtoReflect().Descriptor().Oneofs().ByName("payload")
+	if oneof == nil {
+		t.Fatal("vttv1.Envelope has no \"payload\" oneof")
+	}
+	for i := range oneof.Fields().Len() {
+		arm := oneof.Fields().Get(i)
+		t.Run(string(arm.Name()), func(t *testing.T) {
+			refuseRoleFields(t, arm.Message(), map[protoreflect.FullName]bool{})
+		})
+	}
+}
+
+// refuseRoleFields reports every field under md whose name contains "role",
+// descending into message-typed fields once each.
+func refuseRoleFields(t *testing.T, md protoreflect.MessageDescriptor, seen map[protoreflect.FullName]bool) {
+	t.Helper()
+	if seen[md.FullName()] {
+		return
+	}
+	seen[md.FullName()] = true
+	fields := md.Fields()
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		if strings.Contains(strings.ToLower(string(fd.Name())), "role") {
+			t.Errorf("%s.%s names a role — a role lives beside the credential, never in an event payload",
+				md.FullName(), fd.Name())
+		}
+		if fd.Message() != nil {
+			refuseRoleFields(t, fd.Message(), seen)
+		}
 	}
 }
 
