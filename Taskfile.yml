@@ -43,6 +43,7 @@ tasks:
       - task: check:breaking
       - task: check:invariants
       - task: check:doc-owner
+      - task: check:requirements-chain
       - task: check:new-prose
       - task: check:no-retraction
       - task: check:no-create-scene
@@ -207,7 +208,8 @@ tasks:
       and lint), plus tiers 2-4 of the suite. Enumerated 2026-09-01, so nobody
       has to diff the two by hand: test:cross, test:external, check:coverage,
       check:ts-coverage, client:typecheck, check:drift, check:breaking,
-      check:invariants, check:doc-owner, check:new-prose,
+      check:invariants, check:doc-owner, check:requirements-chain,
+      check:new-prose,
       check:no-retraction, check:no-create-scene, check:no-pack, check:arch,
       check:race, check:mutation and check:ts-mutation. The list read
       "test:cross, test:external, check:coverage, check:mutation, check:drift,
@@ -812,6 +814,19 @@ tasks:
     cmds:
       - python3 tools/check_doc_owner_test.py -q
       - python3 tools/check-doc-owner.py .
+
+  check:requirements-chain:
+    desc: >
+      Fail when the chain between docs/requirements.md, the tests and the
+      specifications is broken: a test or a specification citing an id no row
+      defines; a row whose evidence names a file that does not exist, does not
+      carry the id, or does not declare the check named; a row id not of the
+      shape VTT-NNN; two rows with one id; a blank evidence cell. An empty
+      register passes; nothing scanned does not.
+    cmds:
+      - python3 tools/check_requirements_chain_test.py -q
+      - python3 tools/check_requirements_chain_qa_test.py -q
+      - python3 tools/check-requirements-chain.py .
 
   check:new-prose:
     desc: >

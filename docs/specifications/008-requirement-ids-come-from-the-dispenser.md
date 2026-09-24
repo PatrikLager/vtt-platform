@@ -2,15 +2,11 @@
 
 ## Status
 
-Accepted, and partly implemented. The register `docs/requirements.md` carries
-the tag `VTT` and the `| Id | Requirement | Verified by |` header, and the
-dispenser `requirement-id` from the dev-cycle package allocates into it; that
-half is in place, exercised by the package's own tests rather than by anything
-in this repository. The other half, a gate that checks the chain between the
-register, the tests and the specifications, is not implemented: nothing in
-`task check` reads a citation. No ticket carries it yet; the first arc's ticket
-under the process, written next, is where it lands, because that arc's rows are
-the first the gate has to hold.
+Accepted. Implemented by `docs/requirements.md`, the dispenser `requirement-id`
+from the dev-cycle package, and `tools/check-requirements-chain.py`, which
+`Taskfile.yml`'s `check:requirements-chain` step runs inside `task check`;
+pinned by `tools/check_requirements_chain_test.py` and, derived from this
+record alone, `tools/check_requirements_chain_qa_test.py`.
 
 ## Principles served
 
@@ -20,8 +16,9 @@ thing, is missing rather than absent; the blueprint is its own ticket.
 
 ## How it works
 
-**An id is the tag `VTT` and a number**, `VTT-001` upward, with no per-subject
-segment. The tag is declared once, on the register's `project:` line.
+**An id is the tag `VTT` and a number**, `VTT-NNN` counted from one, with no
+per-subject segment. The tag is declared once, on the register's `project:`
+line.
 
 **Only the dispenser writes an id.** `requirement-id "<the rule, one sentence>"`
 run from the repository root appends the row and prints the id. What the
@@ -40,6 +37,27 @@ section when it holds several. No marker word: the id is unique and greppable,
 and a second format would be a second thing to keep true. Only the tag `VTT`
 reads as a claim about this register; a fixture that builds registers as test
 data carries another tag.
+
+### How the chain is checked
+
+`check:requirements-chain`, a step of `task check`, reads the register's tag
+and rows, the test files under the source roots, and the records under
+`docs/specifications/`. Which files those are, which directories are skipped,
+and which declaration shapes count as a check are the checker's own to say, in
+the docstring of `tools/check-requirements-chain.py`. An id with the register's
+tag anywhere in one of those files is a citation, comment or not, and only the
+register's own tag reads as one.
+
+The gate refuses a citation no row defines; a row whose id is not `VTT-NNN`,
+three or more digits and never zero, once markup is stripped; two rows with
+one id; a malformed row; a blank evidence cell, or a `READING` that names no
+review; and an evidence entry that names no check, a file that does not exist,
+a file that does not carry the row's id, or a check the file does not declare.
+An evidence entry is `<repo-relative path>#<check name>`; entries are separated
+by a comma that begins the next entry, so a comma inside a test's name is the
+name's. An empty register passes. A run that scans nothing fails with its own
+exit code: no register, a register with no `project:` line or no requirements
+header, or no test file under the roots.
 
 ### Where the rules come from
 
@@ -60,12 +78,9 @@ signed off.
 
 The register holds only ids of the shape `VTT-NNN`.
 
-Until the chain gate exists, a citation that resolves to nothing is caught by a
-reading and by nothing else; `CLAUDE.md`'s record of the register says so in
-one sentence, and that sentence changes when the gate lands.
-
-A search of `internal/`, `cmd/`, `client/` and `tools/` for `VTT-` followed by
-digits finds no citation; the first arrive with the first arc's ticket.
+A citation that resolves to nothing, and an evidence entry that resolves to
+nothing, fail the gate rather than a reading. Where a citation sits in its file
+is held by a reading; the gate reads that the file carries the id.
 
 ## Requirements
 

@@ -40,9 +40,9 @@ guesses at these runs gates that do not run.
   the dev-cycle review gate (`review-gate` in `.lefthook.yml`, which refuses a
   commit unless a review record matches the tree being committed or a
   user-approved skip reason is given); pre-push runs tiers 2-3 and the contract
-  gates, drift and breaking; everything else — coverage, race, the prose gates
-  and both mutation gates — runs when somebody types `task check` and at no
-  other time.
+  gates, drift and breaking; everything else — coverage, race, the prose gates,
+  the requirements chain and both mutation gates — runs when somebody types
+  `task check` and at no other time.
   So the cycle's "run the gate locally" is not a courtesy here: half these
   gates run at no other time, and nothing downstream will notice if it is
   skipped.
@@ -75,7 +75,8 @@ guesses at these runs gates that do not run.
   while the package is installed and otherwise at
   `~/.claude/plugins/cache/patrik-process/dev-cycle/<version>/bin/`, and never
   chosen by hand. How an id is allocated, cited and checked is SPEC-008 in
-  `docs/specifications/`. Nothing checks the chain here today.
+  `docs/specifications/`. `check:requirements-chain`, a step of `task check`,
+  holds the chain that record describes.
 - **Where the blueprint is.** Nowhere. This project has none, so no
   specification can honestly name the principles it serves. Writing one from a
   single record would invent the principles, which is what a blueprint exists
@@ -86,8 +87,8 @@ guesses at these runs gates that do not run.
   never rewritten.
 - **Where adjudications go.** Mutation survivors:
   `tools/mutation-equivalents.txt` and `tools/ts-mutation-equivalents.txt`.
-  Phase 4a's QA adjudications HAVE NO HOME YET — the first QA run here has to
-  give them one, and saying so beats sending them somewhere they do not belong.
+  Phase 4a's QA adjudications go in the arc's implementation report, under
+  their own heading, one line per finding.
 - **The ONE file where escaped defects go.** `docs/verification-debt.md`, as a
   RECIPE: the exact edit that puts the defect back, which gate should have
   caught it, and why it did not. Recipes are cheap at the moment of escape and

@@ -194,6 +194,13 @@ where it is closed or recorded as open.
 
 ## Open debt
 
+**A test that cites a row marked `OPEN` passes the chain gate.**
+`check:requirements-chain` refuses a citation with no row and an evidence entry
+that resolves to nothing; it does not notice a row whose evidence says no test
+holds it while a test cites it. Found by QA on 2026-09-23 and left open: the
+fix is one more refusal in `tools/check-requirements-chain.py`, written when an
+arc produces the case.
+
 **The oracle corpus contains no non-party viewpoint.** `MayPerch` produced every
 seat in it, so any rule that only diverges for a non-party or not-yet-existing
 viewpoint is invisible to all eleven. `TestARefusedLookStillFillsTheRoster`
