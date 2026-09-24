@@ -48,3 +48,13 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-037 | Promoting one participant changes no other participant's role. | internal/identity/identity_test.go#TestSetRoleLeavesEVERYONEElseAlone |
 | VTT-038 | No event payload names a role. | internal/gateway/authz_test.go#TestNoEventPayloadNamesARole, internal/engine/qa_role_test.go#TestQANoEventPayloadNamesARole |
 | VTT-039 | Folding an event yields the same state whatever role its envelope carries. | internal/engine/role_test.go#TestTheFoldIgnoresTheEnvelopesRole, internal/engine/qa_role_test.go#TestQAFoldingIgnoresTheEnvelopesRole |
+| VTT-040 | Reading the join secret does not change it. | internal/identity/identity_test.go#TestTheJoinSecretIsStableUntilRotated |
+| VTT-041 | A participant's credential is stored as its hash. | internal/identity/identity_test.go#TestTokenNotRecoverableFromDB |
+| VTT-042 | A join carrying the current secret at an open door with budget remaining is admitted. | internal/identity/identity_test.go#TestTheDoorNeedsBOTHTheFlagAndTheSecret |
+| VTT-043 | Rotating the link leaves the door open or shut as it was. | internal/identity/identity_test.go#TestRotatingTheSecretLeavesTheDoorAlone, internal/identity/identity_test.go#TestRotatingBeforeAnythingElseLeavesTheDoorSHUT, internal/gateway/server_test.go#TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse |
+| VTT-044 | At an open door, a link rotated after its budget is spent admits a holder of the new secret. | internal/identity/identity_test.go#TestRotatingAfterASpentBudgetGivesAWorkingLink |
+| VTT-045 | An admission whose spend cannot be recorded is not granted. | internal/identity/fault_internal_test.go#TestAnAdmissionThatCannotBeSpentIsNotGranted |
+| VTT-046 | A door whose database cannot answer admits nobody. | internal/identity/fault_internal_test.go#TestTheDoorStateReadFailingIsNotAnAdmission, internal/identity/identity_test.go#TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting |
+| VTT-047 | A promotion is announced on the promoted participant's own connection. | internal/gateway/server_test.go#TestAPromotionIsAnnouncedToThePromotedPersonThemselves |
+| VTT-048 | A door whose database cannot answer reads as shut. | internal/identity/identity_test.go#TestTheDoorRefusesWhenTheDatabaseIsUnusable |
+| VTT-049 | Rotating the link against a database that cannot answer reports the failure. | internal/identity/identity_test.go#TestTheDoorRefusesWhenTheDatabaseIsUnusable, internal/identity/identity_test.go#TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting |

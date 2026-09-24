@@ -62,6 +62,7 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 // retrievable: it opens a second, independent SQLite handle on the same
 // file and reads the persisted token_hash directly, asserting it neither
 // equals the raw token bytes nor anything other than sha256(token).
+// VTT-041
 func TestTokenNotRecoverableFromDB(t *testing.T) {
 	d, path := openTemp(t)
 	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -334,6 +335,7 @@ func TestTheDoorSurvivesAReopen(t *testing.T) {
 	}
 }
 
+// VTT-040
 func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
 	// Stable, because the DM shares it — a secret that changed per call would
 	// invalidate the link the moment anyone looked at it.
@@ -425,6 +427,7 @@ func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
 // write must report the failure rather than pretend it worked, and JoinOpen
 // must answer FALSE — it gates an unauthenticated, row-minting endpoint, so a
 // database it cannot read must keep people OUT.
+// VTT-048 VTT-049
 func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.Close(); err != nil {
@@ -461,6 +464,7 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 // The closed case is the security-relevant one: a DM who rotates a leaked link
 // while the table is shut must not thereby open it. The open case matters too —
 // rotating mid-session should not lock out the people still arriving.
+// VTT-043
 func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 	for _, open := range []bool{false, true} {
 		d, _ := openTemp(t)
@@ -763,6 +767,7 @@ func TestLookupRefusesACorruptRow(t *testing.T) {
 	}
 }
 
+// VTT-043
 func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 	// RotateJoinSecret is an upsert, and its INSERT branch is reached only on a
 	// campaign whose join_access row does not exist yet — `vtt join-link rotate`
@@ -801,6 +806,7 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 // TestTheDoorNeedsBOTHTheFlagAndTheSecret walks all four cells. Three of them
 // refuse, and each refuses for its own reason: a guard that only ever says yes
 // is not a guard, and one that says no for the wrong reason is worse.
+// VTT-042
 func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 	d, _ := openTemp(t)
 	right, err := d.JoinSecret()
@@ -1269,6 +1275,7 @@ func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 // against for a zero default, reached by a different road.
 //
 // A new secret is a NEW OPENING. Nobody holding it has spent anything.
+// VTT-044
 func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rotate.db")
 	d, err := identity.Open(path)
@@ -1454,6 +1461,7 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 // must fail CLOSED. A database that cannot answer must never be able to open a
 // door, and JoinAdmits returning (true, err) anywhere would admit a stranger on
 // a broken campaign.
+// VTT-046 VTT-049
 func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.db")
 	d, err := identity.Open(path)

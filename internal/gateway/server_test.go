@@ -1865,7 +1865,7 @@ func TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt(t *testing.T) {
 	}
 }
 
-// VTT-020
+// VTT-020 VTT-043
 func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
 	// The property spec §2 calls close to required: a LEAKED link must be
 	// closable without re-inviting anyone already in.
@@ -2012,6 +2012,7 @@ func TestPromotionCannotUNMAKEADMOrAgent(t *testing.T) {
 // own DISPLAY NAME is what pins which connection the registry looked up — a
 // lookup that matched the wrong participant would announce somebody else's
 // name under this id, and the table's roster would quietly rename them.
+// VTT-047
 func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 	f := newGWFixture(t)
 

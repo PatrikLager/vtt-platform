@@ -201,6 +201,7 @@ func TestAMigrationThatCannotReadTheBudgetStateRefusesTheCampaign(t *testing.T) 
 	}
 }
 
+// VTT-045
 func TestAnAdmissionThatCannotBeSpentIsNotGranted(t *testing.T) {
 	// The arm that matters most in this file. The SELECT says there is room;
 	// the UPDATE that spends the slot fails. Returning true here would admit a
@@ -236,6 +237,7 @@ func TestAnAdmissionThatCannotBeSpentIsNotGranted(t *testing.T) {
 	}
 }
 
+// VTT-046
 func TestTheDoorStateReadFailingIsNotAnAdmission(t *testing.T) {
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "read.db")
