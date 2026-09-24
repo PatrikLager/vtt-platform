@@ -58,3 +58,12 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-047 | A promotion is announced on the promoted participant's own connection. | internal/gateway/server_test.go#TestAPromotionIsAnnouncedToThePromotedPersonThemselves |
 | VTT-048 | A door whose database cannot answer reads as shut. | internal/identity/identity_test.go#TestTheDoorRefusesWhenTheDatabaseIsUnusable |
 | VTT-049 | Rotating the link against a database that cannot answer reports the failure. | internal/identity/identity_test.go#TestTheDoorRefusesWhenTheDatabaseIsUnusable, internal/identity/identity_test.go#TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting |
+| VTT-050 | An added comment line carries none of the banned terms the comment gate names. | **OPEN — no test yet** |
+| VTT-051 | A comment in code is an imperative warning, a pointer to a record, or the one-line doc sentence of an exported symbol. | **READING — Phase 4b** |
+| VTT-052 | A comment block longer than the bound is refused when a change adds a line to it, the package doc excepted. | **OPEN — no test yet** |
+| VTT-053 | A change that adds a comment line to a file leaves that file at or under its ceiling. | **OPEN — no test yet** |
+| VTT-054 | A ledger row is never raised above the base's. | **OPEN — no test yet** |
+| VTT-055 | A share more than the band under its ceiling is refused until the ceiling is lowered. | **OPEN — no test yet** |
+| VTT-056 | Every ledger row names a file that exists. | **OPEN — no test yet** |
+| VTT-057 | A file with no row is held to the default ceiling. | **OPEN — no test yet** |
+| VTT-058 | A run of the comment gate that scans nothing, has no base, or finds no ledger fails. | **OPEN — no test yet** |
