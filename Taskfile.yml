@@ -45,6 +45,7 @@ tasks:
       - task: check:doc-owner
       - task: check:requirements-chain
       - task: check:new-prose
+      - task: check:comments
       - task: check:no-retraction
       - task: check:no-create-scene
       - task: check:no-pack
@@ -910,6 +911,20 @@ tasks:
       - python3 tools/check_comment_wrap_test.py -q
       - python3 tools/check_citations_test.py -q
       - python3 tools/check-new-prose.py main
+
+  check:comments:
+    desc: >
+      SPEC-010: a comment in code is a warning or a pointer. Over the comment
+      lines a change adds against main, refuse a banned term and a block over
+      the bound; over every Go and TypeScript file under internal/, cmd/ and
+      client/src, hold the comment share to its ceiling in
+      tools/comment-ceilings.txt, which `python3 tools/check-comments.py
+      --write-ledger` lowers and the gate refuses raising. The self-test and
+      the QA tests run first, and a run that scans nothing fails.
+    cmds:
+      - python3 tools/check_comments_test.py -q
+      - python3 tools/check_comments_qa_test.py -q
+      - python3 tools/check-comments.py main
 
   check:no-retraction:
     desc: >

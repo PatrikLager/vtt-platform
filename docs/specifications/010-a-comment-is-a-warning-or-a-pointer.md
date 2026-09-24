@@ -2,14 +2,11 @@
 
 ## Status
 
-Accepted, and not yet implemented. Today no check refuses a comment for the
-kind of sentence it is, history, a measurement or an argument, and none
-measures how much comment a file carries: `check:new-prose` holds wrap width
-and that a cited name exists, on added lines, `check:doc-owner` holds that a
-doc comment sits on its own function, and `check:invariants` refuses
-game-system words wherever they stand. `CLAUDE.md` does not yet carry rule 10.
-The change is carried by
-`docs/superpowers/specs/2026-09-24-comments-are-warnings-or-pointers-design.md`.
+Accepted. Implemented by `tools/check-comments.py`, which `Taskfile.yml`'s
+`check:comments` step runs inside `task check`, and by
+`tools/comment-ceilings.txt`; pinned by `tools/check_comments_test.py` and,
+derived from this record alone, `tools/check_comments_qa_test.py`. `CLAUDE.md`
+does not yet carry rule 10.
 
 ## Principles served
 
