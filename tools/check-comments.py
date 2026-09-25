@@ -18,7 +18,15 @@ every line of a `/* ... */` block in either. A block is a run of comment lines
 that only a code line ends. A file's share is its comment lines over its
 non-blank lines, in percent to one decimal. Added lines are the change's
 against the base's merge base, an untracked file whole; a rename is one git
-detects, so `git mv` or `git add` of both paths.
+detects, so `git mv` or `git add` of both paths. A `//` line carrying only
+requirement ids of the register's tag, spaces between and nothing else,
+`// VTT-042` or `// VTT-048 VTT-049` (the tag is the `project:` line of
+docs/requirements.md, read as tools/check-requirements-chain.py reads it;
+whether an id resolves is that checker's), is a citation line: it counts in
+no share, is not an added comment line and belongs to no block, as a blank
+line counts in none and ends none. A line inside a `/* ... */` block is a
+block line whatever it carries. With no register or no `project:` line, no
+line is set aside and every run says so.
 
 The gate refuses, and exits 1:
   - an added comment line carrying a banned term (case-insensitive; matched
@@ -44,7 +52,7 @@ It exits 2 when it scans no file in scope, cannot establish the base, or finds
 no ledger or one it cannot read (a value outside 0.0 to 100.0 with one decimal,
 or a path twice); and ends a clean run with a completion line.
 
-Rows: VTT-050 to VTT-058.
+Rows: VTT-050 to VTT-059.
 """
 import importlib.util
 import math
@@ -55,6 +63,7 @@ import subprocess
 import sys
 
 LEDGER = "tools/comment-ceilings.txt"
+REGISTER = "docs/requirements.md"
 ROOTS = ("internal/", "cmd/", "client/src/")
 SKIP_DIRS = {"gen", "node_modules", ".git", "contract-spike", "webdist"}
 BOUND = 6
@@ -68,6 +77,7 @@ DOCS_PATH = re.compile(r"docs/[\w./-]+")
 ANCHOR = re.compile(r"\[anchor:[\w-]+\]")
 DIRECTIVE = re.compile(r"^\s*//(go:|nolint|lint:|line |export |extern |sys | \+build)")
 VALUE = re.compile(r"^\d{1,3}\.\d$")
+TAG_RE = re.compile(r"^\s*project:\s*([A-Z][A-Z0-9]*)\s*$")  # the chain checker's
 
 _prose_spec = importlib.util.spec_from_file_location(
     "check_new_prose", os.path.join(os.path.dirname(os.path.abspath(__file__)), "check-new-prose.py"))
@@ -100,17 +110,38 @@ def read(path):
         return None
 
 
-def measure(lines, ts):
-    """(nonblank, set of comment line numbers, blocks); a block is a list of
-    line numbers paired with whether it is the Go package doc."""
+def register_tag():
+    lines = read(REGISTER)
+    if lines is None:
+        return None
+    return next((m.group(1) for m in map(TAG_RE.match, lines) if m), None)
+
+
+def cite_pattern(tag):
+    """A `//` line whose text is ids of `tag`, spaces between, nothing else;
+    ASCII digits, as the chain checker's id shape."""
+    if tag is None:
+        return None
+    one = re.escape(tag) + r"-[0-9]{3,}"
+    return re.compile(r"^// *%s(?: +%s)* *$" % (one, one))
+
+
+def measure(lines, ts, cite=None):
+    """(nonblank, set of comment line numbers, blocks, set of citation line
+    numbers); a block is a list of line numbers paired with whether it is the
+    Go package doc. A citation line, one `cite` matches outside a /* */ block,
+    is set aside like a blank line: in no count and in no block."""
     nonblank = 0
-    comments = set()
+    comments, cites = set(), set()
     blocks, cur = [], []
     in_block = False
     for i, line in enumerate(lines, 1):
         s = line.strip()
         if not s:
             continue  # a blank line neither counts nor ends a block
+        if cite is not None and not in_block and cite.match(s):
+            cites.add(i)
+            continue
         nonblank += 1
         if in_block:
             is_c, in_block = True, "*/" not in s
@@ -127,7 +158,7 @@ def measure(lines, ts):
                 cur = []
     if cur:
         blocks.append((cur, False))
-    return nonblank, comments, blocks
+    return nonblank, comments, blocks, cites
 
 
 def share_of(nonblank, comment):
@@ -206,35 +237,35 @@ def load_ledger():
         return None, "%s cannot be read: %s" % (LEDGER, err)
 
 
-def measure_all(files):
+def measure_all(files, cite):
     out = {}
     for path in files:
         lines = read(path)
         if lines is None:
             continue
-        out[path] = measure(lines, path.endswith(".ts")) + (lines,)
+        out[path] = measure(lines, path.endswith(".ts"), cite) + (lines,)
     return out
 
 
-def report(files, rows):
-    total_nb = total_c = banned = over = 0
-    for path, (nonblank, comments, blocks, lines) in measure_all(files).items():
+def report(files, rows, cite):
+    total_nb = total_c = banned = over = aside = 0
+    for path, (nonblank, comments, blocks, cites, lines) in measure_all(files, cite).items():
         b = sum(1 for i in comments if BANNED.search(prose_of(lines[i - 1])))
         o = sum(1 for blk, pkg in blocks if len(blk) > BOUND and not pkg)
         ceiling = rows.get(path)
-        print("%-60s %5.1f%%  ceiling %s  banned %3d  blocks>%d %3d" % (
-            path, share_of(nonblank, len(comments)), "%5.1f" % ceiling if ceiling is not None else "  none", b, BOUND, o))
-        total_nb += nonblank; total_c += len(comments); banned += b; over += o
-    print("check:comments --report: %d files, %d comment lines of %d (%d%%), %d banned lines, %d blocks over %d"
-          % (len(files), total_c, total_nb, 100 * total_c // total_nb if total_nb else 0, banned, over, BOUND))
+        print("%-60s %5.1f%%  ceiling %s  banned %3d  blocks>%d %3d  cites %3d" % (
+            path, share_of(nonblank, len(comments)), "%5.1f" % ceiling if ceiling is not None else "  none", b, BOUND, o, len(cites)))
+        total_nb += nonblank; total_c += len(comments); banned += b; over += o; aside += len(cites)
+    print("check:comments --report: %d files, %d comment lines of %d (%d%%), %d banned lines, %d blocks over %d, %d citation lines set aside"
+          % (len(files), total_c, total_nb, 100 * total_c // total_nb if total_nb else 0, banned, over, BOUND, aside))
     return 0
 
 
-def do_write_ledger(files, rows, base):
+def do_write_ledger(files, rows, base, cite):
     pairs = renames(base) if base else {}
-    measured = measure_all(files)
+    measured = measure_all(files, cite)
     new, stranded = {}, []
-    for path, (nonblank, comments, _, _) in measured.items():
+    for path, (nonblank, comments, _, _, _) in measured.items():
         now = ceil1(share_of(nonblank, len(comments)))
         old = rows.get(path)
         if old is None and path in pairs:
@@ -258,7 +289,7 @@ def do_write_ledger(files, rows, base):
     return 0
 
 
-def gate(base_arg):
+def gate(base_arg, cite):
     base = prose.resolve_base(base_arg)
     if base is None:
         print("check:comments: no base to measure added lines against (%s); nothing is proven." % base_arg)
@@ -280,11 +311,11 @@ def gate(base_arg):
     added = {p: ls for p, ls in added.items() if in_scope(p)}
     old_of = renames(base)
     base_rows = base_ledger(base)
-    measured = measure_all(files)
+    measured = measure_all(files, cite)
 
     findings, notices = [], []
     added_comment_lines = 0
-    for path, (nonblank, comments, blocks, lines) in measured.items():
+    for path, (nonblank, comments, blocks, _, lines) in measured.items():
         new_lines = added.get(path, set())
         added_here = 0
         for i in sorted(new_lines & comments):
@@ -335,6 +366,8 @@ def gate(base_arg):
     for line in findings:
         print("check:comments: " + line)
     tail = "; no ledger at %s, raise check skipped" % base_arg if base_rows is None else ""
+    if cite is None:
+        tail += "; no tag in %s, citation lines counted as comment lines" % REGISTER
     if findings:
         print("check:comments: %d finding(s) on %d files, %d added comment lines, %d ledger rows%s"
               % (len(findings), len(measured), added_comment_lines, len(rows), tail))
@@ -356,11 +389,14 @@ def main(argv):
             if err:
                 print("check:comments: " + err)
                 return 2
+        cite = cite_pattern(register_tag())
+        if cite is None:
+            print("check:comments: no tag in %s, citation lines counted as comment lines" % REGISTER)
         if argv[1] == "--report":
-            return report(files, rows)
-        return do_write_ledger(files, rows, prose.resolve_base("main") if rows else None)
+            return report(files, rows, cite)
+        return do_write_ledger(files, rows, prose.resolve_base("main") if rows else None, cite)
     if len(argv) == 2 and not argv[1].startswith("-"):
-        return gate(argv[1])
+        return gate(argv[1], cite_pattern(register_tag()))
     print(__doc__)
     return 2
 

@@ -100,8 +100,8 @@ internal/engine/apply.go  43.0
 internal/engine/apply_boundary_test.go  27.2
 internal/engine/apply_int32_test.go  32.3
 internal/engine/apply_test.go  13.8
-internal/engine/qa_role_test.go  8.2
-internal/engine/role_test.go  9.6
+internal/engine/qa_role_test.go  7.4
+internal/engine/role_test.go  7.4
 internal/engine/state.go  58.1
 internal/engine/terrain.go  52.3
 internal/engine/terrain_test.go  29.4
@@ -114,7 +114,7 @@ internal/gateway/adventure.go  63.6
 internal/gateway/adventure_test.go  30.4
 internal/gateway/artfile_internal_test.go  38.8
 internal/gateway/authz.go  52.4
-internal/gateway/authz_test.go  38.5
+internal/gateway/authz_test.go  38.2
 internal/gateway/codec.go  37.5
 internal/gateway/codec_test.go  8.2
 internal/gateway/convert.go  36.0
@@ -123,7 +123,7 @@ internal/gateway/export_test.go  49.2
 internal/gateway/grant_validate.go  76.7
 internal/gateway/grant_validate_test.go  40.7
 internal/gateway/join.go  53.1
-internal/gateway/join_test.go  27.5
+internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  77.3
 internal/gateway/keepalive_conn_internal_test.go  23.0
 internal/gateway/keepalive_internal_test.go  41.1
@@ -139,7 +139,7 @@ internal/gateway/project.go  61.7
 internal/gateway/project_internal_test.go  33.4
 internal/gateway/project_property_test.go  35.9
 internal/gateway/project_test.go  33.6
-internal/gateway/qa_joining_test.go  5.9
+internal/gateway/qa_joining_test.go  4.8
 internal/gateway/remove_actor_test.go  37.0
 internal/gateway/ruleset.go  43.4
 internal/gateway/ruleset_test.go  24.4
@@ -147,7 +147,7 @@ internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  72.4
 internal/gateway/server.go  64.9
 internal/gateway/server_internal_test.go  37.6
-internal/gateway/server_test.go  29.1
+internal/gateway/server_test.go  28.8
 internal/gateway/server_visibility_test.go  29.9
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  69.2
@@ -173,11 +173,11 @@ internal/harness/soak_drain_internal_test.go  24.6
 internal/harness/soak_test.go  39.1
 internal/harness/states_equal_conditions_internal_test.go  17.3
 internal/harness/states_equal_notes_internal_test.go  16.2
-internal/identity/fault_internal_test.go  8.8
+internal/identity/fault_internal_test.go  7.4
 internal/identity/identity.go  19.9
 internal/identity/identity_failure_test.go  6.9
-internal/identity/identity_test.go  4.0
-internal/identity/qa_joining_internal_test.go  12.7
+internal/identity/identity_test.go  2.5
+internal/identity/qa_joining_internal_test.go  12.2
 internal/mapdef/apidoc_test.go  30.0
 internal/mapdef/boundary_test.go  32.6
 internal/mapdef/compile.go  63.1

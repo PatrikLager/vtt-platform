@@ -1,4 +1,4 @@
-"""Independent QA for tools/check-comments.py against SPEC-010, VTT-050..058.
+"""Independent QA for tools/check-comments.py against SPEC-010, VTT-050..059.
 
 Black-box: every test builds a small git repository, copies the gate and the
 module it imports into that repository's tools/, commits a base on main,
@@ -79,6 +79,15 @@ class Repo:
             "# ledger\n" + "".join("%s  %s\n" % (p, s) for p, s in rows.items()),
         )
 
+    def register(self, tag):
+        """docs/requirements.md with a `project: <tag>` line, or with no
+        `project:` line at all when tag is ""."""
+        line = "project: %s\n\n" % tag if tag else ""
+        self.write(
+            "docs/requirements.md",
+            "# Requirements\n\n" + line + "| Id | Requirement | Verified by |\n|---|---|---|\n",
+        )
+
     def commit(self):
         self.git("add", "-A")
         self.git("commit", "-qm", "base", "--allow-empty")
@@ -100,10 +109,12 @@ class QA(unittest.TestCase):
     def tearDown(self):
         self.r.close()
 
-    def base(self, files, rows=None):
+    def base(self, files, rows=None, register=None):
         for p, t in files.items():
             self.r.write(p, t)
         self.r.ledger(rows or {})
+        if register is not None:
+            self.r.register(register)
         self.r.commit()
 
     def gate(self):
@@ -522,6 +533,198 @@ class QA(unittest.TestCase):
     def test_qa_no_arguments_exits_2(self):
         code, out = self.r.run()
         self.assertEqual(code, 2, out)
+
+    # ---------------------------------------------------------------- VTT-059
+    #
+    # SPEC-010: "A `//` line carrying only requirement ids of the register's
+    # tag, spaces between, is a citation line: it counts in no comment share,
+    # is not an added comment line and has no place in a block, so adding one
+    # moves nothing; a line inside a `/* ... */` block is a block line
+    # whatever it carries".
+    # The gate's usage text gives the shapes `// VTT-042` and
+    # `// VTT-048 VTT-049`, takes the tag from the register's `project:` line,
+    # sets a citation line aside "as a blank line does not", and with no
+    # register or no `project:` line sets no line aside "and the completion
+    # line says so". Every register these tests write holds the tag line and
+    # an empty table: the record reads the tag, not the rows.
+
+    def added(self, res):
+        """The completion line's added-comment-line figure of a clean run."""
+        code, out = res
+        self.assertEqual(code, 0, out)
+        m = COMPLETION.search(out)
+        self.assertIsNotNone(m, out)
+        return int(m.group(2))
+
+    def cited(self, *lines):
+        """twenty() with the given lines after its last comment: 2 of 10 plus
+        whatever the gate counts of `lines`."""
+        return go(["// Keep a.", "var s = 0", "// Keep b."] + list(lines), code=6)
+
+    # VTT-059
+    def test_qa_a_line_carrying_only_ids_of_the_registers_tag_is_not_an_added_comment_line(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        for line in ["// VTT-042", "// VTT-048 VTT-049", "\t// VTT-042"]:
+            with self.subTest(line=line):
+                self.r.write("internal/foo/a.go", go([line], code=40))
+                self.assertEqual(self.added(self.gate()), 0, line)
+
+    # VTT-059
+    def test_qa_a_word_beside_the_id_makes_an_added_comment_line(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        for line in ["// VTT-042 holds this.", "// Holds VTT-042", "// See VTT-048 VTT-049"]:
+            with self.subTest(line=line):
+                self.r.write("internal/foo/a.go", go([line], code=40))
+                self.assertEqual(self.added(self.gate()), 1, line)
+
+    # "carrying only requirement ids": a comma is not an id, and the usage
+    # text's two-id shape is space-separated.
+    # VTT-059
+    def test_qa_a_comma_between_two_ids_makes_an_added_comment_line(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        self.r.write("internal/foo/a.go", go(["// VTT-048, VTT-049"], code=40))
+        self.assertEqual(self.added(self.gate()), 1)
+
+    # VTT-059
+    def test_qa_the_tag_is_the_registers_project_line_and_another_tag_counts(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="ABC")
+        self.r.write("internal/foo/a.go", go(["// ABC-001"], code=40))
+        self.assertEqual(self.added(self.gate()), 0, "the register's own tag")
+        self.r.write("internal/foo/a.go", go(["// VTT-042"], code=40))
+        self.assertEqual(self.added(self.gate()), 1, "a tag the register does not declare")
+
+    # VTT-059
+    def test_qa_a_typescript_slash_line_carrying_only_ids_is_a_citation_line(self):
+        ts = "export const a = 1;\n" * 40
+        self.base({"client/src/a.ts": ts}, register="VTT")
+        self.r.write("client/src/a.ts", "// VTT-042\n" + ts)
+        self.assertEqual(self.added(self.gate()), 0)
+
+    # A line of a /* */ block is a block line in either language, whatever it
+    # carries (SPEC-010).
+    # VTT-059
+    def test_qa_a_go_slash_star_line_carrying_only_ids_is_a_comment_line(self):
+        # Ruled at adjudication: only a `//` line is a citation line; a /* */
+        # line is a block line whatever it carries.
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        self.r.write("internal/foo/a.go", go(["/* VTT-042 */"], code=40))
+        self.assertEqual(self.added(self.gate()), 1)
+
+    # VTT-059
+    def test_qa_a_star_line_inside_a_typescript_block_carrying_only_ids_is_a_block_line(self):
+        # Ruled at adjudication, as the Go case above.
+        ts = "export const a = 1;\n" * 40
+        self.base({"client/src/a.ts": ts}, register="VTT")
+        self.r.write("client/src/a.ts", "/**\n * Keep it.\n * VTT-042\n */\n" + ts)
+        self.assertEqual(self.added(self.gate()), 4)  # /**, * Keep it., * VTT-042, */
+
+    # VTT-059
+    def test_qa_a_file_at_its_ceiling_that_gains_a_citation_line_stays_clean(self):
+        # counted as comment: 3 of 11 = 27.3, refused; counted as a non-blank
+        # line only: 2 of 11 = 18.2, more than the band under; counted as
+        # neither: 2 of 10 = 20.0
+        self.base({"internal/foo/a.go": self.twenty()}, {"internal/foo/a.go": "20.0"}, register="VTT")
+        self.r.write("internal/foo/a.go", self.cited("// VTT-042"))
+        self.assertClean(self.gate())
+
+    # "as a blank line does not": the line is not among the non-blank lines
+    # the share divides by either.
+    # VTT-059
+    def test_qa_a_citation_line_is_not_a_non_blank_line_of_the_share(self):
+        # exactly the band under its ceiling before; 2 of 12 = 16.7 would be over it
+        self.base({"internal/foo/a.go": self.twenty()}, {"internal/foo/a.go": "21.0"}, register="VTT")
+        self.r.write("internal/foo/a.go", self.cited("// VTT-042", "// VTT-048 VTT-049"))
+        self.assertClean(self.gate())
+
+    # VTT-059
+    def test_qa_a_file_above_its_ceiling_that_gains_only_a_citation_line_is_a_notice(self):
+        self.base({"internal/foo/a.go": self.forty()}, {"internal/foo/a.go": "30.0"}, register="VTT")
+        self.r.write("internal/foo/a.go",
+                     go(["// A.", "var s = 0", "// B.", "var t = 0", "// C.", "var u = 0", "// D.", "// VTT-042"], code=2))
+        code, out = self.gate()
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, COMPLETION)
+        self.assertRegex(out, r"notice: internal/foo/a\.go .*above its ceiling")
+
+    # VTT-059
+    def test_qa_a_block_at_the_bound_plus_a_citation_line_passes(self):
+        self.base({"internal/foo/a.go": go(self.block(BOUND - 1), code=40)}, register="VTT")
+        for where, lines in [("before", ["// VTT-042"] + self.block(BOUND)),
+                             ("after", self.block(BOUND) + ["// VTT-042"])]:
+            with self.subTest(where=where):
+                self.r.write("internal/foo/a.go", go(lines, code=40))
+                self.assertClean(self.gate())
+
+    # VTT-059
+    def test_qa_a_citation_line_between_two_halves_of_a_long_block_does_not_split_it(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        b = self.block(BOUND + 2)
+        self.r.write("internal/foo/a.go", go(b[:4] + ["// VTT-042"] + b[4:], code=40))
+        self.assertRefused(self.gate(), why=r"comment block of %d lines is over the bound" % (BOUND + 2))
+
+    # "has no place in a block, so adding one moves nothing": a long block the
+    # change adds only a citation line to was not added to.
+    # VTT-059
+    def test_qa_a_citation_line_added_to_a_long_block_does_not_add_a_line_to_it(self):
+        long = self.block(BOUND + 4)  # 10 of 51 = 19.6, under the default with no row
+        self.base({"internal/foo/a.go": go(long, code=40)}, register="VTT")
+        self.r.write("internal/foo/a.go", go(long + ["// VTT-042"], code=40))
+        self.assertClean(self.gate())
+
+    # VTT-059
+    def test_qa_the_completion_line_counts_added_comment_lines_without_citation_lines(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="VTT")
+        self.r.write("internal/foo/a.go",
+                     go(["// Keep x.", "// VTT-042", "var s = 0", "// Keep y.", "// VTT-048 VTT-049"], code=40))
+        code, out = self.gate()
+        self.assertEqual(code, 0, out)
+        m = COMPLETION.search(out)
+        self.assertIsNotNone(m, out)
+        self.assertEqual(m.group(2), "2", out)
+        self.assertRegex(m.group(0), r"; clean$")  # nothing to say: a register was read
+
+    # VTT-059
+    def test_qa_write_ledger_writes_the_share_without_citation_lines(self):
+        # as comment lines: 4 of 12 = 33.3; as non-blank only: 2 of 12 = 16.7
+        self.base({"internal/foo/a.go": self.forty()}, {"internal/foo/a.go": "40.0"}, register="VTT")
+        self.r.write("internal/foo/a.go", self.cited("// VTT-042", "// VTT-048 VTT-049"))
+        code, out = self.r.run("--write-ledger")
+        self.assertEqual(code, 0, out)
+        led = self.r.read("tools/comment-ceilings.txt")
+        m = re.search(r"^internal/foo/a\.go\s+(\S+)$", led, re.M)
+        self.assertIsNotNone(m, led)
+        self.assertEqual(m.group(1), "20.0", led)
+        self.assertClean(self.gate())
+
+    # VTT-059
+    def test_qa_with_no_register_a_line_carrying_only_ids_is_an_added_comment_line(self):
+        self.base({"internal/foo/a.go": self.twenty()}, {"internal/foo/a.go": "20.0"})
+        self.r.write("internal/foo/a.go", self.cited("// VTT-042"))
+        self.assertRefused(self.gate(), why=CEIL_WHY)  # 3 of 11 = 27.3
+
+    # VTT-059
+    def test_qa_with_no_register_the_completion_line_says_no_line_was_set_aside(self):
+        self.base({"internal/foo/a.go": go(code=40)})
+        self.r.write("internal/foo/a.go", go(["// VTT-042"], code=40))
+        code, out = self.gate()
+        self.assertEqual(code, 0, out)
+        m = COMPLETION.search(out)
+        self.assertIsNotNone(m, out)
+        self.assertEqual(m.group(2), "1", out)
+        self.assertNotRegex(m.group(0), r"; clean$")
+        self.assertRegex(m.group(0), r"(?i)register|set aside|citation")
+
+    # VTT-059
+    def test_qa_with_no_project_line_every_slash_line_counts_and_the_completion_line_says_so(self):
+        self.base({"internal/foo/a.go": go(code=40)}, register="")
+        self.r.write("internal/foo/a.go", go(["// VTT-042"], code=40))
+        code, out = self.gate()
+        self.assertEqual(code, 0, out)
+        m = COMPLETION.search(out)
+        self.assertIsNotNone(m, out)
+        self.assertEqual(m.group(2), "1", out)
+        self.assertNotRegex(m.group(0), r"; clean$")
+        self.assertRegex(m.group(0), r"(?i)project|register|set aside|citation")
 
 
 if __name__ == "__main__":

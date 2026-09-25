@@ -37,7 +37,8 @@ this record's decision, and rule 10 of `CLAUDE.md` says so.
 after `check:new-prose` and reads the comment lines a change adds against
 `main`, the scope `check:new-prose` uses. It refuses an added line that carries
 a banned term, and a comment block longer than the bound when the change added
-at least one line to that block, the Go package doc excepted. The banned list,
+at least one line to that block, the Go package doc excepted; a citation line,
+defined below, is in no block and adds no length to one. The banned list,
 the bound, the default ceiling and the band below are the checker's own to
 carry, in the docstring of `tools/check-comments.py`, as SPEC-008 leaves its
 file sets to its checker.
@@ -54,7 +55,13 @@ that lowers a row is not refused. When the base carries no ledger, the raise
 check is skipped and the run says so. A file that has fallen more than the band
 under its ceiling is refused until the ledger is lowered, so a share that fell
 is recorded by the change that lowered it. A file with no row is held to the
-default ceiling; a row whose file no longer exists is refused.
+default ceiling; a row whose file no longer exists is refused. A `//` line
+carrying only requirement ids of the register's tag, spaces between, is a
+citation line: it counts in no comment share, is not an added comment line and
+has no place in a block, so adding one moves nothing; a line inside a
+`/* ... */` block is a block line whatever it carries, and whether an id
+resolves to a row is the chain gate's. The checker's docstring says what such
+a line is and what a run with no register does.
 
 **A run proves it ran.** A clean run ends with a completion line naming the
 files, added comment lines and ledger rows it read. A run that scans no file in
@@ -90,4 +97,4 @@ reviewed decision under `CLAUDE.md` rule 2, not an annotation.
 ## Requirements
 
 VTT-050, VTT-051, VTT-052, VTT-053, VTT-054, VTT-055, VTT-056, VTT-057,
-VTT-058.
+VTT-058, VTT-059.

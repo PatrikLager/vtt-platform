@@ -61,12 +61,16 @@ class CommentGateTest(unittest.TestCase):
         body = "# comment ceilings, SPEC-010\n" + "".join(f"{p}  {v:.1f}\n" for p, v in rows)
         self.write(LEDGER, body)
 
-    def base(self, files, ledger_rows=None):
-        """Commit files (and a ledger) as `main`, then branch `work`."""
+    def base(self, files, ledger_rows=None, tag="VTT"):
+        """Commit files (and a ledger, and a register carrying `tag` unless None)
+        as `main`, then branch `work`."""
         for name, text in files.items():
             self.write(name, text)
         if ledger_rows is not None:
             self.ledger(ledger_rows)
+        if tag is not None:
+            self.write("docs/requirements.md",
+                       "# Requirements\n\nproject: %s\n\n| Id | Requirement | Verified by |\n|---|---|---|\n" % tag)
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "base")
         git(self.repo, "branch", "-M", "main")
@@ -273,6 +277,102 @@ class CommentGateTest(unittest.TestCase):
         self.base({"internal/a/a.go": GO_CLEAN}, [("internal/a/a.go", 0.0)])
         self.write("internal/a/new.go", "package a\n\n// N is one.\nfunc N() int {\n\treturn 1\n}\n")
         self.assertClean(self.run_gate())
+
+    # --- citation lines ----------------------------------------------------
+    # A `//` line carrying only ids of the register's tag; rows are set from the
+    # lines that are not citations, since share() counts every `//` line.
+
+    # VTT-059
+    def test_a_bare_citation_line_is_not_an_added_comment_line(self):
+        old = GO_CLEAN.replace("func B()", "// B is two.\nfunc B()")
+        self.base({"internal/a/a.go": old}, [("internal/a/a.go", 9.1)])  # 1 of 11
+        self.write("internal/a/a.go", old.replace("func A()", "// VTT-042\nfunc A()"))
+        got = self.run_gate()
+        self.assertClean(got)
+        self.assertIn("0 added comment lines", got.stdout)
+
+    # VTT-059
+    def test_a_word_beside_the_id_makes_it_a_comment_line(self):
+        old = GO_CLEAN.replace("func B()", "// B is two.\nfunc B()")
+        self.base({"internal/a/a.go": old}, [("internal/a/a.go", 9.1)])
+        self.write("internal/a/a.go", old.replace("func A()", "// VTT-042 holds this\nfunc A()"))
+        self.assertRefused(self.run_gate(), "internal/a/a.go", "ceiling", "added a comment line")
+
+    # VTT-059
+    def test_a_citation_added_to_a_file_above_its_ceiling_is_a_notice(self):
+        old = GO_CLEAN.replace("func B()", "// B is two.\nfunc B()")
+        self.base({"internal/a/a.go": old}, [("internal/a/a.go", 9.1)])
+        new = old.replace("\nfunc C() int {\n\treturn 3\n}\n", "").replace("func A()", "// VTT-042\nfunc A()")
+        self.write("internal/a/a.go", new)  # 1 of 8 is above 9.1, with no comment line added
+        got = self.run_gate()
+        self.assertClean(got)
+        self.assertIn("notice", got.stdout)
+
+    # VTT-059
+    def test_a_worded_citation_added_to_a_file_above_its_ceiling_is_refused(self):
+        old = GO_CLEAN.replace("func B()", "// B is two.\nfunc B()")
+        self.base({"internal/a/a.go": old}, [("internal/a/a.go", 9.1)])
+        new = old.replace("\nfunc C() int {\n\treturn 3\n}\n", "").replace("func A()", "// VTT-042 and more\nfunc A()")
+        self.write("internal/a/a.go", new)
+        self.assertRefused(self.run_gate(), "internal/a/a.go", "ceiling")
+
+    # VTT-059
+    def test_citation_lines_leave_the_share_where_it_was(self):
+        old = GO_CLEAN.replace("func B()", "// B is two.\nfunc B()")
+        self.base({"internal/a/a.go": old}, [("internal/a/a.go", 9.1)])  # 1 of 11, and the band is 1.0
+        new = old.replace("func A()", "// VTT-042\nfunc A()").replace("func B()", "// VTT-042\nfunc B()") \
+                 .replace("func C()", "// VTT-042\nfunc C()")
+        self.write("internal/a/a.go", new)
+        self.assertClean(self.run_gate())
+
+    # VTT-059
+    def test_a_citation_line_adds_no_length_to_a_block(self):
+        six = "".join("// Line %d.\n" % i for i in range(6))
+        self.base({"internal/a/a.go": GO_CLEAN}, [("internal/a/a.go", 37.5)])  # 6 of 16
+        self.write("internal/a/a.go", GO_CLEAN.replace("func B()", six + "// VTT-042\nfunc B()"))
+        self.assertClean(self.run_gate())
+
+    # VTT-059
+    def test_a_citation_line_does_not_split_a_block(self):
+        four = "".join("// Line %d.\n" % i for i in range(4))
+        three = "".join("// More %d.\n" % i for i in range(3))
+        self.base({"internal/a/a.go": GO_CLEAN}, [("internal/a/a.go", 41.2)])  # 7 of 17
+        self.write("internal/a/a.go", GO_CLEAN.replace("func B()", four + "// VTT-042\n" + three + "func B()"))
+        self.assertRefused(self.run_gate(), "internal/a/a.go", "block", "7 lines")
+
+    # VTT-059
+    def test_the_tag_is_the_registers(self):
+        other = GO_CLEAN.replace("package a", "package a\n")
+        self.base({"internal/a/a.go": GO_CLEAN, "internal/a/b.go": other},
+                  [("internal/a/a.go", 0.0), ("internal/a/b.go", 9.1)], tag="ABC")
+        self.write("internal/a/a.go", GO_CLEAN.replace("func A()", "// ABC-001\nfunc A()"))  # set aside, or a.go is refused
+        self.write("internal/a/b.go", other.replace("func A()", "// VTT-001\nfunc A()"))  # counted: 1 of 11
+        got = self.run_gate()
+        self.assertClean(got)
+        self.assertIn("1 added comment lines", got.stdout)
+
+    # VTT-059
+    def test_two_ids_on_one_line_are_one_citation_line(self):
+        self.base({"internal/a/a.go": GO_CLEAN}, [("internal/a/a.go", 0.0)])
+        self.write("internal/a/a.go", GO_CLEAN.replace("func A()", "// VTT-048 VTT-049\nfunc A()"))
+        got = self.run_gate()
+        self.assertClean(got)
+        self.assertIn("0 added comment lines", got.stdout)
+
+    # VTT-059
+    def test_no_tag_counts_a_citation_line_as_a_comment_and_says_so(self):
+        self.base({"internal/a/a.go": GO_CLEAN}, [("internal/a/a.go", 0.0)], tag=None)
+        self.write("internal/a/a.go", GO_CLEAN.replace("func A()", "// VTT-042\nfunc A()"))
+        self.assertRefused(self.run_gate(), "internal/a/a.go", "ceiling", "no tag in docs/requirements.md")
+
+    # VTT-059
+    def test_write_ledger_lowers_a_row_for_citation_lines(self):
+        text = GO_CLEAN.replace("func A()", "// VTT-042\nfunc A()").replace("func B()", "// B is two.\nfunc B()") \
+                       .replace("func C()", "// VTT-042\nfunc C()")
+        self.base({"internal/a/a.go": text}, [("internal/a/a.go", 23.1)])  # 3 of 13 counting every `//` line
+        got = self.run_gate("--write-ledger")
+        self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
+        self.assertIn("internal/a/a.go  9.1\n", (self.repo / LEDGER).read_text())  # 1 of 11
 
     # --- the run itself ----------------------------------------------------
 
