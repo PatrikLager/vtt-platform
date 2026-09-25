@@ -48,6 +48,7 @@ func preBudgetCampaign(t *testing.T) string {
 }
 
 // Arms the one fault on the migration's door-repair UPDATE, under the lock.
+// VTT-060
 func TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign(t *testing.T) {
 	// Keep this test: swallowing the repair's error leaves an open door budgeted
 	// at 0, which admits nobody and says nothing.
@@ -70,6 +71,7 @@ func TestAMigrationThatCannotBudgetAnOpenDoorRefusesTheCampaign(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestAMigrationThatCannotStartRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
@@ -86,6 +88,7 @@ func TestAMigrationThatCannotStartRefusesTheCampaign(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestAMigrationThatCannotCommitRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
@@ -101,6 +104,7 @@ func TestAMigrationThatCannotCommitRefusesTheCampaign(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestAMigrationThatCannotAddAColumnRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
@@ -117,6 +121,7 @@ func TestAMigrationThatCannotAddAColumnRefusesTheCampaign(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestAMigrationThatCannotReadTheShapeRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := preBudgetCampaign(t)
@@ -133,6 +138,7 @@ func TestAMigrationThatCannotReadTheShapeRefusesTheCampaign(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestAMigrationThatCannotReadTheBudgetStateRefusesTheCampaign(t *testing.T) {
 	withFaultDriver(t)
 	path := filepath.Join(t.TempDir(), "current.db")
@@ -216,6 +222,7 @@ func TestTheDoorStateReadFailingIsNotAnAdmission(t *testing.T) {
 	}
 }
 
+// VTT-071
 func TestOpeningWithAnUnusableDriverIsReported(t *testing.T) {
 	// Do not arm a fault here: sql.Open fails before any statement runs.
 	prev := driverName
@@ -228,6 +235,7 @@ func TestOpeningWithAnUnusableDriverIsReported(t *testing.T) {
 	}
 }
 
+// VTT-063
 func TestPreBudgetFixtureReallyDropsTheColumns(t *testing.T) {
 	// Keep this control: if DROP COLUMN quietly stopped working, every test on
 	// preBudgetCampaign would arm a fault against a migration with nothing to do.

@@ -7,7 +7,8 @@ Accepted. Implemented by `internal/identity/identity.go`,
 `internal/gateway/server.go` and `internal/gateway/metadata.go`; pinned by the
 checks the rows under Requirements name, in
 `internal/identity/identity_test.go`,
-`internal/identity/fault_internal_test.go`, `internal/gateway/join_test.go`,
+`internal/identity/fault_internal_test.go`,
+`internal/identity/identity_failure_test.go`, `internal/gateway/join_test.go`,
 `internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
 `internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
@@ -178,4 +179,6 @@ VTT-013, VTT-014, VTT-015, VTT-016, VTT-017, VTT-018, VTT-019, VTT-020,
 VTT-021, VTT-022, VTT-023, VTT-024, VTT-025, VTT-026, VTT-027, VTT-028,
 VTT-029, VTT-030, VTT-031, VTT-032, VTT-033, VTT-034, VTT-036, VTT-037,
 VTT-038, VTT-039, VTT-040, VTT-041, VTT-042, VTT-043, VTT-044, VTT-045,
-VTT-046, VTT-047, VTT-048, VTT-049.
+VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061, VTT-062, VTT-063,
+VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069, VTT-070, VTT-071,
+VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077.

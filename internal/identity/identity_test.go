@@ -30,6 +30,7 @@ func openTemp(t *testing.T) (*identity.DB, string) {
 	return d, path
 }
 
+// VTT-075
 func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	d, _ := openTemp(t)
 	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -86,6 +87,7 @@ func TestTokenNotRecoverableFromDB(t *testing.T) {
 	}
 }
 
+// VTT-074
 func TestVerifyRejectsWrongToken(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Lera", identity.RolePlayer); err != nil {
@@ -96,6 +98,7 @@ func TestVerifyRejectsWrongToken(t *testing.T) {
 	}
 }
 
+// VTT-074
 func TestRevokedTokenRejectedAfterRevoke(t *testing.T) {
 	d, _ := openTemp(t)
 	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -113,6 +116,7 @@ func TestRevokedTokenRejectedAfterRevoke(t *testing.T) {
 	}
 }
 
+// VTT-066
 func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -140,6 +144,7 @@ func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 	}
 }
 
+// VTT-024
 func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	d, _ := openTemp(t)
 	token1, id1, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -168,6 +173,7 @@ func TestVerifyUsesConstantTimeCompare(t *testing.T) {
 	}
 }
 
+// VTT-076
 func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
@@ -265,6 +271,7 @@ func TestJoinIsClosedOnAFreshCampaign(t *testing.T) {
 	}
 }
 
+// VTT-064
 func TestTheDoorOpensAndClosesAgain(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.SetJoinOpen(true, 100); err != nil {
@@ -281,6 +288,7 @@ func TestTheDoorOpensAndClosesAgain(t *testing.T) {
 	}
 }
 
+// VTT-064
 func TestTheDoorSurvivesAReopen(t *testing.T) {
 	d, path := openTemp(t)
 	if err := d.SetJoinOpen(true, 100); err != nil {
@@ -318,6 +326,7 @@ func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
 	}
 }
 
+// VTT-019
 func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
 	d, _ := openTemp(t)
 	old, err := d.JoinSecret()
@@ -367,7 +376,7 @@ func TestReadingTheLinkDoesNotOpenTheDoor(t *testing.T) {
 	}
 }
 
-// VTT-048 VTT-049
+// VTT-048 VTT-049 VTT-070
 func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.Close(); err != nil {
@@ -415,6 +424,7 @@ func TestRotatingTheSecretLeavesTheDoorAlone(t *testing.T) {
 	}
 }
 
+// VTT-065
 func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, err := d.JoinSecret(); err != nil { // mints the row, closed
@@ -431,6 +441,7 @@ func TestTheDoorOpensOnACampaignThatAlreadyHasALink(t *testing.T) {
 	}
 }
 
+// VTT-065
 func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	a, _ := openTemp(t)
 	if err := a.SetJoinOpen(true, 100); err != nil {
@@ -458,6 +469,7 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	}
 }
 
+// VTT-029
 func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
 	d, _ := openTemp(t)
 	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
@@ -502,6 +514,7 @@ func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
 	}
 }
 
+// VTT-066
 func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
@@ -514,6 +527,7 @@ func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
 	}
 }
 
+// VTT-067
 func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.SetRole("p-nobody", identity.RolePlayer); err == nil {
@@ -521,6 +535,7 @@ func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
 	}
 }
 
+// VTT-068
 func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
@@ -570,6 +585,7 @@ func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
 	}
 }
 
+// VTT-029
 func TestLookupReflectsAPromotionImmediately(t *testing.T) {
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
@@ -589,6 +605,7 @@ func TestLookupReflectsAPromotionImmediately(t *testing.T) {
 	}
 }
 
+// VTT-074
 func TestLookupRefusesARevokedParticipant(t *testing.T) {
 	d, _ := openTemp(t)
 	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer)
@@ -604,6 +621,7 @@ func TestLookupRefusesARevokedParticipant(t *testing.T) {
 	}
 }
 
+// VTT-074
 func TestLookupRefusesAnUnknownParticipant(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, err := d.Lookup("p-nobody"); err == nil {
@@ -611,6 +629,7 @@ func TestLookupRefusesAnUnknownParticipant(t *testing.T) {
 	}
 }
 
+// VTT-075
 func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 	// Assert ID too: Authorize reads it for ownership, so a partial lookup would
 	// change what authorization sees.
@@ -628,6 +647,7 @@ func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 	}
 }
 
+// VTT-069
 func TestLookupRefusesACorruptRow(t *testing.T) {
 	d, path := openTemp(t)
 	if err := d.Close(); err != nil {
@@ -714,7 +734,7 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 	}
 }
 
-// VTT-034
+// VTT-034 VTT-072
 func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
@@ -751,6 +771,7 @@ func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	}
 }
 
+// VTT-072
 func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
 	// Keep the duplicate names and the id tie-break: `ORDER BY display_name, id`
 	// could lose its second column and no other test would notice.
@@ -783,6 +804,7 @@ func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
 	}
 }
 
+// VTT-069
 func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 	d, path := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
@@ -818,6 +840,7 @@ func TestListingRefusesACorruptRowRatherThanInventingARole(t *testing.T) {
 	}
 }
 
+// VTT-070
 func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
 	d, path := openTemp(t)
 	if _, _, err := d.CreateInvite("Zoe", identity.RoleSpectator); err != nil {
@@ -843,6 +866,7 @@ func TestListingRefusesWhenTheTableCannotBeRead(t *testing.T) {
 	}
 }
 
+// VTT-063
 func TestACampaignPredatingTheAdmissionBudgetStillWorks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	raw, err := sql.Open("sqlite", path)
@@ -1051,7 +1075,7 @@ func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 	}
 }
 
-// VTT-044
+// VTT-044 VTT-019
 func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rotate.db")
 	d, err := identity.Open(path)
@@ -1085,6 +1109,7 @@ func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	}
 }
 
+// VTT-061
 func TestMigrationSurvivesConcurrentFirstOpens(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "concurrent.db")
 	raw, err := sql.Open("sqlite", path)
@@ -1142,6 +1167,7 @@ func TestMigratingTwiceIsNotAnError(t *testing.T) {
 	}
 }
 
+// VTT-073
 func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	d, err := identity.Open(path)
@@ -1186,7 +1212,7 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 	}
 }
 
-// VTT-046 VTT-049
+// VTT-046 VTT-049 VTT-070
 func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.db")
 	d, err := identity.Open(path)
@@ -1218,6 +1244,7 @@ func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	}
 }
 
+// VTT-071
 func TestOpeningAnUnreadableCampaignFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "notadb.db")
@@ -1230,6 +1257,7 @@ func TestOpeningAnUnreadableCampaignFailsLoudly(t *testing.T) {
 	}
 }
 
+// VTT-060
 func TestMigratingAReadOnlyCampaignFailsRatherThanHalfApplying(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "readonly.db")
@@ -1275,6 +1303,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 	}
 }
 
+// VTT-062
 func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "current.db")
 	d, err := identity.Open(path)
@@ -1323,6 +1352,7 @@ func TestOpeningACurrentCampaignTakesNoWriteLock(t *testing.T) {
 	}
 }
 
+// VTT-062
 func TestAnAlreadyMigratedReadOnlyCampaignStillOpens(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "archived.db")
@@ -1355,6 +1385,7 @@ func TestAnAlreadyMigratedReadOnlyCampaignStillOpens(t *testing.T) {
 	}
 }
 
+// VTT-017
 func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "untouched.db")
 	d, err := identity.Open(path)
@@ -1382,6 +1413,7 @@ func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.
 	}
 }
 
+// VTT-066
 func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord")); err == nil {
@@ -1389,6 +1421,7 @@ func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	}
 }
 
+// VTT-070
 func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gone.db")
 	d, err := identity.Open(path)

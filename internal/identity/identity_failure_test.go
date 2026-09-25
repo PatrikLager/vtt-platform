@@ -28,6 +28,7 @@ func tamperRow(t *testing.T, path, column, value string) {
 	}
 }
 
+// VTT-069
 func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 	d, path := openTemp(t)
 	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -47,6 +48,7 @@ func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 	}
 }
 
+// VTT-069
 func TestVerifyRejectsEmptyStoredRole(t *testing.T) {
 	d, path := openTemp(t)
 	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -60,6 +62,7 @@ func TestVerifyRejectsEmptyStoredRole(t *testing.T) {
 	}
 }
 
+// VTT-071
 func TestOpenRejectsFileThatIsNotADatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "not-a-db")
 	if err := os.WriteFile(path, []byte("this is not a SQLite file"), 0o600); err != nil {
@@ -75,6 +78,7 @@ func TestOpenRejectsFileThatIsNotADatabase(t *testing.T) {
 	}
 }
 
+// VTT-067
 func TestRevokeUnknownParticipantErrors(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.Revoke("no-such-participant"); err == nil {
@@ -83,6 +87,7 @@ func TestRevokeUnknownParticipantErrors(t *testing.T) {
 }
 
 // Closes the handle first: the shape composeServer's shutdown race leaves.
+// VTT-070
 func TestOperationsFailAfterClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	d, err := identity.Open(path)
