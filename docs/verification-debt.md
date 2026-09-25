@@ -233,6 +233,22 @@ always spent before the re-read. Labels: `test data missing`, `outside the
 tool`. Closing it needs a fault that fires on the second matching statement.
 Recorded 2026-09-24, moved here from the comment at the arm.
 
+**`TestVerifyUsesConstantTimeCompare` reads `identity.go` as text.** It passes
+while the string `subtle.ConstantTimeCompare` appears anywhere in the file;
+today it appears three times, in `Verify`'s code, in `JoinAdmits`' code and in
+`Verify`'s doc comment. Removing the call from `Verify` alone leaves it green
+because the other two remain, and a comment alone would satisfy it with no
+call at all. The branch it
+guards is unreachable by construction, since the row is selected by the same
+hash it then compares, so no behavioural test can observe the compare; the test
+pins the call's presence and nothing finer. Labels: `test asserts nothing`,
+`outside the tool`. Recipe: in `Verify`, replace the `subtle.ConstantTimeCompare`
+call with `bytes.Equal`; the doc comment and `JoinAdmits` keep the identifier,
+and the test and the package stay green. Closing it needs a check that finds the call inside
+`Verify`'s own body, by `go/ast` or by a reading. Recorded 2026-09-24 by the
+identity sweep, which changes no code line; the fix waits for the next ticket
+that touches the package's tests.
+
 **A test that cites a row marked `OPEN` passes the chain gate.**
 `check:requirements-chain` refuses a citation with no row and an evidence entry
 that resolves to nothing; it does not notice a row whose evidence says no test
