@@ -175,8 +175,8 @@ def ceil1(x):
 def shown(share, bound, above):
     """The share printed to the fewest decimals, two at least, that keep it
     above (or under) the bound the comparison used. Pass a bound that is a
-    parsed tenth: ceiling - BAND drifts by an ulp for 15 of the tenths and
-    lands above the edge for some, so round it first."""
+    parsed tenth: ceiling - BAND drifts by an ulp for some tenths and lands
+    above the edge for some of those, so round it first."""
     for d in range(2, 11):
         s = "%.*f" % (d, share)
         if (float(s) > bound) if above else (float(s) < bound):
