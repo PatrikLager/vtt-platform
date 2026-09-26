@@ -14,11 +14,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from fractions import Fraction
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = "tools/check-comments.py"
 BOUND = 6
 DEFAULT = 25.0
+BAND = 1.0
 BANNED_WHY = r"an added comment line carries"
 BLOCK_WHY = r"comment block of \d+ lines is over the bound"
 CEIL_WHY = r"is above its ceiling [\d.]+ and this change added a comment line"
@@ -44,6 +46,18 @@ def go(body_comments=(), code=10, pkg="foo"):
     s += "".join(c + "\n" for c in body_comments)
     s += pad(code)
     return s
+
+
+def shared(comments, nonblank, pkg="foo"):
+    """A Go file whose share is comments/nonblank*100: `comments` `//` lines,
+    each its own block, among `nonblank` non-blank lines."""
+    code = nonblank - 1 - comments
+    assert 0 <= comments <= code, (comments, nonblank)
+    body = []
+    for i in range(comments):
+        body.append("// Keep item %d in order." % i)
+        body.append("var c%d = %d" % (i, i))
+    return go(body, code=code - comments, pkg=pkg)
 
 
 class Repo:
@@ -725,6 +739,173 @@ class QA(unittest.TestCase):
         self.assertEqual(m.group(2), "1", out)
         self.assertNotRegex(m.group(0), r"; clean$")
         self.assertRegex(m.group(0), r"(?i)project|register|set aside|citation")
+
+    # ---------------------------------------------------------------- VTT-078
+    #
+    # VTT-078: "A finding or notice that compares a share with a ceiling
+    # prints the share on the side of that ceiling its verdict names." The
+    # gate's usage text: a share is "compared unrounded; a ledger row holds a
+    # share as a tenth, rounded up; a finding or notice prints the share it
+    # compared, rounded to the fewest decimals, two at least, that keep it on
+    # the side of the compared value the verdict names". The band is 1.0 and
+    # the default ceiling 25.0 as the usage text names them.
+    # Each near-edge fixture below is a ratio c/n whose share sits within a
+    # twentieth of the value it is compared with, where a tenth reads AT that
+    # value, or within a two-hundredth, where two decimals do; n is chosen so
+    # that rounding and truncation give the same decimal count, except 11 of
+    # 57, where truncation would stop at two. The side is checked with
+    # Fraction on the printed strings, never with floats.
+
+    def finding(self, out, path):
+        """The one line of `out` that names `path` against a ceiling."""
+        lines = [l for l in out.splitlines() if path in l and "ceiling" in l]
+        self.assertEqual(len(lines), 1, out)
+        return lines[0]
+
+    def printed(self, line):
+        """(share, ceiling, band) as the line prints them: the ceiling is the
+        number after `ceiling`, the band the number after `more than`, and
+        the share the one number left, wherever it stands."""
+        ceiling = re.search(r"ceiling (\d+\.\d+)", line)
+        band = re.search(r"more than (\d+\.\d+) under", line)
+        rest = re.findall(r"(?<!ceiling )(?<!than )\b\d+\.\d+\b", line)
+        self.assertEqual(len(rest), 1, line)
+        return rest[0], ceiling and ceiling.group(1), band and band.group(1)
+
+    @staticmethod
+    def decimals(s):
+        return len(s.split(".")[1])
+
+    # "compared unrounded": 81 of 404 = 20.0495 is above 20.0, though a tenth
+    # of it reads 20.0.
+    # VTT-078
+    def test_qa_a_ceiling_refusal_within_a_twentieth_prints_the_share_above_the_ceiling(self):
+        self.base({"internal/foo/a.go": shared(80, 403)}, {"internal/foo/a.go": "20.0"})
+        self.r.write("internal/foo/a.go", shared(81, 404))
+        res = self.gate()
+        self.assertRefused(res, why=CEIL_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        self.assertEqual(self.decimals(share), 2, share)
+        self.assertGreater(Fraction(share), Fraction("20.0"), share)
+
+    # VTT-078
+    def test_qa_a_band_refusal_within_a_twentieth_of_the_edge_prints_the_share_past_the_band(self):
+        # 61 of 304 = 20.0658 with ceiling 21.1: 1.034 under; a tenth reads 20.1, exactly the band
+        self.base({"internal/foo/a.go": shared(61, 304)}, {"internal/foo/a.go": "21.1"})
+        res = self.gate()
+        self.assertRefused(res, why=BAND_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        self.assertEqual(self.decimals(share), 2, share)
+        self.assertGreater(Fraction("21.1") - Fraction(share), Fraction(str(BAND)), share)
+
+    # VTT-078
+    def test_qa_a_default_refusal_within_a_twentieth_prints_the_share_above_the_default(self):
+        # 151 of 603 = 25.0415 with no row; a tenth reads 25.0
+        self.base({"internal/foo/a.go": go(code=40)})
+        self.r.write("internal/foo/b.go", shared(151, 603))
+        res = self.gate()
+        self.assertRefused(res, why=DEFAULT_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/b.go"))
+        self.assertEqual(self.decimals(share), 2, share)
+        self.assertGreater(Fraction(share), Fraction(str(DEFAULT)), share)
+
+    # SPEC-010: a file above its ceiling with no comment line added "is
+    # reported and not refused"; the usage text: "a finding or notice prints
+    # the share it compared".
+    # VTT-078
+    def test_qa_a_notice_prints_the_share_above_the_ceiling(self):
+        # 100 of 503 = 19.88 under 20.0; four code lines leave: 100 of 499 = 20.04
+        self.base({"internal/foo/a.go": shared(100, 503)}, {"internal/foo/a.go": "20.0"})
+        self.r.write("internal/foo/a.go", shared(100, 499))
+        code, out = self.gate()
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, COMPLETION)
+        line = self.finding(out, "internal/foo/a.go")
+        self.assertRegex(line, r"notice: internal/foo/a\.go .*above its ceiling")
+        share, _, _ = self.printed(line)
+        self.assertEqual(self.decimals(share), 2, share)
+        self.assertGreater(Fraction(share), Fraction("20.0"), share)
+
+    # "the fewest decimals ... that keep it on the side": two do not, here.
+    # VTT-078
+    def test_qa_a_ceiling_refusal_within_a_two_hundredth_prints_a_third_decimal(self):
+        # 21 of 83 = 25.3012 above 25.3; "25.30" reads at it
+        self.base({"internal/foo/a.go": shared(20, 82)}, {"internal/foo/a.go": "25.3"})
+        self.r.write("internal/foo/a.go", shared(21, 83))
+        res = self.gate()
+        self.assertRefused(res, why=CEIL_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        self.assertEqual(self.decimals(share), 3, share)
+        self.assertGreater(Fraction(share), Fraction("25.3"), share)
+
+    # VTT-078
+    def test_qa_a_band_refusal_within_a_two_hundredth_of_the_edge_prints_a_third_decimal(self):
+        # 11 of 57 = 19.29825 with ceiling 20.3: 1.0018 under; "19.30" reads exactly the band under
+        self.base({"internal/foo/a.go": shared(11, 57)}, {"internal/foo/a.go": "20.3"})
+        res = self.gate()
+        self.assertRefused(res, why=BAND_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        self.assertEqual(self.decimals(share), 3, share)
+        self.assertGreater(Fraction("20.3") - Fraction(share), Fraction(str(BAND)), share)
+
+    # VTT-078
+    def test_qa_a_default_refusal_within_a_two_hundredth_prints_a_third_decimal(self):
+        # 1251 of 5003 = 25.004997 with no row; "25.00" reads at the default
+        self.base({"internal/foo/a.go": go(code=40)})
+        self.r.write("internal/foo/b.go", shared(1251, 5003))
+        res = self.gate()
+        self.assertRefused(res, why=DEFAULT_WHY)
+        share, _, _ = self.printed(self.finding(res[1], "internal/foo/b.go"))
+        self.assertEqual(self.decimals(share), 3, share)
+        self.assertGreater(Fraction(share), Fraction(str(DEFAULT)), share)
+
+    # "two at least": a share a tenth would separate is still printed to two.
+    # VTT-078
+    def test_qa_a_finding_prints_two_decimals_even_where_one_would_separate(self):
+        # a.go: 4 of 10 = 40.0 above 20.0 with comment lines added; b.go: 2 of 10 = 20.0, 1.1 under 21.1
+        self.base({"internal/foo/a.go": self.twenty(), "internal/foo/b.go": self.twenty()},
+                  {"internal/foo/a.go": "20.0", "internal/foo/b.go": "21.1"})
+        self.r.write("internal/foo/a.go", self.forty())
+        res = self.gate()
+        self.assertRefused(res, why=CEIL_WHY)
+        self.assertRegex(res[1], BAND_WHY)
+        a, _, _ = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        b, _, _ = self.printed(self.finding(res[1], "internal/foo/b.go"))
+        self.assertEqual(a, "40.00", res[1])
+        self.assertEqual(b, "20.00", res[1])
+
+    # The ceiling a finding names is the ledger row, "a tenth"; the band and
+    # the default are "1.0 point" and "25.0" as the usage text spells them.
+    # VTT-078
+    def test_qa_the_ceiling_the_band_and_the_default_in_a_finding_read_as_tenths(self):
+        self.base({"internal/foo/a.go": shared(80, 403), "internal/foo/b.go": shared(61, 304)},
+                  {"internal/foo/a.go": "20.0", "internal/foo/b.go": "21.1"})
+        self.r.write("internal/foo/a.go", shared(81, 404))
+        self.r.write("internal/foo/c.go", shared(151, 603))
+        res = self.gate()
+        self.assertRefused(res, why=CEIL_WHY)
+        _, a_ceiling, a_band = self.printed(self.finding(res[1], "internal/foo/a.go"))
+        _, b_ceiling, b_band = self.printed(self.finding(res[1], "internal/foo/b.go"))
+        _, c_ceiling, c_band = self.printed(self.finding(res[1], "internal/foo/c.go"))
+        self.assertEqual(a_ceiling, "20.0", res[1])
+        self.assertIsNone(a_band, res[1])
+        self.assertEqual((b_ceiling, b_band), ("21.1", "1.0"), res[1])
+        self.assertEqual(c_ceiling, "25.0", res[1])
+        self.assertIsNone(c_band, res[1])
+
+    # "a ledger row holds a share as a tenth, rounded up": the decimals a
+    # finding prints do not reach the ledger.
+    # VTT-078
+    def test_qa_write_ledger_writes_a_tenth_rounded_up(self):
+        # 81 of 404 = 20.0495: rounded up 20.1, to the nearest 20.0, as printed 20.05
+        self.base({"internal/foo/a.go": shared(81, 404)}, {"internal/foo/a.go": "40.0"})
+        code, out = self.r.run("--write-ledger")
+        self.assertEqual(code, 0, out)
+        led = self.r.read("tools/comment-ceilings.txt")
+        m = re.search(r"^internal/foo/a\.go\s+(\S+)$", led, re.M)
+        self.assertIsNotNone(m, led)
+        self.assertEqual(m.group(1), "20.1", led)
+        self.assertClean(self.gate())
 
 
 if __name__ == "__main__":

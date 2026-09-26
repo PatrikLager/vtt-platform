@@ -29,6 +29,17 @@ def git(repo, *args):
                           capture_output=True, text=True, check=True).stdout
 
 
+def go_file(comments, nonblank):
+    """A Go file with `comments` one-line comments, each above its own var, and
+    `nonblank` non-blank lines in all; rows for it are set by hand."""
+    assert nonblank - 1 - 2 * comments >= 0, (comments, nonblank)
+    lines = ["package a", ""]
+    for n in range(comments):
+        lines += ["// Keep %d." % n, "var c%d = %d" % (n, n)]
+    lines += ["var p%d = %d" % (n, n) for n in range(nonblank - 1 - 2 * comments)]
+    return "\n".join(lines) + "\n"
+
+
 def share(text):
     lines = [l for l in text.split("\n") if l.strip()]
     return 100.0 * sum(1 for l in lines if l.strip().startswith("//")) / len(lines)
@@ -373,6 +384,52 @@ class CommentGateTest(unittest.TestCase):
         got = self.run_gate("--write-ledger")
         self.assertEqual(got.returncode, 0, got.stdout + got.stderr)
         self.assertIn("internal/a/a.go  9.1\n", (self.repo / LEDGER).read_text())  # 1 of 11
+
+    # --- a finding prints the share it compared -----------------------------
+
+    # VTT-078
+    def test_a_ceiling_finding_prints_the_share_it_compared(self):
+        self.base({"internal/a/a.go": go_file(100, 503)}, [("internal/a/a.go", 20.0)])
+        self.write("internal/a/a.go", go_file(101, 504))  # 20.04
+        self.assertRefused(self.run_gate(), "comment share 20.04 is above its ceiling 20.0 and this change added a comment line to it")
+
+    # VTT-078
+    def test_a_band_finding_prints_the_share_it_compared(self):
+        self.base({"internal/a/a.go": go_file(101, 508)}, [("internal/a/a.go", 20.0)])
+        self.write("internal/a/a.go", go_file(95, 502))  # 18.92
+        self.assertRefused(self.run_gate(), "comment share 18.92 has fallen more than 1.0 under its ceiling 20.0")
+
+    # VTT-078
+    def test_a_default_finding_prints_the_share_it_compared(self):
+        self.base({"internal/a/a.go": go_file(0, 12)}, [("internal/a/a.go", 0.0)])
+        self.write("internal/a/new.go", go_file(189, 755))  # 25.03
+        self.assertRefused(self.run_gate(), "comment share 25.03 with no row in tools/comment-ceilings.txt is above the default ceiling 25.0")
+
+    # VTT-078
+    def test_a_notice_prints_the_share_it_compared(self):
+        self.base({"internal/a/a.go": go_file(101, 505)}, [("internal/a/a.go", 20.0)])
+        self.write("internal/a/a.go", go_file(101, 504))  # 20.04, no comment line added
+        got = self.run_gate()
+        self.assertClean(got)
+        self.assertIn("is at 20.04 above its ceiling 20.0", got.stdout)
+
+    # VTT-078
+    def test_a_band_finding_prints_past_the_band_at_a_ceiling_whose_edge_drifts(self):
+        self.base({"internal/a/a.go": go_file(18, 109)}, [("internal/a/a.go", 16.6)])  # 16.6 - 1.0 is not float("15.6")
+        self.write("internal/a/a.go", go_file(17, 109))  # 15.596
+        self.assertRefused(self.run_gate(), "comment share 15.596 has fallen more than 1.0 under its ceiling 16.6")
+
+    # VTT-078
+    def test_a_band_finding_prints_past_two_decimals_when_two_do_not_separate(self):
+        self.base({"internal/a/a.go": go_file(59, 285)}, [("internal/a/a.go", 20.0)])
+        self.write("internal/a/a.go", go_file(53, 279))  # 18.996
+        self.assertRefused(self.run_gate(), "comment share 18.996 has fallen more than 1.0 under its ceiling 20.0")
+
+    # VTT-078
+    def test_a_ceiling_finding_prints_past_two_decimals_when_two_do_not_separate(self):
+        self.base({"internal/a/a.go": go_file(32, 823)}, [("internal/a/a.go", 4.0)])
+        self.write("internal/a/a.go", go_file(33, 824))  # 4.005
+        self.assertRefused(self.run_gate(), "comment share 4.005 is above its ceiling 4.0")
 
     # --- the run itself ----------------------------------------------------
 

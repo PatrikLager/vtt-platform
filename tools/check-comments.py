@@ -16,7 +16,10 @@ generated ones (.pb.go, .d.ts, a gen/ directory). A comment line is one whose
 stripped text starts with `//` in Go, or `//`, `*` or `/*` in TypeScript, and
 every line of a `/* ... */` block in either. A block is a run of comment lines
 that only a code line ends. A file's share is its comment lines over its
-non-blank lines, in percent to one decimal. Added lines are the change's
+non-blank lines, in percent, compared unrounded; a ledger row holds a share as
+a tenth, rounded up; a finding or notice prints the share it compared,
+rounded to the fewest decimals, two at least, that keep it on the side of the
+compared value the verdict names. Added lines are the change's
 against the base's merge base, an untracked file whole; a rename is one git
 detects, so `git mv` or `git add` of both paths. A `//` line carrying only
 requirement ids of the register's tag, spaces between and nothing else,
@@ -52,7 +55,7 @@ It exits 2 when it scans no file in scope, cannot establish the base, or finds
 no ledger or one it cannot read (a value outside 0.0 to 100.0 with one decimal,
 or a path twice); and ends a clean run with a completion line.
 
-Rows: VTT-050 to VTT-059.
+Rows: VTT-050 to VTT-059, VTT-078.
 """
 import importlib.util
 import math
@@ -167,6 +170,18 @@ def share_of(nonblank, comment):
 
 def ceil1(x):
     return math.ceil(x * 10 - EPS) / 10
+
+
+def shown(share, bound, above):
+    """The share printed to the fewest decimals, two at least, that keep it
+    above (or under) the bound the comparison used. Pass a bound that is a
+    parsed tenth: ceiling - BAND drifts by an ulp for 15 of the tenths and
+    lands above the edge for some, so round it first."""
+    for d in range(2, 11):
+        s = "%.*f" % (d, share)
+        if (float(s) > bound) if above else (float(s) < bound):
+            return s
+    raise AssertionError("shown: %r does not separate from %r at ten decimals" % (share, bound))
 
 
 def scan_tree():
@@ -333,19 +348,19 @@ def gate(base_arg, cite):
         ceiling = rows.get(path)
         if ceiling is None:
             if share > DEFAULT + EPS:
-                findings.append("%s: comment share %.1f with no row in %s is above the default ceiling %.1f (SPEC-010)"
-                                % (path, share, LEDGER, DEFAULT))
+                findings.append("%s: comment share %s with no row in %s is above the default ceiling %.1f (SPEC-010)"
+                                % (path, shown(share, DEFAULT, True), LEDGER, DEFAULT))
             continue
         if share > ceiling + EPS:
             if added_here:
-                findings.append("%s: comment share %.1f is above its ceiling %.1f and this change added a comment line to it (SPEC-010)"
-                                % (path, share, ceiling))
+                findings.append("%s: comment share %s is above its ceiling %.1f and this change added a comment line to it (SPEC-010)"
+                                % (path, shown(share, ceiling, True), ceiling))
             else:
-                notices.append("check:comments: notice: %s is at %.1f above its ceiling %.1f with no comment line added; the next change that adds one brings it under"
-                               % (path, share, ceiling))
+                notices.append("check:comments: notice: %s is at %s above its ceiling %.1f with no comment line added; the next change that adds one brings it under"
+                               % (path, shown(share, ceiling, True), ceiling))
         elif share < ceiling - BAND - EPS:
-            findings.append("%s: comment share %.1f has fallen more than %.1f under its ceiling %.1f; record it: python3 tools/check-comments.py --write-ledger (SPEC-010)"
-                            % (path, share, BAND, ceiling))
+            findings.append("%s: comment share %s has fallen more than %.1f under its ceiling %.1f; record it: python3 tools/check-comments.py --write-ledger (SPEC-010)"
+                            % (path, shown(share, round(ceiling - BAND, 1), False), BAND, ceiling))
     for path, ceiling in rows.items():
         if not os.path.exists(path):
             findings.append("%s: stale row for %s, which does not exist; --write-ledger moves it after a rename git can see, or drops it (SPEC-010)"
