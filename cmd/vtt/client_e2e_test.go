@@ -600,16 +600,16 @@ func TestEventsTailBinaryExitsCleanlyOnSIGINT(t *testing.T) {
 	}()
 	select {
 	case <-gotLine:
-	case <-time.After(5 * time.Second):
+	case <-time.After(subprocessAnswers):
 		_ = cmd.Process.Kill()
-		t.Fatal("subprocess produced no output within 5s")
+		t.Fatalf("subprocess produced no output within %s", subprocessAnswers)
 	}
 
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatalf("send SIGINT: %v", err)
 	}
 
-	if err := waitWithTimeout(cmd, 5*time.Second); err != nil {
+	if err := waitWithTimeout(cmd, subprocessExits); err != nil {
 		t.Fatalf("subprocess did not exit cleanly after SIGINT: %v", err)
 	}
 	if code := cmd.ProcessState.ExitCode(); code != 0 {

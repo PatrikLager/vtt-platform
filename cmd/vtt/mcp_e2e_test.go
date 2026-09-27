@@ -157,7 +157,7 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	})
 
 	clientTransport := &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}
-	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), subprocessAnswers)
 	defer connectCancel()
 	cl := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "mcp-stdio-smoke-client", Version: "0.0.1"}, nil)
 	cs, err := cl.Connect(connectCtx, clientTransport, nil)
@@ -201,7 +201,7 @@ func TestMCPCommandServesRealStdioTransport(t *testing.T) {
 	}
 
 	cs.Close() // closes stdin -> subprocess sees EOF -> Run should return.
-	if err := waitWithTimeout(cmd, 5*time.Second); err != nil {
+	if err := waitWithTimeout(cmd, subprocessExits); err != nil {
 		t.Fatalf("subprocess did not exit cleanly after stdin EOF: %v (stderr: %s)", err, stderr.String())
 	}
 	if code := cmd.ProcessState.ExitCode(); code != 0 {
@@ -249,7 +249,7 @@ func TestMCPSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
 	})
 
 	clientTransport := &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}
-	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), subprocessAnswers)
 	cl := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "mcp-sigterm-client", Version: "0.0.1"}, nil)
 	cs, err := cl.Connect(connectCtx, clientTransport, nil)
 	connectCancel()
@@ -267,14 +267,7 @@ func TestMCPSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
 		t.Fatalf("send SIGTERM: %v", err)
 	}
 
-	// Bounded well past anything this subprocess needs to unwind (no live
-	// Shutdown-style drain here, just ctx cancellation propagating through
-	// internal/mcp.Server.Run) — a correct implementation exits close to
-	// immediately, so this margin is purely to distinguish "slow but
-	// working" from "swallowed entirely" without flaking on the former
-	// (same reasoning as TestServeSubprocessExitsCleanlyOnSIGTERM's own
-	// margin).
-	if err := waitWithTimeout(cmd, 7*time.Second); err != nil {
+	if err := waitWithTimeout(cmd, subprocessExits); err != nil {
 		t.Fatalf("subprocess did not exit cleanly after SIGTERM: %v (stderr: %s)", err, stderr.String())
 	}
 	if code := cmd.ProcessState.ExitCode(); code != 0 {

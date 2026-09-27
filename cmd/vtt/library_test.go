@@ -34,7 +34,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -438,7 +437,7 @@ func TestThreeRoleExitScenarioOverLiveServeSubprocess(t *testing.T) {
 	})
 
 	base := "http://" + addr
-	if err := waitForHealthz(base, 5*time.Second); err != nil {
+	if err := waitForHealthz(base, subprocessAnswers); err != nil {
 		t.Fatalf("vtt serve subprocess healthz never became ready: %v", err)
 	}
 

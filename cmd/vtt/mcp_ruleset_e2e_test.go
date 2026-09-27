@@ -313,40 +313,51 @@ func TestMCPRulesetGuideWithAndWithoutRulesetFlag(t *testing.T) {
 // safety net.
 func dialMCPSubprocess(t *testing.T, binPath, wsURL, token string, extraArgs ...string) (*mcpsdk.ClientSession, func()) {
 	t.Helper()
+	cs, cleanup, err := connectMCPSubprocess(t, binPath, wsURL, token, subprocessAnswers, extraArgs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cs, cleanup
+}
+
+// connectMCPSubprocess is dialMCPSubprocess's core: it returns the connect
+// error, with the subprocess killed and reaped, instead of failing the test.
+func connectMCPSubprocess(t *testing.T, binPath, wsURL, token string, bound time.Duration, extraArgs ...string) (*mcpsdk.ClientSession, func(), error) {
+	t.Helper()
 	args := append([]string{"mcp", "--server", wsURL, "--token", token}, extraArgs...)
 	cmd := exec.Command(binPath, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		t.Fatalf("StdinPipe: %v", err)
+		return nil, nil, fmt.Errorf("StdinPipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		t.Fatalf("StdoutPipe: %v", err)
+		return nil, nil, fmt.Errorf("StdoutPipe: %w", err)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start vtt mcp subprocess: %v", err)
+		return nil, nil, fmt.Errorf("start vtt mcp subprocess: %w", err)
 	}
 
 	clientTransport := &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}
-	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), bound)
 	defer connectCancel()
 	cl := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "mcp-ruleset-e2e-client", Version: "0.0.1"}, nil)
 	cs, err := cl.Connect(connectCtx, clientTransport, nil)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		t.Fatalf("stdio client Connect: %v (stderr: %s)", err, stderr.String())
+		return nil, nil, fmt.Errorf("stdio client Connect: %w (stderr: %s)", err, stderr.String())
 	}
 
 	cleanup := func() {
 		cs.Close()
-		if err := waitWithTimeout(cmd, 5*time.Second); err != nil {
+		if err := waitWithTimeout(cmd, subprocessExits); err != nil {
 			t.Errorf("subprocess did not exit cleanly after stdin EOF: %v (stderr: %s)", err, stderr.String())
 		}
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}
-	return cs, cleanup
+	return cs, cleanup, nil
 }

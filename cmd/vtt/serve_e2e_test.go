@@ -173,7 +173,7 @@ func TestServeSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
 	})
 
 	base := "http://" + addr
-	if err := waitForHealthz(base, 5*time.Second); err != nil {
+	if err := waitForHealthz(base, subprocessAnswers); err != nil {
 		t.Fatalf("vtt serve subprocess healthz never became ready: %v", err)
 	}
 
@@ -181,12 +181,7 @@ func TestServeSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
 		t.Fatalf("send SIGTERM: %v", err)
 	}
 
-	// Bounded well past serve.go's own 5s Shutdown timeout: a correct
-	// implementation exits close to immediately (nothing is holding
-	// Shutdown up in this test — no live WS connection), so this margin is
-	// purely to distinguish "slow but working" from "swallowed entirely"
-	// without flaking on the former.
-	if err := waitWithTimeout(cmd, 7*time.Second); err != nil {
+	if err := waitWithTimeout(cmd, subprocessExits); err != nil {
 		t.Fatalf("subprocess did not exit cleanly after SIGTERM: %v", err)
 	}
 	if code := cmd.ProcessState.ExitCode(); code != 0 {
@@ -194,24 +189,32 @@ func TestServeSubprocessExitsCleanlyOnSIGTERM(t *testing.T) {
 	}
 }
 
-// waitForHealthz polls /healthz until it returns 200 or the deadline
-// elapses — the server starts serving in a goroutine, so a fixed sleep
-// would be a race; this loop is not.
+// waitForHealthz polls /healthz until it answers 200 or timeout elapses.
+// Keep the deadline on each request: a listener that accepts and never answers
+// holds a bare Get past it (VTT-079).
 func waitForHealthz(base string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	var lastErr error
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(base + "/healthz")
+	for ctx.Err() == nil {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
 			lastErr = errors.New("healthz status " + resp.Status)
-		} else {
-			lastErr = err
+		} else if lastErr == nil || !errors.Is(err, context.DeadlineExceeded) {
+			lastErr = err // a deadline mid-request keeps the last real error
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if lastErr == nil {
+		lastErr = ctx.Err()
 	}
 	return lastErr
 }
