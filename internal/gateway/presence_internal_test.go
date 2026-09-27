@@ -40,6 +40,7 @@ func conn(participantID, displayName string, buffer int) *presenceConn {
 	}
 }
 
+// VTT-098
 func TestJoinReportsFirstConnectionOnlyOnce(t *testing.T) {
 	// The reference count is PER PARTICIPANT (spec §4). One person on a
 	// laptop and a phone is ONE arrival at the table, not two — announcing
@@ -57,6 +58,7 @@ func TestJoinReportsFirstConnectionOnlyOnce(t *testing.T) {
 	}
 }
 
+// VTT-098
 func TestLeaveReportsLastOnlyWhenEveryConnectionIsGone(t *testing.T) {
 	// The mirror image, and the one that matters more: telling the table
 	// someone left while they are still connected elsewhere is the failure
@@ -101,6 +103,7 @@ func TestLeaveOfAnUnknownConnectionIsNotADeparture(t *testing.T) {
 	}
 }
 
+// VTT-097
 func TestSnapshotListsEachParticipantOnceIncludingTheJoiner(t *testing.T) {
 	// A picture of the TABLE, not of everyone else: a client should see
 	// itself. And once per participant regardless of device count —
@@ -132,6 +135,7 @@ func TestSnapshotListsEachParticipantOnceIncludingTheJoiner(t *testing.T) {
 	}
 }
 
+// VTT-105
 func TestBroadcastReachesEveryoneButTheExcludedConnection(t *testing.T) {
 	r := newPresenceRegistry()
 	self := conn("p-1", "Ada", 1)
@@ -149,6 +153,7 @@ func TestBroadcastReachesEveryoneButTheExcludedConnection(t *testing.T) {
 	}
 }
 
+// VTT-105
 func TestBroadcastReachesEverySecondDeviceOfTheSameParticipant(t *testing.T) {
 	// Excluding by CONNECTION, not by participant id. A person on two devices
 	// who acts on one must still see the result on the other.
@@ -165,6 +170,7 @@ func TestBroadcastReachesEverySecondDeviceOfTheSameParticipant(t *testing.T) {
 	}
 }
 
+// VTT-101
 func TestBroadcastIsBoundedByAWedgedConnectionNotStalledByIt(t *testing.T) {
 	// The property that keeps one stalled client from stalling the table.
 	//
@@ -197,6 +203,7 @@ func TestBroadcastIsBoundedByAWedgedConnectionNotStalledByIt(t *testing.T) {
 	}
 }
 
+// VTT-100
 func TestBroadcastWaitsForAConnectionThatIsMerelyBusy(t *testing.T) {
 	// The other half, and the one an instant drop got wrong: a client that is
 	// briefly full but still draining must RECEIVE the announcement, not lose
@@ -343,6 +350,7 @@ func TestAFanOutAbandonsAConnectionThatLeftMidWalk(t *testing.T) {
 // announcement for that participant can be produced at all. Stated as an
 // OUTCOME on purpose — it survived the locking being rebuilt underneath it,
 // which a test phrased in terms of "the lock is held here" would not have.
+// VTT-103
 func TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT(t *testing.T) {
 	r := newPresenceRegistry()
 	// Via the helper, not a literal: leave() closes done, so a connection built
@@ -414,6 +422,7 @@ func TestBroadcastSkipsAnybodyTheCallerHasDenied(t *testing.T) {
 	}
 }
 
+// VTT-102
 func TestAJoinerDoesNotWaitOutSomebodyElsesFanOut(t *testing.T) {
 	// #47. #36 stopped a joiner waiting on its OWN announcement; this is the
 	// same wait arriving by a different route, and that fix did not touch it.
@@ -465,6 +474,7 @@ func TestAJoinerDoesNotWaitOutSomebodyElsesFanOut(t *testing.T) {
 	<-fanOutDone
 }
 
+// VTT-103
 func TestConcurrentFanOutsReachEveryConnectionInTheSameOrder(t *testing.T) {
 	// Measured by MUTUAL EXCLUSION, not by observed order, and the first draft
 	// of this test is why. It ran two fan-outs at eight fast connections and
@@ -517,6 +527,7 @@ func TestConcurrentFanOutsReachEveryConnectionInTheSameOrder(t *testing.T) {
 	}
 }
 
+// VTT-103
 func TestAPromotionInFlightIsNotOvertakenByTheDeparture(t *testing.T) {
 	// The reason announceIfPresent takes fanOut BEFORE mu. Review reversed the
 	// two and the entire package still passed: the invariant the whole comment
@@ -572,6 +583,7 @@ func TestAPromotionInFlightIsNotOvertakenByTheDeparture(t *testing.T) {
 	}
 }
 
+// VTT-099
 func TestADepartureIsNotAnnouncedIfTheyHaveAlreadyComeBack(t *testing.T) {
 	// #55. leave() decides "that was their last connection" and the
 	// announcement is a SEPARATE step, so a reconnect landing in between makes
@@ -619,6 +631,7 @@ func TestADepartureIsNotAnnouncedIfTheyHaveAlreadyComeBack(t *testing.T) {
 	}
 }
 
+// VTT-099
 func TestARealDepartureIsStillAnnounced(t *testing.T) {
 	// The control, and the one that matters: a suppression rule that suppressed
 	// everything would satisfy the test above while removing presence entirely.

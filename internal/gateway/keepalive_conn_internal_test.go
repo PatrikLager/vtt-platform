@@ -72,6 +72,7 @@ func newKeepAliveFixture(t *testing.T, interval, timeout time.Duration) *keepAli
 // keep the socket from looking dead. That is the whole property: before this,
 // an idle connection was indistinguishable from an abandoned one to every hop
 // between a player and the server.
+// VTT-091
 func TestAnIdleConnectionIsPinged(t *testing.T) {
 	f := newKeepAliveFixture(t, 20*time.Millisecond, 5*time.Second)
 	token, _, err := f.ids.CreateInvite("Idle", identity.RoleSpectator)
@@ -136,6 +137,7 @@ func TestAnIdleConnectionIsPinged(t *testing.T) {
 // it, which is precisely a half-open connection: bytes still flow toward it,
 // nothing comes back. A stubbed-out "pretend the pong failed" would prove
 // nothing about the wire.
+// VTT-092 VTT-104
 func TestAClientThatStopsPongingIsAnnouncedGone(t *testing.T) {
 	f := newKeepAliveFixture(t, 20*time.Millisecond, 100*time.Millisecond)
 	dmToken, _, err := f.ids.CreateInvite("DM", identity.RoleDM)
@@ -218,6 +220,7 @@ func TestAClientThatStopsPongingIsAnnouncedGone(t *testing.T) {
 // enough intervals that a systematically wrong verdict cannot hide in a
 // margin. Presence is watched rather than just the socket, because a spurious
 // reap announces DISCONNECTED and that is what the table would actually see.
+// VTT-092
 func TestAClientThatKeepsAnsweringIsNotReaped(t *testing.T) {
 	const interval = 20 * time.Millisecond
 	f := newKeepAliveFixture(t, interval, 100*time.Millisecond)

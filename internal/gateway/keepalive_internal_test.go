@@ -9,47 +9,13 @@ import (
 	"time"
 )
 
-// These tests are about the SECOND failure this keepalive had, and it was not
-// the one it was built for. The first draft reaped a peer whenever conn.Ping
-// returned an error — but Ping fails for several unrelated reasons, and only
-// one of them is both a statement about the peer AND ours to act on. The full
-// taxonomy lives on pingUntilStopped in keepalive.go and is deliberately not
-// restated here; a second copy is a second thing to go stale, and an earlier
-// version of this header already carried a shorter list that stopped matching.
-// The two that these tests exercise:
-//
-//  1. the pong never came back inside our budget — the peer is gone, reap it;
-//  2. the ping FRAME could not be sent, because coder/websocket wraps every
-//     control frame in a hard-coded five-second context (write.go:277, pinned
-//     v1.8.15) and a data write was holding writeFrameMu for longer than that.
-//
-// (2) says nothing whatever about the peer. It says our own writer is busy.
-// And it is not a corner: gatewayPingInterval (20s) is SHORTER than
-// Server.writeTimeout (30s), so any write that uses its full budget straddles
-// a tick by construction. A client that was merely receiving a large frame got
-// killed at five seconds, by the very policy whose doc comment promised it
-// could be idle without being kicked out.
-//
-// THE FIRST DRAFT OF THESE TESTS HAD THE OPPOSITE HOLE, and a reviewer found
-// it: every assertion was a negative one. They proved the keepalive does not
-// reap and never once proved that it does, so `err == nil` -> `err != nil` on
-// the verdict line — a default-enabled gremlins mutant on a gated package —
-// survived the whole suite while switching reaping off entirely. A dead peer
-// would have been pinged forever and the table would have kept a ghost. That
-// is strictly worse than the bug being fixed here, which is why
-// TestAPongThatNeverComesReapsThePeer leads.
-//
-// All of these run in a synctest bubble: the ticker is the subject, and a fake
-// clock makes "ten intervals passed and nothing happened" an assertion rather
-// than a sleep long enough to hope.
-
-// TestAPongThatNeverComesReapsThePeer is the positive case, and the one the
-// whole file exists to make true.
-//
-// The injected ping blocks until our own budget expires and then reports that
-// deadline — which is exactly what conn.Ping does when the frame goes out and
-// no pong ever comes back (conn.go:255 wraps ctx.Err()). Without this, every
-// other test here passes on a keepalive that never reaps anyone.
+// A ping is only ever a verdict about the pong (SPEC-011): a pong lost past
+// the budget reaps the peer, a ping frame the busy writer could not send does
+// not. Keep TestAPongThatNeverComesReapsThePeer first and positive: a suite
+// of negative assertions alone stays green with reaping switched off. The
+// pinger tests run in a synctest bubble, so "ten intervals passed and
+// nothing happened" is an assertion rather than a sleep.
+// VTT-092
 func TestAPongThatNeverComesReapsThePeer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const interval = time.Second
@@ -79,31 +45,12 @@ func TestAPongThatNeverComesReapsThePeer(t *testing.T) {
 	})
 }
 
-// TestThePongBudgetStaysAtLeastThreeIntervals pins the one relationship
-// gatewayPingTimeout's doc comment calls "a floor rather than a nicety" and
-// that nothing otherwise enforces.
-//
-// Three intervals is what lets two pongs be lost or arrive late before anyone
-// is declared dead, and it is the entire reason this is safe to point at a
-// real table instead of a loopback. Patrik chose 60s against 40s and 20s on
-// 2026-08-26 for exactly that margin. Tighten either constant without the
-// other and the argument in the comment silently stops describing the code —
-// which is the failure this repo keeps finding in prose that no test reads.
-//
-// DISCLOSED, because it changes how much weight this deserves: this test was
-// written because golangci-lint's `unused` flagged both constants (nothing
-// wires them until the serve() seam lands). It is kept because it turned out
-// to be a real guard on a stated invariant, not because it silences a linter —
-// but it would not have been written otherwise, and a reader should know that.
-//
-// The positive floor check is not redundant either, but NOT for the reason it
-// looks like: without it an interval of zero makes the ratio vacuously true,
-// and that is worth guarding — against a HUMAN edit, not a mutant. Both
-// constants sit on `const` declarations, which emit no statement and so never
-// appear in a coverage profile, which is why gremlins reports them NOT COVERED
-// and never executes them. Nothing written here can move them to KILLED. In a
-// mutation-gated package a check like this reads as a kill claim; it is not
-// one, and saying so is cheaper than letting the next reader assume it.
+// TestThePongBudgetStaysAtLeastThreeIntervals pins the ratio SPEC-011 states
+// between the two constants and nothing else enforces. Not a kill claim: both
+// sit on const declarations, which no coverage profile sees, so gremlins
+// reports them NOT COVERED whatever this asserts. The positive check guards a
+// zero interval, which makes the ratio vacuous.
+// VTT-095
 func TestThePongBudgetStaysAtLeastThreeIntervals(t *testing.T) {
 	if gatewayPingInterval <= 0 || gatewayPingTimeout <= 0 {
 		t.Fatalf("both budgets must be positive; interval=%v timeout=%v — a non-positive "+
@@ -111,8 +58,8 @@ func TestThePongBudgetStaysAtLeastThreeIntervals(t *testing.T) {
 			gatewayPingInterval, gatewayPingTimeout)
 	}
 	if floor := 3 * gatewayPingInterval; gatewayPingTimeout < floor {
-		t.Errorf("gatewayPingTimeout is %v against a %v interval (%.1fx); the doc comment "+
-			"argues 3x is a FLOOR, because at less than that a single late pong from a phone "+
+		t.Errorf("gatewayPingTimeout is %v against a %v interval (%.1fx); SPEC-011 "+
+			"holds 3x as a FLOOR, because at less than that a single late pong from a phone "+
 			"on a slow cell reaps a player who is perfectly fine — want >= %v",
 			gatewayPingTimeout, gatewayPingInterval,
 			float64(gatewayPingTimeout)/float64(gatewayPingInterval), floor)
@@ -141,6 +88,7 @@ func TestThePongBudgetStaysAtLeastThreeIntervals(t *testing.T) {
 // the spec, a scratch program, and the mutation itself, which passes the whole
 // suite because it is equivalent. Recorded because the wrong reason is more
 // durable than the right one once it is written down.
+// VTT-094
 func TestNoPingGoesOutWhileTheWriterIsBusy(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const interval = time.Second
@@ -212,6 +160,7 @@ func TestNoPingGoesOutWhileTheWriterIsBusy(t *testing.T) {
 // genuinely disconnected one sees. The bug being fixed cost one person their
 // connection once; this failure mode costs everyone theirs, repeatedly,
 // whenever the table is busy enough to matter.
+// VTT-093
 func TestASendFailureIsNotAVerdictAboutThePeer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const interval = time.Second
@@ -304,6 +253,7 @@ func TestACancelledConnectionStopsItsOwnPinger(t *testing.T) {
 // under mutation. A predicate stuck at false silently disables the skip; a
 // predicate stuck at true silently disables the KEEPALIVE, and neither shows up
 // as a failure anywhere else. Both directions are asserted.
+// VTT-094
 func TestWriteActivityReportsAWriteInFlight(t *testing.T) {
 	var w writeActivity
 
@@ -340,6 +290,7 @@ func TestWriteActivityReportsAWriteInFlight(t *testing.T) {
 //
 // So the stamping lives in a helper and is asserted here, deterministically,
 // with no sockets and no clock.
+// VTT-094
 func TestTheWriterIsReportedBusyForExactlyTheDurationOfAWrite(t *testing.T) {
 	var a writeActivity
 	var busyDuring bool

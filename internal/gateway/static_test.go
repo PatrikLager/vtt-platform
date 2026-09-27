@@ -53,6 +53,7 @@ func get(t *testing.T, base, path string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
+// VTT-106
 func TestStaticServesTheClientAtRoot(t *testing.T) {
 	s := newStaticFixture(t, true)
 
@@ -77,6 +78,7 @@ func TestStaticServesTheClientAtRoot(t *testing.T) {
 // public. It has to be — the browser must load the app before it has anywhere
 // to type a token. Every route the bundle then calls is authenticated, so
 // what leaks here is the program, not the campaign.
+// VTT-106
 func TestStaticIsUnauthenticated(t *testing.T) {
 	s := newStaticFixture(t, true)
 	if code, _ := get(t, s.URL, "/"); code != http.StatusOK {
@@ -89,6 +91,7 @@ func TestStaticIsUnauthenticated(t *testing.T) {
 // getting the precedence wrong serves index.html to the client's own fetch
 // calls — which then fail to parse as JSON with a message that says nothing
 // about routing.
+// VTT-107
 func TestStaticDoesNotShadowTheAPI(t *testing.T) {
 	s := newStaticFixture(t, true)
 
@@ -105,6 +108,7 @@ func TestStaticDoesNotShadowTheAPI(t *testing.T) {
 // TestStaticAbsentIsNotAServerError covers `vtt serve` built without the
 // client bundle: the API must keep working and the browser must get an honest
 // 404 rather than a panic on a nil FS.
+// VTT-108
 func TestStaticAbsentIsNotAServerError(t *testing.T) {
 	s := newStaticFixture(t, false)
 
@@ -120,6 +124,7 @@ func TestStaticAbsentIsNotAServerError(t *testing.T) {
 // out of. http.FS rejects this, but the assertion belongs here rather than in
 // the stdlib's tests, because it is our handler's registration that decides
 // whether that protection is even in the path.
+// VTT-109
 func TestStaticRefusesPathTraversal(t *testing.T) {
 	s := newStaticFixture(t, true)
 	for _, p := range []string{"/../go.mod", "/assets/../../go.mod", "/%2e%2e/go.mod"} {

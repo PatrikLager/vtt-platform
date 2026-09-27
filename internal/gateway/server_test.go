@@ -202,36 +202,12 @@ func (f *gwFixture) dial(token string, after int64) *websocket.Conn {
 	return conn
 }
 
-// --- read/write helpers -------------------------------------------------
-
-// --- per-connection frame demultiplexing ---------------------------------
+// --- read/write helpers: per-connection frame demultiplexing ------------
 //
-// The gateway does NOT order a command's CommandResult relative to the
-// Envelopes that command produced. Results are enqueued by the command loop
-// and events by the broadcast pump: two independent producers feeding one
-// writer goroutine (see serve's "Writer choice" comment in server.go, which
-// says so outright -- "the ordering of interleaved results/events is whatever
-// order they arrive at outCh"). Either can win the race.
-//
-// The previous helpers read POSITIONALLY, skipping up to 10 frames of the
-// wrong kind and DISCARDING them. That produced two failure modes, both seen
-// in CI and both misfiled as a resource-contention flake:
-//
-//   - a batch bigger than the budget failed outright, "no CommandResult
-//     within 10 frames" -- an adventure load emits well over ten events;
-//   - a single inversion desynchronised the connection PERMANENTLY, because
-//     the discarded frame was the one a later read wanted, so that read
-//     blocked until the 20s deadline.
-//
-// Load never caused either; it only changes how often the race flips. A
-// captured frame log shows the inversion plainly: five commands arriving
-// RESULT-then-EVENT, then one arriving EVENT-then-RESULT.
-//
-// frameQueue owns the ONLY reader for a connection and sorts frames by kind
-// into separate queues, so asking for a result never consumes an event, and
-// no read depends on arrival order. This is exactly what harness.Client
-// already does in production -- SendCommand returns the result, Events() is a
-// separate channel -- so these tests were the outlier, not the server.
+// Never read positionally: a CommandResult and the Envelopes its command
+// produced come from two producers, in either order (SPEC-007, SPEC-011).
+// frameQueue owns a connection's only reader and sorts frames by kind, so no
+// read depends on arrival order.
 type frameQueue struct {
 	results chan *vttv1.CommandResult
 	events  chan *vttv1.Envelope
@@ -364,6 +340,7 @@ func assertNoFrameWithin(t *testing.T, conn *websocket.Conn, d time.Duration) {
 
 // --- tests ---------------------------------------------------------------
 
+// VTT-110
 func TestHealthzOK(t *testing.T) {
 	f := newGWFixture(t)
 	resp, err := http.Get(f.srv.URL + "/healthz")
@@ -379,6 +356,7 @@ func TestHealthzOK(t *testing.T) {
 // TestConnectBadTokenRejectedBeforeUpgrade covers the binding design: a
 // bad/revoked token gets a plain HTTP 401 and the socket is never upgraded
 // (verify runs before websocket.Accept).
+// VTT-080
 func TestConnectBadTokenRejectedBeforeUpgrade(t *testing.T) {
 	f := newGWFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -394,6 +372,7 @@ func TestConnectBadTokenRejectedBeforeUpgrade(t *testing.T) {
 
 // TestConnectRevokedTokenRejectedBeforeUpgrade is the revoked half of the
 // same case: a token valid at mint time but revoked before connecting.
+// VTT-080
 func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -440,6 +419,7 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 // TestConnectAfterZeroReceivesFullHistoryThenLive covers catch-up: a fresh
 // connection with after=0 sees every seeded event, in sequence order,
 // before any new live event.
+// VTT-081
 func TestConnectAfterZeroReceivesFullHistoryThenLive(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -871,6 +851,7 @@ func TestSpectatorCommandDenied(t *testing.T) {
 // TestMalformedFrameClosesOnlyThatConnection covers isolation: a
 // syntactically invalid frame closes the sender's own connection, but a
 // second, unrelated connection stays fully live.
+// VTT-085
 func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 	f := newGWFixture(t)
 	badConn := f.dial(f.dmToken, gwSeedHead)
@@ -890,8 +871,8 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 	// badConn must be closed by the server.
 	readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer readCancel()
-	if _, _, err := badConn.Read(readCtx); err == nil {
-		t.Fatal("want badConn closed after sending a malformed frame")
+	if _, _, err := badConn.Read(readCtx); websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+		t.Fatalf("want badConn closed with StatusPolicyViolation after a malformed frame, got %v", err)
 	}
 
 	// otherConn is untouched: it can still issue a command and see it
@@ -1058,19 +1039,11 @@ func TestNarrationForwardAnchorRejectedCleanConnectionIntact(t *testing.T) {
 	}
 }
 
-// TestOversizedFrameClosesConnectionMaxLegalPayloadWorks covers the
-// amendment-mandated fix (server.go's maxWSFrameBytes doc comment): the
-// gateway's per-command websocket frame bound (32 KiB) is now an explicit,
-// OWNED part of the size posture (handleWS's conn.SetReadLimit call) rather
-// than silently inherited from coder/websocket's undocumented default read
-// limit — no SetReadLimit call existed anywhere in internal/ or cmd/
-// before this fix. Two directions: a frame one byte over the limit closes
-// the connection with StatusMessageTooBig — pure transport-layer
-// enforcement, before DecodeCommand ever sees the bytes, so any content
-// triggers it, not just a well-formed oversized command — while a legal
-// command whose encoded frame sits at EXACTLY the limit still round-trips
-// cleanly (proving the explicit cap didn't shrink the effective bound
-// below the library's own prior default).
+// TestOversizedFrameClosesConnectionMaxLegalPayloadWorks pins the read limit
+// handleWS sets (SPEC-011), in both directions: one byte over closes the
+// connection with StatusMessageTooBig before DecodeCommand sees the bytes, and
+// a command whose frame sits exactly at the limit round-trips.
+// VTT-085
 func TestOversizedFrameClosesConnectionMaxLegalPayloadWorks(t *testing.T) {
 	t.Run("frame one byte over the limit closes the connection", func(t *testing.T) {
 		f := newGWFixture(t)
@@ -1248,6 +1221,7 @@ func expectPresenceChanged(t *testing.T, conn *websocket.Conn, participantID str
 }
 
 // TestPresenceAnnouncesAnArrival: the table learns when someone joins.
+// VTT-097
 func TestPresenceAnnouncesAnArrival(t *testing.T) {
 	f := newGWFixture(t)
 	watcher := f.dial(f.dmToken, 0)
@@ -1269,6 +1243,7 @@ func TestPresenceAnnouncesAnArrival(t *testing.T) {
 }
 
 // TestPresenceAnnouncesACleanDeparture: the ordinary "I closed the tab" path.
+// VTT-104
 func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 	f := newGWFixture(t)
 	watcher := f.dial(f.dmToken, 0)
@@ -2270,6 +2245,7 @@ func TestADoorOpenedOverTheWireWithNoBudgetStillAdmits(t *testing.T) {
 // The scenario is a player whose connection drops and who reconnects — which
 // spec §3.4 makes a manual act, so whatever the table is told last is what it
 // keeps until somebody does something about it.
+// VTT-099
 func TestAReconnectingPlayerIsNeverAnnouncedGone(t *testing.T) {
 	f := newGWFixture(t)
 	watcher := f.dial(f.dmToken, 0)

@@ -32,7 +32,7 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer func() { _ = closeFn() }() // see composeServer's hijack-contract note
+			defer func() { _ = closeFn() }() // closeFn under a live connection: docs/verification-debt.md
 
 			if rulesetDir != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "vtt serve: listening on %s (campaign %s, ruleset %s)\n", addr, campaignPath, rulesetDir)

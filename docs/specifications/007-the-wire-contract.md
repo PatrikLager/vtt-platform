@@ -78,10 +78,13 @@ were not currently asking for.
 
 ### What the connection opens with
 
-`CatchUpHead` is sent once, first, carrying the highest sequence already queued
-as this connection's catch-up backlog. A client wanting a point-in-time snapshot
-reads until it has seen `head_sequence`; one wanting a live tail ignores the
-frame. A `head_sequence` of 0 means the log was empty at subscribe time.
+`CatchUpHead` is sent once, first, carrying the last sequence THIS SEAT's
+catch-up will deliver: for the DM and the agent the last sequence queued as
+catch-up, or `after` itself when the log holds nothing newer; for a projected
+seat the sequence of the last envelope its catch-up sends, which can be below
+the log's head, and 0 when it sends none (SPEC-011). A client wanting a
+point-in-time snapshot reads until it has seen `head_sequence`; one wanting a
+live tail ignores the frame.
 
 `PresenceSnapshot` follows immediately, sent unconditionally INCLUDING WHEN
 EMPTY, so a joining client never infers who is online from silence.

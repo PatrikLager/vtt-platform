@@ -38,30 +38,6 @@ const errAdventuresRequireRuleset = "vtt serve: --adventures-dir requires --rule
 // e.g. via ListenAndServe or, for tests that need the assigned port, its
 // own net.Listener + Serve).
 //
-// The returned close func closes both handles (identity first, then
-// campaign). CAUTION: srv.Shutdown returning does NOT by itself guarantee
-// it is safe to call closeFn. http.Server.Shutdown gracefully closes idle
-// listeners and connections and waits for active HTTP handlers to return,
-// but it does NOT wait for connections that have been hijacked out of
-// HTTP's request/response cycle — which is exactly what every WebSocket
-// connection is (coder/websocket hijacks the net.Conn on upgrade). A live
-// WS connection can still be reading/writing against campaign/identity
-// after Shutdown has returned, so closeFn is only actually safe once every
-// gateway connection has itself finished closing.
-//
-// Today, closeFn's callers are responsible for that guarantee themselves:
-// the composeServer e2e test (serve_e2e_test.go) explicitly closes its one
-// WS connection before calling Shutdown, so no live connection remains by
-// the time closeFn runs. `vtt serve` (serve.go) now has a SIGINT/SIGTERM
-// shutdown path (RunE watches cmd.Context().Done()), but it does not close
-// this gap either — it calls srv.Shutdown then srv.Close as a best-effort
-// bound on wall-clock time, then runs closeFn regardless of whether any WS
-// connection is still actually mid-teardown, so a connection racing the
-// signal can still observe campaign/identity closing under it. Making this
-// safe unconditionally — draining/closing every open gateway connection as
-// part of shutdown, rather than trusting the caller (or a timeout) — is a
-// ledgered carry-forward (see .superpowers/sdd/progress.md), not solved by
-// this comment.
 // rulesetDir is OPTIONAL (ruleset-interpreter Task 6, spec §7): "" keeps
 // every pre-Task-6 behavior exactly as it was — a nil gateway.Server
 // ruleset, use_ability commands rejected with a clean "no ruleset loaded"
@@ -368,6 +344,8 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		// applies before the upgrade, so it is the one that is safe here.
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	// Do not call closeFn until every gateway connection has unwound: Shutdown
+	// does not wait for hijacked connections (docs/verification-debt.md).
 	closeFn := func() error {
 		idsErr := ids.Close()
 		cErr := c.Close()

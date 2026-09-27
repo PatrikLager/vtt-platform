@@ -1117,6 +1117,7 @@ func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
 // It fails CLOSED, which is the right direction and not a defence — a
 // deterministic 30s failure on a shipped command is still a regression. So the
 // head a seat is given is now the last sequence THAT SEAT's catch-up carries.
+// VTT-086
 func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)

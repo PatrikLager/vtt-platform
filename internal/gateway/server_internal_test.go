@@ -125,6 +125,7 @@ var bigPaddingName = strings.Repeat("x", 28*1024)
 // That is what makes this deterministic rather than a race: healthy peers are
 // unaffected BY CONSTRUCTION, not by winning a timing margin against the
 // victim. Both servers share one campaign, so the broadcast path is real.
+// VTT-089 VTT-090
 func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -487,6 +488,7 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 //
 // Mirrors the subscribe-failure path directly above it in serve: close with
 // StatusInternalError, do not serve.
+// VTT-087
 func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -557,6 +559,7 @@ func TestCatchUpHeadEncodeFailureClosesTheConnection(t *testing.T) {
 // Observed through onServeDone because the client must NOT read: reading is
 // progress, and progress is the precondition being excluded. Reading to detect
 // the close would destroy the state under test.
+// VTT-089
 func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -683,6 +686,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 //
 // The watcher reads continuously and so keeps making progress, which is what
 // keeps the aggressive write budget off its back.
+// VTT-104
 func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -839,6 +843,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 // ahead of what we send next; a command issued after that point therefore
 // arrives strictly later. Reading up to the marker and finding no presence
 // frame is then a real negative, not a race we happened to win.
+// VTT-098
 func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -1003,6 +1008,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 // The stall is ARRANGED, not raced: the wedged peer gets buffer 0 and never
 // reads, so its outCh cannot accept anything, and the budget below is two
 // orders of magnitude above the microseconds a healthy send takes.
+// VTT-096
 func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -1123,16 +1129,11 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 
-	// AND THE WEDGE MUST HAVE BEEN REAL. "Fast" on its own cannot tell a
-	// working fix from a peer that was never wedged — remove the tiny socket
-	// buffers and the oversized events and this still finishes in 4ms, which
-	// is exactly how the first three versions of this test passed against the
-	// unfixed code.
-	//
-	// The witness is free and already here: the READ LOOP still starts after
-	// the announcement (deliberately — see server.go), so the joiner's own
-	// first command result is gated on the fan-out. If that came back quickly
-	// the budget was never spent and this test proved nothing.
+	// The wedge must have been real: a fast finish alone cannot tell a working
+	// fan-out from a peer that was never wedged. The read loop starts after the
+	// announcement (SPEC-011), so the joiner's first command result is gated on
+	// the fan-out; a quick result means the budget was never spent and this test
+	// proved nothing.
 	cmdStart := time.Now()
 	raw, err := protojson.Marshal(&vttv1.ClientCommand{
 		RequestId: "probe",
@@ -1177,6 +1178,7 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	t.Logf("joiner's first EVENT after %v (budget %v)", elapsed.Round(time.Millisecond), budget)
 }
 
+// VTT-081 VTT-082
 func TestTheWriterDrainsWhatIsQueuedBeforeItStops(t *testing.T) {
 	// The behaviour `for b := range outCh` used to give for free. outCh is no
 	// longer closed (#47 moved presence sends outside the registry lock, and
@@ -1214,6 +1216,7 @@ func TestTheWriterDrainsWhatIsQueuedBeforeItStops(t *testing.T) {
 	}
 }
 
+// VTT-083
 func TestTheWriterStopsAtTheFirstFailedWrite(t *testing.T) {
 	// A failed write means the socket is gone. Carrying on would spend the
 	// write deadline once per queued frame on a connection that cannot receive
@@ -1243,6 +1246,7 @@ func TestTheWriterStopsAtTheFirstFailedWrite(t *testing.T) {
 	}
 }
 
+// VTT-084
 func TestServeNeverClosesAConnectionsOutboundChannel(t *testing.T) {
 	// A SOURCE-LEVEL assertion, which needs justifying because it is unusual.
 	//
@@ -1266,7 +1270,7 @@ func TestServeNeverClosesAConnectionsOutboundChannel(t *testing.T) {
 		t.Fatalf("reading server.go: %v", err)
 	}
 	// COMMENTS STRIPPED, because the first version of this test fired on the
-	// prose that explains why the close is gone — the shutdown comment quotes
+	// prose that explains why the close is gone — the shutdown comment quoted
 	// `close(outCh)` to describe what the ordering used to defend. A gate that
 	// cannot tell code from the comment about the code trains people to delete
 	// the comment.
@@ -1351,6 +1355,7 @@ func TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough(t 
 // package-level EncodeFrame — until it did, this branch was unreachable by
 // WIRING rather than by construction, and its behaviour was a claim in a
 // comment that nothing checked.
+// VTT-088
 func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)

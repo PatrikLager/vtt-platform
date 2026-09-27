@@ -261,3 +261,16 @@ seat in it, so any rule that only diverges for a non-party or not-yet-existing
 viewpoint is invisible to all eleven. `TestARefusedLookStillFillsTheRoster`
 covers the one such rule known today; the corpus limit itself is unchanged, and
 the next rule of that shape will need its own hand-built fixture.
+
+**A WebSocket connection can outlive `Shutdown` and see its handles closed under
+it.** `composeServer` in `cmd/vtt/serve_compose.go` returns a close func that
+closes the identity and campaign handles. `http.Server.Shutdown` waits for
+active HTTP handlers and not for hijacked connections, which every WebSocket
+connection is, so a connection still reading or writing when `Shutdown`
+returns runs against handles `closeFn` is about to close. `vtt serve`'s `RunE`
+calls `Shutdown`, then `Close`, then `closeFn` regardless; the e2e test in
+`cmd/vtt/serve_e2e_test.go` closes its one connection before `Shutdown` and so
+never reaches the window. Labels: `test data missing`, `outside the tool`.
+Closing it needs `Shutdown` to drain every gateway connection, or `closeFn` to
+wait for them, and a test that holds a connection open across `Shutdown`.
+Recorded 2026-09-27, moved here from the comment at `composeServer`.

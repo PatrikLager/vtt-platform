@@ -8,17 +8,9 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// EncodeFrame marshals frame to its protojson wire representation (spec §3:
-// one WebSocket endpoint, protojson TEXT frames). Frames are marshaled per
-// connection, by each connection's own pump — not once and fanned out — see
-// server.go for the rationale.
-//
-// The encode seam lives on Server (server.go's encodeFrame field), NOT on a
-// package-global var. It was global until 2026-08-07, when review found a DATA
-// RACE: presence made encodeFrame reachable from a connection's TEARDOWN, so
-// one test swapping the global raced a DIFFERENT connection unwinding after
-// its own test had returned. A per-Server field cannot race across servers,
-// and each test owns the Server it builds.
+// EncodeFrame marshals frame to the protojson text frame the gateway writes.
+// Keep the encode seam a field of Server, never a package variable: a test
+// swapping a global races another connection's teardown (SPEC-011).
 func EncodeFrame(frame *vttv1.ServerFrame) ([]byte, error) {
 	b, err := protojson.Marshal(frame)
 	if err != nil {

@@ -26,18 +26,8 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// writeUntilFlushed hands every frame on out to write, in order, until write
-// fails or flush is closed — and on flush it DRAINS what is already queued
-// before returning.
-//
-// A free function with an injected write, rather than the closure it was, so
-// the drain can be tested at all. It cannot be observed through the socket:
-// flush is only ever closed while the connection is being torn down, so on the
-// path where the client has gone every write fails anyway, and on the path
-// where it has not, the frames are usually already in the OS buffer. Behaviour
-// nobody can see is behaviour nobody maintains — this was the one assertion in
-// #47 that fault injection found untested, and deleting the drain to make that
-// go away would have silently dropped what `for b := range out` gave for free.
+// Keep the drain on flush: it is what `for b := range out` gave for free, and
+// nothing on the socket can observe its loss (SPEC-011).
 func writeUntilFlushed(out <-chan []byte, flush <-chan struct{}, write func([]byte) bool) {
 	for {
 		select {
@@ -60,69 +50,16 @@ func writeUntilFlushed(out <-chan []byte, flush <-chan struct{}, write func([]by
 	}
 }
 
-// gatewayBuffer is Server.buffer's default (New sets it; see that field's
-// doc comment for the test-only override seam). It sizes the hand-off channel
-// store.Store.Subscribe hands back, and the per-connection outbound byte
-// channel in serve.
-//
-// It is NOT a limit on how far behind a connection may fall — that reading was
-// the bug. The store used to drop any subscriber whose channel filled, which
-// an atomic batch larger than this could trigger regardless of how fast the
-// client was reading, making this constant a ceiling on adventure size. The
-// store now queues per subscriber and drops only on no progress
-// (gatewayNoProgress). This is slack for bursty readers, nothing more (see the pump
-// goroutine below) so the client observes the disconnect and can reconnect
-// with a fresh `after` cursor; the log is always the source of truth for
-// whatever was missed. 256 is generous headroom for one connection's
-// fan-out lag under normal load.
+// Keep it slack for a bursty reader, never a limit on how far behind a connection
+// may fall: the store drops a subscriber only on no progress (SPEC-011).
 const gatewayBuffer = 256
 
-// gatewayNoProgress is Server.noProgress's default: how long a connection may
-// fail to accept a frame before the server stops waiting on it.
-//
-// It bounds the store's per-subscriber queue
-// (store.SubscriberNoProgressTimeout — kept numerically in step with this
-// deliberately; gateway does not import store). Once that budget elapses the
-// store closes the subscription, and the pump below force-closes the socket.
-//
-// Prior art: MapTool (net.rptools.clientserver) bounds its per-connection
-// queue not at all and detects a departed client purely with a socket timeout
-// — one minute, against a 20s CLIENT heartbeat.
-//
-// BOTH HALVES ARE OURS NOW. Server.writeTimeout is the socket deadline (it has
-// been since 2026-08-06, the same commit that added this citation — the
-// sentence that used to sit here, "we have no such deadline on conn.Write",
-// was already false when it was written), and gatewayPingInterval /
-// gatewayPingTimeout are the heartbeat, added 2026-08-26 after session zero
-// found an idle browser reaped through a tunnel. See keepalive.go.
-//
-// ONE ASYMMETRY THE CITATION STATES IN A SINGLE WORD, worth spelling out
-// because the consequence is large: MapTool's heartbeat is CLIENT-side and
-// ours is SERVER-side. That is why ours needs no client change at all. A
-// browser's WebSocket
-// stack answers a ping frame below JavaScript, so pinging from the server
-// keeps clients honest including the ones we did not write, whereas the JS
-// WebSocket API cannot send a ping frame in the first place. Borrowing
-// MapTool's INTERVALS is sound; borrowing its direction would not have been.
+// Keep it numerically in step with store.SubscriberNoProgressTimeout: gateway
+// does not import store, and New gives writeTimeout the same figure (SPEC-011).
 const gatewayNoProgress = 30 * time.Second
 
-// maxWSFrameBytes is the per-connection websocket message read limit,
-// pinned explicitly via conn.SetReadLimit in handleWS below (amendment-
-// mandated merge-gate fix, review finding: "as" was the only participant-
-// writable world-layer field with no cap of its own, its EFFECTIVE bound
-// resting silently on coder/websocket's undocumented default read limit —
-// nothing in internal/ or cmd/ had ever called SetReadLimit). This value
-// matches that library default (github.com/coder/websocket v1.8.15,
-// websocket.Conn's own doc comment: "By default, the connection has a
-// message read limit of 32768 bytes") byte-for-byte, so pinning it changes
-// no observed behavior today — the point is OWNERSHIP: this is now the
-// gateway's own stated outer size posture for every inbound command frame,
-// not an inherited default that could silently drift wider (or narrower)
-// on a future coder/websocket upgrade. Every command's own per-field caps
-// (internal/engine/apply.go's maxTextBytes etc.) are stricter than this and
-// unaffected by it; this is the layer's outermost wire-frame bound, the one
-// thing standing between an oversized frame and Accept ever handing that
-// connection's bytes to DecodeCommand at all.
+// Keep the read limit pinned in handleWS: the library's default is the same figure
+// today and may move; every per-field cap in internal/engine is stricter (SPEC-011).
 const maxWSFrameBytes = 32768
 
 // Server is the WebSocket/HTTP gateway (spec §3, §7.9): it wires the pure
@@ -303,14 +240,9 @@ func (s *Server) WithRuleset(rs *rules.Ruleset) *Server {
 	return s
 }
 
-// WithStatic serves fsys (the built web client) at /. Optional — a server
-// without it is API-only, which is what `vtt serve` is before the client is
-// built and what the harness's own throwaway servers always are.
-//
-// Takes an fs.FS rather than a directory path because the bundle is EMBEDDED
-// in the binary (cmd/vtt/embed.go): go:embed cannot cross package
-// directories, so cmd/vtt owns the embed and hands the FS over, the same
-// division of labour adventure guides already use.
+// WithStatic serves fsys, the built web client, at /; without it the server is
+// API-only. Take an fs.FS, not a path: cmd/vtt embeds the bundle, and go:embed
+// cannot cross package directories (SPEC-011).
 func (s *Server) WithStatic(fsys fs.FS) *Server {
 	s.static = fsys
 	return s
@@ -435,15 +367,12 @@ func (s *Server) WithCellPx(px int32) *Server {
 	return s
 }
 
-// Handler returns the http.Handler routing /healthz and /ws (spec §3).
+// Handler returns the http.Handler for every route the gateway serves (SPEC-011).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealthz)
 	mux.HandleFunc("/ws", s.handleWS)
-	// Read-only metadata (metadata.go). Method-qualified patterns, so a POST
-	// to a read endpoint is a clean 405 rather than a silent success.
-	// The shared join link. POST-only and unauthenticated by construction —
-	// see join.go for why its refusals are deliberately indistinguishable.
+	// Keep the patterns method-qualified: a POST to a read route must be a 405.
 	mux.HandleFunc("POST /join", s.handleJoin)
 
 	mux.HandleFunc("GET /api/me", s.handleMe)
@@ -454,20 +383,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/adventures", s.handleAdventures)
 	mux.HandleFunc("GET /api/adventures/{id}/guide", s.handleAdventureGuide)
 	mux.HandleFunc("GET /api/maps", s.handleMaps)
-	// The campaign's own art bytes. SINGLE-SEGMENT {file} DELIBERATELY — see
-	// handleArtFile, where the reason is written down: net/http's wildcard does
-	// not match across "/", and art/ is flat.
+	// Keep {file} single-segment: net/http's wildcard does not match across "/", and
+	// art/ is flat (handleArtFile).
 	mux.HandleFunc("GET /api/art/{file}", s.handleArtFile)
 
-	// The client bundle, LAST and at the bare "/" pattern. ServeMux matches
-	// the most specific pattern, so the explicit routes above always win — a
-	// naive catch-all registered first would serve index.html to the client's
-	// own /api fetches, which then fail to parse as JSON with an error that
-	// says nothing about routing.
-	//
-	// Unauthenticated on purpose: the browser must load the app before it has
-	// anywhere to type a token. What is public here is the PROGRAM; every
-	// route it then calls is authenticated.
+	// Keep the bundle last and at the bare "/": the most specific pattern wins, so no
+	// API route falls into it. Unauthenticated on purpose: the program is public and
+	// every route it calls is not (SPEC-011).
 	if s.static != nil {
 		mux.Handle("/", http.FileServerFS(s.static))
 	}
@@ -478,11 +400,8 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleWS resolves both connection parameters from the URL — `token` and
-// `after` — BEFORE ever calling websocket.Accept (binding design decision):
-// identity.Verify runs against the plain HTTP request, so a bad or revoked
-// token gets an ordinary HTTP 401 response and the connection is never
-// upgraded. Only a verified request reaches Accept.
+// handleWS must verify the token before websocket.Accept: a refused credential
+// gets an ordinary 401 and is never upgraded (SPEC-011).
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	after, err := parseAfter(r.URL.Query().Get("after"))
 	if err != nil {
@@ -498,11 +417,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		return // Accept already wrote the HTTP error response.
+		return // Accept has written the HTTP error; add nothing.
 	}
-	// Own the wire size posture (maxWSFrameBytes's doc comment): pin the
-	// read limit explicitly rather than leaving it to coder/websocket's
-	// unpinned default.
+	// Pin the read limit: the library's default is unpinned (SPEC-011).
 	conn.SetReadLimit(maxWSFrameBytes)
 
 	s.serve(r.Context(), conn, p, after)
@@ -515,27 +432,16 @@ func parseAfter(raw string) (int64, error) {
 	return strconv.ParseInt(raw, 10, 64)
 }
 
-// serve runs one connection's full lifecycle: catch-up + live subscription,
-// the inbound command loop, and a single writer goroutine that owns every
-// write to conn.
-//
-// Writer choice (documented per the binding constraint): writes are
-// serialized through outCh and ONE writer goroutine below, rather than a
-// per-connection mutex. Both the command loop (CommandResult replies) and
-// the broadcast pump goroutine (live/catch-up Envelopes from `events`) only
-// ever hand byte slices to outCh — neither goroutine calls conn.Write
-// itself — so two writes can never race on the wire, and the ordering of
-// interleaved results/events is whatever order they arrive at outCh.
+// SPEC-011 holds this lifecycle. Keep every write on outCh: the read loop, the
+// pump, the presence registry and the head frame hand bytes to one writer.
 func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
 	defer func() { _ = conn.CloseNow() }()
 	if s.onServeDone != nil {
 		defer s.onServeDone()
 	}
 
-	// The seat decides what this connection may receive AND where its
-	// subscription starts — for a projected seat those are two different
-	// numbers, which is the one thing about this arc that is easy to get
-	// wrong (see seat's doc comment).
+	// Keep the seat deciding both what this connection receives and where the
+	// subscription starts: for a projected seat they differ (seat.go).
 	sub := newSeat(p, after)
 	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(sub.subscribeFrom(after), s.buffer, s.noProgress)
 	if err != nil {
@@ -544,41 +450,20 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 
 	outCh := make(chan []byte, s.buffer)
-	// flush replaces close(outCh) as the writer's stop signal, and outCh is
-	// now never closed at all. Presence sends happen OUTSIDE the registry lock
-	// (#47), so the old interlock — deregister under r.mu, then close — cannot
-	// hold, and no amount of selecting saves a sender from it: closing a
-	// channel while a goroutine is parked sending on it panics that goroutine.
-	// A frame written after teardown lands in the buffer and is collected with
-	// the connection, which costs one garbage slice and removes the whole
-	// "send on closed channel" class that 656079f fixed by ordering and that
-	// took three attempts to get right.
+	// Never close outCh: presence sends outside the registry lock, and closing a
+	// channel under a parked sender panics that goroutine. flush is the writer's
+	// stop signal (SPEC-011).
 	flush := make(chan struct{})
 	writerDone := make(chan struct{})
-	// activity is read by the keepalive's busy predicate, below. It is declared
-	// out here rather than inside the goroutine because the pinger reads it
-	// from a third goroutine; see keepalive.go for why a ping must never
-	// contend with a write for the library's frame lock.
+	// Keep activity declared here: the pinger reads it from a third goroutine
+	// (keepalive.go).
 	var activity writeActivity
 	go func() {
 		defer close(writerDone)
 		write := stampedWrite(&activity, func(b []byte) bool {
-			// Bounded, and load-bearing. A client that stops reading backs
-			// the socket up; without a deadline this parks forever while the
-			// command loop still waits in conn.Read — a connection that is
-			// gone but looks alive, leaking its goroutines and socket.
-			//
-			// It is not belt-and-braces with the pump's post-loop close
-			// below: under the store's no-progress policy a subscriber is
-			// only dropped after making ZERO progress, which means this
-			// writer is parked, which means the pump is parked handing off to
-			// outCh — so by construction the pump is NOT ranging `events`
-			// when they close, and that close cannot be observed. This
-			// deadline is what unwinds it. shutdown() depends on it too: it
-			// waits on pumpDone, which can only come after this returns.
-			//
-			// MapTool does the same thing and only this thing — a socket
-			// timeout, never queue depth (net.rptools.clientserver).
+			// Keep this write bounded: a client that stops reading otherwise parks the
+			// writer, the pump and the read loop forever, and shutdown waits on the pump,
+			// which waits on this (SPEC-011).
 			wctx, wcancel := context.WithTimeout(ctx, s.writeTimeout)
 			err := conn.Write(wctx, websocket.MessageText, b)
 			wcancel()
@@ -587,37 +472,19 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		writeUntilFlushed(outCh, flush, write)
 	}()
 
-	// closing is set (by shutdown, below) immediately before it cancels the
-	// subscription as part of a normal, intentional teardown. The pump
-	// goroutine checks it once `events` closes so it can tell that apart from
-	// the store closing `events` UNILATERALLY — which now means this
-	// connection made no progress for its whole no-progress budget, not that
-	// it briefly fell behind. See the force-close below the loop.
-	// PROJECTED FIRST, FOR A PROJECTED SEAT, so the head below is a sequence
-	// this seat can actually reach — see seat.catchUp, which also explains why
-	// the DM and the agent skip this entirely and keep the log's own head.
+	// Project the backlog first, so the head below is a sequence this seat can
+	// reach (seat.catchUp).
 	backlog, catchUpHead := sub.catchUp(ctx, events, catchUpHead)
 
-	// The catch-up head goes out FIRST, before any backlog, so a client knows
-	// what it is waiting for before it starts receiving it.
-	//
-	// Without it a client could not tell catch-up from live: this pump feeds
-	// backlog and live broadcast down one channel with no boundary, so
-	// `vtt state dump` stopped after 300ms of quiet and called that caught up.
-	// A slow moment mid-replay then produced a silently TRUNCATED snapshot.
-	// Sent unconditionally, including head 0 for an empty log, so "no frame
-	// yet" never has to be interpreted.
+	// Queue the head first, before any backlog, and unconditionally, head 0 included
+	// (SPEC-007, SPEC-011).
 	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
 	})
 	if err != nil {
-		// Fail closed, exactly like the subscribe failure above. Serving a
-		// connection that can never announce its head is worse than refusing
-		// it: harness.Client.CatchUpHead waits on its context, and `vtt state
-		// dump` hands it main.go's signal context, which has NO deadline — so
-		// the caller hangs until Ctrl-C instead of getting an error. Tear the
-		// writer down first (nothing else has started yet) so it cannot
-		// outlive the connection.
+		// Fail closed: a connection that cannot announce its head hangs a caller with no
+		// deadline (`vtt state dump`). Stop the writer first so it cannot outlive the
+		// connection.
 		unsubscribe()
 		close(flush)
 		<-writerDone
@@ -629,27 +496,16 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	case <-ctx.Done():
 	}
 
-	// Presence joins AFTER the catch-up head and BEFORE the snapshot, so the
-	// joining client sees itself in its own snapshot (spec §4: a picture of
-	// the table, not of everyone else).
-	//
-	// Deregistration hangs off serve returning, which is what makes BOTH
-	// teardown paths one path: a clean quit and a client force-closed by the
-	// writer's deadline each unwind through here. The second is the one that
-	// gets forgotten, and it is the one that matters — a wedged client that
-	// never says goodbye would otherwise sit in the table's list forever.
+	// Join presence after the head and before the pump, so the joiner is in its
+	// own snapshot (SPEC-011).
 	pc := &presenceConn{
 		participantID: p.ID,
 		displayName:   p.Name,
 		out:           outCh,
 		done:          make(chan struct{}),
 	}
-	// The snapshot is built AND enqueued inside join's critical section, so no
-	// delta can slip between this connection being registered and the snapshot
-	// that describes the table it joined. Enqueued after, a DISCONNECTED could
-	// overtake it and the joiner would then apply a snapshot still listing the
-	// participant it was just told had left — a ghost, permanently, on a
-	// client that applies snapshot-then-deltas.
+	// Keep the snapshot built and queued inside joinAndSend's critical section:
+	// enqueued after, a delta can overtake it and leave a ghost.
 	firstConnection := s.presence.joinAndSend(pc, func(present []*vttv1.PresenceChanged) []byte {
 		b, err := s.encodeFrame(&vttv1.ServerFrame{
 			Frame: &vttv1.ServerFrame_PresenceSnapshot{
@@ -662,10 +518,8 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		return b
 	})
 
-	// Safe to reach twice — shutdown below, and this defer as a backstop for
-	// the returns that never get there. leave() is idempotent and closes
-	// pc.done itself, behind its own membership check, so a second call is a
-	// no-op rather than a double close.
+	// Safe to reach twice: leave is idempotent and closes pc.done behind its own
+	// membership check.
 	leavePresence := func() {
 		if last := s.presence.leave(pc); last {
 			s.announceDeparture(pc)
@@ -673,37 +527,24 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 	defer leavePresence()
 
+	// closing tells the pump a closed events was shutdown's doing, not the
+	// store's no-progress drop; set it before unsubscribing.
 	var closing atomic.Bool
 
-	// perches carries a spectator's chosen shoulder from the command goroutine
-	// to the pump, which is the only goroutine allowed to write this
-	// connection's envelopes (see handleSetViewpoint for what the second
-	// producer cost). One slot, latest wins — see perchBox.
+	// Keep the pump the only producer of this connection's envelopes: a perch queued
+	// from the command goroutine reorders batches (handleSetViewpoint, perchBox).
 	perches := newPerchBox()
 
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
 
-		// env is declared out here because the loop below is a select rather
-		// than a range: the events arm assigns it, the perches arm does not
-		// reach it.
+		// Keep env outside the loop: the perches arm does not assign it.
 		var env *vttv1.Envelope
 
-		// The backlog seat.catchUp already projected, sent from HERE rather
-		// than from serve directly, so it goes out behind the same revocation
-		// check and through the same writer as everything else. One check for
-		// the whole backlog rather than one per envelope: it was drained in a
-		// single pass milliseconds ago, and the loop below re-resolves on the
-		// very next event either way.
-		//
-		// UNGUARDED BY len(backlog), which costs one identity read on a
-		// connection that has no backlog — every DM and agent — and buys a
-		// check that cannot be skipped. The guard was there and the mutation
-		// gate found it unkillable in both directions: nothing can observe
-		// whether a lookup is made before a delivery of nothing. Deleting it
-		// beats adjudicating it, and it makes the check below reachable by the
-		// revocation tests rather than only by the window it was written for.
+		// Send the projected backlog from here, behind the same revocation check and
+		// writer as everything else. Do not guard the check on len(backlog): every DM
+		// connection has an empty one, and the mutation gate cannot see the guard.
 		if s.credentialGone(pc.participantID) {
 			if !closing.Load() {
 				_ = conn.Close(websocket.StatusPolicyViolation,
@@ -715,24 +556,14 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			return
 		}
 
-		// TWO SOURCES, ONE PRODUCER. Everything this connection is ever sent is
-		// computed and enqueued by THIS goroutine: the log, through `events`,
-		// and a spectator's chosen shoulder, through `perches`. The command
-		// goroutine used to enqueue its own perch frames, and two producers on
-		// one socket delivered batches in the opposite order to the one they
-		// were computed in — see handleSetViewpoint for what that cost.
-		//
-		// A select rather than a second goroutine feeding the first: the whole
-		// point is that projecting and sending happen in the same goroutine, so
-		// the order envelopes are emitted in IS the order the projector's memory
-		// changed in.
+		// Keep projecting and sending in this one goroutine: the order envelopes leave
+		// in must be the order the projector's memory changed in (SPEC-011).
 	pumping:
 		for {
 			select {
 			case <-perches.wake:
-				// The perch is APPLIED here, not merely sent here. sub.perch
-				// both moves the eyes and computes what those eyes newly see,
-				// and both must happen where sub.receive happens.
+				// Apply the perch here, not only send it: sub.perch moves the eyes and computes
+				// what they newly see, beside sub.receive.
 				actorID, ok := perches.take()
 				if ok && !deliver(s.encodeFrame, sub.perch(actorID), outCh, writerDone, conn, &closing) {
 					return
@@ -744,39 +575,13 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 				}
 				env = e
 			}
-			// RE-RESOLVE HERE TOO, and for a reason the command loop cannot
-			// cover. commandRoles has no spectator row anywhere, so a
-			// spectator may issue NO command — the lookup down there never
-			// fires for one. And every joiner through the shared link arrives
-			// as a spectator. So a revoked stranger who found a leaked link
-			// kept watching the whole session: the one thing a spectator does
-			// is exactly the thing revocation was not reaching.
-			//
-			// Delivery is where a watcher meets the server, so delivery is
-			// where it bites — on the next thing the table would have shown
-			// them, not on a timer and not at their next connect.
-			//
-			// ErrInvalidToken ONLY. An operational failure must not silently
-			// drop an event: losing a frame is worse than a moment's delay in
-			// removing somebody, and the very next event catches them anyway.
+			// Re-resolve on every delivery: a spectator issues no command, so this is where
+			// revocation reaches one (SPEC-009, VTT-032). ErrInvalidToken only: an
+			// operational failure must not drop an event.
 			if s.credentialGone(pc.participantID) {
-				// CLOSED WITH A REASON, not force-closed.
-				//
-				// There are two revocation paths — this one and the command
-				// loop's — and they used to end the connection differently:
-				// the command loop sends StatusPolicyViolation with a reason,
-				// this one dropped the socket. Which one fired was a race, so
-				// a revoked participant was told why SOMETIMES. Measured 5 in
-				// 30 runs, and the winner shifts with unrelated timing: the
-				// person's client showed "closed" with nothing to explain it.
-				//
-				// conn.Close rather than shutdown(): shutdown waits on
-				// pumpDone and this IS the pump, so calling it here would
-				// deadlock. Close only writes the close frame; the read loop
-				// then unwinds through its own error path exactly as before,
-				// and serve's deferred CloseNow still does the final cleanup.
-				// coder/websocket serialises writes internally, so a frame
-				// already going out finishes first.
+				// Close with a reason, as the command loop does, or which path fires decides
+				// whether the peer is told why. conn.Close, not shutdown: shutdown waits on
+				// this pump.
 				if !closing.Load() {
 					_ = conn.Close(websocket.StatusPolicyViolation,
 						"gateway: credential no longer valid")
@@ -784,128 +589,34 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 				return
 			}
 
-			// PROJECTED PER RECIPIENT (visibility spec §4), and this is the
-			// seam the whole arc turns on. It already existed: this goroutine
-			// holds p for the connection's life and already marshaled per
-			// connection, so what one seat may see is decided in the one place
-			// that was already per-seat.
-			//
-			// Marshaled per connection, deliberately: each pump encodes
-			// straight off its own subscription channel with no shared
-			// cache. At table scale (a handful of participants, not
-			// thousands of fan-out sockets) a few extra protojson.Marshal
-			// calls per event is cheap. Revisit with a real broadcast hub
-			// (marshal once, shared bytes) only if client count per
-			// campaign ever grows past table scale (say, >10) — and note that
-			// a hub can only ever share bytes between seats with the SAME
-			// projection, which is the DM and the agent.
-			//
-			// ONE EVENT IS NOW ZERO, ONE OR SEVERAL FRAMES for a projected
-			// seat: an arrival is an ActorAdded plus a TokenPlaced plus a
-			// SceneSeen, all stamped with the sequence that caused them. The
-			// DM and the agent still get exactly one frame per event, by
-			// pointer, unchanged.
-			// An encode failure TEARS THE CONNECTION DOWN rather than
-			// skipping to the next envelope — see enqueueEvents/deliver.
-			// conn.Close rather than shutdown(), because this IS the pump and
-			// shutdown waits on it.
+			// Marshal per connection, in this goroutine: a seat's projection is per
+			// recipient, and one event can be zero, one or several frames (SPEC-011). Do
+			// not share bytes across seats with different projections.
 			if !deliver(s.encodeFrame, sub.receive(env), outCh, writerDone, conn, &closing) {
 				return
 			}
 		}
-		// `events` is closed. If shutdown() didn't do it, the store dropped
-		// this subscription — this connection will never receive another
-		// broadcast, but the command loop below is still blocked in
-		// conn.Read, unaware anything happened, and would otherwise sit there
-		// looking alive while broadcasts are silently dead forever. Force the
-		// connection closed so that Read errors out and drives the normal
-		// shutdown() path.
-		//
-		// Reached when the pump was IDLE at the close — a client that kept up
-		// until its subscription ended. A WEDGED one exits through the writer
-		// path instead, and needs nothing here: coder/websocket fails the
-		// connection when a write errors, so conn.Read below returns and
-		// serve unwinds on its own. Verified by injection, not assumed.
+		// events closed without shutdown: the store dropped this subscription. Force the
+		// socket closed so conn.Read fails and the read loop runs shutdown; a wedged
+		// writer exits by its own path (SPEC-011).
 		if !closing.Load() {
 			_ = conn.CloseNow()
 		}
 	}()
 
-	// AFTER the pump is running, and that ordering is the whole point.
-	//
-	// Announcing an arrival walks the registry SERIALLY, waiting up to
-	// presenceSendBudget on each connection. Done before the pump started, the
-	// news of your arrival sat on the critical path of your own catch-up: N
-	// wedged peers cost N x budget, paid by the person joining, who has done
-	// nothing wrong. MEASURED: with a 2s budget and one peer whose socket had
-	// genuinely backed up, a joiner waited 2.018s for its first event; at the
-	// registry, one stalled peer costs 101ms against a 100ms budget, two 202ms,
-	// three 302ms. With the production 3s budget and two dead tabs left open
-	// somewhere, a new player waits six seconds to see the board.
-	//
-	// The bound itself is deliberate and unchanged (spec §4.1): a client that
-	// is merely BUSY must keep its frame, and an instant drop was tried and was
-	// wrong. What moved is WHO WAITS. The announcement is other people's news;
-	// the catch-up is the joiner's own reason for connecting.
-	//
-	// SYNCHRONOUS, not a goroutine, and that is deliberate too. In a goroutine
-	// a fast disconnect could let leavePresence broadcast DISCONNECTED before
-	// this CONNECTED landed, and a client that re-adds on CONNECTED would keep
-	// a ghost for the rest of the session — the same inversion that made
-	// announcePromotion take one lock hold instead of three. So the read loop
-	// below still waits for this; only the pump no longer does, and a joiner
-	// with nothing on screen yet has nothing to send.
-	//
-	// Only the participant's FIRST connection is an arrival. A second device
-	// must not announce someone who is already at the table.
+	// Announce after the pump is running, and synchronously: before it, N wedged
+	// peers cost the joiner N budgets; in a goroutine, a fast disconnect lets
+	// DISCONNECTED overtake CONNECTED (SPEC-011).
 	if firstConnection {
 		s.announcePresence(pc)
 	}
 
-	// shutdown tears the connection's helper goroutines down in dependency
-	// order: mark this as an intentional close (so the pump's post-loop
-	// check above is a no-op), stop the subscription (closes `events`),
-	// wait for the pump to drain it, THEN signal the writer to flush what is
-	// queued and stop, and wait for it to exit.
-	//
-	// Safe to call after the pump has already force-closed the connection on
-	// overflow — but note WHY, because the previous wording ("unsubscribe,
-	// CloseNow, and channel-close are all idempotent here") was wrong about the
-	// last one and invited the second call that would panic. Closing a channel
-	// twice panics. What is actually true is that shutdown runs at most once
-	// per serve, and the catch-up-head failure path returns before shutdown
-	// exists — so close(flush) has exactly one caller on any given path.
+	// Keep this order: leave presence, mark closing, unsubscribe, drain the pump,
+	// flush the writer. close(flush) has one caller per path; closing a channel
+	// twice panics.
 	shutdown := func() {
-		// Presence FIRST — but the reason has changed, and the history is
-		// worth keeping because it is what makes the current shape defensible.
-		//
-		// This used to be an ordering against close(outCh): leave took the
-		// registry lock, broadcast HELD that same lock while sending, so once
-		// leave returned no broadcast could still be holding this connection.
-		// Get it backwards and the registry kept handing frames to a channel
-		// this function had already closed — "send on closed channel", raised
-		// inside a teardown that is often already unwinding, and caught only
-		// by net/http's handler recover. The consequence was worse than the
-		// crash: map iteration order is random, so a panic mid-broadcast
-		// delivered the departure to SOME connections and never to the rest, a
-		// permanent ghost at the table, arriving silently. Found by review
-		// under -race when `task check` ran no -race anywhere; check:race
-		// closes that (2026-08-08), and reinstating the bad ordering was the
-		// injection that proved the new gate has teeth.
-		//
-		// #47 dissolved that interlock, because sends no longer happen under
-		// the registry lock at all — so instead of ordering the close, there
-		// IS no close (see the flush channel above). What leaving first buys
-		// now is smaller and still worth it: the departure is announced before
-		// the writer stops, so it goes out on this connection's own socket
-		// too, and pc.done is closed early enough that a fan-out already
-		// holding this connection abandons it rather than spending the budget.
-		//
-		// The deferred leave below stays, as a backstop for the return paths
-		// that never reach shutdown. Both are safe because leave() is
-		// idempotent and closes pc.done behind its own membership check — NOT
-		// because of a sync.Once here, which is what this first was and what a
-		// reader adding a third call site would otherwise go looking for.
+		// Leave first: pc.done lets a fan-out holding this connection abandon it
+		// before the writer stops (SPEC-011).
 		leavePresence()
 		closing.Store(true)
 		unsubscribe()
@@ -914,33 +625,8 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		<-writerDone
 	}
 
-	// The keepalive, on its OWN goroutine — keepalive.go carries the reasoning
-	// for why it cannot be the writer's and why that does not breach the
-	// single-writer discipline the writer block above establishes.
-	//
-	// STARTED HERE rather than beside the writer, and the reason is the
-	// hand-rolled teardowns above, not tidiness. Between the writer goroutine
-	// and this point sit two early returns that unwind by hand — unsubscribe,
-	// close(flush), wait on writerDone, then conn.Close with a reason. A pinger
-	// already running there could CloseNow the socket out from under that
-	// reasoned Close, turning a diagnosable failure into a bare disconnect.
-	//
-	// AN EARLIER VERSION OF THIS COMMENT ARGUED SOMETHING ELSE and it was
-	// wrong: that starting earlier would risk pinging during catch-up and the
-	// presence fan-out. It would not. The first tick is a whole pingInterval
-	// after this line, setup finishes in milliseconds, and presenceSendBudget
-	// bounds time spent handing bytes to OTHER connections' writers — which
-	// never makes THIS connection's writer hold the frame lock. Worse, if it
-	// somehow did, activity.busy() is already the defence. Recorded because
-	// the wrong reason was plausible enough to survive being written down.
-	//
-	// Nothing waits for it to exit, deliberately, and nothing needs to. The
-	// pinger has two independent exits: this stop channel, and ctx — which
-	// net/http cancels as soon as ServeHTTP returns — so it cannot outlive the
-	// request by more than one in-flight ping. Note that the LIFO position of
-	// this defer buys nothing on its own: every return past this point calls
-	// shutdown() explicitly, and shutdown()'s first act is leavePresence, so
-	// the ordering only ever matters if a panic unwinds through net/http.
+	// Start the pinger after the hand-rolled teardowns above: a CloseNow from here
+	// would pre-empt their reasoned Close (keepalive.go).
 	stopPing := make(chan struct{})
 	defer close(stopPing)
 	go pingUntilStopped(ctx, s.pingInterval, s.pingTimeout, stopPing,
@@ -955,62 +641,26 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 
 		cmd, err := DecodeCommand(raw)
 		if err != nil {
-			// Malformed frame: close only THIS connection (binding
-			// contract) — every other connection is untouched.
+			// Close only this connection, with a reason (SPEC-011).
 			shutdown()
 			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: malformed frame")
 			return
 		}
 
-		// RE-RESOLVE, every command. Verify ran once before the upgrade and
-		// answered "who is this, and what may they do?" — but the first half
-		// is a connection-time fact and the second is a LIVE one. Trusting the
-		// cached answer meant a promotion did not bite until the participant
-		// reconnected, which would sit on the critical path of everybody who
-		// ever joins (they all arrive as spectators), and it meant `vtt revoke`
-		// removed nobody: a revoked participant kept playing until they chose
-		// to disconnect. Spec §3.2.
-		//
-		// THIS IS HALF OF IT. A spectator issues no commands at all, so the
-		// pump above re-resolves on DELIVERY for the same reason. Change one
-		// and you almost certainly mean to change the other.
+		// Re-resolve on every command: authorization is live, a connection-time answer
+		// is not (SPEC-009, VTT-031). The pump re-resolves on delivery for the same
+		// reason; change both or neither.
 		now, err := s.ids.Lookup(p.ID)
 		if errors.Is(err, identity.ErrInvalidToken) {
-			// Revoked, or gone. Close rather than refuse-and-continue: their
-			// credential is no longer valid, so there is nothing left for this
-			// connection to be allowed to do.
+			// Revoked or gone: close, there is nothing left this connection may do (VTT-032).
 			shutdown()
 			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
 			return
 		}
 
-		// ANY OTHER ERROR IS OPERATIONAL, and must not be read as a
-		// revocation. Putting a database read on this path also put its
-		// failure modes here: a busy file, a corrupt row, a driver error. None
-		// of those is a fact about this person's credential, and closing on
-		// them tells a player in good standing that theirs is no longer valid
-		// — a lie, and one that throws them out of a live table over a
-		// transient. identity's own comment records this shared file blocking
-		// the full busy_timeout and then failing under another handle's write
-		// transaction, so it is measured, not hypothetical. It is handed to
-		// answerCommand below, which refuses THE COMMAND and keeps the
-		// connection: one CommandResult with ok=false, and nothing else about
-		// this seat changes.
-		//
-		// A TRANSPORT failure is the other thing entirely, and where that
-		// one lives is worth saying, because it used to be visible on this
-		// very line. answerCommand answered `(result, alive)` while it
-		// still enqueued a perch's own frames, and alive=false meant the
-		// writer was gone or a frame would not encode — never anything
-		// about this person's credential. The perch stopped writing
-		// envelopes (see answerCommand), so the only frame this READ LOOP
-		// still enqueues is the one below — serve's opening frames go out
-		// before the loop starts, on their own arms — and a dead writer is
-		// what its `<-writerDone` arm sees. The two still end differently,
-		// which is the whole of the ruling: an operational lookup error
-		// costs one command, a dead writer costs the connection, and a
-		// revoked credential — dealt with above — is the only one of the
-		// three that closes because of WHO IS ASKING.
+		// Any other lookup error is operational: refuse the command and keep the
+		// connection (VTT-033). A dead writer, seen on the result's writerDone arm,
+		// costs the connection.
 		result := s.answerCommand(now, err, cmd, perches)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
@@ -1720,56 +1370,23 @@ var (
 	errWriterGone  = errors.New("gateway: writer stopped")
 )
 
-// deliver is enqueueEvents plus the pump's standing answer to failing at it:
-// tear the connection down, and say why when the reason was ours.
-//
-// It exists because the pump now has THREE places that send (the backlog, a
-// perch, an event) and each carried the same six lines. Folding them into one
-// function is not only tidiness — it kept `serve` under the gocyclo limit that
-// the perch's select arm would otherwise have pushed it over, and it means a
-// future fourth sender cannot get the teardown subtly different from the other
-// three.
-//
-// closing is a POINTER because it is serve's own flag and the caller reads it
-// after this returns; taking it by value would copy an atomic.Bool, which vet
-// rejects outright.
+// Keep closing a pointer: it is serve's own atomic, and vet refuses a copy.
 func deliver(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope,
 	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) bool {
 	err := enqueueEvents(encode, envs, outCh, writerDone)
 	if err == nil {
 		return true
 	}
-	// errWriterGone needs no close: the writer is already gone, and serve's
-	// deferred CloseNow does the disposing. An ENCODE failure is ours, and the
-	// client is owed a reason for a connection that ends mid-stream.
+	// errWriterGone needs no close: serve's deferred CloseNow disposes of it.
 	if errors.Is(err, errEncodeFrame) && !closing.Load() {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
 	}
 	return false
 }
 
-// enqueueEvents encodes each envelope as a ServerFrame and hands it to the
-// connection's writer, in order, stopping at the first failure.
-//
-// ALL OR NOTHING PER BATCH, and that is the reason this stops rather than
-// skipping. One log event is now several envelopes for a projected seat, and
-// project.go's ordering within them is LOAD-BEARING: an actor before its
-// token, a scene before what stands in it. Dropping one and sending the next
-// is "token placed for unknown actor" in both folds — the permanent client
-// freeze this arc keeps coming back to — so delivering an incoherent stream is
-// worse than delivering none. It used to `continue`, which was harmless while
-// one event was exactly one frame.
-//
-// A nil or empty batch is a no-op, which is what a projection that withheld
-// everything returns.
-//
-// THE ENCODER IS PASSED IN, through Server.encodeFrame's seam, and that is the
-// difference between a branch nothing can reach and one a test can drive. It
-// called the package-level EncodeFrame at first, which left the error path
-// above unreachable BY WIRING — not by construction, since the seam sits in
-// this same file and five other frames already go through it. Reviewers
-// spotted the distinction before I did; the branch below is now killable, and
-// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch drives it.
+// Stop at the first failure, never skip: a projected batch's order is
+// load-bearing for the client's fold (SPEC-011). Keep the encoder injected, or
+// the error arm is unreachable by wiring.
 func enqueueEvents(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
 	for _, pe := range envs {
 		b, err := encode(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})
