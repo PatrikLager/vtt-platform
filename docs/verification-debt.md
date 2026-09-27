@@ -274,3 +274,14 @@ never reaches the window. Labels: `test data missing`, `outside the tool`.
 Closing it needs `Shutdown` to drain every gateway connection, or `closeFn` to
 wait for them, and a test that holds a connection open across `Shutdown`.
 Recorded 2026-09-27, moved here from the comment at `composeServer`.
+
+**The busy skip's wiring in `serve` is unpinned.** `keepAlive` skips a tick
+while `busy` reports the writer mid-frame, and `serve` wires that through
+`stampedWrite` around its real write and `activity.busy` into
+`pingUntilStopped`. VTT-094's three tests drive `keepAlive`, `writeActivity`
+and `stampedWrite` in isolation; replacing `stampedWrite(&activity, ...)` in
+`serve` with the bare closure, or passing a predicate that always answers false
+in place of `activity.busy`, leaves them and the rest of the package green.
+Labels: `test data missing`, `outside the tool`. Closing it needs a connection
+test whose writer is held mid-frame across a tick and whose ping is observed
+not to go out. Recorded 2026-09-27 by the reading review of SPEC-011.
