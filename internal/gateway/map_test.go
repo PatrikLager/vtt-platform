@@ -558,8 +558,7 @@ func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 
 	// Every envelope in the batch must be stamped by the HANDLER, not left
 	// zero: mapdef.Compile itself leaves EventId/ParticipantId/ActorRole/
-	// OccurredAt zero by convention (matching adventure.Compile's own
-	// contract — see adventure.go's handleLoadAdventure doc comment).
+	// OccurredAt zero by convention, as adventure.Compile does (SPEC-012).
 	for _, env := range []*vttv1.Envelope{sceneEnv, tokEnv} {
 		if env.GetEventId() == "" {
 			t.Errorf("envelope %v has no EventId — mapdef.Compile's envelopes must be stamped before AppendBatch", env)
