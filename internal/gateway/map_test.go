@@ -404,6 +404,7 @@ func TestLoadMapNoMapsConfiguredCleanError(t *testing.T) {
 // TestLoadMapUnknownIdCleanError covers the "unknown map" clean error,
 // distinct from "no maps configured at all" — the server DOES have maps
 // loaded, just not this id.
+// VTT-163
 func TestLoadMapUnknownIdCleanError(t *testing.T) {
 	f := newMapFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -454,6 +455,7 @@ func mapPayloadKind(env *vttv1.Envelope) string {
 // and NOTHING would persist — not even the SceneCreated ahead of it, since
 // AppendBatch validates the whole batch atomically before persisting any of
 // it. Confirmed as actual behavior while developing this test, not assumed.
+// VTT-175
 func TestLoadMapProducesBatchCarryingTilesAndObjects(t *testing.T) {
 	f := newMapFixture(t, true)
 	dmConn := f.dial(f.dmToken, 0)
@@ -688,6 +690,7 @@ func TestTheShippedCampaignResolvesItsOwnArt(t *testing.T) {
 // thing that catches this collision is campaign.AppendBatch's own
 // snapshot-fold validation, so this test also proves that backstop actually
 // engages for the standalone-map path, not just the adventure path.
+// VTT-172
 func TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 	f := newMapFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -752,6 +755,7 @@ func TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 // ok=true alone would not prove it: the assertion follows the batch onto a
 // second connection and reads the SceneCreated back, so the map has to have
 // reached campaign state, not merely satisfied a lookup.
+// VTT-164
 func TestAMapInstalledAfterBootIsLoadable(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	dmConn := f.dial(f.dmToken, 0)
@@ -787,6 +791,7 @@ func TestAMapInstalledAfterBootIsLoadable(t *testing.T) {
 // discarded: /api/maps is how a client discovers what this table has, and a
 // map loaded mid-session has to appear there the same as one present at
 // boot.
+// VTT-165
 func TestAMapInstalledAfterBootJoinsTheListing(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -826,6 +831,7 @@ func TestAMapInstalledAfterBootJoinsTheListing(t *testing.T) {
 // half is the load-bearing one: os.Open's own error carries the server's
 // absolute path, and handing that to whoever asked would leak the layout of
 // the machine to every DM seat.
+// VTT-163 VTT-168
 func TestAnUnknownMapIsRefusedByName(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -861,6 +867,7 @@ func TestAnUnknownMapIsRefusedByName(t *testing.T) {
 // Asking twice is not repetition: a probe that cached before validating
 // would answer the second attempt differently, and /api/maps below would
 // list a map nobody could load.
+// VTT-166
 func TestAnInstalledButBrokenMapIsRefusedAndStaysUnloaded(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -899,6 +906,7 @@ func TestAnInstalledButBrokenMapIsRefusedAndStaysUnloaded(t *testing.T) {
 //
 // The insert-once property itself is pinned in map_internal_test.go, which
 // can observe the map set directly; this test is the boundary half.
+// VTT-172
 func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	first := f.dial(f.dmToken, 0)
@@ -974,6 +982,7 @@ func TestTwoRacingLoadsOfANewlyInstalledMapProduceOneScene(t *testing.T) {
 // The row below is the substitute, and f.artDir joins the paths this test
 // forbids in an answer, because an art error is exactly as capable of carrying
 // the server's layout as a map error is.
+// VTT-168
 func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -1107,6 +1116,7 @@ func TestNoRefusalTellsAClientWhereTheCampaignLives(t *testing.T) {
 // seat reads, which is where the leak was actually observed in Task 3 and the
 // reason the refusal test above keeps its own end-to-end art rows. Recorded in
 // the Task 4 report.
+// VTT-169
 func TestNoWarningTellsAClientWhereTheCampaignLives(t *testing.T) {
 	t.Run("the art root cannot be opened", func(t *testing.T) {
 		root := t.TempDir()
@@ -1259,6 +1269,7 @@ func assertNoWarningNamesAPath(t *testing.T, warnings []string, forbidden ...str
 // under any other broken sidecar. format_version 99 was already the fixture,
 // so the mechanism this pins is unchanged; only the name and the sentences
 // around it were describing a wider class than still exists.
+// VTT-166
 func TestAMapWithArtFromALaterFormatIsRefusedOnDemandExactlyAsAtBoot(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -1296,6 +1307,7 @@ func TestAMapWithArtFromALaterFormatIsRefusedOnDemandExactlyAsAtBoot(t *testing.
 // see a boot-order defect): this one pins only that nothing is cached between
 // loads at this layer — the art did not exist when the fixture booted, and the
 // wire carries it anyway.
+// VTT-170
 func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
 	f := newInstallableMapFixture(t)
 	conn := f.dial(f.dmToken, 0)
@@ -1366,6 +1378,7 @@ func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
 // what campaigns/example/art/masonry-1.json must declare when Task 8 commits
 // it. If that fixture's kinds are ever softened, this test goes
 // quietly green-for-nothing rather than failing.
+// VTT-171
 func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
 	// An installable fixture is enough now: art comes from WithArtDir, which
 	// newMapFixtureWith wires unconditionally, so nothing has to be loaded at
@@ -1417,6 +1430,7 @@ func TestALoadMapWarningReachesTheIssuer(t *testing.T) {
 // Asserted on the DM-facing sentence rather than on any substring the engine
 // happens to share, so that a future change to the fold's own wording cannot
 // quietly make this pass while the DM reads something else.
+// VTT-172
 func TestASecondLoadTellsTheDMTheMapIsLoadedAndHowToReload(t *testing.T) {
 	f := newMapFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -1493,6 +1507,7 @@ func TestASecondLoadTellsTheDMTheMapIsLoadedAndHowToReload(t *testing.T) {
 // The vehicle is the cellar map's own TokenPlaced, which names act-fighter.
 // Loading without seeding that actor makes engine.Apply refuse for a reason
 // that has nothing to do with scene ids, on the same AppendBatch call.
+// VTT-173
 func TestANonCollisionFailureKeepsItsOwnMessage(t *testing.T) {
 	f := newMapFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -1560,6 +1575,7 @@ func bigSidecarArtDir(t *testing.T, n, valueBytes int) string {
 // Not remotely triggerable: authz.go gates load_map to DM and agent, and no
 // route writes map or art files. This is a broken-content and third-party-bundle
 // footgun, which is why it is a bound rather than a refusal.
+// VTT-174
 func TestBrokenArtCannotPushAResultPastTheReadLimit(t *testing.T) {
 	const pieces, valueBytes = 12, 20000 // ~240 KB unbounded, against a 200 KiB limit
 	f := newMapFixtureAt(t, false, true, bigSidecarArtDir(t, pieces, valueBytes))

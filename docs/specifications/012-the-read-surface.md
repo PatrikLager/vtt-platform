@@ -102,8 +102,8 @@ campaign's; `DefaultCellPx` is 64 and duplicates `campaigncfg.DefaultCellPx` on
 purpose, because `.go-arch-lint.yml` gives `gateway` no edge to `campaigncfg`
 (`WithCellPx` takes a number, not a path), and `cmd/vtt`'s
 `TestTheServerDefaultAndTheCampaignDefaultAreTheSameNumber` holds the two
-equal. What a map is, how `load_map` compiles one and how `mapByID` grows the
-set at request time are `map.go`'s and have no record yet.
+equal. How `load_map` looks a map up and grows the set is SPEC-014's; what a
+map is, `internal/mapdef`'s.
 
 **The art route.** `handleArtFile` serves one file out of the campaign's flat
 art directory, `Server.artDir`, and is the only route that hands a browser raw
@@ -150,9 +150,16 @@ way, so an unreadable guide fails at boot and never as a 500 mid-session;
 `rules.Load` for the ruleset, `loadAdventuresDir` for the adventures,
 `loadAdventureGuides` for their guides, `campaigncfg.Load` for `cell_px`. The
 `With*` methods write without a lock and are called before the server serves.
-This package reads the filesystem at request time in two places and no other:
-`handleArtFile` opens the art directory, and `mapByID` in `map.go` probes the
-campaign's maps directory on a lookup miss.
+Apart from the campaign's log and the identity database, which `campaign` and
+`identity` hold open, this package reads a file at request time through four
+calls and no other: `handleArtFile` opens the art directory; `mapByID` runs
+`mapdef.LoadInstalled`, which reads the maps directory and the art directory;
+and `handleLoadMap` runs `mapdef.Compile` and `handleLoadAdventure` runs
+`adventure.Compile`, each of which reads an art directory through
+`internal/artlib` (SPEC-014). Over the package's non-test files, `os.` is
+called only in `handleArtFile`, and of its calls into `mapdef`, `adventure`,
+`artlib` and `rules`, only `mapdef.LoadInstalled`, `mapdef.Compile` and
+`adventure.Compile` read a file.
 
 **The two commands that spend it.** `handleCommand` runs `authorize`, which
 takes `st := s.campaign.State()`, and passes that snapshot to

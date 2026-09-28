@@ -13,88 +13,10 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
-// errNoMapsAvailable is handleLoadMap's clean, ok=false error when s has no
-// maps configured — errNoAdventuresAvailable's exact sibling (adventure.go),
-// for the same reason: a campaign whose maps/ is absent, or which has no
-// maps installed yet (2026-09-01-create-scene-leaves Task 5), keeps
-// load_map rejected with a clean "no maps available" rather than a
-// connection drop or crash.
 const errNoMapsAvailable = "gateway: no maps available"
 
-// handleLoadMap runs the authorized-load_map pipeline (whole-branch-review
-// C1 remediation, maps-as-geometry design spec §4.3): lookup by id via
-// mapByID (below — the map set, and on a miss the campaign's own maps/
-// directory, since 2026-09-01-create-scene-leaves Task 6), mapdef.Compile
-// against the campaign's flat art directory (s.artDir, set by WithArtDir —
-// art is read at load time now, not once at boot:
-// 2026-09-02-art-is-a-flat-library design spec §3.6, and an unresolved
-// reference degrades one square rather than refusing the map, §4), then one
-// campaign.AppendBatch for the whole ordered
-// event batch Compile returns. This mirrors handleLoadAdventure
-// (adventure.go) almost exactly: every failure — no maps configured, an
-// unknown id, a map installed but broken, a Compile error, an AppendBatch
-// rejection — is a clean ok=false CommandResult, never a connection drop.
-// The caller (handleCommand) already ran Authorize before reaching here.
-//
-// One deliberate difference from handleLoadAdventure: a map never creates
-// actors of its own (spec §3.4 — maps are terrain and placements, never a
-// second source of actors), so a placement naming an actor that does not
-// yet exist in campaign state is not caught here at all — it surfaces as an
-// ordinary AppendBatch rejection ("token placed for unknown actor"), the
-// same clean-error path a hand-issued place_token would take. The DM is
-// expected to add_actor first; this handler does not special-case that
-// order.
-//
-// mapdef.Compile's second return value is a []string of warnings. Only the
-// first producer predates 2026-09-02-art-is-a-flat-library Task 3: an
-// override's kind disagreeing with its base tile's (2026-08-12-maps-as-geometry
-// design spec §3.2 — warns, never refuses), art that is not installed, art that
-// has a picture and no sidecar, an art directory this process cannot open, and
-// — since Patrik's ruling of 2026-09-04, which is what stopped a corrupt
-// sidecar taking the whole boot down — art that is installed and cannot be
-// used (all of those, that sub-project's design spec §4). Each is reported
-// ONCE per distinct message with the number of squares
-// or objects it affected. The collapse is a size bound, and the bound is per
-// ADVENTURE, where every scene's warnings ride one CommandResult — see
-// mapdef.BuildSceneCreated's warningTally, and do not restore the byte figure
-// this sentence used to carry, which did not reproduce. This handler carries them onto the
-// ok=true CommandResult it
-// returns (CommandResult.warnings, field 5, added by
-// 2026-09-02-art-is-a-flat-library's Task 2) — the channel this doc comment
-// used to explain the absence of. They go on THIS result and nowhere else:
-// warnings are for whoever issued load_map, not for the table, so nothing
-// here broadcasts them — serve's own read loop (server.go) is what makes
-// that automatic, writing the CommandResult answerCommand returns to only
-// THIS connection's own outCh.
-//
-// This used to say "the other two production call sites" discard the
-// identical warning. That miscounted them and misplaced one.
-// cmd/vtt/maps.go never calls Compile or BuildSceneCreated itself — its
-// boot-time walk reaches the discard INDIRECTLY, inside
-// mapdef.LoadInstalled's own dry-run Compile call (installed.go). mapByID
-// (below) calls that exact same LoadInstalled on a cache miss, which makes
-// it not an "other" site at all from here: a map loaded for the first time
-// through THIS handler has its warnings computed twice in one request —
-// once inside LoadInstalled's dry run, discarded, and once by the Compile
-// call below, kept.
-//
-// THE ADVENTURE SIDE NO LONGER DISCARDS ANYTHING ON ITS LIVE PATH, and this
-// paragraph said the opposite until 2026-09-03. It read: "adventure.Compile's
-// signature is ([]*vttv1.Envelope, error) and swallows the warnings internally
-// -- so widening any of them means changing a signature that drops the warning
-// before a CommandResult is ever in scope, which is a decision this task did
-// not scope." That was a correct description of a gap and an incorrect
-// description of its cost. Once art-is-a-flat-library Task 3 made unresolvable
-// art WARN instead of refusing, the swallowed warning became the only thing
-// that would have been said at all, so the signature was widened:
-// adventure.Compile returns ([]*vttv1.Envelope, []string, error) and
-// handleLoadAdventure (adventure.go) puts them on its own CommandResult, the
-// same way this handler does.
-//
-// internal/adventure/load.go's loadScenes still discards them in ITS dry run,
-// at adventure-LOAD time, and that one is genuinely fine: it runs at boot with
-// no CommandResult anywhere, and every warning it drops is recomputed on the
-// live path a moment later.
+// Answer every failure as an ok=false result, never a close: authorization
+// already ran in handleCommand (SPEC-014).
 func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity.Participant) *vttv1.CommandResult {
 	m, lookupErr := s.mapByID(cmd.GetMapId())
 	if lookupErr != nil {
@@ -106,10 +28,8 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// mapdef.Compile leaves EventId/ParticipantId/ActorRole/OccurredAt zero
-	// on every envelope it returns (the same convention adventure.Compile
-	// follows for handleLoadAdventure) — stamp them here before handing the
-	// batch to campaign.AppendBatch.
+	// Stamp the four fields Compile leaves zero: store.AppendBatch requires an
+	// EventId (SPEC-014).
 	now := timestamppb.Now()
 	for _, env := range envs {
 		id, err := newEventID()
@@ -124,30 +44,12 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 
 	firstSeq, err := s.campaign.AppendBatch(envs)
 	if err != nil {
-		// THE ONE REFUSAL A DM REACHES BY ORDINARY USE, so it is the one that
-		// gets translated. Art that is not installed degrades the square and
-		// lets the load COMMIT (design spec §4), so a mistyped override or a
-		// map copied ahead of its pictures is warned about, not refused — and
-		// the map is in the log. Installing the picture and loading again is
-		// the obvious next move and cannot work, because the first load took
-		// the scene id. The fold's own sentence names a layer the DM does not
-		// work in and a word they never typed, and does not hint at the remedy.
+		// Translate this sentinel and no other: a DM sent to copy a map over an
+		// unrelated fault cannot act on it (TestANonCollisionFailureKeepsItsOwnMessage).
 		//
-		// IT SAYS "SCENE ID", NOT "MAP", because that is all the sentinel
-		// knows, and the difference is reachable with the content this repo
-		// ships. adventures/cellar-rats declares a scene id of "cellar" and
-		// campaigns/example/maps/cellar.json declares a map id of "cellar", so
-		// load_adventure then load_map refuses a map that was never loaded. A
-		// first draft of this message said "map %q is already loaded" and was
-		// therefore FALSE on shipped content — a refusal that misdiagnoses is
-		// worse than one that is merely opaque, because the DM checks
-		// /api/maps, sees the map absent, and has nothing to reconcile.
-		// The remedy clause survives the correction: a map's scene id is its
-		// own id, so a copy under a new id does load.
-		//
-		// Matched on the SENTINEL, never on the fold's prose, and deliberately
-		// narrow — every other AppendBatch failure keeps its own message, which
-		// TestANonCollisionFailureKeepsItsOwnMessage pins.
+		// Say the scene id is in play, never that the map is loaded: a loaded
+		// adventure can hold the id too
+		// (TestASecondLoadTellsTheDMTheMapIsLoadedAndHowToReload).
 		if errors.Is(err, engine.ErrSceneExists) {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: fmt.Sprintf(
 				"gateway: load_map: scene id %q is already in play — a map's scene id is its "+
@@ -157,64 +59,12 @@ func (s *Server) handleLoadMap(requestID string, cmd *vttv1.LoadMap, p *identity
 		}
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	// Return the warnings to the issuer only; nothing broadcasts them (SPEC-014).
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq, Warnings: warnings}
 }
 
-// mapByID answers with the map called id, loading it from the campaign's
-// own maps/ directory if the set does not already hold it — the on-demand
-// lookup this sub-project exists for (2026-09-01-create-scene-leaves design
-// spec §5). Install and load are two separate acts (§4): a map file appears
-// in maps/ by whatever means, and load_map brings it into play, with no
-// restart and no reconnect in between. Boot-time preloading is unchanged —
-// it is step 1 having happened early — so an operator still learns about a
-// broken map before anyone connects.
-//
-// A server with no maps directory configured (s.mapsDir == "") keeps
-// exactly the behaviour this handler had before: its map set is whatever
-// WithMaps was given, an unknown id is unknown, and an empty set answers
-// errNoMapsAvailable. That is not a legacy branch — it is what any caller
-// that wires WithMaps without WithMapsDir gets, and it is the state
-// map_test.go's own newMapFixture still pins.
-//
-// THE SHAPE OF THE LOAD is deliberate, and the three steps are not
-// interchangeable:
-//
-//  1. Read under the read lock, and RELEASE it before doing anything else.
-//  2. Load from disk holding NO lock. Reading and compiling a map is I/O
-//     plus the whole of mapdef's validation; holding the write lock across
-//     it would stall every concurrent reader of the map set — including
-//     GET /api/maps — for as long as the disk takes.
-//  3. Take the write lock and CHECK AGAIN before inserting. Another
-//     goroutine may have finished the same load while this one was reading
-//     the file (design spec §5: "Two load_maps racing on the same new id
-//     must not both compile and cache it"). Whoever gets there first owns
-//     the entry, and everyone else adopts it, so every caller holds the
-//     same *mapdef.Map and the set gains exactly one — proven in
-//     map_internal_test.go, which is the only place that property is
-//     visible.
-//
-// THE PACK-NOT-LOADED ANSWER IS GONE from here, with the mechanism that
-// produced it (2026-09-02-art-is-a-flat-library Task 3, and Task 7 deleted the
-// type itself). It existed because packs were read once at boot, so a map
-// installed together with a new pack was refused until a restart and this
-// handler was the only layer that knew so. Art is now read from a directory
-// when the map is loaded (design spec §3.6), so nothing can be "installed but
-// not loaded" and no answer here has a restart to suggest.
-//
-// WHAT REACHES A CLIENT, and it is a narrower question than it looks:
-// mapdef.LoadInstalled names every file it complains about as
-// "maps/<id>.json" rather than the path it opened, so no error from this
-// probe carries the server's absolute layout. That is a property of THAT
-// function, deliberately, and not of a translation here — round 1 of that
-// task translated only fs.ErrNotExist and forwarded the rest, and the rest
-// includes an *fs.PathError for ENAMETOOLONG (an id of 260 characters, from
-// any seat that can issue load_map) and every field error from an ordinary
-// map with a typo in it. Both leaked the path. On top of that guarantee, ONE
-// error is given more here: a map that is not installed becomes an ordinary
-// unknown-map answer. The second used to be a pack that was not loaded, which
-// gained a restart suggestion; see the paragraph above for where that went.
-// Everything else is forwarded verbatim, because a broken map is a thing the DM
-// has to act on and mapdef already says it best.
+// mapByID is the lookup SPEC-014 states: the set, then the campaign's maps
+// directory on a miss.
 func (s *Server) mapByID(id string) (*mapdef.Map, error) {
 	s.mapsMu.RLock()
 	m, ok := s.maps[id]
@@ -231,8 +81,11 @@ func (s *Server) mapByID(id string) (*mapdef.Map, error) {
 		return nil, fmt.Errorf("gateway: unknown map %q", id)
 	}
 
+	// Hold no lock across this: it reads the disk, and GET /api/maps reads the set.
 	installed, err := mapdef.LoadInstalled(s.mapsDir, id, s.artDir)
 	if err != nil {
+		// Translate not-installed alone and forward the rest: LoadInstalled names
+		// maps/<id>.json and never the path it opened (SPEC-014).
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf(
 				"gateway: unknown map %q: nothing installed at maps/%s.json in this campaign", id, id)
@@ -242,6 +95,8 @@ func (s *Server) mapByID(id string) (*mapdef.Map, error) {
 
 	s.mapsMu.Lock()
 	defer s.mapsMu.Unlock()
+	// Look again under the write lock: racing lookups must end on one map
+	// (TestConcurrentLookupsOfANewlyInstalledMapCompileItOnce).
 	if won, ok := s.maps[id]; ok {
 		return won, nil
 	}

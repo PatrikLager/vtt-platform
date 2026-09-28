@@ -1452,11 +1452,11 @@ func TestArtInstalledAfterTheServerStartedIsServed(t *testing.T) {
 	}
 }
 
-// TestArtWithNoArtDirectoryConfiguredIs404 covers the server the harness and
-// every throwaway test build: no WithArtDir at all. A campaign that has
-// installed no art is ordinary (WithArtDir's own doc comment), so the route
-// answers "nothing here" rather than a 500 — and it must not answer with
-// whatever an empty path happens to resolve to on the filesystem.
+// TestArtWithNoArtDirectoryConfiguredIs404 covers a server built with no
+// WithArtDir at all. A campaign that has installed no art is ordinary
+// (SPEC-012), so the route answers "nothing here" rather than a 500 — and it
+// must not answer with whatever an empty path happens to resolve to on the
+// filesystem.
 // VTT-126
 func TestArtWithNoArtDirectoryConfiguredIs404(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")

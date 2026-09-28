@@ -133,58 +133,21 @@ type Server struct {
 	// an honest 404 rather than a panic. Set via WithStatic, boot time only.
 	static fs.FS
 
-	// maps is OPTIONAL server config (maps-as-geometry Task 7, spec §4.3/
-	// §4.4): nil/empty is today's behavior for a campaign whose maps/ is
-	// absent, or which has no maps installed yet (2026-09-01-create-scene-
-	// leaves Task 5 — maps come from the campaign directory itself, not a
-	// --maps-dir flag) — GET /api/maps answers 200 with an empty list, the
-	// same "empty is not an error" posture handleAdventures already gives
-	// (spec §5). Keyed by each map's own declared id (Map.ID), not any
-	// directory name — cmd/vtt's loadMapsDir refuses a collision there
-	// before either map ever reaches here.
-	//
-	// NO LONGER BOOT TIME ONLY as of 2026-09-01-create-scene-leaves Task 6:
-	// WithMaps still fills it before the server serves anything, but a map
-	// installed into the campaign's maps/ during a session joins it on its
-	// first successful load_map (map.go's mapByID). Every access ONCE THE
-	// SERVER IS SERVING therefore goes through mapsMu below; WithMaps'
-	// own write does not, and its doc comment says why.
+	// Take mapsMu for every access once s serves; see WithMaps and mapByID
+	// (SPEC-014).
 	maps map[string]*mapdef.Map
 
-	// mapsDir is the campaign's own maps/ directory, set via WithMapsDir:
-	// where map.go's mapByID looks when the set above does not hold an id
-	// (2026-09-01-create-scene-leaves design spec §5). Empty means this
-	// server cannot look anything up on disk, which is every pre-Task-6
-	// behaviour unchanged — see mapByID's own doc comment.
+	// See WithMapsDir (SPEC-014).
 	mapsDir string
 
-	// artDir is the campaign's flat art/ directory, set via WithArtDir: the
-	// root every override and every object art name resolves against, read
-	// when a map is loaded rather than once at boot
-	// (2026-09-02-art-is-a-flat-library design spec §3.6). Empty means no art
-	// resolves, which is not an error — every override then degrades to its
-	// base tile and warns (that spec's §4), and the map still loads.
-	//
-	// Read without a lock for the same reason mapsDir is: a configuration
-	// call sets it before the server serves anything. NOTHING IS CACHED behind
-	// it — the directory is read as it is at the moment it is asked, which is
-	// what makes art installed or overwritten during a session take effect on
-	// the next load_map with no restart, and what a boot-time pack load could
-	// never do.
+	// See WithArtDir (SPEC-014).
 	artDir string
 
-	// cellPx is how many pixels one grid square of this campaign's art
-	// occupies, reported on GET /api/maps and set via WithCellPx. New fills it
-	// with DefaultCellPx, so a Server nobody configured still reports the
-	// documented number rather than a zero that would read as "no grid".
-	//
-	// Read without a lock for the same reason mapsDir and artDir are: a
-	// configuration call sets it before the server serves anything.
+	// See WithCellPx (SPEC-012).
 	cellPx int32
 
-	// mapsMu guards maps, and only maps. mapsDir, artDir and cellPx are set
-	// once by a With* call before the server serves anything and never written
-	// again, so they are read without it (each says so at its own field above).
+	// Guard maps with this and nothing else: mapsDir, artDir and cellPx are
+	// written only before s serves (SPEC-014).
 	mapsMu sync.RWMutex
 }
 
@@ -227,107 +190,29 @@ func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 	return s
 }
 
-// WithMaps configures s to answer GET /api/maps from m, keyed by each map's
-// own declared id (maps-as-geometry Task 7). m is expected already fully
-// loaded and validated (cmd/vtt's loadMapsDir, via mapdef.LoadInstalled — fail
-// loud at boot, spec §4.4); this method does no I/O and no validation of its
-// own, mirroring WithAdventures.
-//
-// IT TOOK A SECOND ARGUMENT, a pack set, until 2026-09-02-art-is-a-flat-library
-// Task 7. That set enriched every /api/maps entry with the map's own declared
-// pack until Task 5 deleted mapdef.Map.Pack and left nothing to key the lookup
-// by; Task 7 took the set, the fs.FS beside it (WithPackFiles) and mapdef.Pack
-// itself. Art is read from a directory at map-load time now — see WithArtDir.
-//
-// Returns s for call-site chaining; mutates s in place WITHOUT taking mapsMu,
-// so it is not safe to call concurrently with s already serving traffic — the
-// map set gains entries during a session (WithMapsDir below), but never
-// through this method.
+// WithMaps sets the maps s starts with, keyed by each map's own id and
+// validated by the caller (SPEC-014).
 func (s *Server) WithMaps(m map[string]*mapdef.Map) *Server {
 	s.maps = m
 	return s
 }
 
-// WithMapsDir tells s where this campaign keeps its maps, so that a map
-// installed while the server is running is loadable without a restart
-// (2026-09-01-create-scene-leaves design spec §4/§5, and the sub-project's
-// own reason to exist: create_scene left the platform, and what replaces
-// improvisation is authoring a map outside the platform, writing it into
-// the campaign's maps/, and loading it). dir is the campaign's maps/
-// directory itself; it need not exist — a brand-new campaign has no maps
-// directory at all, and one that appears later is found on the next lookup,
-// because the probe reads the directory as it is at the moment it is asked
-// rather than holding any state about it.
-//
-// A PATH rather than an fs.FS: the point of the probe
-// is that it runs mapdef.LoadInstalled, the SAME function cmd/vtt's boot
-// walk runs (design spec §12 — a map that boots cleanly must not be refused
-// on reload), and that function works in ordinary paths because the boot
-// walk does. An fs.FS here would have needed a second, bytes-shaped entry
-// into mapdef and a second error vocabulary, which is the divergence itself
-// wearing the costume of a safety measure. The escape an fs.FS would have
-// closed is closed instead where the untrusted id enters:
-// mapdef.LoadInstalled refuses any id that is not one plain filename,
-// before it joins anything.
-//
-// Boot time only as a CONFIGURATION call, like every other With* method:
-// mutates s in place, so it is not safe to call concurrently with s already
-// serving traffic.
+// WithMapsDir names the campaign's maps directory, where a load_map looks for a
+// map s does not hold (SPEC-014).
 func (s *Server) WithMapsDir(dir string) *Server {
 	s.mapsDir = dir
 	return s
 }
 
-// WithArtDir tells s where this campaign keeps its art, so that every map it
-// loads resolves overrides and object art against that one flat directory
-// (2026-09-02-art-is-a-flat-library design spec §3). dir need not exist: a
-// campaign that has installed no art is ordinary, its maps still load, and
-// each unresolved reference costs one warning rather than the map (§4).
-//
-// A PATH rather than an fs.FS, for the reason WithMapsDir gives above and one
-// more: internal/artlib opens every file through os.OpenRoot, so the symlink
-// escape an fs.FS would be reached for is already closed underneath, at the
-// syscall rather than at a name check.
-//
-// NOTHING IS READ HERE AND NOTHING IS CACHED. That is the whole point: the
-// boot-order defect this sub-project removes existed because art was loaded
-// once, at startup, in an order another directory's loading depended on.
-// There is no boot-time art load to get wrong any more.
-//
-// This method landed in Task 3 rather than Task 4, where the plan scheduled
-// it: Task 3 moved art resolution off the pack Task 7 later deleted, and
-// without somewhere for
-// the gateway to resolve FROM, map_test.go's assertion that an override's art
-// reaches the wire had to be weakened for one task and remembered back. A
-// weakened assertion that nobody restores fails silently; an interface that
-// arrives one task early fails loudly, at the next implementer's first
-// compile. Task 4 then did what it owned: cmd/vtt's composeServer calls this
-// with campaignPath/art, unconditionally and outside its maps guard, having
-// first run artlib.Validate over that directory and reported (not refused) what
-// it found.
-//
-// Boot time only as a CONFIGURATION call, like every other With* method:
-// mutates s in place, so it is not safe to call concurrently with s already
-// serving traffic.
+// WithArtDir names the campaign's art directory, which every map load resolves
+// art against (SPEC-014).
 func (s *Server) WithArtDir(dir string) *Server {
 	s.artDir = dir
 	return s
 }
 
-// WithCellPx tells s how many pixels one grid square of this campaign's art
-// occupies — campaign.json's cell_px, read by cmd/vtt (ADR-008: cmd owns the
-// filesystem) through internal/campaigncfg and handed over as a number, which
-// is why this package takes an int32 and never a path.
-//
-// It was a PACK field until 2026-09-02-art-is-a-flat-library, served to the
-// client as pack.cellPx on every /api/maps entry. Design spec §6 rehomes it to
-// the campaign because a grid is uniform: art pieces at differing native
-// resolutions on the same board is a rendering problem, not a capability, and
-// one number per campaign says so.
-//
-// Boot time only as a CONFIGURATION call, like every other With* method:
-// mutates s in place, so it is not safe to call concurrently with s already
-// serving traffic.
+// WithCellPx sets how many pixels one grid square of this campaign occupies
+// (SPEC-012).
 func (s *Server) WithCellPx(px int32) *Server {
 	s.cellPx = px
 	return s

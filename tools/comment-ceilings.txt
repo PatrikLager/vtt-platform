@@ -130,7 +130,7 @@ internal/gateway/keepalive.go  22.7
 internal/gateway/keepalive_conn_internal_test.go  23.0
 internal/gateway/keepalive_internal_test.go  29.7
 internal/gateway/keystone_test.go  46.7
-internal/gateway/map.go  67.7
+internal/gateway/map.go  18.8
 internal/gateway/map_internal_test.go  24.6
 internal/gateway/map_test.go  43.2
 internal/gateway/metadata.go  11.8
@@ -147,7 +147,7 @@ internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  24.4
 internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  72.4
-internal/gateway/server.go  44.3
+internal/gateway/server.go  37.6
 internal/gateway/server_internal_test.go  36.9
 internal/gateway/server_test.go  27.8
 internal/gateway/server_visibility_test.go  29.4

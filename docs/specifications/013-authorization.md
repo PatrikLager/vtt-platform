@@ -228,10 +228,10 @@ alone.
 
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`) and `load_adventure` (`handleLoadAdventure`) are
-SPEC-012's; `load_map` (`handleLoadMap`, `map.go`) and `remove_actor`
-(`handleRemoveActor`) have no record of their own, and SPEC-007 states what
-their batches carry. All four append a whole batch through
-`campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
+SPEC-012's; `load_map` (`handleLoadMap`) is SPEC-014's; `remove_actor`
+(`handleRemoveActor`) has no record of its own; and SPEC-007 states what the
+`load_map` and `remove_actor` batches carry. All four append a whole batch
+through `campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
 `set_join_door` (`handleJoinDoor`) and `rotate_join_link`
 (`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
 their ok=true result carries no sequence. Every other command reaches
@@ -252,7 +252,7 @@ are sent, and a shoulder replaced before the pump takes it is never applied.
 **What this record does not decide.** Promotion's bounds and the
 re-resolution before every command are SPEC-009's; the perch's rule is
 `MayPerch`'s in `viewpoint.go`; what a seat can see is `seat.go`'s; the batch
-handlers are SPEC-012's, `handleLoadMap`'s and `handleRemoveActor`'s; the
+handlers are SPEC-012's, SPEC-014's and `handleRemoveActor`'s; the
 join door and promotion handlers are SPEC-009's; what the fold refuses is
 `engine.Apply`'s.
 

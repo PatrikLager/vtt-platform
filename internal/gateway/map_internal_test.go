@@ -31,6 +31,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
+// VTT-165 VTT-167
 func TestConcurrentLookupsOfANewlyInstalledMapCompileItOnce(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
