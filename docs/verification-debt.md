@@ -321,3 +321,22 @@ each refused. Recorded 2026-09-28 by the breaks in
 `docs/reports/2026-09-28-authorization-has-a-record.md`, whose change
 (`8128a61`) changes no code line; the test waits for the next ticket that
 touches the package's tests.
+
+**`handleLoadMap`'s `Compile` refusal arm is driven by no test.** In
+`internal/gateway/map.go`, a `mapdef.Compile` error is answered ok=false with
+the error's text. Recipe: make that arm return `Ok: true` instead; `go test
+./internal/gateway/` stays green, and so does `go test ./cmd/vtt/ -run
+'Map|Art|Load'`. The arm is reachable: a map already in the set, whose art is
+overwritten after its lookup with a sidecar declaring a `format_version` later
+than this server understands, passes the lookup and is refused by the live
+compile, and that refusal names the art and not the map. VTT-168's "or
+compile" is observed only through `LoadInstalled`'s dry-run compile. The
+mutation gate covers `internal/gateway`, but no gremlins operator rewrites a
+boolean literal, so it never makes this edit. Labels: `test data missing`,
+`outside the tool`. Closing it needs a `map_test.go` case that boots with a
+map, overwrites one of its art sidecars with `format_version` 99, loads it,
+and asserts ok=false with the art named and no path. Recorded 2026-09-28 by
+the verification of
+`docs/superpowers/specs/2026-09-28-loading-a-map-has-a-record-design.md`,
+whose change changes no code line; the test waits for the next ticket that
+touches the package's tests.
