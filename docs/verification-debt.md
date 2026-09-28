@@ -285,3 +285,23 @@ in place of `activity.busy`, leaves them and the rest of the package green.
 Labels: `test data missing`, `outside the tool`. Closing it needs a connection
 test whose writer is held mid-frame across a tick and whose ping is observed
 not to go out. Recorded 2026-09-27 by the reading review of SPEC-011.
+
+**A `load_adventure` whose note key collides with a note upserted after its
+snapshot overwrites it instead of refusing.** `handleCommand` in
+`internal/gateway/server.go` runs `authorize`, which takes
+`st := s.campaign.State()`, and hands that snapshot to `handleLoadAdventure`;
+`adventure.Compile` runs `checkCollisions` against it and refuses a scene,
+actor, token or note key the snapshot already holds. `campaign.AppendBatch`
+then re-folds the batch against a fresh snapshot under its own lock, where
+`engine.Apply`'s `SceneCreated`, `ActorAdded` and `TokenPlaced` arms refuse a
+duplicate id and its `NoteUpserted` arm upserts; so an `upsert_note` on the
+same key landing between the two calls is overwritten, while the three id
+kinds are refused. Labels: `test data missing`, `outside the tool`: no
+fixture holds an `upsert_note` between the two calls, and no mutation operator
+opens the window. Recipe for the test that would show it: an internal test in
+`internal/gateway` that takes `st := c.State()`, appends a `NoteUpserted` on
+key K through `c.Append`, with the `EventId` `store.Append` requires, calls `s.handleLoadAdventure(..., st, ...)` for an
+adventure declaring K (`goblin-ambush` declares `ravine-trail-warning`), and
+asserts ok=false; today it answers ok=true and the
+note is overwritten. Recorded 2026-09-27, moved here from the comment at
+`handleLoadAdventure`.

@@ -1,29 +1,3 @@
-// Metadata endpoints: the read-only HTTP surface a client needs before it can
-// render anything — what ruleset is loaded, what abilities exist, which
-// adventures are available, and the markdown guides.
-//
-// # Auth is a Bearer header, NOT ?token=
-//
-// The WebSocket route takes its token as a query parameter, and these routes
-// deliberately do not follow that precedent. A token in a URL leaks into
-// places nobody audits: server access logs, the Referer header on any
-// outbound link, proxy logs, browser history, and error strings. This
-// codebase already carries the scars — internal/harness/client.go has a
-// redactURL regex precisely because a WS URL with a token in it must never be
-// printed, and README.md warns about fronting proxies for the same reason.
-//
-// A header has none of those paths. The WS parameter stays as it is because
-// browsers cannot set headers on a WebSocket handshake; HTTP has no such
-// excuse, so it does not get the exception.
-//
-// # Empty is not an error
-//
-// A server with no ruleset answers /api/ruleset with 200 and empty
-// collections rather than 404 (client spec §5: "clean empty responses the UI
-// renders honestly"). The client then shows an empty picker instead of an
-// error banner, which is the truth: there is nothing to pick. GUIDES are the
-// exception — a guide that does not exist is a 404, because an empty string
-// would render as a blank document and read as a broken one.
 package gateway
 
 import (
@@ -40,193 +14,34 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// --- /api/maps (maps-as-geometry Task 7) ----------------------------------
-//
-// Open to EVERY role, unlike the adventure guide (DM/agent only — DM secrets)
-// or the join link (admission control): a map's geometry carries neither. Spec
-// §7 states this plainly — "everyone still sees the whole map, no filtering in
-// this arc" — so the gate here is simply s.authed, the same shape /api/ruleset
-// and the /api/adventures LIST already use.
-//
-// --- THE RULING THIS FILE'S RAW-BYTE ROUTE IS BUILT ON ---------------------
-//
-// GET /api/packs/{pack}/{file} served raw bytes out of an operator-installed
-// pack directory. 2026-09-02-art-is-a-flat-library Task 7 deleted it with the
-// pack, and Task 6 of that plan built GET /api/art/{file} (handleArtFile below)
-// over the campaign's one flat art/ directory — the SAME problem, one directory
-// over: a route handing a browser bytes that this process did not author.
-// Everything below was decided for the pack route, corrected once by review,
-// and survived the interval between the two as prose so that the successor did
-// not rediscover it by shipping the hole first.
-//
-// NEVER LET Content-Type BE INFERRED the way server.go's WithStatic route does
-// for the client bundle (http.FileServerFS's extension/sniffing inference).
-// Serve under a CLOSED ALLOWLIST with a real Content-Type and
-// X-Content-Type-Options: nosniff; serve anything NOT on that list as
-// application/octet-stream with Content-Disposition: attachment (still
-// nosniff), so a browser navigating directly to it downloads rather than
-// executes it, whatever it turns out to be. Set both headers BEFORE calling
-// http.ServeFileFS: net/http's serveContent only infers a type when
-// Content-Type is still unset at that point, so setting it first is what
-// suppresses the inference rather than racing it.
-//
-// THE ALLOWLIST HAS ONE ENTRY NOW, and it shrank rather than weakened. The pack
-// route allowed .png/.jpg/.jpeg/.gif/.webp because a pack author could name any
-// file. An art id resolves to exactly two filenames — artlib's pictureExt is
-// ".png" and its sidecarExt is ".json" — so artlib.IsArtFileName refuses every
-// other extension before the content type is ever chosen, and a .jpg entry here
-// would be a row nothing can reach. What the fallback still serves, and must,
-// is the SIDECAR: real content this route hands out, and not a picture.
-//
-// WHY THIS IS NOT THE SAME CALL AS THE STATIC BUNDLE, even though both are
-// "serve a directory of files this process did not author": the static bundle
-// is FIRST-PARTY — built by this repo's own `task build:client`, committed,
-// embedded into the binary. Art is directory content an OPERATOR installs,
-// potentially from a third party (maps-as-geometry spec §4.2 said a pack
-// carried the same trust as an adventure's guide.md — but a guide is
-// hand-authored markdown a browser never executes, and this kind of route
-// serves raw content-type-labelled bytes rather than JSON-wrapped text). An
-// installed file that is .html or .js, served with a browser-executable
-// Content-Type at a same-origin URL, would let script read this client's own
-// Bearer token — it is stored in localStorage (client/src/auth.ts) and sent on
-// every /api/* request (client/src/metadata.ts) — and call any authenticated
-// route as that participant. Markdown can never do that; same-origin JavaScript
-// can. That is the actual difference in KIND review found and this comment
-// previously missed: "same trust as guide.md" does not mean "safe to serve as
-// browser-executable content", because guide.md was never executable to begin
-// with.
-//
-// SVG IS UNSAFE. The pack route forced it down the attachment/octet-stream path
-// rather than serving it inline, because an SVG document can embed <script>, so
-// "it has an image extension" is not the same claim as "a browser cannot
-// execute anything in it" the way it is for PNG/JPEG/GIF/WebP, which carry no
-// script-execution surface in any current browser. THIS route goes further and
-// does not serve it at all: .svg is not one of the two extensions an art id can
-// carry, so it 404s at the name check (TestArtNameNotAnArtFilenameIs404). The
-// ruling is unchanged; the surface it applies to got narrower.
-//
-// ALL OF THAT IS LAYERED ON TOP OF, NOT INSTEAD OF, two other boundaries, and
-// each was proven separately because a fix for one says nothing about the
-// other:
-//
-//  1. The filesystem boundary. An fs.FS built via os.OpenRoot(dir).FS()
-//     (go1.24+) cannot be walked outside dir, by ".." or by symlink; os.DirFS
-//     CANNOT make that claim and its own doc comment says so ("does not stop
-//     the access any more than using os.Open does"). This distinction was found
-//     missing by review after DirFS shipped first, and internal/artlib already
-//     opens every file through os.OpenRoot for the same reason
-//     (TestLookupWillNotFollowASymlinkOutOfTheArtDirectory).
-//  2. The authentication boundary. Every /api route requires the same Bearer
-//     header, and this kind of route is no exception — operator-installed
-//     content is trusted about what an AUTHENTICATED caller may read, not about
-//     skipping authentication the way /join and the static bundle deliberately
-//     do.
-//
-// A hostile art directory can still make ITS OWN pictures ugly, wrong or
-// offensive — that remains the operator's call to vet, as an adventure's
-// content is — but it cannot turn into script running in this origin.
-//
-// ONE THING IS NEW FOR art/ AND HAS NO PACK PRECEDENT: art/ is FLAT (that
-// plan's design spec §3.1/§3.3), and os.OpenRoot CONFINES without FLATTENING —
-// "art/pack-ish/x.png" is legitimately inside the root and fs.ValidPath rejects
-// only "..". net/http's single-segment {file} wildcard not matching across "/"
-// is what the pack route relied on without anyone deciding it, because a pack
-// WAS a directory.
-//
-// THAT WILDCARD IS NOT ENOUGH, AND THE BELIEF THAT IT WAS IS THE FINDING.
-// Measured by fault injection on 2026-09-05: with handleArtFile's name check
-// neutralised, GET /api/art/pack-ish/x.png is refused by routing as expected —
-// and GET /api/art/pack-ish%2Fx.png IS SERVED, 200, with the nested file's
-// bytes. ServeMux decodes %2F before matching, so the request presents as ONE
-// segment, matches {file}, and arrives at PathValue as "pack-ish/x.png";
-// fs.ValidPath then accepts it, because a subdirectory path contains no "..".
-// The pack route inherited the same hole and nobody looked, since a pack was a
-// directory and a nested request meant nothing there.
-//
-// SO THE NAME CHECK IS THE GUARD: handleArtFile runs artlib.IsArtFileName, the
-// same rule a map load resolves by, and every subdirectory shape fails it.
-// Pinned at two levels — TestArtInsideASubdirectoryIsNotReachable over the wire
-// (both the plain and the encoded spelling) and
-// TestHandleArtFileRefusesANestedNameThatRoutingWouldNeverProduce with
-// PathValue set by hand, bypassing routing entirely.
-//
-// THE SINGLE-SEGMENT PATTERN STAYS, as a second layer, and its independent
-// contribution is currently ZERO by measurement: widening it to {file...} while
-// the name check stands changed no test. It is kept because two independent
-// refusals cost one word and this file's own history is a list of single
-// defences found insufficient — but nobody may rely on it, and a reader who
-// deletes the name check on the strength of it has re-opened the hole above.
-
-// adventureGuideRoles mirrors the dm/agent shape load_adventure carries
-// (authz.go) — adventure guides hold DM secrets (adventure/format.go), so a
-// player or spectator reading one would leak the plot, not merely exceed a
-// permission.
-//
-// Deliberately NOT a cell of commandRoles: that table's keys are ClientCommand
-// oneof field names and its cell count is asserted literally in authz_test.go.
-// HTTP routes are not wire commands, and folding them in would break that
-// count for no gain.
+// Keep the HTTP gates out of commandRoles: its keys are the ClientCommand
+// oneof's fields, which TestEveryClientCommandHasRoleCells walks (SPEC-012).
 var adventureGuideRoles = map[identity.Role]bool{
 	identity.RoleDM:    true,
 	identity.RoleAgent: true,
 }
 
-// joinLinkRoles gates GET /api/join-link (joining-a-table spec §5).
-//
-// This route is different in kind from everything else behind /api. A player
-// may read the ruleset and a spectator may list adventures — those are facts
-// about the table. This one hands back a SHARED SECRET that admits ANYBODY who
-// holds it, so a spectator who could read it could staff the table with
-// strangers, and the spectator default the whole design rests on would be
-// decoration.
-//
-// Same shape as adventureGuideRoles, and NOT a cell of commandRoles for the
-// same stated reason: that table's keys are ClientCommand oneof field names
-// and its cell count is asserted literally.
+// Keep this the join link's own gate (SPEC-009).
 var joinLinkRoles = map[identity.Role]bool{
 	identity.RoleDM:    true,
 	identity.RoleAgent: true,
 }
 
-// participantRoles gates GET /api/participants — the table's roster.
-//
-// A SEPARATE map from joinLinkRoles even though the values match today. "Who
-// may read a secret that admits anybody" and "who may see who is at this
-// table" are two questions, and one map answering both means widening either
-// one silently widens the other.
+// Keep this a separate map from joinLinkRoles: widening one must not widen
+// the other (SPEC-009).
 var participantRoles = map[identity.Role]bool{
 	identity.RoleDM:    true,
 	identity.RoleAgent: true,
 }
 
-// WithAdventureGuides supplies the markdown served by
-// /api/adventures/{id}/guide, keyed by adventure id. Boot-time only, like
-// WithAdventures: the map is never mutated per request.
-//
-// Guides are passed in rather than read from disk here because cmd/vtt owns
-// the filesystem (ADR-008), and a guide read at request time would also
-// mean an unreadable file becomes a 500 in the middle of a session instead
-// of a loud failure at boot.
-//
-// That rule now has exactly one deliberate exception, and this is not it:
-// map.go's mapByID probes the campaign's maps/ on a lookup miss, because
-// the 2026-09-01-create-scene-leaves design spec §5 assigns that probe to
-// the server on purpose — a map authored mid-session has to be loadable
-// without a restart, and there is nothing about a guide that needs the
-// same.
+// WithAdventureGuides supplies the markdown /api/adventures/{id}/guide serves,
+// keyed by adventure id (SPEC-012).
 func (s *Server) WithAdventureGuides(guides map[string]string) *Server {
 	s.adventureGuides = guides
 	return s
 }
 
-// authed verifies the Bearer token and returns the participant, or writes the
-// 401 itself and returns nil.
 func (s *Server) authed(w http.ResponseWriter, r *http.Request) *identity.Participant {
-	// CutPrefix rather than a hand-rolled length test: the manual version
-	// carried an off-by-one boundary of its own invention (is a bare
-	// "Bearer " with an empty token caught by the length check or by Verify?)
-	// that no observable behaviour depended on. Fewer branches, fewer things
-	// to get subtly wrong.
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		http.Error(w, "gateway: unauthorized", http.StatusUnauthorized)
@@ -234,8 +49,8 @@ func (s *Server) authed(w http.ResponseWriter, r *http.Request) *identity.Partic
 	}
 	p, err := s.ids.Verify(token)
 	if err != nil {
-		// Deliberately not distinguishing unknown from revoked: telling an
-		// unauthenticated caller which one it was is a token-probing oracle.
+		// Answer an unknown and a revoked token alike: telling them apart is a
+		// token-probing oracle (SPEC-009).
 		http.Error(w, "gateway: unauthorized", http.StatusUnauthorized)
 		return nil
 	}
@@ -244,13 +59,9 @@ func (s *Server) authed(w http.ResponseWriter, r *http.Request) *identity.Partic
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	// The status line is already written by the time Encode can fail, so there
-	// is nothing left to tell the client — the response simply ends short.
-	// Discarded explicitly rather than guarded by an `if` that only returns.
+	// Discard the encode error: the status line is already written.
 	_ = json.NewEncoder(w).Encode(v)
 }
-
-// --- /api/me ---------------------------------------------------------------
 
 type meJSON struct {
 	ParticipantID string `json:"participantId"`
@@ -258,36 +69,19 @@ type meJSON struct {
 	Role          string `json:"role"`
 }
 
-// handleMe tells a client who its token makes it.
-//
-// Without this the client cannot know its own role or participant id, and
-// both are load-bearing: "which actors do I control" is a membership test of
-// participantId in Actor.controller_ids, and the role decides which panels
-// render at all. Inferring either from the event stream would be guesswork —
-// a spectator who has caused no events is indistinguishable from a player who
-// has not acted yet.
-//
-// IT DOES NOT ANSWER WHAT YOU CONTROL, and that is the point (2026-08-24).
-// This route used to echo participants.controls, a column no grant ever wrote,
-// so it reported control that no rule in the system agreed with. The client
-// already asks the right source — client/src/player.ts's controlledActors
-// filters the folded st.Actors on controllerIds — so the identity it needs
-// from here is the participant id, and control follows from the log.
-//
-// It reveals nothing the caller did not already prove by holding the token.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	p := s.authed(w, r)
 	if p == nil {
 		return
 	}
+	// Do not answer control here: the log's ActorControlGranted is the only
+	// authority (SPEC-012).
 	writeJSON(w, meJSON{
 		ParticipantID: p.ID,
 		Name:          p.Name,
 		Role:          string(p.Role),
 	})
 }
-
-// --- /api/ruleset ----------------------------------------------------------
 
 type abilityJSON struct {
 	ID         string    `json:"id"`
@@ -298,7 +92,7 @@ type abilityJSON struct {
 }
 
 type usageJSON struct {
-	Kind     string `json:"kind"` // "atWill" | "resource"
+	Kind     string `json:"kind"`
 	Resource string `json:"resource,omitempty"`
 	Cost     int    `json:"cost,omitempty"`
 }
@@ -321,9 +115,8 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
 	}
-	// Every slice starts non-nil: a JSON `null` where the client expects an
-	// array turns a "nothing loaded" server into a client-side crash on the
-	// first .map().
+	// Keep every slice non-nil: a JSON null where the client expects an array
+	// crashes its first .map() (SPEC-012).
 	out := rulesetJSON{
 		Abilities:  []abilityJSON{},
 		Conditions: []conditionJSON{},
@@ -352,9 +145,8 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Abilities = append(out.Abilities, a)
 		}
-		// Compiled is a map and Go randomizes map iteration, so without this
-		// the ability list arrives in a different order on every request and
-		// the client's picker reshuffles under the user's cursor.
+		// Keep the sort: Compiled is a map, and an unsorted list reshuffles the
+		// picker on every request (SPEC-012).
 		slices.SortFunc(out.Abilities, func(a, b abilityJSON) int { return strings.Compare(a.ID, b.ID) })
 
 		for _, c := range rs.Conditions {
@@ -371,8 +163,6 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// --- /api/ruleset/guide ----------------------------------------------------
-
 func (s *Server) handleRulesetGuide(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
@@ -384,8 +174,6 @@ func (s *Server) handleRulesetGuide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"guide": s.ruleset.Guide})
 }
 
-// --- /api/adventures -------------------------------------------------------
-
 type adventureJSON struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -395,8 +183,8 @@ func (s *Server) handleAdventures(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
 	}
-	// The LIST is open to every role even though the GUIDES are not: a player
-	// may see which adventures exist without reading the DM's secrets.
+	// Keep the list open to every role and the guide gated: a guide holds the
+	// DM's secrets (SPEC-012).
 	out := []adventureJSON{}
 	for id, adv := range s.adventures {
 		out = append(out, adventureJSON{ID: id, Name: adv.Name})
@@ -404,8 +192,6 @@ func (s *Server) handleAdventures(w http.ResponseWriter, r *http.Request) {
 	slices.SortFunc(out, func(a, b adventureJSON) int { return strings.Compare(a.ID, b.ID) })
 	writeJSON(w, map[string]any{"adventures": out})
 }
-
-// --- /api/adventures/{id}/guide --------------------------------------------
 
 func (s *Server) handleAdventureGuide(w http.ResponseWriter, r *http.Request) {
 	p := s.authed(w, r)
@@ -424,32 +210,13 @@ func (s *Server) handleAdventureGuide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"guide": guide})
 }
 
-// --- /api/join-link --------------------------------------------------------
-
 type joinLinkJSON struct {
-	Open   bool   `json:"open"`
-	Secret string `json:"secret"`
-	// The budget, because a door has a third state now: open, shut, and open
-	// but spent. Without these the console can only say "open" about a link
-	// that refuses everyone, and the DM's only way to find out is a player
-	// telling them they were turned away — with the same message a stranger
-	// gets, so neither of them can tell why.
-	Admitted   int `json:"admitted"`
-	AdmitLimit int `json:"admitLimit"`
+	Open       bool   `json:"open"`
+	Secret     string `json:"secret"`
+	Admitted   int    `json:"admitted"`
+	AdmitLimit int    `json:"admitLimit"`
 }
 
-// handleJoinLink reports the shared join link and whether the door is open.
-//
-// The browser cannot read identity's SQLite, so this is the DM console's only
-// mirror of both facts. BOTH are returned together on purpose: a console that
-// showed the link without the door would have a DM confidently sending out a
-// URL that admits nobody, and one that showed the door without the link would
-// leave them nothing to send.
-//
-// The secret is readable BEFORE the door is opened, deliberately. The
-// alternative ordering — open first, then look — means the only way to get the
-// link is to have the door already standing open while you go and find someone
-// to send it to.
 func (s *Server) handleJoinLink(w http.ResponseWriter, r *http.Request) {
 	p := s.authed(w, r)
 	if p == nil {
@@ -475,25 +242,12 @@ func (s *Server) handleJoinLink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- /api/participants -----------------------------------------------------
-
 type participantJSON struct {
 	ParticipantID string `json:"participantId"`
 	Name          string `json:"name"`
 	Role          string `json:"role"`
 }
 
-// handleParticipants lists everyone who can still act at this table.
-//
-// This is what the DM console's promote control is built on, and it reads
-// identity rather than presence on purpose: presence answers "who is connected
-// right now", which is connection-scoped and carries no role, while promotion
-// is a question about what somebody is ALLOWED to do. Folding a role into a
-// presence frame would go stale the moment somebody was promoted without
-// reconnecting — which is exactly what live re-resolution made possible.
-//
-// It returns names, ids and roles: no token, no hash. The roster is a list of
-// people, not of credentials.
 func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 	p := s.authed(w, r)
 	if p == nil {
@@ -508,9 +262,7 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gateway: participants unavailable", http.StatusInternalServerError)
 		return
 	}
-	// Built as a non-nil slice so an empty table serializes as [] rather than
-	// null — a client that does list.map() on null gets an exception, and
-	// "nobody is here" is a perfectly ordinary state.
+	// Keep the slice non-nil: an empty table is [] to a client, never null.
 	out := make([]participantJSON, 0, len(list))
 	for _, q := range list {
 		out = append(out, participantJSON{ParticipantID: q.ID, Name: q.Name, Role: string(q.Role)})
@@ -518,55 +270,9 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// --- /api/maps ---------------------------------------------------------
-
-// packRefJSON IS GONE, and its absence is the requirement now. It carried a
-// map's pack — id, display name, cell size — on every /api/maps entry, built
-// by looking s.packs up under the map's OWN declared pack id. That id was
-// mapdef.Map.Pack, and Task 5 of 2026-09-02-art-is-a-flat-library deleted the
-// field and made a map file that declares one a refusal (design spec §7). With
-// nothing left to key the lookup by, a pack reference cannot be built at all —
-// so this is rubble from that deletion rather than Task 6's work brought
-// forward, and leaving the JSON key in place would have shipped a field that
-// can never again be non-null.
-//
-// WHAT A CLIENT LOSES, AND IT IS NOT cellPx. An earlier version of this
-// comment said the renderer read cellPx from pack.cellPx to draw at the right
-// scale, and that was false — corrected in review, 2026-09-04. NOTHING in the
-// client has ever read it: client/src/view/spectator.ts's CELL = 44 is the only
-// cell size in the renderer, passed to planScene, planFog, planGrid and
-// cellFromPoint, and client/src/metadata.ts merely DECLARES the field.
-// client/public/std-pack/pack.json's own cell_px is ignored for the same
-// reason. So this endpoint dropping cellPx costs the client nothing today, and
-// Task 6 is what gives a campaign-level cellPx its first reader rather than
-// what restores one. Believing otherwise would let Task 6 ship a server half,
-// see no change, and think it had closed a regression that was never open.
-//
-// THE REAL LOSS IS THE ROUTE, NOT THE NUMBER, and as of Task 7 the route is
-// literally gone rather than merely unaddressable. A pack id was the only thing
-// this endpoint ever gave a client to fetch art WITH, and
-// GET /api/packs/{pack}/{file} was deleted with the pack itself, so the client
-// cannot fetch a campaign's art at all until GET /api/art/{file} exists
-// (spec §6, Task 6). Nothing shows yet, because no shipped map's art resolves
-// and every TileRef.art is empty, so scene-plan.ts's tileImage falls back to a
-// "std:<kind>/<material>" key the client's own bundled baseline pack answers.
-// The moment Task 8 installs campaigns/example/art/ and TileRef.art starts
-// arriving non-empty, tileImage emits "tile:<art>" instead, the ImageMap has no
-// such key, and canvas.ts paints drawMissingTile's magenta checkerboard over
-// every overridden square. Task 6 lands before Task 8, so the order holds —
-// but that is the dependency, and it is between those two tasks rather than
-// between this one and either.
-
-// DefaultCellPx is what this server reports for cell_px when nothing has told
-// it otherwise: 64, the number design spec §6 writes into campaign.json's own
-// example.
-//
-// DUPLICATED FROM campaigncfg.DefaultCellPx ON PURPOSE. internal/gateway reads
-// no files and must not gain a dependency on a package whose whole job is
-// reading one — the same division ADR-008 draws everywhere else, and the reason
-// WithCellPx takes a number rather than a path. cmd/vtt imports both and is the
-// one place that can see the two constants at once, so the guard against them
-// drifting lives there (TestTheServerDefaultAndTheCampaignDefaultAreTheSameNumber).
+// DefaultCellPx is the cell size a server reports when nothing set one.
+// Keep it equal to campaigncfg.DefaultCellPx without importing that package
+// (TestTheServerDefaultAndTheCampaignDefaultAreTheSameNumber, SPEC-012).
 const DefaultCellPx int32 = 64
 
 type mapMetaJSON struct {
@@ -574,36 +280,20 @@ type mapMetaJSON struct {
 	Name       string `json:"name"`
 	GridWidth  int32  `json:"gridWidth"`
 	GridHeight int32  `json:"gridHeight"`
-	// CellPx is this map's grid resolution, ALREADY RESOLVED: the map's own
-	// declaration when it made one, and the campaign default otherwise. The
-	// inheritance is done here rather than left for every client to re-derive by
-	// noticing a field is absent — one rule, in the one place that holds both
-	// numbers.
-	CellPx int32 `json:"cellPx"`
+	CellPx     int32  `json:"cellPx"`
 }
 
-// handleMaps lists every map this server holds (maps-as-geometry Task 7),
-// open to every role (this file's own doc comment above explains why). An
-// entry is now the map's own identity and geometry and nothing else — see
-// packRefJSON's obituary above for why the pack reference it used to carry
-// could not survive mapdef.Map.Pack.
-//
-// The map set is no longer a boot-time constant: a map installed while the
-// server runs joins it on its first successful load_map (map.go's mapByID,
-// 2026-09-01-create-scene-leaves Task 6), so this listing grows during a
-// session and the read below has to be guarded. The entries are copied out
-// under the lock and the response is written outside it — a client that
-// stops reading must not be able to hold the map set shut against every
-// load_map for as long as it likes.
 func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
 	}
 	out := []mapMetaJSON{}
+	// Copy the entries out under mapsMu and write outside it: a client that
+	// stops reading must not hold the map set shut against load_map.
 	s.mapsMu.RLock()
 	for id, m := range s.maps {
-		// ZERO MEANS THE MAP DECLARED NOTHING (mapdef.Map.CellPx), which is every
-		// map in this repo — so this is the inheritance, not a defensive guard.
+		// Do not read the zero check as a guard: zero is a map that declared
+		// nothing (SPEC-012).
 		cellPx := m.CellPx
 		if cellPx == 0 {
 			cellPx = s.cellPx
@@ -614,78 +304,18 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mapsMu.RUnlock()
 	slices.SortFunc(out, func(a, b mapMetaJSON) int { return strings.Compare(a.ID, b.ID) })
-	// THE TOP-LEVEL cellPx IS THE CAMPAIGN DEFAULT, and each entry carries its
-	// own resolved value beside it. Both, because they answer different
-	// questions: "what does THIS map draw at" is per entry, and "what will the
-	// next map that declares nothing draw at" is the campaign's.
-	//
-	// THE ENTRY FIELD DID NOT EXIST FOR ONE DAY, and this comment argued it
-	// should not: design spec §6 said cell_px was campaign-level because "a grid
-	// is uniform", and a per-entry copy looked like the pack's own defect rebuilt
-	// one field over. Patrik overturned that on 2026-09-05 from MapTool, which
-	// puts grid size on the Zone rather than the campaign. A grid is uniform
-	// across ONE MAP; grid size is exactly what differs between an art set drawn
-	// at 64 and one drawn at 128, so two maps of one campaign SHOULD be able to
-	// disagree — because their art does.
 	writeJSON(w, map[string]any{"maps": out, "cellPx": s.cellPx})
 }
 
-// --- GET /api/art/{file} (art-is-a-flat-library design spec §6) -------------
-
-// artContentTypes is the closed allowlist: a hit is served with its real
-// Content-Type, inline. A miss — which today is exactly the sidecar — gets
-// application/octet-stream and Content-Disposition: attachment, so a browser
-// navigating straight to it downloads rather than renders it. nosniff is set on
-// EVERY response, allowlisted or not, so a browser never second-guesses either
-// header.
-//
-// ONE ENTRY, and see this file's own doc section for why that is the allowlist
-// shrinking rather than loosening: artlib.IsArtFileName admits only "<id>.png"
-// and "<id>.json", so a .jpg row here would be unreachable code claiming to be
-// a security control.
+// Keep this allowlist closed and set the type before ServeFileFS, or net/http
+// infers one (SPEC-012).
 var artContentTypes = map[string]string{
 	".png": "image/png",
 }
 
-// handleArtFile serves ONE FILE out of the campaign's flat art/ directory. It
-// is this package's only route that hands back bytes an operator installed, and
-// every rule it obeys is written down in this file's own doc section above,
-// because the route it replaces was deleted with its proofs and the ruling had
-// to outlive both.
-//
-// THE NAME IS CHECKED BEFORE ANYTHING IS OPENED, against artlib's own rule
-// rather than a second one written here — what a map load resolves, this route
-// serves, and a private copy of the kebab-case rule would be free to drift from
-// the one that decides whether art renders at all. That check is also what
-// keeps art/ FLAT over this route: os.OpenRoot confines without flattening.
-//
-// THE ROOT IS OPENED PER REQUEST AND THIS SERVER CACHES NOTHING, which is
-// design spec §3.6 at the HTTP surface: a piece installed while the server runs
-// is served without a restart, and one overwritten in place hands back the new
-// bytes on the next request. The pack route could not do this — WithPackFiles
-// resolved one fs.FS per pack at boot — and that boot-time resolution is the
-// defect §1 exists to delete, in its other half.
-//
-// AND THAT SENTENCE IS ABOUT THE ROUTE, NOT ABOUT THE TABLE, which is the whole
-// reason Cache-Control is set below (review finding F1, 2026-09-05 — this
-// comment claimed the guarantee while the header that delivers it was missing).
-// A 200 carrying only Last-Modified is heuristically cacheable (RFC 9111
-// §4.2.2), so a browser may reuse month-old art for days without asking, and
-// spec §10 criterion 4 — overwrite the file, reload the map, see the new art —
-// is broken with every byte on this side of the wire correct. no-cache rather
-// than no-store: the browser may keep the bytes and must revalidate before
-// reusing them, which http.ServeFileFS's own Last-Modified answers with a 304.
-// TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser pins both halves.
-//
-// AN UNOPENABLE OR ABSENT ART ROOT IS A 404, NOT A 500 (Patrik's ruling,
-// 2026-09-03: "strict at boot and lenient at request time"). cmd/vtt's
-// artRootIsOpenable already refused the boot where an operator could chmod the
-// directory; a DM in a browser cannot, and a campaign that worked five minutes
-// ago should not start answering 500 at the table.
-//
-// NO RESPONSE NAMES A PATH. An error body travels to any authenticated seat, an
-// agent included, and the server's filesystem layout is nobody's business — the
-// same rule mapdef.LoadInstalled promises in writing, applied to a route.
+// Check the name with artlib.IsArtFileName before opening anything: the {file}
+// pattern does not stop an encoded slash, and os.OpenRoot confines without
+// flattening (SPEC-012).
 func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 	if s.authed(w, r) == nil {
 		return
@@ -697,26 +327,15 @@ func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 	}
 	root, err := os.OpenRoot(s.artDir)
 	if err != nil {
-		// Absent and unopenable answer alike, deliberately: neither is
-		// something the caller can act on, and telling them apart would tell an
-		// unauthenticated-adjacent seat about the operator's filesystem.
+		// Answer an absent and an unopenable root alike, and name no path: the body
+		// reaches every seat (SPEC-012).
 		http.Error(w, "gateway: no such art", http.StatusNotFound)
 		return
 	}
 	defer root.Close()
 
-	// ONE REGULAR FILE OR NOTHING, and the stat runs on the SAME fs.FS the serve
-	// below uses rather than on the path — which is what keeps it from masking
-	// the confinement it sits in front of. os.DirFS's Stat follows a symlink out
-	// of the tree and reports the target, so swapping root.FS() for os.DirFS
-	// still leaks through both this check and ServeFileFS; the fault injection
-	// in artfile_internal_test.go stays honest (measured 2026-09-05).
-	//
-	// The shape this catches is `mkdir art/masonry-1.png`: a name artlib.Lookup
-	// refuses as art that cannot be read, which http.ServeFileFS answered with a
-	// 301 to the same path plus a trailing slash. Nothing escaped — that target
-	// matches no route — but a route and the loader must not give two different
-	// answers about the same bytes.
+	// Stat on root.FS(), never on the path: os.DirFS follows a symlink out and
+	// would mask the confinement (TestHandleArtFileRefusesSymlinkEscape).
 	fsys := root.FS()
 	if info, err := fs.Stat(fsys, name); err != nil || !info.Mode().IsRegular() {
 		http.Error(w, "gateway: no such art", http.StatusNotFound)
@@ -724,9 +343,8 @@ func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// no-cache, so the browser REVALIDATES rather than guessing. See this
-	// function's own doc comment: without it the route's per-request read is a
-	// guarantee the table never sees.
+	// Keep no-cache: without it a browser reuses month-old art for days
+	// (SPEC-012).
 	w.Header().Set("Cache-Control", "no-cache")
 	if ct, ok := artContentTypes[filepath.Ext(name)]; ok {
 		w.Header().Set("Content-Type", ct)
@@ -734,9 +352,6 @@ func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	}
-	// root.FS() rather than os.DirFS: a symlink inside art/ pointing outside it
-	// carries no ".." anywhere, so fs.ValidPath never engages and os.DirFS's own
-	// doc comment says it "does not stop the access any more than using os.Open
-	// does". os.Root does. See artfile_internal_test.go.
+	// Serve off root.FS(), for the reason the Stat above gives.
 	http.ServeFileFS(w, r, fsys, name)
 }

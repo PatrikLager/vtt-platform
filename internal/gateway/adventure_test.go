@@ -288,6 +288,7 @@ func loadAdventureCmdFor(id string) *vttv1.ClientCommand {
 // working; a load_adventure command specifically gets a clean ok=false
 // CommandResult naming "no adventures available" — never a connection drop,
 // crash, or protocol error. The connection stays usable afterward.
+// VTT-132
 func TestLoadAdventureNoAdventuresConfiguredCleanError(t *testing.T) {
 	f := newAdventureFixture(t, false) // withAdventures=false
 	conn := f.dial(f.dmToken, 0)
@@ -312,6 +313,7 @@ func TestLoadAdventureNoAdventuresConfiguredCleanError(t *testing.T) {
 // TestLoadAdventureUnknownIdCleanError covers the "unknown adventure" clean
 // error, distinct from "no adventures configured at all" — the server DOES
 // have adventures loaded, just not this id.
+// VTT-132
 func TestLoadAdventureUnknownIdCleanError(t *testing.T) {
 	f := newAdventureFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -357,6 +359,7 @@ func adventurePayloadKind(env *vttv1.Envelope) string {
 // own hand-derived goblin-ambush golden, .superpowers/sdd/p12-task-3-
 // report.md) reaches a second, uninvolved connection as broadcasts, in
 // Compile's own binding order.
+// VTT-137
 func TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants(t *testing.T) {
 	f := newAdventureFixture(t, true)
 	dmConn := f.dial(f.dmToken, 0)
@@ -396,16 +399,11 @@ func TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants(t *testin
 	}
 }
 
-// TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned is the
-// double-load proof (spec §5: ids "must NOT collide with existing campaign
-// state at load time... rejection, not overwrite"): loading goblin-ambush a
-// SECOND time collides on its own scene/actor/token ids (checked by
-// adventure.Compile's checkCollisions against the live snapshot, and
-// independently re-validated by campaign.AppendBatch's own atomic
-// snapshot-fold — see adventure.go's handleLoadAdventure doc comment on the
-// TOCTOU race posture) and is cleanly rejected — never a poisoned campaign,
-// proven by a follow-up ordinary command still succeeding on the same
-// connection.
+// TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned loads the same
+// adventure twice: the second load collides on its own ids, is refused as a
+// result, and a follow-up command on the same connection still succeeds. The
+// note-key half of that check is docs/verification-debt.md's.
+// VTT-133
 func TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) {
 	f := newAdventureFixture(t, true)
 	conn := f.dial(f.dmToken, 0)
@@ -441,35 +439,12 @@ func TestLoadAdventureDoubleLoadCollisionRejectedCleanNotPoisoned(t *testing.T) 
 	}
 }
 
-// TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent covers
-// the id-selection contract itself (fix-wave F3, task-12-wf-final-review
-// finding): every OTHER load_adventure gateway test loads a server with a
-// SINGLE adventure (newAdventureFixture(t, true) always maps just
-// goblin-ambush), so a lookup regression at handleLoadAdventure
-// (adventure.go:76, `s.adventures[cmd.GetAdventureId()]`) that compiles a
-// DIFFERENT loaded adventure than the one requested — whenever more than
-// one is loaded, with ok still true — passes the entire existing suite
-// undetected. newMultiAdventureFixture loads TWO adventures (goblin-ambush,
-// cellar-rats); each subtest requests one id and asserts the compiled
-// batch's FIRST envelope (AdventureLoaded testimony) names exactly that
-// adventure_id/name, plus a distinguishing envelope only the requested
-// adventure could have produced (goblin-ambush's scene id is "ravine",
-// cellar-rats' is "cellar" — the two never collide) — so serving the
-// OTHER loaded adventure's content would fail both assertions.
-//
-// The batch is read from a SECOND, uninvolved connection (agentConn), the
-// same choice TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants
-// makes — not the commanding dmConn, whose own queue holds earlier broadcasts
-// this test would then read positionally instead of the batch it asserts on.
-//
-// CORRECTED, fix round 1 of retraction-leaves Task 9: this comment used to
-// justify the second connection by quoting readResult as one that "skips any
-// Envelope frames that race ahead of it". That sentence left server_test.go
-// when the per-connection demultiplexer landed, and readResult's doc comment
-// now says the opposite — "Events that arrive first are queued, not discarded,
-// so a later readEvent still sees them". The choice of connection is still
-// right; only the reason was wrong. map_test.go carried the same borrowed
-// claim and is corrected too.
+// TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent loads two
+// adventures and asserts each load_adventure compiles the one its id names:
+// every other test loads one, so a lookup in handleLoadAdventure that served
+// another loaded adventure with ok=true would pass them all. The batch is read
+// from a second, uninvolved connection.
+// VTT-134
 func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *testing.T) {
 	cases := []struct {
 		requestID       string
@@ -547,6 +522,7 @@ func TestLoadAdventureWithMultipleAdventuresLoadedServesRequestedContent(t *test
 // or an object yet — which is also why nothing triggered this in production and
 // why it had to be caught by reading rather than by a red test. Tasks 7-8 are
 // building toward adventure art; this is here before the feature is.
+// VTT-135
 func TestALoadAdventureWarningReachesTheIssuer(t *testing.T) {
 	rs := loadDnd45eMinimal(t)
 	adv := loadGoblinAmbush(t, rs)
@@ -601,6 +577,7 @@ func TestALoadAdventureWarningReachesTheIssuer(t *testing.T) {
 // The map-side twin is TestBrokenArtCannotPushAResultPastTheReadLimit in
 // map_test.go; this one exists because bounding the per-scene message would look
 // like enough while the per-bundle total still crossed.
+// VTT-136
 func TestABrokenBundleCannotPushALoadAdventurePastTheReadLimit(t *testing.T) {
 	const scenes, pieces, valueBytes = 6, 6, 20000
 

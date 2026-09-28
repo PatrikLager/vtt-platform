@@ -1,43 +1,10 @@
 package gateway
 
-// artfile_internal_test.go is packfile_internal_test.go's successor. That file
-// was deleted whole with GET /api/packs/{pack}/{file} (art-is-a-flat-library
-// Task 7), and it covered handleArtFile's ancestor against escape mechanisms
-// that each needed their own proof, because a fix for one says nothing about
-// the others:
-//
-//  1. A literal ".." in the requested name (fs.ValidPath's own contract).
-//  2. A symlink INSIDE the art directory pointing OUTSIDE it. No ".." appears
-//     anywhere in that request: a symlink target is resolved by the OS, not by
-//     path syntax, so mechanism 1's defence never engages. os.DirFS does not
-//     stop it and says so in its own doc comment ("does not stop the access any
-//     more than using os.Open does"); os.Root does ("symbolic links may not
-//     reference a location outside the root").
-//  3. NEW, AND WITH NO PACK PRECEDENT: a file inside a SUBDIRECTORY of the
-//     root. A pack WAS a directory, so nobody had to stop this; art/ is FLAT
-//     (design spec §3.1/§3.3) and os.OpenRoot CONFINES WITHOUT FLATTENING —
-//     art/pack-ish/x.png is legitimately inside the root and fs.ValidPath
-//     rejects only "..". handleArtFile's artlib.IsArtFileName check is the
-//     guard, and the route pattern's single-segment wildcard is NOT a
-//     substitute for it: ServeMux decodes %2F before matching, so
-//     /api/art/pack-ish%2Fx.png arrives as one segment and reaches PathValue as
-//     "pack-ish/x.png" (measured 2026-09-05 — see metadata.go's own doc
-//     section). metadata_test.go drives both spellings over the wire; this file
-//     drives a nested PathValue no ServeMux would ever produce, so the name
-//     check is proved with routing out of the picture altogether.
-//
-// EVERY TEST HERE CALLS handleArtFile DIRECTLY, without ServeMux, because the
-// property under test belongs to the HANDLER rather than to the HTTP surface.
-// net/http's ServeMux redirects any request whose path contains a ".." element
-// to the cleaned path BEFORE pattern matching runs, and http.ServeFileFS has
-// its OWN precaution against a dirty r.URL.Path — both would mask a broken
-// handler, so r.URL.Path stays clean and the payload lives only in PathValue.
-//
-// AND EVERY TEST ASSERTS ITS CONTROL FIRST. A refusal test against a handler
-// that refuses everything proves nothing — it is green on the stub this task
-// started from. So each one drives a legitimate name through the same handler,
-// the same fixture and the same art directory, asserts the bytes come back, and
-// only then asserts the escape does not.
+// Every test here calls handleArtFile directly, with a clean r.URL.Path and the
+// payload only in PathValue: ServeMux cleans ".." before matching and
+// http.ServeFileFS guards a dirty path itself, and both would mask a broken
+// handler. Every test asserts its control first, since a handler that refuses
+// everything is green on every refusal (SPEC-012).
 
 import (
 	"io"
@@ -122,6 +89,7 @@ func (f *artHandlerFixture) control(t *testing.T) {
 // TestHandlePackFileRefusesTraversalEvenWithAPathValueSetDirectly's successor.
 // The secret is a real file this test controls, outside the art root, standing
 // in for /etc/passwd (which may not exist or be readable in every sandbox).
+// VTT-125
 func TestHandleArtFileRefusesTraversalEvenWithAPathValueSetDirectly(t *testing.T) {
 	f := newArtHandlerFixture(t)
 	f.control(t)
@@ -159,6 +127,7 @@ func TestHandleArtFileRefusesTraversalEvenWithAPathValueSetDirectly(t *testing.T
 // evil.png IS A PERFECTLY ORDINARY ART FILENAME — that is the point. It passes
 // artlib.IsArtFileName, so the name check says nothing here and the refusal has
 // to come from the filesystem layer. No ".." appears anywhere in the request.
+// VTT-125
 func TestHandleArtFileRefusesSymlinkEscape(t *testing.T) {
 	f := newArtHandlerFixture(t)
 	f.control(t)
@@ -193,6 +162,7 @@ func TestHandleArtFileRefusesSymlinkEscape(t *testing.T) {
 //
 // os.OpenRoot WOULD NOT SAVE THIS. art/pack-ish/x.png is legitimately inside
 // the root: a root confines, it does not flatten.
+// VTT-123
 func TestHandleArtFileRefusesANestedNameThatRoutingWouldNeverProduce(t *testing.T) {
 	f := newArtHandlerFixture(t)
 	f.control(t)
@@ -234,6 +204,7 @@ func TestHandleArtFileRefusesANestedNameThatRoutingWouldNeverProduce(t *testing.
 // 301 is only observable here, one layer below the client's own redirect
 // following, and what it was is an answer nobody asked for from a handler whose
 // whole job is to hand back one file.
+// VTT-124
 func TestHandleArtFileRefusesADirectoryWearingAnArtFilename(t *testing.T) {
 	f := newArtHandlerFixture(t)
 	f.control(t)

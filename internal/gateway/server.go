@@ -118,36 +118,14 @@ type Server struct {
 	// and not reading is the whole precondition of the case it pins.
 	onServeDone func()
 
-	// ruleset/roller are OPTIONAL server config (ruleset-interpreter Task
-	// 6): nil ruleset is today's behavior, unchanged — every command this
-	// package handled before Task 6 keeps working exactly as before, and a
-	// use_ability command gets a clean "no ruleset loaded" CommandResult
-	// (ok=false) rather than a connection drop or a crash. Set together via
-	// WithRuleset — see that method's doc comment for why roller is always
-	// the production crypto.Roller when ruleset is non-nil (never
-	// separately configurable at this layer).
+	// See WithRuleset (SPEC-012).
 	ruleset *rules.Ruleset
 	roller  rules.Roller
 
-	// adventures is OPTIONAL server config (adventure-format Task 4): nil/
-	// empty is today's behavior — a load_adventure command gets a clean "no
-	// adventures available" CommandResult (ok=false) rather than a
-	// connection drop or a crash, exactly matching ruleset's own "no
-	// ruleset loaded" posture. Set via WithAdventures, BOOT TIME ONLY — the
-	// map is never mutated or re-loaded per request; adventure-format spec
-	// §7: "All available adventures load+validate at BOOT (fail loud at
-	// startup, not at the table)". Keyed by the adventure's own manifest id
-	// (adventure.Adventure.ID), not its directory name.
+	// See WithAdventures (SPEC-012).
 	adventures map[string]*adventure.Adventure
 
-	// adventureGuides is the markdown served by /api/adventures/{id}/guide,
-	// keyed by adventure id. Set via WithAdventureGuides, boot time only.
-	// Held separately from adventures because cmd/vtt owns the filesystem
-	// (ADR-008): it reads the guides and hands them over, so an unreadable
-	// one fails loudly at boot rather than becoming a 500 mid-session. The
-	// rule has one deliberate exception since 2026-09-01-create-scene-leaves
-	// Task 6 — mapsDir below — and a guide is not it; see mapByID (map.go)
-	// and WithAdventureGuides (metadata.go) for the whole reasoning.
+	// See WithAdventureGuides (SPEC-012).
 	adventureGuides map[string]string
 
 	// static is the built web client, served at / when non-nil. Optional:
@@ -225,15 +203,9 @@ func New(c *campaign.Campaign, ids *identity.DB) *Server {
 	}
 }
 
-// WithRuleset configures s to resolve use_ability commands against rs,
-// using the production crypto-seeded Roller (rules.NewCryptoRoller — dice
-// are rolled ONCE at Resolve time and recorded onto the resulting
-// AbilityUsed event; replay never re-rolls, ruleset-interpreter spec §5
-// decision 3). Returns s for call-site chaining (e.g.
-// gateway.New(c, ids).WithRuleset(rs)); mutates s in place rather than
-// copying, so it is not safe to call concurrently with s already serving
-// traffic — callers configure a Server fully before handing it to a
-// listener, exactly like New itself.
+// WithRuleset configures s to resolve use_ability commands against rs with a
+// crypto-seeded roller (SPEC-012). Do not call a With* method on a serving
+// Server: they write without a lock.
 func (s *Server) WithRuleset(rs *rules.Ruleset) *Server {
 	s.ruleset = rs
 	s.roller = rules.NewCryptoRoller()
@@ -248,14 +220,8 @@ func (s *Server) WithStatic(fsys fs.FS) *Server {
 	return s
 }
 
-// WithAdventures configures s to serve advs via load_adventure, keyed by
-// each adventure's own id (advs.Adventure.ID — the caller, cmd/vtt's boot
-// glue, is responsible for building this map with THAT key, not the
-// directory name it loaded from). advs is expected already fully loaded and
-// validated (adventure.Load, boot time, fail loud on any error — spec §7);
-// this method does no I/O and no validation of its own. Returns s for
-// call-site chaining (mirrors WithRuleset); mutates s in place, so it is
-// not safe to call concurrently with s already serving traffic.
+// WithAdventures configures s to serve advs via load_adventure, keyed by each
+// adventure's own id (SPEC-012).
 func (s *Server) WithAdventures(advs map[string]*adventure.Adventure) *Server {
 	s.adventures = advs
 	return s

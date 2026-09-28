@@ -94,8 +94,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 	return f
 }
 
-// get issues an authenticated GET. Auth is a Bearer HEADER, not ?token= —
-// see metadata.go for why the WS precedent is deliberately not followed.
+// get issues a GET with the token in the Authorization header (SPEC-012).
 func (f *metaFixture) get(path, token string) (int, []byte) {
 	f.t.Helper()
 	req, err := http.NewRequest(http.MethodGet, f.srv.URL+path, nil)
@@ -127,6 +126,7 @@ func (f *metaFixture) get(path, token string) (int, []byte) {
 // Adventure guides hold DM secrets (adventure/format.go). A player or
 // spectator reading one is not a permissions nit — it is the table's whole
 // reason to exist.
+// VTT-116
 func TestMetadataAdventureGuideRoleTable(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -170,6 +170,7 @@ func TestMetadataAdventureGuideRoleTable(t *testing.T) {
 
 // --- auth ------------------------------------------------------------------
 
+// VTT-111
 func TestMetadataRejectsBadMissingAndRevokedTokens(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -208,6 +209,7 @@ func TestMetadataRejectsBadMissingAndRevokedTokens(t *testing.T) {
 // responses the UI renders honestly": a server with no ruleset answers 200
 // with empty collections rather than 404 or 500, so the client shows an empty
 // picker instead of an error banner.
+// VTT-114 VTT-115
 func TestMetadataEmptyCollectionsWithNothingLoaded(t *testing.T) {
 	f := newMetaFixture(t, false)
 
@@ -259,6 +261,7 @@ func TestMetadataEmptyCollectionsWithNothingLoaded(t *testing.T) {
 // Ruleset.Compiled is a Go map, and Go randomizes map iteration, so an
 // unsorted handler returns a different ability order on every request — the
 // client's picker would reshuffle under the user's cursor between polls.
+// VTT-118
 func TestMetadataRulesetAbilitiesAreSortedById(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -301,6 +304,7 @@ func TestMetadataRulesetAbilitiesAreSortedById(t *testing.T) {
 // TestMetadataAdventuresListedForEveryRole pins that the LIST is public to
 // all four roles even though the GUIDES are not — a player must be able to
 // see which adventures exist without reading the DM's secrets.
+// VTT-117 VTT-118
 func TestMetadataAdventuresListedForEveryRole(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -340,6 +344,7 @@ func TestMetadataAdventuresListedForEveryRole(t *testing.T) {
 // TestMetadataRulesetGuideServedForEveryRole is the ruleset guide's happy path;
 // unlike an adventure guide it carries no DM secrets and is open to all four
 // roles (the LLM affordance every client may read).
+// VTT-117
 func TestMetadataRulesetGuideServedForEveryRole(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -371,6 +376,7 @@ func TestMetadataRulesetGuideServedForEveryRole(t *testing.T) {
 // TestMetadataRulesetShapeMatchesTheContract pins the response fields the
 // client is written against, including usage — the picker greys out an
 // ability whose resource is spent, and cannot do that without cost.
+// VTT-118
 func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -447,6 +453,7 @@ func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 // participantId, and the role decides which panels exist at all. Inferring
 // either from the event stream would be guesswork — a spectator who has
 // caused no events looks exactly like a player who has not acted yet.
+// VTT-111 VTT-112
 func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -509,6 +516,7 @@ func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 // exactly the code this deletes. Decoding into a map is what makes absence
 // observable at all — a struct field would read the same for "absent" and
 // "present and empty".
+// VTT-113
 func TestMeSaysWhoYouAreAndNeverWhatYouControl(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -704,46 +712,9 @@ func TestParticipantsNamesEveryoneAndTheirRole(t *testing.T) {
 	}
 }
 
-// --- maps (maps-as-geometry Task 7) -----------------------------------
-//
-// SIX TESTS AND A PACK DIRECTORY STOOD HERE, all of them about
-// GET /api/packs/{pack}/{file}, which 2026-09-02-art-is-a-flat-library Task 7
-// deleted with the pack. Each pinned a property, and every one of those
-// properties belongs to GET /api/art/{file} the day Task 6 of that plan builds
-// it — the ruling itself is written down in metadata.go's own doc section so it
-// is not carried only by tests that no longer exist:
-//
-//   - TestPackImagesAreServedAndUnknownOnesAre404: a real file 200s, an unknown
-//     id 404s, and a traversal over the real round trip does not escape.
-//   - TestPackFileUnknownWithinKnownPackIs404: a known directory, a file it
-//     does not contain — without it, a handler that served a listing or always
-//     200'd would pass the two cases above.
-//   - TestPackFileAllowlistedExtensionGetsItsRealContentType and
-//     TestPackFileUnrecognizedExtensionIsOctetStreamAttachment: the closed
-//     allowlist and the octet-stream/attachment fallback, both with nosniff.
-//   - TestPackFileSVGIsNotServedAsImage: the one deliberate exclusion, because
-//     an SVG can embed <script> and a same-origin script can read this client's
-//     Bearer token out of localStorage.
-//   - TestPackFilesRequireAuth: the Bearer gate. This one IS replaced, by
-//     TestNoPackRouteIsServed below, which is only able to tell a deleted route
-//     from a live one BECAUSE that gate answered 401 before anything else.
-//   - TestPackFilesReadableByEveryRole: spec §7's role breadth. The /api/maps
-//     half of that survives in TestMapsListedForEveryRole below.
-//
-// Two more went with internal/gateway/packfile_internal_test.go, which was the
-// whole file: the ".." refusal isolated from ServeMux's own redirect, and the
-// symlink escape that only os.OpenRoot (never os.DirFS) stops. internal/artlib
-// still pins the symlink half at the LOOKUP layer
-// (TestLookupWillNotFollowASymlinkOutOfTheArtDirectory); nothing pins it at a
-// ROUTE, because there is no route serving bytes any more.
-//
-// NOTHING REGRESSES BY DELETING THEM — the surface they guarded is gone, and
-// no client can fetch campaign art at all until Task 6. What WOULD regress is
-// Task 6 shipping that route without re-deriving this list.
-
-// mapsFixture is deliberately separate from metaFixture: /api/maps needs a
-// server holding real maps, which metaFixture's adventures/ruleset setup has
-// no reason to carry.
+// mapsFixture is separate from metaFixture: /api/maps needs a server holding
+// real maps, which metaFixture's ruleset and adventures have no reason to
+// carry (SPEC-012).
 type mapsFixture struct {
 	t   *testing.T
 	srv *httptest.Server
@@ -881,6 +852,7 @@ func TestNoPackRouteIsServed(t *testing.T) {
 // cellPx to draw with — client/src/view/spectator.ts's CELL = 44 is the only
 // cell size in the renderer, and metadata.ts merely declared the field. Task 6
 // of that plan is what gives a campaign-level cellPx its first reader.
+// VTT-117
 func TestMapsListedForEveryRole(t *testing.T) {
 	f := newGatewayWithMaps(t)
 	for _, tc := range []struct {
@@ -943,6 +915,7 @@ func TestMapsListedForEveryRole(t *testing.T) {
 // posture (spec §5): a server booted for a campaign whose maps/ is absent,
 // or which has no maps installed yet (2026-09-01-create-scene-leaves Task
 // 5), answers 200 with an empty list, not a 404 or a 500.
+// VTT-114
 func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -991,36 +964,10 @@ func TestMapsEmptyCollectionWithNothingLoaded(t *testing.T) {
 	}
 }
 
-// --- GET /api/art/{file} (art-is-a-flat-library Task 6) ---------------------
-//
-// EVERY TEST BELOW IS A PROOF TASK 7 DELETED. Six route tests plus the whole of
-// internal/gateway/packfile_internal_test.go went with GET /api/packs/{pack}/{file},
-// and the ruling behind them survived only as prose in metadata.go's own doc
-// section. This is where each one comes back, against the route that inherited
-// the problem — a route handing a browser raw bytes this process did not author:
-//
-//   - a real file 200s, an unknown name 404s (TestPackImagesAreServedAndUnknownOnesAre404,
-//     TestPackFileUnknownWithinKnownPackIs404)
-//   - the closed allowlist with nosniff, and the octet-stream/attachment
-//     fallback (TestPackFileAllowlistedExtensionGetsItsRealContentType,
-//     TestPackFileUnrecognizedExtensionIsOctetStreamAttachment)
-//   - SVG is not served as an image (TestPackFileSVGIsNotServedAsImage) — and
-//     under this route's narrower name rule it is not served AT ALL
-//   - the Bearer gate (TestPackFilesRequireAuth) and the role breadth
-//     (TestPackFilesReadableByEveryRole)
-//   - the ".." refusal isolated from ServeMux's own redirect, and the symlink
-//     escape only os.OpenRoot stops — both in artfile_internal_test.go, which
-//     is packfile_internal_test.go's successor
-//
-// AND ONE THAT HAS NO PACK PRECEDENT: art/ is FLAT, and a pack WAS a directory,
-// so nobody ever had to stop the route serving a nested file. os.OpenRoot
-// confines without flattening. TestArtInsideASubdirectoryIsNotReachable is the
-// half over the wire; the internal file carries the half that bypasses routing.
-
-// artFixture is a server whose campaign has a real art/ directory on disk, and
-// four tokens, one per role. Separate from mapsFixture because these tests need
-// BYTES on a filesystem — the whole point under test — which a map set held in
-// memory has no reason to carry.
+// artFixture is a server whose campaign has a real art/ directory on disk and
+// four tokens, one per role: these tests need bytes on a filesystem. The
+// route's escape mechanisms are proved with routing out of the picture in
+// artfile_internal_test.go, and over the wire here (SPEC-012).
 type artFixture struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -1140,6 +1087,7 @@ func (f *artFixture) get(path string) (int, []byte) {
 //
 // THE BYTES ARE COMPARED, not merely the status. Without that, a handler that
 // 200'd with an empty body — or with the wrong file — passes.
+// VTT-121 VTT-125
 func TestArtIsServedAndUnknownArtIs404(t *testing.T) {
 	f := newGatewayWithArt(t)
 	code, body := f.get("/api/art/masonry-1.png")
@@ -1163,6 +1111,7 @@ func TestArtIsServedAndUnknownArtIs404(t *testing.T) {
 // filenames are written in <id>.json — so a client that can fetch only
 // pictures cannot draw a door at all. It is the same order artlib.lookupIn
 // resolves in: sidecar first, picture second.
+// VTT-121
 func TestASidecarIsServedSoAClientCanResolveADoor(t *testing.T) {
 	f := newGatewayWithArt(t)
 	code, body := f.get("/api/art/masonry-1.json")
@@ -1198,6 +1147,7 @@ func TestASidecarIsServedSoAClientCanResolveADoor(t *testing.T) {
 // the plain form 404 and served the encoded form with the nested file's bytes.
 // The name check is what actually holds this line; artfile_internal_test.go
 // proves it again with routing bypassed entirely.
+// VTT-123
 func TestArtInsideASubdirectoryIsNotReachable(t *testing.T) {
 	f := newGatewayWithArt(t)
 	// The file is really there — assert the fixture, so this test cannot pass
@@ -1232,6 +1182,7 @@ func TestArtInsideASubdirectoryIsNotReachable(t *testing.T) {
 // ignores a .DS_Store rather than refusing the campaign over one. That makes it
 // the case a status-only assertion cannot fake: the file EXISTS and must still
 // not come back, because it is not art and this route hands out art.
+// VTT-122
 func TestArtNameNotAnArtFilenameIs404(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, tc := range []struct{ path, why string }{
@@ -1265,6 +1216,7 @@ func TestArtNameNotAnArtFilenameIs404(t *testing.T) {
 // 404. It is kept as the end-to-end statement that nothing from inside the
 // directory comes back; the 301 itself is only visible one layer down, and
 // artfile_internal_test.go is where it is pinned.
+// VTT-124
 func TestADirectoryWEARINGAnArtFilenameIs404(t *testing.T) {
 	f := newGatewayWithArt(t)
 	dir := filepath.Join(f.artDir, "earth-1.png")
@@ -1291,6 +1243,7 @@ func TestADirectoryWEARINGAnArtFilenameIs404(t *testing.T) {
 // allowlist decides the Content-Type, never inference, and nosniff is set so a
 // browser cannot second-guess it. Inline (no Content-Disposition), because a
 // picture is what this route exists to let a canvas draw.
+// VTT-128
 func TestArtPictureGetsItsRealContentTypeInline(t *testing.T) {
 	f := newGatewayWithArt(t)
 	resp := f.getFull("/api/art/masonry-1.png")
@@ -1316,6 +1269,7 @@ func TestArtPictureGetsItsRealContentTypeInline(t *testing.T) {
 // an attachment disposition, so a browser navigating straight to it downloads
 // rather than renders it, while fetch().json() — which is what the client
 // actually does with it — is unaffected by either header.
+// VTT-129
 func TestArtSidecarIsOctetStreamAttachment(t *testing.T) {
 	f := newGatewayWithArt(t)
 	resp := f.getFull("/api/art/masonry-1.json")
@@ -1362,6 +1316,7 @@ func TestArtSidecarIsOctetStreamAttachment(t *testing.T) {
 // no body. The second half of this test is that 304, because "revalidation is
 // cheap" is the claim that makes the header the right one rather than merely a
 // correct one.
+// VTT-131
 func TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser(t *testing.T) {
 	f := newGatewayWithArt(t)
 	// BOTH KINDS, because the header is set beside nosniff for every response
@@ -1415,6 +1370,7 @@ func TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser(t *testing.T) {
 // art is operator-trusted content, and that trust is about what an
 // AUTHENTICATED caller may read — never about skipping authentication the way
 // /join and the static bundle deliberately do.
+// VTT-111
 func TestArtFilesRequireAuth(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, tc := range []struct{ name, token string }{
@@ -1437,6 +1393,7 @@ func TestArtFilesRequireAuth(t *testing.T) {
 // design spec §7's "everyone still sees the whole map. No filtering in this
 // arc". Unlike an adventure guide (DM secrets) or the join link (admission
 // control), a picture of a wall carries neither.
+// VTT-117
 func TestArtIsReadableByEveryRole(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, tc := range []struct{ role, token string }{
@@ -1473,6 +1430,7 @@ func TestArtIsReadableByEveryRole(t *testing.T) {
 // finding F1, 2026-09-05). The other half is
 // TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser, and neither
 // test can see what the other is about.
+// VTT-130
 func TestArtInstalledAfterTheServerStartedIsServed(t *testing.T) {
 	f := newGatewayWithArt(t)
 	if code, _ := f.get("/api/art/earth-1.png"); code != http.StatusNotFound {
@@ -1499,6 +1457,7 @@ func TestArtInstalledAfterTheServerStartedIsServed(t *testing.T) {
 // installed no art is ordinary (WithArtDir's own doc comment), so the route
 // answers "nothing here" rather than a 500 — and it must not answer with
 // whatever an empty path happens to resolve to on the filesystem.
+// VTT-126
 func TestArtWithNoArtDirectoryConfiguredIs404(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -1538,6 +1497,7 @@ func TestArtWithNoArtDirectoryConfiguredIs404(t *testing.T) {
 // existed: "An art DIRECTORY that cannot be opened is strict at boot and
 // lenient at request time." A DM in a browser cannot chmod a path, and a
 // campaign that worked five minutes ago should not start answering 500.
+// VTT-126
 func TestAnUnopenableArtRootDegradesAtRequestTime(t *testing.T) {
 	f := newGatewayWithArt(t)
 	if err := os.Chmod(f.artDir, 0o000); err != nil {
@@ -1559,6 +1519,7 @@ func TestAnUnopenableArtRootDegradesAtRequestTime(t *testing.T) {
 // filesystem layout is nobody's business — the same rule
 // mapdef.LoadInstalled promises in writing, applied to a route rather than to a
 // command result.
+// VTT-127
 func TestNoArtResponseNamesWhereTheCampaignLives(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, path := range []string{
@@ -1592,6 +1553,7 @@ func TestNoArtResponseNamesWhereTheCampaignLives(t *testing.T) {
 // uniform across ONE MAP, and grid size is exactly what differs between an art
 // set drawn at 64 and one drawn at 128. Two maps of one campaign SHOULD be able
 // to disagree, because their art does.
+// VTT-119 VTT-120
 func TestMapsReportsTheCampaignCellPx(t *testing.T) {
 	f := newGatewayWithMaps(t)
 	code, body := f.getAs("/api/maps", f.dmToken)
@@ -1632,6 +1594,7 @@ func TestMapsReportsTheCampaignCellPx(t *testing.T) {
 // cannot see, and the one Patrik's ruling is about: a map that declares its own
 // grid resolution reports THAT, while its neighbour in the same campaign keeps
 // inheriting. Two maps, one campaign, two answers — which is the whole point.
+// VTT-118 VTT-119 VTT-120
 func TestAMapsOwnCellPxOverridesTheCampaignDefault(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
@@ -1696,6 +1659,7 @@ func TestAMapsOwnCellPxOverridesTheCampaignDefault(t *testing.T) {
 // campaign DECLARED has to travel, or campaign.json is a file nothing reads.
 // Asserted through WithCellPx rather than the default, so a handler that
 // hard-coded 64 fails here while passing the test above.
+// VTT-120
 func TestACampaignsOwnCellPxReachesTheClient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)

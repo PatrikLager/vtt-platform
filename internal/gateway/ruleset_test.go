@@ -204,6 +204,7 @@ func fistsCmd(casterID, targetID string) *vttv1.ClientCommand {
 // command specifically gets a clean ok=false CommandResult naming "no
 // ruleset loaded" — never a connection drop, crash, or protocol error. The
 // connection stays usable afterward (a follow-up command still works).
+// VTT-132
 func TestUseAbilityNoRulesetLoadedCleanError(t *testing.T) {
 	f := newRulesetFixture(t, false) // withRuleset=false
 	conn := f.dial(f.brawlerToken, 0)
@@ -236,6 +237,7 @@ func TestUseAbilityNoRulesetLoadedCleanError(t *testing.T) {
 // drink threshold's ConditionApplied — tavern-brawl's own ruleset.json/
 // fists.json, read verbatim, not re-derived here), and every one of those
 // events reaches a second, uninvolved connection (the DM's) as broadcasts.
+// VTT-137
 func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	brawlerConn := f.dial(f.brawlerToken, 0)
@@ -295,6 +297,7 @@ func payloadKind(env *vttv1.Envelope) string {
 // ok=false CommandResult — proving handleUseAbility does not distinguish
 // "no ruleset" from "ruleset loaded but Resolve rejected the command" at
 // the wire level; both are clean, connection-preserving denials.
+// VTT-132
 func TestUseAbilityResolveValidationErrorIsCleanOkFalse(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	conn := f.dial(f.brawlerToken, 0)
