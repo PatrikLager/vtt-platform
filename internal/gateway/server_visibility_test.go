@@ -511,6 +511,7 @@ func TestAPlayersCatchUpIsTheSameStreamItWouldHaveSeenLive(t *testing.T) {
 // rule about the square. "Hard for players, free for DM" (maps-as-geometry
 // spec §6) governs sight exactly as it governs stone, and a DM staging a
 // creature across the map is a legitimate thing to do.
+// VTT-155 VTT-158
 func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -526,8 +527,8 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	if r.Ok {
 		t.Fatal("a player reached a square on the far side of a wall they cannot see through")
 	}
-	// The refusal says WHY, and what it says is a fact the player already
-	// holds — see handleCommand's note on why this must not name the occupant.
+	// The refusal says WHY, and what it says is a fact the player already holds
+	// (SPEC-013).
 	if !strings.Contains(r.Error, "cannot see") {
 		t.Fatalf("refusal = %q, want it to name the sight rule", r.Error)
 	}
@@ -992,6 +993,7 @@ func TestPerchingAppendsNothingToTheLog(t *testing.T) {
 // destination gets the same answer whatever stands on it. The assertion is
 // byte-equality between the refusals, not a substring: a message that varied
 // by terrain would still be an oracle even if no single word gave it away.
+// VTT-156
 func TestAPlayerCannotProbeTheDarkWithMoveCommands(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -1046,17 +1048,10 @@ func TestAPlayerCannotProbeTheDarkWithMoveCommands(t *testing.T) {
 	}
 }
 
-// TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee pins the COST of the
-// sight rule, which the rule's own doc comment names and no test reached.
-//
-// The two cases are not the same and only one of them was covered. A square
-// never seen and never explored is refused for the obvious reason. A square
-// whose terrain this player HAS been sent, and whose client still holds and
-// still draws it (spec §3.2, terrain is remembered and creatures are not), is
-// refused too — and that is the deliberate restriction, the one a reader of
-// "you may only move where you can see" would want to check before agreeing to
-// it. If it is ever relaxed to "seen OR explored", this is the test that has to
-// change, and it says so.
+// Keep the destination a remembered square, not an unseen one: its terrain was
+// sent, and SPEC-013 refuses the move anyway. Change this test only with that
+// rule.
+// VTT-155
 func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)

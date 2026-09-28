@@ -641,57 +641,9 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 }
 
-// describeBlockage turns engine.State.Blocked's reason into a clause a
-// player reading a CommandResult.Error can act on. This is the FIRST place a
-// Blocked answer reaches a human rather than a source reader or a test
-// failure (task-5 review finding) — terrain.go's own reasons are written for
-// the latter, and read inconsistently as a result: "a wall" and "a closed
-// door" already pass for plain English, but "scenery: <kind>" is a
-// colon-joined debug tag, and `unknown scene %q` is a raw Go-quoted literal
-// naming an internal scene id nobody at the table chose. Only those two get
-// rewritten; the rest pass through unchanged rather than being forced
-// through a "sentence-ifier" that would just be paraphrasing prose that
-// already reads fine. engine/terrain.go stays untouched (Task 6 does not
-// touch internal/engine) — this list has to be kept in sync by hand if
-// Blocked's reasons ever change, which is the cost of the fix living on the
-// consuming side instead.
-//
-// THE KIND IS BOUNDED HERE, and it is the only author-written string this
-// function RENDERS — the unknown-scene arm receives one too and discards it.
-// A map file's objects[].kind is free text: mapdef.Load checks that object's
-// footprint and its art and never looks at kind, so terrain.go's
-// "scenery: " + o.Kind carried whatever the file said, one-for-one, into what
-// a blocked player reads.
-//
-// Measured 2026-09-10 before the clip, and the two pairs are DIFFERENT SHAPES,
-// which an earlier draft of this comment ran together: as a Blocked reason, a
-// 4-byte kind gave 32 bytes and a 5000-byte one gave 5028. Over the wire, where
-// answerCommand prefixes "gateway: cannot move there — ", the test's own two
-// shapes — 100 and 5000 — gave 159 and 5059. A 4-byte kind over the wire is 63,
-// and a reader re-deriving the sentence as written would get that and conclude
-// the numbers were invented.
-//
-// It is an ERROR rather than a warning, which is why it was not bounded
-// alongside the art warnings and why the reasoning belongs here rather than
-// being inferred: one move_token yields one refusal, so it never
-// scene-qualifies and never accumulates the way adventure.Compile's warnings
-// do. The cost was a player bumping into a crate and reading a wall of text,
-// not a socket closing.
-//
-// THE PASSTHROUGH ARM IS NOT BOUNDED and does not need to be TODAY: every
-// other reason terrain.go returns is a literal it wrote itself ("a wall", "a
-// closed door", "outside the grid"), and the unknown-scene arm is rewritten to
-// a constant above.
-// A reason that ever interpolates something a map file wrote needs the same
-// treatment, and will not get it by sitting in that arm.
-// RULE 9, ANSWERED: MapTool has nothing to borrow here, and the reason is
-// structural rather than an oversight. Its movement blocking is geometric —
-// ZoneWalker and VBL decide passability and the client simply will not path
-// into the cell — so no server-to-client message names the obstruction, and
-// there is no sentence to bound. It could not have one worth copying anyway:
-// every MapTool client receives the whole campaign, which is the distribution
-// model CLAUDE.md says explicitly not to take, so it has no per-message budget
-// to protect in the first place.
+// Keep the kind clipped: it is the one author-written string this function
+// renders, and a Blocked reason that interpolates a map file's text needs the
+// same clip (SPEC-013).
 func describeBlockage(why string) string {
 	if kind, ok := strings.CutPrefix(why, "scenery: "); ok {
 		return "something (a " + artlib.Clip(kind, artlib.MaxFragment) + ") is in the way"
@@ -702,33 +654,13 @@ func describeBlockage(why string) string {
 	return why
 }
 
-// answerCommand produces the CommandResult for one decoded command.
-//
-// IT WRITES NO ENVELOPE, and that restriction is the whole of the C1 fix: this
-// runs on the COMMAND goroutine, and the pump is the only producer of a
-// connection's envelopes. A perch that needs frames sent asks the pump for them
-// through `perches` rather than enqueueing its own — see handleSetViewpoint.
-//
-// lookupErr is the identity re-resolution's OPERATIONAL failure, never a
-// revocation: serve has already dealt with that one and does not reach here.
-// See its comment on why a busy database must not be read as "your credential
-// is no longer valid".
-//
-// A separate function rather than a switch inline in serve, and the reason is
-// mechanical rather than aesthetic: written inline, the perch branch put serve
-// at gocyclo 31 against a limit of 30 and the lint gate refused it (MEASURED —
-// that is the failure this extraction answers, not an estimate of what it
-// would have been). Raising the threshold would have been weakening a gate to
-// pass it (CLAUDE.md rule 2); the split it forced runs along a seam that was
-// already there.
+// Never enqueue a frame here: the pump is the only producer of a connection's
+// envelopes (SPEC-011).
 func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vttv1.ClientCommand,
 	perches *perchBox) *vttv1.CommandResult {
 	switch sv, isPerch := cmd.GetCommand().(*vttv1.ClientCommand_SetViewpoint); {
 	case lookupErr != nil:
-		// Refuse the command and keep the connection, exactly as authorize
-		// already does for a campaign that cannot answer. Still fail-closed
-		// where it counts: nothing is authorized while we cannot say who is
-		// asking.
+		// Refuse this command and keep the connection (SPEC-009, VTT-033).
 		return &vttv1.CommandResult{
 			RequestId: cmd.GetRequestId(),
 			Ok:        false,
@@ -736,12 +668,8 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 		}
 
 	case isPerch:
-		// THE ONE COMMAND ANSWERED OUTSIDE handleCommand, and the reason is the
-		// one handleCommand's own doc comment gives for owning no transport: a
-		// perch appends NOTHING to the log and changes nothing anyone else can
-		// observe. Its whole effect is on THIS connection's seat and THIS
-		// connection's wire. handleCommand runs authorize → convert → persist,
-		// and a perch is none of those three.
+		// Keep the perch out of handleCommand: it appends nothing and its effect is
+		// this connection's alone (SPEC-013).
 		return s.handleSetViewpoint(p, cmd, sv.SetViewpoint, perches)
 
 	default:
@@ -749,15 +677,8 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 	}
 }
 
-// authorize is the preamble EVERY inbound command shares, in one place because
-// it has two callers: fetch the world the command is judged against, and ask
-// the one authorization function (spec §4). It returns either that state, or
-// the CommandResult that refuses the command — never both, and never neither.
-//
-// The nil-state arm is not a formality. campaign.State() answers nil for a
-// campaign that cannot be read, and authorizing against no world at all would
-// be deciding who may do what with nothing to decide it from; fail closed
-// (spec §4.4) and tell the caller so, keeping the connection.
+// Refuse on a nil state: authorizing against no world decides from nothing
+// (SPEC-013).
 func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*engine.State, *vttv1.CommandResult) {
 	requestID := cmd.GetRequestId()
 	st := s.campaign.State()
@@ -770,42 +691,9 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 	return st, nil
 }
 
-// handleSetViewpoint authorizes a perch and HANDS IT TO THE PUMP.
-//
-// IT APPENDS NOTHING, and that is a ruling rather than an omission — the same
-// one handleJoinDoor's doc comment makes for the shared door. Patrik: "we do
-// not need to log anything about what/where the spectator sees." The log is
-// the campaign's history, and where a watcher points their camera is not a
-// fact about the campaign; it is a view preference, like zoom. Logged, it
-// would replay forever and add story-panel noise — and the log only goes
-// forward, so it would be there for good.
-//
-// The cost of that ruling is the perch not surviving a reconnect (spec
-// §3.1.1), because it lives on the connection like the catch-up point does.
-// The client re-sends it after redialling.
-//
-// IT DOES NOT APPLY THE PERCH ITSELF, and that division is C1's fix rather
-// than a preference. This function runs on the command goroutine; the seat's
-// projector and this connection's wire belong to the PUMP. When both goroutines
-// enqueued, two batches computed in one order reached the socket in the other:
-// a pump frame landed INSIDE a perch batch, and a TokenMoved computed before a
-// TokenHidden was delivered after it, so the watcher's own stream stopped
-// folding — permanently, on the browser client. Handing the shoulder over and
-// letting the pump do both the projecting and the sending makes that
-// unrepresentable rather than unlikely: one goroutine mutates the projector's
-// memory and emits the frames that describe the mutation, so emission order IS
-// mutation order.
-//
-// WHAT ok MEANS HERE, precisely, because the honest answer is narrower than the
-// usual one: the shoulder has been RECORDED and this connection's pump will
-// move to it. Not "the frames are on the wire" — they are computed a moment
-// later, by the pump. Handing over never blocks (perchBox.set), so a spectator
-// hopping quickly cannot stall their own command loop behind a projection, and
-// a hop that is superseded before the pump reaches it is simply skipped.
-//
-// The refusal path is Authorize's, which is where MayPerch enforces the one
-// rule this command has: a perch may only target a PARTY MEMBER — what the
-// actor IS, never who currently controls it (visibility spec §5.1).
+// Hand the perch to the pump and apply nothing here: a frame emitted from this
+// goroutine lands inside a projected batch and the watcher's fold stops
+// (SPEC-011, SPEC-013).
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
 	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
 	if _, refusal := s.authorize(p, cmd); refusal != nil {
@@ -815,14 +703,9 @@ func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCo
 	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true}
 }
 
-// handleCommand runs the authorize → convert → persist pipeline for one
-// inbound ClientCommand (spec §3): authz/validation failures produce an
-// ok=false CommandResult and leave the connection open; only a persisted
-// event/marker produces ok=true. It never itself closes the connection or
-// writes to the wire — the caller (serve) owns transport.
-//
-// set_viewpoint never reaches here: it persists nothing and its whole effect
-// is on one connection, so serve answers it directly (handleSetViewpoint).
+// handleCommand runs the command path SPEC-013 states, in its order. Never
+// close the connection or write to the wire here: serve owns transport
+// (SPEC-011).
 func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
 	requestID := cmd.GetRequestId()
 
@@ -831,69 +714,23 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return refusal
 	}
 
-	// The map constrains PLAYERS; the DM and the agent author the world and
-	// are free of it (maps-as-geometry spec §6, Patrik: "hard for players,
-	// free for DM"). Staging a creature inside stone is a legitimate thing
-	// for a DM to do.
-	//
-	// Checked HERE, not in engine.Apply: Apply is the FOLD — by the time an
-	// event reaches it the move is already history, and history is not the
-	// place to say no. This is the seam where a command is still a request,
-	// the last point a refusal can mean "you may not" rather than "this
-	// never happened".
+	// Keep this gate the player's alone: the DM and the agent author the world
+	// (SPEC-013).
 	if p.Role == identity.RolePlayer {
 		if mt, ok := cmd.GetCommand().(*vttv1.ClientCommand_MoveToken); ok {
 			if tok, known := st.Tokens[mt.MoveToken.GetTokenId()]; known {
 				to := mt.MoveToken.GetTo()
-				// YOU MAY ONLY MOVE WHERE YOU CAN SEE (visibility spec exit
-				// criterion 7: the goblin's square "cannot be targeted by a
-				// player who cannot see it"). This is the second half of
-				// session zero. Filtering the wire stops a player LOOKING at a
-				// hidden creature; without this they could still land on it,
-				// because move_token validates a destination and never a path
-				// — the whole grid was one command away.
-				//
-				// PHRASED AS "CAN YOU SEE THE SQUARE", NOT "IS SOMETHING
-				// STANDING THERE", and the difference is the whole design. A
-				// refusal that depends on the occupant is an ORACLE: a player
-				// could sweep the map with move commands and read the hidden
-				// creatures off the refusals, which is session zero again with
-				// more typing. This refusal depends on nothing the player does
-				// not already hold — their own visible set is exactly what
-				// SceneSeen just told them — so it leaks nothing, in the
-				// strong sense that they can compute it themselves.
-				//
-				// FIRST, AND THE ORDER IS THE WHOLE POINT. It ran second for
-				// one commit, so that every pre-existing refusal kept its exact
-				// wording, and that was a leak of its own: engine.Blocked
-				// answers for ANY square in the scene, sight-independent — it
-				// was written when a player received every tile, so it gave
-				// nothing away. Against a REDACTED board it hands back walls,
-				// closed doors and scenery kinds ("something (a crate) is in
-				// the way") for terrain SceneSeen has never sent, one
-				// move_token at a time, defeating spec §4.2 through an error
-				// string. TestAPlayerCannotProbeTheDarkWithMoveCommands sweeps
-				// unseen squares of four different kinds and requires the
-				// refusals to be byte-identical.
-				//
-				// The cost is real and deliberate: a square out of line of
-				// sight cannot be walked onto even when it is remembered
-				// terrain (spec §3.2), so a player cannot round a corner in
-				// one command. Fail closed (spec §4.4). And this is the
-				// PLAYER's branch only — "hard for players, free for DM"
-				// (maps-as-geometry spec §6) governs sight exactly as it
-				// governs stone, so the DM's refusals are untouched, wording
-				// and ordering both.
+				// Ask sight FIRST and answer with one string: a refusal that varies with
+				// the occupant is a terrain oracle
+				// (TestAPlayerCannotProbeTheDarkWithMoveCommands).
 				if !canSee(viewerFor(p), st, tok.SceneID, to) {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — you cannot see that square",
 					}
 				}
-				// AND ONLY THEN WHAT IS ON IT. Reached only for a square this
-				// player can see, which is a square whose terrain they have
-				// already been sent — so naming it tells them nothing new and
-				// keeps the refusal useful.
+				// Name the obstruction only here, after sight: this player has been sent
+				// this square's terrain (SPEC-013).
 				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
@@ -904,55 +741,23 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// grant_actor_control's kind gets the SAME seam and the SAME reasoning as
-	// the movement check above, and for the second time the same argument:
-	// engine.Apply is the fold, and by the time an event reaches it the grant
-	// is already history — history is not the place to say no. (This paragraph
-	// named create_scene's terrain check as the seam directly above it until
-	// 2026-09-02, when create_scene left the platform; add_actor's own check
-	// below still makes three call sites of the pattern, not two.)
-	//
-	// It is HERE rather than in Authorize because it is not a rule about who:
-	// the DM and the agent are both entitled to hand a character over, and
-	// neither may do it without saying what they are handing over. And it is
-	// here rather than in ToEvent because ToEvent's own completeness gate
-	// (TestEveryClientCommandConverts) requires every command to convert from
-	// an EMPTY payload — that gate exists because grant_actor_control once
-	// shipped advertised and dead, so narrowing it for this command in
-	// particular would be trading one silent hole for another.
+	// Keep both validators here, for every role, before anything is written: not
+	// in Authorize, since they refuse a form and not an issuer; not in ToEvent
+	// (TestEveryClientCommandConverts); not in the fold (SPEC-013).
 	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
 		if err := validateGrantActorControl(g.GrantActorControl); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 		}
 	}
 
-	// add_actor gets the SAME seam and, for the third time, the same argument:
-	// engine.Apply is the fold, and by the time an ActorAdded reaches it the
-	// actor is already history.
-	//
-	// TWO RULES BEHIND ONE CALL, and they answer the fold question OPPOSITELY.
-	// The CONTROLLER rule also lives in the fold, which refuses the same shape
-	// outright — there is no history to protect, so it can — and this seam only
-	// adds the answer: a refusal naming grant_actor_control, before anything is
-	// written, instead of a poisoned append. The KIND rule (actor-kind Task 7)
-	// lives HERE AND NOWHERE ELSE, because an absent kind is a legal state on a
-	// recorded event ("not a party member") and a fold that refused it would be
-	// refusing something the contract defines. See validateAddActor, which
-	// argues both at length.
 	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
 		if err := validateAddActor(aa.AddActor); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 		}
 	}
 
-	// use_ability/load_adventure/load_map/remove_actor do not become a single
-	// Envelope via ToEvent (they each produce a whole ordered batch instead —
-	// ruleset.go/adventure.go/map.go and handleRemoveActor in this file);
-	// every other command, including remove_condition
-	// and remove_token (retraction-leaves Task 8 — no board-position seam
-	// needed here, since it is DM/agent only and engine.Apply's own
-	// unknown-token guard is the entire validation story), still flows
-	// through the plain ToEvent -> campaign.Append path below.
+	// Dispatch these four before ToEvent: each appends a batch, never one envelope
+	// (SPEC-012, SPEC-013).
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
@@ -962,17 +767,10 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if lm, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadMap); ok {
 		return s.handleLoadMap(requestID, lm.LoadMap, p)
 	}
-	// remove_actor is the fourth batch command and the only one in this arc:
-	// it emits a TokenRemoved per token of the actor and then the
-	// ActorRemoved, as ONE ordered batch (handleRemoveActor, in this file).
 	if ra, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveActor); ok {
 		return s.handleRemoveActor(requestID, ra.RemoveActor, st, p)
 	}
-	// promote_participant produces NO EVENT AT ALL, unlike the two above which
-	// produce a batch. A role lives in participants.role beside the token —
-	// one source of truth, never in the log (joining-a-table spec §3.1). It is
-	// the only command that changes identity rather than campaign state, which
-	// is why ToEvent's completeness gate names it on its allowlist.
+	// Answer these three without ToEvent: they append nothing (SPEC-007).
 	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
 		return s.handlePromotion(requestID, pp.PromoteParticipant)
 	}
@@ -988,15 +786,9 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// Controller decision (binding, Task 4 flagged concern): backfill
-	// TokenMoved.SceneId/From from the state already fetched for Authorize
-	// above — the token's CURRENT scene/position, i.e. where it is moving
-	// FROM — so the permanent log records that, not just the destination.
-	// engine.Apply never reads these fields for TokenMoved (it only reads
-	// To — see internal/engine/apply.go), so nothing downstream of Append
-	// would supply them; this is the one place in the pipeline that still
-	// has both the pre-move state snapshot and the about-to-be-appended
-	// envelope in hand.
+	// Keep the backfill here: engine.Apply never reads SceneId or From from a
+	// TokenMoved, and nothing after this point holds both the pre-move token and
+	// the envelope (VTT-160).
 	if tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved); ok {
 		if tok, ok := st.Tokens[tm.TokenMoved.GetTokenId()]; ok {
 			tm.TokenMoved.SceneId = tok.SceneID

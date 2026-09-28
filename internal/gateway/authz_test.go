@@ -519,7 +519,7 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
-// VTT-028
+// VTT-028 VTT-139 VTT-140 VTT-141
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	if len(authzCases) != 88 {
 		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
@@ -539,6 +539,7 @@ func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	}
 }
 
+// VTT-142
 func TestAuthorizePlayerOwnTokenOK(t *testing.T) {
 	st := ownershipFixture()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -547,6 +548,7 @@ func TestAuthorizePlayerOwnTokenOK(t *testing.T) {
 	}
 }
 
+// VTT-142
 func TestAuthorizePlayerOtherTokenDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -565,6 +567,7 @@ func TestAuthorizePlayerOtherTokenDenied(t *testing.T) {
 	}
 }
 
+// VTT-143
 func TestAuthorizePlayerControllerlessActorTokenDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero"} // ControllerId empty = DM/agent only
@@ -575,6 +578,7 @@ func TestAuthorizePlayerControllerlessActorTokenDenied(t *testing.T) {
 	}
 }
 
+// VTT-142
 func TestAuthorizePlayerUnknownTokenDenied(t *testing.T) {
 	st := engine.NewState()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -606,6 +610,7 @@ func doorFixture(x, y int32) *engine.State {
 	return st
 }
 
+// VTT-149
 func TestAuthorizePlayerMayWorkAdjacentDoor(t *testing.T) {
 	st := doorFixture(0, 0) // door at (0,1): dx=0, dy=1 — adjacent
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -620,6 +625,7 @@ func TestAuthorizePlayerMayWorkAdjacentDoor(t *testing.T) {
 // TestAuthorizePlayerMayNotWorkDistantDoor is the guard direction: without
 // it, mayWorkDoor could always return nil for a player and every open_door/
 // close_door player cell in the matrix would pass for the wrong reason.
+// VTT-149
 func TestAuthorizePlayerMayNotWorkDistantDoor(t *testing.T) {
 	st := doorFixture(5, 5) // nowhere near the door at (0,1)
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -642,6 +648,7 @@ func TestAuthorizePlayerMayNotWorkDistantDoor(t *testing.T) {
 // is at (3,3) and the door at (2,3): the true delta is 1 (adjacent), while the
 // mutated sum is 5 — far enough to refuse a door the player is standing right
 // beside.
+// VTT-149
 func TestAuthorizePlayerMayWorkAdjacentDoorAwayFromTheOrigin(t *testing.T) {
 	st := doorFixture(3, 3) // door at (2,3): dx=1, dy=0 — adjacent
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -664,6 +671,7 @@ func TestAuthorizePlayerMayWorkAdjacentDoorAwayFromTheOrigin(t *testing.T) {
 // `<= 1`, so a player could work a door from any distance as long as it lay to
 // the west or north of their token. Both axes are checked because the two
 // comparisons in mayWorkDoor are separate expressions.
+// VTT-149
 func TestAuthorizePlayerMayNotWorkADoorItStandsWestOrNorthOf(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	for _, c := range []struct {
@@ -693,6 +701,7 @@ func TestAuthorizePlayerMayNotWorkADoorItStandsWestOrNorthOf(t *testing.T) {
 // "position happens to be adjacent" and "adjacent in the right scene": a
 // token that is numerically close but in a DIFFERENT scene must not count,
 // or mayWorkDoor's scene filter is dead code no test would catch removing.
+// VTT-149
 func TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -711,6 +720,7 @@ func TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes(t *testing.T) {
 // of "free for DM": mayWorkDoor returns nil for a non-player role before it
 // ever inspects token position, so a token nowhere near the door still lets
 // the DM and agent through.
+// VTT-147
 func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 	st := doorFixture(5, 5) // far from the door at (0,1) — irrelevant for dm/agent
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
@@ -739,6 +749,7 @@ func TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition(t *testing.T) {
 // token at distance 1 diagonally" case (sub-project 12, dm-hands-and-
 // retraction task 3, 2026-08-30), so both languages are pinned on the same
 // numbers.
+// VTT-149
 func TestAuthorizePlayerMayWorkDiagonallyAdjacentDoor(t *testing.T) {
 	st := doorFixture(4, 4) // door at (3,3): dx=1, dy=1 — diagonally adjacent
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -756,6 +767,7 @@ func TestAuthorizePlayerMayWorkDiagonallyAdjacentDoor(t *testing.T) {
 // not distinguish the two the way the adjacent case above does. It exists
 // to pin the same offsets as doors.test.ts's paired "distance 2" case,
 // keeping both languages' fixtures readable side by side.
+// VTT-149
 func TestAuthorizePlayerMayNotWorkDiagonallyDistantDoor(t *testing.T) {
 	st := doorFixture(5, 5) // door at (3,3): dx=2, dy=2
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -793,10 +805,10 @@ func TestAuthorizeSpectatorMayNotPerchOnAnNpc(t *testing.T) {
 }
 
 // --- use_ability / remove_condition actor ownership (Task 6) --------------
-// Same shape as the move_token ownership tests above, checked against
-// Actor.controller_id directly (no token indirection) — see
-// authorizeActorOwnership's doc comment.
+// Same shape as the move_token ownership tests above, checked against the
+// actor's controller_ids directly, with no token between (SPEC-013).
 
+// VTT-144
 func TestAuthorizePlayerUseAbilityOwnActorOK(t *testing.T) {
 	st := ownershipFixture()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -805,6 +817,7 @@ func TestAuthorizePlayerUseAbilityOwnActorOK(t *testing.T) {
 	}
 }
 
+// VTT-144
 func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -822,6 +835,7 @@ func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
 	}
 }
 
+// VTT-143
 func TestAuthorizePlayerUseAbilityControllerlessActorDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero"} // ControllerId empty = DM/agent only
@@ -831,6 +845,7 @@ func TestAuthorizePlayerUseAbilityControllerlessActorDenied(t *testing.T) {
 	}
 }
 
+// VTT-144
 func TestAuthorizePlayerUseAbilityUnknownActorDenied(t *testing.T) {
 	st := engine.NewState()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -839,6 +854,7 @@ func TestAuthorizePlayerUseAbilityUnknownActorDenied(t *testing.T) {
 	}
 }
 
+// VTT-144
 func TestAuthorizePlayerRemoveConditionOwnActorOK(t *testing.T) {
 	st := ownershipFixture()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -847,6 +863,7 @@ func TestAuthorizePlayerRemoveConditionOwnActorOK(t *testing.T) {
 	}
 }
 
+// VTT-144
 func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -867,6 +884,7 @@ func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
 // TestAuthorizeUnknownCommandDeniedForEveryRole is the default-deny case:
 // an empty/unset ClientCommand oneof is not in commandRoles at all, so it
 // must be denied regardless of role.
+// VTT-138
 func TestAuthorizeUnknownCommandDeniedForEveryRole(t *testing.T) {
 	st := engine.NewState()
 	roles := []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator}
@@ -888,6 +906,7 @@ func TestAuthorizeUnknownCommandDeniedForEveryRole(t *testing.T) {
 // TestAuthorizeSecondControllerMayMoveTheToken is the point of the whole
 // change. Under the scalar rule this participant was denied, because
 // controller_id can only ever hold ONE of the two.
+// VTT-142
 func TestAuthorizeSecondControllerMayMoveTheToken(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -907,6 +926,7 @@ func TestAuthorizeSecondControllerMayMoveTheToken(t *testing.T) {
 
 // TestAuthorizeNonControllerStillDeniedWhenActorIsShared guards the direction
 // that matters more: widening to a set must not widen to EVERYONE.
+// VTT-142
 func TestAuthorizeNonControllerStillDeniedWhenActorIsShared(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -930,6 +950,7 @@ func TestAuthorizeNonControllerStillDeniedWhenActorIsShared(t *testing.T) {
 // to break by "tidying" the ownership check to run for every role, which
 // reads like a tightening and would silently lock the DM out of every
 // assigned character mid-session.
+// VTT-147
 func TestAuthorizeDMMayActOnAnActorAPlayerControls(t *testing.T) {
 	st := ownershipFixture() // a1 controlled by p-1
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
@@ -948,6 +969,7 @@ func TestAuthorizeDMMayActOnAnActorAPlayerControls(t *testing.T) {
 }
 
 // TestAuthorizePlayerRevokeSelfOK: a player may put a character down.
+// VTT-145
 func TestAuthorizePlayerRevokeSelfOK(t *testing.T) {
 	st := ownershipFixture()
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
@@ -959,6 +981,7 @@ func TestAuthorizePlayerRevokeSelfOK(t *testing.T) {
 // TestAuthorizePlayerRevokeOtherParticipantDenied is the other half, and the
 // half that makes the player row a guard rather than an opening: a player may
 // not take a character from someone else.
+// VTT-145
 func TestAuthorizePlayerRevokeOtherParticipantDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -975,6 +998,7 @@ func TestAuthorizePlayerRevokeOtherParticipantDenied(t *testing.T) {
 // TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied closes the gap
 // between "names themselves" and "has anything to give up". Without it, the
 // self-check alone would let any player issue revoke against any actor.
+// VTT-146
 func TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied(t *testing.T) {
 	st := ownershipFixture() // a1 controlled by p-1, NOT p-9
 	p := &identity.Participant{ID: "p-9", Role: identity.RolePlayer}
@@ -991,6 +1015,7 @@ func TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied(t *testing.T) 
 // reached state by a route the fold does not own, an empty participant id
 // matching it would hand a stranger every such actor at the table. The two
 // guards are independent, and this one is authz's own.
+// VTT-148
 func TestAuthorizeEmptyParticipantMatchesNothing(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{
@@ -1016,6 +1041,7 @@ func TestAuthorizeEmptyParticipantMatchesNothing(t *testing.T) {
 // it could be removed with the whole suite still green: every role in the
 // matrix test runs as "p-1", so the DM and agent revoke cells passed the
 // self-check VACUOUSLY rather than by bypassing it.
+// VTT-147
 func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
 	st := ownershipFixture() // a1 controlled by p-1
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
@@ -1059,33 +1085,10 @@ func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 
 // VTT-025
 func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
-	// THE SAME GUARD AS THE TEST ABOVE, ASSERTED FOR THE ACTOR WHO MATTERS.
-	// Every requested-role REFUSAL in this file is issued by a DM, and
-	// authorizePromotionTarget is actor-agnostic by construction — it reads
-	// req.GetRole() and nothing else, and its doc says it is "checked for every
-	// role including the DM's own". Nothing pinned that for the AGENT.
-	//
-	// The agent is the role an LLM holds: internal/mcp is a WebSocket client
-	// (harness.Dial with a token), so a prompt-injected tool call arrives here
-	// with agent authority. An agent that could mint a dm or a second agent
-	// would turn one bad tool call into a permanent takeover — and unlike the
-	// demotion case, nothing downstream would refuse it, because the new dm is
-	// a legitimate dm.
-	//
-	// THE MUTATION STORY IS MEASURED, and the first draft of this comment got
-	// it wrong in the direction that would have made the test look better than
-	// it is. `if p.Role == identity.RoleAgent { return nil }` in
-	// authorizePromotionTarget — the same non-player bypass mayWorkDoor uses —
-	// leaves the WHOLE gateway package passing except this test.
-	//
-	// The DM-shaped bypasses are already pinned and this test does NOT catch
-	// them: both `p.Role == RoleDM` and `p.Role != RolePlayer` fail
-	// TestPromotionMayOnlyTargetPlayerOrSpectator. The agent row was the
-	// uncovered one — and not because the other agent-actor tests use a DM,
-	// which is false (TestPromotionCannotUNMAKEADMOrAgent dials the agent
-	// token, and authzCases' promote_participant/agent cell drives this guard
-	// as an agent). They survive it because they request a LEGAL role, so they
-	// never ask this guard to refuse anything.
+	// Keep the issuer an agent: an agent is an LLM's seat, and a promotion to dm
+	// it could issue would make one injected tool call a permanent takeover. The
+	// DM-shaped bypasses are TestPromotionMayOnlyTargetPlayerOrSpectator's
+	// (SPEC-009, SPEC-013).
 	st := ownershipFixture()
 	agent := &identity.Participant{ID: "p-agent", Role: identity.RoleAgent}
 
@@ -1264,6 +1267,7 @@ func TestEveryPlayerCommandHasARule(t *testing.T) {
 // It cannot be reached through Authorize while the two tables agree — which
 // TestEveryPlayerCommandHasARule requires — so without this the refusal would
 // be a guard nobody drives, the shape this repo has been bitten by before.
+// VTT-150
 func TestAPlayerCommandNobodyRuledOnIsRefused(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	err := gateway.AuthorizeUndecidedForTest(p, "a_command_nobody_ruled_on")

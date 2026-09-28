@@ -505,6 +505,7 @@ func TestTwoClientsBothReceiveAcceptedCommandAsEvent(t *testing.T) {
 // player moving a token they don't control gets an ok=false Result on their
 // own connection, the connection stays open (proven by a follow-up command
 // succeeding on it), and NO Envelope is broadcast to anyone.
+// VTT-142 VTT-161 VTT-162
 func TestPlayerOwnershipDenialNoBroadcast(t *testing.T) {
 	f := newGWFixture(t)
 
@@ -690,6 +691,7 @@ func (f *gwFixture) seedCellarWithSceneryKind(t *testing.T, kind string) int64 {
 // sent this player, so the refusal may name it and this test's own property —
 // the map constrains a player and does not constrain the DM — is exactly as it
 // was.
+// VTT-157 VTT-158
 func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 	f := newGWFixture(t)
 	after := f.seedCellar(t) // tok-fighter at (2,1); walls across the top row
@@ -736,6 +738,7 @@ func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 // covers the helper directly; this proves the wiring reaches it, and pins
 // the exact wording rather than a substring that would survive a wording
 // regression).
+// VTT-157
 func TestAPlayerCannotWalkOntoBlockingSceneryAndTheRefusalNamesIt(t *testing.T) {
 	f := newGWFixture(t)
 	after := f.seedCellar(t) // tok-fighter at (2,1); boulder (BlocksMove) at (1,1)
@@ -765,6 +768,7 @@ func TestAPlayerCannotWalkOntoBlockingSceneryAndTheRefusalNamesIt(t *testing.T) 
 // The DM/agent bypass of this same rule is pinned at the authz-unit level
 // (TestAuthorizeDMMayWorkDoorRegardlessOfTokenPosition); this test proves
 // the player half end to end, over the wire.
+// VTT-149 VTT-158
 func TestAPlayerMayOnlyWorkADoorTheyAreNextTo(t *testing.T) {
 	f := newGWFixture(t)
 	after := f.seedCellar(t) // tok-fighter at (2,1); door at (0,1), two squares away
@@ -812,6 +816,7 @@ func TestAPlayerMayOnlyWorkADoorTheyAreNextTo(t *testing.T) {
 // a door even once the adjacency check exists: commandRoles' open_door/
 // close_door rows (commit 092381a) already deny a spectator outright, on
 // role alone, before adjacency is ever consulted.
+// VTT-139
 func TestASpectatorMayNotWorkDoors(t *testing.T) {
 	f := newGWFixture(t)
 	after := f.seedCellar(t)
@@ -831,6 +836,7 @@ func TestASpectatorMayNotWorkDoors(t *testing.T) {
 // TestSpectatorCommandDenied covers the default-deny role: a spectator can
 // connect and receive the stream, but issuing ANY command comes back
 // ok=false, and the connection stays open.
+// VTT-139 VTT-161
 func TestSpectatorCommandDenied(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.spectatorToken, gwSeedHead)
@@ -891,6 +897,7 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 // dedicated test: the broadcast TokenMoved carries SceneId and From
 // backfilled from the token's state BEFORE the move, not just the
 // destination the client sent.
+// VTT-160
 func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	f := newGWFixture(t)
 	playerConn := f.dial(f.playerToken, gwSeedHead)
@@ -932,6 +939,7 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 // ok=false CommandResult and leave the connection (and the campaign) fully
 // usable afterward, never poisoned (campaign.Append validates against a
 // snapshot BEFORE persisting — see that method's doc comment).
+// VTT-161
 func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, gwSeedHead)
@@ -1002,6 +1010,7 @@ func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
 // drops/zeroes/swaps the anchor fields in ToEvent before Append, would make
 // an invalid anchor silently accepted while every other existing wire test
 // stayed green.
+// VTT-161
 func TestNarrationForwardAnchorRejectedCleanConnectionIntact(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, gwSeedHead)
@@ -1268,6 +1277,7 @@ func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 // tests stopped at Authorize and never crossed into conversion, so nothing
 // noticed. A test that ends at the permission check is not evidence the
 // command works.
+// VTT-147
 func TestDMGrantsControlOverTheWire(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.dial(f.dmToken, 0)
@@ -2339,6 +2349,7 @@ func lastPresenceStateFor(t *testing.T, conn *websocket.Conn, id string, d time.
 // The invariant is the same one the art path uses, for the same reason: past
 // the clip point the sentence must stop growing, which survives a rewording
 // where a byte count would not.
+// VTT-159
 func TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind(t *testing.T) {
 	refusal := func(t *testing.T, kind string) string {
 		t.Helper()
@@ -2371,8 +2382,8 @@ func TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind(t *testing.T) {
 	// AND THAT IT CARRIES THE KIND AT ALL. Without this the test is satisfied by
 	// any refusal of constant length, and two sit ahead of the Blocked call on
 	// this exact path — authorize's, and the sight arm's "you cannot see that
-	// square", whose own comment says the order is the whole point. The
-	// assertions above only say the kind is not carried too FAR.
+	// square", in the order SPEC-013 states. The assertions above only say the
+	// kind is not carried too FAR.
 	if !strings.Contains(long, strings.Repeat("k", artlib.MaxFragment)) {
 		t.Errorf("the refusal does not carry the scenery kind at all — this move was "+
 			"refused by something else, and the length invariant above would hold for "+

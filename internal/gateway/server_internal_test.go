@@ -1300,19 +1300,9 @@ func TestServeNeverClosesAConnectionsOutboundChannel(t *testing.T) {
 	}
 }
 
-// TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough
-// closes the coordinator's fix-round-1 finding: describeBlockage shipped
-// with its two rewritten branches (the reason this function exists at all —
-// see its own doc comment on the task-5 review finding) driven by no
-// assertion anywhere. server_test.go's wall test only ever checked
-// strings.Contains(result.Error, "wall"), which the PASSTHROUGH branch
-// alone already satisfies — it could never have caught either rewrite
-// regressing, or even being deleted outright, so long as passthrough still
-// worked.
-//
-// Exact string equality, not a substring: describeBlockage exists SOLELY
-// for its wording, so a test that would still pass with the rewrite
-// silently reverted to "scenery: boulder" protects nothing.
+// Keep the comparison exact: the passthrough arm alone satisfies a substring
+// check, and describeBlockage exists for its wording (SPEC-013).
+// VTT-157
 func TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough(t *testing.T) {
 	cases := []struct {
 		name string

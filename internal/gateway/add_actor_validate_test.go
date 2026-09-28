@@ -26,6 +26,7 @@ import (
 // still get an error with the controller check DELETED — this test would go on
 // passing while pinning nothing. Stating it leaves the controller as the only
 // thing wrong with this command.
+// VTT-152
 func TestAddActorSeedingAControllerIsRefused(t *testing.T) {
 	cmd := &vttv1.AddActor{Actor: &vttv1.Actor{
 		ActorId: "act-hollis", Name: "Hollis Ketch", ControllerId: "p-2",
@@ -50,6 +51,7 @@ func TestAddActorSeedingAControllerIsRefused(t *testing.T) {
 // AUTHORITATIVE field (Actor.controller_ids' own doc comment) and
 // controller_id is its mirror, so a check written against the mirror alone
 // leaves the real door open. The wire has both because history has both.
+// VTT-152
 func TestAddActorSeedingAControllerSetIsRefused(t *testing.T) {
 	cmd := &vttv1.AddActor{Actor: &vttv1.Actor{
 		ActorId: "act-hollis", Name: "Hollis Ketch", ControllerIds: []string{"p-2"},
@@ -72,6 +74,7 @@ func TestAddActorSeedingAControllerSetIsRefused(t *testing.T) {
 // controller here" must not depend on whether the id they chose happened to be
 // usable. The fold refuses it on the same terms; it used to STRIP such ids
 // instead, and that stripping is what this replaced.
+// VTT-152
 func TestAddActorSeedingAnEmptyControllerSetIsRefused(t *testing.T) {
 	cmd := &vttv1.AddActor{Actor: &vttv1.Actor{
 		ActorId: "act-hollis", ControllerIds: []string{""},
@@ -93,6 +96,7 @@ func TestAddActorSeedingAnEmptyControllerSetIsRefused(t *testing.T) {
 // creating an actor means (TestAddActorWithNoKindIsRefused below). Both values
 // appear: a validator that accepted only PARTY_MEMBER would pass a
 // single-valued version of this test while making every monster unaddable.
+// VTT-152
 func TestAddActorWithoutAControllerIsAccepted(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -130,6 +134,7 @@ func TestAddActorWithoutAControllerIsAccepted(t *testing.T) {
 //
 // Patrik, 2026-08-24: "when you create an actor you should know what for — is
 // it an NPC or a PC. So add_actor should have kind defined."
+// VTT-153
 func TestAddActorWithNoKindIsRefused(t *testing.T) {
 	cmd := &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "act-bandit", Name: "Bandit"}}
 	if cmd.GetActor().GetKind() != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
@@ -160,6 +165,7 @@ func TestAddActorWithNoKindIsRefused(t *testing.T) {
 // party member" until something deliberately says otherwise. An allowlist here
 // would refuse a value the contract offers, turning additive growth into a
 // broken command.
+// VTT-153
 func TestAddActorAcceptsAKindTheEnumDoesNotYetDefine(t *testing.T) {
 	// A value the enum does not define today. It is not UNSPECIFIED, so it is
 	// not silence — the caller said something, and the readers fail it closed.
@@ -189,6 +195,7 @@ func TestAddActorAcceptsAKindTheEnumDoesNotYetDefine(t *testing.T) {
 // It still confers NO CONTROL, which is the half that stays true: creating a
 // character says what it is, and a grant says who drives it. Two facts, two
 // commands, and neither can be stated by silence.
+// VTT-153
 func TestAddActorDeclaresAPartyMemberWithoutGrantingIt(t *testing.T) {
 	cmd := &vttv1.AddActor{Actor: &vttv1.Actor{
 		ActorId: "act-hollis", Name: "Hollis Ketch",
@@ -214,6 +221,7 @@ func TestAddActorDeclaresAPartyMemberWithoutGrantingIt(t *testing.T) {
 // all that their KIND was the problem — a refusal that misdescribes the rule
 // teaches the wrong one. The kind check is therefore reached only once an
 // actor is present, and this test is what holds that line.
+// VTT-154
 func TestAddActorWithNoActorAtAllIsNotRefusedHere(t *testing.T) {
 	if err := validateAddActor(&vttv1.AddActor{}); err != nil {
 		t.Fatalf("a missing actor is the fold's refusal to make, not this one's: %v", err)
@@ -240,6 +248,7 @@ func TestAddActorWithNoActorAtAllIsNotRefusedHere(t *testing.T) {
 // model rather than a forgotten field — worth saying to a caller whatever else
 // is wrong with their command, since fixing the id alone would just produce the
 // same refusal a round trip later.
+// VTT-154
 func TestAddActorWithAnActorThatHasNoIdIsNotRefusedHere(t *testing.T) {
 	empty := &vttv1.AddActor{Actor: &vttv1.Actor{}}
 	if empty.GetActor() == nil {
