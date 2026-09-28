@@ -305,3 +305,19 @@ adventure declaring K (`goblin-ambush` declares `ravine-trail-warning`), and
 asserts ok=false; today it answers ok=true and the
 note is overwritten. Recorded 2026-09-27, moved here from the comment at
 `handleLoadAdventure`.
+
+**VTT-149's door bound is unobserved from above on the y axis.** `mayWorkDoor`
+in `internal/gateway/authz.go` accepts a player's door command when a
+controlled token on the door's scene stands at most one square from it on each
+axis. No test puts a token two squares from the door on the y axis and within
+one on the x axis, so that bound is held from below and not from above.
+Recipe: in `mayWorkDoor`, make `abs(tok.Y-at.GetY()) <= 1` read `<= 2`; every
+test in `internal/gateway` stays green. The x bound made `<= 2` alone is red
+in one test only, `TestAPlayerMayOnlyWorkADoorTheyAreNextTo`, over the wire.
+The mutation gate rewrites operators and not constants, so it never meets
+either edit. Labels: `test data missing`, `outside the tool`. Closing it needs
+an `authz_test.go` door test with the token at (dx, dy) = (1, 2) and (2, 1),
+each refused. Recorded 2026-09-28 by the breaks in
+`docs/reports/2026-09-28-authorization-has-a-record.md`, whose change
+(`8128a61`) changes no code line; the test waits for the next ticket that
+touches the package's tests.
