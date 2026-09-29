@@ -397,3 +397,32 @@ which this change cut; the review re-ran it. Closing it needs a test that
 perches on a shoulder, hops away, hops back, and asserts the first shoulder's
 board is served again. Recorded 2026-09-29 by the Phase 4b review recorded in
 `docs/reports/2026-09-29-the-seat-and-the-perch-have-a-record.md`.
+
+**A visible set that becomes another of the same size is unobserved.** In
+`internal/gateway/project.go`, `transitions` sends a scene's `SceneSeen` only
+when `sameSet` finds the squares a viewer sees there now differ from those
+last sent. Recipe: in `sameSet`, make `if !b[k] {` read `if !b[k] && false {`;
+`go test -count=1 ./internal/gateway/... ./cmd/vtt/...` stays green. With it,
+a viewer whose visible squares in a scene change to as many other squares, a
+token stepping along a corridor whose count of visible squares holds, is sent
+no `SceneSeen`, and its client keeps the old lit area while the tokens it is
+sent move on. VTT-201 states the rule and is OPEN. The mutation gate does not
+drop a comparison from a condition. Labels: `test data missing`, `outside the
+tool`. Closing it needs a test that moves an eye so its count of visible
+squares holds while the set changes, and asserts a `SceneSeen` carrying the
+new set. Recorded 2026-09-29 by the verification of
+`docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`,
+whose change changes no code line.
+
+**No test sends a spectator an event whose payload the build does not know.**
+In `internal/gateway/project.go`, `Project` sends nothing for an
+`unrecognised` verdict, to a player and a spectator alike. Recipe: make `if v
+== unrecognised {` read `if v == unrecognised && pr.viewer.Role ==
+identity.RolePlayer {`; `go test -count=1 ./internal/gateway/...` stays
+green, although a spectator would then be sent `transitions`' frames for an
+event the projection cannot read. VTT-227 states the rule and is OPEN;
+`TestAnUnrecognisedPayloadIsWithheldFromAPlayer` holds VTT-220, the player's
+half, alone. The mutation gate does not add a condition. Labels: `test data
+missing`, `outside the tool`. Closing it needs that test's shape for a
+spectator perched on a party member. Recorded 2026-09-29 by the Phase 4b
+review recorded in `docs/reports/2026-09-29-the-projection-has-a-record.md`.
