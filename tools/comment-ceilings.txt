@@ -137,7 +137,7 @@ internal/gateway/metadata.go  11.8
 internal/gateway/metadata_test.go  25.0
 internal/gateway/presence.go  16.1
 internal/gateway/presence_internal_test.go  30.5
-internal/gateway/project.go  61.7
+internal/gateway/project.go  20.4
 internal/gateway/project_internal_test.go  33.4
 internal/gateway/project_property_test.go  35.9
 internal/gateway/project_test.go  33.6

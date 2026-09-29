@@ -29,7 +29,7 @@ does not parse never reaches it, since `identity.Verify` refuses it
 one `NewProjector(viewerFor(p))`, with `resume` set to the cursor the
 connection asked for. An unprojected seat's `receive` returns the event it was
 handed, unchanged, and folds nothing. `Project` itself answers the DM and the
-agent with the event unchanged (`project.go`), so what `projected` decides for
+agent with the event unchanged (SPEC-016), so what `projected` decides for
 them is where their subscription starts and the head they are told (SPEC-011),
 whether each event costs a fold, and so whether a failed fold can withhold an
 event from them; a player or a spectator answered false would be sent the
@@ -44,7 +44,7 @@ state after it, from what this seat has received, and never against
 `campaign.State()`, which during catch-up is ahead of the event being judged.
 Every event folds the whole prefix received so far, with campaign's fold; the
 gateway keeps none of its own. That a projector must be fed from the start of
-the log is the `Projector`'s (`project.go`).
+the log is the `Projector`'s (SPEC-016).
 
 **What a projected seat drops.** `pastResume` keeps the frames whose sequence
 is strictly greater than `resume`, as `store.Subscribe` keeps `seq >
@@ -74,7 +74,7 @@ refuses the log (`docs/verification-debt.md`).
 
 **The viewpoint a connection opens with.** `viewerFor` gives the
 participant's id and role and an empty `Viewpoint`. `eyes` reads an empty
-viewpoint as no eyes, and ignores `Viewpoint` for a player (`project.go`), so a
+viewpoint as no eyes, and ignores `Viewpoint` for a player (SPEC-016), so a
 spectator's connection is shown no board until a perch names a shoulder, and no
 shoulder is chosen for them. The viewpoint lives in the seat, which `serve`
 makes per connection.
@@ -89,7 +89,7 @@ the id the asker sent. Every refusal wraps `ErrUnauthorized` (SPEC-013).
 which holds a cell for the spectator alone (SPEC-013), so through `Authorize`
 the role arm never refuses, and `Authorize` is its one production caller
 (`grep -rn 'MayPerch('` over the non-test files); `eyes` refuses a non-party
-viewpoint a second time (`project.go`).
+viewpoint a second time (SPEC-016).
 
 **How a perch travels to the pump.** `handleSetViewpoint` calls
 `perchBox.set` after `authorize` (SPEC-013). `set` stores the shoulder and
@@ -113,7 +113,7 @@ never passes `pastResume`, so no resume cursor filters it. Neither
 `handleSetViewpoint` nor `perch` appends to the log (SPEC-007 names
 `set_viewpoint` among the commands that append nothing). What `reperch` sends,
 and that a shoulder named again is served in full, since the projector's
-memory never held it, are `project.go`'s.
+memory never held it, are SPEC-016's.
 
 **`canSee`.** `canSee` builds a fresh `Projector` for the viewer, asks `look`
 once and answers `canSeeSquare` for one square, so no seat's projector is
@@ -133,7 +133,7 @@ SPEC-013's; that `set_viewpoint` appends nothing and what `CatchUpHead` means
 to a client are SPEC-007's; re-resolution, and that a perch's frames are not
 re-checked, are SPEC-009's; what a projection computes (`Project`, `reperch`,
 `eyes`, `look`, `canSeeSquare`, `perchSequence`, the `Viewer` type) is
-`project.go`'s and has no record yet; what a party member is, is
+SPEC-016's; what a party member is, is
 `engine.IsPartyMember`'s.
 
 ## Consequences

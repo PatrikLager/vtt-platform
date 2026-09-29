@@ -63,6 +63,7 @@ type seatUnderTest struct {
 // role switch, which TestTheDMReceivesEverythingUnchanged already pins by
 // pointer. It is kept because a regression there would be severe and this
 // notices it for free, not because it demonstrates anything.
+// VTT-212 VTT-224
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {

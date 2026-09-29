@@ -437,6 +437,8 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     §3.2's terrain memory. Its Visible must be EMPTY there — the projection
 //     emits an empty SceneSeen when a scene goes dark — and the scene itself
 //     must be one an eye stood in at some prefix.
+
+// VTT-194 VTT-225
 func TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees(t *testing.T) {
 	for _, g := range keystoneCorpus(t) {
 		for _, seat := range keystoneSeats(t, g) {
@@ -948,6 +950,7 @@ type projectedSeat struct {
 // corpus is, and three separate things are held to it — the Go fold here, the
 // TypeScript fold in client/test, and (for everything but Explored) the
 // independent sight oracle in the keystone above.
+// VTT-217 VTT-219
 func TestTheProjectedGoldensAreWhatTheProjectionActuallySends(t *testing.T) {
 	corpus := map[string]keystoneGolden{}
 	for _, g := range keystoneCorpus(t) {

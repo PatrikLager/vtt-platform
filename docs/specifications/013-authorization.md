@@ -194,8 +194,7 @@ scene, seen or not, so the order is what keeps an unseen square's refusal one
 string that names no wall, door or scenery. A square out of the player's sight
 is refused even when they remember its terrain. A token the snapshot does not
 hold never reaches the gate, since `authorizeTokenOwnership` has refused it.
-`canSee` and `viewerFor` are SPEC-015's; what a projection sees is the
-`Projector`'s in `project.go`, which has no record yet.
+`canSee` and `viewerFor` are SPEC-015's; what a projection sees is SPEC-016's.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind

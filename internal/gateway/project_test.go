@@ -139,6 +139,7 @@ func player() gateway.Viewer {
 	return gateway.Viewer{ParticipantID: "p-1", Role: identity.RolePlayer}
 }
 
+// VTT-203 VTT-218
 func TestAPlayerNeverReceivesATokenBehindAClosedDoor(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -197,6 +198,7 @@ func TestTheAgentSeatReceivesEverythingUnchangedToo(t *testing.T) {
 	}
 }
 
+// VTT-221
 func TestOpeningTheDoorIntroducesTheGoblinToThePlayer(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -227,6 +229,7 @@ func TestOpeningTheDoorIntroducesTheGoblinToThePlayer(t *testing.T) {
 	}
 }
 
+// VTT-204
 func TestClosingTheDoorHidesTheGoblinAgain(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -267,6 +270,8 @@ func TestClosingTheDoorHidesTheGoblinAgain(t *testing.T) {
 //   - exactly one grant per controller, IN THE SET'S OWN ORDER, so the mirror
 //     (controller_ids[0]) lands on the same participant the server has.
 //   - the batch FOLDS, which is the property the other two exist to protect.
+
+// VTT-209
 func TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt(t *testing.T) {
 	st := twoRooms()
 	// A SHARED party member, because one controller cannot tell "a grant per
@@ -345,6 +350,7 @@ func TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt(t *testing.T) {
 	}
 }
 
+// VTT-208
 func TestAPartyMemberStaysKnownEvenWhenOutOfSight(t *testing.T) {
 	// Spec §5: party members are ALWAYS known — and §5.1 decides what counts
 	// as one. "Rogue" here SAYS it is a party member, which is now the only
@@ -402,6 +408,7 @@ func actorIDsIn(out []*vttv1.Envelope) map[string]bool {
 	return ids
 }
 
+// VTT-194 VTT-207
 func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
 	// THE LEAK, stated as a test — the whole-branch review's finding I1, in a
 	// shape the keystone structurally cannot provide: §4.3's oracle
@@ -480,6 +487,7 @@ func shippedActor(t *testing.T, actorID string) *vttv1.Actor {
 	return nil
 }
 
+// VTT-207
 func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *testing.T) {
 	// THE ARCHER THIS ARC IS NAMED AFTER, against shipped content.
 	//
@@ -534,6 +542,7 @@ func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *te
 	}
 }
 
+// VTT-208
 func TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember(t *testing.T) {
 	// THE OTHER HALF OF THE AMBIGUITY, and the reason no rule could have
 	// resolved it before. This grant is byte-identical to the one above in
@@ -589,6 +598,7 @@ func TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember(t *testing.T) {
 // the four available sheets is correct, not a leak — and §5.1's "an ungranted
 // actor is NOT a party member" is the sentence that makes this test fail on
 // paper while passing in fact. Patrik is amending it.
+// VTT-208
 func TestTheShippedHumanFighterIsAPartyMemberBeforeAnybodyIsAssignedToIt(t *testing.T) {
 	fighter := shippedActor(t, "act-fighter")
 	if k := fighter.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
@@ -738,6 +748,7 @@ func TestCreatingAnActorAndThenGrantingItIsTheTwoStepThatReplacesTheOne(t *testi
 // which is why this has to build the event by hand. Belt and braces, in that
 // order: the refusal stops it being written, and this says what it would mean
 // if it were.
+// VTT-207
 func TestAKindlessGrantConfersControlAndNothingElse(t *testing.T) {
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "cleric", Name: "Cleric"}})
@@ -764,6 +775,7 @@ func TestAKindlessGrantConfersControlAndNothingElse(t *testing.T) {
 	}
 }
 
+// VTT-208
 func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 	// THE OTHER DIRECTION, and the reason kind belongs to the ACTOR rather
 	// than to whoever holds it. A player's character run by the DM while its
@@ -810,6 +822,7 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 // to decide. The ghost below is the exact fixture the deleted test asserted the
 // OPPOSITE about — kept, rather than removed, so the change is visible as a
 // change.
+// VTT-207
 func TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -851,6 +864,7 @@ func TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt(t *testing.T) 
 	}
 }
 
+// VTT-208
 func TestASpectatorGetsNoSightFromAnNPCTheDMControls(t *testing.T) {
 	// The SAME defect at the perch, which is why one rule has to govern both
 	// (spec §5.1, "one rule, both call sites"). §3.1.1 calls this the
@@ -880,6 +894,7 @@ func TestASpectatorGetsNoSightFromAnNPCTheDMControls(t *testing.T) {
 	}
 }
 
+// VTT-220
 func TestAnUnrecognisedPayloadIsWithheldFromAPlayer(t *testing.T) {
 	// FAIL CLOSED (spec §4.4). A payload the projection does not understand
 	// must NOT be forwarded — that default is how this ships broken.
@@ -903,6 +918,7 @@ func firstPlace(pr *gateway.Projector, st *engine.State) []*vttv1.Envelope {
 		Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
 }
 
+// VTT-196
 func TestASeatWithNoActorIsToldOfNoSceneAtAll(t *testing.T) {
 	// Spec §3.1 / exit criterion 4: a seat with no actor is not in a scene,
 	// so it has no board — not its name, not its size. Onboarding starts here:
@@ -917,6 +933,7 @@ func TestASeatWithNoActorIsToldOfNoSceneAtAll(t *testing.T) {
 	}
 }
 
+// VTT-196
 func TestAPlayerLearnsOnlyTheSceneTheirActorStandsIn(t *testing.T) {
 	// Spec §4.2 / exit criterion 6: a scene a player has never entered is
 	// absent from their stream ENTIRELY. Six loaded scenes must not hand a
@@ -937,6 +954,7 @@ func TestAPlayerLearnsOnlyTheSceneTheirActorStandsIn(t *testing.T) {
 	}
 }
 
+// VTT-197
 func TestAnIntroducedSceneCarriesTheOutlineButNoTerrain(t *testing.T) {
 	// Spec §4.2: "of course there is a board, but you do not know what is in
 	// the black area before you enter the black area." Grid dimensions are the
@@ -965,6 +983,7 @@ func TestAnIntroducedSceneCarriesTheOutlineButNoTerrain(t *testing.T) {
 	}
 }
 
+// VTT-194 VTT-198
 func TestSceneSeenCarriesOnlyTheSquaresInSight(t *testing.T) {
 	// Spec §5: SceneSeen carries the viewer's WHOLE CURRENT visible set, never
 	// a delta — and never a square they cannot see. The far room's floor at
@@ -1001,6 +1020,7 @@ func sceneSeenIn(out []*vttv1.Envelope, sceneID string) *vttv1.SceneSeen {
 	return found
 }
 
+// VTT-202
 func TestASceneThatLeavesSightEntirelyIsReportedDark(t *testing.T) {
 	// THE HOLE TASK 7 CLOSES. transitions emits SceneSeen by walking the scenes
 	// currently IN sight, so a scene that drops out of sight entirely has no
@@ -1033,6 +1053,7 @@ func TestASceneThatLeavesSightEntirelyIsReportedDark(t *testing.T) {
 	}
 }
 
+// VTT-202
 func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
 	// The other half of the same behaviour: emitting the empty set must not
 	// become a per-event heartbeat for every scene the seat has ever seen. It
@@ -1195,6 +1216,7 @@ func bareCanvas() *engine.State {
 // before the fix: both tokens sent, SceneSeen carrying 0 tiles and 0 objects.
 //
 // The visible set now travels as itself.
+// VTT-198
 func TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain(t *testing.T) {
 	st := bareCanvas()
 	pr := gateway.NewProjector(player())
@@ -1244,6 +1266,7 @@ func TestSceneSeenCarriesTheVisibleSquaresEvenWithNoTerrain(t *testing.T) {
 // the sc.Objects SLICE, which already has an order and needs no sorter.
 // TestTheSameLogProjectsTheSameStreamEveryTime would catch an unsorted walk
 // eventually and by coin flip; this catches it directly.
+// VTT-223
 func TestTheVisibleSetIsSentInAStableOrder(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		seen := sceneSeenIn(pr20(), "s")
@@ -1303,6 +1326,7 @@ func must3(t *testing.T, err error) {
 	}
 }
 
+// VTT-195
 func TestASpectatorRidesTheShoulderTheyPerchOn(t *testing.T) {
 	// Spec §3.1.1: "like a bird hopping from one shoulder to another". A
 	// spectator perched on the hero sees the hero's room and, once the door
@@ -1368,6 +1392,7 @@ func TestAPlayerCannotBorrowAnNpcsEyesByPerching(t *testing.T) {
 	}
 }
 
+// VTT-222
 func TestProjectingChangesNeitherTheEventNorTheState(t *testing.T) {
 	// CLAUDE.md rule 4: engine.Apply is the only writer, so the projection
 	// READS state. And the envelope it is handed is SHARED — the pump hands
@@ -1504,6 +1529,7 @@ func aWholeFight() []step {
 	}
 }
 
+// VTT-210
 func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	// THE FAILURE SPEC §8 CALLS THE WORST AVAILABLE, one layer over from the
 	// example it uses. Both folds reject removing a condition that is not
@@ -1622,6 +1648,7 @@ func runLog(v gateway.Viewer, steps []step) []*vttv1.Envelope {
 	return out
 }
 
+// VTT-223
 func TestTheSameLogProjectsTheSameStreamEveryTime(t *testing.T) {
 	// Spec §4.1 — THE property everything rests on: the projection is a pure
 	// function of (log-so-far, viewer). Live streaming and reconnect catch-up
@@ -1676,6 +1703,7 @@ func TestTheSameLogProjectsTheSameStreamEveryTime(t *testing.T) {
 	}
 }
 
+// VTT-222
 func TestAReconnectingSeatIsCaughtUpToExactlyWhatItMissed(t *testing.T) {
 	// Spec §4.1's property stated as the thing it protects, and the half
 	// TestTheSameLogProjectsTheSameStreamEveryTime does NOT establish.
@@ -1841,6 +1869,7 @@ func runLogStepsResumingAt(v gateway.Viewer, steps []step, from int) [][]*vttv1.
 	return out
 }
 
+// VTT-218 VTT-224
 func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 	// The failure spec §8 calls the worst available: "a TokenHidden arrives
 	// for a token the client never had, and the strict fold throws, taking the
@@ -1882,6 +1911,7 @@ func TestAProjectedStreamFoldsCleanly(t *testing.T) {
 // is the permanent client freeze spec §8 names as the worst failure
 // available. engine.Apply is the SAME fold the client mirrors, so what it
 // refuses here is what a real client would refuse too.
+// VTT-205
 func TestARemovedTokenReachesAPlayerOnlyAsHidden(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -1954,6 +1984,7 @@ func removeActorBatch(pr *gateway.Projector, st *engine.State, seq int64,
 // the worst failure available. And it would tell a player an actor they never
 // saw existed and was removed off-screen, which is the leak withheld exists to
 // prevent.
+// VTT-215
 func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -2007,6 +2038,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 // seat's own fold, which applied the forwarded ActorRemoved, no longer has the
 // actor at all. The next token to arrive for it is then "token placed for
 // unknown actor" on that seat, forever.
+// VTT-211
 func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -2071,6 +2103,7 @@ func TestAMoveIsWithheldWhileTheMoverIsOutOfSight(t *testing.T) {
 	}
 }
 
+// VTT-206
 func TestSteppingIntoViewArrivesRatherThanMoves(t *testing.T) {
 	// The other half of the TokenMoved rule, and the one that leaks if it is
 	// dropped: a token that was HIDDEN and is now visible must not be
@@ -2103,6 +2136,7 @@ func TestSteppingIntoViewArrivesRatherThanMoves(t *testing.T) {
 	}
 }
 
+// VTT-212
 func TestADoorInARoomYouAreNotInStaysSilent(t *testing.T) {
 	// Doors are forwarded only when the viewer can see the square (spec §4.2:
 	// events about what their actors can see). A door swinging in a scene
@@ -2123,6 +2157,7 @@ func TestADoorInARoomYouAreNotInStaysSilent(t *testing.T) {
 	}
 }
 
+// VTT-214
 func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
 	// THE CONTROL FOR THE TEST ABOVE, and it was missing until a
 	// mutation run said so. Withholding EVERY door satisfies
@@ -2160,6 +2195,7 @@ func TestADoorYouCanSeeDoesReachThePlayer(t *testing.T) {
 	}
 }
 
+// VTT-214
 func TestADoorYouCanSeeSwingShutReachesThePlayerOnce(t *testing.T) {
 	// The CLOSING direction, which the review named as the case that must not
 	// break: a closed door's square is visible from the adjacent room, so
@@ -2194,6 +2230,7 @@ func TestADoorYouCanSeeSwingShutReachesThePlayerOnce(t *testing.T) {
 	}
 }
 
+// VTT-206
 func TestAVisibleTokensMoveDoesReachThePlayer(t *testing.T) {
 	// The control for TestAMoveIsWithheldWhileTheMoverIsOutOfSight: withholding
 	// EVERY move would satisfy it while making the board static.
@@ -2263,6 +2300,7 @@ func oneRoomWithAPillar() *engine.State {
 	return st
 }
 
+// VTT-199 VTT-203
 func TestSightBlockingSceneryHidesWhatStandsBehindIt(t *testing.T) {
 	// Spec §3.3/§3.5: "trees are pillars — you cannot see THROUGH a tree, only
 	// BETWEEN trees." An object carrying blocks_sight is as opaque as a wall,
@@ -2336,6 +2374,7 @@ func oneRoomWithAGapInTheWall() *engine.State {
 	return st
 }
 
+// VTT-199
 func TestAnObjectIsRevealedOnlyByTheSquaresItStandsOn(t *testing.T) {
 	// An object is shown when its OWN footprint is visible — never because a
 	// square just past its edge is. objectInSight walks the half-open extent
@@ -2399,6 +2438,7 @@ func keysOf(m map[string]*vttv1.TileRef) []string {
 	return out
 }
 
+// VTT-213
 func TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen(t *testing.T) {
 	// THE ONBOARDING FLOW, which is how this defect actually reaches a table:
 	// you log in with no character and the DM assigns one afterwards. Every
@@ -2452,6 +2492,7 @@ func TestAnIntroducedSceneArrivesWithItsDoorsAlreadyOpen(t *testing.T) {
 	}
 }
 
+// VTT-200 VTT-213
 func TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView(t *testing.T) {
 	// The sibling of the test above, and the same defect without any
 	// introduction involved. The viewer is already IN the scene; a door they
@@ -2579,11 +2620,12 @@ func TestTheProjectionFailsClosedWhenItHasNothingToGoOn(t *testing.T) {
 	}
 }
 
+// VTT-216
 func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 	// The two payloads spec §4.4 names as reasons a forwarding default ships
 	// broken, and they are ruled OPPOSITE ways on one distinction: narration
 	// is ADDRESSED to the table by whoever writes it, and a note is a private
-	// world record the DM keeps. See project.go for the full reasoning; this
+	// world record the DM keeps. SPEC-016 states both rulings; this
 	// test is what stops either ruling drifting silently.
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
@@ -2700,6 +2742,7 @@ func projectRemovalBatchSeat(st *engine.State) []*vttv1.Envelope {
 // removal-batch-parity.test.ts), so the two languages are not folding two
 // hand-written copies of a stream: they fold the same bytes, and this test is
 // what keeps those bytes equal to what the projector really emits.
+// VTT-200 VTT-221
 func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	stream := projectRemovalBatchSeat(removalBatchWorld())
 

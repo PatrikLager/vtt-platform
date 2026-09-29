@@ -191,7 +191,7 @@ func mentions(t *testing.T, stream []*vttv1.Envelope, needle string) bool {
 // TARGETED by a player who cannot see it, and — the control that keeps the
 // other two from passing vacuously — the same player still receives its own
 // board and can still move on it.
-// VTT-177
+// VTT-177 VTT-203 VTT-218
 func TestSessionZeroCannotHappenAgain(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -359,7 +359,7 @@ func (f *gwFixture) log(t *testing.T) []*vttv1.Envelope {
 // A projector built at the resume point never knew the token was there, so it
 // synthesizes no departure and the enemy stays on that player's board for the
 // rest of the session — the direction spec §4.4 forbids.
-// VTT-178 VTT-179 VTT-190
+// VTT-178 VTT-179 VTT-190 VTT-204 VTT-206
 func TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -564,7 +564,7 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 // They still receive what is addressed to the table rather than drawn on the
 // board — narration is the case that matters, because withholding it would
 // leave a watcher with no game at all rather than merely no map.
-// VTT-177 VTT-180
+// VTT-177 VTT-180 VTT-216
 func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -683,7 +683,7 @@ func hides(stream []*vttv1.Envelope, tokenID string) bool {
 // away, because creatures are pure line of sight; and the terrain of BOTH rooms
 // is still theirs at the end, because the bird remembers every shoulder it has
 // sat on.
-// VTT-180 VTT-192
+// VTT-180 VTT-192 VTT-195 VTT-218
 func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)

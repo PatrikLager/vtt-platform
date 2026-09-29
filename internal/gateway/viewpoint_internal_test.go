@@ -131,6 +131,7 @@ func TestARapidHopIsCoalescedToTheShoulderItEndedOn(t *testing.T) {
 // travels in neither the redacted SceneCreated nor SceneSeen, and both folds
 // treat a repeat as idempotent. A demo-gate find, not a CI one, which is why it
 // is pinned here rather than trusted.
+// VTT-213
 func TestAPerchArrivesWithTheDoorsItCanSeeAlreadyOpen(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	log := perchFixtureLog()
@@ -172,6 +173,7 @@ func TestAPerchArrivesWithTheDoorsItCanSeeAlreadyOpen(t *testing.T) {
 // is empty — while every square they have already mapped stays mapped. An
 // EMPTY SceneSeen says exactly that and no more: it withdraws nothing, because
 // both folds union its tiles into Explored and it has none.
+// VTT-202 VTT-204
 func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range perchFixtureLog() {
@@ -209,6 +211,7 @@ func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 // rests on: a shoulder named again is served in full, since the projector's
 // memory never held it (SPEC-015). Keep both checks on the burst's own room:
 // without the second, the first passes an empty perch.
+// VTT-226
 func TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range threeRoomLog() {
