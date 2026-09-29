@@ -785,6 +785,7 @@ func TestAuthorizePlayerMayNotWorkDiagonallyDistantDoor(t *testing.T) {
 // cannot prove. Its spectator cell is true because commandFor names an actor
 // that reads as a party member; this asks the same question about the Goblin
 // Archer and requires Authorize itself — not a menu, not a client — to say no.
+// VTT-181
 func TestAuthorizeSpectatorMayNotPerchOnAnNpc(t *testing.T) {
 	st := ownershipFixture()
 	// An actor with an EMPTY control set: DM/agent only, which is what "NPC"

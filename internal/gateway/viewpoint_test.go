@@ -14,6 +14,7 @@ func watcher() *identity.Participant {
 	return &identity.Participant{ID: "s-1", Role: identity.RoleSpectator}
 }
 
+// VTT-181
 func TestASpectatorMayPerchOnAPartyMemberButNotOnAnNPC(t *testing.T) {
 	// twoRooms (project_test.go) gives "hero" a controller and "goblin" none.
 	st := twoRooms()
@@ -29,6 +30,7 @@ func TestASpectatorMayPerchOnAPartyMemberButNotOnAnNPC(t *testing.T) {
 	}
 }
 
+// VTT-181
 func TestASpectatorMayNotPerchOnAnNPCTheDMControls(t *testing.T) {
 	// The rule above, held to what an actor IS rather than to whether anyone
 	// holds it (spec §5.1). A DM taking control of the Goblin Archer is an
@@ -59,6 +61,7 @@ func TestASpectatorMayNotPerchOnAnNPCTheDMControls(t *testing.T) {
 // rests on. A spectator perched on the Goblin Archer watches the ambush from
 // inside it, and "somebody controls it" was one of the two ways to become
 // perchable without anyone saying what the actor was.
+// VTT-181
 func TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt(t *testing.T) {
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wisp", Name: "Wisp"}})
@@ -97,6 +100,7 @@ func TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt(t *testing.T) {
 // avoided the word "NPC" would still be an oracle. Nothing is lost by it — the
 // refusal names the id the spectator themselves just sent, so it stays
 // actionable while telling them nothing they did not already hold.
+// VTT-182
 func TestAPerchRefusalDoesNotSayWhetherTheActorExists(t *testing.T) {
 	present := twoRooms()
 
@@ -140,6 +144,7 @@ func TestOnlyASpectatorRidesAShoulder(t *testing.T) {
 
 // TestUnperchingNamesNoActorAndIsAllowed covers the empty id, which is how a
 // spectator gets OFF a shoulder without immediately sitting on another.
+// VTT-183
 func TestUnperchingNamesNoActorAndIsAllowed(t *testing.T) {
 	if err := gateway.MayPerch(watcher(), "", twoRooms()); err != nil {
 		t.Fatalf("naming no actor is how a bird leaves a shoulder: %v", err)

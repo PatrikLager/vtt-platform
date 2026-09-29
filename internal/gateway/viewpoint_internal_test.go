@@ -52,6 +52,7 @@ func TestASeatPerchesOnlyAgainstAWorldItHasSeen(t *testing.T) {
 // demonstrated is not, which is why this test outlives its motivating defect: a
 // frame no event caused must carry no number an addressable operation could
 // ever name. perchSequence argues it in full.
+// VTT-186
 func TestAPerchCarriesNoSequenceAtAll(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range perchFixtureLog() {
@@ -78,6 +79,7 @@ func TestAPerchCarriesNoSequenceAtAll(t *testing.T) {
 // output — and now that a perch carries no sequence at all, asking it would
 // discard EVERY perch frame ever, at every cursor. The two halves are one fix,
 // so this test holds them together.
+// VTT-187
 func TestAPerchIsNotFilteredByTheResumeCursor(t *testing.T) {
 	log := perchFixtureLog()
 	// Resumed from the very head of the log: the strictest cursor a client can
@@ -95,24 +97,10 @@ func TestAPerchIsNotFilteredByTheResumeCursor(t *testing.T) {
 }
 
 // TestARapidHopIsCoalescedToTheShoulderItEndedOn pins perchBox's latest-wins
-// slot, which is what keeps a hopping spectator from taxing the whole table
-// (forty hops over a blocking one-slot handoff time a DM's own command out in
-// roughly two runs in three, and never once over the box that is here; see
-// perchBox for the measurement and for what coalescing costs).
-//
-// IT ENDS SOMEWHERE THE BURST DID NOT START, and that is the design of the
-// sequence rather than an incidental. It ran hero → goblin → hero and required
-// "hero" until review, which a FIRST-WINS box passes identically — measured, by
-// injecting `if !b.full { b.shoulder, b.full = actorID, true }` into set and
-// watching this test and the whole package stay green. A first-wins box parks a
-// spectator on the shoulder they hopped AWAY from, so the direction that matters
-// had nothing pinning it. Ending on a value that is neither the first set nor
-// the second refuses first-wins and "keeps the second" alike.
-//
-// THE LAST SET IS THE EMPTY SHOULDER on purpose: un-perching travels through
-// this slot as a VALUE, and `full` is the only thing that says the slot is
-// occupied. A box that read "" as "nothing here" would strand a bird trying to
-// leave, and the ok below is what catches that.
+// slot (SPEC-015). Keep the burst ending on a shoulder it did not start on, and
+// on the empty one: a first-wins box and a box that reads "" as empty pass
+// anything else.
+// VTT-188
 func TestARapidHopIsCoalescedToTheShoulderItEndedOn(t *testing.T) {
 	b := newPerchBox()
 	b.set("hero")
@@ -217,56 +205,10 @@ func TestLeavingAShoulderTakesTheCreaturesAndNotTheTerrain(t *testing.T) {
 	}
 }
 
-// TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt is the premise
-// perchBox's whole design rests on, and until this test nothing held it.
-//
-// Coalescing a burst of hops to the one it ended on DROPS FRAMES — measured, and
-// written up at perchBox: the rooms passed through never reach the board. That
-// is affordable for exactly one reason, which is that nothing dropped is lost.
-// reperch computes a diff against MEMORY and current sight, and it keeps no
-// record of which shoulders it has been asked for, so a shoulder a burst flew
-// past is served in full the moment somebody asks for it again.
-//
-// EVERY ASSERTION BELOW WAS INJECTED AGAINST, one fault each, all four
-// realistic rather than arithmetic — this test was written after the code it
-// guards, so nothing in it is trusted for looking reasonable:
-//
-//   - "only the room it ended in" fails when reperch hands the new eyes the
-//     whole scene list (`for id := range st.Scenes` folded into look's squares);
-//     it reports r-a.
-//   - "must be shown its room" fails when the projector's memory is
-//     fast-forwarded over every scene in st inside transitions — r-c is marked
-//     introduced during catch-up, before anybody perches, so the burst's own
-//     room never arrives either.
-//   - "must introduce its room" fails when reperch marks every scene introduced
-//     AFTER computing its frames ("we coalesced past those rooms, so count them
-//     as shown"). That is the dangerous form of this optimisation, and the one
-//     the empty assertion above cannot see: the burst's own room still arrives,
-//     the board is silently wrong only for the rooms flown past, and hopping
-//     back cannot repair it.
-//   - "the whole of the room" fails when introducing a room is taken to have
-//     described it (`pr.seen[id] = now.squares[id]` in the introduction loop);
-//     the room arrives with 0 of its 9 tiles.
-//
-// A FIFTH INJECTION DID NOT BITE and is recorded because it was the one this
-// comment first claimed: giving reperch a `served` set and returning nil for a
-// repeat changes nothing here, since no shoulder below is asked for twice. It
-// was written down before it was run, which is the exact defect this round of
-// review exists to fix — and the two entries above it are the second instance
-// of the same thing, since the first draft of this list gave ONE fault for
-// "must introduce its room" and review found it landed on a different
-// assertion once the empty-perch check was added.
-//
-// WHAT THIS PINS IS THE PER-SCENE FORM, and the fifth injection is exactly why
-// that has to be said out loud: a reperch that skipped by SHOULDER passes here.
-// The property held is that reperch's output is a function of memory and current
-// sight — so an optimisation that touches the MEMORY is caught, and one that
-// short-circuits on the request is not. Coalescing's premise needs the former,
-// since the memory is the only thing that can lose a room; a shoulder asked for
-// twice is a different question, and no test in this package asks it.
-//
-// If this property ever goes, coalescing stops being defensible and perchBox has
-// to become the FIFO its comment explains away.
+// TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt holds what coalescing
+// rests on: a shoulder named again is served in full, since the projector's
+// memory never held it (SPEC-015). Keep both checks on the burst's own room:
+// without the second, the first passes an empty perch.
 func TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	for _, env := range threeRoomLog() {
@@ -318,16 +260,8 @@ func TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt(t *testing.T) {
 	}
 }
 
-// threeRoomLog is three separate 3x3 rooms with one player-controlled actor
-// standing in the middle of each, so hopping between shoulders means changing
-// SCENE rather than changing view of one. THREE and not two, because a burst
-// needs a shoulder to start on, one to fly past, and one to end on.
-//
-// It is the bench perchBox's FRAME COUNTS were taken on — the 11-against-3 and
-// the recoverability figures. Its STALL numbers are from somewhere else and
-// could not have come from here: a blocking handoff timing a DM's own command
-// out needs a server, a second connection and two goroutines, none of which this
-// fixture has. That bench is TestHoppingWhileTheTableIsBusyKeepsOneOrder.
+// Keep three rooms: a burst needs a shoulder to start on, one to fly past and
+// one to end on.
 func threeRoomLog() []*vttv1.Envelope {
 	rooms := []string{"r-a", "r-b", "r-c"}
 	actors := []string{"a-a", "a-b", "a-c"}

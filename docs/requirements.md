@@ -184,3 +184,21 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-173 | A `load_map` the log refuses for any reason but a scene collision is answered with the log's own message. | internal/gateway/map_test.go#TestANonCollisionFailureKeepsItsOwnMessage |
 | VTT-174 | A `load_map` result stays readable whatever the art's warnings. | internal/gateway/map_test.go#TestBrokenArtCannotPushAResultPastTheReadLimit |
 | VTT-175 | A `load_map` result carries the first sequence of the batch it appended. | internal/gateway/map_test.go#TestLoadMapProducesBatchCarryingTilesAndObjects |
+| VTT-176 | A DM or agent connection is sent every event of the log after its cursor, each unchanged. | internal/gateway/server_visibility_test.go#TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection |
+| VTT-177 | A player's or a spectator's connection is sent its projection of the log, never the log itself. | internal/gateway/server_visibility_test.go#TestSessionZeroCannotHappenAgain, internal/gateway/server_visibility_test.go#TestASpectatorWithNoPerchReceivesNoBoard |
+| VTT-178 | A projected seat resumed at a cursor is told what left its view while it was away. | internal/gateway/server_visibility_test.go#TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway |
+| VTT-179 | A projected seat resumed at a cursor is sent no frame of an event at or below it. | internal/gateway/server_visibility_test.go#TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway |
+| VTT-180 | A spectator's connection is shown no board until a perch names a shoulder. | internal/gateway/server_visibility_test.go#TestASpectatorWithNoPerchReceivesNoBoard, internal/gateway/server_visibility_test.go#TestASpectatorHopsFromOneShoulderToAnother |
+| VTT-181 | A spectator may perch only on an actor whose kind is party member; controlling an actor does not make it one. | internal/gateway/viewpoint_test.go#TestASpectatorMayPerchOnAPartyMemberButNotOnAnNPC, internal/gateway/viewpoint_test.go#TestASpectatorMayNotPerchOnAnNPCTheDMControls, internal/gateway/viewpoint_test.go#TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt, internal/gateway/server_visibility_test.go#TestASpectatorMayNotPerchOnTheGoblinArcher, internal/gateway/authz_test.go#TestAuthorizeSpectatorMayNotPerchOnAnNpc |
+| VTT-182 | A perch refusal is the same text whether the named actor exists or not. | internal/gateway/viewpoint_test.go#TestAPerchRefusalDoesNotSayWhetherTheActorExists |
+| VTT-183 | A perch naming no actor is accepted. | internal/gateway/viewpoint_test.go#TestUnperchingNamesNoActorAndIsAllowed, internal/gateway/server_visibility_test.go#TestPerchingAppendsNothingToTheLog |
+| VTT-184 | A perch appends nothing to the log. | internal/gateway/server_visibility_test.go#TestPerchingAppendsNothingToTheLog |
+| VTT-185 | A perch is judged against the state its seat last folded, never the campaign's head. | **OPEN — no test yet** |
+| VTT-186 | Every frame a perch sends carries sequence 0. | internal/gateway/viewpoint_internal_test.go#TestAPerchCarriesNoSequenceAtAll |
+| VTT-187 | A resume cursor does not filter a perch's frames. | internal/gateway/viewpoint_internal_test.go#TestAPerchIsNotFilteredByTheResumeCursor, internal/gateway/server_visibility_test.go#TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard |
+| VTT-188 | Of a burst of perches set before the pump takes one, the pump is handed the last, an empty shoulder included. | internal/gateway/viewpoint_internal_test.go#TestARapidHopIsCoalescedToTheShoulderItEndedOn |
+| VTT-189 | Perching stalls no other participant's command. | internal/gateway/server_visibility_test.go#TestHoppingWhileTheTableIsBusyKeepsOneOrder |
+| VTT-190 | A projected seat judges each event against the state that event produced, never the campaign's head. | internal/gateway/server_visibility_test.go#TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway, internal/gateway/server_visibility_test.go#TestAPlayersCatchUpIsTheSameStreamItWouldHaveSeenLive |
+| VTT-191 | A projected seat is sent nothing for an event whose fold fails. | **OPEN — no test yet** |
+| VTT-192 | A perch is sent at once, without waiting for an event. | internal/gateway/server_visibility_test.go#TestASpectatorHopsFromOneShoulderToAnother |
+| VTT-193 | A refused perch leaves the watcher on the shoulder they were on. | **OPEN — no test yet** |

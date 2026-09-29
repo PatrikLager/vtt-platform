@@ -880,8 +880,7 @@ func keystoneSeats(t *testing.T, g keystoneGolden) []keystoneSeat {
 		// The onboarding seat: a player who has been granted no character yet.
 		// Exit criterion 4 — "a seat with no actor sees no scene at all".
 		{name: "player-unassigned", viewer: gateway.Viewer{ParticipantID: "p-nobody", Role: identity.RolePlayer}},
-		// A spectator who has not named a shoulder. seat.go: "a connection opens
-		// perched on nobody", which is the fail-closed direction.
+		// A spectator who has not named a shoulder (SPEC-015).
 		{name: "spectator-unperched", viewer: gateway.Viewer{ParticipantID: "p-watcher", Role: identity.RoleSpectator}},
 	}
 	for _, id := range sortedKeys(controllers) {
@@ -918,14 +917,9 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
-// projectedSeat is scenarios/goldens/<golden>/projections/<seat>/viewer.json:
-// which seat a committed projected stream belongs to.
-//
-// THE PERCH IS NOT A LOG FACT, which is why this file exists at all. A
-// spectator's shoulder arrives over SetViewpoint on their own connection and
-// nothing about it is ever written to the log (seat.go: the perch "is
-// connection state, like the catch-up point"), so a projected golden has to
-// declare it beside the stream rather than derive it from one.
+// projectedSeat is scenarios/goldens/<golden>/projections/<seat>/viewer.json.
+// Declare the viewpoint here, beside the stream: a perch is never in the log
+// (SPEC-015).
 type projectedSeat struct {
 	Seat          string `json:"seat"`
 	ParticipantID string `json:"participantId"`

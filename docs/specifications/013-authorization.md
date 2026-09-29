@@ -85,7 +85,7 @@ refused for every role the same way.
 accepts a target role of player or spectator and refuses every other, for
 the DM's promotions as for anyone's; SPEC-009 states that bound and
 `handlePromotion`'s bound on the target's current role. For `set_viewpoint`
-it runs `MayPerch`, whose rule is `viewpoint.go`'s. Both run for every role,
+it runs `MayPerch`, whose rule is SPEC-015's. Both run for every role,
 so the DM is bound by promotion's bound and a spectator, whom the player half
 never reaches, is bound by `MayPerch`.
 
@@ -194,8 +194,8 @@ scene, seen or not, so the order is what keeps an unseen square's refusal one
 string that names no wall, door or scenery. A square out of the player's sight
 is refused even when they remember its terrain. A token the snapshot does not
 hold never reaches the gate, since `authorizeTokenOwnership` has refused it.
-What a seat can see is `canSee`'s and `viewerFor`'s in `seat.go` and the
-`Projector`'s in `project.go`, and has no record yet.
+`canSee` and `viewerFor` are SPEC-015's; what a projection sees is the
+`Projector`'s in `project.go`, which has no record yet.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind
@@ -250,11 +250,10 @@ are sent, and a shoulder replaced before the pump takes it is never applied.
 `serve` makes `perches` per connection, so a perch ends with its connection.
 
 **What this record does not decide.** Promotion's bounds and the
-re-resolution before every command are SPEC-009's; the perch's rule is
-`MayPerch`'s in `viewpoint.go`; what a seat can see is `seat.go`'s; the batch
-handlers are SPEC-012's, SPEC-014's and `handleRemoveActor`'s; the
-join door and promotion handlers are SPEC-009's; what the fold refuses is
-`engine.Apply`'s.
+re-resolution before every command are SPEC-009's; the perch's rule and what
+a seat is sent are SPEC-015's; the batch handlers are SPEC-012's, SPEC-014's
+and `handleRemoveActor`'s; the join door and promotion handlers are
+SPEC-009's; what the fold refuses is `engine.Apply`'s.
 
 ## Consequences
 

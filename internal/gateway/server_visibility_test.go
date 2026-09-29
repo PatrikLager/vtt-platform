@@ -191,6 +191,7 @@ func mentions(t *testing.T, stream []*vttv1.Envelope, needle string) bool {
 // TARGETED by a player who cannot see it, and — the control that keeps the
 // other two from passing vacuously — the same player still receives its own
 // board and can still move on it.
+// VTT-177
 func TestSessionZeroCannotHappenAgain(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -262,6 +263,7 @@ func TestSessionZeroCannotHappenAgain(t *testing.T) {
 // Compared BYTE FOR BYTE against the log itself — protojson of each envelope,
 // in order — rather than by counting frames or spot-checking payload kinds. A
 // redaction that dropped one field would survive both of those.
+// VTT-176
 func TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -357,6 +359,7 @@ func (f *gwFixture) log(t *testing.T) []*vttv1.Envelope {
 // A projector built at the resume point never knew the token was there, so it
 // synthesizes no departure and the enemy stays on that player's board for the
 // rest of the session — the direction spec §4.4 forbids.
+// VTT-178 VTT-179 VTT-190
 func TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -449,6 +452,7 @@ func TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway(t *testing.T) {
 // connection, where head and now are the same thing, and wrong on every
 // catch-up, where head is the future. Here the two streams have to match, so
 // it cannot hide.
+// VTT-190
 func TestAPlayersCatchUpIsTheSameStreamItWouldHaveSeenLive(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -560,6 +564,7 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 // They still receive what is addressed to the table rather than drawn on the
 // board — narration is the case that matters, because withholding it would
 // leave a watcher with no game at all rather than merely no map.
+// VTT-177 VTT-180
 func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -678,6 +683,7 @@ func hides(stream []*vttv1.Envelope, tokenID string) bool {
 // away, because creatures are pure line of sight; and the terrain of BOTH rooms
 // is still theirs at the end, because the bird remembers every shoulder it has
 // sat on.
+// VTT-180 VTT-192
 func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -746,6 +752,7 @@ func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 //
 // A watcher inside the archer sees the ambush the party is walking into, which
 // is session zero with a different seat number.
+// VTT-181
 func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -792,6 +799,7 @@ func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
 // It hops while the table is BUSY on purpose: the inversion needs both
 // producers active at once. Measured before the fix at 1 failure in 10 plain
 // runs and 2 in 2 under -race; after it, 25 plain runs and 8 under -race, clean.
+// VTT-189
 func TestHoppingWhileTheTableIsBusyKeepsOneOrder(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -924,6 +932,7 @@ func TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt(t *testing.T) {
 // A spectator who dials with a cursor at the log's head — which a reconnecting
 // client legitimately does — had every perch frame dropped by the resume
 // filter, and got ok=true with an empty board and no way to tell.
+// VTT-187
 func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -950,6 +959,7 @@ func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
 // Two assertions, because "nothing was appended" and "nobody was told" are
 // different claims: the log's own length, and a DM sitting at the table who
 // must hear nothing at all while the watcher hops.
+// VTT-183 VTT-184
 func TestPerchingAppendsNothingToTheLog(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
