@@ -340,3 +340,60 @@ the verification of
 `docs/superpowers/specs/2026-09-28-loading-a-map-has-a-record-design.md`,
 whose change changes no code line; the test waits for the next ticket that
 touches the package's tests.
+
+**Two `Campaign`s on one campaign directory can write a log that no longer
+opens.** Nothing locks a campaign directory to one writer: `grep -rn -i
+'flock\|lockfile\|O_EXCL'` over `internal/store`, `internal/campaign` and
+`cmd/vtt` prints nothing, and each `Campaign` validates an append against its
+own in-memory state. Recipe: open two `campaign.Open` handles on one
+directory, in one process or two, and have each append a `SceneCreated` for
+the same scene id; both are accepted, a projected seat fed the log logs
+`campaign: corrupt log at seq 2: engine: scene "s" already exists` and is sent
+no further event, and the next `campaign.Open` refuses the log, so the
+campaign no longer boots. Two writes that do not conflict (two
+`NarrationAdded`) fold, so the damage depends on what the second writer
+appends. VTT-191, a seat withholding an event whose fold fails, is OPEN
+because no test hands a seat a prefix that does not fold. None needs a second
+`Campaign` to: an internal test that calls `receive` with two `SceneCreated`
+for one scene id and then a `NarrationAdded` is sent no frame for either,
+where a fresh seat is sent one for the narration. Which gate should have
+caught it, and why not: the tier-1 tests, and none did. No requirement says a
+campaign has one writer, no fixture gives a seat a prefix that does not fold,
+and no mutation operator adds a second writer. Labels: `test data missing`,
+`spec silent`. Closing it needs a single-writer lock on the campaign
+directory, which is a ticket of its own, and a test that a second `Open` of a
+locked directory is refused; closing VTT-191 needs only the internal test
+above, cited `// VTT-191`. Recorded 2026-09-29 by the verification and review
+of
+`docs/superpowers/specs/2026-09-29-the-seat-and-the-perch-have-a-record-design.md`,
+whose change changes no code line.
+
+**`perchBox.wake`'s capacity is unobserved.** In `internal/gateway/seat.go`,
+`newPerchBox` makes `wake` with capacity 1, and `set` sends to it without
+blocking. Recipe: make it `make(chan struct{})`; `go test -count=1
+./internal/gateway/...` stays green. Unbuffered, `set`'s send is dropped
+whenever the pump is not parked in its `select`, so a perch set while the pump
+is delivering an event waits in the slot until the next hop, and a spectator
+who hops once at a busy table stays on their old shoulder until they hop
+again. The mutation gate does not change a `make` capacity. Labels: `test data
+missing`, `outside the tool`. Closing it needs a test that sets one perch
+while the pump is busy delivering, sends nothing else, and asserts the new
+shoulder's frames arrive. Recorded 2026-09-29 by the Phase 4b review recorded
+in `docs/reports/2026-09-29-the-seat-and-the-perch-have-a-record.md`, whose
+change (`7be685a`) changes no code line.
+
+**No test asks for a shoulder a spectator sat on and left.** SPEC-015 states
+that naming a shoulder again restores it;
+`TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt` observes that only
+for a shoulder a burst flew past, which the projector's memory never held.
+Recipe: give `Projector.reperch` a per-projector set of shoulders already
+served and return nil for an `actorID` in it; `go test -count=1
+./internal/gateway/...` stays green, although a spectator who hops from Asme
+to Armak and back to Asme would then be sent no frame on the way back, and the
+creatures Asme sees would stay hidden. The mutation gate does not add state.
+Labels: `test data missing`, `outside the tool`. It moves here from
+`TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt`'s doc at `74c547f`,
+which this change cut; the review re-ran it. Closing it needs a test that
+perches on a shoulder, hops away, hops back, and asserts the first shoulder's
+board is served again. Recorded 2026-09-29 by the Phase 4b review recorded in
+`docs/reports/2026-09-29-the-seat-and-the-perch-have-a-record.md`.
