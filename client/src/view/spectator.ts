@@ -9,7 +9,7 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
@@ -145,7 +145,7 @@ export function describe(e: Envelope): string {
     case "noteUpserted":
       return `note "${p.value.key}" updated`;
     case "noteDeleted":
-      return `note "${p.value.key}" deleted`;
+      return `note "${p.value.key}" withdrawn`;
     case "abilityUsed":
       return `${p.value.actorId} used ${p.value.abilityId}`;
     case "attackRolled":
@@ -407,7 +407,12 @@ function renderNotes(st: State): HTMLElement {
   for (const k of keys) {
     const n = st.Notes[k]!;
     const item = el("article", "note");
-    item.appendChild(el("h3", undefined, n.Title || k));
+    const heading = el("h3", undefined, n.Title || k);
+    if (n.Visibility !== NoteVisibility.PUBLIC) {
+      item.classList.add("secret");
+      heading.appendChild(el("span", "secret-tag", "DM only"));
+    }
+    item.appendChild(heading);
     item.appendChild(el("p", undefined, n.Text));
     wrap.appendChild(item);
   }

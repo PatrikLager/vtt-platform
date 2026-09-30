@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect, beforeEach } from "bun:test";
 import { create } from "@bufbuild/protobuf";
 import { newState, type State } from "../src/state";
-import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
@@ -295,6 +295,9 @@ test("each guard refuses with its own exact wording", () => {
     ["name the token to remove", () => { const h = harness(); h.action("remove-token").click(); return h; }],
     ["name the actor to remove", () => { const h = harness(); h.action("remove-actor").click(); return h; }],
     ["a note needs a key and some text", () => { const h = harness(); h.button("Save").click(); return h; }],
+    ["Say who may read it: every player and spectator, or the DM alone.", () => {
+      const h = harness(); fill(h, { "note-key": "k", "note-text": "t" }); h.button("Save").click(); return h;
+    }],
     ["name the note to delete", () => { const h = harness(); h.button("Delete").click(); return h; }],
   ];
   const seen: string[] = [];
@@ -396,7 +399,7 @@ test("an actor with no kind chosen is refused here, not sent and bounced", () =>
 // something is waiting for an answer.
 //
 // These two read the OPTION's own selectedness instead, which is the state the
-// browser paints, and they are what stops kindSelect being "simplified" back to
+// browser paints, and they are what stops choiceSelect being "simplified" back to
 // assigning `sel.value` (see the comment there). Characterization tests over an
 // existing builder (ADR-009 §3): each assertion below was proven able to fail by
 // injection rather than by a red phase, because the builder they pin was
@@ -525,9 +528,51 @@ test("removing an actor sends its trimmed id and clears the field", () => {
   expect(next.field("actor-id").value).toBe("");
 });
 
+// VTT-229
+test("a note is not sent until who may read it is chosen", () => {
+  const h = harness();
+  fill(h, { "note-key": "k", "note-text": "body" });
+  const vis = h.node.querySelector(".note-visibility") as HTMLSelectElement;
+  expect(vis.options[vis.selectedIndex]!.value).toBe("");
+  h.button("Save").click();
+  expect(h.sent).toHaveLength(0);
+  expect(h.notices).toEqual(["Say who may read it: every player and spectator, or the DM alone."]);
+});
+
+// VTT-229
+test("a saved note carries the visibility chosen", () => {
+  for (const [wire, want] of [
+    ["NOTE_VISIBILITY_PUBLIC", NoteVisibility.PUBLIC],
+    ["NOTE_VISIBILITY_SECRET", NoteVisibility.SECRET],
+  ] as const) {
+    const h = harness();
+    fill(h, { "note-key": "k", "note-text": "body" });
+    (h.node.querySelector(".note-visibility") as HTMLSelectElement).value = wire;
+    h.button("Save").click();
+    expect(payloads(h)).toEqual([
+      { case: "upsertNote", value: expect.objectContaining({ key: "k", visibility: want }) },
+    ]);
+  }
+});
+
+// VTT-229
+test("a choice is not carried to the next note, re-rendered or not", () => {
+  const h = harness();
+  fill(h, { "note-key": "k", "note-text": "body" });
+  const vis = h.node.querySelector(".note-visibility") as HTMLSelectElement;
+  vis.value = "NOTE_VISIBILITY_SECRET";
+  vis.dispatchEvent(new Event("change"));
+  h.button("Save").click();
+  expect(vis.options[vis.selectedIndex]!.value).toBe("");
+  h.button("Save").click();
+  expect(h.sent).toHaveLength(1);
+  expect((harness().node.querySelector(".note-visibility") as HTMLSelectElement).value).toBe("");
+});
+
 test("a note's key, title and text are trimmed on the way out", () => {
   const h = harness();
   fill(h, { "note-key": " k ", "note-title": " T ", "note-text": " body " });
+  (h.node.querySelector(".note-visibility") as HTMLSelectElement).value = "NOTE_VISIBILITY_PUBLIC";
   h.button("Save").click();
   expect(payloads(h)).toEqual([
     { case: "upsertNote", value: expect.objectContaining({ key: "k", title: "T", text: "body" }) },

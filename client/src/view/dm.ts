@@ -10,7 +10,7 @@
 import type { State } from "../state";
 import type { Participant } from "../session";
 import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
-import { ActorKind } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, placeToken, removeToken, loadAdventure, loadMap,
@@ -82,59 +82,49 @@ function actorKindFromWireName(name: string): ActorKind | null {
   }
 }
 
+const KIND_CHOICES = [
+  ["", "what is it?"],
+  ["ACTOR_KIND_PARTY_MEMBER", "party member"],
+  ["ACTOR_KIND_NON_PARTY", "monster / NPC"],
+] as const;
+
+const VISIBILITY_CHOICES = [
+  ["", "who may read it?"],
+  ["NOTE_VISIBILITY_PUBLIC", "public — every player and spectator"],
+  ["NOTE_VISIBILITY_SECRET", "DM only"],
+] as const;
+
+function noteVisibilityFromWireName(name: string): NoteVisibility | null {
+  switch (name) {
+    case "NOTE_VISIBILITY_PUBLIC":
+      return NoteVisibility.PUBLIC;
+    case "NOTE_VISIBILITY_SECRET":
+      return NoteVisibility.SECRET;
+    default:
+      return null;
+  }
+}
+
 /**
- * The <select> that asks it, shared by the two places that must ask.
- *
- * ONE builder for both the Add-actor form and the per-actor grant row, so the
- * console cannot grow two vocabularies for the same question. The blank first
- * option is the load-bearing part: it is what keeps "the DM did not answer" a
- * state actorKindFromWireName above can SEE, rather than a value this function
- * would have to guess at — the same reason the server refuses an unstated kind
- * instead of defaulting one.
- *
- * `field` is the draft key, so a half-filled console survives a re-render; the
- * grant row keys it per actor, the creation form has only one.
+ * choiceSelect asks one closed question. Keep the blank first option: it keeps
+ * "the DM did not answer" a state the caller can see, as the server refuses an
+ * unstated kind rather than defaulting one (SPEC-013). `field` is the draft key.
  */
-function kindSelect(cls: string, field: string): HTMLSelectElement {
+function choiceSelect(
+  cls: string, field: string, choices: readonly (readonly [string, string])[],
+): HTMLSelectElement {
   const sel = document.createElement("select");
   sel.className = cls;
-  for (const [value, label] of [
-    ["", "what is it?"],
-    ["ACTOR_KIND_PARTY_MEMBER", "party member"],
-    ["ACTOR_KIND_NON_PARTY", "monster / NPC"],
-  ] as const) {
+  for (const [value, label] of choices) {
     const o = document.createElement("option");
     o.value = value;
     o.textContent = label;
     sel.appendChild(o);
-    // WHICH ONE IS SELECTED, said on the option — NOT by assigning `sel.value`
-    // after the loop. Do not "simplify" it back; the assignment form is what
-    // this replaced, and it was a line no test could defend.
-    //
-    // The two are equivalent for every value this field can hold, measured
-    // across all three: no remembered answer, a remembered "", and each real
-    // kind. So this is not a fix. It is a choice about what a test can SEE.
-    //
-    // `sel.value = draft[field] ?? ""` needed a sentinel "" to mean "nothing
-    // remembered", and that sentinel was untestable BY CONSTRUCTION. Per the
-    // HTML spec, assigning a select a string no option carries deselects
-    // everything: selectedIndex goes to -1 while the getter still reports "",
-    // so the DM meets an EMPTY box where the question belongs and `.value`
-    // says the field is fine. happy-dom then re-runs "ask for a reset" the
-    // instant the select is appended to a parent and puts selectedIndex back
-    // to 0 (measured: -1 before the append, 0 after), erasing the difference
-    // one synchronous statement after it appears, inside a private function no
-    // test can enter. A mutation of that literal therefore survived every test
-    // that could ever be written — and calling it EQUIVALENT would have been
-    // false, because in a real browser it is a visible defect.
-    //
-    // This way there is no sentinel to mutate. An absent draft matches no
-    // option, nothing is selected, and the DOM's own "ask for a reset" picks
-    // the first option — which IS "what is it?". Same default, reached by the
-    // rule the browser already runs rather than by a value we name. And the
-    // comparison IS killable: flip it and every option but the right one is
-    // selected, the last of those wins, and the box shows a wrong answer where
-    // a test can read it off the option.
+    // Select on the option, never by assigning `sel.value` after the loop: a
+    // draft no option carries leaves nothing selected in a browser, while
+    // happy-dom resets to the first option and hides it. An absent draft
+    // matches no option, so the browser's reset shows the blank first one.
+    // "a remembered kind selects THAT option, and only that one" holds this.
     o.selected = value === draft[field];
   }
   sel.addEventListener("change", () => {
@@ -304,7 +294,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   // who never looked.
   const actorId = input("actor id", "actor-id");
   const actorName = input("name", "actor-name");
-  const actorKind = kindSelect("actor-kind", "actor-kind");
+  const actorKind = choiceSelect("actor-kind", "actor-kind", KIND_CHOICES);
   wrap.appendChild(
     group(
       "Add actor",
@@ -443,15 +433,22 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   const noteKey = input("key", "note-key");
   const noteTitle = input("title", "note-title");
   const noteText = input("text", "note-text", "wide");
+  const noteVisibility = choiceSelect("note-visibility", "note-visibility", VISIBILITY_CHOICES);
   wrap.appendChild(
     group(
       "Notes",
-      noteKey, noteTitle, noteText,
+      noteKey, noteTitle, noteText, noteVisibility,
       button("Save", () => {
         if (!noteKey.value.trim() || !noteText.value.trim()) {
           return d.notify("a note needs a key and some text");
         }
-        d.send(upsertNote(noteKey.value.trim(), noteTitle.value.trim(), noteText.value.trim()));
+        const visibility = noteVisibilityFromWireName(noteVisibility.value);
+        if (visibility === null) {
+          return d.notify("Say who may read it: every player and spectator, or the DM alone.");
+        }
+        d.send(upsertNote(noteKey.value.trim(), noteTitle.value.trim(), noteText.value.trim(), visibility));
+        noteVisibility.value = "";
+        clearDraft("note-visibility");
       }, "upsert-note"),
       button("Delete", () => {
         if (!noteKey.value.trim()) return d.notify("name the note to delete");
@@ -588,7 +585,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     // as an answer while being an assumption, and the one actor it would be
     // wrong about is the monster somebody is being handed.
     const kindField = `grant-kind-${a.actorId}`;
-    const kindPick = kindSelect("grant-kind", kindField);
+    const kindPick = choiceSelect("grant-kind", kindField, KIND_CHOICES);
     row.appendChild(kindPick);
 
     const give = document.createElement("button");

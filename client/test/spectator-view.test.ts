@@ -88,6 +88,25 @@ test("notes render with title and body", () => {
   expect(notes.textContent).toContain("body text");
 });
 
+// VTT-230
+test("the notes panel marks every note that is not public as DM only", () => {
+  const st = world();
+  st.Notes = {
+    pub: { Title: "Pub", Text: "p", UpdatedSeq: 1, Visibility: NoteVisibility.PUBLIC },
+    sec: { Title: "Sec", Text: "s", UpdatedSeq: 2, Visibility: NoteVisibility.SECRET },
+    none: { Title: "None", Text: "n", UpdatedSeq: 3, Visibility: NoteVisibility.UNSPECIFIED },
+  };
+  const byTitle = new Map(
+    Array.from(render(st).querySelectorAll(".note")).map((n) => [n.querySelector("h3")!.firstChild!.textContent, n]),
+  );
+  for (const title of ["Sec", "None"]) {
+    expect(byTitle.get(title)!.classList.contains("secret")).toBe(true);
+    expect(byTitle.get(title)!.querySelector("h3")!.textContent).toContain("DM only");
+  }
+  expect(byTitle.get("Pub")!.classList.contains("secret")).toBe(false);
+  expect(byTitle.get("Pub")!.textContent).not.toContain("DM only");
+});
+
 test("an open session is named in the status bar", () => {
   expect(render(world()).querySelector(".session")?.textContent).toContain("Night One");
 });
@@ -172,7 +191,7 @@ test("describe renders a real label for every event kind it handles, not the fal
     [env(10, { case: "noteUpserted", value: create(NoteUpsertedSchema, { key: "k", title: "t", text: "x" }) }),
       'note "k" updated'],
     [env(11, { case: "noteDeleted", value: create(NoteDeletedSchema, { key: "k" }) }),
-      'note "k" deleted'],
+      'note "k" withdrawn'],
     [env(12, { case: "abilityUsed", value: create(AbilityUsedSchema, { actorId: "a", abilityId: "cleave" }) }),
       "a used cleave"],
     [env(13, { case: "attackRolled", value: create(AttackRolledSchema, { total: 17 }) }),

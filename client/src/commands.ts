@@ -31,7 +31,7 @@ import {
   JoinDoor,
   type ClientCommand,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { ActorKind, ActorSchema } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, ActorSchema, type NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fromJson } from "@bufbuild/protobuf";
 
 export interface Point {
@@ -99,10 +99,10 @@ export function addNarration(
   });
 }
 
-export function upsertNote(key: string, title: string, text: string): ClientCommand {
+export function upsertNote(key: string, title: string, text: string, visibility: NoteVisibility): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "upsertNote", value: { key, title, text } },
+    command: { case: "upsertNote", value: { key, title, text, visibility } },
   });
 }
 

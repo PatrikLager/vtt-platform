@@ -3,6 +3,7 @@
   "upsertNote": {
     "key": "town-goldenreach",
     "title": "Goldenreach",
-    "text": "A trade town on the river; the current mayor is suspicious of adventurers after the last incident at the mill."
+    "text": "A trade town on the river; the current mayor is suspicious of adventurers after the last incident at the mill.",
+    "visibility": "NOTE_VISIBILITY_PUBLIC"
   }
 }

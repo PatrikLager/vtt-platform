@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
 import { ClientCommandSchema, JoinDoor, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -42,7 +42,7 @@ test("useAbility matches the committed fixture, targets included", () => {
 
 test("upsertNote matches the committed fixture", () => {
   const f = fixture("upsert_note_command.json") as { upsertNote: Record<string, string> };
-  const cmd = upsertNote(f.upsertNote["key"]!, f.upsertNote["title"]!, f.upsertNote["text"]!);
+  const cmd = upsertNote(f.upsertNote["key"]!, f.upsertNote["title"]!, f.upsertNote["text"]!, NoteVisibility.PUBLIC);
   sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, f as never);
 });
 
@@ -75,7 +75,7 @@ test("every constructed command carries a request id", () => {
     moveToken("t1", { x: 0, y: 0 }),
     useAbility("a1", "ab", ["t2"]),
     addNarration("x"),
-    upsertNote("k", "t", "x"),
+    upsertNote("k", "t", "x", NoteVisibility.SECRET),
   ]) {
     expect(cmd.requestId).not.toBe("");
   }
