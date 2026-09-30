@@ -438,7 +438,7 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     emits an empty SceneSeen when a scene goes dark — and the scene itself
 //     must be one an eye stood in at some prefix.
 
-// VTT-194 VTT-225
+// VTT-194 VTT-225 VTT-234 VTT-238
 func TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees(t *testing.T) {
 	for _, g := range keystoneCorpus(t) {
 		for _, seat := range keystoneSeats(t, g) {
@@ -567,12 +567,41 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		for _, diff := range keystoneDiff(got, want, everKnownActors, everSeenScenes, everSeenSquares) {
 			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
 		}
+		for _, diff := range keystoneNoteDiff(got, world) {
+			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
+		}
 		if t.Failed() {
 			// The first divergent prefix is the informative one; everything
 			// after it is that same divergence carried forward.
 			return
 		}
 	}
+}
+
+// keystoneNoteDiff holds a seat's notes to the world's public notes, entry for
+// entry, derived from each note's visibility and not from classify.
+func keystoneNoteDiff(got, world *engine.State) []string {
+	var out []string
+	for key, n := range world.Notes {
+		if n.Visibility != vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
+			continue
+		}
+		held, ok := got.Notes[key]
+		if !ok {
+			out = append(out, fmt.Sprintf("note %q is public and MISSING from this seat's notes", key))
+			continue
+		}
+		if held.Title != n.Title || held.Text != n.Text {
+			out = append(out, fmt.Sprintf("note %q is held as %q/%q and the world has %q/%q",
+				key, held.Title, held.Text, n.Title, n.Text))
+		}
+	}
+	for key := range got.Notes {
+		if n, ok := world.Notes[key]; !ok || n.Visibility != vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
+			out = append(out, fmt.Sprintf("note %q is on this seat and is not a public note of the world", key))
+		}
+	}
+	return out
 }
 
 // keystoneDiff is the comparison §4.3 specifies, in both directions. It returns

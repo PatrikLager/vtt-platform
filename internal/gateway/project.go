@@ -40,6 +40,9 @@ type Projector struct {
 	// Correct a door belief only for a square in sight (doorTransitions): a
 	// correction out of sight tells the viewer of a door it cannot see.
 	doors map[string]map[string]bool
+	// Forget a key only in noteTransitions, which sends its NoteDeleted: a key
+	// forgotten anywhere else stays in the viewer's fold (SPEC-016).
+	notes map[string]bool
 }
 
 func NewProjector(v Viewer) *Projector {
@@ -50,6 +53,7 @@ func NewProjector(v Viewer) *Projector {
 		tokens: map[string]bool{},
 		seen:   map[string]map[string]bool{},
 		doors:  map[string]map[string]bool{},
+		notes:  map[string]bool{},
 	}
 }
 
@@ -319,7 +323,7 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		pr.seen[id] = lit
 	}
 
-	return out
+	return append(out, pr.noteTransitions(cause, seq, st)...)
 }
 
 // sceneSeenFor is the whole of what this viewer sees of sc now, never a
@@ -430,8 +434,12 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		// Withhold: only the projection issues these.
 		return withheld
 
-	case *vttv1.Envelope_NoteUpserted, *vttv1.Envelope_NoteDeleted:
-		// Withhold notes from every player and spectator (SPEC-016).
+	case *vttv1.Envelope_NoteUpserted:
+		return passIf(p.NoteUpserted.GetVisibility() == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC)
+
+	case *vttv1.Envelope_NoteDeleted:
+		// Withhold: noteTransitions sends a holder the bare NoteDeleted a note
+		// made secret gets, so the two cannot be told apart (SPEC-016).
 		return withheld
 
 	case *vttv1.Envelope_AdventureLoaded:
@@ -615,6 +623,24 @@ func sortedSceneIDsUnion(a, b map[string]map[string]bool) []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// noteTransitions keeps this viewer's notes to the public ones (SPEC-016).
+func (pr *Projector) noteTransitions(cause *vttv1.Envelope, seq int64, st *engine.State) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, key := range sortedSet(pr.notes) {
+		n, ok := st.Notes[key]
+		if ok && n.Visibility == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
+			continue
+		}
+		delete(pr.notes, key)
+		out = append(out, &vttv1.Envelope{Sequence: seq,
+			Payload: &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{Key: key}}})
+	}
+	if nu := cause.GetNoteUpserted(); nu.GetVisibility() == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
+		pr.notes[nu.GetKey()] = true
+	}
 	return out
 }
 

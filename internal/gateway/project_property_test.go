@@ -25,6 +25,7 @@ type seatUnderTest struct {
 	viewer   gateway.Viewer
 	pr       *gateway.Projector
 	received []*vttv1.Envelope
+	live     *engine.State
 }
 
 // TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer folds what the
@@ -63,7 +64,7 @@ type seatUnderTest struct {
 // role switch, which TestTheDMReceivesEverythingUnchanged already pins by
 // pointer. It is kept because a regression there would be severe and this
 // notices it for free, not because it demonstrates anything.
-// VTT-212 VTT-224
+// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
@@ -103,6 +104,13 @@ func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	if total.seedsWithScenes < 5 {
 		t.Errorf("only %d of 6 seeds ended with a player holding a scene", total.seedsWithScenes)
 	}
+	if total.seedsWithPublicNotes < 5 {
+		t.Errorf("only %d of 6 seeds sent a player a public note", total.seedsWithPublicNotes)
+	}
+	if total.seedsWithNoteWithdrawals < 2 {
+		t.Errorf("only %d of 6 seeds took a note from a player because it stopped being public",
+			total.seedsWithNoteWithdrawals)
+	}
 	t.Logf("player seats ended holding %d scenes and %d tokens; %d withdrawals projected; "+
 		"seeds with tokens/hides/scenes: %d/%d/%d",
 		total.playerScenes, total.playerTokens, total.hides,
@@ -114,6 +122,8 @@ func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 type walkStats struct {
 	playerScenes, playerTokens, hides                int
 	seedsWithScenes, seedsWithTokens, seedsWithHides int
+	publicNotes, noteWithdrawals                     int
+	seedsWithPublicNotes, seedsWithNoteWithdrawals   int
 }
 
 func (w *walkStats) add(o walkStats) {
@@ -128,6 +138,12 @@ func (w *walkStats) add(o walkStats) {
 	}
 	if o.hides > 0 {
 		w.seedsWithHides++
+	}
+	if o.publicNotes > 0 {
+		w.seedsWithPublicNotes++
+	}
+	if o.noteWithdrawals > 0 {
+		w.seedsWithNoteWithdrawals++
 	}
 }
 
@@ -156,7 +172,9 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 	}
 	for _, s := range seats {
 		s.pr = gateway.NewProjector(s.viewer)
+		s.live = engine.NewState()
 	}
+	everPublic := map[string]bool{}
 
 	var seq int64
 	for i := 0; i < propertyWalkEvents; i++ {
@@ -204,6 +222,11 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 				i, a.Kind, err)
 		}
 		m.Accepted(a, seq)
+		for key, n := range server.Notes {
+			if n.Visibility == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
+				everPublic[key] = true
+			}
+		}
 
 		// Project AFTER applying, against the state that now includes the
 		// event — the ordering internal/gateway's seat.go uses, and which its
@@ -215,7 +238,16 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 					if _, ok := e.GetPayload().(*vttv1.Envelope_TokenHidden); ok {
 						stats.hides++
 					}
+					if nu := e.GetNoteUpserted(); nu != nil {
+						stats.publicNotes++
+					}
+					if nd := e.GetNoteDeleted(); nd != nil {
+						if _, still := server.Notes[nd.GetKey()]; still {
+							stats.noteWithdrawals++
+						}
+					}
 				}
+				assertNotesFollowThePublicOnes(t, s, out, server, everPublic, i)
 			}
 			s.received = append(s.received, out...)
 		}
@@ -238,6 +270,39 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 		}
 	}
 	return stats
+}
+
+// assertNotesFollowThePublicOnes folds a player's frames as they arrive and
+// holds its notes to the server's public notes after every event, and every
+// note key it is sent to one that was public at or before that event.
+func assertNotesFollowThePublicOnes(t *testing.T, s *seatUnderTest, out []*vttv1.Envelope,
+	server *engine.State, everPublic map[string]bool, action int) {
+	t.Helper()
+	for _, e := range out {
+		for _, key := range []string{e.GetNoteUpserted().GetKey(), e.GetNoteDeleted().GetKey()} {
+			if key != "" && !everPublic[key] {
+				t.Fatalf("action #%d: %s was sent note %q, which was never public", action, s.name, key)
+			}
+		}
+		if err := engine.Apply(s.live, e); err != nil {
+			t.Fatalf("action #%d: %s's fold refused %T: %v", action, s.name, e.GetPayload(), err)
+		}
+	}
+	for key, n := range server.Notes {
+		held, ok := s.live.Notes[key]
+		public := n.Visibility == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC
+		if public && (!ok || held.Text != n.Text || held.Title != n.Title) {
+			t.Fatalf("action #%d: %s does not hold public note %q as the server does", action, s.name, key)
+		}
+		if !public && ok {
+			t.Fatalf("action #%d: %s still holds note %q, which is not public", action, s.name, key)
+		}
+	}
+	for key := range s.live.Notes {
+		if _, ok := server.Notes[key]; !ok {
+			t.Fatalf("action #%d: %s holds note %q, which the server deleted", action, s.name, key)
+		}
+	}
 }
 
 // assertSameWorld is the DM and agent case. It checks the three counts and then

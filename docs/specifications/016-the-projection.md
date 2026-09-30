@@ -7,29 +7,24 @@ Accepted. Implemented by `internal/gateway/project.go` (`Viewer`,
 `sightView`, `look`, `eyes`, `transitions`, `sceneSeenFor`,
 `objectInSight`, `verdict`, `passIf`, `classify`, `canSeeSquare`,
 `doorTransitions`, `doorSubject`, `squareAt`, `squareKey`, `sortedSet`,
-`sortedSceneIDs`, `sortedSceneIDsUnion`, `sameSet`), over
+`sortedSceneIDs`, `sortedSceneIDsUnion`, `noteTransitions`, `sameSet`), over
 `internal/sight`'s `VisibleFrom` and `engine.IsPartyMember`; called from
 `internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
 by `internal/gateway/project_test.go`, `project_internal_test.go`,
-`project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`
-and `server_visibility_test.go`.
+`project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
+`server_visibility_test.go` and `qa_note_projection_test.go`.
 
-Two decisions the owner has taken will change this record, and neither is
-implemented. A note will carry a visibility flag, public or DM-only; that
-changes the notes ruling under "How each payload is ruled" and the
-Consequence that a player's notes panel is empty. Only what a viewer sees
-will give them information, for every actor, party members included; that
-changes the rulings for a payload forwarded when the viewer knows every actor
-it names or already holds the actor, whether a party member no eye sees is
-introduced, and with what, and the Consequence that a party member is on
-every projected roster, seen or not. Each is carried by a ticket of its own:
-the notes flag first, in
-`docs/superpowers/specs/2026-09-29-a-note-says-who-may-read-it-design.md`,
-and the testimony rule second, which is not written yet; both decisions are
-recorded in
+One decision the owner has taken will change this record, and it is not
+implemented. Only what a viewer sees will give them information, for every
+actor, party members included; that changes the rulings for a payload
+forwarded when the viewer knows every actor it names or already holds the
+actor, whether a party member no eye sees is introduced, and with what, and
+the Consequence that a party member is on every projected roster, seen or
+not. A ticket of its own carries it, and it is not written yet; the decision
+is recorded in
 `docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`.
-Until each lands, every sentence below describes the code, and the ticket
-that lands it rewrites this paragraph and the sentences it names.
+Until it lands, every sentence below describes the code, and the ticket that
+lands it rewrites this paragraph and the sentences it names.
 
 ## Principles served
 
@@ -88,12 +83,14 @@ actors introduced, and `transitions` removes one only when `st` no longer
 holds it (`grep -n 'delete(pr.actors' internal/gateway/project.go` prints its
 one line). `tokens` holds the tokens on the viewer's board now. `seen` holds,
 per scene, the visible set last sent. `doors` holds, per scene, the door
-squares the viewer believes open. The maps are a function of the whole log
-prefix the projector was fed, of the viewer, and of the perches applied along
-the way, not of the current state: an actor seen and then hidden stays in
-`actors`, which no state records. So a
-projector is fed the log from its first event and never seeded from a state;
-the seat feeds it so (SPEC-015).
+squares the viewer believes open. `notes` holds the keys of the notes the
+viewer holds; `noteTransitions` removes a key when `st` no longer holds the
+note or holds it with any visibility but `NOTE_VISIBILITY_PUBLIC`. The maps
+are a function of the whole log prefix the projector was fed, of the viewer,
+and of the perches applied along the way, not of the current state: an actor
+seen and then hidden stays in `actors`, which no state records. So a projector
+is fed the log from its first event and never seeded from a state; the seat
+feeds it so (SPEC-015).
 
 **What `transitions` sends, in order.** `transitions` first forgets each actor
 `actors` holds that `st` does not, and sends nothing for it. Then, walking each
@@ -119,7 +116,13 @@ and each actor its grants, conditions and tokens, the order `engine.Apply` and
 `client/src/fold.ts` both require. A token's departure precedes any arrival,
 which no fold requires, so the board never holds a departing token and an
 arriving one at once. Every walk that emits frames is over a sorted set or a
-slice, so one log projects to one stream of frames.
+slice, so one log projects to one stream of frames. Last, `noteTransitions`
+walks `notes` by key: a key whose note `st` no longer holds, or holds with any
+visibility but `NOTE_VISIBILITY_PUBLIC`, is forgotten and sent as a
+`NoteDeleted` carrying that key and the event's sequence and nothing else; and
+the key of a causing `NoteUpserted` whose visibility is
+`NOTE_VISIBILITY_PUBLIC` is remembered. A perch changes no note, so it sends
+no note frame.
 
 **Doors.** For each scene in the look, by id, and each visible square, by key,
 where `OpenDoors` in `st` differs from the viewer's belief, `doorTransitions`
@@ -143,21 +146,26 @@ table, and `add_narration` is open to the player, the DM and the agent
 that held the token a `TokenHidden` once `st` no longer has it; `TokenHidden`
 and `SceneSeen`, which only the projection issues (`grep -rn
 'Envelope_TokenHidden{\|Envelope_SceneSeen{'` over the non-test Go under
-`internal/` and `cmd/` prints only `project.go`); `NoteUpserted` and
-`NoteDeleted`, which only the DM and the agent may issue (SPEC-013); and
-`AdventureLoaded`, a no-op for `engine.Apply` whose batch's events are each
-projected on their own. It forwards `TokenMoved` when the token was on the
-board before the event and is in the look after it, since a move names both
-its ends. It forwards `DoorOpened` and `DoorClosed` when `canSeeSquare` finds
-the square in the look. It forwards `AttackRolled` (attacker and target),
-`AbilityUsed` (actor and targets), `ActorControlGranted` and
-`ActorControlRevoked` when every non-empty actor id named is in `actors` or in
-the look (`knows`). It forwards `ResourceChanged`, `ConditionApplied` and
-`ConditionRemoved` when `actors` held the actor before the event, since an
-introduction already carries the actor's resources and conditions, and
-`ActorRemoved` on the same test, since a fold that never held the actor
-refuses its removal. Every other payload, and an envelope with none, is
-`unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the
+`internal/` and `cmd/` prints only `project.go`); and `AdventureLoaded`, a
+no-op for `engine.Apply` whose batch's events are each projected on their
+own. It forwards `NoteUpserted` when its visibility is
+`NOTE_VISIBILITY_PUBLIC` and withholds it for every other value,
+`NOTE_VISIBILITY_UNSPECIFIED` included, so a note recorded without a
+visibility is DM-only. It withholds `NoteDeleted`: `noteTransitions` sends a
+viewer that holds the note the same bare `NoteDeleted` a note made secret
+gets, and a viewer that does not hold it nothing, since its fold would refuse
+the deletion and a key the viewer does not hold is the DM's. It forwards
+`TokenMoved` when the token was on the board before the event and is in the
+look after it, since a move names both its ends. It forwards `DoorOpened` and
+`DoorClosed` when `canSeeSquare` finds the square in the look. It forwards
+`AttackRolled` (attacker and target), `AbilityUsed` (actor and targets),
+`ActorControlGranted` and `ActorControlRevoked` when every non-empty actor id
+named is in `actors` or in the look (`knows`). It forwards `ResourceChanged`,
+`ConditionApplied` and `ConditionRemoved` when `actors` held the actor before
+the event, since an introduction already carries the actor's resources and
+conditions, and `ActorRemoved` on the same test, since a fold that never held
+the actor refuses its removal. Every other payload, and an envelope with none,
+is `unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the
 envelope's oneof and fails on a payload `classify` answers `unrecognised`.
 
 **A perch.** `reperch` sets `Viewpoint` to the actor named, answers a nil state
@@ -182,8 +190,9 @@ seat hands `Project`, what its resume cursor drops, when a perch is taken and
 against which state, and `canSee` are SPEC-015's. What a square can see
 (walls, closed doors, objects that block sight, range and tolerance) is
 `internal/sight`'s, which has no record. The payloads and their fields are
-SPEC-007's; delivery is SPEC-011's; who may issue each command, and the move
-gate, are SPEC-013's; what a party member is, is `engine.IsPartyMember`'s;
+SPEC-007's; delivery is SPEC-011's; who may issue each command, the move
+gate, and the refusal of an `upsert_note` that names no visibility are
+SPEC-013's; what a party member is, is `engine.IsPartyMember`'s;
 what each fold refuses is `engine.Apply`'s and `client/src/fold.ts`'s.
 
 ## Consequences
@@ -204,7 +213,10 @@ A client author, and whoever changes the code, are bound by these:
 - A condition an introduction carries bears the introduction's sequence.
 - A viewer present at a grant that introduces an actor receives the grant
   twice, which both folds accept.
-- A player's and a spectator's notes panel is empty.
+- A player's and a spectator's fold holds exactly the notes whose visibility
+  is `NOTE_VISIBILITY_PUBLIC`. A note that stops being public and a note that
+  is deleted reach them as the same bare `NoteDeleted`, so they cannot tell
+  the two apart.
 - A payload added to the contract needs an arm in `classify`, or no player or
   spectator is sent it and its event derives nothing for them.
 - Nothing may write to an envelope a seat is handed: a live event is one
@@ -220,4 +232,5 @@ VTT-194, VTT-195, VTT-196, VTT-197, VTT-198, VTT-199, VTT-200, VTT-201,
 VTT-202, VTT-203, VTT-204, VTT-205, VTT-206, VTT-207, VTT-208, VTT-209,
 VTT-210, VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217,
 VTT-218, VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225,
-VTT-226, VTT-227.
+VTT-226, VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238,
+VTT-239.

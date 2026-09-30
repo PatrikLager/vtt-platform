@@ -131,7 +131,7 @@ internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  22.7
 internal/gateway/keepalive_conn_internal_test.go  23.0
 internal/gateway/keepalive_internal_test.go  29.7
-internal/gateway/keystone_test.go  46.4
+internal/gateway/keystone_test.go  45.5
 internal/gateway/map.go  18.8
 internal/gateway/map_internal_test.go  24.6
 internal/gateway/map_test.go  43.2
@@ -141,11 +141,12 @@ internal/gateway/note_validate.go  12.5
 internal/gateway/note_validate_test.go  0.0
 internal/gateway/presence.go  16.1
 internal/gateway/presence_internal_test.go  30.5
-internal/gateway/project.go  20.4
+internal/gateway/project.go  20.3
 internal/gateway/project_internal_test.go  33.4
-internal/gateway/project_property_test.go  35.9
-internal/gateway/project_test.go  33.6
+internal/gateway/project_property_test.go  31.0
+internal/gateway/project_test.go  31.6
 internal/gateway/qa_joining_test.go  4.8
+internal/gateway/qa_note_projection_test.go  1.1
 internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/remove_actor_test.go  37.0
 internal/gateway/ruleset.go  10.6
@@ -155,7 +156,7 @@ internal/gateway/seat.go  29.6
 internal/gateway/server.go  37.4
 internal/gateway/server_internal_test.go  36.9
 internal/gateway/server_test.go  27.4
-internal/gateway/server_visibility_test.go  29.4
+internal/gateway/server_visibility_test.go  28.7
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  22.3
 internal/gateway/viewpoint_internal_test.go  28.5

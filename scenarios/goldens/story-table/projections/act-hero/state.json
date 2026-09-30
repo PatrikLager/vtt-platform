@@ -11,7 +11,14 @@
     }
   },
   "Conditions": {},
-  "Notes": {},
+  "Notes": {
+    "kobold-den": {
+      "Title": "Kobold Den (cleared)",
+      "Text": "The tunnel is empty now; the kobolds fled west.",
+      "UpdatedSeq": 12,
+      "Visibility": 1
+    }
+  },
   "Scenes": {
     "scn-table": {
       "ID": "scn-table",

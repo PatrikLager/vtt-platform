@@ -745,6 +745,36 @@ func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	}
 }
 
+// VTT-234
+func TestAPublicNoteReachesAPlayersConnectionAndASecretOneDoesNot(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	playerConn := f.dial(f.playerToken, gwSeedHead)
+	for _, n := range []struct {
+		key string
+		vis vttv1.NoteVisibility
+	}{
+		{"tavern", vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC},
+		{"ambush", vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET},
+	} {
+		sendCommand(t, dmConn, &vttv1.ClientCommand{
+			RequestId: "note-" + n.key,
+			Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
+				Key: n.key, Title: n.key, Text: "a note called " + n.key, Visibility: n.vis}},
+		})
+		if r := readResult(t, dmConn); !r.Ok {
+			t.Fatalf("upsert_note %s: %s", n.key, r.Error)
+		}
+	}
+	playerStream := drainEvents(t, playerConn, 500*time.Millisecond)
+	if !mentions(t, playerStream, "tavern") {
+		t.Errorf("a public note never reached the player's connection; got %d envelopes", len(playerStream))
+	}
+	if mentions(t, playerStream, "ambush") {
+		t.Errorf("a secret note reached the player's connection")
+	}
+}
+
 // TestASpectatorMayNotPerchOnTheGoblinArcher is THE CONSTRAINT THE WHOLE IDEA
 // RESTS ON, end to end and over the real wire: MayPerch is unit-tested in
 // viewpoint_test.go, and this proves the server actually asks it before moving

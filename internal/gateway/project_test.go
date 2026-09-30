@@ -2621,12 +2621,7 @@ func TestTheProjectionFailsClosedWhenItHasNothingToGoOn(t *testing.T) {
 }
 
 // VTT-216
-func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
-	// The two payloads spec §4.4 names as reasons a forwarding default ships
-	// broken, and they are ruled OPPOSITE ways on one distinction: narration
-	// is ADDRESSED to the table by whoever writes it, and a note is a private
-	// world record the DM keeps. SPEC-016 states both rulings; this
-	// test is what stops either ruling drifting silently.
+func TestNarrationReachesAPlayer(t *testing.T) {
 	st := twoRooms()
 	pr := gateway.NewProjector(player())
 	firstPlace(pr, st)
@@ -2641,23 +2636,183 @@ func TestNarrationReachesAPlayerAndANoteDoesNot(t *testing.T) {
 	if !toldStory {
 		t.Error("withholding narration from players silences the table's story channel")
 	}
+}
 
-	note := envelope(9, &vttv1.NoteUpserted{
-		Key: "ambush", Title: "Ambush", Text: "Archer waits at 19,8"})
-	for _, e := range pr.Project(note, st) {
-		if e.GetNoteUpserted() != nil {
-			t.Error("a note can say anything (spec §4.4) and must not reach a player")
+// noteSeat is one projected seat whose client folds every frame it is sent.
+type noteSeat struct {
+	name   string
+	pr     *gateway.Projector
+	folded *engine.State
+}
+
+func noteSeats() []*noteSeat {
+	return []*noteSeat{
+		{name: "player", pr: gateway.NewProjector(player()), folded: engine.NewState()},
+		{name: "spectator", pr: gateway.NewProjector(gateway.Viewer{
+			ParticipantID: "p-watch", Role: identity.RoleSpectator}), folded: engine.NewState()},
+	}
+}
+
+// feedNote applies one event to the world and projects it to every seat,
+// failing the test if a seat's fold refuses a frame it was sent.
+func feedNote(t *testing.T, st *engine.State, seats []*noteSeat, seq int64, payload proto.Message) map[string][]*vttv1.Envelope {
+	t.Helper()
+	env := envelope(seq, payload)
+	if err := engine.Apply(st, env); err != nil {
+		t.Fatalf("the world refused seq %d: %v", seq, err)
+	}
+	sent := map[string][]*vttv1.Envelope{}
+	for _, s := range seats {
+		out := s.pr.Project(env, st)
+		for _, e := range out {
+			if err := engine.Apply(s.folded, e); err != nil {
+				t.Fatalf("%s's fold refused a frame of seq %d: %v", s.name, seq, err)
+			}
+		}
+		sent[s.name] = out
+	}
+	return sent
+}
+
+func namesNote(out []*vttv1.Envelope, key string) bool {
+	for _, e := range out {
+		if e.GetNoteUpserted().GetKey() == key || e.GetNoteDeleted().GetKey() == key {
+			return true
 		}
 	}
+	return false
+}
 
-	// BOTH note arms, because classify rules on them together and a test that
-	// exercises one leaves the other free to drift to the opposite ruling. The
-	// KEY alone is the leak here: "ambush" names the DM's plan whether or not
-	// any text travels with it.
-	deleted := envelope(10, &vttv1.NoteDeleted{Key: "ambush"})
-	for _, e := range pr.Project(deleted, st) {
-		if e.GetNoteDeleted() != nil {
-			t.Error("deleting a note names the note, and must not reach a player either")
+// VTT-233
+func TestANoteRecordedWithoutAVisibilityReachesNoPlayer(t *testing.T) {
+	st, seats := engine.NewState(), noteSeats()
+	sent := feedNote(t, st, seats, 1, &vttv1.NoteUpserted{
+		Key: "ambush", Title: "Ambush", Text: "Archer waits at 19,8"})
+	for _, s := range seats {
+		if namesNote(sent[s.name], "ambush") {
+			t.Errorf("a note recorded without a visibility reached the %s", s.name)
+		}
+		if len(s.folded.Notes) != 0 {
+			t.Errorf("the %s's fold holds %v", s.name, s.folded.Notes)
+		}
+	}
+}
+
+// VTT-234
+func TestAPublicNoteReachesEveryPlayerAndSpectator(t *testing.T) {
+	st := twoRooms()
+	seats := append(noteSeats(),
+		&noteSeat{name: "player with no actor", pr: gateway.NewProjector(
+			gateway.Viewer{ParticipantID: "p-9", Role: identity.RolePlayer}), folded: engine.NewState()},
+		&noteSeat{name: "spectator on the hero", pr: gateway.NewProjector(gateway.Viewer{
+			ParticipantID: "p-bird", Role: identity.RoleSpectator, Viewpoint: "hero"}), folded: engine.NewState()},
+	)
+	sent := feedNote(t, st, seats, 8, &vttv1.NoteUpserted{Key: "tavern", Title: "Tavern",
+		Text: "The Rusty Flagon.", Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC})
+	for _, s := range seats {
+		if !namesNote(sent[s.name], "tavern") {
+			t.Errorf("a public note did not reach the %s", s.name)
+		}
+		if got := s.folded.Notes["tavern"]; got.Text != "The Rusty Flagon." {
+			t.Errorf("the %s's fold holds %+v for the public note", s.name, got)
+		}
+	}
+}
+
+// VTT-235
+func TestANoteNeverPublicIsNeverNamedToAPlayer(t *testing.T) {
+	st, seats := engine.NewState(), noteSeats()
+	secret := vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET
+	for seq, payload := range []proto.Message{
+		&vttv1.NoteUpserted{Key: "ambush", Text: "Archer waits at 19,8", Visibility: secret},
+		&vttv1.NoteUpserted{Key: "ambush", Text: "Two archers now", Visibility: secret},
+		&vttv1.NoteDeleted{Key: "ambush"},
+	} {
+		sent := feedNote(t, st, seats, int64(seq+1), payload)
+		for _, s := range seats {
+			if namesNote(sent[s.name], "ambush") {
+				t.Errorf("seq %d named a never-public note to the %s", seq+1, s.name)
+			}
+		}
+	}
+}
+
+// VTT-236 VTT-221
+func TestANoteMadeSecretLeavesEveryFoldThatHeldIt(t *testing.T) {
+	for _, flip := range []vttv1.NoteVisibility{
+		vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+		vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED,
+	} {
+		t.Run(flip.String(), func(t *testing.T) {
+			st, seats := engine.NewState(), noteSeats()
+			feedNote(t, st, seats, 1, &vttv1.NoteUpserted{Key: "rumor", Text: "Gold under the cellar.",
+				Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC})
+			for _, s := range seats {
+				if _, ok := s.folded.Notes["rumor"]; !ok {
+					t.Fatalf("fixture check: the %s must hold the public note before it is made secret", s.name)
+				}
+			}
+			sent := feedNote(t, st, seats, 2, &vttv1.NoteUpserted{Key: "rumor", Text: "Gold under the cellar.",
+				Visibility: flip})
+			for _, s := range seats {
+				if _, ok := s.folded.Notes["rumor"]; ok {
+					t.Errorf("the %s still holds a note that stopped being public", s.name)
+				}
+				for _, e := range sent[s.name] {
+					if e.GetNoteDeleted() != nil && e.GetSequence() != 2 {
+						t.Errorf("the %s's NoteDeleted carries seq %d, want the causing 2", s.name, e.GetSequence())
+					}
+					if e.GetNoteUpserted() != nil {
+						t.Errorf("the %s was sent the secret upsert itself", s.name)
+					}
+				}
+			}
+		})
+	}
+}
+
+// VTT-237
+func TestADeletedPublicNoteLeavesEveryFoldThatHeldIt(t *testing.T) {
+	st, seats := engine.NewState(), noteSeats()
+	feedNote(t, st, seats, 1, &vttv1.NoteUpserted{Key: "tavern", Text: "The Rusty Flagon.",
+		Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC})
+	for _, s := range seats {
+		if _, ok := s.folded.Notes["tavern"]; !ok {
+			t.Fatalf("fixture check: the %s must hold the public note before it is deleted", s.name)
+		}
+	}
+	sent := feedNote(t, st, seats, 2, &vttv1.NoteDeleted{Key: "tavern"})
+	for _, s := range seats {
+		if _, ok := s.folded.Notes["tavern"]; ok {
+			t.Errorf("the %s still holds a deleted note", s.name)
+		}
+		if n := len(sent[s.name]); n != 1 {
+			t.Errorf("the %s was sent %d frames for one deletion, want 1", s.name, n)
+		}
+	}
+}
+
+// VTT-238
+func TestADeletionAfterANoteWasMadeSecretReachesNoPlayer(t *testing.T) {
+	st, seats := engine.NewState(), noteSeats()
+	feedNote(t, st, seats, 1, &vttv1.NoteUpserted{Key: "rumor", Text: "Gold under the cellar.",
+		Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC})
+	for _, s := range seats {
+		if _, ok := s.folded.Notes["rumor"]; !ok {
+			t.Fatalf("fixture check: the %s must hold the public note before it is made secret", s.name)
+		}
+	}
+	feedNote(t, st, seats, 2, &vttv1.NoteUpserted{Key: "rumor", Text: "Gold under the cellar.",
+		Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET})
+	for _, s := range seats {
+		if _, ok := s.folded.Notes["rumor"]; ok {
+			t.Fatalf("fixture check: the %s must have lost the note when it was made secret", s.name)
+		}
+	}
+	sent := feedNote(t, st, seats, 3, &vttv1.NoteDeleted{Key: "rumor"})
+	for _, s := range seats {
+		if namesNote(sent[s.name], "rumor") {
+			t.Errorf("the %s was sent the deletion of a note it no longer holds", s.name)
 		}
 	}
 }

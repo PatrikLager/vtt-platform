@@ -620,6 +620,38 @@
   },
   {
     "actorRole": "dm",
+    "eventId": "evt-12",
+    "noteUpserted": {
+      "key": "kobold-den",
+      "text": "The tunnel is empty now; the kobolds fled west.",
+      "title": "Kobold Den (cleared)",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
+    },
+    "participantId": "p-dm",
+    "sequence": "12",
+    "sessionId": "sess-1"
+  },
+  {
+    "actorRole": "dm",
+    "eventId": "evt-13",
+    "noteUpserted": {
+      "key": "old-rumor",
+      "text": "They say the innkeeper buried gold under the cellar.",
+      "title": "Old Rumor",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
+    },
+    "participantId": "p-dm",
+    "sequence": "13",
+    "sessionId": "sess-1"
+  },
+  {
+    "noteDeleted": {
+      "key": "old-rumor"
+    },
+    "sequence": "14"
+  },
+  {
+    "actorRole": "dm",
     "eventId": "evt-16",
     "participantId": "p-dm",
     "sequence": "16",
