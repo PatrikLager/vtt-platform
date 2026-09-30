@@ -1,0 +1,14 @@
+{
+  "eventId": "evt-note-1",
+  "sequence": "46",
+  "occurredAt": "2026-09-30T09:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "noteUpserted": {
+    "key": "kobold-den",
+    "title": "Kobold Den",
+    "text": "Six kobolds behind a trapped door.",
+    "visibility": "NOTE_VISIBILITY_SECRET"
+  }
+}

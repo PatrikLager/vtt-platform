@@ -102,7 +102,12 @@ message AddNarration {
   int64 anchor_from_seq = 3;
   int64 anchor_to_seq = 4;
 }
-message UpsertNote { string key = 1; string title = 2; string text = 3; }
+message UpsertNote {
+  string key = 1;
+  string title = 2;
+  string text = 3;
+  NoteVisibility visibility = 4;
+}
 message DeleteNote { string key = 1; }
 
 message LoadAdventure { string adventure_id = 1; }

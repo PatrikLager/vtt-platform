@@ -484,7 +484,22 @@ message NarrationAdded {
   int64 anchor_from_seq = 3;
   int64 anchor_to_seq = 4;
 }
-message NoteUpserted { string key = 1; string title = 2; string text = 3; }
+// NoteVisibility says who may read a note. An enum rather than a bool:
+// protojson omits a false bool, so a secret note would travel as an absent
+// field, indistinguishable from a writer who said nothing. A note recorded
+// with NOTE_VISIBILITY_UNSPECIFIED is not public, and NOTE_VISIBILITY_SECRET
+// is read by the DM and the agent alone.
+enum NoteVisibility {
+  NOTE_VISIBILITY_UNSPECIFIED = 0;
+  NOTE_VISIBILITY_PUBLIC = 1;
+  NOTE_VISIBILITY_SECRET = 2;
+}
+message NoteUpserted {
+  string key = 1;
+  string title = 2;
+  string text = 3;
+  NoteVisibility visibility = 4;
+}
 message NoteDeleted { string key = 1; }
 
 // Pure testimony (AbilityUsed's pattern — engine no-op): the compile

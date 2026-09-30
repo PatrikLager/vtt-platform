@@ -123,6 +123,60 @@ func (ActorKind) EnumDescriptor() ([]byte, []int) {
 	return file_vtt_v1_events_proto_rawDescGZIP(), []int{0}
 }
 
+// NoteVisibility says who may read a note. An enum rather than a bool:
+// protojson omits a false bool, so a secret note would travel as an absent
+// field, indistinguishable from a writer who said nothing. A note recorded
+// with NOTE_VISIBILITY_UNSPECIFIED is not public, and NOTE_VISIBILITY_SECRET
+// is read by the DM and the agent alone.
+type NoteVisibility int32
+
+const (
+	NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED NoteVisibility = 0
+	NoteVisibility_NOTE_VISIBILITY_PUBLIC      NoteVisibility = 1
+	NoteVisibility_NOTE_VISIBILITY_SECRET      NoteVisibility = 2
+)
+
+// Enum value maps for NoteVisibility.
+var (
+	NoteVisibility_name = map[int32]string{
+		0: "NOTE_VISIBILITY_UNSPECIFIED",
+		1: "NOTE_VISIBILITY_PUBLIC",
+		2: "NOTE_VISIBILITY_SECRET",
+	}
+	NoteVisibility_value = map[string]int32{
+		"NOTE_VISIBILITY_UNSPECIFIED": 0,
+		"NOTE_VISIBILITY_PUBLIC":      1,
+		"NOTE_VISIBILITY_SECRET":      2,
+	}
+)
+
+func (x NoteVisibility) Enum() *NoteVisibility {
+	p := new(NoteVisibility)
+	*p = x
+	return p
+}
+
+func (x NoteVisibility) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (NoteVisibility) Descriptor() protoreflect.EnumDescriptor {
+	return file_vtt_v1_events_proto_enumTypes[1].Descriptor()
+}
+
+func (NoteVisibility) Type() protoreflect.EnumType {
+	return &file_vtt_v1_events_proto_enumTypes[1]
+}
+
+func (x NoteVisibility) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use NoteVisibility.Descriptor instead.
+func (NoteVisibility) EnumDescriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{1}
+}
+
 type GridPosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -2067,6 +2121,7 @@ type NoteUpserted struct {
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Visibility    NoteVisibility         `protobuf:"varint,4,opt,name=visibility,proto3,enum=vtt.v1.NoteVisibility" json:"visibility,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2120,6 +2175,13 @@ func (x *NoteUpserted) GetText() string {
 		return x.Text
 	}
 	return ""
+}
+
+func (x *NoteUpserted) GetVisibility() NoteVisibility {
+	if x != nil {
+		return x.Visibility
+	}
+	return NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED
 }
 
 type NoteDeleted struct {
@@ -2914,11 +2976,14 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x0e\n" +
 	"\x02as\x18\x02 \x01(\tR\x02as\x12&\n" +
 	"\x0fanchor_from_seq\x18\x03 \x01(\x03R\ranchorFromSeq\x12\"\n" +
-	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\"J\n" +
+	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\"\x82\x01\n" +
 	"\fNoteUpserted\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
-	"\x04text\x18\x03 \x01(\tR\x04text\"\x1f\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x126\n" +
+	"\n" +
+	"visibility\x18\x04 \x01(\x0e2\x16.vtt.v1.NoteVisibilityR\n" +
+	"visibility\"\x1f\n" +
 	"\vNoteDeleted\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"H\n" +
 	"\x0fAdventureLoaded\x12!\n" +
@@ -2967,7 +3032,11 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\tActorKind\x12\x1a\n" +
 	"\x16ACTOR_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ACTOR_KIND_PARTY_MEMBER\x10\x01\x12\x18\n" +
-	"\x14ACTOR_KIND_NON_PARTY\x10\x02BBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
+	"\x14ACTOR_KIND_NON_PARTY\x10\x02*i\n" +
+	"\x0eNoteVisibility\x12\x1f\n" +
+	"\x1bNOTE_VISIBILITY_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16NOTE_VISIBILITY_PUBLIC\x10\x01\x12\x1a\n" +
+	"\x16NOTE_VISIBILITY_SECRET\x10\x02BBZ@github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;vttv1b\x06proto3"
 
 var (
 	file_vtt_v1_events_proto_rawDescOnce sync.Once
@@ -2981,101 +3050,103 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 	return file_vtt_v1_events_proto_rawDescData
 }
 
-var file_vtt_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_vtt_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_vtt_v1_events_proto_goTypes = []any{
 	(ActorKind)(0),                // 0: vtt.v1.ActorKind
-	(*GridPosition)(nil),          // 1: vtt.v1.GridPosition
-	(*TokenMoved)(nil),            // 2: vtt.v1.TokenMoved
-	(*DieRoll)(nil),               // 3: vtt.v1.DieRoll
-	(*Modifier)(nil),              // 4: vtt.v1.Modifier
-	(*AttackRolled)(nil),          // 5: vtt.v1.AttackRolled
-	(*Resource)(nil),              // 6: vtt.v1.Resource
-	(*Actor)(nil),                 // 7: vtt.v1.Actor
-	(*ActorControlGranted)(nil),   // 8: vtt.v1.ActorControlGranted
-	(*ActorControlRevoked)(nil),   // 9: vtt.v1.ActorControlRevoked
-	(*TileRef)(nil),               // 10: vtt.v1.TileRef
-	(*SceneObject)(nil),           // 11: vtt.v1.SceneObject
-	(*SceneCreated)(nil),          // 12: vtt.v1.SceneCreated
-	(*TokenHidden)(nil),           // 13: vtt.v1.TokenHidden
-	(*SceneSeen)(nil),             // 14: vtt.v1.SceneSeen
-	(*DoorOpened)(nil),            // 15: vtt.v1.DoorOpened
-	(*DoorClosed)(nil),            // 16: vtt.v1.DoorClosed
-	(*ActorAdded)(nil),            // 17: vtt.v1.ActorAdded
-	(*TokenPlaced)(nil),           // 18: vtt.v1.TokenPlaced
-	(*TokenRemoved)(nil),          // 19: vtt.v1.TokenRemoved
-	(*ActorRemoved)(nil),          // 20: vtt.v1.ActorRemoved
-	(*SessionStarted)(nil),        // 21: vtt.v1.SessionStarted
-	(*SessionEnded)(nil),          // 22: vtt.v1.SessionEnded
-	(*AbilityUsed)(nil),           // 23: vtt.v1.AbilityUsed
-	(*ResourceChanged)(nil),       // 24: vtt.v1.ResourceChanged
-	(*ConditionApplied)(nil),      // 25: vtt.v1.ConditionApplied
-	(*ConditionRemoved)(nil),      // 26: vtt.v1.ConditionRemoved
-	(*NarrationAdded)(nil),        // 27: vtt.v1.NarrationAdded
-	(*NoteUpserted)(nil),          // 28: vtt.v1.NoteUpserted
-	(*NoteDeleted)(nil),           // 29: vtt.v1.NoteDeleted
-	(*AdventureLoaded)(nil),       // 30: vtt.v1.AdventureLoaded
-	(*Envelope)(nil),              // 31: vtt.v1.Envelope
-	nil,                           // 32: vtt.v1.Actor.AttributesEntry
-	nil,                           // 33: vtt.v1.Actor.ResourcesEntry
-	nil,                           // 34: vtt.v1.SceneCreated.TilesEntry
-	nil,                           // 35: vtt.v1.SceneSeen.TilesEntry
-	(*AbilityUsed_Roll)(nil),      // 36: vtt.v1.AbilityUsed.Roll
-	(*structpb.Struct)(nil),       // 37: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 38: google.protobuf.Timestamp
+	(NoteVisibility)(0),           // 1: vtt.v1.NoteVisibility
+	(*GridPosition)(nil),          // 2: vtt.v1.GridPosition
+	(*TokenMoved)(nil),            // 3: vtt.v1.TokenMoved
+	(*DieRoll)(nil),               // 4: vtt.v1.DieRoll
+	(*Modifier)(nil),              // 5: vtt.v1.Modifier
+	(*AttackRolled)(nil),          // 6: vtt.v1.AttackRolled
+	(*Resource)(nil),              // 7: vtt.v1.Resource
+	(*Actor)(nil),                 // 8: vtt.v1.Actor
+	(*ActorControlGranted)(nil),   // 9: vtt.v1.ActorControlGranted
+	(*ActorControlRevoked)(nil),   // 10: vtt.v1.ActorControlRevoked
+	(*TileRef)(nil),               // 11: vtt.v1.TileRef
+	(*SceneObject)(nil),           // 12: vtt.v1.SceneObject
+	(*SceneCreated)(nil),          // 13: vtt.v1.SceneCreated
+	(*TokenHidden)(nil),           // 14: vtt.v1.TokenHidden
+	(*SceneSeen)(nil),             // 15: vtt.v1.SceneSeen
+	(*DoorOpened)(nil),            // 16: vtt.v1.DoorOpened
+	(*DoorClosed)(nil),            // 17: vtt.v1.DoorClosed
+	(*ActorAdded)(nil),            // 18: vtt.v1.ActorAdded
+	(*TokenPlaced)(nil),           // 19: vtt.v1.TokenPlaced
+	(*TokenRemoved)(nil),          // 20: vtt.v1.TokenRemoved
+	(*ActorRemoved)(nil),          // 21: vtt.v1.ActorRemoved
+	(*SessionStarted)(nil),        // 22: vtt.v1.SessionStarted
+	(*SessionEnded)(nil),          // 23: vtt.v1.SessionEnded
+	(*AbilityUsed)(nil),           // 24: vtt.v1.AbilityUsed
+	(*ResourceChanged)(nil),       // 25: vtt.v1.ResourceChanged
+	(*ConditionApplied)(nil),      // 26: vtt.v1.ConditionApplied
+	(*ConditionRemoved)(nil),      // 27: vtt.v1.ConditionRemoved
+	(*NarrationAdded)(nil),        // 28: vtt.v1.NarrationAdded
+	(*NoteUpserted)(nil),          // 29: vtt.v1.NoteUpserted
+	(*NoteDeleted)(nil),           // 30: vtt.v1.NoteDeleted
+	(*AdventureLoaded)(nil),       // 31: vtt.v1.AdventureLoaded
+	(*Envelope)(nil),              // 32: vtt.v1.Envelope
+	nil,                           // 33: vtt.v1.Actor.AttributesEntry
+	nil,                           // 34: vtt.v1.Actor.ResourcesEntry
+	nil,                           // 35: vtt.v1.SceneCreated.TilesEntry
+	nil,                           // 36: vtt.v1.SceneSeen.TilesEntry
+	(*AbilityUsed_Roll)(nil),      // 37: vtt.v1.AbilityUsed.Roll
+	(*structpb.Struct)(nil),       // 38: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 39: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
-	1,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
-	1,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
-	3,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
-	4,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	32, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	33, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	37, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	2,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
+	2,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
+	4,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
+	5,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
+	33, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	34, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	38, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
 	0,  // 7: vtt.v1.Actor.kind:type_name -> vtt.v1.ActorKind
 	0,  // 8: vtt.v1.ActorControlGranted.kind:type_name -> vtt.v1.ActorKind
-	1,  // 9: vtt.v1.SceneObject.at:type_name -> vtt.v1.GridPosition
-	34, // 10: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
-	11, // 11: vtt.v1.SceneCreated.objects:type_name -> vtt.v1.SceneObject
-	35, // 12: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
-	11, // 13: vtt.v1.SceneSeen.objects:type_name -> vtt.v1.SceneObject
-	1,  // 14: vtt.v1.DoorOpened.at:type_name -> vtt.v1.GridPosition
-	1,  // 15: vtt.v1.DoorClosed.at:type_name -> vtt.v1.GridPosition
-	7,  // 16: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
-	1,  // 17: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
-	36, // 18: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
-	38, // 19: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
-	2,  // 20: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
-	5,  // 21: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
-	12, // 22: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
-	17, // 23: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
-	18, // 24: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
-	21, // 25: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
-	22, // 26: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
-	23, // 27: vtt.v1.Envelope.ability_used:type_name -> vtt.v1.AbilityUsed
-	24, // 28: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
-	25, // 29: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
-	26, // 30: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
-	27, // 31: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
-	28, // 32: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
-	29, // 33: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
-	30, // 34: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
-	8,  // 35: vtt.v1.Envelope.actor_control_granted:type_name -> vtt.v1.ActorControlGranted
-	9,  // 36: vtt.v1.Envelope.actor_control_revoked:type_name -> vtt.v1.ActorControlRevoked
-	15, // 37: vtt.v1.Envelope.door_opened:type_name -> vtt.v1.DoorOpened
-	16, // 38: vtt.v1.Envelope.door_closed:type_name -> vtt.v1.DoorClosed
-	13, // 39: vtt.v1.Envelope.token_hidden:type_name -> vtt.v1.TokenHidden
-	14, // 40: vtt.v1.Envelope.scene_seen:type_name -> vtt.v1.SceneSeen
-	19, // 41: vtt.v1.Envelope.token_removed:type_name -> vtt.v1.TokenRemoved
-	20, // 42: vtt.v1.Envelope.actor_removed:type_name -> vtt.v1.ActorRemoved
-	6,  // 43: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	10, // 44: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
-	10, // 45: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
-	46, // [46:46] is the sub-list for method output_type
-	46, // [46:46] is the sub-list for method input_type
-	46, // [46:46] is the sub-list for extension type_name
-	46, // [46:46] is the sub-list for extension extendee
-	0,  // [0:46] is the sub-list for field type_name
+	2,  // 9: vtt.v1.SceneObject.at:type_name -> vtt.v1.GridPosition
+	35, // 10: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
+	12, // 11: vtt.v1.SceneCreated.objects:type_name -> vtt.v1.SceneObject
+	36, // 12: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
+	12, // 13: vtt.v1.SceneSeen.objects:type_name -> vtt.v1.SceneObject
+	2,  // 14: vtt.v1.DoorOpened.at:type_name -> vtt.v1.GridPosition
+	2,  // 15: vtt.v1.DoorClosed.at:type_name -> vtt.v1.GridPosition
+	8,  // 16: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
+	2,  // 17: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
+	37, // 18: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
+	1,  // 19: vtt.v1.NoteUpserted.visibility:type_name -> vtt.v1.NoteVisibility
+	39, // 20: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	3,  // 21: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
+	6,  // 22: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
+	13, // 23: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
+	18, // 24: vtt.v1.Envelope.actor_added:type_name -> vtt.v1.ActorAdded
+	19, // 25: vtt.v1.Envelope.token_placed:type_name -> vtt.v1.TokenPlaced
+	22, // 26: vtt.v1.Envelope.session_started:type_name -> vtt.v1.SessionStarted
+	23, // 27: vtt.v1.Envelope.session_ended:type_name -> vtt.v1.SessionEnded
+	24, // 28: vtt.v1.Envelope.ability_used:type_name -> vtt.v1.AbilityUsed
+	25, // 29: vtt.v1.Envelope.resource_changed:type_name -> vtt.v1.ResourceChanged
+	26, // 30: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
+	27, // 31: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
+	28, // 32: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
+	29, // 33: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
+	30, // 34: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
+	31, // 35: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
+	9,  // 36: vtt.v1.Envelope.actor_control_granted:type_name -> vtt.v1.ActorControlGranted
+	10, // 37: vtt.v1.Envelope.actor_control_revoked:type_name -> vtt.v1.ActorControlRevoked
+	16, // 38: vtt.v1.Envelope.door_opened:type_name -> vtt.v1.DoorOpened
+	17, // 39: vtt.v1.Envelope.door_closed:type_name -> vtt.v1.DoorClosed
+	14, // 40: vtt.v1.Envelope.token_hidden:type_name -> vtt.v1.TokenHidden
+	15, // 41: vtt.v1.Envelope.scene_seen:type_name -> vtt.v1.SceneSeen
+	20, // 42: vtt.v1.Envelope.token_removed:type_name -> vtt.v1.TokenRemoved
+	21, // 43: vtt.v1.Envelope.actor_removed:type_name -> vtt.v1.ActorRemoved
+	7,  // 44: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	11, // 45: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
+	11, // 46: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
+	47, // [47:47] is the sub-list for method output_type
+	47, // [47:47] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -3113,7 +3184,7 @@ func file_vtt_v1_events_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   0,

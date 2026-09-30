@@ -292,6 +292,13 @@
         "title": {
           "description": "Optional; may be empty.",
           "type": "string"
+        },
+        "visibility": {
+          "enum": [
+            "NOTE_VISIBILITY_PUBLIC",
+            "NOTE_VISIBILITY_SECRET"
+          ],
+          "type": "string"
         }
       },
       "required": [

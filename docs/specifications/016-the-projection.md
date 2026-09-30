@@ -22,9 +22,11 @@ will give them information, for every actor, party members included; that
 changes the rulings for a payload forwarded when the viewer knows every actor
 it names or already holds the actor, whether a party member no eye sees is
 introduced, and with what, and the Consequence that a party member is on
-every projected roster, seen or not. Each is carried by a ticket of its own,
-the notes flag first and the testimony rule second, and neither ticket is
-written yet; both decisions are recorded in
+every projected roster, seen or not. Each is carried by a ticket of its own:
+the notes flag first, in
+`docs/superpowers/specs/2026-09-29-a-note-says-who-may-read-it-design.md`,
+and the testimony rule second, which is not written yet; both decisions are
+recorded in
 `docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`.
 Until each lands, every sentence below describes the code, and the ticket
 that lands it rewrites this paragraph and the sentences it names.
