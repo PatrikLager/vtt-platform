@@ -101,7 +101,7 @@ test("the notes panel marks every note that is not public as DM only", () => {
   );
   for (const title of ["Sec", "None"]) {
     expect(byTitle.get(title)!.classList.contains("secret")).toBe(true);
-    expect(byTitle.get(title)!.querySelector("h3")!.textContent).toContain("DM only");
+    expect(byTitle.get(title)!.querySelector("h3 .secret-tag")?.textContent).toBe("DM only");
   }
   expect(byTitle.get("Pub")!.classList.contains("secret")).toBe(false);
   expect(byTitle.get("Pub")!.textContent).not.toContain("DM only");
