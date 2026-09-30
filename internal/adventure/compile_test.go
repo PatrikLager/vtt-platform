@@ -52,6 +52,7 @@ func TestASceneWithNoTilesLoadsAndCompilesWithNoTerrain(t *testing.T) {
 // mutation of Compile is overwhelmingly unlikely to coincidentally match
 // this golden by chance, so this test actually pins the ordering claim
 // instead of trivially passing regardless of it.
+// VTT-240
 func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 	rs := loadFixtureRuleset(t)
 	adv, err := adventure.Load("testdata/valid", rs)
@@ -147,6 +148,7 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 		}}},
 		{Payload: &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
 			Key: "yard-rumor", Title: "Yard Rumor", Text: "Something stirs behind the well.",
+			Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
 		}}},
 		{Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
 			Text: "The yard is quiet before the bell rings.",

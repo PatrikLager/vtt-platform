@@ -97,6 +97,7 @@ func TestRunUnknownDirectory(t *testing.T) {
 // top-level rulesets/ directory. Wired into `go test ./...` (and so `task
 // check`) by simply existing in this suite; no separate Taskfile target
 // needed.
+// VTT-240
 func TestConformanceOverAdventuresGlob(t *testing.T) {
 	dirs, err := filepath.Glob(filepath.Join("..", "..", "..", "adventures", "*"))
 	if err != nil {

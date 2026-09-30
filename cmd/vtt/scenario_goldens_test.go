@@ -18,24 +18,11 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
-// TestScenarioGoldenStreamsHaveNotDrifted re-runs each corpus scenario
-// against a real self-contained server and asserts the normalized event
-// stream still equals the committed scenarios/goldens/<name>/stream.json.
-//
-// THERE IS DELIBERATELY NO -update FLAG. The original plan for this task
-// generated the corpus behind one, and that was rejected: the rule shipped
-// in internal/adventure/conformance says to "derive a golden by hand FIRST
-// (ADR-009) ... never to generate a golden no human derived first". A
-// regenerate-on-demand switch is exactly how a golden stops being a claim
-// anyone checked. When this test fails, read the diff and decide whether the
-// SERVER changed (fix it) or the corpus is legitimately stale (re-derive the
-// state by hand, then re-record the stream).
-//
-// Division of labour with internal/harness's TestFoldGoldenCorpus:
-//   - stream.json is a recorded observation of the server; THIS test pins it.
-//   - state.json is hand-derived from the scenario definition; the fold gate
-//     checks it. Neither file was produced from the other, which is what
-//     makes their agreement evidence rather than a tautology.
+// Do not add an -update flag: a golden is derived by hand first (ADR-009).
+// On a failure, read the diff: either the SERVER changed (fix it), or the
+// corpus is stale (re-derive state.json by hand, then re-record stream.json).
+// state.json is held by internal/harness's TestFoldGoldenCorpus.
+// VTT-240
 func TestScenarioGoldenStreamsHaveNotDrifted(t *testing.T) {
 	dirs := goldenDirs(t)
 

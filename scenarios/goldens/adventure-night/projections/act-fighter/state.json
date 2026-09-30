@@ -69,7 +69,14 @@
     }
   },
   "Conditions": {},
-  "Notes": {},
+  "Notes": {
+    "ravine-trail-warning": {
+      "Title": "Trail Warning",
+      "Text": "Crude markings are scratched into the rock near the ravine's mouth — a jagged little glyph, repeated three times. A warning, or a boast.",
+      "UpdatedSeq": 9,
+      "Visibility": 1
+    }
+  },
   "Scenes": {
     "ravine": {
       "ID": "ravine",

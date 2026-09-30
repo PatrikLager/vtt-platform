@@ -56,7 +56,7 @@ cmd/vtt/mcp_ruleset_e2e_test.go  24.4
 cmd/vtt/qa_e2e_wait_test.go  1.6
 cmd/vtt/qa_note_schema_test.go  0.0
 cmd/vtt/revoke.go  16.3
-cmd/vtt/scenario_goldens_test.go  30.0
+cmd/vtt/scenario_goldens_test.go  25.7
 cmd/vtt/serve.go  29.0
 cmd/vtt/serve_compose.go  70.2
 cmd/vtt/serve_e2e_test.go  20.9
@@ -65,15 +65,16 @@ cmd/vtt/state_dump.go  45.1
 cmd/vtt/state_dump_cause_test.go  22.5
 cmd/vtt/state_dump_head_test.go  29.8
 cmd/vtt/version.go  15.8
-internal/adventure/compile.go  37.5
+internal/adventure/compile.go  37.3
 internal/adventure/compile_test.go  28.5
-internal/adventure/conformance/conformance.go  29.2
+internal/adventure/conformance/conformance.go  29.1
 internal/adventure/conformance/conformance_test.go  27.4
 internal/adventure/conformance/dump_test.go  39.1
 internal/adventure/format.go  69.7
 internal/adventure/format_test.go  42.9
 internal/adventure/load.go  37.5
 internal/adventure/load_test.go  33.9
+internal/adventure/qa_note_public_test.go  0.0
 internal/artlib/artlib.go  69.5
 internal/artlib/artlib_internal_test.go  27.8
 internal/artlib/artlib_test.go  31.9
@@ -146,6 +147,7 @@ internal/gateway/project_internal_test.go  33.4
 internal/gateway/project_property_test.go  31.0
 internal/gateway/project_test.go  31.6
 internal/gateway/qa_joining_test.go  4.8
+internal/gateway/qa_note_adventure_test.go  0.0
 internal/gateway/qa_note_projection_test.go  1.1
 internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/remove_actor_test.go  37.0

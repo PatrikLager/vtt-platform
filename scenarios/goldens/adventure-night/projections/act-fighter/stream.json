@@ -5253,6 +5253,18 @@
   },
   {
     "actorRole": "dm",
+    "eventId": "evt-9",
+    "noteUpserted": {
+      "key": "ravine-trail-warning",
+      "text": "Crude markings are scratched into the rock near the ravine's mouth — a jagged little glyph, repeated three times. A warning, or a boast.",
+      "title": "Trail Warning",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
+    },
+    "participantId": "p-dm",
+    "sequence": "9"
+  },
+  {
+    "actorRole": "dm",
     "eventId": "evt-10",
     "narrationAdded": {
       "text": "The trail narrows into a ravine, stone walls rising steep on either side. Loose scree litters the ground underfoot, and somewhere above, a pebble skitters loose — dislodged by wind, or by something watching from the rocks."

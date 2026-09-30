@@ -35,13 +35,13 @@
 //	  "kind": "ACTOR_KIND_PARTY_MEMBER|ACTOR_KIND_NON_PARTY",
 //	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}}}}
 //	{"type": "token_placed", "token_placed": {"token_id": "...", "scene_id": "...", "actor_id": "...", "x": 0, "y": 0}}
-//	{"type": "note_upserted", "note_upserted": {"key": "...", "title": "...", "text": "..."}}
+//	{"type": "note_upserted", "note_upserted": {"key": "...", "title": "...",
+//	  "text": "...", "visibility": "NOTE_VISIBILITY_PUBLIC"}}
 //	{"type": "narration_added", "narration_added": {"text": "..."}}
 //
 // Envelope metadata (event_id/sequence/occurred_at/session_id/actor_role/
-// participant_id) is deliberately absent — Compile itself never sets those
-// fields (they are stamped later by whatever calls campaign.AppendBatch),
-// so a golden pinning them would pin nothing meaningful.
+// participant_id) is absent: Compile never sets it; handleLoadAdventure and
+// campaign.AppendBatch stamp it, so a golden pinning it would pin nothing.
 package conformance
 
 import (
@@ -324,9 +324,10 @@ type tokenPlacedDump struct {
 }
 
 type noteUpsertedDump struct {
-	Key   string `json:"key"`
-	Title string `json:"title"`
-	Text  string `json:"text"`
+	Key        string `json:"key"`
+	Title      string `json:"title"`
+	Text       string `json:"text"`
+	Visibility string `json:"visibility"`
 }
 
 type narrationAddedDump struct {
@@ -362,7 +363,7 @@ func toEnvelopeDump(env *vttv1.Envelope) (envelopeDump, error) {
 	case *vttv1.Envelope_NoteUpserted:
 		nu := p.NoteUpserted
 		return envelopeDump{Type: typeNoteUpserted, NoteUpserted: &noteUpsertedDump{
-			Key: nu.Key, Title: nu.Title, Text: nu.Text,
+			Key: nu.Key, Title: nu.Title, Text: nu.Text, Visibility: nu.GetVisibility().String(),
 		}}, nil
 
 	case *vttv1.Envelope_NarrationAdded:

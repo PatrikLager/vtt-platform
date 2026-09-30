@@ -150,7 +150,8 @@
     "note_upserted": {
       "key": "room-note",
       "title": "A Note",
-      "text": "Dust covers everything."
+      "text": "Dust covers everything.",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
     }
   },
   {

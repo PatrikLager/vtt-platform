@@ -304,7 +304,11 @@ key K through `c.Append`, with the `EventId` `store.Append` requires, calls `s.h
 adventure declaring K (`goblin-ambush` declares `ravine-trail-warning`), and
 asserts ok=false; today it answers ok=true and the
 note is overwritten. Recorded 2026-09-27, moved here from the comment at
-`handleLoadAdventure`.
+`handleLoadAdventure`. Since 2026-10-01 an adventure's notes load public
+(`docs/superpowers/specs/2026-09-29-a-note-says-who-may-read-it-design.md`),
+so the overwrite also replaces a DM-only note on that key with the
+adventure's public one: the DM's text leaves the current state, the log keeps
+it, and no frame a player or spectator is sent carries it.
 
 **VTT-149's door bound is unobserved from above on the y axis.** `mayWorkDoor`
 in `internal/gateway/authz.go` accepts a player's door command when a

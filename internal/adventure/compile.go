@@ -104,6 +104,7 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, []string, err
 		envs = append(envs, &vttv1.Envelope{
 			Payload: &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
 				Key: n.Key, Title: n.Title, Text: n.Text,
+				Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
 			}},
 		})
 	}
