@@ -1,20 +1,11 @@
-// TypeScript mirror of internal/engine's State and its JSON shape.
-//
-// The types exist to make the fold's output byte-identical to Go's
-// `vtt state dump`, so the shapes below are dictated by how Go marshals —
-// which differs per type and is the main source of subtle mismatch:
-//
-//   Scene/Token/Session/Note/ActorCondition are plain Go structs with NO json
-//   tags, so every field is emitted with its Go name and zero values are NOT
-//   omitted. `EndSeq: 0` must appear.
-//
-//   Actor and Resource are protobuf-generated and DO carry
-//   `json:"...,omitempty"` tags, so their keys are snake_case and empty
-//   values vanish entirely. `{Current: 0, Max: 0}` marshals as `{}`.
-//
-//   Sessions is a Go slice: nil marshals as `null`, not `[]`.
+// Keep these types marshalling as internal/engine's State does: the fold's dump
+// must match `vtt state dump` byte for byte (client/test/fold-parity.test.ts).
+// Emit every zero value of a plain Go struct except the omitempty ones (Scene's
+// Explored and Visible, Note's Visibility); Actor and Resource are protobuf
+// types, whose keys are snake_case and whose empty values vanish; a nil
+// Sessions slice marshals as null.
 
-import type { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import type { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 /**
  * Tile mirrors internal/engine's Tile: one square's terrain, translated out
@@ -150,6 +141,7 @@ export interface Note {
   Title: string;
   Text: string;
   UpdatedSeq: number;
+  Visibility: NoteVisibility;
 }
 
 export interface Resource {

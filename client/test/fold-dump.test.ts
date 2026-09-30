@@ -87,6 +87,17 @@ test("conditions reach the dump with their own fields intact", () => {
   expect(parsed.Conditions.a1).toEqual([{ ID: "prone", Source: "spell", AppliedSeq: 3 }]);
 });
 
+test("a note's visibility is dumped when stated and omitted when not", () => {
+  const { parsed } = dumpOf([
+    started,
+    env(2, { noteUpserted: { key: "a", text: "t", visibility: "NOTE_VISIBILITY_SECRET" } }),
+    env(3, { noteUpserted: { key: "b", text: "t" } }),
+  ]);
+  expect(parsed.Notes.a.Visibility).toBe(2);
+  expect(Object.keys(parsed.Notes.a)).toEqual(["Title", "Text", "UpdatedSeq", "Visibility"]);
+  expect(parsed.Notes.b).not.toHaveProperty("Visibility");
+});
+
 test("headSequence is the MAXIMUM sequence, not the last envelope's", () => {
   // Replay is ordered today. Pinning this stops the rule silently depending
   // on that, and kills `Number(e.sequence) > head` -> `true`, under which head

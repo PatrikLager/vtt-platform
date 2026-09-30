@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { fromJson } from "@bufbuild/protobuf";
-import { ActorKind, EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, EnvelopeSchema, NoteVisibility, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fold, foldToDumpJSON } from "../src/fold";
 import { FoldError } from "../src/state";
 
@@ -242,6 +242,27 @@ test("note text length is measured in BYTES, not characters", () => {
       env(2, { noteUpserted: { key: "k", title: "t", text: long } }),
     ]),
   ).toThrow(FoldError);
+});
+
+// VTT-228
+test("a note records the visibility its latest upsert stated, none included", () => {
+  for (const [wire, want] of [
+    [undefined, NoteVisibility.UNSPECIFIED],
+    ["NOTE_VISIBILITY_PUBLIC", NoteVisibility.PUBLIC],
+    ["NOTE_VISIBILITY_SECRET", NoteVisibility.SECRET],
+  ] as const) {
+    const st = fold([
+      env(1, { sessionStarted: { name: "S" } }),
+      env(2, { noteUpserted: { key: "k", text: "t", ...(wire ? { visibility: wire } : {}) } }),
+    ]);
+    expect(st.Notes.k?.Visibility).toBe(want);
+  }
+  const st = fold([
+    env(1, { sessionStarted: { name: "S" } }),
+    env(2, { noteUpserted: { key: "k", text: "t", visibility: "NOTE_VISIBILITY_PUBLIC" } }),
+    env(3, { noteUpserted: { key: "k", text: "t" } }),
+  ]);
+  expect(st.Notes.k?.Visibility).toBe(NoteVisibility.UNSPECIFIED);
 });
 
 test("narration validates but leaves no trace in state", () => {

@@ -185,6 +185,7 @@ type ActorCondition struct {
 type Note struct {
 	Title, Text string
 	UpdatedSeq  int64
+	Visibility  vttv1.NoteVisibility `json:",omitempty"`
 }
 
 type State struct {

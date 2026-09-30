@@ -502,7 +502,7 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if len(nu.Text) == 0 || len(nu.Text) > maxTextBytes {
 			return fmt.Errorf("engine: note text must be 1-%d bytes, got %d", maxTextBytes, len(nu.Text))
 		}
-		st.Notes[nu.Key] = Note{Title: nu.Title, Text: nu.Text, UpdatedSeq: env.Sequence}
+		st.Notes[nu.Key] = Note{Title: nu.Title, Text: nu.Text, UpdatedSeq: env.Sequence, Visibility: nu.Visibility}
 		return nil
 
 	case *vttv1.Envelope_NoteDeleted:

@@ -3,6 +3,7 @@ package campaign_test
 import (
 	"testing"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
 
@@ -31,5 +32,13 @@ func TestStatesEqualDiscriminatesNotes(t *testing.T) {
 		"town-hollowreach": {Title: "Hollowreach", Text: "A river town.", UpdatedSeq: 4},
 	})) {
 		t.Fatal("statesEqual must treat states with identical Notes as equal")
+	}
+	if statesEqual(withNote, mk(map[string]engine.Note{
+		"town-hollowreach": {
+			Title: "Hollowreach", Text: "A river town.", UpdatedSeq: 4,
+			Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
+		},
+	})) {
+		t.Fatal("statesEqual must treat notes that differ only in Visibility as unequal")
 	}
 }

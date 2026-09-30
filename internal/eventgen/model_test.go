@@ -87,6 +87,39 @@ func TestAWalkDrawsEveryKind(t *testing.T) {
 	}
 }
 
+func TestAWalkDrawsEveryNoteVisibilityAndAChangeOfOne(t *testing.T) {
+	seen := map[vttv1.NoteVisibility]bool{}
+	madeNotPublic := false
+	for seed := int64(1); seed <= 5; seed++ {
+		_, envs := walk(t, seed, 400)
+		last := map[string]vttv1.NoteVisibility{}
+		for _, e := range envs {
+			nu := e.GetNoteUpserted()
+			if nu == nil {
+				continue
+			}
+			seen[nu.GetVisibility()] = true
+			prev, ok := last[nu.GetKey()]
+			if ok && prev == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC && nu.GetVisibility() != prev {
+				madeNotPublic = true
+			}
+			last[nu.GetKey()] = nu.GetVisibility()
+		}
+	}
+	for _, v := range []vttv1.NoteVisibility{
+		vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED,
+		vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
+		vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+	} {
+		if !seen[v] {
+			t.Errorf("visibility %v was never drawn across five 400-action walks", v)
+		}
+	}
+	if !madeNotPublic {
+		t.Error("no note was upserted public and later upserted not public across five 400-action walks")
+	}
+}
+
 // TestBothSidesOfEveryRefusalAreDrawn is the half that makes MustFail worth
 // having. An action that only ever aims at legal targets never exercises the
 // engine guard behind it, and one that only ever aims at illegal ones never

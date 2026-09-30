@@ -24,7 +24,7 @@
 // ActorKind is imported as a VALUE, not just a type: the grant arm below
 // compares against ACTOR_KIND_UNSPECIFIED, and `v.kind !== 0` would state the
 // same rule in a form no reader can check against the contract.
-import { ActorKind, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import {
   FoldError,
   emptyMap,
@@ -391,7 +391,7 @@ function apply(st: State, env: Envelope): void {
       checkLen("note key", v.key, 1, 128);
       checkLen("note title", v.title, 0, 256);
       checkLen("note text", v.text, 1, 8192);
-      st.Notes[v.key] = { Title: v.title, Text: v.text, UpdatedSeq: seq };
+      st.Notes[v.key] = { Title: v.title, Text: v.text, UpdatedSeq: seq, Visibility: v.visibility };
       return;
     }
     case "noteDeleted": {
@@ -576,7 +576,11 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
   const out: Record<string, unknown> = {
     Actors: sortedMap(st.Actors, actorJSON),
     Conditions: sortedMap(st.Conditions, (cs) => cs.map((c) => ({ ...c }))),
-    Notes: sortedMap(st.Notes, (n) => ({ Title: n.Title, Text: n.Text, UpdatedSeq: n.UpdatedSeq })),
+    Notes: sortedMap(st.Notes, (n) => {
+      const note: Record<string, unknown> = { Title: n.Title, Text: n.Text, UpdatedSeq: n.UpdatedSeq };
+      if (n.Visibility !== NoteVisibility.UNSPECIFIED) note["Visibility"] = n.Visibility;
+      return note;
+    }),
     Scenes: sortedMap(st.Scenes, (s) => {
       // `?? {}` / `?? []` are the same defaulting state.ts's comment on
       // Scene calls for: these fields are optional only to let bare test

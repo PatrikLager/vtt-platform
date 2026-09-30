@@ -341,6 +341,12 @@ func (m *Model) addNarration(rng *rand.Rand, idx int) Action {
 	return Action{Env: m.env(na), Kind: "addNarration"}
 }
 
+var noteVisibilities = []vttv1.NoteVisibility{
+	vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED,
+	vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
+	vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+}
+
 // upsertNote re-upserts an existing key about 30% of the time, exercising
 // last-write-wins on the SAME key with no rejection expected.
 func (m *Model) upsertNote(rng *rand.Rand, idx int) Action {
@@ -354,7 +360,8 @@ func (m *Model) upsertNote(rng *rand.Rand, idx int) Action {
 	}
 	return Action{Env: m.env(&vttv1.NoteUpserted{
 		Key: key, Title: fmt.Sprintf("Note %s", key),
-		Text: fmt.Sprintf("text for %s at action #%d", key, idx),
+		Text:       fmt.Sprintf("text for %s at action #%d", key, idx),
+		Visibility: noteVisibilities[idx%len(noteVisibilities)],
 	}), Kind: "upsertNote"}
 }
 

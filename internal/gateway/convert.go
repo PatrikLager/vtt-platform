@@ -89,9 +89,10 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		}}
 	case *vttv1.ClientCommand_UpsertNote:
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
-			Key:   c.UpsertNote.GetKey(),
-			Title: c.UpsertNote.GetTitle(),
-			Text:  c.UpsertNote.GetText(),
+			Key:        c.UpsertNote.GetKey(),
+			Title:      c.UpsertNote.GetTitle(),
+			Text:       c.UpsertNote.GetText(),
+			Visibility: c.UpsertNote.GetVisibility(),
 		}}
 	case *vttv1.ClientCommand_DeleteNote:
 		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{

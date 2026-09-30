@@ -869,6 +869,29 @@ func TestNoteUpsertedReplaceIsLastWriteWins(t *testing.T) {
 	}
 }
 
+// VTT-228
+func TestANoteRecordsTheVisibilityItsLatestUpsertStated(t *testing.T) {
+	for _, v := range []vttv1.NoteVisibility{
+		vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED,
+		vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
+		vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+	} {
+		st := seedScene(t)
+		must(t, engine.Apply(st, env(4, &vttv1.NoteUpserted{Key: "k", Text: "t", Visibility: v})))
+		if got := st.Notes["k"].Visibility; got != v {
+			t.Fatalf("upserted with %v, recorded %v", v, got)
+		}
+	}
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(4, &vttv1.NoteUpserted{
+		Key: "k", Text: "t", Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
+	})))
+	must(t, engine.Apply(st, env(5, &vttv1.NoteUpserted{Key: "k", Text: "t"})))
+	if got := st.Notes["k"].Visibility; got != vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED {
+		t.Fatalf("a later upsert stating no visibility must replace PUBLIC, recorded %v", got)
+	}
+}
+
 // TestNoteDeletedAccept covers delete of a present key.
 func TestNoteDeletedAccept(t *testing.T) {
 	st := seedScene(t)

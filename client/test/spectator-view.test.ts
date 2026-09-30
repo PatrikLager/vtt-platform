@@ -14,7 +14,7 @@ import {
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
-import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -41,7 +41,7 @@ function world(): State {
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
-  st.Notes["k"] = { Title: "A Note", Text: "body text", UpdatedSeq: 5 };
+  st.Notes["k"] = { Title: "A Note", Text: "body text", UpdatedSeq: 5, Visibility: NoteVisibility.PUBLIC };
   st.Sessions = [{ ID: "sess-1", Name: "Night One", StartSeq: 1, EndSeq: 0 }];
   return st;
 }
@@ -868,9 +868,9 @@ test("notes are listed in sorted key order, headed, and say so when empty", () =
   // list reorders itself as the DM edits.
   const st = world();
   st.Notes = {
-    zeta: { Title: "Z", Text: "z", UpdatedSeq: 1 },
-    alpha: { Title: "A", Text: "a", UpdatedSeq: 2 },
-    mid: { Title: "M", Text: "m", UpdatedSeq: 3 },
+    zeta: { Title: "Z", Text: "z", UpdatedSeq: 1, Visibility: NoteVisibility.PUBLIC },
+    alpha: { Title: "A", Text: "a", UpdatedSeq: 2, Visibility: NoteVisibility.PUBLIC },
+    mid: { Title: "M", Text: "m", UpdatedSeq: 3, Visibility: NoteVisibility.PUBLIC },
   };
   const titles = Array.from(render(st).querySelectorAll(".note h3")).map((n) => n.textContent);
   expect(titles).toEqual(["A", "M", "Z"]);

@@ -230,7 +230,10 @@ func TestToEventAddNarrationProducesNarrationAdded(t *testing.T) {
 func TestToEventUpsertNoteProducesNoteUpserted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UpsertNote{
-		UpsertNote: &vttv1.UpsertNote{Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel."},
+		UpsertNote: &vttv1.UpsertNote{
+			Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+			Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+		},
 	}}
 
 	env, err := gateway.ToEvent(cmd, p)
@@ -241,8 +244,9 @@ func TestToEventUpsertNoteProducesNoteUpserted(t *testing.T) {
 	if !ok {
 		t.Fatalf("payload = %T, want *Envelope_NoteUpserted", env.Payload)
 	}
-	if nu.NoteUpserted.Key != "kobold-den" || nu.NoteUpserted.Title != "Kobold Den" || nu.NoteUpserted.Text != "Three kobolds guard the east tunnel." {
-		t.Fatalf("NoteUpserted = %+v, want key/title/text verbatim from the command", nu.NoteUpserted)
+	if nu.NoteUpserted.Key != "kobold-den" || nu.NoteUpserted.Title != "Kobold Den" || nu.NoteUpserted.Text != "Three kobolds guard the east tunnel." ||
+		nu.NoteUpserted.Visibility != vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET {
+		t.Fatalf("NoteUpserted = %+v, want key/title/text/visibility verbatim from the command", nu.NoteUpserted)
 	}
 }
 

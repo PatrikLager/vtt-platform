@@ -236,3 +236,4 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-225 | Folding a viewer's stream at every prefix gives exactly the world the server says that viewer sees. | internal/gateway/keystone_test.go#TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees |
 | VTT-226 | A perch sends everything the new eyes see that the viewer was never sent. | internal/gateway/viewpoint_internal_test.go#TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt |
 | VTT-227 | An event whose payload this build does not know is sent to no spectator and derives nothing for them. | **OPEN — no test yet** |
+| VTT-228 | A note in the folded state carries the visibility its latest NoteUpserted stated, and none when that event stated none. | internal/engine/apply_test.go#TestANoteRecordsTheVisibilityItsLatestUpsertStated, client/test/fold-unit.test.ts#a note records the visibility its latest upsert stated, none included |
