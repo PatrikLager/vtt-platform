@@ -319,7 +319,9 @@ func TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T)
 // would force `title` alongside key/text even though empty title is
 // adjudicated-legal (spec-permitted "may be empty" ruling, engine only
 // enforces a max — internal/engine/apply.go's NoteUpserted case). The
-// override replaces the derived list with exactly ["key", "text"].
+// override replaces the derived list with exactly ["key", "text",
+// "visibility"]: an unstated visibility is refused (SPEC-007).
+// VTT-232
 func TestUpsertNoteRequiredOverrideReplacesDerivedList(t *testing.T) {
 	tool := findTool(t, "upsert_note")
 	schema, ok := tool["inputSchema"].(map[string]any)
@@ -327,7 +329,7 @@ func TestUpsertNoteRequiredOverrideReplacesDerivedList(t *testing.T) {
 		t.Fatalf("upsert_note: inputSchema missing or not an object: %#v", tool["inputSchema"])
 	}
 	got := schema["required"]
-	want := []any{"key", "text"}
+	want := []any{"key", "text", "visibility"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("upsert_note required = %v, want %v", got, want)
 	}

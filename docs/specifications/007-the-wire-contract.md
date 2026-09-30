@@ -112,6 +112,12 @@ rather than defaulted. proto3 cannot mark a field required, so an omitted enum
 arrives as UNSPECIFIED — indistinguishable from a caller that deliberately said
 nothing — and either default is wrong in a way that matters.
 
+`upsert_note` REQUIRES `visibility`, and one that omits it is refused rather
+than defaulted, for the reason `grant_actor_control`'s `kind` is: an omitted
+enum arrives as `NOTE_VISIBILITY_UNSPECIFIED`, and a default to public
+publishes a note nobody chose to publish. Its MCP tool lists `visibility` as
+required.
+
 `revoke_actor_control` requires both `actor_id` and `participant_id`.
 
 `set_join_door` carries `admit_limit`: how many people THIS OPENING may admit.
@@ -196,4 +202,4 @@ Those readers are not reading this record.
 
 ## Requirements
 
-None allocated for this record; no ticket carries them yet.
+VTT-232.

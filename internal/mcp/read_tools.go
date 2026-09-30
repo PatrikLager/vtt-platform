@@ -45,7 +45,11 @@ const getStateDescription = `Return the campaign's current derived state, ` +
 	`Tokens/Sessions/Notes and their own fields) serialize as their exact ` +
 	`Go struct field names, e.g. a session's "StartSeq"/"EndSeq" (plain ` +
 	`JSON numbers, never strings), or a world note's "Title"/"Text"/` +
-	`"UpdatedSeq" keyed under Notes by the note's own key — while nested ` +
+	`"UpdatedSeq" keyed under Notes by the note's own key, and its ` +
+	`"Visibility", a plain JSON number: 1 for NOTE_VISIBILITY_PUBLIC (every ` +
+	`player and spectator holds the note), 2 for NOTE_VISIBILITY_SECRET (the ` +
+	`DM and you alone); a note recorded without one has no "Visibility" key ` +
+	`and is the DM's and yours alone — while nested ` +
 	`Actor values use their ` +
 	`protobuf-generated snake_case tags instead (e.g. "actor_id"). ` +
 	`Neither matches protojson's camelCase; headSequence and wireConnected ` +

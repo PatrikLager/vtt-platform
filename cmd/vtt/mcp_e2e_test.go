@@ -792,7 +792,7 @@ func TestMCPWorldLayerRoundTrip(t *testing.T) {
 
 	narrationSeq := mustCallToolOK(t, cs, "add_narration", map[string]any{"text": narrationText})
 	noteSeq := mustCallToolOK(t, cs, "upsert_note", map[string]any{
-		"key": noteKey, "title": noteTitle, "text": noteText,
+		"key": noteKey, "title": noteTitle, "text": noteText, "visibility": "NOTE_VISIBILITY_PUBLIC",
 	})
 	if noteSeq <= narrationSeq {
 		t.Fatalf("upsert_note sequence %d, want it to follow add_narration's sequence %d", noteSeq, narrationSeq)
@@ -821,6 +821,10 @@ func TestMCPWorldLayerRoundTrip(t *testing.T) {
 	}
 	if updatedSeq, ok := note["UpdatedSeq"].(float64); !ok || int64(updatedSeq) != noteSeq {
 		t.Fatalf("get_state: Notes[%q].UpdatedSeq = %#v, want %d", noteKey, note["UpdatedSeq"], noteSeq)
+	}
+	if note["Visibility"] != float64(vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC) {
+		t.Fatalf("get_state: Notes[%q].Visibility = %#v, want %d", noteKey, note["Visibility"],
+			vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC)
 	}
 
 	// --- narration visible in get_events_since ---

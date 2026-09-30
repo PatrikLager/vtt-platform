@@ -127,7 +127,8 @@ func (ActorKind) EnumDescriptor() ([]byte, []int) {
 // protojson omits a false bool, so a secret note would travel as an absent
 // field, indistinguishable from a writer who said nothing. A note recorded
 // with NOTE_VISIBILITY_UNSPECIFIED is not public, and NOTE_VISIBILITY_SECRET
-// is read by the DM and the agent alone.
+// is read by the DM and the agent alone. An UpsertNote naming
+// NOTE_VISIBILITY_UNSPECIFIED is refused.
 type NoteVisibility int32
 
 const (

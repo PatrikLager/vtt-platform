@@ -545,6 +545,9 @@ func TestGetStateDescriptionNamesNotesKey(t *testing.T) {
 	if !strings.Contains(desc, "Notes") {
 		t.Fatalf("get_state description does not name the Notes key:\n%s", desc)
 	}
+	if !strings.Contains(desc, `"Visibility"`) {
+		t.Fatalf("get_state description does not name a note's Visibility key:\n%s", desc)
+	}
 }
 
 // TestGetStateSessionSequenceFieldsAreGoJSONNumbersNotProtojsonStrings

@@ -626,7 +626,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// Keep both validators here, for every role, before anything is written: not
+	// Keep the validators here, for every role, before anything is written: not
 	// in Authorize, since they refuse a form and not an issuer; not in ToEvent
 	// (TestEveryClientCommandConverts); not in the fold (SPEC-013).
 	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
@@ -637,6 +637,12 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 
 	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
 		if err := validateAddActor(aa.AddActor); err != nil {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		}
+	}
+
+	if un, ok := cmd.GetCommand().(*vttv1.ClientCommand_UpsertNote); ok {
+		if err := validateUpsertNote(un.UpsertNote); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 		}
 	}

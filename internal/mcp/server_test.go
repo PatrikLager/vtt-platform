@@ -340,4 +340,7 @@ func TestServerInstructionsMentionNarrationAsTableMemory(t *testing.T) {
 	if !strings.Contains(instr, "notes") {
 		t.Fatalf("server Instructions never mentions world notes as the table's durable memory:\n%s", instr)
 	}
+	if !strings.Contains(instr, "NOTE_VISIBILITY_SECRET") {
+		t.Fatalf("server Instructions never says an upsert_note states who may read it:\n%s", instr)
+	}
 }

@@ -531,7 +531,8 @@
     "noteUpserted": {
       "key": "kobold-den",
       "title": "Kobold Den",
-      "text": "Three kobolds guard the east tunnel."
+      "text": "Three kobolds guard the east tunnel.",
+      "visibility": "NOTE_VISIBILITY_SECRET"
     }
   },
   {
@@ -543,7 +544,8 @@
     "noteUpserted": {
       "key": "kobold-den",
       "title": "Kobold Den (cleared)",
-      "text": "The tunnel is empty now; the kobolds fled west."
+      "text": "The tunnel is empty now; the kobolds fled west.",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
     }
   },
   {
@@ -555,7 +557,8 @@
     "noteUpserted": {
       "key": "old-rumor",
       "title": "Old Rumor",
-      "text": "They say the innkeeper buried gold under the cellar."
+      "text": "They say the innkeeper buried gold under the cellar.",
+      "visibility": "NOTE_VISIBILITY_PUBLIC"
     }
   },
   {
@@ -564,13 +567,26 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
-    "noteDeleted": {
-      "key": "old-rumor"
+    "noteUpserted": {
+      "key": "old-rumor",
+      "title": "Old Rumor",
+      "text": "They say the innkeeper buried gold under the cellar.",
+      "visibility": "NOTE_VISIBILITY_SECRET"
     }
   },
   {
     "eventId": "evt-15",
     "sequence": "15",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "noteDeleted": {
+      "key": "old-rumor"
+    }
+  },
+  {
+    "eventId": "evt-16",
+    "sequence": "16",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

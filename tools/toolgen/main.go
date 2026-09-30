@@ -179,9 +179,14 @@ var manifest = []toolSpec{
 		// AddNarration above.
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.UpsertNote": {
-				requiredOverride: []string{"key", "text"},
+				requiredOverride: []string{"key", "text", "visibility"},
 				fieldDocs: map[string]string{
 					"title": "Optional; may be empty.",
+					"visibility": "REQUIRED. Who may read this note. NOTE_VISIBILITY_PUBLIC sends it to every " +
+						"player and spectator; NOTE_VISIBILITY_SECRET keeps it for the DM and the agent. There " +
+						"is no default and omitting it is REFUSED. Upserting a public note's key as SECRET " +
+						"removes it from every player's and spectator's view, though not from what they have " +
+						"read; upserting a secret one as PUBLIC sends it to them.",
 				},
 			},
 		},

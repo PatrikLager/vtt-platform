@@ -8,12 +8,13 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `controls`, `authorizeSelfRevoke`, `authorizePromotionTarget`, `commandName`,
 `ErrUnauthorized`), `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
-(`validateAddActor`) and `internal/gateway/server.go` (`answerCommand`,
+(`validateAddActor`), `internal/gateway/note_validate.go`
+(`validateUpsertNote`) and `internal/gateway/server.go` (`answerCommand`,
 `authorize`, `handleSetViewpoint`, `handleCommand`, `describeBlockage`),
 against `internal/engine`'s `State`; pinned by
 `internal/gateway/authz_test.go`, `grant_validate_test.go`,
-`add_actor_validate_test.go`, `server_test.go`, `server_visibility_test.go`
-and `server_internal_test.go`.
+`add_actor_validate_test.go`, `note_validate_test.go`, `server_test.go`,
+`server_visibility_test.go` and `server_internal_test.go`.
 
 ## Principles served
 
@@ -165,16 +166,17 @@ runs, in this order, and stops at the first refusal:
    below;
 2. `validateGrantActorControl`, for a `grant_actor_control`;
 3. `validateAddActor`, for an `add_actor`;
-4. the dispatch of `use_ability`, `load_adventure`, `load_map`,
+4. `validateUpsertNote`, for an `upsert_note`;
+5. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `promote_participant`, `set_join_door` and
    `rotate_join_link` to their handlers;
-5. `ToEvent`, which makes every other command one envelope stamped with the
+6. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
-6. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
+7. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
    snapshot's token;
-7. `campaign.Append`, which folds a clone of the envelope and returns the
+8. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
-8. an ok=true result carrying the sequence `campaign.Append` assigned.
+9. an ok=true result carrying the sequence `campaign.Append` assigned.
 
 Every refusal is an ok=false `CommandResult` whose `Error` is the refusal's
 text. The read loop queues it on the issuing connection and reads the next
@@ -205,7 +207,7 @@ table has created`, naming no id; every other reason, each a literal
 through unchanged. The scenery kind is a map object's `kind`, free text from
 the map file, and the one author-written string `describeBlockage` renders.
 
-**The two validators.** They run after `Authorize`, for every role, before
+**The three validators.** They run after `Authorize`, for every role, before
 anything is written, and their refusals do not wrap `ErrUnauthorized`: they
 refuse a command's form, not its issuer. `validateGrantActorControl` refuses
 a grant whose `kind` is `ACTOR_KIND_UNSPECIFIED` and accepts every other
@@ -223,7 +225,12 @@ nobody controls yet. A command wrong in both the controller and the kind is
 told about the controller. `engine.Apply` refuses an `ActorAdded` that names
 a controller as well, and accepts one with no kind, which on a recorded event
 reads as not a party member; the kind refusal exists at the command boundary
-alone.
+alone. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
+`NOTE_VISIBILITY_UNSPECIFIED`, with a message naming `visibility`, and accepts
+every other value, so the enum may grow without a note being refused.
+`engine.Apply` accepts a `NoteUpserted` with no visibility, which the
+projection sends to no player or spectator (SPEC-016), so this refusal too
+exists at the command boundary alone.
 
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`) and `load_adventure` (`handleLoadAdventure`) are
@@ -270,6 +277,7 @@ A client or tool author is bound by these:
   record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
+- An `upsert_note` states who may read the note.
 - The DM and the agent are bound by the table's cells and by promotion's
   bound, and by no player rule.
 - A perch does not survive a reconnect; a client re-sends it after
@@ -287,4 +295,4 @@ And whoever changes the code:
 VTT-138, VTT-139, VTT-140, VTT-141, VTT-142, VTT-143, VTT-144, VTT-145,
 VTT-146, VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153,
 VTT-154, VTT-155, VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161,
-VTT-162.
+VTT-162, VTT-231.

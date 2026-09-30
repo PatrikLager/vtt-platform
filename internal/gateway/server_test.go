@@ -546,6 +546,41 @@ func TestPlayerOwnershipDenialNoBroadcast(t *testing.T) {
 	}
 }
 
+// VTT-231 VTT-162
+func TestAnUpsertNoteNamingNoVisibilityIsRefusedForTheDMAndTheAgent(t *testing.T) {
+	f := newAdventureFixture(t, false)
+	monitor := f.dial(f.dmToken, 0)
+	for _, seat := range []struct{ name, token string }{{"dm", f.dmToken}, {"agent", f.agentToken}} {
+		conn := f.dial(seat.token, 0)
+		sendCommand(t, conn, &vttv1.ClientCommand{
+			RequestId: "r-no-visibility-" + seat.name,
+			Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
+				Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+			}},
+		})
+		refused := readResult(t, conn)
+		if refused.Ok {
+			t.Fatalf("%s: want ok=false for an upsert_note naming no visibility", seat.name)
+		}
+		if !strings.Contains(refused.Error, "visibility") {
+			t.Fatalf("%s: refusal %q never names the field that is missing", seat.name, refused.Error)
+		}
+		assertNoFrameWithin(t, monitor, 300*time.Millisecond)
+
+		sendCommand(t, conn, &vttv1.ClientCommand{
+			RequestId: "r-secret-" + seat.name,
+			Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
+				Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+				Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_SECRET,
+			}},
+		})
+		if accepted := readResult(t, conn); !accepted.Ok {
+			t.Fatalf("%s: want ok=true for an upsert_note stating a visibility, got %q", seat.name, accepted.Error)
+		}
+		readEvent(t, monitor)
+	}
+}
+
 // dmSeedOtherToken appends ActorAdded "a2" (controlled by nobody the
 // fixture's player controls) + TokenPlaced "t2", and returns the sequence
 // after which fresh connections should subscribe.
@@ -949,6 +984,7 @@ func TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned(t *testing.T) {
 		RequestId: "r-upsert",
 		Command: &vttv1.ClientCommand_UpsertNote{UpsertNote: &vttv1.UpsertNote{
 			Key: "kobold-den", Title: "Kobold Den", Text: "Three kobolds guard the east tunnel.",
+			Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
 		}},
 	})
 	upsertResult := readResult(t, dmConn)
