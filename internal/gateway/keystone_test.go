@@ -120,105 +120,10 @@ type oracleView struct {
 	actors map[string]bool
 }
 
-// visibleState is `visibleState(fold(log), viewer)` — the oracle §4.3 requires,
-// DERIVED FROM engine.State AND internal/sight AND NOTHING ELSE.
-//
-// INDEPENDENCE IS THE WHOLE POINT, and it is worth stating exactly what is and
-// is not independent here, because "independent" is the claim a reader a year
-// from now has to be able to check:
-//
-//   - It calls NOTHING in internal/gateway's projection. Not look, not
-//     classify, not transitions, not sceneSeenFor, not Projector's maps. If it
-//     did, the equation would be a tautology that holds however wrong the
-//     projection is: two derivations sharing an implementation agree about
-//     their shared bug.
-//
-//   - A BUG INSIDE look() IS CAUGHT, four injections for four, and an earlier
-//     version of this comment claimed the opposite. It said "a bug INSIDE look()
-//     would move both sides of the equation together and this test would stay
-//     green" — on the reasoning that the rules below are, statement for
-//     statement, what look() and eyes() do. THAT REASONING CONFUSED RESEMBLANCE
-//     WITH SHARING. Two transcriptions of one rule are still two, and an edit to
-//     one of them diverges from the other. The task report's injections A, B, C
-//     and D are all edits to look()'s body — its VisibleFrom call, its token
-//     loop, its actor loop — and all four red this test. The comment was written
-//     without running what it asserted, which is the branch's own recurring
-//     defect, and it mattered more than usual here: it told a reader to distrust
-//     the half that works.
-//
-//   - IT DOES CALL internal/sight, deliberately, because §4.3 says the
-//     right-hand side is computed "with the sight test over engine.State".
-//     sight is pure geometry with its own boundary tests
-//     (internal/sight/sight_test.go); sharing it means this test measures the
-//     PROJECTION rather than re-litigating the geometry. sight.VisibleFrom
-//     consults BOTH blocker sources — wall/closed-door entries in Tiles AND
-//     objects carrying blocks_sight (see sight.Blockers) — so a scene with no
-//     terrain at all can still be shadowed, and this oracle inherits that for
-//     free by asking VisibleFrom rather than reasoning about tiles.
-//
-//     THAT SHARING IS WHERE THE REAL HOLE IS, and it is the consequence the same
-//     earlier comment left out while listing only the benefit. TWO THINGS PASS
-//     THIS TEST SILENTLY, both measured rather than reasoned:
-//
-//     1. A WRONG internal/sight. Break Blockers so wall tiles stop casting a
-//     shadow and this test still reports `ok` — both sides ask the same
-//     broken oracle and agree. The bug is not invisible; it is invisible TO
-//     THE KEYSTONE. 11 other top-level tests in this package fail, and so
-//     does internal/sight's own suite.
-//     2. A RULE MIS-TRANSCRIBED INTO BOTH SIDES. Delete spec §5's roster
-//     exception ("party members are always known") from look() AND from
-//     visibleState below, and this test stays green. Only 6 other top-level
-//     tests in this package fail, which is the thinner margin of the two.
-//     RE-MEASURED 2026-08-24 and the number MOVED AGAIN, from 4 to 6, by
-//     deleting both loops and reading the failures rather than carrying a
-//     number forward. They are TestAPartyMemberIsKnownEvenWhenHeldByTheDM,
-//     TestAPartyMemberStaysKnownEvenWhenOutOfSight,
-//     TestASpectatorGetsNoSightFromAnNPCTheDMControls,
-//     TestASpectatorHopsFromOneShoulderToAnother,
-//     TestTheSameShippedArcherAssignedToAPlayerIsAPartyMember, and
-//     TestTheProjectedGoldensAreWhatTheProjectionActuallySends — the last of
-//     which is a committed-bytes gate rather than a behavioural test, so the
-//     behavioural margin is 5. The previous measurement said 4 and named
-//     TestAnActorFromBeforeTheKindFieldIsAPartyMemberWhenSomeoneControlsIt,
-//     which this branch DELETED along with the migration rule it pinned.
-//     This SAME HAZARD is why the count is worth keeping honest, and 2026-08-24
-//     proved it twice over: the finding that produced §5.1 was exactly hazard
-//     2, and review found the oracle below STILL carrying the migration arm
-//     after the production rule had lost it.
-//
-//     Counted as TOP-LEVEL tests and with the fixture gate excluded from the
-//     tally deliberately: it is the thing being credited in the next paragraph,
-//     so counting it among "other tests" would be crediting it twice. An earlier
-//     draft said 13 and 5 by counting subtests and including that gate — the
-//     same failure to check a number that this whole comment exists to correct.
-//
-//     IN BOTH CASES THE THING THAT CATCHES IT IS THE HAND-DERIVED FIXTURE, and
-//     that is verified rather than hoped: under each of the two injections above,
-//     TestTheProjectedGoldensAreWhatTheProjectionActuallySends FAILS.
-//     scenarios/goldens/*/projections/*/state.json is a file no machine produced
-//     and neither look() nor sight had any hand in — a human wrote 36 squares
-//     down from the scene's geometry — so it is the independent measurement that
-//     survives a wrong shared dependency. The oracle covers the fold; the
-//     fixtures cover the geometry. Neither alone is the keystone.
-//
-//     Each rule below cites the spec section it comes from, so the check a
-//     reader can perform is against the spec and not against project.go.
-//
-// The rules, each from the spec and not from the implementation:
-//
-//   - §3.1 whose eyes: a player sees through the union of the actors they
-//     control; a spectator through the one shoulder they are riding, and that
-//     shoulder must be a PARTY MEMBER (§3.1.1 — "a spectator perched on the
-//     Goblin Archer would watch the ambush from inside it" — as amended by
-//     §5.1, which moved the test from who holds an actor to what it is).
-//   - §3.4 sight range is an INPUT and is not supplied by the platform, so the
-//     oracle asks for the same "not supplied" the projection does: unlimited
-//     range, one exposed sample point of nine.
-//   - §3.2 creatures are not remembered: a token is visible iff it stands on a
-//     currently visible square.
-//   - §5 the actor roster: an NPC becomes knowable on first sight, and PARTY
-//     MEMBERS are always known ("you know your party exists when the rogue is
-//     two rooms away"). §5.1 decides what counts — see oracleIsPartyMember.
+// visibleState is what a viewer may know of st, derived from engine.State and
+// internal/sight alone. Call nothing in the projection: a shared derivation
+// agrees with its own bug. It shares internal/sight, so a wrong sight passes
+// this oracle; the hand-derived projected goldens catch it (SPEC-016).
 func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 	out := oracleView{
 		squares: map[string]map[string]bool{},
@@ -230,6 +135,7 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 	}
 
 	for _, eye := range oracleEyes(st, v) {
+		out.actors[eye] = true
 		for _, tok := range st.Tokens {
 			if tok.ActorID != eye {
 				continue
@@ -438,7 +344,7 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     emits an empty SceneSeen when a scene goes dark — and the scene itself
 //     must be one an eye stood in at some prefix.
 
-// VTT-194 VTT-225 VTT-234 VTT-238
+// VTT-194 VTT-225 VTT-234 VTT-238 VTT-241 VTT-242
 func TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees(t *testing.T) {
 	for _, g := range keystoneCorpus(t) {
 		for _, seat := range keystoneSeats(t, g) {

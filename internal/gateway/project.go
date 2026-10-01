@@ -139,6 +139,7 @@ func (pr *Projector) look(st *engine.State) sightView {
 		return v
 	}
 	for _, eye := range pr.eyes(st) {
+		v.actors[eye] = true
 		// Walk this map unordered only because the loop unions a set; sort every
 		// walk that emits frames (sortedSet).
 		for _, tok := range st.Tokens {

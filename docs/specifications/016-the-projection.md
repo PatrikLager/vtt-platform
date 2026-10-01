@@ -12,19 +12,23 @@ Accepted. Implemented by `internal/gateway/project.go` (`Viewer`,
 `internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
 by `internal/gateway/project_test.go`, `project_internal_test.go`,
 `project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
-`server_visibility_test.go` and `qa_note_projection_test.go`.
+`server_visibility_test.go`, `qa_note_projection_test.go` and
+`qa_testimony_eyes_test.go`.
 
-One decision the owner has taken will change this record, and it is not
-implemented. Only what a viewer sees will give them information, for every
-actor, party members included; that changes the rulings for a payload
-forwarded when the viewer knows every actor it names or already holds the
-actor, whether a party member no eye sees is introduced, and with what, and
-the Consequence that a party member is on every projected roster, seen or
-not. A ticket of its own carries it, and it is not written yet; the decision
-is recorded in
-`docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`.
-Until it lands, every sentence below describes the code, and the ticket that
-lands it rewrites this paragraph and the sentences it names.
+One decision the owner has taken will change this record, and only part of
+it is implemented: a player is introduced to every actor it controls, token or
+not ("What a look sees"). Only what a viewer sees will give them information,
+for every actor, party members included; that changes the rulings for a
+payload forwarded when the viewer knows every actor it names or already holds
+the actor, adds a correction that brings an actor up to date when it comes
+into sight, and makes the Consequence that a party member is on every
+projected roster, seen or not, gain: with the status it had when the viewer
+last saw it. The decision is recorded in
+`docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`, its
+refinements of 2026-10-01 in
+`docs/superpowers/specs/2026-10-01-a-viewer-hears-of-an-actor-only-while-it-sees-it-design.md`,
+which carries it. Until it lands, every sentence below describes the code, and
+that ticket rewrites this paragraph and the sentences it names.
 
 ## Principles served
 
@@ -62,16 +66,17 @@ it, and otherwise none, the empty viewpoint included. `MayPerch` refuses a
 player's perch and a non-party shoulder first (SPEC-015), and `eyes` refuses a
 non-party shoulder again with the same predicate. Every other role has none.
 
-**What a look sees.** `look` walks each eye's tokens that stand in a scene `st`
-holds. Each such scene gets an entry whether or not anything is visible from
-there, so standing in a scene is what earns its board. Its squares are the
-union, over those tokens, of `sight.VisibleFrom(scene, x, y,
+**What a look sees.** `look` walks each eye's tokens that stand in a scene
+`st` holds. Each such scene gets an entry whether or not anything is visible
+from there, so standing in a scene is what earns its board. Its squares are
+the union, over those tokens, of `sight.VisibleFrom(scene, x, y,
 sightRangeNotSupplied, toleranceNotSupplied)`; both are 0, which
-`internal/sight` reads as unlimited range and a tolerance of one sample
-point. The look's tokens are every token of `st` on one of those squares in
-its scene, and its actors are those tokens' actors and every actor
-`engine.IsPartyMember` accepts, seen or not. `look` runs on every
-call, keeps no memo, and writes nothing to `st`. `canSeeSquare` answers
+`internal/sight` reads as unlimited range and a tolerance of one sample point.
+The look's tokens are every token of `st` on one of those squares in its
+scene, and its actors are the viewer's eyes, those tokens' actors and every
+actor `engine.IsPartyMember` accepts, seen or not, so a player is introduced
+to every actor it controls, with a token in sight or none. `look` runs on
+every call, keeps no memo, and writes nothing to `st`. `canSeeSquare` answers
 whether one square of one scene is in a look, and false for a missing
 position.
 
@@ -229,8 +234,8 @@ A client author, and whoever changes the code, are bound by these:
 ## Requirements
 
 VTT-194, VTT-195, VTT-196, VTT-197, VTT-198, VTT-199, VTT-200, VTT-201,
-VTT-202, VTT-203, VTT-204, VTT-205, VTT-206, VTT-207, VTT-208, VTT-209,
-VTT-210, VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217,
-VTT-218, VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225,
-VTT-226, VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238,
-VTT-239.
+VTT-202, VTT-203, VTT-204, VTT-205, VTT-206, VTT-208, VTT-209, VTT-210,
+VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218,
+VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226,
+VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
+VTT-241, VTT-242.

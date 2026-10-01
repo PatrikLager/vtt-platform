@@ -408,7 +408,7 @@ func actorIDsIn(out []*vttv1.Envelope) map[string]bool {
 	return ids
 }
 
-// VTT-194 VTT-207
+// VTT-194 VTT-242
 func TestAnNPCHeldByTheDMIsNotPublishedToThePartysRoster(t *testing.T) {
 	// THE LEAK, stated as a test — the whole-branch review's finding I1, in a
 	// shape the keystone structurally cannot provide: §4.3's oracle
@@ -487,7 +487,7 @@ func shippedActor(t *testing.T, actorID string) *vttv1.Actor {
 	return nil
 }
 
-// VTT-207
+// VTT-242
 func TestGrantingAnAgentTheShippedGoblinArcherDoesNotPublishItToThePlayers(t *testing.T) {
 	// THE ARCHER THIS ARC IS NAMED AFTER, against shipped content.
 	//
@@ -748,7 +748,7 @@ func TestCreatingAnActorAndThenGrantingItIsTheTwoStepThatReplacesTheOne(t *testi
 // which is why this has to build the event by hand. Belt and braces, in that
 // order: the refusal stops it being written, and this says what it would mean
 // if it were.
-// VTT-207
+// VTT-242
 func TestAKindlessGrantConfersControlAndNothingElse(t *testing.T) {
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "cleric", Name: "Cleric"}})
@@ -805,6 +805,35 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 	}
 }
 
+// VTT-241
+func TestAPlayerIsIntroducedToATokenlessActorItIsGranted(t *testing.T) {
+	familiar := &vttv1.Actor{ActorId: "familiar", Name: "Familiar",
+		Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+		Resources: map[string]*vttv1.Resource{"pool": {Current: 2, Max: 2}}}
+	out := runLog(player(), []step{
+		{1, &vttv1.SessionStarted{Name: "n"}},
+		{2, &vttv1.ActorAdded{Actor: familiar}},
+		{3, &vttv1.ActorControlGranted{ActorId: "familiar", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
+	})
+	viewer := engine.NewState()
+	for i, e := range out {
+		if err := engine.Apply(viewer, e); err != nil {
+			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+		}
+	}
+	a, ok := viewer.Actors["familiar"]
+	if !ok {
+		t.Fatal("the player was not introduced to the token-less actor it was granted")
+	}
+	if ids := a.GetControllerIds(); len(ids) != 1 || ids[0] != "p-1" {
+		t.Errorf("the player's fold holds the familiar with controllers %v, want [p-1]", ids)
+	}
+	if got := a.GetResources()["pool"].GetCurrent(); got != 2 {
+		t.Errorf("the familiar arrived with pool %d, want 2", got)
+	}
+}
+
 // TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt is the rule
 // that REPLACED the migration rule, and it is the inversion of a test that
 // stood here until 2026-08-24.
@@ -822,7 +851,7 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 // to decide. The ghost below is the exact fixture the deleted test asserted the
 // OPPOSITE about — kept, rather than removed, so the change is visible as a
 // change.
-// VTT-207
+// VTT-242
 func TestAnActorWithNoDeclaredKindIsNotAPartyMemberWhoeverHoldsIt(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
