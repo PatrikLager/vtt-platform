@@ -430,3 +430,24 @@ half, alone. The mutation gate does not add a condition. Labels: `test data
 missing`, `outside the tool`. Closing it needs that test's shape for a
 spectator perched on a party member. Recorded 2026-09-29 by the Phase 4b
 review recorded in `docs/reports/2026-09-29-the-projection-has-a-record.md`.
+
+**The `TestQAMCPConnect*` deadline fixture fails when its shell starts
+late.** In `cmd/vtt/qa_e2e_wait_test.go`, `qaScript` writes a shell script
+whose first command writes its pid to a file, and the four tests that bound a
+subprocess that does not answer give `connectMCPSubprocess`
+`neverAnswersBound`, 500 ms, which includes the shell's own start-up. On a
+loaded machine the connect's deadline passes, and the subprocess is killed,
+before the shell reaches that first command; the test then fails on its
+precondition, "the fixture never got to run: open …/pid: no such file or
+directory", not on the behaviour it pins. Recipe: none is needed to put it
+back; it is there. Seen 2026-09-30 in `task check`'s `check:coverage` step,
+whose `-cover -p 1` run holds `cmd/vtt`, on `106dcaf`, which changed no Go
+file: `TestQAMCPConnectFailsWithADeadlineWhenTheSubprocessIgnoresStdio`. The
+same family failed before, as gap 11 of
+`docs/superpowers/plans/2026-09-29-the-seat-and-the-perch-have-a-record.md`
+and gap 9 of `docs/superpowers/plans/2026-09-29-the-projection-has-a-record.md`
+record. No gate catches it: the fixture is green on an idle machine, where
+Phase 4a and 4b of `3aed0ce` ran it. Labels: `test data missing`. Closing it
+needs the fixture to wait for the pid file before the bound starts, or a
+bound that excludes start-up, in a ticket of its own. Recorded 2026-09-30 by
+the note-visibility change, whose gate run it stopped.
