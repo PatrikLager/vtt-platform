@@ -450,7 +450,9 @@ record. No gate catches it: the fixture is green on an idle machine, where
 Phase 4a and 4b of `3aed0ce` ran it. Labels: `test data missing`. Closing it
 needs the fixture to wait for the pid file before the bound starts, or a
 bound that excludes start-up, in a ticket of its own. Recorded 2026-09-30 by
-the note-visibility change, whose gate run it stopped.
+the note-visibility change, whose gate run it stopped. Seen again 2026-10-01
+in `check:race`, on `e75c416`, which changed no file under `cmd/vtt`:
+`TestQAMCPConnectEndsASubprocessThatIgnoresSIGTERM`.
 
 **No golden log carries an actor's removal, so the keystone holds none.**
 `TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees` runs
@@ -466,3 +468,17 @@ whose eventgen walk removes actors, and by unit tests; a reused id
 `test data missing`. Closing it needs a scenario that removes an actor some
 seats saw and others did not, and one that adds an actor under a removed id.
 Recorded 2026-10-01 by the testimony change's reading review.
+
+**`check:doc-owner` does not read test files, so a test can take another's
+doc comment.** `tools/check-doc-owner.py` skips every file ending
+`_test.go`. A new test inserted directly above an existing test's `// VTT-NNN`
+line lands between that test's doc block and its function: the block then
+documents the new test and the old one keeps only its citation, and the gate
+prints "every doc comment sits on its own function". Recipe: in any
+`_test.go`, put a new `func TestX` with its citation line directly above
+another test's citation line. It happened in
+`internal/gateway/server_visibility_test.go` in the note-visibility change and
+in `internal/gateway/project_test.go` in this one, and the reading review
+caught both. Labels: `outside the tool`. Closing it needs the checker to read
+test files, which may find findings older than this entry. Recorded 2026-10-01
+by the testimony change's report review.
