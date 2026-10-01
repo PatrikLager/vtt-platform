@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -26,45 +27,17 @@ type seatUnderTest struct {
 	pr       *gateway.Projector
 	received []*vttv1.Envelope
 	live     *engine.State
+	// frozen and sawBefore are keystoneStatusDiff's memory for this seat.
+	frozen    map[string]string
+	sawBefore map[string]bool
 }
 
-// TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer folds what the
-// PROJECTOR chose to send a seat and compares it against what the server holds.
-// A projection bug makes those two disagree; TestRebuildEqualsLiveProperty
-// cannot see one at all, because it only ever folds the log.
-//
-// IT DOES NOT ESCAPE THE SAME-CODE CANCELLATION, and a first version of this
-// comment claimed it did. Both sides here run engine.Apply too, so a fault in a
-// FORWARDED arm lands identically on both and cancels exactly as it does in
-// internal/campaign. Measured:
-//
-//	ActorRemoved made a no-op      forwarded to players   green here, green there
-//	SceneCreated storing width+1   re-synthesized         RED here, green there
-//
-// The escape is real but narrow: it holds for the arms the projector REBUILDS
-// from state — a SceneSeen it synthesizes, a TokenPlaced it emits at the square
-// a token now occupies — because the fault is then applied twice, once by the
-// server and once by the projector reading a state the same fault produced. For
-// an envelope forwarded unchanged there is no second application and no escape,
-// and on the DM/agent path there is no projection at all.
-//
-// WHAT SOUNDNESS MEANS, precisely, because a player is SUPPOSED to know less:
-// every scene, actor and token a seat's fold holds must exist in the server's
-// with an equal value. It may hold fewer — that is the whole point of the
-// projection — but never something the server does not have, and never a stale
-// value for something it does. A token that moved out of sight is deleted from
-// the seat by a TokenHidden rather than left behind at its last known square,
-// so "fewer, never different" is the invariant the projector owes.
-//
-// THE DM AND AGENT ARM IS A TRIPWIRE, NOT A PROOF, and calling it the sharp
-// case was wrong. Project returns the SAME POINTER for those roles, so their
-// fold is built from the identical envelopes the server folded — it is
-// fold(log) against fold(log), the very shape this file faults
-// TestRebuildEqualsLiveProperty for. It can only fail if someone edits that
-// role switch, which TestTheDMReceivesEverythingUnchanged already pins by
-// pointer. It is kept because a regression there would be severe and this
-// notices it for free, not because it demonstrates anything.
-// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237
+// TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer folds what each
+// seat is sent and holds it to the server: a scene or token a player holds
+// exists there with an equal value, and an actor holds the status it had when
+// the player last saw it (keystoneStatusDiff). A fault in a forwarded arm lands
+// on both sides alike and cancels here; the DM and agent seats are a tripwire.
+// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
@@ -111,19 +84,25 @@ func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 		t.Errorf("only %d of 6 seeds took a note from a player because it stopped being public",
 			total.seedsWithNoteWithdrawals)
 	}
+	if total.seedsWithResourceCorrections < 3 {
+		t.Errorf("only %d of 6 seeds corrected a resource a player saw change while unseen",
+			total.seedsWithResourceCorrections)
+	}
 	t.Logf("player seats ended holding %d scenes and %d tokens; %d withdrawals projected; "+
-		"seeds with tokens/hides/scenes: %d/%d/%d",
+		"seeds with tokens/hides/scenes/resource corrections: %d/%d/%d/%d",
 		total.playerScenes, total.playerTokens, total.hides,
-		total.seedsWithTokens, total.seedsWithHides, total.seedsWithScenes)
+		total.seedsWithTokens, total.seedsWithHides, total.seedsWithScenes,
+		total.seedsWithResourceCorrections)
 }
 
 // walkStats is what one walk showed a player, so the test can refuse a run that
 // asserted over an empty board.
 type walkStats struct {
-	playerScenes, playerTokens, hides                int
-	seedsWithScenes, seedsWithTokens, seedsWithHides int
-	publicNotes, noteWithdrawals                     int
-	seedsWithPublicNotes, seedsWithNoteWithdrawals   int
+	playerScenes, playerTokens, hides                 int
+	seedsWithScenes, seedsWithTokens, seedsWithHides  int
+	publicNotes, noteWithdrawals                      int
+	seedsWithPublicNotes, seedsWithNoteWithdrawals    int
+	resourceCorrections, seedsWithResourceCorrections int
 }
 
 func (w *walkStats) add(o walkStats) {
@@ -144,6 +123,9 @@ func (w *walkStats) add(o walkStats) {
 	}
 	if o.noteWithdrawals > 0 {
 		w.seedsWithNoteWithdrawals++
+	}
+	if o.resourceCorrections > 0 {
+		w.seedsWithResourceCorrections++
 	}
 }
 
@@ -173,8 +155,43 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 	for _, s := range seats {
 		s.pr = gateway.NewProjector(s.viewer)
 		s.live = engine.NewState()
+		s.frozen = map[string]string{}
+		s.sawBefore = map[string]bool{}
 	}
 	everPublic := map[string]bool{}
+
+	project := func(env *vttv1.Envelope, action int) {
+		for _, s := range seats {
+			out := s.pr.Project(env, server)
+			if s.viewer.Role == identity.RolePlayer {
+				for _, e := range out {
+					if _, ok := e.GetPayload().(*vttv1.Envelope_TokenHidden); ok {
+						stats.hides++
+					}
+					if nu := e.GetNoteUpserted(); nu != nil {
+						stats.publicNotes++
+					}
+					if nd := e.GetNoteDeleted(); nd != nil {
+						if _, still := server.Notes[nd.GetKey()]; still {
+							stats.noteWithdrawals++
+						}
+					}
+				}
+				assertNotesFollowThePublicOnes(t, s, out, server, everPublic, action)
+				want := visibleState(server, s.viewer)
+				for _, d := range keystoneStatusDiff(s.live, server, want, s.frozen, s.sawBefore) {
+					t.Fatalf("action #%d: %s: %s", action, s.name, d)
+				}
+				s.sawBefore = want.sees
+				for _, e := range out {
+					if e.GetResourceChanged() != nil && e.GetEventId() == "" {
+						stats.resourceCorrections++
+					}
+				}
+			}
+			s.received = append(s.received, out...)
+		}
+	}
 
 	var seq int64
 	for i := 0; i < propertyWalkEvents; i++ {
@@ -228,28 +245,17 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 			}
 		}
 
-		// Project AFTER applying, against the state that now includes the
-		// event — the ordering internal/gateway's seat.go uses, and which its
-		// own comment calls what Project is specified to read.
-		for _, s := range seats {
-			out := s.pr.Project(a.Env, server)
-			if s.viewer.Role == identity.RolePlayer {
-				for _, e := range out {
-					if _, ok := e.GetPayload().(*vttv1.Envelope_TokenHidden); ok {
-						stats.hides++
-					}
-					if nu := e.GetNoteUpserted(); nu != nil {
-						stats.publicNotes++
-					}
-					if nd := e.GetNoteDeleted(); nd != nil {
-						if _, still := server.Notes[nd.GetKey()]; still {
-							stats.noteWithdrawals++
-						}
-					}
+		project(a.Env, i)
+		// Change a resource every third step, by step index and with no draw, so
+		// a seat that did not see it has something to correct.
+		if i%3 == 0 {
+			if env := injectResourceChange(server, seq+1, i); env != nil {
+				seq++
+				if err := engine.Apply(server, env); err != nil {
+					t.Fatalf("action #%d: the injected %v was refused: %v", i, env, err)
 				}
-				assertNotesFollowThePublicOnes(t, s, out, server, everPublic, i)
+				project(env, i)
 			}
-			s.received = append(s.received, out...)
 		}
 	}
 
@@ -324,6 +330,29 @@ func assertSameWorld(t *testing.T, name string, server, seen *engine.State) {
 		t.Errorf("%s holds %d tokens and the server holds %d", name, len(seen.Tokens), len(server.Tokens))
 	}
 	assertSound(t, name, server, seen)
+	assertConditionsHeld(t, name, server, seen)
+}
+
+// assertConditionsHeld is the DM and agent case: every condition a seat holds,
+// the server holds; a player's are held by keystoneStatusDiff instead.
+func assertConditionsHeld(t *testing.T, name string, server, seen *engine.State) {
+	t.Helper()
+	for actor, carried := range seen.Conditions {
+		held := server.Conditions[actor]
+		for _, c := range carried {
+			found := false
+			for _, h := range held {
+				if h.ID == c.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s believes actor %q carries condition %q and the server does not",
+					name, actor, c.ID)
+			}
+		}
+	}
 }
 
 // assertSound is the player case: fewer is allowed, different is not.
@@ -392,22 +421,6 @@ func assertSound(t *testing.T, name string, server, seen *engine.State) {
 			}
 		}
 	}
-	for actor, carried := range seen.Conditions {
-		held := server.Conditions[actor]
-		for _, c := range carried {
-			found := false
-			for _, h := range held {
-				if h.ID == c.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("%s believes actor %q carries condition %q and the server does not",
-					name, actor, c.ID)
-			}
-		}
-	}
 	for key, n := range seen.Notes {
 		held, ok := server.Notes[key]
 		if !ok {
@@ -418,4 +431,29 @@ func assertSound(t *testing.T, name string, server, seen *engine.State) {
 			t.Errorf("%s holds note %q with different contents than the server", name, key)
 		}
 	}
+}
+
+// injectResourceChange is a ResourceChanged on the actor step picks, by index,
+// moving its pool by one within its bounds, or nil when that actor has none.
+func injectResourceChange(server *engine.State, seq int64, step int) *vttv1.Envelope {
+	ids := make([]string, 0, len(server.Actors))
+	for id := range server.Actors {
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	sort.Strings(ids)
+	id := ids[step%len(ids)]
+	pool, ok := server.Actors[id].GetResources()["pool"]
+	if !ok {
+		return nil
+	}
+	delta := int32(-1)
+	if pool.GetCurrent() == 0 {
+		delta = 1
+	}
+	return &vttv1.Envelope{Sequence: seq, EventId: fmt.Sprintf("inject-%d", seq),
+		Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+			ActorId: id, Resource: "pool", Delta: delta, NewValue: pool.GetCurrent() + delta}}}
 }

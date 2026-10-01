@@ -73,7 +73,7 @@
     "act-hidden": [
       {
         "ID": "dazed-by-ale",
-        "Source": "threshold:drink",
+        "Source": "",
         "AppliedSeq": 13
       }
     ]

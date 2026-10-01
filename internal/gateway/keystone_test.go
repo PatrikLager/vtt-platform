@@ -118,6 +118,9 @@ type oracleView struct {
 	tokens map[string]engine.Token
 	// actors is the actor ids this viewer is entitled to know of.
 	actors map[string]bool
+	// sees is the actors this viewer sees now: its eyes and the actors of the
+	// tokens on its seen squares.
+	sees map[string]bool
 }
 
 // visibleState is what a viewer may know of st, derived from engine.State and
@@ -129,6 +132,7 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 		squares: map[string]map[string]bool{},
 		tokens:  map[string]engine.Token{},
 		actors:  map[string]bool{},
+		sees:    map[string]bool{},
 	}
 	if st == nil {
 		return out
@@ -136,6 +140,7 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 
 	for _, eye := range oracleEyes(st, v) {
 		out.actors[eye] = true
+		out.sees[eye] = true
 		for _, tok := range st.Tokens {
 			if tok.ActorID != eye {
 				continue
@@ -159,6 +164,7 @@ func visibleState(st *engine.State, v gateway.Viewer) oracleView {
 		if out.squares[tok.SceneID][oracleSquareKey(tok.X, tok.Y)] {
 			out.tokens[id] = tok
 			out.actors[tok.ActorID] = true
+			out.sees[tok.ActorID] = true
 		}
 	}
 	for id, a := range st.Actors {
@@ -344,7 +350,7 @@ func oracleSquareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
 //     emits an empty SceneSeen when a scene goes dark — and the scene itself
 //     must be one an eye stood in at some prefix.
 
-// VTT-194 VTT-225 VTT-234 VTT-238 VTT-241 VTT-242
+// VTT-194 VTT-225 VTT-234 VTT-238 VTT-241 VTT-242 VTT-247
 func TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees(t *testing.T) {
 	for _, g := range keystoneCorpus(t) {
 		for _, seat := range keystoneSeats(t, g) {
@@ -367,6 +373,8 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 	everKnownActors := map[string]bool{}
 	everSeenScenes := map[string]bool{}
 	everSeenSquares := map[string]map[string]bool{}
+	frozen := map[string]string{}
+	sawBefore := map[string]bool{}
 
 	for i, env := range g.log {
 		received = append(received, env)
@@ -476,12 +484,67 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		for _, diff := range keystoneNoteDiff(got, world) {
 			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
 		}
+		for _, diff := range keystoneStatusDiff(got, world, want, frozen, sawBefore) {
+			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
+		}
+		sawBefore = want.sees
 		if t.Failed() {
 			// The first divergent prefix is the informative one; everything
 			// after it is that same divergence carried forward.
 			return
 		}
 	}
+}
+
+// keystoneStatusDiff holds each actor a seat's fold shares with the world to
+// the world's status as of the last prefix the oracle saw it at, before or
+// after the event, or as of the prefix it became knowable in this
+// incarnation (VTT-247). frozen carries those statuses from prefix to prefix.
+func keystoneStatusDiff(got, world *engine.State, want oracleView, frozen map[string]string,
+	sawBefore map[string]bool) []string {
+	for id := range frozen {
+		if _, ok := world.Actors[id]; !ok {
+			delete(frozen, id)
+		}
+	}
+	for id := range world.Actors {
+		_, known := frozen[id]
+		if want.sees[id] || sawBefore[id] || (!known && want.actors[id]) {
+			frozen[id] = keystoneActorStatus(world, id)
+		}
+	}
+	var out []string
+	for id := range got.Actors {
+		if _, ok := world.Actors[id]; !ok {
+			continue
+		}
+		if gotS, wantS := keystoneActorStatus(got, id), frozen[id]; gotS != wantS {
+			out = append(out, fmt.Sprintf("actor %q is held as %s, want %s", id, gotS, wantS))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// keystoneActorStatus is one actor as a fold holds it, with conditions and
+// controllers as sets.
+func keystoneActorStatus(st *engine.State, id string) string {
+	a := st.Actors[id]
+	var parts []string
+	for name, v := range a.GetAttributes() {
+		parts = append(parts, fmt.Sprintf("a:%s=%d", name, v))
+	}
+	for name, r := range a.GetResources() {
+		parts = append(parts, fmt.Sprintf("r:%s=%d/%d", name, r.GetCurrent(), r.GetMax()))
+	}
+	for _, c := range st.Conditions[id] {
+		parts = append(parts, "c:"+c.ID)
+	}
+	for _, c := range a.GetControllerIds() {
+		parts = append(parts, "p:"+c)
+	}
+	sort.Strings(parts)
+	return fmt.Sprintf("{%s %v %s}", a.GetName(), a.GetKind(), strings.Join(parts, ","))
 }
 
 // keystoneNoteDiff holds a seat's notes to the world's public notes, entry for

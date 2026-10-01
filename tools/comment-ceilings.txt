@@ -111,7 +111,7 @@ internal/engine/state.go  57.9
 internal/engine/terrain.go  52.3
 internal/engine/terrain_test.go  29.4
 internal/engine/visibility_fold_test.go  27.1
-internal/eventgen/model.go  29.3
+internal/eventgen/model.go  29.2
 internal/eventgen/model_test.go  14.7
 internal/gateway/add_actor_validate.go  25.0
 internal/gateway/add_actor_validate_test.go  48.8
@@ -132,7 +132,7 @@ internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  22.7
 internal/gateway/keepalive_conn_internal_test.go  23.0
 internal/gateway/keepalive_internal_test.go  29.7
-internal/gateway/keystone_test.go  40.8
+internal/gateway/keystone_test.go  39.4
 internal/gateway/map.go  18.8
 internal/gateway/map_internal_test.go  24.6
 internal/gateway/map_test.go  43.2
@@ -142,15 +142,16 @@ internal/gateway/note_validate.go  12.5
 internal/gateway/note_validate_test.go  0.0
 internal/gateway/presence.go  16.1
 internal/gateway/presence_internal_test.go  30.5
-internal/gateway/project.go  20.2
+internal/gateway/project.go  18.7
 internal/gateway/project_internal_test.go  33.4
-internal/gateway/project_property_test.go  31.0
-internal/gateway/project_test.go  31.3
+internal/gateway/project_property_test.go  22.4
+internal/gateway/project_test.go  27.8
 internal/gateway/qa_joining_test.go  4.8
 internal/gateway/qa_note_adventure_test.go  0.0
 internal/gateway/qa_note_projection_test.go  1.1
 internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/qa_testimony_eyes_test.go  0.0
+internal/gateway/qa_testimony_sight_test.go  0.0
 internal/gateway/remove_actor_test.go  37.0
 internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  24.4
@@ -162,7 +163,7 @@ internal/gateway/server_test.go  27.4
 internal/gateway/server_visibility_test.go  28.7
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  22.3
-internal/gateway/viewpoint_internal_test.go  28.5
+internal/gateway/viewpoint_internal_test.go  25.8
 internal/gateway/viewpoint_test.go  45.2
 internal/harness/batch_test.go  30.3
 internal/harness/batch_truncation_internal_test.go  26.4

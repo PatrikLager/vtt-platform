@@ -69,18 +69,6 @@
     "sessionId": "sess-1"
   },
   {
-    "actorControlGranted": {
-      "actorId": "act-patron",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-patron"
-    },
-    "actorRole": "dm",
-    "eventId": "evt-6",
-    "participantId": "p-dm",
-    "sequence": "6",
-    "sessionId": "sess-1"
-  },
-  {
     "sceneCreated": {
       "gridHeight": 5,
       "gridWidth": 5,
@@ -232,6 +220,14 @@
       ]
     },
     "sequence": "7"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-patron",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-patron"
+    },
+    "sequence": "8"
   },
   {
     "sequence": "8",

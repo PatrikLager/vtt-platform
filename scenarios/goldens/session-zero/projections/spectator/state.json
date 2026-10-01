@@ -3,10 +3,6 @@
     "act-fighter": {
       "actor_id": "act-fighter",
       "name": "Asme",
-      "controller_id": "p-player",
-      "controller_ids": [
-        "p-player"
-      ],
       "kind": 1
     },
     "act-healer": {

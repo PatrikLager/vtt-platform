@@ -368,8 +368,46 @@ func perchFixtureLog() []*vttv1.Envelope {
 			env.Payload = p
 		case *vttv1.Envelope_TokenPlaced:
 			env.Payload = p
+		case *vttv1.Envelope_ActorControlGranted:
+			env.Payload = p
 		}
 		out = append(out, env)
 	}
 	return out
+}
+
+// VTT-248
+func TestAPerchOntoAStaleShoulderCorrectsIt(t *testing.T) {
+	log := append(perchFixtureLog(), []*vttv1.Envelope{
+		{Sequence: 8, EventId: "e", Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+			Actor: &vttv1.Actor{ActorId: "rogue", Name: "Rogue",
+				Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+				Resources: map[string]*vttv1.Resource{"pool": {Current: 5, Max: 5}}}}}},
+		{Sequence: 9, EventId: "e", Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+			TokenId: "t-rogue", SceneId: "s", ActorId: "rogue", Position: &vttv1.GridPosition{X: 4, Y: 1}}}},
+	}...)
+	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
+	for _, env := range log {
+		s.receive(env)
+	}
+	if len(s.perch("hero")) == 0 {
+		t.Fatal("the watcher must be on the hero's shoulder before the rogue is hurt")
+	}
+	if out := s.receive(&vttv1.Envelope{Sequence: 10, EventId: "e", Payload: &vttv1.Envelope_ResourceChanged{
+		ResourceChanged: &vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: -2, NewValue: 3}}}); len(out) != 0 {
+		t.Fatalf("the rogue's wound behind the shut door reached the hero's watcher: %v", out)
+	}
+
+	var fix *vttv1.ResourceChanged
+	for _, e := range s.perch("rogue") {
+		if rc := e.GetResourceChanged(); rc != nil {
+			if e.GetSequence() != perchSequence || e.GetEventId() != "" {
+				t.Errorf("a perch's correction carries sequence %d and event id %q", e.GetSequence(), e.GetEventId())
+			}
+			fix = rc
+		}
+	}
+	if fix.GetActorId() != "rogue" || fix.GetDelta() != -2 || fix.GetNewValue() != 3 {
+		t.Errorf("perching on the hurt rogue sent %v, want its pool brought from 5 to 3", fix)
+	}
 }

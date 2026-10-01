@@ -17,10 +17,6 @@
     "act-healer": {
       "actor_id": "act-healer",
       "name": "Ilva",
-      "controller_id": "p-player",
-      "controller_ids": [
-        "p-player"
-      ],
       "kind": 1
     }
   },

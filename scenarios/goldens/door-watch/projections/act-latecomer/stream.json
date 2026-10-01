@@ -33,18 +33,6 @@
     "sequence": "3"
   },
   {
-    "actorControlGranted": {
-      "actorId": "act-watcher",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-watcher"
-    },
-    "actorRole": "dm",
-    "eventId": "evt-4",
-    "participantId": "p-dm",
-    "sequence": "4",
-    "sessionId": "sess-1"
-  },
-  {
     "actorAdded": {
       "actor": {
         "actorId": "act-latecomer",
@@ -85,6 +73,14 @@
       "gridWidth": 7,
       "name": "The Door Hall",
       "sceneId": "door-hall"
+    },
+    "sequence": "17"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-watcher",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-watcher"
     },
     "sequence": "17"
   },

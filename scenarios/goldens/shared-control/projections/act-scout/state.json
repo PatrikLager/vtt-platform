@@ -8,11 +8,6 @@
     "act-warden": {
       "actor_id": "act-warden",
       "name": "Warden",
-      "controller_id": "p-bo",
-      "controller_ids": [
-        "p-bo",
-        "p-cy"
-      ],
       "kind": 1
     }
   },

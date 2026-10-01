@@ -274,7 +274,8 @@ func (m *Model) addActor() Action {
 	id := fmt.Sprintf("prop-actor-%d", m.actorN)
 	m.actors = append(m.actors, id)
 	return Action{Env: m.env(&vttv1.ActorAdded{
-		Actor: &vttv1.Actor{ActorId: id, Name: id, ModuleId: "prop-module"},
+		Actor: &vttv1.Actor{ActorId: id, Name: id, ModuleId: "prop-module",
+			Resources: map[string]*vttv1.Resource{"pool": {Current: 3, Max: 5}}},
 	}), Kind: "addActor", Anchors: true}
 }
 

@@ -137,8 +137,7 @@
   {
     "conditionApplied": {
       "actorId": "act-hidden",
-      "conditionId": "dazed-by-ale",
-      "source": "threshold:drink"
+      "conditionId": "dazed-by-ale"
     },
     "sequence": "13"
   },
@@ -289,11 +288,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-latecomer"
     },
-    "actorRole": "dm",
-    "eventId": "evt-16",
-    "participantId": "p-dm",
-    "sequence": "16",
-    "sessionId": "sess-1"
+    "sequence": "17"
   },
   {
     "sequence": "17",

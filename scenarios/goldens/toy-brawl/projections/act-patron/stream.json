@@ -58,18 +58,6 @@
   },
   {
     "actorControlGranted": {
-      "actorId": "act-brawler",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-brawler"
-    },
-    "actorRole": "dm",
-    "eventId": "evt-5",
-    "participantId": "p-dm",
-    "sequence": "5",
-    "sessionId": "sess-1"
-  },
-  {
-    "actorControlGranted": {
       "actorId": "act-patron",
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-patron"
@@ -86,6 +74,14 @@
       "gridWidth": 5,
       "name": "The Rusty Flagon",
       "sceneId": "scn-tavern"
+    },
+    "sequence": "8"
+  },
+  {
+    "actorControlGranted": {
+      "actorId": "act-brawler",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "participantId": "p-brawler"
     },
     "sequence": "8"
   },

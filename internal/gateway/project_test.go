@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -69,6 +70,12 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
 	case *vttv1.ConditionRemoved:
 		env.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
+	case *vttv1.ResourceChanged:
+		env.Payload = &vttv1.Envelope_ResourceChanged{ResourceChanged: p}
+	case *vttv1.AttackRolled:
+		env.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
+	case *vttv1.AbilityUsed:
+		env.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
 	default:
 		panic(fmt.Sprintf("envelope: no oneof arm wired for %T", payload))
 	}
@@ -1558,21 +1565,10 @@ func aWholeFight() []step {
 	}
 }
 
-// VTT-210
+// VTT-210 VTT-249
 func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
-	// THE FAILURE SPEC §8 CALLS THE WORST AVAILABLE, one layer over from the
-	// example it uses. Both folds reject removing a condition that is not
-	// there — engine.Apply: "condition %q not present on actor %q";
-	// client/src/fold.ts: the same sentence — and Task 3 measured what a throw
-	// costs a client: Session re-folds its whole log on every event, so one
-	// throw freezes that viewer's state permanently.
-	//
-	// The projection can walk straight into it. A condition applied to an
-	// actor the viewer cannot see is withheld; the actor then becomes known;
-	// and the REMOVAL is forwarded, because knowing an actor is all that arm
-	// asks. The viewer never received the application. So an introduction has
-	// to carry the actor's conditions — unlike its resources, which are fields
-	// of the Actor and ride along in the clone for free.
+	// Both folds refuse to remove a condition they never received, so an
+	// introduction carries the conditions applied while the actor was unseen.
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ConditionApplied{
 		ActorId: "goblin", ConditionId: "marked", Source: "the DM"})
@@ -1612,8 +1608,8 @@ func TestAConditionAppliedOutOfSightArrivesWithTheActor(t *testing.T) {
 	if got == nil {
 		t.Fatal("an introduced actor must arrive with the conditions already on it")
 	}
-	if got.GetConditionId() != "marked" || got.GetSource() != "the DM" {
-		t.Errorf("the condition must arrive whole, got id %q source %q",
+	if got.GetConditionId() != "marked" || got.GetSource() != "" {
+		t.Errorf("the condition must arrive by its id and without what applied it, got id %q source %q",
 			got.GetConditionId(), got.GetSource())
 	}
 
@@ -2991,5 +2987,375 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	}
 	if _, ok := viewerState.Tokens["t-hero"]; !ok {
 		t.Error("the seat's own token must survive another actor's removal")
+	}
+}
+
+// testimonyLog is twoRooms as a log, with a party member of another player,
+// the rogue, granted in the hero's room, and extra appended from sequence 11.
+func testimonyLog(extra ...proto.Message) []step {
+	steps := []step{
+		{1, &vttv1.SessionStarted{Name: "n"}},
+		{2, &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3,
+			Tiles: twoRoomsTiles()}},
+		{3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "hero", Name: "Hero",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}},
+		{4, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Goblin",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}},
+		{5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s", ActorId: "hero",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}}},
+		{6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s", ActorId: "goblin",
+			Position: &vttv1.GridPosition{X: 5, Y: 1}}},
+		{7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
+		{8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "rogue", Name: "Rogue",
+			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+			Resources: map[string]*vttv1.Resource{"pool": {Current: 5, Max: 5}}}}},
+		{9, &vttv1.TokenPlaced{TokenId: "t-rogue", SceneId: "s", ActorId: "rogue",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}}},
+		{10, &vttv1.ActorControlGranted{ActorId: "rogue", ParticipantId: "p-2",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}},
+	}
+	for i, p := range extra {
+		steps = append(steps, step{int64(11 + i), p})
+	}
+	return steps
+}
+
+var testimonyDoor = &vttv1.GridPosition{X: 3, Y: 1}
+
+// rogueLeaves takes the rogue behind the shut door.
+var rogueLeaves = &vttv1.TokenMoved{TokenId: "t-rogue", To: &vttv1.GridPosition{X: 4, Y: 1}}
+
+// runTestimony projects steps for v as a seat does, each event stamped with
+// the metadata a log carries, so a forwarded frame can be told from a built one.
+func runTestimony(v gateway.Viewer, steps []step) [][]*vttv1.Envelope {
+	st := engine.NewState()
+	pr := gateway.NewProjector(v)
+	out := make([][]*vttv1.Envelope, len(steps))
+	for i, s := range steps {
+		env := envelope(s.seq, s.payload)
+		env.EventId = fmt.Sprintf("evt-%d", s.seq)
+		env.ActorRole = "dm"
+		env.ParticipantId = "p-dm"
+		env.SessionId = "sess-1"
+		if err := engine.Apply(st, env); err != nil {
+			panic(fmt.Sprintf("runTestimony seq %d: %v", s.seq, err))
+		}
+		out[i] = pr.Project(env, st)
+	}
+	return out
+}
+
+// foldSteps folds every frame a seat was sent, failing on the first refused.
+func foldSteps(t *testing.T, frames [][]*vttv1.Envelope) *engine.State {
+	t.Helper()
+	viewer := engine.NewState()
+	for i, batch := range frames {
+		for _, e := range batch {
+			if err := engine.Apply(viewer, e); err != nil {
+				t.Fatalf("step %d: projected %T does not fold: %v", i, e.GetPayload(), err)
+			}
+		}
+	}
+	return viewer
+}
+
+// VTT-243
+func TestAConditionOnACreatureBehindAShutDoorReachesNoPlayer(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+		&vttv1.DoorClosed{SceneId: "s", At: testimonyDoor},
+		&vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "marked"},
+	))
+	viewer := foldSteps(t, frames)
+	if _, ok := viewer.Actors["goblin"]; !ok {
+		t.Fatal("fixture check: the player must have seen the goblin while the door stood open")
+	}
+	if out := frames[12]; len(out) != 0 {
+		t.Errorf("a condition on a goblin behind a shut door reached the player: %v", out)
+	}
+}
+
+// VTT-243
+func TestAPartyMemberInAnotherSceneIsNotHeardOf(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.SceneCreated{SceneId: "far", Name: "Far", GridWidth: 3, GridHeight: 3},
+		&vttv1.TokenRemoved{TokenId: "t-rogue"},
+		&vttv1.TokenPlaced{TokenId: "t-rogue-far", SceneId: "far", ActorId: "rogue",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}},
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "marked"},
+		&vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: -2, NewValue: 3},
+		&vttv1.ConditionRemoved{ActorId: "rogue", ConditionId: "marked"},
+	))
+	viewer := foldSteps(t, frames)
+	if _, ok := viewer.Actors["rogue"]; !ok {
+		t.Fatal("fixture check: a party member stays on every roster (VTT-208)")
+	}
+	for i := 13; i <= 15; i++ {
+		if len(frames[i]) != 0 {
+			t.Errorf("step %d about a party member in another scene reached the player: %v", i, frames[i])
+		}
+	}
+	if got := viewer.Actors["rogue"].GetResources()["pool"].GetCurrent(); got != 5 {
+		t.Errorf("the player's rogue holds pool %d, want the 5 it was introduced with", got)
+	}
+}
+
+// VTT-244
+func TestAnUnseenPartyMembersAttackReachesNoPlayer(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.AttackRolled{AttackerId: "rogue", TargetId: "hero", Total: 12, Outcome: "hit"},
+		&vttv1.AbilityUsed{ActorId: "rogue", AbilityId: "taunt", TargetIds: []string{"hero"}},
+		&vttv1.AttackRolled{AttackerId: "hero", TargetId: "goblin", Total: 9, Outcome: "miss"},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+		&vttv1.AttackRolled{AttackerId: "hero", TargetId: "goblin", Total: 15, Outcome: "hit"},
+	))
+	foldSteps(t, frames)
+	for i, what := range map[int]string{11: "the rogue's attack on the hero", 12: "the rogue's ability on the hero",
+		13: "the hero's attack on a goblin it does not see"} {
+		if len(frames[i]) != 0 {
+			t.Errorf("%s reached the player: %v", what, frames[i])
+		}
+	}
+	if out := frames[15]; len(out) != 1 || out[0].GetAttackRolled() == nil {
+		t.Errorf("the hero's attack on a goblin it sees did not reach the player, got %v", out)
+	}
+}
+
+// VTT-245
+func TestAControlChangeOnAnUnseenPartyMemberReachesNoPlayer(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.ActorControlGranted{ActorId: "rogue", ParticipantId: "p-3",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		&vttv1.ActorControlRevoked{ActorId: "rogue", ParticipantId: "p-2"},
+	))
+	viewer := foldSteps(t, frames)
+	for i := 11; i <= 12; i++ {
+		if len(frames[i]) != 0 {
+			t.Errorf("a control change on the unseen rogue reached the player: %v", frames[i])
+		}
+	}
+	if ids := viewer.Actors["rogue"].GetControllerIds(); len(ids) != 1 || ids[0] != "p-2" {
+		t.Errorf("the player's rogue is held by %v, want the [p-2] it was introduced with", ids)
+	}
+}
+
+// VTT-246
+func TestAPlayersOwnTokenlessCharacterIsHeardOf(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "familiar", Name: "Familiar",
+			Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			Resources: map[string]*vttv1.Resource{"pool": {Current: 2, Max: 2}}}},
+		&vttv1.ActorControlGranted{ActorId: "familiar", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		&vttv1.ResourceChanged{ActorId: "familiar", Resource: "pool", Delta: -1, NewValue: 1},
+		&vttv1.ConditionApplied{ActorId: "familiar", ConditionId: "tired"},
+	))
+	viewer := foldSteps(t, frames)
+	for i := 12; i <= 13; i++ {
+		if len(frames[i]) != 1 || frames[i][0].GetEventId() == "" {
+			t.Errorf("step %d about the player's own token-less familiar was not forwarded: %v", i, frames[i])
+		}
+	}
+	if got := viewer.Actors["familiar"].GetResources()["pool"].GetCurrent(); got != 1 {
+		t.Errorf("the player's familiar holds pool %d, want 1", got)
+	}
+}
+
+// correctionFrames returns the status frames of out about actorID, failing on
+// any that carries something a correction must not.
+func correctionFrames(t *testing.T, out []*vttv1.Envelope, actorID string) []*vttv1.Envelope {
+	t.Helper()
+	var fix []*vttv1.Envelope
+	for _, e := range out {
+		var about, extra string
+		switch p := e.GetPayload().(type) {
+		case *vttv1.Envelope_ResourceChanged:
+			about, extra = p.ResourceChanged.GetActorId(), p.ResourceChanged.GetReason()
+		case *vttv1.Envelope_ConditionApplied:
+			about, extra = p.ConditionApplied.GetActorId(), p.ConditionApplied.GetSource()
+		case *vttv1.Envelope_ConditionRemoved:
+			about, extra = p.ConditionRemoved.GetActorId(), p.ConditionRemoved.GetReason()
+		case *vttv1.Envelope_ActorControlGranted:
+			about = p.ActorControlGranted.GetActorId()
+		case *vttv1.Envelope_ActorControlRevoked:
+			about = p.ActorControlRevoked.GetActorId()
+		default:
+			continue
+		}
+		if about != actorID {
+			continue
+		}
+		if e.GetEventId() != "" || e.GetActorRole() != "" || e.GetParticipantId() != "" ||
+			e.GetSessionId() != "" || e.GetOccurredAt() != nil || extra != "" {
+			t.Errorf("a frame bringing %s up to date carries more than its status: %v", actorID, e)
+		}
+		fix = append(fix, e)
+	}
+	return fix
+}
+
+// VTT-248 VTT-249 VTT-247
+func TestDamageTakenOutOfSightArrivesWhenTheEyeWalksIn(t *testing.T) {
+	steps := testimonyLog(
+		rogueLeaves,
+		&vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: -2, NewValue: 3, Reason: "ability:stab:hit"},
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "bleeding", Source: "ability:stab:hit"},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+	)
+	frames := runTestimony(player(), steps)
+	viewer := foldSteps(t, frames)
+
+	fix := correctionFrames(t, frames[13], "rogue")
+	if len(fix) != 2 || fix[0].GetResourceChanged() == nil || fix[1].GetConditionApplied() == nil {
+		t.Fatalf("walking in on the rogue sent %v, want its pool and its condition", fix)
+	}
+	if rc := fix[0].GetResourceChanged(); rc.GetDelta() != -2 || rc.GetNewValue() != 3 {
+		t.Errorf("the rogue's pool arrived as delta %d new %d, want -2 and 3", rc.GetDelta(), rc.GetNewValue())
+	}
+	for _, e := range fix {
+		if e.GetSequence() != 14 {
+			t.Errorf("a correction carries sequence %d, want the door's 14", e.GetSequence())
+		}
+	}
+	if got := viewer.Actors["rogue"].GetResources()["pool"].GetCurrent(); got != 3 {
+		t.Errorf("the player's rogue holds pool %d after seeing it, want 3", got)
+	}
+	if c := viewer.Conditions["rogue"]; len(c) != 1 || c[0].ID != "bleeding" {
+		t.Errorf("the player's rogue carries %v after seeing it, want [bleeding]", c)
+	}
+}
+
+// VTT-248 VTT-247
+func TestAKindChangedOutOfSightIsCorrectedOnSight(t *testing.T) {
+	charm := &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-3",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
+	for _, tc := range []struct {
+		name  string
+		after []proto.Message
+		want  []string
+	}{
+		{"with a controller", nil, []string{"p-3"}},
+		{"with none", []proto.Message{&vttv1.ActorControlRevoked{ActorId: "goblin", ParticipantId: "p-3"}}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			log := []proto.Message{
+				&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+				&vttv1.DoorClosed{SceneId: "s", At: testimonyDoor},
+				charm,
+			}
+			log = append(log, tc.after...)
+			log = append(log, &vttv1.DoorOpened{SceneId: "s", At: testimonyDoor})
+			frames := runTestimony(player(), testimonyLog(log...))
+			viewer := foldSteps(t, frames)
+			for i := 12; i < len(frames)-1; i++ {
+				if len(frames[i]) != 0 {
+					t.Errorf("step %d, a control change on the unseen goblin, reached the player: %v", i, frames[i])
+				}
+			}
+			g := viewer.Actors["goblin"]
+			if g.GetKind() != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
+				t.Errorf("the player's goblin is %v after seeing it, want a party member", g.GetKind())
+			}
+			if ids := g.GetControllerIds(); !sameStrings(ids, tc.want) {
+				t.Errorf("the player's goblin is held by %v after seeing it, want %v", ids, tc.want)
+			}
+		})
+	}
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// VTT-248
+func TestAResourceStartedBelowZeroIsCorrectedOnSight(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
+			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+			Resources: map[string]*vttv1.Resource{"pool": {Current: math.MinInt32}}}},
+		&vttv1.TokenPlaced{TokenId: "t-wraith", SceneId: "s", ActorId: "wraith",
+			Position: &vttv1.GridPosition{X: 5, Y: 1}},
+		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: 1, NewValue: 0},
+		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: math.MaxInt32, NewValue: math.MaxInt32},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+	))
+	viewer := foldSteps(t, frames)
+	fix := correctionFrames(t, frames[14], "wraith")
+	if len(fix) != 2 {
+		t.Fatalf("seeing the wraith sent %v, want two frames through zero", fix)
+	}
+	first, second := fix[0].GetResourceChanged(), fix[1].GetResourceChanged()
+	if first.GetDelta() != 0 || first.GetNewValue() != 0 ||
+		second.GetDelta() != math.MaxInt32 || second.GetNewValue() != math.MaxInt32 {
+		t.Errorf("the wraith's pool arrived as %v then %v, want 0/0 then %d/%d",
+			first, second, math.MaxInt32, math.MaxInt32)
+	}
+	if got := viewer.Actors["wraith"].GetResources()["pool"].GetCurrent(); got != math.MaxInt32 {
+		t.Errorf("the player's wraith holds pool %d, want %d", got, math.MaxInt32)
+	}
+}
+
+// VTT-250
+func TestAChangeUndoneOutOfSightSendsNothingOnSight(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "marked"},
+		&vttv1.ConditionRemoved{ActorId: "rogue", ConditionId: "marked"},
+		&vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: -2, NewValue: 3},
+		&vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: 2, NewValue: 5},
+		&vttv1.ActorControlGranted{ActorId: "rogue", ParticipantId: "p-3",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		&vttv1.ActorControlRevoked{ActorId: "rogue", ParticipantId: "p-3"},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+	))
+	foldSteps(t, frames)
+	if fix := correctionFrames(t, frames[17], "rogue"); len(fix) != 0 {
+		t.Errorf("seeing the rogue, whose changes were all undone unseen, sent %v", fix)
+	}
+}
+
+// VTT-250
+func TestConditionsReorderedOutOfSightSendNothingOnSight(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "a"},
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "b"},
+		rogueLeaves,
+		&vttv1.ConditionRemoved{ActorId: "rogue", ConditionId: "a"},
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "a"},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+	))
+	foldSteps(t, frames)
+	if fix := correctionFrames(t, frames[15], "rogue"); len(fix) != 0 {
+		t.Errorf("seeing the rogue, whose conditions were only reordered unseen, sent %v", fix)
+	}
+}
+
+// VTT-248
+func TestADifferenceOfExactlyMaxInt32IsOneCorrection(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
+			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+			Resources: map[string]*vttv1.Resource{"pool": {Current: -1}}}},
+		&vttv1.TokenPlaced{TokenId: "t-wraith", SceneId: "s", ActorId: "wraith",
+			Position: &vttv1.GridPosition{X: 5, Y: 1}},
+		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: 1, NewValue: 0},
+		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: math.MaxInt32 - 1, NewValue: math.MaxInt32 - 1},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+	))
+	foldSteps(t, frames)
+	fix := correctionFrames(t, frames[14], "wraith")
+	if len(fix) != 1 || fix[0].GetResourceChanged().GetDelta() != math.MaxInt32 {
+		t.Errorf("a difference of exactly MaxInt32 arrived as %v, want one frame carrying it", fix)
 	}
 }

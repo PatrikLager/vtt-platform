@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,17 +44,24 @@ type Projector struct {
 	// Forget a key only in noteTransitions, which sends its NoteDeleted: a key
 	// forgotten anywhere else stays in the viewer's fold (SPEC-016).
 	notes map[string]bool
+	// Replace sighted only in snapshotSighted: classify judges every
+	// actor-naming payload against it (SPEC-016).
+	sighted map[string]bool
+	// Write a belief only where the viewer's fold equals st (snapshotSighted).
+	belief map[string]actorBelief
 }
 
 func NewProjector(v Viewer) *Projector {
 	return &Projector{
-		viewer: v,
-		scenes: map[string]bool{},
-		actors: map[string]bool{},
-		tokens: map[string]bool{},
-		seen:   map[string]map[string]bool{},
-		doors:  map[string]map[string]bool{},
-		notes:  map[string]bool{},
+		viewer:  v,
+		scenes:  map[string]bool{},
+		actors:  map[string]bool{},
+		tokens:  map[string]bool{},
+		seen:    map[string]map[string]bool{},
+		doors:   map[string]map[string]bool{},
+		notes:   map[string]bool{},
+		sighted: map[string]bool{},
+		belief:  map[string]actorBelief{},
 	}
 }
 
@@ -124,6 +132,7 @@ type sightView struct {
 	squares map[string]map[string]bool
 	tokens  map[string]bool
 	actors  map[string]bool
+	sees    map[string]bool
 }
 
 // look is what this viewer sees and may know of st, recomputed on every call
@@ -134,12 +143,14 @@ func (pr *Projector) look(st *engine.State) sightView {
 		squares: map[string]map[string]bool{},
 		tokens:  map[string]bool{},
 		actors:  map[string]bool{},
+		sees:    map[string]bool{},
 	}
 	if st == nil {
 		return v
 	}
 	for _, eye := range pr.eyes(st) {
 		v.actors[eye] = true
+		v.sees[eye] = true
 		// Walk this map unordered only because the loop unions a set; sort every
 		// walk that emits frames (sortedSet).
 		for _, tok := range st.Tokens {
@@ -166,6 +177,7 @@ func (pr *Projector) look(st *engine.State) sightView {
 		if v.squares[tok.SceneID][squareKey(tok.X, tok.Y)] {
 			v.tokens[id] = true
 			v.actors[tok.ActorID] = true
+			v.sees[tok.ActorID] = true
 		}
 	}
 	for id, a := range st.Actors {
@@ -221,6 +233,7 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	for id := range pr.actors {
 		if _, ok := st.Actors[id]; !ok {
 			delete(pr.actors, id)
+			delete(pr.belief, id)
 		}
 	}
 
@@ -245,37 +258,16 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 	out = append(out, pr.doorTransitions(cause, seq, now, st)...)
 
 	for _, id := range sortedSet(now.actors) {
-		if pr.actors[id] {
-			continue
-		}
 		a, ok := st.Actors[id]
 		if !ok {
 			continue
 		}
-		// Clone the actor: st.Actors holds live pointers a later grant mutates.
-		clone := proto.Clone(a).(*vttv1.Actor)
-
-		// Clear the controllers from the introduction, since both folds refuse an
-		// ActorAdded that names one, and send each behind it as a grant stating the
-		// actor's kind (TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt).
-		controllers := clone.GetControllerIds()
-		clone.ControllerId = ""
-		clone.ControllerIds = nil
-		out = append(out, &vttv1.Envelope{Sequence: seq,
-			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: clone}}})
-		for _, cid := range controllers {
-			out = append(out, &vttv1.Envelope{Sequence: seq,
-				Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
-					ActorId: id, ParticipantId: cid, Kind: a.GetKind()}}})
+		if !pr.actors[id] {
+			out = append(out, pr.introduce(id, seq, a, st)...)
+			continue
 		}
-		pr.actors[id] = true
-
-		// Send its conditions behind it: the Actor does not carry them
-		// (TestAConditionAppliedOutOfSightArrivesWithTheActor).
-		for _, c := range st.Conditions[id] {
-			out = append(out, &vttv1.Envelope{Sequence: seq,
-				Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
-					ActorId: id, ConditionId: c.ID, Source: c.Source}}})
+		if now.sees[id] && !pr.sighted[id] {
+			out = append(out, pr.correct(id, seq, a, st)...)
 		}
 	}
 
@@ -324,6 +316,7 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		pr.seen[id] = lit
 	}
 
+	pr.snapshotSighted(now, st)
 	return append(out, pr.noteTransitions(cause, seq, st)...)
 }
 
@@ -396,11 +389,11 @@ func passIf(ok bool) verdict {
 // classify rules on env for this viewer (SPEC-016). Keep an arm for every
 // payload and the default unrecognised: a default that forwards leaks
 // (TestEveryEnvelopePayloadArmHasAnExplicitRuling). Call it before
-// transitions, which moves pr.tokens and pr.actors past this event.
+// transitions, which moves pr.tokens, pr.actors and pr.sighted past this event.
 func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
-	knows := func(ids ...string) bool {
+	saw := func(ids ...string) bool {
 		for _, id := range ids {
-			if id != "" && !pr.actors[id] && !now.actors[id] {
+			if id != "" && !pr.sighted[id] {
 				return false
 			}
 		}
@@ -460,32 +453,30 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 	case *vttv1.Envelope_DoorClosed:
 		return passIf(pr.canSeeSquare(now, p.DoorClosed.GetSceneId(), p.DoorClosed.GetAt()))
 
-	// Forward these when the viewer knows every actor they name (SPEC-016).
+	// Forward these when the viewer saw every actor they name before the event;
+	// an actor it comes to see is corrected in transitions (SPEC-016).
 
 	case *vttv1.Envelope_AttackRolled:
-		return passIf(knows(p.AttackRolled.GetAttackerId(), p.AttackRolled.GetTargetId()))
+		return passIf(saw(p.AttackRolled.GetAttackerId(), p.AttackRolled.GetTargetId()))
 
 	case *vttv1.Envelope_AbilityUsed:
-		return passIf(knows(append([]string{p.AbilityUsed.GetActorId()},
+		return passIf(saw(append([]string{p.AbilityUsed.GetActorId()},
 			p.AbilityUsed.GetTargetIds()...)...))
 
 	case *vttv1.Envelope_ActorControlGranted:
-		return passIf(knows(p.ActorControlGranted.GetActorId()))
+		return passIf(saw(p.ActorControlGranted.GetActorId()))
 
 	case *vttv1.Envelope_ActorControlRevoked:
-		return passIf(knows(p.ActorControlRevoked.GetActorId()))
-
-	// Forward these to a viewer that held the actor before this event: its
-	// introduction already carries the change (SPEC-016).
+		return passIf(saw(p.ActorControlRevoked.GetActorId()))
 
 	case *vttv1.Envelope_ResourceChanged:
-		return passIf(pr.actors[p.ResourceChanged.GetActorId()])
+		return passIf(saw(p.ResourceChanged.GetActorId()))
 
 	case *vttv1.Envelope_ConditionApplied:
-		return passIf(pr.actors[p.ConditionApplied.GetActorId()])
+		return passIf(saw(p.ConditionApplied.GetActorId()))
 
 	case *vttv1.Envelope_ConditionRemoved:
-		return passIf(pr.actors[p.ConditionRemoved.GetActorId()])
+		return passIf(saw(p.ConditionRemoved.GetActorId()))
 
 	case *vttv1.Envelope_ActorRemoved:
 		// Forward only to a seat that held the actor: a fold without it refuses
@@ -643,6 +634,183 @@ func (pr *Projector) noteTransitions(cause *vttv1.Envelope, seq int64, st *engin
 		pr.notes[nu.GetKey()] = true
 	}
 	return out
+}
+
+// introduce sends the viewer an actor it does not hold, with its controllers
+// as grants and its conditions behind it (SPEC-016).
+func (pr *Projector) introduce(id string, seq int64, a *vttv1.Actor, st *engine.State) []*vttv1.Envelope {
+	// Clone the actor: st.Actors holds live pointers a later grant mutates.
+	clone := proto.Clone(a).(*vttv1.Actor)
+
+	// Clear the controllers from the introduction, since both folds refuse an
+	// ActorAdded that names one, and send each behind it as a grant stating the
+	// actor's kind (TestAnIntroductionCarriesNoControllerAndTheGrantsBehindIt).
+	controllers := clone.GetControllerIds()
+	clone.ControllerId = ""
+	clone.ControllerIds = nil
+	out := []*vttv1.Envelope{{Sequence: seq,
+		Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: clone}}}}
+	for _, cid := range controllers {
+		out = append(out, &vttv1.Envelope{Sequence: seq,
+			Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+				ActorId: id, ParticipantId: cid, Kind: a.GetKind()}}})
+	}
+	// Send its conditions behind it, since the Actor does not carry them, and
+	// without their source (VTT-249).
+	for _, c := range st.Conditions[id] {
+		out = append(out, &vttv1.Envelope{Sequence: seq,
+			Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
+				ActorId: id, ConditionId: c.ID}}})
+	}
+	pr.actors[id] = true
+	pr.belief[id] = beliefOf(a, st.Conditions[id])
+	return out
+}
+
+// actorBelief is what the viewer's fold holds of an actor that an event can
+// change: each resource's current value, its conditions, its controllers and
+// its kind (SPEC-016).
+type actorBelief struct {
+	resources   map[string]int32
+	conditions  []string
+	controllers []string
+	kind        vttv1.ActorKind
+}
+
+func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
+	b := actorBelief{resources: map[string]int32{}, kind: a.GetKind()}
+	for name, r := range a.GetResources() {
+		b.resources[name] = r.GetCurrent()
+	}
+	for _, c := range conditions {
+		b.conditions = append(b.conditions, c.ID)
+	}
+	b.controllers = append(b.controllers, a.GetControllerIds()...)
+	return b
+}
+
+// snapshotSighted records the belief of every held actor this event's frames
+// left equal to st: one seen before the event, or seen now (SPEC-016).
+func (pr *Projector) snapshotSighted(now sightView, st *engine.State) {
+	for _, set := range []map[string]bool{pr.sighted, now.sees} {
+		for id := range set {
+			if a, ok := st.Actors[id]; ok && pr.actors[id] {
+				pr.belief[id] = beliefOf(a, st.Conditions[id])
+			}
+		}
+	}
+	pr.sighted = now.sees
+}
+
+// correct brings the viewer's fold of a held actor that comes into sight to
+// its present status, in frames carrying seq and nothing that says who or what
+// changed it (SPEC-016).
+func (pr *Projector) correct(id string, seq int64, a *vttv1.Actor, st *engine.State) []*vttv1.Envelope {
+	b := pr.belief[id]
+	fix, ok := statusFrames(id, seq, b, a, st.Conditions[id])
+	if !ok {
+		// Re-introduce what no grant can carry: both folds accept it, since no
+		// token of an actor entering sight is on the viewer's board.
+		delete(pr.actors, id)
+		out := []*vttv1.Envelope{{Sequence: seq,
+			Payload: &vttv1.Envelope_ActorRemoved{ActorRemoved: &vttv1.ActorRemoved{ActorId: id}}}}
+		return append(out, pr.introduce(id, seq, a, st)...)
+	}
+	pr.belief[id] = beliefOf(a, st.Conditions[id])
+	return fix
+}
+
+// statusFrames are the frames that bring belief b to actor a, or false when
+// none can: a resource set that differs, or a kind no held controller carries
+// (SPEC-016).
+func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, conditions []engine.ActorCondition) ([]*vttv1.Envelope, bool) {
+	var out []*vttv1.Envelope
+	frame := func(e *vttv1.Envelope) {
+		e.Sequence = seq
+		out = append(out, e)
+	}
+
+	if len(a.GetResources()) != len(b.resources) {
+		return nil, false
+	}
+	names := make([]string, 0, len(a.GetResources()))
+	for name := range a.GetResources() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		was, held := b.resources[name]
+		if !held {
+			return nil, false
+		}
+		cur := a.GetResources()[name].GetCurrent()
+		if cur == was {
+			continue
+		}
+		// Pass through zero when the difference does not fit int32: the fold floors
+		// a negative current at 0 (TestAResourceStartedBelowZeroIsCorrectedOnSight).
+		if d := int64(cur) - int64(was); d > math.MaxInt32 {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+				ActorId: id, Resource: name}}})
+			was = 0
+		}
+		frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+			ActorId: id, Resource: name, Delta: cur - was, NewValue: cur}}})
+	}
+
+	present := map[string]bool{}
+	for _, c := range conditions {
+		present[c.ID] = true
+	}
+	believed := map[string]bool{}
+	for _, c := range b.conditions {
+		believed[c] = true
+		if !present[c] {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{
+				ActorId: id, ConditionId: c}}})
+		}
+	}
+	for _, c := range conditions {
+		if !believed[c.ID] {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
+				ActorId: id, ConditionId: c.ID}}})
+		}
+	}
+
+	controls := map[string]bool{}
+	for _, c := range a.GetControllerIds() {
+		controls[c] = true
+	}
+	held := map[string]bool{}
+	for _, c := range b.controllers {
+		held[c] = true
+	}
+	grant := func(pid string) {
+		frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: id, ParticipantId: pid, Kind: a.GetKind()}}})
+	}
+	granted := false
+	for _, c := range a.GetControllerIds() {
+		if !held[c] {
+			grant(c)
+			granted = true
+		}
+	}
+	if a.GetKind() != b.kind && !granted {
+		// Re-state a controller the fold holds: a grant is the one frame that
+		// carries a kind, and naming any other would tell of a participant unseen.
+		if len(b.controllers) == 0 || a.GetKind() == vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
+			return nil, false
+		}
+		grant(b.controllers[0])
+	}
+	for _, c := range b.controllers {
+		if !controls[c] {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
+				ActorId: id, ParticipantId: c}}})
+		}
+	}
+	return out, true
 }
 
 func sameSet(a, b map[string]bool) bool {

@@ -42,18 +42,6 @@
     "sequence": "6"
   },
   {
-    "actorControlGranted": {
-      "actorId": "act-healer",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-player"
-    },
-    "actorRole": "dm",
-    "eventId": "evt-7",
-    "participantId": "p-dm",
-    "sequence": "7",
-    "sessionId": "sess-1"
-  },
-  {
     "sceneCreated": {
       "gridHeight": 9,
       "gridWidth": 20,

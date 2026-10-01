@@ -20,18 +20,6 @@
     "sequence": "4"
   },
   {
-    "actorControlGranted": {
-      "actorId": "act-fighter",
-      "kind": "ACTOR_KIND_PARTY_MEMBER",
-      "participantId": "p-player"
-    },
-    "actorRole": "dm",
-    "eventId": "evt-5",
-    "participantId": "p-dm",
-    "sequence": "5",
-    "sessionId": "sess-1"
-  },
-  {
     "actorAdded": {
       "actor": {
         "actorId": "act-healer",
