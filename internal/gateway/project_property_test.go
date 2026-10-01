@@ -27,17 +27,18 @@ type seatUnderTest struct {
 	pr       *gateway.Projector
 	received []*vttv1.Envelope
 	live     *engine.State
-	// frozen and sawBefore are keystoneStatusDiff's memory for this seat.
+	// frozen, sawBefore and ghosts are keystoneStatusDiff's memory for this seat.
 	frozen    map[string]string
 	sawBefore map[string]bool
+	ghosts    map[string]bool
 }
 
 // TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer folds what each
-// seat is sent and holds it to the server: a scene or token a player holds
-// exists there with an equal value, and an actor holds the status it had when
-// the player last saw it (keystoneStatusDiff). A fault in a forwarded arm lands
-// on both sides alike and cancels here; the DM and agent seats are a tripwire.
-// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248
+// seat is sent and holds it to the server after every event: scenes and tokens
+// (assertSound), an actor's status as last seen (keystoneStatusDiff) and a
+// removal only where it was seen (keystoneRemovalDiff). A fault in a forwarded
+// arm lands on both sides alike and cancels; the DM and agent are a tripwire.
+// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248 VTT-251
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
@@ -157,11 +158,14 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 		s.live = engine.NewState()
 		s.frozen = map[string]string{}
 		s.sawBefore = map[string]bool{}
+		s.ghosts = map[string]bool{}
 	}
 	everPublic := map[string]bool{}
 
+	worldBefore := map[string]bool{}
 	project := func(env *vttv1.Envelope, action int) {
 		for _, s := range seats {
+			heldBefore := actorIDSet(s.live)
 			out := s.pr.Project(env, server)
 			if s.viewer.Role == identity.RolePlayer {
 				for _, e := range out {
@@ -179,7 +183,10 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 				}
 				assertNotesFollowThePublicOnes(t, s, out, server, everPublic, action)
 				want := visibleState(server, s.viewer)
-				for _, d := range keystoneStatusDiff(s.live, server, want, s.frozen, s.sawBefore) {
+				for _, d := range keystoneStatusDiff(s.live, server, want, s.frozen, s.sawBefore, s.ghosts) {
+					t.Fatalf("action #%d: %s: %s", action, s.name, d)
+				}
+				for _, d := range keystoneRemovalDiff(s.live, server, heldBefore, worldBefore, s.sawBefore) {
 					t.Fatalf("action #%d: %s: %s", action, s.name, d)
 				}
 				s.sawBefore = want.sees
@@ -191,6 +198,7 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 			}
 			s.received = append(s.received, out...)
 		}
+		worldBefore = actorIDSet(server)
 	}
 
 	var seq int64
@@ -330,13 +338,19 @@ func assertSameWorld(t *testing.T, name string, server, seen *engine.State) {
 		t.Errorf("%s holds %d tokens and the server holds %d", name, len(seen.Tokens), len(server.Tokens))
 	}
 	assertSound(t, name, server, seen)
-	assertConditionsHeld(t, name, server, seen)
+	assertActorsHeld(t, name, server, seen)
 }
 
-// assertConditionsHeld is the DM and agent case: every condition a seat holds,
-// the server holds; a player's are held by keystoneStatusDiff instead.
-func assertConditionsHeld(t *testing.T, name string, server, seen *engine.State) {
+// assertActorsHeld is the DM and agent case: every actor and condition a seat
+// holds, the server holds; a player's are held by keystoneStatusDiff and
+// keystoneRemovalDiff instead.
+func assertActorsHeld(t *testing.T, name string, server, seen *engine.State) {
 	t.Helper()
+	for id := range seen.Actors {
+		if _, ok := server.Actors[id]; !ok {
+			t.Errorf("%s holds actor %q, which the server does not have", name, id)
+		}
+	}
 	for actor, carried := range seen.Conditions {
 		held := server.Conditions[actor]
 		for _, c := range carried {
@@ -355,18 +369,10 @@ func assertConditionsHeld(t *testing.T, name string, server, seen *engine.State)
 	}
 }
 
-// assertSound is the player case: fewer is allowed, different is not.
-//
-// WHAT IT DOES NOT COMPARE, stated because the sentence above promises more
-// than the code delivers otherwise: a scene's Tiles, Objects, Explored and
-// Visible, an Actor's fields beyond existence, and State.Sessions. OpenDoors is
-// checked one way only — every door a seat believes open really is open — and
-// cannot be checked the other, because a player legitimately holds FEWER open
-// doors when the projector withheld one it could not see. Review demonstrated
-// the gap: neutering classify's DoorOpened arm leaves a player permanently
-// stale about a door they watched open, and this stays green. The package's own
-// TestADoorYouCanSeeDoesReachThePlayer is what catches that; a soundness
-// property structurally cannot.
+// assertSound holds a seat's scenes by name and size, its tokens by position,
+// its open doors and its notes to the server: fewer is allowed, different is
+// not. It compares no actor; TestADoorYouCanSeeDoesReachThePlayer holds a door
+// the other way.
 func assertSound(t *testing.T, name string, server, seen *engine.State) {
 	t.Helper()
 	for id, sc := range seen.Scenes {
@@ -401,11 +407,6 @@ func assertSound(t *testing.T, name string, server, seen *engine.State) {
 			t.Errorf("%s holds token %q at %s(%d,%d), the server has it at %s(%d,%d) — a seat "+
 				"that still holds a token must hold it where it really is",
 				name, id, tk.SceneID, tk.X, tk.Y, held.SceneID, held.X, held.Y)
-		}
-	}
-	for id := range seen.Actors {
-		if _, ok := server.Actors[id]; !ok {
-			t.Errorf("%s holds actor %q, which the server does not have", name, id)
 		}
 	}
 	for id, sc := range seen.Scenes {

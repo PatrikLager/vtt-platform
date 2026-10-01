@@ -375,6 +375,9 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 	everSeenSquares := map[string]map[string]bool{}
 	frozen := map[string]string{}
 	sawBefore := map[string]bool{}
+	ghosts := map[string]bool{}
+	heldBefore := map[string]bool{}
+	worldBefore := map[string]bool{}
 
 	for i, env := range g.log {
 		received = append(received, env)
@@ -484,10 +487,14 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 		for _, diff := range keystoneNoteDiff(got, world) {
 			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
 		}
-		for _, diff := range keystoneStatusDiff(got, world, want, frozen, sawBefore) {
+		for _, diff := range keystoneStatusDiff(got, world, want, frozen, sawBefore, ghosts) {
+			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
+		}
+		for _, diff := range keystoneRemovalDiff(got, world, heldBefore, worldBefore, sawBefore) {
 			t.Errorf("prefix %d (seq %d): %s", i+1, env.GetSequence(), diff)
 		}
 		sawBefore = want.sees
+		heldBefore, worldBefore = actorIDSet(got), actorIDSet(world)
 		if t.Failed() {
 			// The first divergent prefix is the informative one; everything
 			// after it is that same divergence carried forward.
@@ -499,16 +506,30 @@ func walkKeystone(t *testing.T, g keystoneGolden, seat keystoneSeat) {
 // keystoneStatusDiff holds each actor a seat's fold shares with the world to
 // the world's status as of the last prefix the oracle saw it at, before or
 // after the event, or as of the prefix it became knowable in this
-// incarnation (VTT-247). frozen carries those statuses from prefix to prefix.
+// incarnation (VTT-247). frozen carries those statuses from prefix to prefix;
+// ghosts marks an actor removed unseen, held as it was until its id is
+// knowable again (VTT-252).
 func keystoneStatusDiff(got, world *engine.State, want oracleView, frozen map[string]string,
-	sawBefore map[string]bool) []string {
+	sawBefore, ghosts map[string]bool) []string {
 	for id := range frozen {
-		if _, ok := world.Actors[id]; !ok {
+		if _, ok := world.Actors[id]; ok {
+			continue
+		}
+		if sawBefore[id] {
 			delete(frozen, id)
+		} else {
+			ghosts[id] = true
 		}
 	}
 	for id := range world.Actors {
 		_, known := frozen[id]
+		if ghosts[id] {
+			if !want.actors[id] {
+				continue
+			}
+			delete(ghosts, id)
+			known = false
+		}
 		if want.sees[id] || sawBefore[id] || (!known && want.actors[id]) {
 			frozen[id] = keystoneActorStatus(world, id)
 		}
@@ -524,6 +545,35 @@ func keystoneStatusDiff(got, world *engine.State, want oracleView, frozen map[st
 	}
 	sort.Strings(out)
 	return out
+}
+
+// keystoneRemovalDiff holds a seat to each actor the world removed at this
+// prefix: gone from its fold if the oracle saw it before the event, and still
+// held if the seat held it and the oracle did not (VTT-251).
+func keystoneRemovalDiff(got, world *engine.State, heldBefore, worldBefore, sawBefore map[string]bool) []string {
+	var out []string
+	for id := range worldBefore {
+		if _, ok := world.Actors[id]; ok {
+			continue
+		}
+		_, held := got.Actors[id]
+		if sawBefore[id] && held {
+			out = append(out, fmt.Sprintf("actor %q was removed in sight and is still held", id))
+		}
+		if !sawBefore[id] && heldBefore[id] && !held {
+			out = append(out, fmt.Sprintf("actor %q was removed unseen and left the fold", id))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func actorIDSet(st *engine.State) map[string]bool {
+	ids := map[string]bool{}
+	for id := range st.Actors {
+		ids[id] = true
+	}
+	return ids
 }
 
 // keystoneActorStatus is one actor as a fold holds it, with conditions and

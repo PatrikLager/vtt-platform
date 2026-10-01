@@ -29,10 +29,11 @@ import { fold } from "../src/fold";
 // the hero's player. It was shown the goblin and its near token t-gob, and was
 // never told that t-gob-far — behind a closed door — exists. remove_actor then
 // emits three events (TokenRemoved t-gob, TokenRemoved t-gob-far, ActorRemoved
-// goblin) and the seat receives two: a synthesized TokenHidden for the token it
-// could see, nothing whatever for the one it could not, and the raw
-// ActorRemoved because it holds the actor. A fold that threw on any of those —
-// "removed unknown token", "removed unknown actor" — would freeze a real
+// goblin) and the seat receives one: a synthesized TokenHidden for the token it
+// could see. Once that token is gone the seat no longer sees the goblin, so its
+// removal is not reported and the goblin stays in its fold (SPEC-016). The id
+// is then used again by a second goblin placed in sight, which arrives behind a
+// bare ActorRemoved. A fold that threw on any of those would freeze a real
 // client permanently, because session.ts re-folds the whole log on every event.
 //
 // ASSERTED AGAINST FACTS RATHER THAN A state.json, and the reason is that no
@@ -51,19 +52,32 @@ function stream(): Envelope[] {
   return raw.map((e) => fromJson(EnvelopeSchema, e as never));
 }
 
-test("the projected removal batch folds, and what it removes is gone", () => {
+test("the projected removal batch folds, and a removal the seat did not see leaves the actor held", () => {
   const envelopes = stream();
+  const hidden = envelopes.findIndex((e) => e.payload.case === "tokenHidden");
+  const withdrawn = envelopes.findIndex((e) => e.payload.case === "actorRemoved");
+  expect(hidden).toBeGreaterThan(0);
+  expect(withdrawn).toBeGreaterThan(hidden);
 
   // THE CONTROL. The seat must actually hold the world before the batch, or
-  // "removed" below means "never arrived". Folded up to the first removal
-  // event, everything is present.
-  const before = fold(envelopes.filter((e) => e.payload.case !== "tokenHidden" && e.payload.case !== "actorRemoved"));
+  // "removed" below means "never arrived".
+  const before = fold(envelopes.slice(0, hidden));
   expect(Object.keys(before.Actors).sort()).toEqual(["goblin", "hero"]);
   expect(Object.keys(before.Tokens).sort()).toEqual(["t-gob", "t-hero"]);
 
+  // After the batch: the token is gone, the goblin is still held.
+  const after = fold(envelopes.slice(0, withdrawn));
+  expect(Object.keys(after.Actors).sort()).toEqual(["goblin", "hero"]);
+  expect(after.Actors["goblin"]!.name).toBe("Goblin");
+  expect(Object.keys(after.Tokens)).toEqual(["t-hero"]);
+
+  // After the reuse: the bare ActorRemoved makes room for the second goblin.
+  expect(envelopes[withdrawn]!.eventId).toBe("");
+  expect(envelopes[withdrawn + 1]!.payload.case).toBe("actorAdded");
   const st = fold(envelopes);
-  expect(Object.keys(st.Actors)).toEqual(["hero"]);
-  expect(Object.keys(st.Tokens)).toEqual(["t-hero"]);
+  expect(Object.keys(st.Actors).sort()).toEqual(["goblin", "hero"]);
+  expect(st.Actors["goblin"]!.name).toBe("Second Goblin");
+  expect(Object.keys(st.Tokens).sort()).toEqual(["t-gob-2", "t-hero"]);
   // The seat's own character and its board survive somebody else's removal.
   expect(st.Tokens["t-hero"]!.X).toBe(1);
   expect(st.Tokens["t-hero"]!.Y).toBe(1);

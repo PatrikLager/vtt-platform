@@ -31,8 +31,8 @@ type Projector struct {
 	viewer Viewer
 
 	// Never delete from scenes: a scene introduced twice is a fold error. Forget
-	// an actor only where transitions does, after classify has forwarded its
-	// ActorRemoved.
+	// an actor only in transitions' forgetting loop, after classify forwarded its
+	// ActorRemoved, or in withdraw, which sends one (SPEC-016).
 	scenes map[string]bool
 	actors map[string]bool
 	tokens map[string]bool
@@ -49,6 +49,9 @@ type Projector struct {
 	sighted map[string]bool
 	// Write a belief only where the viewer's fold equals st (snapshotSighted).
 	belief map[string]actorBelief
+	// Withdraw a gone actor only before its id is introduced again: a bare
+	// ActorRemoved at any other time reports a removal the viewer did not see.
+	gone map[string]bool
 }
 
 func NewProjector(v Viewer) *Projector {
@@ -62,6 +65,7 @@ func NewProjector(v Viewer) *Projector {
 		notes:   map[string]bool{},
 		sighted: map[string]bool{},
 		belief:  map[string]actorBelief{},
+		gone:    map[string]bool{},
 	}
 }
 
@@ -226,14 +230,18 @@ func (pr *Projector) eyes(st *engine.State) []string {
 func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
-	// Forget an actor the world no longer has, after classify and before any
-	// introduction: this seat was forwarded its ActorRemoved, and an id used
-	// again must be introduced afresh
-	// (TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh).
+	// Forget an actor the world no longer has only when this seat was forwarded
+	// its ActorRemoved, after classify and before any introduction; keep one
+	// removed unseen as gone (SPEC-016).
 	for id := range pr.actors {
-		if _, ok := st.Actors[id]; !ok {
+		if _, ok := st.Actors[id]; ok {
+			continue
+		}
+		if pr.sighted[id] {
 			delete(pr.actors, id)
 			delete(pr.belief, id)
+		} else {
+			pr.gone[id] = true
 		}
 	}
 
@@ -261,6 +269,9 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		a, ok := st.Actors[id]
 		if !ok {
 			continue
+		}
+		if pr.gone[id] {
+			out = append(out, pr.withdraw(id, seq))
 		}
 		if !pr.actors[id] {
 			out = append(out, pr.introduce(id, seq, a, st)...)
@@ -479,9 +490,9 @@ func (pr *Projector) classify(env *vttv1.Envelope, now sightView) verdict {
 		return passIf(saw(p.ConditionRemoved.GetActorId()))
 
 	case *vttv1.Envelope_ActorRemoved:
-		// Forward only to a seat that held the actor: a fold without it refuses
-		// the removal (TestARemovedActorReachesOnlyTheSeatThatHeldIt).
-		return passIf(pr.actors[p.ActorRemoved.GetActorId()])
+		// Forward only to a seat that saw the actor before the event; one that did
+		// not keeps it until withdraw (SPEC-016).
+		return passIf(saw(p.ActorRemoved.GetActorId()))
 
 	default:
 		return unrecognised
@@ -667,6 +678,17 @@ func (pr *Projector) introduce(id string, seq int64, a *vttv1.Actor, st *engine.
 	return out
 }
 
+// withdraw forgets a held actor and returns the bare ActorRemoved that takes it
+// out of the viewer's fold, which both folds accept only while no token of it
+// is on the viewer's board: send it only before an introduction (SPEC-016).
+func (pr *Projector) withdraw(id string, seq int64) *vttv1.Envelope {
+	delete(pr.actors, id)
+	delete(pr.belief, id)
+	delete(pr.gone, id)
+	return &vttv1.Envelope{Sequence: seq,
+		Payload: &vttv1.Envelope_ActorRemoved{ActorRemoved: &vttv1.ActorRemoved{ActorId: id}}}
+}
+
 // actorBelief is what the viewer's fold holds of an actor that an event can
 // change: each resource's current value, its conditions, its controllers and
 // its kind (SPEC-016).
@@ -709,12 +731,8 @@ func (pr *Projector) correct(id string, seq int64, a *vttv1.Actor, st *engine.St
 	b := pr.belief[id]
 	fix, ok := statusFrames(id, seq, b, a, st.Conditions[id])
 	if !ok {
-		// Re-introduce what no grant can carry: both folds accept it, since no
-		// token of an actor entering sight is on the viewer's board.
-		delete(pr.actors, id)
-		out := []*vttv1.Envelope{{Sequence: seq,
-			Payload: &vttv1.Envelope_ActorRemoved{ActorRemoved: &vttv1.ActorRemoved{ActorId: id}}}}
-		return append(out, pr.introduce(id, seq, a, st)...)
+		// Re-introduce what no grant can carry.
+		return append([]*vttv1.Envelope{pr.withdraw(id, seq)}, pr.introduce(id, seq, a, st)...)
 	}
 	pr.belief[id] = beliefOf(a, st.Conditions[id])
 	return fix

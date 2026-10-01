@@ -451,3 +451,18 @@ Phase 4a and 4b of `3aed0ce` ran it. Labels: `test data missing`. Closing it
 needs the fixture to wait for the pid file before the bound starts, or a
 bound that excludes start-up, in a ticket of its own. Recorded 2026-09-30 by
 the note-visibility change, whose gate run it stopped.
+
+**No golden log carries an actor's removal, so the keystone holds none.**
+`TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees` runs
+`keystoneRemovalDiff` at every prefix of every golden under
+`scenarios/goldens/`, and none of those logs holds an `ActorRemoved`
+(`grep -l actorRemoved scenarios/goldens/*/stream.json` prints nothing), nor
+reuses an actor id, so the keystone's removal clause and its ghost handling
+in `keystoneStatusDiff` run over nothing. The rule that a viewer is told of a
+removal only when it saw the actor before it (VTT-251) is held by
+`project_property_test.go#TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer`,
+whose eventgen walk removes actors, and by unit tests; a reused id
+(VTT-252) by unit tests alone, since eventgen never reuses one. Labels:
+`test data missing`. Closing it needs a scenario that removes an actor some
+seats saw and others did not, and one that adds an actor under a removed id.
+Recorded 2026-10-01 by the testimony change's reading review.

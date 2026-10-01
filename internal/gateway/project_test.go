@@ -1990,25 +1990,10 @@ func removeActorBatch(pr *gateway.Projector, st *engine.State, seq int64,
 	return append(out, pr.Project(envelope(seq, &vttv1.ActorRemoved{ActorId: actorID}), st)...)
 }
 
-// TestARemovedActorReachesOnlyTheSeatThatHeldIt pins classify's ActorRemoved
-// ruling, and it is written to fail in BOTH directions, because an
-// exhaustiveness gate only asks whether an arm exists and never what it
-// returns (the Task 8 lesson).
-//
-// FORWARDED TO A SEAT THAT HELD THE ACTOR. Unlike a token's departure, an
-// actor's has no synthesized narration: pr.actors "never withdraws" and there
-// is no un-introduce message. Withholding it would leave the seat holding a
-// character that is not in the world, in its roster, for the rest of the
-// session — and, since the id can be added again, would eventually leave that
-// seat unable to fold its own stream.
-//
-// WITHHELD FROM A SEAT THAT NEVER HELD IT, for two reasons, and the first is
-// fatal on its own: their fold has no such actor, so the raw event fails with
-// "engine: removed unknown actor" — through session.ts's
-// re-fold-the-whole-log-on-every-event, the permanent freeze spec §8 names as
-// the worst failure available. And it would tell a player an actor they never
-// saw existed and was removed off-screen, which is the leak withheld exists to
-// prevent.
+// TestARemovedActorReachesOnlyTheSeatThatHeldIt holds both directions of the
+// removal ruling: an actor the seat never held is not announced, since its
+// fold would refuse the removal, and the seat's own character, which it sees,
+// is (SPEC-016).
 // VTT-215
 func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 	st := twoRooms()
@@ -2024,8 +2009,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 		}
 	}
 
-	// Then their OWN character, which they hold: this one they must be told
-	// about, or their roster keeps a character the world no longer has.
+	// Then their OWN character, which they see as an eye: its removal reaches them.
 	held := removeActorBatch(pr, st, 10, "hero", []string{"t-hero"})
 	var told bool
 	for _, e := range held {
@@ -2034,7 +2018,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 		}
 	}
 	if !told {
-		t.Fatal("want the raw ActorRemoved forwarded to a seat that holds the actor")
+		t.Fatal("want the raw ActorRemoved forwarded to a seat that sees the actor")
 	}
 
 	// And everything this seat was sent, from the introductions onward, folds
@@ -2051,18 +2035,9 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 	}
 }
 
-// TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh is the deliberate
-// answer to the question transitions' own comment left open: "nothing removes
-// an actor from the world today either. The day something does, both maps need
-// an answer chosen deliberately."
-//
-// pr.actors FORGETS an actor the world no longer has. It has to. engine.Apply
-// accepts an ActorAdded for an id whose actor was removed (the duplicate check
-// reads the CURRENT world), so the id can come back — and a projector that
-// still believed it had introduced it would skip the introduction while the
-// seat's own fold, which applied the forwarded ActorRemoved, no longer has the
-// actor at all. The next token to arrive for it is then "token placed for
-// unknown actor" on that seat, forever.
+// TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh holds the case where
+// the seat saw the removal: the projector forgets the actor with its fold, so
+// the id used again is introduced in full (SPEC-016).
 // VTT-211
 func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
 	st := twoRooms()
@@ -2883,46 +2858,33 @@ func removalBatchWorld() *engine.State {
 
 // projectRemovalBatchSeat replays this world to the hero's player and returns
 // everything that seat receives: the introductions carried by the first event
-// it is projected, then the three-envelope batch remove_actor emits.
+// it is projected, the three-envelope batch remove_actor emits, and the id
+// used again by a second goblin placed in sight.
 func projectRemovalBatchSeat(st *engine.State) []*vttv1.Envelope {
 	pr := gateway.NewProjector(player())
 	stream := pr.Project(envelope(7, &vttv1.TokenPlaced{TokenId: "t-gob-far",
 		SceneId: "s", ActorId: "goblin",
 		Position: &vttv1.GridPosition{X: 5, Y: 1}}), st)
-	return append(stream, removeActorBatch(pr, st, 9, "goblin",
+	stream = append(stream, removeActorBatch(pr, st, 9, "goblin",
 		[]string{"t-gob", "t-gob-far"})...)
+	for _, s := range []step{
+		{12, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Second Goblin",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}},
+		{13, &vttv1.TokenPlaced{TokenId: "t-gob-2", SceneId: "s", ActorId: "goblin",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}}},
+	} {
+		mustApply(st, s.seq, s.payload)
+		stream = append(stream, pr.Project(envelope(s.seq, s.payload), st)...)
+	}
+	return stream
 }
 
-// TestARemovalBatchProjectsToTheBytesBothFoldsRead is the pin the whole arc was
-// missing, and it is a REACH problem rather than a behaviour one: neither
-// remove_token nor remove_actor, and neither TokenRemoved nor ActorRemoved,
-// appears in any golden, any scenario, any soak action or any cmd/vtt e2e — so
-// fold-parity, projection-parity and the golden corpus have exactly zero
-// coverage of them, in either language. Whole-branch review 2026-09-01
-// established by hand that the two folds agree here; this is what keeps that
-// true tomorrow.
-//
-// THE MULTI-TOKEN PATH, specifically. removeActorBatch is called three times
-// elsewhere in this file and every one passes a ONE-element token slice, so
-// nothing walked a batch that is partly withheld — which is the only
-// interesting case, because it is where the seat's stream stops being a
-// prefix of the DM's.
-//
-// WHAT THE SEAT MUST RECEIVE, and why each is what it is:
-//
-//   - t-gob's removal as a synthesized TokenHidden, never the raw TokenRemoved
-//     (TestARemovedTokenReachesAPlayerOnlyAsHidden owns that ruling);
-//   - t-gob-far's removal as NOTHING AT ALL — the seat was never told the token
-//     existed, and "engine: removed unknown token" through session.ts's
-//     re-fold-the-whole-log is the permanent freeze spec §8 names as the worst
-//     failure available;
-//   - the raw ActorRemoved, because this seat WAS shown the goblin.
-//
-// The fixture is what the TypeScript half folds (client/test/
-// removal-batch-parity.test.ts), so the two languages are not folding two
-// hand-written copies of a stream: they fold the same bytes, and this test is
-// what keeps those bytes equal to what the projector really emits.
-// VTT-200 VTT-221
+// TestARemovalBatchProjectsToTheBytesBothFoldsRead holds the stream both folds
+// read (client/test/removal-batch-parity.test.ts): a token seen leaves as a
+// TokenHidden, one never shown is named nowhere, the actor's removal, unseen
+// once its token is gone, is not reported, and its id used again arrives behind
+// a bare ActorRemoved (SPEC-016).
+// VTT-200 VTT-221 VTT-251 VTT-252
 func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	stream := projectRemovalBatchSeat(removalBatchWorld())
 
@@ -2967,15 +2929,20 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 		}
 	}
 
-	// AND IT FOLDS, through the same engine.Apply the client mirrors.
 	viewerState := engine.NewState()
 	for i, e := range stream {
+		if e.GetActorRemoved() != nil {
+			if g := viewerState.Actors["goblin"]; g.GetName() != "Goblin" || len(viewerState.Tokens) != 1 {
+				t.Errorf("before the reuse the seat must hold the first goblin and no token of it, got %v and %d tokens",
+					g, len(viewerState.Tokens))
+			}
+		}
 		if err := engine.Apply(viewerState, e); err != nil {
 			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
 		}
 	}
-	if _, ok := viewerState.Actors["goblin"]; ok {
-		t.Error("the goblin must be gone from the seat's own fold after the batch")
+	if g := viewerState.Actors["goblin"]; g.GetName() != "Second Goblin" {
+		t.Errorf("after the reuse the seat must hold the second goblin, got %v", g)
 	}
 	if _, ok := viewerState.Actors["hero"]; !ok {
 		t.Error("the seat's own character must survive another actor's removal")
@@ -2985,8 +2952,10 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 			t.Errorf("%s must not be on the seat's board after the batch", id)
 		}
 	}
-	if _, ok := viewerState.Tokens["t-hero"]; !ok {
-		t.Error("the seat's own token must survive another actor's removal")
+	for _, id := range []string{"t-hero", "t-gob-2"} {
+		if _, ok := viewerState.Tokens[id]; !ok {
+			t.Errorf("%s must be on the seat's board at the end", id)
+		}
 	}
 }
 
@@ -3357,5 +3326,74 @@ func TestADifferenceOfExactlyMaxInt32IsOneCorrection(t *testing.T) {
 	fix := correctionFrames(t, frames[14], "wraith")
 	if len(fix) != 1 || fix[0].GetResourceChanged().GetDelta() != math.MaxInt32 {
 		t.Errorf("a difference of exactly MaxInt32 arrived as %v, want one frame carrying it", fix)
+	}
+}
+
+// VTT-251
+func TestARemovalOutOfSightIsNotReported(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.TokenRemoved{TokenId: "t-rogue"},
+		&vttv1.ActorRemoved{ActorId: "rogue"},
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "familiar", Name: "Familiar",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
+		&vttv1.ActorControlGranted{ActorId: "familiar", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		&vttv1.ActorRemoved{ActorId: "familiar"},
+	))
+	viewer := foldSteps(t, frames)
+	if out := frames[12]; len(out) != 0 {
+		t.Errorf("the removal of the rogue, unseen behind the door, reached the player: %v", out)
+	}
+	if _, ok := viewer.Actors["rogue"]; !ok {
+		t.Error("the player's fold dropped the rogue it never saw removed")
+	}
+	if out := frames[15]; len(out) != 1 || out[0].GetActorRemoved().GetActorId() != "familiar" {
+		t.Errorf("the removal of the player's own familiar, which it sees, did not reach it: %v", out)
+	}
+}
+
+// VTT-252 VTT-211
+func TestAnIdReusedAfterAnUnseenRemovalFoldsAgain(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.TokenRemoved{TokenId: "t-rogue"},
+		&vttv1.ActorRemoved{ActorId: "rogue"},
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "rogue", Name: "Second Rogue",
+			Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			Resources: map[string]*vttv1.Resource{"pool": {Current: 9, Max: 9}}}},
+		&vttv1.TokenPlaced{TokenId: "t-rogue-2", SceneId: "s", ActorId: "rogue",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}},
+	))
+	viewer := foldSteps(t, frames)
+	out := frames[14]
+	if len(out) < 2 || out[0].GetActorRemoved().GetActorId() != "rogue" || out[0].GetEventId() != "" ||
+		out[1].GetActorAdded().GetActor().GetActorId() != "rogue" {
+		t.Fatalf("the reused rogue arrived as %v, want a bare ActorRemoved and then its introduction", out)
+	}
+	if a := viewer.Actors["rogue"]; a.GetName() != "Second Rogue" || a.GetResources()["pool"].GetCurrent() != 9 {
+		t.Errorf("the player holds rogue as %v, want the second incarnation", a)
+	}
+}
+
+// VTT-252
+func TestARemovedActorWhoseIdNeverReturnsStaysInTheFold(t *testing.T) {
+	frames := runTestimony(player(), testimonyLog(
+		rogueLeaves,
+		&vttv1.TokenRemoved{TokenId: "t-rogue"},
+		&vttv1.ActorRemoved{ActorId: "rogue"},
+		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
+		&vttv1.ConditionApplied{ActorId: "hero", ConditionId: "relieved"},
+	))
+	viewer := foldSteps(t, frames)
+	for i, batch := range frames {
+		for _, e := range batch {
+			if e.GetActorRemoved().GetActorId() == "rogue" {
+				t.Errorf("step %d sent the player a removal of the rogue, whose id never returned: %v", i, e)
+			}
+		}
+	}
+	if _, ok := viewer.Actors["rogue"]; !ok {
+		t.Error("the player's fold dropped the rogue, whose removal it never saw")
 	}
 }

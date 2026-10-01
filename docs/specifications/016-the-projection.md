@@ -2,40 +2,28 @@
 
 ## Status
 
-Accepted. Implemented by `internal/gateway/project.go` (`Viewer`,
-`Projector`, `NewProjector`, `Project`, `perchSequence`, `reperch`,
-`sightView`, `look`, `eyes`, `transitions`, `sceneSeenFor`,
-`objectInSight`, `verdict`, `passIf`, `classify`, `canSeeSquare`,
-`doorTransitions`, `doorSubject`, `squareAt`, `squareKey`, `sortedSet`,
-`sortedSceneIDs`, `sortedSceneIDsUnion`, `noteTransitions`, `introduce`,
-`actorBelief`, `beliefOf`, `snapshotSighted`, `correct`, `statusFrames`,
-`sameSet`), over
+Accepted. Implemented by `internal/gateway/project.go` (`Viewer`, `Projector`,
+`NewProjector`, `Project`, `perchSequence`, `reperch`, `sightView`, `look`,
+`eyes`, `transitions`, `sceneSeenFor`, `objectInSight`, `verdict`, `passIf`,
+`classify`, `canSeeSquare`, `doorTransitions`, `doorSubject`, `squareAt`,
+`squareKey`, `sortedSet`, `sortedSceneIDs`, `sortedSceneIDsUnion`,
+`noteTransitions`, `introduce`, `withdraw`, `actorBelief`, `beliefOf`,
+`snapshotSighted`, `correct`, `statusFrames`, `sameSet`), over
 `internal/sight`'s `VisibleFrom` and `engine.IsPartyMember`; called from
 `internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
 by `internal/gateway/project_test.go`, `project_internal_test.go`,
 `project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
-`server_visibility_test.go`, `qa_note_projection_test.go` and
-`qa_testimony_eyes_test.go`.
-
-One decision the owner has taken will change this record, and all of it is
-implemented but one part: a viewer hears of an actor only while it sees it,
-for every actor, party members included, and is brought up to date when it
-comes into sight, while an actor removed from the world is still reported to
-every viewer that holds it, seen or not. The decision is recorded in
-`docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`, its
-refinements of 2026-10-01 in
-`docs/superpowers/specs/2026-10-01-a-viewer-hears-of-an-actor-only-while-it-sees-it-design.md`,
-which carries the removal too. Until it lands, every sentence below describes
-the code, and that ticket rewrites this paragraph and the sentences about an
-actor's removal.
+`server_visibility_test.go`, `qa_note_projection_test.go`,
+`qa_testimony_eyes_test.go`, `qa_testimony_sight_test.go` and
+`qa_testimony_removal_test.go`.
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: a player or a spectator is sent of each event only what their eyes
-see, their roster already holds, or the table is told, decided on the server,
-and when the projection cannot tell, it sends nothing.
+This project has no blueprint, so no principle can be named as served. The one
+this record would cite is absent from the record rather than from the system:
+a player or a spectator is sent of each event only what their eyes see, or the
+table is told, decided on the server, and when the projection cannot tell, it
+sends nothing.
 
 ## How it works
 
@@ -84,9 +72,12 @@ for a missing position.
 each empty. `scenes` holds the scenes introduced to the viewer and loses none
 (`grep -n 'delete(pr.scenes' internal/gateway/project.go` prints nothing, and
 no code under `internal/` deletes from a state's `Scenes`). `actors` holds the
-actors introduced, and loses one only when `st` no longer holds it or
-`correct` re-introduces it (`grep -n 'delete(pr.actors'
-internal/gateway/project.go` prints those two lines). `tokens` holds the
+actors introduced, and loses one only when `st` no longer holds it and
+`sighted` does, or when `withdraw` takes it out before an introduction (`grep
+-n 'delete(pr.actors' internal/gateway/project.go` prints those two lines).
+`gone` marks an actor in `actors` that the world removed while `sighted` did
+not hold it: the viewer was not told, so it stays in `actors` with its belief
+frozen until `withdraw`, even once `st` holds the id again. `tokens` holds the
 tokens on the viewer's board now. `seen` holds, per scene, the visible set
 last sent. `doors` holds, per scene, the door squares the viewer believes
 open. `notes` holds the keys of the notes the viewer holds; `noteTransitions`
@@ -109,10 +100,13 @@ way, not of the current state: an actor seen and then hidden stays in
 event and never seeded from a state; the seat feeds it so (SPEC-015).
 
 **What `transitions` sends, in order.** `transitions` first forgets each actor
-`actors` holds that `st` does not, and sends nothing for it. Then, walking
-each set by sorted id, it sends: for each scene in the look not yet
-introduced, a `SceneCreated` of its id, name, width and height, with no tile
-and no object; `doorTransitions`' frames; for each actor in the look not yet
+`actors` holds that `st` does not and `sighted` does, and marks gone each
+other one `st` does not hold, sending nothing for either. Then, walking each
+set by sorted id, it sends: for each scene in the look not yet introduced, a
+`SceneCreated` of its id, name, width and height, with no tile and no object;
+`doorTransitions`' frames; for each actor in the look that is gone,
+`withdraw`'s bare `ActorRemoved`, carrying the actor's id and the event's
+sequence and nothing else, and then, as for each actor in the look not yet
 introduced, `introduce`'s frames: an `ActorAdded` of a copy of it with
 `ControllerId` and `ControllerIds` cleared, then one `ActorControlGranted` per
 controller, in the actor's order, carrying the actor's kind, then one
@@ -159,9 +153,9 @@ one `ActorControlRevoked` per controller the belief holds and `st` does not.
 Conditions and controllers are compared as sets, so a change undone while the
 viewer did not see it sends nothing. When the belief's resources are not the
 actor's, or the kind differs, no grant carries it, and the belief holds no
-controller or the present kind is unspecified, `correct` sends a bare
-`ActorRemoved` and then `introduce`'s frames instead; both folds accept it,
-since no token of an actor entering sight is on the viewer's board.
+controller or the present kind is unspecified, `correct` sends `withdraw`'s
+bare `ActorRemoved` and then `introduce`'s frames instead; both folds accept
+it, since no token of an actor entering sight is on the viewer's board.
 
 **Doors.** For each scene in the look, by id, and each visible square, by key,
 where `OpenDoors` in `st` differs from the viewer's belief, `doorTransitions`
@@ -202,11 +196,11 @@ square in the look. It forwards `AttackRolled` (attacker and target),
 `ConditionRemoved` when every non-empty actor id named is in `sighted`, so
 when the viewer saw each of them before the event; what an event brings into
 sight arrives by introduction or by correction instead. It forwards
-`ActorRemoved` when `actors` held the actor before the event, since a fold
-that never held the actor refuses its removal. Every other payload, and an
-envelope with none, is `unrecognised`;
-`TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the envelope's oneof
-and fails on a payload `classify` answers `unrecognised`.
+`ActorRemoved` on the same test, so when the viewer saw the actor before the
+event; a viewer that did not see it keeps it, gone, and a fold that never held
+it would refuse its removal. Every other payload, and an envelope with none,
+is `unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the
+envelope's oneof and fails on a payload `classify` answers `unrecognised`.
 
 **A perch.** `reperch` sets `Viewpoint` to the actor named, answers a nil
 state with nothing, and otherwise returns `transitions` with no causing event
@@ -262,11 +256,22 @@ A client author, and whoever changes the code, are bound by these:
 - A viewer hears of a resource, a condition, a control change, an attack or
   an ability only while it sees every actor it names; what changed meanwhile
   arrives as one correction when the actor comes into sight.
-- A frame with no event id is the projection's own: an introduction, a
-  correction, a token's departure or arrival, a door's correction, a
-  `SceneSeen` or a note's bare `NoteDeleted`.
+- A frame with no event id is the projection's own: an introduction and the
+  bare `ActorRemoved` before one, a correction, a token's departure or
+  arrival, a door's correction, a `SceneSeen` or a note's bare `NoteDeleted`.
 - A change undone while the viewer did not see the actor sends nothing when
   it comes into sight.
+- A party member removed while a spectator did not see it stays on that
+  spectator's shoulder list; `MayPerch` refuses a perch on it as an absent
+  actor (SPEC-015).
+- A forwarded `ActorRemoved` reaches only a viewer whose eye the actor is: a
+  fold refuses the removal of an actor with a token on the board, so
+  `remove_actor` takes the tokens first, and an actor no token stands for is
+  seen only as an eye.
+- An actor removed while the viewer did not see it stays in the viewer's fold,
+  with the status it had when last seen, until its id is introduced again; a
+  bare `ActorRemoved` precedes that introduction and is sent at no other time
+  but a correction's re-introduction.
 - The conditions and controllers a correction brings need not keep the
   server's order, and a corrected condition carries no source.
 - A player's and a spectator's fold holds exactly the notes whose visibility
@@ -290,4 +295,4 @@ VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218,
 VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226,
 VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
 VTT-241, VTT-242, VTT-243, VTT-244, VTT-245, VTT-246, VTT-247, VTT-248,
-VTT-249, VTT-250.
+VTT-249, VTT-250, VTT-251, VTT-252.
