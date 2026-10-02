@@ -488,3 +488,37 @@ in `internal/gateway/project_test.go` in this one, and the reading review
 caught both. Labels: `outside the tool`. Closing it needs the checker to read
 test files, which may find findings older than this entry. Recorded 2026-10-01
 by the testimony change's report review.
+
+**Nothing observes a removal batch's participant and role, nor that a refused
+`set_join_door` leaves an open door open.** `handleRemoveActor` in
+`internal/gateway/server.go` stamps every envelope of its batch with the
+issuer's `ParticipantId` and `ActorRole`, and `handleJoinDoor` refuses a door
+that says neither open nor closed before it calls `SetJoinOpen` (VTT-256).
+Recipes: leave the stamping loop's `ParticipantId` and `ActorRole` assignments
+out; or call `s.ids.SetJoinOpen(false, 0)` in `handleJoinDoor`'s refusal arm
+before it returns. Under each, `go test -count=1 ./internal/gateway/...` stays
+green (probes P8 and P9b of
+`docs/superpowers/plans/2026-10-02-removing-an-actor-has-a-record.md`), and no
+test under `cmd/vtt` drives `remove_actor` or `set_join_door` (that plan's
+check 3). `TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt` reads the door
+after its refusal, but from a shut start, so a refusal that shuts the door
+cannot change what it sees. The tier-1 tests should have caught both; no
+mutation operator deletes an assignment or adds a call. Labels: `test data
+missing` and `outside the tool` for the stamping; `test asserts nothing` for
+the door. Closing it needs a removal test that reads the batch's envelopes
+back for their participant and role, and a door test that opens the door,
+sends an unspecified door, and asserts the door is still open. Recorded
+2026-10-02 by the removal record's report.
+
+**`move_token`'s `reason` never reaches the log.** `MoveTokenRequest` carries
+`optional string reason`, which `contract/vtt/v1/commands.proto` says is shown
+in the log and the MCP `move_token` tool offers; `TokenMoved` has no field for
+it, so `ToEvent` drops it and the command answers ok=true. No test sends a
+reason through `ToEvent`: `internal/mcp/tools_test.go` sets one against a fake
+server and `contract/testdata/client_command.json` round-trips one, and
+neither reaches the gateway. The gateway's tier-1 tests should have caught it;
+`TestToEventMoveTokenProducesTokenMoved` sets no reason. The reading review of
+`597051b` found it by calling `ToEvent` with one. Recipe: none is needed to
+put it back; it is there. Labels: `spec silent`, `test data missing`. Closing
+it is the next ticket, which adds the field to `TokenMoved`, additively, and
+decides who is shown it. Recorded 2026-10-02 by the removal record's report.
