@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -86,12 +87,12 @@ func qaHealthzServer(t *testing.T, status func(n int32) int) (string, *atomic.In
 	return srv.URL, &hits
 }
 
-func qaScript(t *testing.T, body string) (string, string) {
+func qaScript(t *testing.T, setup, body string) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
 	path := filepath.Join(dir, "fake-vtt.sh")
-	src := "#!/bin/sh\necho $$ > '" + pidFile + "'\n" + body + "\n"
+	src := "#!/bin/sh\n" + setup + "\necho $$ > '" + pidFile + "'\n" + body + "\n"
 	if err := os.WriteFile(path, []byte(src), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -254,11 +255,26 @@ func TestQAHealthzWaitKeepsPollingThroughEarly503s(t *testing.T) {
 	}
 }
 
-func qaConnect(t *testing.T, script string, bound time.Duration) (time.Duration, func(), error) {
+func qaConnect(t *testing.T, script, pidFile string, bound time.Duration) (time.Duration, func(), error) {
 	t.Helper()
+	p, err := startMCPSubprocess(script, "ws://127.0.0.1:1/ws", "qa-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(subprocessAnswers)
+	for {
+		if b, err := os.ReadFile(pidFile); err == nil && strings.HasSuffix(string(b), "\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			p.kill()
+			t.Fatalf("the fixture did not write its pid within %s", subprocessAnswers)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	var closer func()
 	took, err := qaBounded(t, "connectMCPSubprocess", func() error {
-		session, c, err := connectMCPSubprocess(t, script, "ws://127.0.0.1:1/ws", "qa-token", bound)
+		session, c, err := p.connect(t, bound)
 		closer = c
 		if err != nil && session != nil {
 			t.Errorf("a failed connect handed back a session: %v", session)
@@ -270,8 +286,8 @@ func qaConnect(t *testing.T, script string, bound time.Duration) (time.Duration,
 
 // VTT-079
 func TestQAMCPConnectFailsWithADeadlineWhenTheSubprocessNeverWrites(t *testing.T) {
-	script, pidFile := qaScript(t, "while read -r line; do :; done")
-	took, _, err := qaConnect(t, script, neverAnswersBound)
+	script, pidFile := qaScript(t, "", "while read -r line; do :; done")
+	took, _, err := qaConnect(t, script, pidFile, neverAnswersBound)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want a deadline error, got %v", err)
 	}
@@ -287,8 +303,8 @@ func TestQAMCPConnectFailsWithADeadlineWhenTheSubprocessNeverWrites(t *testing.T
 
 // VTT-079
 func TestQAMCPConnectFailsWithADeadlineWhenTheSubprocessIgnoresStdio(t *testing.T) {
-	script, pidFile := qaScript(t, "exec sleep 1000")
-	took, _, err := qaConnect(t, script, neverAnswersBound)
+	script, pidFile := qaScript(t, "", "exec sleep 1000")
+	took, _, err := qaConnect(t, script, pidFile, neverAnswersBound)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want a deadline error, got %v", err)
 	}
@@ -304,8 +320,8 @@ func TestQAMCPConnectFailsWithADeadlineWhenTheSubprocessIgnoresStdio(t *testing.
 
 // VTT-079
 func TestQAMCPConnectEndsASubprocessThatIgnoresSIGTERM(t *testing.T) {
-	script, pidFile := qaScript(t, "trap '' TERM\nexec sleep 1000")
-	took, _, err := qaConnect(t, script, neverAnswersBound)
+	script, pidFile := qaScript(t, "trap '' TERM", "exec sleep 1000")
+	took, _, err := qaConnect(t, script, pidFile, neverAnswersBound)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("want a deadline error, got %v", err)
 	}
@@ -321,8 +337,8 @@ func TestQAMCPConnectEndsASubprocessThatIgnoresSIGTERM(t *testing.T) {
 
 // VTT-079
 func TestQAMCPConnectFailsPromptlyWhenTheSubprocessExitsWithoutAnswering(t *testing.T) {
-	script, pidFile := qaScript(t, "exit 0")
-	took, _, err := qaConnect(t, script, neverAnswersBound)
+	script, pidFile := qaScript(t, "", "exit 0")
+	took, _, err := qaConnect(t, script, pidFile, neverAnswersBound)
 	if err == nil {
 		t.Fatal("connectMCPSubprocess returned nil for a subprocess that exited unanswered")
 	}
@@ -336,11 +352,48 @@ func TestQAMCPConnectFailsPromptlyWhenTheSubprocessExitsWithoutAnswering(t *test
 	t.Logf("reported %q after %s", err, took)
 }
 
+// VTT-253
+func TestQAMCPConnectReachesItsAssertionsWhenTheFixtureStartsLate(t *testing.T) {
+	setup := fmt.Sprintf("sleep %g", (2 * neverAnswersBound).Seconds())
+	script, pidFile := qaScript(t, setup, "while read -r line; do :; done")
+	took, _, err := qaConnect(t, script, pidFile, neverAnswersBound)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want a deadline error, got %v", err)
+	}
+	if took >= qaPromptly {
+		t.Fatalf("connectMCPSubprocess took %s against a %s bound", took, neverAnswersBound)
+	}
+	pid := qaReadPID(t, pidFile)
+	if state := qaProcessState(pid); state != "gone" {
+		t.Fatalf("the subprocess is %s after the failed connect returned", state)
+	}
+	t.Logf("reported %q after %s", err, took)
+}
+
+// VTT-079
+func TestQAConnectMCPSubprocessFailsWithinItsOwnBound(t *testing.T) {
+	script := neverAnswersScript(t)
+	took, err := qaBounded(t, "connectMCPSubprocess", func() error {
+		session, cleanup, err := connectMCPSubprocess(t, script, "ws://127.0.0.1:1/ws", "qa-token", neverAnswersBound)
+		if err == nil {
+			_ = session.Close()
+			cleanup()
+		}
+		return err
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want a deadline error, got %v", err)
+	}
+	if took >= qaPromptly {
+		t.Fatalf("connectMCPSubprocess took %s against a %s bound", took, neverAnswersBound)
+	}
+}
+
 // VTT-079
 func TestQAMCPConnectSucceedsAgainstASubprocessThatAnswers(t *testing.T) {
 	// Keep the canned reply's id 1 and its protocol version in step with the
 	// go-sdk: Connect numbers its requests from 1 and refuses a version off its list.
-	script, pidFile := qaScript(t, strings.Join([]string{
+	script, pidFile := qaScript(t, "", strings.Join([]string{
 		"read -r line",
 		`printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"qa-fake","version":"0"}}}'`,
 		"while read -r line; do :; done",

@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -324,40 +325,62 @@ func dialMCPSubprocess(t *testing.T, binPath, wsURL, token string, extraArgs ...
 // error, with the subprocess killed and reaped, instead of failing the test.
 func connectMCPSubprocess(t *testing.T, binPath, wsURL, token string, bound time.Duration, extraArgs ...string) (*mcpsdk.ClientSession, func(), error) {
 	t.Helper()
+	p, err := startMCPSubprocess(binPath, wsURL, token, extraArgs...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return p.connect(t, bound)
+}
+
+type mcpSubprocess struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	stderr *bytes.Buffer
+}
+
+func startMCPSubprocess(binPath, wsURL, token string, extraArgs ...string) (*mcpSubprocess, error) {
 	args := append([]string{"mcp", "--server", wsURL, "--token", token}, extraArgs...)
 	cmd := exec.Command(binPath, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("StdinPipe: %w", err)
+		return nil, fmt.Errorf("StdinPipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("StdoutPipe: %w", err)
+		return nil, fmt.Errorf("StdoutPipe: %w", err)
 	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	p := &mcpSubprocess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &bytes.Buffer{}}
+	cmd.Stderr = p.stderr
 	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("start vtt mcp subprocess: %w", err)
+		return nil, fmt.Errorf("start vtt mcp subprocess: %w", err)
 	}
+	return p, nil
+}
 
-	clientTransport := &mcpsdk.IOTransport{Reader: stdout, Writer: stdin}
+func (p *mcpSubprocess) kill() {
+	_ = p.cmd.Process.Kill()
+	_ = p.cmd.Wait()
+}
+
+func (p *mcpSubprocess) connect(t *testing.T, bound time.Duration) (*mcpsdk.ClientSession, func(), error) {
+	t.Helper()
+	clientTransport := &mcpsdk.IOTransport{Reader: p.stdout, Writer: p.stdin}
 	connectCtx, connectCancel := context.WithTimeout(context.Background(), bound)
 	defer connectCancel()
 	cl := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "mcp-ruleset-e2e-client", Version: "0.0.1"}, nil)
 	cs, err := cl.Connect(connectCtx, clientTransport, nil)
 	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return nil, nil, fmt.Errorf("stdio client Connect: %w (stderr: %s)", err, stderr.String())
+		p.kill()
+		return nil, nil, fmt.Errorf("stdio client Connect: %w (stderr: %s)", err, p.stderr.String())
 	}
 
 	cleanup := func() {
 		cs.Close()
-		if err := waitWithTimeout(cmd, subprocessExits); err != nil {
-			t.Errorf("subprocess did not exit cleanly after stdin EOF: %v (stderr: %s)", err, stderr.String())
+		if err := waitWithTimeout(p.cmd, subprocessExits); err != nil {
+			t.Errorf("subprocess did not exit cleanly after stdin EOF: %v (stderr: %s)", err, p.stderr.String())
 		}
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		p.kill()
 	}
 	return cs, cleanup, nil
 }

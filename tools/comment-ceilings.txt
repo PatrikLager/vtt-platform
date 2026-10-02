@@ -52,8 +52,9 @@ cmd/vtt/maps_test.go  46.9
 cmd/vtt/mcp.go  46.6
 cmd/vtt/mcp_adventure_e2e_test.go  25.8
 cmd/vtt/mcp_e2e_test.go  25.3
-cmd/vtt/mcp_ruleset_e2e_test.go  24.4
-cmd/vtt/qa_e2e_wait_test.go  1.6
+cmd/vtt/mcp_ruleset_e2e_test.go  23.1
+cmd/vtt/qa_e2e_wait_test.go  1.4
+cmd/vtt/qa_fixture_startup_test.go  0.0
 cmd/vtt/qa_note_schema_test.go  0.0
 cmd/vtt/revoke.go  16.3
 cmd/vtt/scenario_goldens_test.go  25.7
