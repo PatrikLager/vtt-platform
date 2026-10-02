@@ -53,6 +53,7 @@ func removalPayloadKind(env *vttv1.Envelope) string {
 // "sorted by id" from "whatever order the map iterated" — which for a Go map
 // is deliberately randomised, and would otherwise make this test pass or fail
 // by coin toss.
+// VTT-254 VTT-255 VTT-259
 func TestRemoveActorEmitsEveryTokenThenTheActor(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, 0)
@@ -139,6 +140,7 @@ func TestRemoveActorEmitsEveryTokenThenTheActor(t *testing.T) {
 //
 // A cascade-free ActorRemoved would still APPEND fine here; it is the replay
 // that would be left holding a token whose actor no longer exists.
+// VTT-255
 func TestARemovedActorLeavesALogThatStillFolds(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, 0)
@@ -309,6 +311,7 @@ func TestAMidBatchRefusalPersistsNothingThatCameBeforeIt(t *testing.T) {
 // TestRemovingAnActorWithNoTokensYieldsABatchOfOne pins the degenerate end of
 // the cascade: no tokens means no TokenRemoved events, not an empty batch
 // (campaign.AppendBatch refuses one) and not a placeholder.
+// VTT-254 VTT-259
 func TestRemovingAnActorWithNoTokensYieldsABatchOfOne(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, 0)

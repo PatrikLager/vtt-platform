@@ -17,16 +17,17 @@ import (
 var ErrUnknownCommand = errors.New("gateway: unknown or empty command")
 
 // ToEvent converts an authorized ClientCommand into the past-tense Envelope
-// it becomes, stamping EventId (fresh per call), ParticipantId, ActorRole,
-// and OccurredAt. Not every command converts here; the ones that deliberately
-// do not are listed with their reasons in TestEveryClientCommandConverts,
-// which is the gate that keeps that list honest.
+// it becomes, stamping EventId, ParticipantId, ActorRole and OccurredAt
+// (SPEC-013). TestEveryClientCommandConverts lists the commands that do not
+// convert here.
 func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope, error) {
 	env := &vttv1.Envelope{
 		ParticipantId: p.ID,
 		ActorRole:     string(p.Role),
 		OccurredAt:    timestamppb.Now(),
 	}
+	// Validate nothing in these arms: Authorize, the validators and the fold
+	// have (SPEC-013).
 	switch c := cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_MoveToken:
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
@@ -45,11 +46,6 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			Position: c.PlaceToken.GetPosition(),
 		}}
 	case *vttv1.ClientCommand_RemoveToken:
-		// retraction-leaves Task 8. Plain single-Envelope conversion, the
-		// same shape OpenDoor/CloseDoor use below: Authorize has already
-		// decided this participant may issue it (a DM/agent-only row), and
-		// engine.Apply owns the "unknown token" rejection — there is
-		// nothing left to validate at this layer.
 		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: &vttv1.TokenRemoved{
 			TokenId: c.RemoveToken.GetTokenId(),
 		}}
@@ -60,27 +56,12 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 	case *vttv1.ClientCommand_EndSession:
 		env.Payload = &vttv1.Envelope_SessionEnded{SessionEnded: &vttv1.SessionEnded{}}
 	case *vttv1.ClientCommand_RemoveCondition:
-		// use_ability does NOT flow through ToEvent (server.go's
-		// handleUseAbility routes it to rules.Resolve + campaign.AppendBatch
-		// instead, ruleset-interpreter Task 6) — it produces a whole ordered
-		// batch of events, not the single Envelope this function returns.
-		// remove_condition has no such batch: it is a single, direct
-		// ConditionRemoved, going through the SAME Authorize -> ToEvent ->
-		// campaign.Append path every other one-event command uses.
-		// engine.Apply's ConditionRemoved case (internal/engine/apply.go)
-		// already rejects an absent condition, and campaign.Append validates
-		// against a snapshot BEFORE persisting (internal/campaign/
-		// campaign.go) — so an absent condition surfaces as an ordinary
-		// ok=false CommandResult here, never a poisoned Campaign.
 		env.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{
 			ActorId:     c.RemoveCondition.GetActorId(),
 			ConditionId: c.RemoveCondition.GetConditionId(),
 			Reason:      "manual",
 		}}
 	case *vttv1.ClientCommand_AddNarration:
-		// world-layer Task 3: same plain single-Envelope conversion as
-		// remove_condition above — size-cap/anchor-sanity validation lives in
-		// the fold (internal/engine/apply.go), not here.
 		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
 			Text:          c.AddNarration.GetText(),
 			As:            c.AddNarration.GetAs(),
@@ -99,28 +80,8 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			Key: c.DeleteNote.GetKey(),
 		}}
 	case *vttv1.ClientCommand_GrantActorControl:
-		// presence-and-actor-control Task 3. Plain single-Envelope conversion,
-		// the same shape as remove_condition: the fold owns every rule about
-		// what a control set may contain (unknown actor, empty participant,
-		// idempotent re-grant), and authz has already decided this participant
-		// may issue it.
-		//
-		// Kind is carried THROUGH, and dropping it would be silent in the
-		// worst way — an accepted command answering ok=true and quietly doing
-		// something else, with a security consequence here rather than a
-		// cosmetic one: an accepted grant, written kindless, DEMOTES the
-		// character it was meant to hand over. Since §5.1's migration rule was
-		// deleted (2026-08-24) an absent kind is not a party member, so the
-		// dropped field fails closed rather than open — a character silently
-		// off its own party's roster instead of a monster silently on it. Both
-		// are the command answering ok=true and doing something else. The
-		// completeness of this copy is pinned by
-		// TestToEventGrantActorControlCarriesTheKind.
-		//
-		// Whether the caller stated a kind AT ALL is not decided here.
-		// handleCommand refuses that before conversion is reached, beside
-		// add_actor's own kind check — see validateGrantActorControl for why
-		// that seam and not this one.
+		// Carry Kind through (TestToEventGrantActorControlCarriesTheKind): a
+		// dropped kind answers ok=true and records a grant that changes no kind.
 		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
 			ActorId:       c.GrantActorControl.GetActorId(),
 			ParticipantId: c.GrantActorControl.GetParticipantId(),
@@ -132,13 +93,6 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ParticipantId: c.RevokeActorControl.GetParticipantId(),
 		}}
 	case *vttv1.ClientCommand_OpenDoor:
-		// maps-as-geometry Task 1 fix. Plain single-Envelope conversion, same
-		// shape as grant/revoke_actor_control above: no adjacency check HERE
-		// — that lives in Authorize (authz.go's mayWorkDoor, Task 6), which
-		// runs before ToEvent ever sees the command. By the time control
-		// reaches this switch, Authorize has already decided this
-		// participant may issue it, and there is nothing else to validate at
-		// this layer.
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
 			SceneId: c.OpenDoor.GetSceneId(),
 			At:      c.OpenDoor.GetAt(),
@@ -160,9 +114,6 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 	return env, nil
 }
 
-// newEventID returns a fresh, random hex event id (16 bytes from
-// crypto/rand — collision-negligible; the store enforces uniqueness as the
-// hard guarantee, this just needs to not collide in practice).
 func newEventID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

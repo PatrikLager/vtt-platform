@@ -123,12 +123,12 @@ internal/gateway/authz.go  13.3
 internal/gateway/authz_test.go  36.9
 internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
-internal/gateway/convert.go  35.8
+internal/gateway/convert.go  8.7
 internal/gateway/convert_test.go  14.4
 internal/gateway/export_test.go  49.2
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  40.7
-internal/gateway/join.go  53.1
+internal/gateway/join.go  17.9
 internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  22.7
 internal/gateway/keepalive_conn_internal_test.go  23.0
@@ -159,7 +159,7 @@ internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  24.4
 internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  29.6
-internal/gateway/server.go  37.4
+internal/gateway/server.go  25.3
 internal/gateway/server_internal_test.go  36.9
 internal/gateway/server_test.go  27.4
 internal/gateway/server_visibility_test.go  28.7

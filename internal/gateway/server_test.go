@@ -1313,7 +1313,7 @@ func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 // tests stopped at Authorize and never crossed into conversion, so nothing
 // noticed. A test that ends at the permission check is not evidence the
 // command works.
-// VTT-147
+// VTT-147 VTT-257
 func TestDMGrantsControlOverTheWire(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.dial(f.dmToken, 0)
@@ -1865,6 +1865,7 @@ func TestTheDMCanActuallyOpenTheDoor(t *testing.T) {
 	}
 }
 
+// VTT-256
 func TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt(t *testing.T) {
 	// The reason the contract carries an ENUM and not a bool. protojson omits
 	// zero values, so `bool open` would put CLOSED on the wire as an ABSENT

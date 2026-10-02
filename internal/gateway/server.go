@@ -62,60 +62,38 @@ const gatewayNoProgress = 30 * time.Second
 // today and may move; every per-field cap in internal/engine is stricter (SPEC-011).
 const maxWSFrameBytes = 32768
 
-// Server is the WebSocket/HTTP gateway (spec §3, §7.9): it wires the pure
-// core in this package (Authorize, ToEvent, EncodeFrame, DecodeCommand) to
-// a real transport over one already-open Campaign and identity DB.
+// Server is the WebSocket and HTTP gateway over one open Campaign and
+// identity DB (SPEC-011).
 type Server struct {
 	campaign *campaign.Campaign
 	ids      *identity.DB
 
-	// buffer defaults to gatewayBuffer; New sets it. It is unexported and
-	// only overridden by this package's own internal tests (see
-	// server_internal_test.go, precedent: campaign's poison_internal_test.go)
-	// to make the overflow-closes-the-socket behavior deterministically
-	// testable without appending gatewayBuffer+ events.
+	// Override only from this package's tests: New sets gatewayBuffer (SPEC-011).
 	buffer int
 
-	// noProgress is how long a connection may fail to consume a waiting
-	// envelope before the store cuts its subscription loose — after which
-	// serveWS force-closes the socket rather than leaving a zombie. Zero means
-	// store.SubscriberNoProgressTimeout. Unexported and settable like buffer,
-	// because the gateway's own tests need a budget shorter than a wall-clock
-	// half-minute.
+	// Override only from this package's tests; zero means
+	// store.SubscriberNoProgressTimeout (SPEC-011).
 	noProgress time.Duration
 
-	// writeTimeout bounds a single conn.Write. SEPARATE from noProgress on
-	// purpose: they are different policies at different layers, and conflating
-	// them makes the socket path untestable. noProgress governs the store's
-	// queue ("is this subscriber consuming?"); writeTimeout governs the socket
-	// ("can this client still take bytes?"). With one knob the store always
-	// drops first, so the write path can never be exercised in isolation —
-	// which is exactly how its absence went unnoticed.
+	// Keep writeTimeout apart from noProgress: with one knob the write bound
+	// fires first, and TestAWedgedConnectionIsTornDownAndOthersKeepServing
+	// stops reaching the store's drop (SPEC-011).
 	writeTimeout time.Duration
 
-	// pingInterval and pingTimeout govern the keepalive (keepalive.go): how
-	// often an otherwise-silent connection is pinged, and how long the pong may
-	// take before the peer is judged gone. Defaults are gatewayPingInterval and
-	// gatewayPingTimeout; unexported and overridden only by this package's own
-	// tests, exactly like buffer and noProgress above, because a suite cannot
-	// wait twenty wall-clock seconds per assertion.
+	// Override both only from this package's tests: New sets
+	// gatewayPingInterval and gatewayPingTimeout (SPEC-011).
 	pingInterval time.Duration
 	pingTimeout  time.Duration
 
-	// encodeFrame is EncodeFrame behind a per-Server seam, so a test can force
-	// an encode failure without reaching across into another Server's
-	// connections. See codec.go for why this is not a package global.
+	// See EncodeFrame (SPEC-011).
 	encodeFrame func(*vttv1.ServerFrame) ([]byte, error)
 
-	// presence tracks who is connected RIGHT NOW. Wire state, never appended
-	// to the log — replaying a campaign must not resurrect a session
-	// (spec §4). See presence.go.
+	// Never append presence to the log: who is online is not campaign history
+	// (SPEC-007, SPEC-011).
 	presence *presenceRegistry
 
-	// onServeDone, when set, fires as each connection's serve returns. Nil in
-	// production; it exists because "the server tore this connection down" is
-	// otherwise unobservable from a client that is deliberately not reading —
-	// and not reading is the whole precondition of the case it pins.
+	// Leave nil in production. TestAClientThatStopsReadingEntirelyIsTornDown
+	// sets it to see a teardown its own client cannot.
 	onServeDone func()
 
 	// See WithRuleset (SPEC-012).
@@ -128,9 +106,7 @@ type Server struct {
 	// See WithAdventureGuides (SPEC-012).
 	adventureGuides map[string]string
 
-	// static is the built web client, served at / when non-nil. Optional:
-	// `vtt serve` without a bundle still serves the API, and a browser gets
-	// an honest 404 rather than a panic. Set via WithStatic, boot time only.
+	// See WithStatic (SPEC-011).
 	static fs.FS
 
 	// Take mapsMu for every access once s serves; see WithMaps and mapByID
@@ -152,9 +128,7 @@ type Server struct {
 }
 
 // New constructs a Server over an already-open campaign and identity DB.
-// The caller owns both handles' lifecycle (Close them after the Server is
-// done serving). No ruleset is loaded — use_ability commands are rejected
-// with a clean "no ruleset loaded" error until WithRuleset is called.
+// Close both after it stops serving: the caller owns them (SPEC-011).
 func New(c *campaign.Campaign, ids *identity.DB) *Server {
 	return &Server{
 		campaign: c, ids: ids,
@@ -694,22 +668,9 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }
 
-// announcePresence tells everyone EXCEPT pc that pc's participant ARRIVED.
-//
-// Arrivals only, since #55. Departures go through announceDeparture, which
-// re-checks absence at send time — a departure is only news if they are still
-// gone, and a reconnect can land between leave() deciding "that was the last
-// connection" and the announcement leaving. An arrival needs no such re-check:
-// the connection announcing it is registered and is the reason the news is
-// true, so there is nothing that could have undone it in between.
-//
-// An encode failure is dropped rather than escalated: presence is soft state,
-// every client is re-synced by the snapshot it gets on connect, and tearing a
-// healthy connection down because someone else's status frame would not
-// marshal would turn a cosmetic fault into an outage. That is the opposite of
-// the catch-up head, which fails the connection closed — a client that cannot
-// learn where catch-up ends cannot function, and one that misses a presence
-// blip can.
+// announcePresence tells every other connection that pc's participant arrived
+// (SPEC-011). Drop the frame on an encode failure, never the connection:
+// presence is repaired by the next snapshot.
 func (s *Server) announcePresence(pc *presenceConn) {
 	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_PresenceChanged{
@@ -723,34 +684,17 @@ func (s *Server) announcePresence(pc *presenceConn) {
 	if err != nil {
 		return
 	}
-	// Revoked participants are denied this frame. Presence is the ONE delivery
-	// path that does not run through the pump, so without this a revoked
-	// stranger who came in on a leaked link went on watching the guest list
-	// arrive and leave until the table next appended an event (spec §3.2).
+	// Pass revoked(): presence does not run through the pump, so this is where a
+	// revoked participant stops hearing it (SPEC-009, VTT-032).
 	s.presence.broadcast(pc, b, s.revoked())
 }
 
-// announceDeparture tells the table pc's participant has gone — unless they
-// have already come back.
-//
-// leave() decides "that was their last connection" and this is a SEPARATE step,
-// so a reconnect landing in between would otherwise make the table's last word
-// about a PRESENT participant "DISCONNECTED", and tell their fresh connection
-// itself gone (broadcast excludes by connection pointer, so a participant's own
-// other connection is a legitimate target). Measured at 1 inversion in 20,000
-// rounds before the re-check existed; it persists until a snapshot, and spec
-// §3.4 makes reconnection manual, so it stays wrong until the player acts on a
-// problem they cannot see. See presenceRegistry.announceIfAbsent (#55).
+// announceDeparture announces pc's participant gone only while no connection
+// of theirs remains (SPEC-011, announceIfAbsent).
 func (s *Server) announceDeparture(pc *presenceConn) {
-	// revoked() resolved HERE, before the fan-out is held, for two reasons and
-	// the second is the binding one. It reads identity once per connected
-	// participant, which inside the walk would queue every other announcement
-	// behind a pile of SQLite reads. And it CANNOT be deferred until after the
-	// absence check to save that work on a suppressed departure: the check and
-	// the target selection have to happen under ONE hold of the registry lock,
-	// or membership can change between them and the suppression this exists for
-	// stops holding. So a suppressed departure pays for a deny set it does not
-	// use, deliberately.
+	// Resolve revoked here, before announceIfAbsent, even for a departure it
+	// suppresses: an identity read inside it holds the registry's locks
+	// (SPEC-011).
 	deny := s.revoked()
 	s.presence.announceIfAbsent(pc.participantID, deny, func() []byte {
 		b, err := s.encodeFrame(&vttv1.ServerFrame{
@@ -769,21 +713,8 @@ func (s *Server) announceDeparture(pc *presenceConn) {
 	})
 }
 
-// revoked resolves every connected participant and returns those whose
-// credential no longer stands.
-//
-// Resolved HERE rather than inside the registry, and that placement is the
-// point: a Lookup inside broadcast's loop would put one SQLite read per
-// connection under the registry's global mutex — the fan-out stall
-// presenceSendBudget exists to prevent, reintroduced on the path that fans out.
-//
-// Only ErrInvalidToken denies. An operational failure is not a fact about
-// anybody's credential, and dropping presence frames on a busy database would
-// make a transient look like the whole table walking out.
-//
-// The cost is one lookup per connected participant per presence frame, and
-// presence frames are rare — somebody joins, somebody leaves — unlike events.
-// nil when nobody is revoked, which is the ordinary case and allocates nothing.
+// revoked answers the connected participants whose Lookup is ErrInvalidToken
+// (SPEC-009). Never call it under the registry's locks (SPEC-011).
 func (s *Server) revoked() map[string]bool {
 	var out map[string]bool
 	for _, id := range s.presence.participantIDs() {
@@ -797,28 +728,11 @@ func (s *Server) revoked() map[string]bool {
 	return out
 }
 
-// announcePromotion re-announces a promoted participant to the whole table,
-// their own connections included.
-//
-// The frame carries no NEW presence information — they were already connected
-// and still are. It exists as a NUDGE, and it closes the half of promotion
-// that live re-resolution does not reach: the server now lets a promoted
-// spectator act on their existing socket, but their own browser read its role
-// once at connect (/api/me) and nothing ever told it that role moved. So they
-// could act and their client offered them nothing to act with — the server
-// said yes to a screen with no controls on it.
-//
-// Sent to everyone rather than just to them, because a stale role is a stale
-// role: the DM's console lists roles too.
-//
-// Found by the e2e. No unit test could see it — every layer was correct, and
-// what was wrong was a browser's idea of itself.
+// announcePromotion re-announces a promoted participant to every connection,
+// theirs included (SPEC-009, VTT-047).
 func (s *Server) announcePromotion(participantID string) {
-	// Resolve, encode and send as ONE UNINTERRUPTIBLE fan-out — see
-	// announceIfPresent, which holds fanOut across all three. Doing it in three
-	// separable steps let the participant's last connection unwind between the
-	// resolve and the send, so the table saw DISCONNECTED then CONNECTED and
-	// kept a ghost in its list for the rest of the session.
+	// Resolve, encode and send inside announceIfPresent, never as separate
+	// steps: a connection that unwinds between them leaves a ghost (SPEC-011).
 	s.presence.announceIfPresent(participantID, func(name string) []byte {
 		b, err := s.encodeFrame(&vttv1.ServerFrame{
 			Frame: &vttv1.ServerFrame_PresenceChanged{
@@ -836,39 +750,9 @@ func (s *Server) announcePromotion(participantID string) {
 	})
 }
 
-// handleRemoveActor takes an actor out of the world AND the pieces it had on
-// the board, as one ordered batch (retraction-leaves spec §5.2, Task 9).
-//
-// THE CASCADE IS CORRECTNESS, NOT CONVENIENCE, and it is the whole reason this
-// command is not a plain ToEvent conversion. engine.Apply's TokenPlaced arm
-// and client/src/fold.ts's tokenPlaced arm both refuse a token whose actor
-// they do not know, in almost the same words — so an ActorRemoved that left
-// this actor's tokens standing would leave a world whose own introductions no
-// longer fold, and through client/src/session.ts's
-// re-fold-the-whole-log-on-every-event that is a permanent client freeze. The
-// batch is therefore one TokenRemoved per token of this actor, in token-id
-// order, and then the ActorRemoved, last.
-//
-// ONE campaign.AppendBatch, which is what makes it atomic: the batch is
-// validated by folding the whole of it before any of it is persisted, so a
-// rejection anywhere appends nothing. handleLoadMap (map.go) is the precedent
-// for the shape, down to this function's own stamping loop.
-//
-// SORTED BY TOKEN ID, not by map iteration order. Go randomises the latter, and
-// the log is permanent: two identical tables would otherwise record the same
-// removal in different orders, and no test could assert either.
-//
-// NOTHING IS CHECKED HERE. An unknown actor id produces a one-event batch that
-// campaign.AppendBatch rejects with the fold's own "removed unknown actor"
-// wording — the same division of labour remove_token has, where engine.Apply
-// owns the unknown-subject rejection and this layer owns the shape. And the
-// snapshot this reads can go stale between here and the append, which the fold
-// also owns: its ActorRemoved arm refuses an actor whose tokens still stand, so
-// a place_token that lands in between costs a clean rejection rather than an
-// orphaned token.
-//
-// CONTROL GRANTS NEED NO EVENT: controller_ids is a field on the Actor, so
-// whoever held this actor stops holding it because the actor is gone.
+// handleRemoveActor appends the batch SPEC-017 states. Check nothing here: the
+// fold refuses an unknown actor and a token placed after st was read, and a
+// refused batch appends nothing.
 func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
 	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
 	var tokenIDs []string
@@ -887,10 +771,8 @@ func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
 	envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_ActorRemoved{
 		ActorRemoved: &vttv1.ActorRemoved{ActorId: cmd.GetActorId()}}})
 
-	// Stamped here rather than by ToEvent, which this command does not use —
-	// the same loop handleLoadMap runs over the envelopes mapdef.Compile
-	// returns, and for the same reason: a batch has no single envelope for
-	// ToEvent to build.
+	// Stamp the four fields the batch leaves zero: store.AppendBatch requires an
+	// EventId (SPEC-017).
 	now := timestamppb.Now()
 	for _, env := range envs {
 		id, err := newEventID()
@@ -910,11 +792,7 @@ func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
 
-// handleJoinDoor opens or closes the shared join link (joining-a-table §2).
-//
-// Authorize has already bounded WHO may issue this (dm/agent, authz.go), so
-// this applies it. It appends NOTHING: the door is operational state, like
-// presence, and replaying a campaign must never reopen a door somebody closed.
+// handleJoinDoor applies set_join_door (SPEC-009).
 func (s *Server) handleJoinDoor(requestID string, req *vttv1.SetJoinDoor) *vttv1.CommandResult {
 	var open bool
 	switch req.GetDoor() {
@@ -923,63 +801,36 @@ func (s *Server) handleJoinDoor(requestID string, req *vttv1.SetJoinDoor) *vttv1
 	case vttv1.JoinDoor_JOIN_DOOR_CLOSED:
 		open = false
 	default:
-		// REFUSED, not defaulted, and this is why the contract carries an enum
-		// rather than a bool: protojson omits zero values, so `bool open`
-		// would put CLOSED on the wire as an absent field and make a sender
-		// that forgot to set it indistinguishable from one asking to shut the
-		// door. Both guesses are bad in their own direction — guess open and a
-		// bug admits strangers, guess closed and a bug locks the table out
-		// mid-session — so neither is made.
+		// Refuse, never default: guessing open admits strangers and guessing
+		// closed locks the table out (SPEC-009, JoinDoor).
 		return &vttv1.CommandResult{
 			RequestId: requestID,
 			Ok:        false,
 			Error:     "gateway: set_join_door must say open or closed",
 		}
 	}
-	// The budget travels straight through. A non-positive value — which is
-	// what an absent field decodes to, since protojson omits zero values —
-	// becomes DefaultAdmitLimit inside SetJoinOpen rather than being guessed at
-	// here, so the CLI and the wire cannot drift into two different defaults.
+	// Pass the limit through as it came: SetJoinOpen owns the default (SPEC-009).
 	if err := s.ids.SetJoinOpen(open, int(req.GetAdmitLimit())); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
-// handleRotateJoinLink mints a new join secret, closing a LEAKED link to
-// newcomers without touching anybody already through it.
+// handleRotateJoinLink applies rotate_join_link (SPEC-009).
 func (s *Server) handleRotateJoinLink(requestID string) *vttv1.CommandResult {
 	if _, err := s.ids.RotateJoinSecret(); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	// The new secret is deliberately NOT returned here. CommandResult carries
-	// no payload, and adding one to smuggle a credential back would put a
-	// shared secret on the channel every participant's frames travel. The DM
-	// reads it from GET /api/join-link instead, which is authenticated and
-	// dm/agent only.
+	// Never return the secret here: a result travels the channel every
+	// participant's frames use, and the DM reads it from GET /api/join-link
+	// (SPEC-009).
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
-// handlePromotion applies an authorized role change.
-//
-// Authorize has already bounded WHO may issue this and WHAT role it may name
-// (gateway/authz.go: dm/agent only, targeting player or spectator only), so
-// this applies it and reports what identity said. It deliberately appends
-// nothing: the whole point of keeping role identity-side is that there is one
-// source of truth, and writing an event beside it would create a second.
+// handlePromotion applies promote_participant (SPEC-009).
 func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant) *vttv1.CommandResult {
-	// A PROMOTION MAY NOT UNMAKE A DM OR AN AGENT.
-	//
-	// Authorize bounds what a promotion may promote TO (authz.go: player or
-	// spectator only, spec §3.1a). It cannot bound who may be promoted FROM,
-	// because that is a fact about the target's CURRENT row and Authorize does
-	// no I/O — so the check lives here, where the lookup is.
-	//
-	// Without it, promote_participant(dm_id, "spectator") names a permitted
-	// role and goes through. Nobody left at the table could undo it: promotion
-	// cannot reach dm by design, so it would take host access and `vtt invite`.
-	// Agents are authorized to promote, which is the sharp end — one agent
-	// having a bad day could lock every human out of their own campaign.
+	// Refuse a dm or agent target here: Authorize does no I/O and cannot read the
+	// target's role (SPEC-009, VTT-026).
 	target, err := s.ids.Lookup(req.GetParticipantId())
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
@@ -998,22 +849,16 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
-// credentialGone reports whether this participant's credential has been
-// revoked since the connection was accepted.
-//
-// ErrInvalidToken ONLY, and that narrowness is the point: an operational
-// failure must not silently drop an event or a connection. Losing a frame is
-// worse than a moment's delay in removing somebody, and the very next event
-// asks again.
+// credentialGone reports whether Lookup answers ErrInvalidToken for the
+// participant (SPEC-009). Match nothing else: an operational failure must not
+// drop a frame (VTT-033).
 func (s *Server) credentialGone(participantID string) bool {
 	_, err := s.ids.Lookup(participantID)
 	return errors.Is(err, identity.ErrInvalidToken)
 }
 
-// The two ways enqueueEvents can stop short, as sentinels so the caller can
-// tell them apart without matching a sentence: one is this server's bug and
-// deserves a close frame saying so, the other is the connection already going
-// away underneath it.
+// Keep these two apart: deliver closes with a reason for errEncodeFrame alone
+// (SPEC-011).
 var (
 	errEncodeFrame = errors.New("gateway: encode event frame")
 	errWriterGone  = errors.New("gateway: writer stopped")

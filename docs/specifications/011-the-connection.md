@@ -162,13 +162,16 @@ joiner, who takes `mu` alone, never waits for a fan-out in progress. `send`
 hands a frame to a connection and waits at most `presenceSendBudget`, 3
 seconds, or until that connection's `done`, then drops the frame for that
 connection; presence is repaired by the next snapshot, never by the log.
-`broadcast` excludes by connection pointer, so a participant's other devices
-receive what one of them caused, and skips the participants in `revoked`, which
-`announcePresence` and `announceDeparture` resolve through `identity.Lookup`
-before taking `fanOut`, so no identity read happens under the registry's locks;
-`announcePromotion` passes no deny set, the debt `docs/verification-debt.md`
-records under 2026-09-24. SPEC-007 owns that presence frames are not envelopes
-and that `DISCONNECTED` is per participant.
+A presence frame that cannot be encoded is sent to nobody, a joiner's snapshot
+included, and ends no connection: `announcePresence` returns, and
+`joinAndSend`, `announceIfPresent` and `announceIfAbsent` send nothing for a
+nil frame. `broadcast` excludes by connection pointer, so a participant's other
+devices receive what one of them caused, and skips the participants in
+`revoked`, which `announcePresence` and `announceDeparture` resolve through
+`identity.Lookup` before taking `fanOut`, so no identity read happens under the
+registry's locks; `announcePromotion` passes no deny set, the debt
+`docs/verification-debt.md` records under 2026-09-24. SPEC-007 owns that
+presence frames are not envelopes and that `DISCONNECTED` is per participant.
 
 **Teardown runs in dependency order.** `shutdown` leaves presence first, so a
 departure is announced before this connection's writer stops and a fan-out

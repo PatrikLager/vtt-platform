@@ -9,12 +9,14 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `ErrUnauthorized`), `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
 (`validateAddActor`), `internal/gateway/note_validate.go`
-(`validateUpsertNote`) and `internal/gateway/server.go` (`answerCommand`,
-`authorize`, `handleSetViewpoint`, `handleCommand`, `describeBlockage`),
-against `internal/engine`'s `State`; pinned by
-`internal/gateway/authz_test.go`, `grant_validate_test.go`,
-`add_actor_validate_test.go`, `note_validate_test.go`, `server_test.go`,
-`server_visibility_test.go` and `server_internal_test.go`.
+(`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`) and
+`internal/gateway/server.go` (`answerCommand`, `authorize`,
+`handleSetViewpoint`, `handleCommand`, `describeBlockage`), against
+`internal/engine`'s `State`; pinned by `internal/gateway/authz_test.go`,
+`grant_validate_test.go`, `add_actor_validate_test.go`,
+`note_validate_test.go`, `convert_test.go`, `server_test.go`,
+`server_visibility_test.go` and `server_internal_test.go`, and by
+`cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
 
@@ -235,13 +237,15 @@ exists at the command boundary alone.
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`) and `load_adventure` (`handleLoadAdventure`) are
 SPEC-012's; `load_map` (`handleLoadMap`) is SPEC-014's; `remove_actor`
-(`handleRemoveActor`) has no record of its own; and SPEC-007 states what the
+(`handleRemoveActor`) is SPEC-017's; and SPEC-007 states what the
 `load_map` and `remove_actor` batches carry. All four append a whole batch
 through `campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
 `set_join_door` (`handleJoinDoor`) and `rotate_join_link`
 (`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
 their ok=true result carries no sequence. Every other command reaches
-`ToEvent` and becomes one envelope. For a `TokenMoved`, `handleCommand` sets
+`ToEvent` and becomes one envelope, carrying every field the command gave
+that the event has a field for, a grant's `kind` included; `move_token`'s
+`reason` has none in `TokenMoved` and is dropped. For a `TokenMoved`, `handleCommand` sets
 `SceneId` and `From` from the snapshot's token before `campaign.Append`, so
 the log records the scene and the square the token left; `engine.Apply`'s
 `TokenMoved` arm reads only `TokenId` and `To`.
@@ -258,7 +262,7 @@ are sent, and a shoulder replaced before the pump takes it is never applied.
 **What this record does not decide.** Promotion's bounds and the
 re-resolution before every command are SPEC-009's; the perch's rule and what
 a seat is sent are SPEC-015's; the batch handlers are SPEC-012's, SPEC-014's
-and `handleRemoveActor`'s; the join door and promotion handlers are
+and SPEC-017's; the join door and promotion handlers are
 SPEC-009's; what the fold refuses is `engine.Apply`'s.
 
 ## Consequences
@@ -295,4 +299,4 @@ And whoever changes the code:
 VTT-138, VTT-139, VTT-140, VTT-141, VTT-142, VTT-143, VTT-144, VTT-145,
 VTT-146, VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153,
 VTT-154, VTT-155, VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161,
-VTT-162, VTT-231.
+VTT-162, VTT-231, VTT-257.
