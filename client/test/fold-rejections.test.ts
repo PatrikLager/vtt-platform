@@ -468,3 +468,38 @@ test("a resource the actor does not have is refused BY NAME, even when that name
   rejects([...withHP(5, 10), env(3, { resourceChanged: { actorId: "a1", resource: "hasOwnProperty", delta: -1, newValue: 4 } })],
     'resource changed for unknown resource "hasOwnProperty" on actor "a1"');
 });
+
+// --- a move's reason --------------------------------------------------------
+
+const placed = env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } });
+
+// VTT-264
+test("a move reason longer than 256 bytes is rejected", () => {
+  rejects([...placeable, placed, env(5, { tokenMoved: { tokenId: "t1", to: { x: 2, y: 2 }, reason: "r".repeat(257) } })],
+    "move reason exceeds 256 bytes");
+});
+
+// VTT-264
+test("a move reason is measured in UTF-8 bytes, not characters", () => {
+  rejects([...placeable, placed, env(5, { tokenMoved: { tokenId: "t1", to: { x: 2, y: 2 }, reason: "é".repeat(129) } })],
+    "move reason exceeds 256 bytes");
+});
+
+// VTT-264
+test("a move reason of exactly 256 bytes is ACCEPTED", () => {
+  const st = fold([...placeable, placed, env(5, { tokenMoved: { tokenId: "t1", to: { x: 2, y: 2 }, reason: "é".repeat(128) } })]);
+  expect(st.Tokens["t1"]!.X).toBe(2);
+});
+
+// --- a narration's speaker --------------------------------------------------
+
+// VTT-266
+test("a narration speaker longer than 256 bytes is rejected", () => {
+  rejects([started, env(2, { narrationAdded: { text: "x", as: "a".repeat(257) } })],
+    "narration as exceeds 256 bytes");
+});
+
+// VTT-266
+test("a narration speaker of exactly 256 bytes is ACCEPTED", () => {
+  expect(() => fold([started, env(2, { narrationAdded: { text: "x", as: "a".repeat(256) } })])).not.toThrow();
+});

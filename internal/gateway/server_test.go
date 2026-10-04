@@ -1010,6 +1010,42 @@ func TestAMoveWithNoReasonAppendsNone(t *testing.T) {
 	}
 }
 
+// VTT-264 VTT-161 VTT-162
+func TestAMoveWhoseReasonExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-long",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "t1", To: &vttv1.GridPosition{X: 9, Y: 9}, Reason: proto.String(strings.Repeat("r", 257)),
+		}},
+	})
+	r := readResult(t, dmConn)
+	if want := "engine: move reason must be at most 256 bytes, got 257"; r.Ok || r.Error != want {
+		t.Fatalf("257-byte reason: ok=%v error=%q, want the fold's refusal %q", r.Ok, r.Error, want)
+	}
+	if got := f.head(t); got != head {
+		t.Fatalf("a refused move moved the log head from %d to %d", head, got)
+	}
+
+	agentConn := f.dial(f.agentToken, head)
+	atCap := strings.Repeat("r", 256)
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-cap",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "t1", To: &vttv1.GridPosition{X: 9, Y: 9}, Reason: proto.String(atCap),
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("256-byte reason: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+	if got := readEvent(t, agentConn).GetTokenMoved().GetReason(); got != atCap {
+		t.Fatalf("appended reason is %d bytes, want the 256 sent", len(got))
+	}
+}
+
 // TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
 // layer (Task 3) precedent RemoveCondition already set: the gateway forwards
 // add_narration/upsert_note/delete_note through the SAME single-Append path

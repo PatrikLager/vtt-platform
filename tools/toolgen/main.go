@@ -52,6 +52,13 @@ var manifest = []toolSpec{
 		name:        "move_token",
 		description: "Move a token to a new grid position on its scene.",
 		descriptor:  (&vttv1.MoveTokenRequest{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.MoveTokenRequest": {
+				fieldDocs: map[string]string{
+					"reason": "Optional; why the token moved, recorded with the move in the log. Only the DM and the agent read it: no player or spectator is sent it. At most 256 bytes of UTF-8; a longer reason refuses the whole move.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.AddActor",

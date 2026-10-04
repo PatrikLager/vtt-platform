@@ -975,3 +975,33 @@ func TestSnapshotIsDeepCopy(t *testing.T) {
 		t.Fatalf("snapshot note mutated: got %+v, want %+v", snapNote, wantNote)
 	}
 }
+
+// VTT-264
+func TestAMoveWhoseReasonExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedMovableToken(t)
+	before := st.Snapshot()
+
+	err := engine.Apply(st, env(5, &vttv1.TokenMoved{
+		TokenId: "t1", SceneId: "scn", To: &vttv1.GridPosition{X: 4, Y: 4},
+		Reason: strings.Repeat("r", 257),
+	}))
+	want := "engine: move reason must be at most 256 bytes, got 257"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused move must leave the state as it was")
+	}
+}
+
+func seedMovableToken(t *testing.T) *engine.State {
+	t.Helper()
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{
+		Actor: &vttv1.Actor{ActorId: "a1", Name: "Hero", ModuleId: "m"},
+	})))
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{
+		TokenId: "t1", SceneId: "scn", ActorId: "a1", Position: &vttv1.GridPosition{X: 1, Y: 1},
+	})))
+	return st
+}

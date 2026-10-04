@@ -248,7 +248,8 @@ grant's `kind` and a move's `reason` included, and a move that gave no
 `reason` records none. For a `TokenMoved`, `handleCommand` sets
 `SceneId` and `From` from the snapshot's token before `campaign.Append`, so
 the log records the scene and the square the token left; `engine.Apply`'s
-`TokenMoved` arm reads only `TokenId` and `To`.
+`TokenMoved` arm reads `TokenId`, `To` and the length of `Reason` (SPEC-018),
+and never `SceneId` or `From`.
 
 **`set_viewpoint`.** `answerCommand` routes it to `handleSetViewpoint`, which
 runs `authorize` (the spectator's cell and `MayPerch`), then
@@ -263,7 +264,8 @@ are sent, and a shoulder replaced before the pump takes it is never applied.
 re-resolution before every command are SPEC-009's; the perch's rule and what
 a seat is sent are SPEC-015's; the batch handlers are SPEC-012's, SPEC-014's
 and SPEC-017's; the join door and promotion handlers are
-SPEC-009's; what the fold refuses is `engine.Apply`'s.
+SPEC-009's; what the fold refuses is `engine.Apply`'s, and its byte bounds
+SPEC-018's.
 
 ## Consequences
 

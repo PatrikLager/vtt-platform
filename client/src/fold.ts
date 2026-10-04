@@ -208,6 +208,7 @@ function apply(st: State, env: Envelope): void {
       const tok = st.Tokens[v.tokenId];
       if (!tok) throw new FoldError(`unknown token "${v.tokenId}" moved`);
       if (!v.to) throw new FoldError(`token "${v.tokenId}" moved with no destination`);
+      checkLen("move reason", v.reason, 0, 256);
       // `from` and `sceneId` are ignored entirely, exactly as Go does.
       tok.X = v.to.x;
       tok.Y = v.to.y;
@@ -431,6 +432,7 @@ function apply(st: State, env: Envelope): void {
       // fold, because the server would never have accepted it.
       const v = p.value;
       checkLen("narration text", v.text, 1, 8192);
+      checkLen("narration as", v.as, 0, 256);
       if (v.anchorFromSeq !== 0n || v.anchorToSeq !== 0n) {
         if (v.anchorFromSeq <= 0n || v.anchorToSeq <= 0n) {
           throw new FoldError("narration anchor requires both ends set");

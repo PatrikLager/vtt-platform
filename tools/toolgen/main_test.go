@@ -413,3 +413,19 @@ func TestEnumFieldOffersOnlyTheChoicesThatCanSucceed(t *testing.T) {
 		}
 	}
 }
+
+// VTT-265
+func TestMoveTokenReasonSaysOnlyTheDMAndTheAgentReadIt(t *testing.T) {
+	tool := findTool(t, "move_token")
+	props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	prop, ok := props["reason"].(map[string]any)
+	if !ok {
+		t.Fatalf("move_token properties[\"reason\"] missing or not an object: %#v", props["reason"])
+	}
+	desc, _ := prop["description"].(string)
+	for _, want := range []string{"Optional", "Only the DM and the agent read it", "At most 256 bytes"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("move_token reason description = %q, want it to contain %q", desc, want)
+		}
+	}
+}

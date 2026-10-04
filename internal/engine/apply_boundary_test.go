@@ -97,3 +97,17 @@ func TestNoteTextAtCapIsAccepted(t *testing.T) {
 		t.Fatalf("text: got %d bytes, want %d", len(got), len(text))
 	}
 }
+
+// VTT-264
+func TestMoveReasonAtCapIsAccepted(t *testing.T) {
+	st := seedMovableToken(t)
+
+	must(t, engine.Apply(st, env(5, &vttv1.TokenMoved{
+		TokenId: "t1", SceneId: "scn", To: &vttv1.GridPosition{X: 4, Y: 4},
+		Reason: strings.Repeat("r", 256),
+	})))
+
+	if tok := st.Tokens["t1"]; tok.X != 4 || tok.Y != 4 {
+		t.Fatalf("a move with a 256-byte reason must land, token at %d,%d", tok.X, tok.Y)
+	}
+}

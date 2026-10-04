@@ -27,8 +27,8 @@ var ErrUnknownVariant = errors.New("engine: unknown event variant")
 // message and made all four quotations false in the same commit that added it.
 var ErrSceneExists = errors.New("already exists")
 
-// Size/anchor limits for the world layer (spec §4): a size posture, not a
-// scripting surface — no game-system meaning, just wire-frame bounds.
+// Inclusive byte bounds on an event's free text (SPEC-018). Never lower one: a
+// log that folded under the old bound would stop folding.
 const (
 	maxNoteKeyBytes   = 128
 	maxNoteTitleBytes = 256
@@ -42,6 +42,7 @@ const (
 	// that posture has to be owned by the fold before any live log exists,
 	// not inherited from a third-party default nobody pinned.
 	maxNarrationAsBytes = 256
+	maxMoveReasonBytes  = 256
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
@@ -251,6 +252,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		if tm.To == nil {
 			return fmt.Errorf("engine: token move without destination")
+		}
+		if len(tm.Reason) > maxMoveReasonBytes {
+			return fmt.Errorf("engine: move reason must be at most %d bytes, got %d", maxMoveReasonBytes, len(tm.Reason))
 		}
 		tok.X, tok.Y = tm.To.X, tm.To.Y
 		st.Tokens[tm.TokenId] = tok
