@@ -17,6 +17,9 @@ message TokenMoved {
   string scene_id = 2;
   GridPosition from = 3;
   GridPosition to = 4;
+  // Never forward reason to a player or spectator: it is free text its issuer
+  // wrote and can name what they do not see (SPEC-016).
+  string reason = 5;
 }
 
 message DieRoll {

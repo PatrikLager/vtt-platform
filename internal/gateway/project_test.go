@@ -2136,6 +2136,51 @@ func TestSteppingIntoViewArrivesRatherThanMoves(t *testing.T) {
 	}
 }
 
+// VTT-262 VTT-222
+func TestAForwardedMoveCarriesNoReasonAndTheEventKeepsIt(t *testing.T) {
+	const why = "the floor gives way under the hero"
+	move := func() *vttv1.Envelope {
+		in := envelope(8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+			From: &vttv1.GridPosition{X: 1, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1},
+			Reason: why})
+		in.EventId, in.ParticipantId, in.ActorRole, in.SessionId = "evt-8", "p-dm", "dm", "sess-1"
+		return in
+	}
+	for _, v := range []gateway.Viewer{player(),
+		{ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "hero"}} {
+		st := twoRooms()
+		pr := gateway.NewProjector(v)
+		firstPlace(pr, st)
+		mustApply(st, 8, &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+			From: &vttv1.GridPosition{X: 1, Y: 1}, To: &vttv1.GridPosition{X: 2, Y: 1}})
+		in := move()
+		before := proto.Clone(in)
+
+		var sent *vttv1.Envelope
+		for _, e := range pr.Project(in, st) {
+			if e.GetTokenMoved() != nil {
+				sent = e
+			}
+		}
+		if sent == nil {
+			t.Fatalf("%s: the move was not forwarded", v.Role)
+		}
+		want := proto.Clone(in).(*vttv1.Envelope)
+		want.GetTokenMoved().Reason = ""
+		if !proto.Equal(sent, want) {
+			t.Errorf("%s: forwarded %v, want the event less its reason", v.Role, sent)
+		}
+		if !proto.Equal(in, before) {
+			t.Errorf("%s: projecting the move changed the event", v.Role)
+		}
+	}
+
+	dm := gateway.NewProjector(gateway.Viewer{ParticipantID: "dm", Role: identity.RoleDM})
+	if out := dm.Project(move(), twoRooms()); len(out) != 1 || out[0].GetTokenMoved().GetReason() != why {
+		t.Errorf("the DM must be sent the move with its reason, got %v", out)
+	}
+}
+
 // VTT-212
 func TestADoorInARoomYouAreNotInStaysSilent(t *testing.T) {
 	// Doors are forwarded only when the viewer can see the square (spec §4.2:

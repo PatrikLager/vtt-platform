@@ -112,7 +112,7 @@ internal/engine/state.go  57.9
 internal/engine/terrain.go  52.3
 internal/engine/terrain_test.go  29.4
 internal/engine/visibility_fold_test.go  27.1
-internal/eventgen/model.go  29.2
+internal/eventgen/model.go  29.1
 internal/eventgen/model_test.go  14.7
 internal/gateway/add_actor_validate.go  25.0
 internal/gateway/add_actor_validate_test.go  48.8
@@ -123,8 +123,8 @@ internal/gateway/authz.go  13.3
 internal/gateway/authz_test.go  36.9
 internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
-internal/gateway/convert.go  8.7
-internal/gateway/convert_test.go  14.4
+internal/gateway/convert.go  8.6
+internal/gateway/convert_test.go  14.3
 internal/gateway/export_test.go  49.2
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  40.7
@@ -145,9 +145,10 @@ internal/gateway/presence.go  16.1
 internal/gateway/presence_internal_test.go  30.5
 internal/gateway/project.go  18.7
 internal/gateway/project_internal_test.go  33.4
-internal/gateway/project_property_test.go  20.7
-internal/gateway/project_test.go  25.9
+internal/gateway/project_property_test.go  20.1
+internal/gateway/project_test.go  25.6
 internal/gateway/qa_joining_test.go  4.8
+internal/gateway/qa_move_reason_test.go  0.6
 internal/gateway/qa_note_adventure_test.go  0.0
 internal/gateway/qa_note_projection_test.go  1.1
 internal/gateway/qa_note_refusal_test.go  0.4
@@ -161,8 +162,8 @@ internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  29.6
 internal/gateway/server.go  25.3
 internal/gateway/server_internal_test.go  36.9
-internal/gateway/server_test.go  27.4
-internal/gateway/server_visibility_test.go  28.7
+internal/gateway/server_test.go  26.9
+internal/gateway/server_visibility_test.go  27.9
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  22.3
 internal/gateway/viewpoint_internal_test.go  25.8

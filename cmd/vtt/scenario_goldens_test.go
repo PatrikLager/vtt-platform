@@ -22,7 +22,7 @@ import (
 // On a failure, read the diff: either the SERVER changed (fix it), or the
 // corpus is stale (re-derive state.json by hand, then re-record stream.json).
 // state.json is held by internal/harness's TestFoldGoldenCorpus.
-// VTT-240 VTT-257
+// VTT-240 VTT-260 VTT-261
 func TestScenarioGoldenStreamsHaveNotDrifted(t *testing.T) {
 	dirs := goldenDirs(t)
 

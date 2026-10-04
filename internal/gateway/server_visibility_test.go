@@ -9,6 +9,7 @@ import (
 
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -1085,6 +1086,39 @@ func TestAPlayerCannotProbeTheDarkWithMoveCommands(t *testing.T) {
 	// been sent, so its refusal still says what is there.
 	if got := probe("probe-visible-wall", 15, 5); !strings.Contains(got, "wall") {
 		t.Fatalf("a wall the player can see must still be named: %q", got)
+	}
+}
+
+// VTT-262 VTT-176
+func TestAPlayerIsSentAMoveWithoutItsReasonAndTheDMWithIt(t *testing.T) {
+	const why = "the floor gives way under the hero"
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-move",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "t1", To: &vttv1.GridPosition{X: 9, Y: 9}, Reason: proto.String(why),
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("want ok=true moving t1, got error %q", r.Error)
+	}
+
+	playerStream := drainEvents(t, f.dial(f.playerToken, 0), 500*time.Millisecond)
+	moved := false
+	for _, e := range playerStream {
+		if e.GetTokenMoved().GetTokenId() == "t1" {
+			moved = true
+		}
+	}
+	if !moved {
+		t.Fatal("the player was not sent its own token's move")
+	}
+	if mentions(t, playerStream, why) {
+		t.Fatal("the player was sent the move's reason")
+	}
+	if !mentions(t, drainEvents(t, f.dial(f.dmToken, 0), 500*time.Millisecond), why) {
+		t.Fatal("the DM was not sent the move's reason")
 	}
 }
 

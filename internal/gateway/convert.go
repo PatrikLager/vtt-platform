@@ -33,6 +33,7 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
 			TokenId: c.MoveToken.GetTokenId(),
 			To:      c.MoveToken.GetTo(),
+			Reason:  c.MoveToken.GetReason(),
 		}}
 	case *vttv1.ClientCommand_AddActor:
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{

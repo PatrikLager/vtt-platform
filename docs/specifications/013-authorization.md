@@ -243,9 +243,9 @@ through `campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
 `set_join_door` (`handleJoinDoor`) and `rotate_join_link`
 (`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
 their ok=true result carries no sequence. Every other command reaches
-`ToEvent` and becomes one envelope, carrying every field the command gave
-that the event has a field for, a grant's `kind` included; `move_token`'s
-`reason` has none in `TokenMoved` and is dropped. For a `TokenMoved`, `handleCommand` sets
+`ToEvent` and becomes one envelope, carrying every field the command gave, a
+grant's `kind` and a move's `reason` included, and a move that gave no
+`reason` records none. For a `TokenMoved`, `handleCommand` sets
 `SceneId` and `From` from the snapshot's token before `campaign.Append`, so
 the log records the scene and the square the token left; `engine.Apply`'s
 `TokenMoved` arm reads only `TokenId` and `To`.
@@ -299,4 +299,4 @@ And whoever changes the code:
 VTT-138, VTT-139, VTT-140, VTT-141, VTT-142, VTT-143, VTT-144, VTT-145,
 VTT-146, VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153,
 VTT-154, VTT-155, VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161,
-VTT-162, VTT-231, VTT-257.
+VTT-162, VTT-231, VTT-260, VTT-261.

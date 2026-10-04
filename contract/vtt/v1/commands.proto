@@ -9,8 +9,9 @@ option go_package = "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1;
 message MoveTokenRequest {
   string token_id = 1;
   GridPosition to = 2;
-  // Optional DM/agent annotation shown in the log. proto3 `optional` is the
-  // contract's optionality annotation: toolgen omits such fields from `required`.
+  // Optional annotation recorded as TokenMoved.reason, which no player or
+  // spectator is sent (SPEC-016). proto3 `optional` is the contract's
+  // optionality annotation: toolgen omits such fields from `required`.
   optional string reason = 3;
 }
 

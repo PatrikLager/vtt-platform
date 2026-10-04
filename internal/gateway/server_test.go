@@ -19,6 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
@@ -964,6 +965,51 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	}
 }
 
+// VTT-260
+func TestAMoveWithAReasonAppendsItsReason(t *testing.T) {
+	const why = "the floor gives way under the hero"
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	agentConn := f.dial(f.agentToken, f.head(t))
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-move",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "t1", To: &vttv1.GridPosition{X: 9, Y: 9}, Reason: proto.String(why),
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("want ok=true moving t1, got error %q", r.Error)
+	}
+	if got := readEvent(t, agentConn).GetTokenMoved().GetReason(); got != why {
+		t.Fatalf("appended reason = %q, want %q", got, why)
+	}
+}
+
+// VTT-261
+func TestAMoveWithNoReasonAppendsNone(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	agentConn := f.dial(f.agentToken, f.head(t))
+
+	sendCommand(t, dmConn, &vttv1.ClientCommand{
+		RequestId: "r-move",
+		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+			TokenId: "t1", To: &vttv1.GridPosition{X: 9, Y: 9},
+		}},
+	})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("want ok=true moving t1, got error %q", r.Error)
+	}
+	tm := readEvent(t, agentConn).GetTokenMoved()
+	if tm == nil {
+		t.Fatal("the agent was not sent the move")
+	}
+	if tm.GetReason() != "" {
+		t.Fatalf("appended reason = %q, want none", tm.GetReason())
+	}
+}
+
 // TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
 // layer (Task 3) precedent RemoveCondition already set: the gateway forwards
 // add_narration/upsert_note/delete_note through the SAME single-Append path
@@ -1313,7 +1359,7 @@ func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 // tests stopped at Authorize and never crossed into conversion, so nothing
 // noticed. A test that ends at the permission check is not evidence the
 // command works.
-// VTT-147 VTT-257
+// VTT-147 VTT-260
 func TestDMGrantsControlOverTheWire(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.dial(f.dmToken, 0)

@@ -86,6 +86,9 @@ func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 func TestNoteUpsertedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "note_upserted_envelope.json", &vttv1.Envelope{})
 }
+func TestTokenMovedReasonEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "token_moved_reason_envelope.json", &vttv1.Envelope{})
+}
 func TestAdventureLoadedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "adventure_loaded_envelope.json", &vttv1.Envelope{})
 }

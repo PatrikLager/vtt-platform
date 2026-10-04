@@ -140,8 +140,9 @@ type MoveTokenRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	TokenId string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
 	To      *GridPosition          `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
-	// Optional DM/agent annotation shown in the log. proto3 `optional` is the
-	// contract's optionality annotation: toolgen omits such fields from `required`.
+	// Optional annotation recorded as TokenMoved.reason, which no player or
+	// spectator is sent (SPEC-016). proto3 `optional` is the contract's
+	// optionality annotation: toolgen omits such fields from `required`.
 	Reason        *string `protobuf:"bytes,3,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

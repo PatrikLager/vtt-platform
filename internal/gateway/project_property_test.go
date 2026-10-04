@@ -38,7 +38,7 @@ type seatUnderTest struct {
 // (assertSound), an actor's status as last seen (keystoneStatusDiff) and a
 // removal only where it was seen (keystoneRemovalDiff). A fault in a forwarded
 // arm lands on both sides alike and cancels; the DM and agent are a tripwire.
-// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248 VTT-251
+// VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248 VTT-251 VTT-262
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
@@ -89,6 +89,10 @@ func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 		t.Errorf("only %d of 6 seeds corrected a resource a player saw change while unseen",
 			total.seedsWithResourceCorrections)
 	}
+	if total.seedsWithReasonedMoves < 2 {
+		t.Errorf("only %d of 6 seeds forwarded a player a move whose event carried a reason",
+			total.seedsWithReasonedMoves)
+	}
 	t.Logf("player seats ended holding %d scenes and %d tokens; %d withdrawals projected; "+
 		"seeds with tokens/hides/scenes/resource corrections: %d/%d/%d/%d",
 		total.playerScenes, total.playerTokens, total.hides,
@@ -104,6 +108,7 @@ type walkStats struct {
 	publicNotes, noteWithdrawals                      int
 	seedsWithPublicNotes, seedsWithNoteWithdrawals    int
 	resourceCorrections, seedsWithResourceCorrections int
+	reasonedMoves, seedsWithReasonedMoves             int
 }
 
 func (w *walkStats) add(o walkStats) {
@@ -127,6 +132,9 @@ func (w *walkStats) add(o walkStats) {
 	}
 	if o.resourceCorrections > 0 {
 		w.seedsWithResourceCorrections++
+	}
+	if o.reasonedMoves > 0 {
+		w.seedsWithReasonedMoves++
 	}
 }
 
@@ -193,6 +201,12 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 				for _, e := range out {
 					if e.GetResourceChanged() != nil && e.GetEventId() == "" {
 						stats.resourceCorrections++
+					}
+					if e.GetTokenMoved().GetReason() != "" {
+						t.Fatalf("action #%d: %s was sent a move's reason", action, s.name)
+					}
+					if e.GetTokenMoved() != nil && env.GetTokenMoved().GetReason() != "" {
+						stats.reasonedMoves++
 					}
 				}
 			}

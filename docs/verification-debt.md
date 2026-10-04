@@ -251,6 +251,26 @@ in `check:race`, on `e75c416`, which changed no file under `cmd/vtt`:
 `cmd/vtt/qa_e2e_wait_test.go`, which reds when `qaConnect` connects without
 waiting for the pid line (observed 2026-10-01).
 
+## 2026-10-02 — `move_token`'s `reason` never reached the log
+
+**`move_token`'s `reason` never reaches the log.** `MoveTokenRequest` carries
+`optional string reason`, which `contract/vtt/v1/commands.proto` says is shown
+in the log and the MCP `move_token` tool offers; `TokenMoved` has no field for
+it, so `ToEvent` drops it and the command answers ok=true. No test sends a
+reason through `ToEvent`: `internal/mcp/tools_test.go` sets one against a fake
+server and `contract/testdata/client_command.json` round-trips one, and
+neither reaches the gateway. The gateway's tier-1 tests should have caught it;
+`TestToEventMoveTokenProducesTokenMoved` sets no reason. The reading review of
+`597051b` found it by calling `ToEvent` with one. Recipe: none is needed to
+put it back; it is there. Labels: `spec silent`, `test data missing`. Closing
+it is the next ticket, which adds the field to `TokenMoved`, additively, and
+decides who is shown it. Recorded 2026-10-02 by the removal record's report.
+
+**Closed by** `TestToEventMoveTokenProducesTokenMoved` in
+`internal/gateway/convert_test.go` and `TestAMoveWithAReasonAppendsItsReason` in
+`internal/gateway/server_test.go`, which red when `ToEvent` drops the reason
+(observed 2026-10-04).
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
@@ -509,16 +529,3 @@ the door. Closing it needs a removal test that reads the batch's envelopes
 back for their participant and role, and a door test that opens the door,
 sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
-
-**`move_token`'s `reason` never reaches the log.** `MoveTokenRequest` carries
-`optional string reason`, which `contract/vtt/v1/commands.proto` says is shown
-in the log and the MCP `move_token` tool offers; `TokenMoved` has no field for
-it, so `ToEvent` drops it and the command answers ok=true. No test sends a
-reason through `ToEvent`: `internal/mcp/tools_test.go` sets one against a fake
-server and `contract/testdata/client_command.json` round-trips one, and
-neither reaches the gateway. The gateway's tier-1 tests should have caught it;
-`TestToEventMoveTokenProducesTokenMoved` sets no reason. The reading review of
-`597051b` found it by calling `ToEvent` with one. Recipe: none is needed to
-put it back; it is there. Labels: `spec silent`, `test data missing`. Closing
-it is the next ticket, which adds the field to `TokenMoved`, additively, and
-decides who is shown it. Recorded 2026-10-02 by the removal record's report.

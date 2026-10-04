@@ -231,11 +231,14 @@ func (x *GridPosition) GetY() int32 {
 }
 
 type TokenMoved struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TokenId       string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
-	SceneId       string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	From          *GridPosition          `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
-	To            *GridPosition          `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TokenId string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	SceneId string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	From    *GridPosition          `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	To      *GridPosition          `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	// Never forward reason to a player or spectator: it is free text its issuer
+	// wrote and can name what they do not see (SPEC-016).
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -296,6 +299,13 @@ func (x *TokenMoved) GetTo() *GridPosition {
 		return x.To
 	}
 	return nil
+}
+
+func (x *TokenMoved) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type DieRoll struct {
@@ -2829,13 +2839,14 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x13vtt/v1/events.proto\x12\x06vtt.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"*\n" +
 	"\fGridPosition\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x02 \x01(\x05R\x01y\"\x92\x01\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"\xaa\x01\n" +
 	"\n" +
 	"TokenMoved\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x19\n" +
 	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12(\n" +
 	"\x04from\x18\x03 \x01(\v2\x14.vtt.v1.GridPositionR\x04from\x12$\n" +
-	"\x02to\x18\x04 \x01(\v2\x14.vtt.v1.GridPositionR\x02to\"3\n" +
+	"\x02to\x18\x04 \x01(\v2\x14.vtt.v1.GridPositionR\x02to\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"3\n" +
 	"\aDieRoll\x12\x10\n" +
 	"\x03die\x18\x01 \x01(\x05R\x03die\x12\x16\n" +
 	"\x06result\x18\x02 \x01(\x05R\x06result\"8\n" +

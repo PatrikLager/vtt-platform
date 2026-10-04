@@ -8,14 +8,14 @@ Accepted. Implemented by `internal/gateway/project.go` (`Viewer`, `Projector`,
 `classify`, `canSeeSquare`, `doorTransitions`, `doorSubject`, `squareAt`,
 `squareKey`, `sortedSet`, `sortedSceneIDs`, `sortedSceneIDsUnion`,
 `noteTransitions`, `introduce`, `withdraw`, `actorBelief`, `beliefOf`,
-`snapshotSighted`, `correct`, `statusFrames`, `sameSet`), over
+`snapshotSighted`, `correct`, `statusFrames`, `sameSet`, `forwardable`), over
 `internal/sight`'s `VisibleFrom` and `engine.IsPartyMember`; called from
 `internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
 by `internal/gateway/project_test.go`, `project_internal_test.go`,
 `project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
 `server_visibility_test.go`, `qa_note_projection_test.go`,
-`qa_testimony_eyes_test.go`, `qa_testimony_sight_test.go` and
-`qa_testimony_removal_test.go`.
+`qa_testimony_eyes_test.go`, `qa_testimony_sight_test.go`,
+`qa_testimony_removal_test.go` and `qa_move_reason_test.go`.
 
 ## Principles served
 
@@ -28,22 +28,24 @@ sends nothing.
 ## How it works
 
 **Which viewers are projected, and what `Project` answers.** `Project` answers
-a nil event with nothing. It answers `identity.RoleDM` and
-`identity.RoleAgent` with the event itself, the same pointer, and reads no
-state. It answers any role but those and `identity.RolePlayer` and
-`identity.RoleSpectator` with nothing; `identity.Role` is a string, and
-`identity.Verify` keeps a stored role that does not parse from reaching a seat
-(SPEC-009). For a player or a spectator it answers a nil state with nothing,
-and otherwise computes `look` over the state and asks `classify` for a
-verdict. For `unrecognised` it sends nothing at all, `transitions`' frames
-included, since it cannot tell what the event did to the world; for `withheld`
-it sends `transitions`' frames; for `forwarded`, those frames and then the
-event. `Project` writes to neither the event nor the state, and every frame it
-builds is new (each `&vttv1.Envelope{`, and each element of a
-`[]*vttv1.Envelope{{` literal, in `project.go`): a live event is one envelope,
-since `store.notifyLocked` enqueues the same pointer to every subscriber.
-Which seats call `Project` (`seat.receive` alone: `grep -rn '\.Project('` over
-the non-test Go files) and with which state is SPEC-015's.
+a nil event with nothing. It answers `identity.RoleDM` and `identity.RoleAgent`
+with the event itself, the same pointer, and reads no state. It answers any
+role but those and `identity.RolePlayer` and `identity.RoleSpectator` with
+nothing; `identity.Role` is a string, and `identity.Verify` keeps a stored role
+that does not parse from reaching a seat (SPEC-009). For a player or a
+spectator it answers a nil state with nothing, and otherwise computes `look`
+over the state and asks `classify` for a verdict. For `unrecognised` it sends
+nothing at all, `transitions`' frames included, since it cannot tell what the
+event did to the world; for `withheld` it sends `transitions`' frames; for
+`forwarded`, those frames and then `forwardable`'s answer: the event itself,
+or, for a `TokenMoved` whose `reason` is not empty, a copy of it with the
+`reason` cleared and every other field as the event has it. `Project` writes to
+neither the event nor the state, and every frame it builds is new (each
+`&vttv1.Envelope{`, each element of a `[]*vttv1.Envelope{{` literal, and
+`forwardable`'s `proto.Clone`, in `project.go`): a live event is one envelope,
+since `store.notifyLocked` enqueues the same pointer to every subscriber. Which
+seats call `Project` (`seat.receive` alone: `grep -rn '\.Project('` over the
+non-test Go files) and with which state is SPEC-015's.
 
 **Whose eyes a viewer has.** `eyes` gives a player every actor in `st.Actors`
 whose `ControllerIds` holds the player's participant id, sorted, and ignores
@@ -170,8 +172,8 @@ so these frames are how a door opened before a viewer had eyes reaches its
 board. `squareKey` builds the key `sight.VisibleFrom` builds, column then row.
 
 **How each payload is ruled.** `classify` runs before `transitions`, so the
-board, roster and `sighted` it reads are the viewer's before the event, and
-the look is the one after it. It forwards `SessionStarted`, `SessionEnded` and
+board, roster and `sighted` it reads are the viewer's before the event, and the
+look is the one after it. It forwards `SessionStarted`, `SessionEnded` and
 `NarrationAdded` to every player and spectator; narration is addressed to the
 table, and `add_narration` is open to the player, the DM and the agent
 (SPEC-013). It withholds `SceneCreated`, `ActorAdded` and `TokenPlaced`, which
@@ -186,21 +188,23 @@ withholds it for every other value, `NOTE_VISIBILITY_UNSPECIFIED` included, so
 a note recorded without a visibility is DM-only. It withholds `NoteDeleted`:
 `noteTransitions` sends a viewer that holds the note the same bare
 `NoteDeleted` a note made secret gets, and a viewer that does not hold it
-nothing, since its fold would refuse the deletion and a key the viewer does
-not hold is the DM's. It forwards `TokenMoved` when the token was on the board
-before the event and is in the look after it, since a move names both its
-ends. It forwards `DoorOpened` and `DoorClosed` when `canSeeSquare` finds the
-square in the look. It forwards `AttackRolled` (attacker and target),
-`AbilityUsed` (actor and targets), `ActorControlGranted`,
-`ActorControlRevoked`, `ResourceChanged`, `ConditionApplied` and
-`ConditionRemoved` when every non-empty actor id named is in `sighted`, so
-when the viewer saw each of them before the event; what an event brings into
-sight arrives by introduction or by correction instead. It forwards
-`ActorRemoved` on the same test, so when the viewer saw the actor before the
-event; a viewer that did not see it keeps it, gone, and a fold that never held
-it would refuse its removal. Every other payload, and an envelope with none,
-is `unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the
-envelope's oneof and fails on a payload `classify` answers `unrecognised`.
+nothing, since its fold would refuse the deletion and a key the viewer does not
+hold is the DM's. It forwards `TokenMoved` when the token was on the board
+before the event and is in the look after it, since a move names both its ends.
+What `Project` sends of it carries no `reason` (`forwardable`), which its
+issuer wrote and the DM and the agent read in the log. It forwards `DoorOpened`
+and `DoorClosed` when `canSeeSquare` finds the square in the look. It forwards
+`AttackRolled` (attacker and target), `AbilityUsed` (actor and targets),
+`ActorControlGranted`, `ActorControlRevoked`, `ResourceChanged`,
+`ConditionApplied` and `ConditionRemoved` when every non-empty actor id named
+is in `sighted`, so when the viewer saw each of them before the event; what an
+event brings into sight arrives by introduction or by correction instead. It
+forwards `ActorRemoved` on the same test, so when the viewer saw the actor
+before the event; a viewer that did not see it keeps it, gone, and a fold that
+never held it would refuse its removal. Every other payload, and an envelope
+with none, is `unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling`
+walks the envelope's oneof and fails on a payload `classify` answers
+`unrecognised`.
 
 **A perch.** `reperch` sets `Viewpoint` to the actor named, answers a nil
 state with nothing, and otherwise returns `transitions` with no causing event
@@ -283,6 +287,8 @@ A client author, and whoever changes the code, are bound by these:
 - Nothing may write to an envelope a seat is handed: a live event is one
   envelope shared by every seat. Nor to the state `Project` reads, which is
   the seat's own fold and which `perch` reads again.
+- A player's or a spectator's `TokenMoved` never carries a `reason`; the DM
+  and the agent are sent it as the log holds it.
 - Sight range and tolerance are not supplied. A ruleset that supplies them
   passes them as arguments to `sight.VisibleFrom`; read off
   `Actor.Attributes`, they would be game-system vocabulary in platform code.
@@ -295,4 +301,4 @@ VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218,
 VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226,
 VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
 VTT-241, VTT-242, VTT-243, VTT-244, VTT-245, VTT-246, VTT-247, VTT-248,
-VTT-249, VTT-250, VTT-251, VTT-252.
+VTT-249, VTT-250, VTT-251, VTT-252, VTT-262.

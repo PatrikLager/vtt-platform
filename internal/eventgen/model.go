@@ -219,7 +219,7 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 	case r < 0.28 && m.canPlaceToken():
 		return m.placeToken(rng)
 	case r < 0.52 && m.canMoveToken():
-		return m.moveToken(rng)
+		return m.moveToken(rng, idx)
 	case r < 0.60:
 		return m.addNarration(rng, idx)
 	case r < 0.64:
@@ -301,7 +301,7 @@ func (m *Model) placeToken(rng *rand.Rand) Action {
 	}), Kind: "placeToken", Anchors: true}
 }
 
-func (m *Model) moveToken(rng *rand.Rand) Action {
+func (m *Model) moveToken(rng *rand.Rand, idx int) Action {
 	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]
 	from := m.tokenPos[id]
 	to := [2]int32{rng.Int31n(50), rng.Int31n(50)}
@@ -309,10 +309,13 @@ func (m *Model) moveToken(rng *rand.Rand) Action {
 	m.tokenPos[id] = to
 	return Action{Env: m.env(&vttv1.TokenMoved{
 		TokenId: id, SceneId: scene,
-		From: &vttv1.GridPosition{X: from[0], Y: from[1]},
-		To:   &vttv1.GridPosition{X: to[0], Y: to[1]},
+		From:   &vttv1.GridPosition{X: from[0], Y: from[1]},
+		To:     &vttv1.GridPosition{X: to[0], Y: to[1]},
+		Reason: moveReasons[idx%len(moveReasons)],
 	}), Kind: "moveToken", Anchors: true}
 }
+
+var moveReasons = []string{"", "prop-reason"}
 
 func (m *Model) startSession() Action {
 	m.sessionOpen = true

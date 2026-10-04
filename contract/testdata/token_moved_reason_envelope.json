@@ -1,0 +1,15 @@
+{
+  "eventId": "evt-move-reason-1",
+  "sequence": "47",
+  "occurredAt": "2026-10-03T09:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "agent",
+  "participantId": "p-agent",
+  "tokenMoved": {
+    "tokenId": "tok-ursus",
+    "sceneId": "scn-goblin-warrens",
+    "from": { "x": 3, "y": 7 },
+    "to": { "x": 5, "y": 8 },
+    "reason": "the floor gives way under the hero"
+  }
+}

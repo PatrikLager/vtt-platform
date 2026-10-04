@@ -107,7 +107,7 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	}
 	out := pr.transitions(env, env.GetSequence(), now, st)
 	if v == forwarded {
-		out = append(out, env)
+		out = append(out, forwardable(env))
 	}
 	return out
 }
@@ -841,4 +841,15 @@ func sameSet(a, b map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+// forwardable is env, or for a move with a reason a copy without it (SPEC-016).
+// Clone before clearing: every seat and the DM share env.
+func forwardable(env *vttv1.Envelope) *vttv1.Envelope {
+	if env.GetTokenMoved().GetReason() == "" {
+		return env
+	}
+	c := proto.Clone(env).(*vttv1.Envelope)
+	c.GetTokenMoved().Reason = ""
+	return c
 }

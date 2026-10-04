@@ -29,8 +29,9 @@ export type MoveTokenRequest = Message<"vtt.v1.MoveTokenRequest"> & {
   to?: GridPosition | undefined;
 
   /**
-   * Optional DM/agent annotation shown in the log. proto3 `optional` is the
-   * contract's optionality annotation: toolgen omits such fields from `required`.
+   * Optional annotation recorded as TokenMoved.reason, which no player or
+   * spectator is sent (SPEC-016). proto3 `optional` is the contract's
+   * optionality annotation: toolgen omits such fields from `required`.
    *
    * @generated from field: optional string reason = 3;
    */
