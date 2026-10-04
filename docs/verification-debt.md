@@ -271,6 +271,23 @@ decides who is shown it. Recorded 2026-10-02 by the removal record's report.
 `internal/gateway/server_test.go`, which red when `ToEvent` drops the reason
 (observed 2026-10-04).
 
+## 2026-10-04 — the client's fold accepted a narration speaker the server refused
+
+**`fold.ts` never bounded `NarrationAdded.as`.** `engine.Apply` refuses a
+speaker over `maxNarrationAsBytes` (256 bytes) since `61e35be`; the TypeScript
+fold that came after it (`8551df4`) checked a narration's text and anchors and
+never its speaker, so a DM client would have folded an `as` the server's fold
+refuses. Nothing reached a table: the server never accepted such a narration,
+so no client was sent one. Recipe: in `client/src/fold.ts`'s `narrationAdded`
+arm, delete `checkLen("narration as", v.as, 0, 256);`. The fold-parity and
+rejection tests should have caught it and had no case for a speaker over the
+bound; the TS mutation gate cannot add a missing check. Labels: `test data
+missing`, `outside the tool`.
+
+**Closed by** `a narration speaker longer than 256 bytes is rejected` in
+`client/test/fold-rejections.test.ts`, which reds when that line is deleted
+(observed 2026-10-04, in `a4543e6`'s breaks).
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
@@ -529,3 +546,18 @@ the door. Closing it needs a removal test that reads the batch's envelopes
 back for their participant and role, and a door test that opens the door,
 sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
+
+**Nothing ties a byte bound's copies to the engine's constant.**
+`client/src/fold.ts` holds each of the fold's six bounds as a literal in a
+`checkLen` call, and `internal/adventure/load.go` holds its own copies of
+`maxNoteKeyBytes`, `maxNoteTitleBytes` and `maxTextBytes`; each side's tests pin
+its own numbers (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`), so a
+bound changed in `internal/engine/apply.go` alone leaves both mirrors stale and
+every test but the engine's own green. Only a move's reason has a link, from
+the MCP tool's description to `maxMoveReasonBytes`
+(`TestTheMoveToolStatesTheFoldsReasonBound`). Recipe: set `maxNoteTitleBytes`
+to 300 in `apply.go`; `go test ./internal/adventure/...` and `bun test
+client/test` stay green. No gate compares a copy with its constant, and no
+mutation operator changes two files. Labels: `outside the tool`. Closing it
+needs a test that reads each mirror's number against the engine's. Recorded
+2026-10-04 by the reason-bound report.
