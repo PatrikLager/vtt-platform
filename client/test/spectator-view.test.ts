@@ -138,6 +138,15 @@ test("the ticker is bounded — an all-night session must not render thousands o
   expect(ticks).toBeGreaterThan(0);
 });
 
+// VTT-263
+test("the feed and the ticker show a move's reason", () => {
+  const log = [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, {
+    tokenId: "t1", to: { x: 3, y: 4 }, reason: "the floor gives way" }) })];
+  const root = render(world(), log);
+  expect(root.querySelector(".feed .mechanical")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
+  expect(root.querySelector(".ticker .tick")?.textContent).toBe("#6 t1 moved to 3,4 — the floor gives way");
+});
+
 test("in-character speech is marked with its speaker; table talk is not", () => {
   const log = [
     env(1, { case: "narrationAdded", value: create(NarrationAddedSchema, { text: "Hi", as: "Goblin" }) }),
@@ -182,6 +191,8 @@ test("describe renders a real label for every event kind it handles, not the fal
       "t placed at 1,2"],
     [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t", to: { x: 3, y: 4 } }) }),
       "t moved to 3,4"],
+    [env(17, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t", to: { x: 3, y: 4 }, reason: "r" }) }),
+      "t moved to 3,4 — r"],
     [env(7, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a", conditionId: "prone" }) }),
       "a gained prone"],
     [env(8, { case: "conditionRemoved", value: create(ConditionRemovedSchema, { actorId: "a", conditionId: "prone" }) }),

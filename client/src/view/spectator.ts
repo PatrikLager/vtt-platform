@@ -124,7 +124,7 @@ export function describe(e: Envelope): string {
     case "tokenPlaced":
       return `${p.value.tokenId} placed at ${p.value.position?.x ?? 0},${p.value.position?.y ?? 0}`;
     case "tokenMoved":
-      return `${p.value.tokenId} moved to ${p.value.to?.x ?? 0},${p.value.to?.y ?? 0}`;
+      return because(`${p.value.tokenId} moved to ${p.value.to?.x ?? 0},${p.value.to?.y ?? 0}`, p.value.reason);
     // The two forward-only removals (retraction-leaves spec §5). They arrive
     // here as ordinary feed entries because a removal IS something that
     // happened — the counterparts above (actorAdded, tokenPlaced) are labelled
@@ -651,4 +651,8 @@ export function renderSpectator(
     nodes.push(t);
   }
   root.replaceChildren(...nodes);
+}
+
+function because(label: string, reason: string): string {
+  return reason === "" ? label : `${label} — ${reason}`;
 }
