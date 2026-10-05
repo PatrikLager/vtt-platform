@@ -587,3 +587,29 @@ platform only. Labels: `outside the tool`. Closing it needs a gate step that
 builds `./...` for linux and darwin and asserts the windows build of
 `internal/campaign` fails as SPEC-019 says, or a ruling that it is not
 wanted. Recorded 2026-10-05 by the writer-hold report, the plan's Gap 5.
+
+**`AttackRolled.Modifier.source` reaches a player as the log holds it.**
+`forwardable` in `internal/gateway/project.go` clears an envelope's issuer and
+the cause of a `TokenMoved`, `ResourceChanged`, `ConditionApplied` or
+`ConditionRemoved` and keeps every other field, and `classify` forwards an
+`AttackRolled` when the viewer saw its attacker and its target, so each
+`Modifier.source` reaches a player or a spectator as written. Nothing in
+production writes an `AttackRolled` today (`git grep -n 'AttackRolled' --
+'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'` prints only
+`engine.Apply`'s and `classify`'s arms, which read it), so no table has met it; a writer that sets a
+modifier's source to an ability or an actor the viewer does not see would name
+it. Recipe: project an `AttackRolled` whose attacker and target a player sees,
+with `Modifiers: []*vttv1.Modifier{{Source: "ability:ambush:hit", Value: 2}}`;
+the player's frame carries the source. QA's
+`TestQAIssAForwardedFrameKeepsEverythingButIssuerAndCause` does exactly this
+with the source `brawn` and asserts it is kept, so the behaviour is pinned as
+correct, not merely unobserved. No gate should have caught it, and none
+did: no rule says what a modifier's source names or who reads it (VTT-273 is
+status changes only), and `TestEveryEnvelopeFieldIsKeptOrClearedByForwardable`
+walks the envelope's own fields, not a payload's. Labels: `spec silent`.
+Closing it needs a ruling on `Modifier.source` before anything writes an
+`AttackRolled`; if it is cleared, an arm in `forwardable` with its test, and
+`qaIssLessIssuerAndCause` and that test's modifier assertion changed with it,
+since today four QA tests red under that arm. Recorded 2026-10-05 by the issuer
+report, from QA's finding and Gap 7 of
+`docs/superpowers/plans/2026-10-05-a-viewer-is-told-no-issuer-and-no-unseen-cause.md`.
