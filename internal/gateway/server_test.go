@@ -1046,6 +1046,72 @@ func TestAMoveWhoseReasonExceedsTheBoundAppendsNothing(t *testing.T) {
 	}
 }
 
+// VTT-274 VTT-161 VTT-162
+func TestAnActorWhoseNameExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+	addActor := func(req, name string) {
+		sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_AddActor{
+			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "a-" + req, Name: name,
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}}})
+	}
+
+	addActor("long", strings.Repeat("n", 257))
+	r := readResult(t, dmConn)
+	if want := "engine: actor name must be at most 256 bytes, got 257"; r.Ok || r.Error != want {
+		t.Fatalf("257-byte name: ok=%v error=%q, want the fold's refusal %q", r.Ok, r.Error, want)
+	}
+	if got := f.head(t); got != head {
+		t.Fatalf("a refused add_actor moved the log head from %d to %d", head, got)
+	}
+
+	agentConn := f.dial(f.agentToken, head)
+	atCap := strings.Repeat("n", 256)
+	addActor("cap", atCap)
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("256-byte name: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+	if got := readEvent(t, agentConn).GetActorAdded().GetActor().GetName(); got != atCap {
+		t.Fatalf("appended name is %d bytes, want the 256 sent", len(got))
+	}
+}
+
+// VTT-274 VTT-161 VTT-162
+func TestASessionWhoseNameExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: "end",
+		Command: &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}}})
+	if r := readResult(t, dmConn); !r.Ok {
+		t.Fatalf("end_session refused: %s", r.Error)
+	}
+	head := f.head(t)
+	start := func(req, name string) {
+		sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: req,
+			Command: &vttv1.ClientCommand_StartSession{StartSession: &vttv1.StartSession{Name: name}}})
+	}
+
+	start("long", strings.Repeat("n", 257))
+	r := readResult(t, dmConn)
+	if want := "engine: session name must be at most 256 bytes, got 257"; r.Ok || r.Error != want {
+		t.Fatalf("257-byte name: ok=%v error=%q, want the fold's refusal %q", r.Ok, r.Error, want)
+	}
+	if got := f.head(t); got != head {
+		t.Fatalf("a refused start_session moved the log head from %d to %d", head, got)
+	}
+
+	agentConn := f.dial(f.agentToken, head)
+	atCap := strings.Repeat("n", 256)
+	start("cap", atCap)
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("256-byte name: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+	if got := readEvent(t, agentConn).GetSessionStarted().GetName(); got != atCap {
+		t.Fatalf("appended name is %d bytes, want the 256 sent", len(got))
+	}
+}
+
 // TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
 // layer (Task 3) precedent RemoveCondition already set: the gateway forwards
 // add_narration/upsert_note/delete_note through the SAME single-Append path

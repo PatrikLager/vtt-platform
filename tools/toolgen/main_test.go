@@ -429,3 +429,26 @@ func TestMoveTokenReasonSaysOnlyTheDMAndTheAgentReadIt(t *testing.T) {
 		}
 	}
 }
+
+// VTT-276
+func TestAddActorAndStartSessionStateTheNameBound(t *testing.T) {
+	props := func(tool map[string]any) map[string]any {
+		return tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	}
+	actor, ok := props(findTool(t, "add_actor"))["actor"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor has no actor property")
+	}
+	for tool, prop := range map[string]any{
+		"add_actor":     actor["properties"].(map[string]any)["name"],
+		"start_session": props(findTool(t, "start_session"))["name"],
+	} {
+		p, ok := prop.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no name property: %#v", tool, prop)
+		}
+		if desc, _ := p["description"].(string); !strings.Contains(desc, "At most 256 bytes") {
+			t.Fatalf("%s name description = %q, want it to state the bound", tool, desc)
+		}
+	}
+}

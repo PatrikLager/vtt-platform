@@ -1005,3 +1005,61 @@ func seedMovableToken(t *testing.T) *engine.State {
 	})))
 	return st
 }
+
+// VTT-274
+func TestASceneWhoseNameExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.SceneCreated{SceneId: "scn-2", Name: strings.Repeat("n", 257),
+		GridWidth: 2, GridHeight: 2}))
+	want := "engine: scene name must be at most 256 bytes, got 257"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused scene must leave the state as it was")
+	}
+}
+
+// VTT-274
+func TestAnActorWhoseNameExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1",
+		Name: strings.Repeat("n", 257)}}))
+	want := "engine: actor name must be at most 256 bytes, got 257"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused actor must leave the state as it was")
+	}
+}
+
+// VTT-274
+func TestAnAdventureWhoseNameExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.AdventureLoaded{AdventureId: "adv", Name: strings.Repeat("n", 257)}))
+	want := "engine: adventure name must be at most 256 bytes, got 257"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused adventure must leave the state as it was")
+	}
+}
+
+// VTT-274
+func TestASessionWhoseNameExceedsTheBoundIsRefused(t *testing.T) {
+	st := engine.NewState()
+	before := st.Snapshot()
+	err := engine.Apply(st, env(1, &vttv1.SessionStarted{Name: strings.Repeat("n", 257)}))
+	want := "engine: session name must be at most 256 bytes, got 257"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused session must leave the state as it was")
+	}
+}

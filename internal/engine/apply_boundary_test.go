@@ -111,3 +111,19 @@ func TestMoveReasonAtCapIsAccepted(t *testing.T) {
 		t.Fatalf("a move with a 256-byte reason must land, token at %d,%d", tok.X, tok.Y)
 	}
 }
+
+// VTT-274
+func TestNamesAtCapAreAccepted(t *testing.T) {
+	name := strings.Repeat("n", 256)
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: name})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{SceneId: "scn", Name: name, GridWidth: 2, GridHeight: 2})))
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1", Name: name}})))
+	must(t, engine.Apply(st, env(4, &vttv1.AdventureLoaded{AdventureId: "adv", Name: name})))
+	if got := st.Scenes["scn"].Name; got != name {
+		t.Fatalf("the scene's 256-byte name was stored as %d bytes", len(got))
+	}
+	if got := st.Actors["a1"].GetName(); got != name {
+		t.Fatalf("the actor's 256-byte name was stored as %d bytes", len(got))
+	}
+}

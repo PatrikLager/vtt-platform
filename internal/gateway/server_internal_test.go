@@ -18,6 +18,7 @@ import (
 
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -76,32 +77,20 @@ func tinyRecvBufClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{DialContext: dialer.DialContext}}
 }
 
-// bigPaddingName is deliberately much larger than tcpBufSize (28KB vs 8KB):
-// a broadcast Envelope carrying it cannot possibly be absorbed by the
-// pinned send/recv buffers in one shot, so a peer that isn't reading forces
-// the writer to genuinely stall after only a few such events — not merely
-// slow down. Kept comfortably under coder/websocket's default 32KB
-// per-message READ limit (which is what the server itself enforces on
-// INCOMING ClientCommand frames, including this string flowing straight
-// through as a command field — AddActor's Actor.Name is copied 1:1 into the
-// broadcast ActorAdded) so the command carrying it is still accepted.
-//
-// NAMED FOR ITS JOB, not for the field it lands in, because it lands in two:
-// an Actor.Name on the three command-driven fixtures, and a SceneCreated.Name
-// on the one that seeds oversized events straight onto the campaign
-// (TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced) — four uses, which is
-// what HEAD had too. (An earlier draft of this very sentence said "four
-// command-driven", making five: the same off-by-one that made the rename wrong
-// in the first place, re-committed in the comment written to explain it. Count
-// the USES; a grep also answers the declaration and every prose reference,
-// including this one.) It was bigSceneName
-// while every site rode on create_scene; that command left the platform on
-// 2026-09-02 (Patrik's ruling, 2026-09-01) and the command sites moved to
-// add_actor — the same shape for this purpose: DM/agent-only, one command to
-// one event, always accepted for a fresh id with no session or scene
-// precondition to trip over, and carrying an unbounded string straight
-// through to the broadcast.
+// Keep bigPaddingName under maxWSFrameBytes and far over tcpBufSize: the
+// command carrying it must still be read, and the broadcast it causes must
+// stall a peer that is not reading.
 var bigPaddingName = strings.Repeat("x", 28*1024)
+
+// bigPadding is bigPaddingName as an actor's module_data.
+func bigPadding(t *testing.T) *structpb.Struct {
+	t.Helper()
+	pad, err := structpb.NewStruct(map[string]any{"pad": bigPaddingName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pad
+}
 
 // TestAWedgedConnectionIsTornDownAndOthersKeepServing succeeds
 // TestOverflowForcesSocketClosedAndOthersKeepServing, which asserted the same
@@ -317,37 +306,16 @@ func TestAWedgedConnectionIsTornDownAndOthersKeepServing(t *testing.T) {
 	// transient SQLite lock contention.
 	const commandCount = 40
 
-	// A BACKSTOP, not a measurement. These writes are the test's scaffolding —
-	// driverConn is healthy and every one of them is EXPECTED to succeed; the
-	// deadline exists only so a genuine wedge fails the suite instead of hanging
-	// it forever. That makes it categorically different from the victim-read
-	// deadlines below, where expiry is part of what is being asserted, and it is
-	// why this one can be generous at no cost: a write that succeeds promptly
-	// never touches it.
-	//
-	// It was 3s, and that failed DETERMINISTICALLY (5 of 5, always at write 14)
-	// on a developer machine under disk pressure — these writes drain through
-	// the server's SQLite-backed Append, so their latency tracks the disk, not
-	// the code. Raising the bound made the same test pass in 17.4s. CI, on a
-	// clean runner, never saw it. A scaffolding timeout tight enough to trip on
-	// a slow disk reports a logic failure that is not there, and it blocked a
-	// push for work in another language entirely.
-	// THE PAYLOAD IS DELIBERATELY MINIMAL BESIDE THE NAME. This fixture's
-	// whole point is an OVERSIZED broadcast — bigPaddingName is what makes it
-	// oversized — and the frame the server READS is bounded by
-	// maxWSFrameBytes = 32768, so everything else in the command is margin
-	// against that limit. Anything added here is spent out of that margin and
-	// would eventually make the DRIVER's own writes unreadable, which would
-	// look like the wedge this test is trying to observe on the victim. A
-	// number is not written here on purpose: the previous version of this
-	// comment carried a measured byte count for a command shape that no
-	// longer exists.
+	// Keep this a generous backstop: these writes drain through SQLite-backed
+	// Append, so their latency tracks the disk. Keep the command minimal beside
+	// the padding: the server reads at most maxWSFrameBytes per frame, and an
+	// unreadable driver write would look like the wedge this test observes.
 	const driverWriteBackstop = 30 * time.Second
 	for i := 0; i < commandCount; i++ {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-				Actor: &vttv1.Actor{ActorId: "act-" + strconv.Itoa(i), Name: bigPaddingName,
+				Actor: &vttv1.Actor{ActorId: "act-" + strconv.Itoa(i), ModuleData: bigPadding(t),
 					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
@@ -650,7 +618,7 @@ func TestAClientThatStopsReadingEntirelyIsTornDown(t *testing.T) {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), Name: bigPaddingName,
+				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), ModuleData: bigPadding(t),
 					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
@@ -803,7 +771,7 @@ func TestAForceClosedClientIsAnnouncedGone(t *testing.T) {
 		cmd := &vttv1.ClientCommand{
 			RequestId: strconv.Itoa(i),
 			Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
-				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), Name: bigPaddingName,
+				Actor: &vttv1.Actor{ActorId: "deaf-" + strconv.Itoa(i), ModuleData: bigPadding(t),
 					Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 			}},
 		}
@@ -1087,9 +1055,9 @@ func TestAJoinerDoesNotWaitForItsOwnArrivalToBeAnnounced(t *testing.T) {
 	for i := range 40 {
 		if _, err := c.Append(&vttv1.Envelope{
 			EventId: fmt.Sprintf("seed-%d", i),
-			Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-				SceneId: fmt.Sprintf("scn-%d", i), Name: bigPaddingName, GridWidth: 4, GridHeight: 4,
-			}},
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+				ActorId: fmt.Sprintf("act-%d", i), ModuleData: bigPadding(t),
+			}}},
 		}); err != nil {
 			t.Fatal(err)
 		}

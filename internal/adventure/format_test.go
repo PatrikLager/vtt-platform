@@ -65,3 +65,10 @@ func TestActorKindNamesAreExactlyTheVocabulary(t *testing.T) {
 		}
 	}
 }
+
+// VTT-275
+func TestTheNameBoundMirrorsEngine(t *testing.T) {
+	if maxNameBytes != 256 {
+		t.Errorf("maxNameBytes = %d, want 256, internal/engine's bound on a name", maxNameBytes)
+	}
+}

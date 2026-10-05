@@ -122,6 +122,9 @@ type FieldErrFunc func(field, msg string) error
 // any of them.
 func Load(path string) (*Map, error) { return loadAs(path, path) }
 
+// maxNameBytes mirrors internal/engine's bound on a name (SPEC-018).
+const maxNameBytes = 256
+
 // loadAs is Load with the name its errors carry (display) held separate
 // from the file they read (path) — see decodeStrict's doc comment for why
 // that separation exists and who uses it. Load itself passes the path for
@@ -160,6 +163,10 @@ func loadAs(path, display string) (*Map, error) {
 					"to use the campaign's own cell_px (campaign.json), which is what every map "+
 					"that declares nothing does", cellPx, MinCellPx, MaxCellPx))
 		}
+	}
+
+	if len(raw.Name) > maxNameBytes {
+		return nil, fieldErr(display, "name", fmt.Sprintf("must be at most %d bytes, got %d", maxNameBytes, len(raw.Name)))
 	}
 
 	if raw.GridWidth < 1 {

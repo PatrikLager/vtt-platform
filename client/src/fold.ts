@@ -63,6 +63,7 @@ function apply(st: State, env: Envelope): void {
       if (st.Sessions.some((s) => s.EndSeq === 0)) {
         throw new FoldError(`session already open at sequence ${seq}`);
       }
+      checkLen("session name", p.value.name, 0, 256);
       // ID comes from the ENVELOPE, not the payload.
       st.Sessions.push({ ID: env.sessionId, Name: p.value.name, StartSeq: seq, EndSeq: 0 });
       return;
@@ -76,6 +77,7 @@ function apply(st: State, env: Envelope): void {
     case "sceneCreated": {
       const v = p.value;
       if (st.Scenes[v.sceneId]) throw new FoldError(`duplicate scene "${v.sceneId}"`);
+      checkLen("scene name", v.name, 0, 256);
       // Translate the wire terrain into engine-shaped Tile/SceneObject,
       // mirroring apply.go's SceneCreated arm. tiles/objects may be empty —
       // a terrain-free scene is legal (Patrik's ruling 2026-08-13) — but
@@ -158,6 +160,7 @@ function apply(st: State, env: Envelope): void {
             `what the actor is`,
         );
       }
+      checkLen("actor name", a.name, 0, 256);
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
@@ -446,14 +449,14 @@ function apply(st: State, env: Envelope): void {
       }
       return;
     }
-    // Recorded on the log, no effect on derived state.
+    case "adventureLoaded":
+      checkLen("adventure name", p.value.name, 0, 256);
+      return;
+    // Recorded on the log, no effect on derived state; an unknown variant is
+    // skipped, as the server's own replay skips it.
     case "attackRolled":
     case "abilityUsed":
-    case "adventureLoaded":
-      return;
     default:
-      // Unknown variants are SKIPPED, not fatal — the same forward
-      // compatibility the server's own replay gives.
       return;
   }
 }

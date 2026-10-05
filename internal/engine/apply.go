@@ -43,6 +43,7 @@ const (
 	// not inherited from a third-party default nobody pinned.
 	maxNarrationAsBytes = 256
 	maxMoveReasonBytes  = 256
+	maxNameBytes        = 256
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
@@ -64,6 +65,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if st.openSession() >= 0 {
 			return fmt.Errorf("engine: session already open")
 		}
+		if len(p.SessionStarted.Name) > maxNameBytes {
+			return fmt.Errorf("engine: session name must be at most %d bytes, got %d", maxNameBytes, len(p.SessionStarted.Name))
+		}
 		st.Sessions = append(st.Sessions, Session{
 			ID: env.SessionId, Name: p.SessionStarted.Name, StartSeq: env.Sequence,
 		})
@@ -81,6 +85,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		sc := p.SceneCreated
 		if _, dup := st.Scenes[sc.SceneId]; dup {
 			return fmt.Errorf("engine: scene %q %w", sc.SceneId, ErrSceneExists)
+		}
+		if len(sc.Name) > maxNameBytes {
+			return fmt.Errorf("engine: scene name must be at most %d bytes, got %d", maxNameBytes, len(sc.Name))
 		}
 		// Translate the wire terrain into the engine's own Tile/SceneObject
 		// (state.go): Tiles/Objects may be empty here — an old-style
@@ -152,6 +159,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 			return fmt.Errorf("engine: actor_added: actor %q declares a controller — creating an "+
 				"actor does not hand it to anyone; control is conferred by actor_control_granted, "+
 				"which also declares what the actor is", a.ActorId)
+		}
+		if len(a.Name) > maxNameBytes {
+			return fmt.Errorf("engine: actor name must be at most %d bytes, got %d", maxNameBytes, len(a.Name))
 		}
 		stored := proto.Clone(a).(*vttv1.Actor)
 		st.Actors[a.ActorId] = stored
@@ -417,6 +427,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)
 
 	case *vttv1.Envelope_AdventureLoaded:
+		if len(p.AdventureLoaded.Name) > maxNameBytes {
+			return fmt.Errorf("engine: adventure name must be at most %d bytes, got %d", maxNameBytes, len(p.AdventureLoaded.Name))
+		}
 		return nil // testimony, not state — AbilityUsed's pattern: the compile batch's FIRST event, meaning arrives via the SceneCreated/ActorAdded/TokenPlaced/NoteUpserted/NarrationAdded events that follow it in the same batch (adventure-format spec §3, internal/adventure's Compile)
 
 	case *vttv1.Envelope_ResourceChanged:

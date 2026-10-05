@@ -187,6 +187,9 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 
 // --- adventure.json ---
 
+// maxNameBytes mirrors internal/engine's bound on a name (SPEC-018).
+const maxNameBytes = 256
+
 type manifestJSON struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
@@ -205,6 +208,9 @@ func loadManifest(path string) (*manifestJSON, error) {
 	}
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
+	}
+	if len(raw.Name) > maxNameBytes {
+		return nil, fieldErr(path, "name", fmt.Sprintf("must be at most %d bytes, got %d", maxNameBytes, len(raw.Name)))
 	}
 	if !supportedFormatVersions[raw.FormatVersion] {
 		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q (want \"1\")", raw.FormatVersion))
@@ -284,6 +290,9 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 		}
 		if raw.Name == "" {
 			return nil, nil, fieldErr(path, "name", "must not be empty")
+		}
+		if len(raw.Name) > maxNameBytes {
+			return nil, nil, fieldErr(path, "name", fmt.Sprintf("must be at most %d bytes, got %d", maxNameBytes, len(raw.Name)))
 		}
 		if seen[raw.ActorID] {
 			return nil, nil, fieldErr(path, "actor_id", fmt.Sprintf("duplicate actor id %q", raw.ActorID))
@@ -436,6 +445,9 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 		}
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")
+		}
+		if len(raw.Name) > maxNameBytes {
+			return nil, fieldErr(path, "name", fmt.Sprintf("must be at most %d bytes, got %d", maxNameBytes, len(raw.Name)))
 		}
 		if seenScene[raw.ID] {
 			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate scene id %q", raw.ID))

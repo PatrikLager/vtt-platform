@@ -152,6 +152,7 @@ func TestLoadValidFixture(t *testing.T) {
 // rules — empty-adventure and unknown-field's strict-decode message — the
 // distinguishing substrings decodeStrict/the empty-adventure check actually
 // produce).
+// VTT-275
 func TestLoadInvalidFixtures(t *testing.T) {
 	cases := []struct {
 		dir  string
@@ -238,6 +239,9 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		// for uniqueness and nothing else: not against its filename the way a
 		// map id is, and not for length the way opening_narration is.
 		{"scene-id-too-long", []string{"cellar.json", `field "id"`, "at most 128 bytes, got 200"}},
+		{"adventure-name-too-long", []string{"adventure.json", `field "name"`, "at most 256 bytes, got 257"}},
+		{"scene-name-too-long", []string{"cellar.json", `field "name"`, "at most 256 bytes, got 257"}},
+		{"actor-name-too-long", []string{"vim-fighter.json", `field "name"`, "at most 256 bytes, got 257"}},
 	}
 
 	rs := loadFixtureRuleset(t)
@@ -287,6 +291,7 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"scene-override-without-tiles",
 		"scene-id-too-long",
 		"actor-kind-missing", "actor-kind-unknown",
+		"adventure-name-too-long", "scene-name-too-long", "actor-name-too-long",
 	}
 	if len(want) != len(onDisk) {
 		t.Errorf("testdata/invalid has %d dirs, case table names %d", len(onDisk), len(want))
@@ -480,42 +485,11 @@ func copyFixtureDirExcluding(t *testing.T, srcDir string, skip ...string) string
 	return dst
 }
 
-// TestLoadAcceptsValuesExactlyOnEveryLimit pins that every limit load.go
-// checks is INCLUSIVE. testdata/at-every-boundary sits exactly on all of them
-// at once — 8192-byte narration and note text, a 128-byte note key, a
-// 256-byte title, a 128-byte scene id, a 1x1 grid, a placement at (0,0), and a
-// resource with max 0 and a non-zero current — and every one of those is legal.
-//
-// The fixture is the pin and this list is its description, so the list is
-// stated as an invariant rather than a count: every BYTE CAP load.go checks has
-// a value here sitting exactly on it, plus the grid, placement and resource
-// cases named above. A count would rot the first time a limit was added — and
-// it did, when maxIDBytes arrived and left a comment saying "seven" three
-// times.
-//
-// Not "every inclusive comparison in the loader", which an earlier draft of
-// this comment claimed: `rv.Current > rv.Max` is inclusive too, and this
-// fixture cannot reach it, because `max: 0` short-circuits the `rv.Max > 0`
-// guard in front of it. testdata/valid pins that one (brace-guard has focus
-// 10/10). Naming the wrong pin is worse than naming none — it sends the next
-// reader to a file that does not hold the coverage.
-//
-// One fixture rather than one per limit, because the limits share a failure
-// mode: loosen any single comparison by one character (`>` to `>=`, `<` to
-// `<=`) and this adventure stops loading. A fixture one byte UNDER each limit
-// would load either way and pin nothing, which is how these boundaries came to
-// be unpinned in the first place.
-//
-// The placement at (0,0) is NOT one of them -- `p.X < 0` and `p.Y < 0`
-// were already killed by testdata/valid/scenes/gate.json, which has had a
-// (0,0) placement all along. It is kept as a deliberate redundant pin, so that
-// the lower bound does not depend on a single fixture the way the upper bound
-// turned out to (see placement-y-out-of-bounds above).
-//
-// The resource case is the odd one and worth naming: max 0 means UNLIMITED, so
-// `rv.Max > 0 && rv.Current > rv.Max` must skip the comparison entirely. Under
-// `rv.Max >= 0` it does not skip, and a current of 7 against a max of 0 reads
-// as an overflow that was never declared.
+// TestLoadAcceptsValuesExactlyOnEveryLimit pins every limit load.go checks as
+// inclusive. Keep a value in testdata/at-every-boundary exactly on each byte
+// cap load.go checks, and on its grid, placement and resource limits: a value
+// one under a cap loads either way and pins nothing.
+// VTT-275
 func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	rs := loadFixtureRuleset(t)
 	adv, err := adventure.Load("testdata/at-every-boundary", rs)
@@ -572,6 +546,15 @@ func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	}
 	if rv, ok := adv.Actors[0].Resources["focus"]; !ok || rv.Max != 0 || rv.Current != 7 {
 		t.Errorf("want focus current=7 max=0 (0 meaning unlimited), got %+v ok=%v", rv, ok)
+	}
+	if got := len(adv.Name); got != 256 {
+		t.Errorf("adventure name = %d bytes, want 256 (exactly maxNameBytes)", got)
+	}
+	if got := len(adv.Scenes[0].Name); got != 256 {
+		t.Errorf("scene name = %d bytes, want 256 (exactly maxNameBytes)", got)
+	}
+	if got := len(adv.Actors[0].Name); got != 256 {
+		t.Errorf("actor name = %d bytes, want 256 (exactly maxNameBytes)", got)
 	}
 }
 

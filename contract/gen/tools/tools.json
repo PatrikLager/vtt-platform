@@ -78,7 +78,7 @@
               "type": "string"
             },
             "name": {
-              "description": "Optional display label for the actor.",
+              "description": "Optional display label for the actor. At most 256 bytes of UTF-8; a longer name refuses the whole command.",
               "type": "string"
             },
             "resources": {
@@ -189,6 +189,7 @@
     "inputSchema": {
       "properties": {
         "name": {
+          "description": "The session's title, shown to everyone at the table. At most 256 bytes of UTF-8; a longer name refuses the command.",
           "type": "string"
         }
       },

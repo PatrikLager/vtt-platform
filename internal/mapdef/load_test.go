@@ -72,6 +72,7 @@ func TestObjectFieldsSurviveTheJSONToMapShapeConversion(t *testing.T) {
 
 // Every refusal in spec §4.4 gets a case. Table-driven over fixture dirs,
 // following internal/rules/testdata/invalid-v2/'s pattern.
+// VTT-275
 func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 	for _, c := range []struct{ dir, want string }{
 		{"missing-square", "no tile"},
@@ -126,6 +127,7 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 		// that needs a real *Pack to disprove, so it is pinned in
 		// compile_test.go instead (ResolveObjectArt, resolve.go), not here.
 		{"object-art-empty", "must not be empty"},
+		{"name-too-long", `field "name": must be at most 256 bytes, got 257`},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			_, err := mapdef.Load(filepath.Join("testdata/invalid", c.dir, "map.json"))
@@ -687,5 +689,19 @@ func TestNoMapMessageCarriesUnboundedAuthorBytes(t *testing.T) {
 				t.Errorf("error = %q, want it to still name the file", err.Error())
 			}
 		})
+	}
+}
+
+// VTT-275
+func TestAMapNameOfExactlyTheBoundLoads(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "hall.json")
+	writeFile(t, p, fmt.Sprintf(`{"format_version":1,"id":"hall","name":%q,"grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"}}`, strings.Repeat("N", 256)))
+	m, err := mapdef.Load(p)
+	if err != nil {
+		t.Fatalf("a 256-byte name (the bound) was refused: %v", err)
+	}
+	if len(m.Name) != 256 {
+		t.Errorf("Name is %d bytes, want 256", len(m.Name))
 	}
 }

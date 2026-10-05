@@ -558,14 +558,17 @@ sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
 
 **Nothing ties a byte bound's copies to the engine's constant.**
-`client/src/fold.ts` holds each of the fold's six bounds as a literal in a
-`checkLen` call, and `internal/adventure/load.go` holds its own copies of
-`maxNoteKeyBytes`, `maxNoteTitleBytes` and `maxTextBytes`; each side's tests pin
-its own numbers (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`), so a
-bound changed in `internal/engine/apply.go` alone leaves both mirrors stale and
-every test but the engine's own green. Only a move's reason has a link, from
-the MCP tool's description to `maxMoveReasonBytes`
-(`TestTheMoveToolStatesTheFoldsReasonBound`). Recipe: set `maxNoteTitleBytes`
+`client/src/fold.ts` holds each of the fold's ten bounds as a literal in a
+`checkLen` call, `internal/adventure/load.go` holds its own copies of
+`maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes` and `maxNameBytes`, and
+`internal/mapdef/load.go` its own `maxNameBytes`; each side's tests pin its own
+numbers (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`,
+`TestTheNameBoundMirrorsEngine`, `TestAMapNameOfExactlyTheBoundLoads`), so a
+bound changed in `internal/engine/apply.go` alone leaves every mirror stale and
+every mirror's own tests green. Only a move's reason and a name have a link, from
+the MCP tools' descriptions to `maxMoveReasonBytes` and `maxNameBytes`
+(`TestTheMoveToolStatesTheFoldsReasonBound`,
+`TestTheToolsStateTheFoldsNameBound`). Recipe: set `maxNoteTitleBytes`
 to 300 in `apply.go`; `go test ./internal/adventure/...` and `bun test
 client/test` stay green. No gate compares a copy with its constant, and no
 mutation operator changes two files. Labels: `outside the tool`. Closing it
@@ -613,3 +616,16 @@ Closing it needs a ruling on `Modifier.source` before anything writes an
 since today four QA tests red under that arm. Recorded 2026-10-05 by the issuer
 report, from QA's finding and Gap 7 of
 `docs/superpowers/plans/2026-10-05-a-viewer-is-told-no-issuer-and-no-unseen-cause.md`.
+
+**The adventure loader's three empty-name refusals are pinned by no test.**
+`internal/adventure/load.go` refuses an adventure, a scene and an actor whose
+`name` is empty ("must not be empty") in `loadManifest`, `loadScenes` and
+`loadActors`, and no fixture under `internal/adventure/testdata/invalid`
+carries an empty name. Recipe: delete `loadManifest`'s `raw.Name == ""`
+branch; `go test ./internal/adventure/...` stays green (observed 2026-10-06).
+The tier-1 tests should have caught it and have no case for an empty name.
+Labels: `test data missing`. Closing it needs three invalid fixtures, one per
+file, each with an empty name, their rows in `TestLoadInvalidFixtures`, and
+their names in `TestLoadInvalidFixturesCatalogueIsComplete`'s list.
+Recorded 2026-10-06 by the name-bound plan's Gap 6, by the owner's ruling on
+its Q7.

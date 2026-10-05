@@ -503,3 +503,40 @@ test("a narration speaker longer than 256 bytes is rejected", () => {
 test("a narration speaker of exactly 256 bytes is ACCEPTED", () => {
   expect(() => fold([started, env(2, { narrationAdded: { text: "x", as: "a".repeat(256) } })])).not.toThrow();
 });
+
+// --- names ------------------------------------------------------------------
+
+// VTT-274
+test("a session name longer than 256 bytes is rejected", () => {
+  rejects([env(1, { sessionStarted: { name: "n".repeat(257) } })], "session name exceeds 256 bytes");
+});
+
+// VTT-274
+test("a scene name over 256 UTF-8 bytes is rejected", () => {
+  rejects([started, env(2, { sceneCreated: { sceneId: "s1", name: "é".repeat(129), gridWidth: 2, gridHeight: 2 } })],
+    "scene name exceeds 256 bytes");
+});
+
+// VTT-274
+test("an actor name longer than 256 bytes is rejected", () => {
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", name: "n".repeat(257) } } })],
+    "actor name exceeds 256 bytes");
+});
+
+// VTT-274
+test("an adventure name longer than 256 bytes is rejected", () => {
+  rejects([started, env(2, { adventureLoaded: { adventureId: "adv", name: "n".repeat(257) } })],
+    "adventure name exceeds 256 bytes");
+});
+
+// VTT-274
+test("names of exactly 256 bytes are ACCEPTED", () => {
+  const st = fold([
+    env(1, { sessionStarted: { name: "n".repeat(256) } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "é".repeat(128), gridWidth: 2, gridHeight: 2 } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", name: "n".repeat(256) } } }),
+    env(4, { adventureLoaded: { adventureId: "adv", name: "n".repeat(256) } }),
+  ]);
+  expect(st.Scenes["s1"]!.Name).toBe("é".repeat(128));
+  expect(st.Actors["a1"]!.name).toBe("n".repeat(256));
+});
