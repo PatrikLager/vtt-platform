@@ -1243,3 +1243,61 @@ func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 		}
 	}
 }
+
+// VTT-272 VTT-273 VTT-176
+func TestAPlayerAndASpectatorAreToldNoIssuerAndNoCause(t *testing.T) {
+	f := newRulesetFixture(t, true)
+	spectator := f.dial(f.spectatorToken, 0)
+	sendCommand(t, spectator, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_SetViewpoint{
+		SetViewpoint: &vttv1.SetViewpoint{ActorId: "patron"}}})
+	if r := readResult(t, spectator); !r.Ok {
+		t.Fatalf("perch on patron refused: %s", r.Error)
+	}
+	patron := f.dial(f.patronToken, 0)
+	brawler := f.dial(f.brawlerToken, 0)
+	dm := f.dial(f.dmToken, 0)
+
+	sendCommand(t, brawler, fistsCmd("brawler", "patron"))
+	if r := readResult(t, brawler); !r.Ok {
+		t.Fatalf("fists refused: %s", r.Error)
+	}
+	sendCommand(t, dm, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveCondition{
+		RemoveCondition: &vttv1.RemoveCondition{ActorId: "patron", ConditionId: "dazed-by-ale"}}})
+	if r := readResult(t, dm); !r.Ok {
+		t.Fatalf("remove_condition refused: %s", r.Error)
+	}
+
+	for name, conn := range map[string]*websocket.Conn{"patron": patron, "brawler": brawler, "spectator": spectator} {
+		changes := 0
+		for _, e := range drainEvents(t, conn, 500*time.Millisecond) {
+			if e.GetParticipantId() != "" || e.GetActorRole() != "" {
+				t.Errorf("%s: seq %d names its issuer %q as %q", name, e.GetSequence(), e.GetParticipantId(), e.GetActorRole())
+			}
+			if e.GetResourceChanged().GetReason() != "" || e.GetConditionApplied().GetSource() != "" ||
+				e.GetConditionRemoved().GetReason() != "" {
+				t.Errorf("%s: seq %d names its cause: %v", name, e.GetSequence(), e)
+			}
+			if e.GetEventId() != "" && (e.GetResourceChanged() != nil || e.GetConditionApplied() != nil ||
+				e.GetConditionRemoved() != nil) {
+				changes++
+			}
+		}
+		if changes != 3 {
+			t.Errorf("%s: forwarded %d status changes, want the drink, the condition and its removal", name, changes)
+		}
+	}
+
+	causes := 0
+	for _, e := range drainEvents(t, dm, 500*time.Millisecond) {
+		if e.GetSequence() > rfSeedHead && (e.GetParticipantId() == "" || e.GetActorRole() == "") {
+			t.Errorf("dm: seq %d lost its issuer", e.GetSequence())
+		}
+		if e.GetResourceChanged().GetReason() != "" || e.GetConditionApplied().GetSource() != "" ||
+			e.GetConditionRemoved().GetReason() != "" {
+			causes++
+		}
+	}
+	if causes != 3 {
+		t.Errorf("dm: %d status changes carry their cause, want 3", causes)
+	}
+}

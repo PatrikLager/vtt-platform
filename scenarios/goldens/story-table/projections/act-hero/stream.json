@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -25,9 +23,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-player"
     },
-    "actorRole": "dm",
     "eventId": "evt-4",
-    "participantId": "p-dm",
     "sequence": "4",
     "sessionId": "sess-1"
   },
@@ -560,9 +556,7 @@
     "sequence": "5"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-6",
-    "participantId": "p-dm",
     "sequence": "6",
     "sessionId": "sess-1",
     "tokenMoved": {
@@ -576,50 +570,41 @@
     }
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-7",
     "narrationAdded": {
       "anchorFromSeq": "6",
       "anchorToSeq": "6",
       "text": "Lera steps toward the bar, anchored to her own move."
     },
-    "participantId": "p-dm",
     "sequence": "7",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-8",
     "narrationAdded": {
       "text": "A hush falls over the tavern as the story begins."
     },
-    "participantId": "p-dm",
     "sequence": "8",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-9",
     "narrationAdded": {
       "as": "Goblin Cutter",
       "text": "You'll not pass, adventurer!"
     },
-    "participantId": "p-dm",
     "sequence": "9",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "player",
     "eventId": "evt-10",
     "narrationAdded": {
       "text": "I raise my sword and step forward."
     },
-    "participantId": "p-player",
     "sequence": "10",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-12",
     "noteUpserted": {
       "key": "kobold-den",
@@ -627,12 +612,10 @@
       "title": "Kobold Den (cleared)",
       "visibility": "NOTE_VISIBILITY_PUBLIC"
     },
-    "participantId": "p-dm",
     "sequence": "12",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-13",
     "noteUpserted": {
       "key": "old-rumor",
@@ -640,7 +623,6 @@
       "title": "Old Rumor",
       "visibility": "NOTE_VISIBILITY_PUBLIC"
     },
-    "participantId": "p-dm",
     "sequence": "13",
     "sessionId": "sess-1"
   },
@@ -651,9 +633,7 @@
     "sequence": "14"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-16",
-    "participantId": "p-dm",
     "sequence": "16",
     "sessionEnded": {},
     "sessionId": "sess-1"

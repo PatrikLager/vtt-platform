@@ -468,16 +468,22 @@ message ResourceChanged {
   string resource = 2;
   int32 delta = 3;
   int32 new_value = 4;
+  // Never forward reason to a player or spectator: it can name an ability
+  // whose user they do not see (SPEC-016).
   string reason = 5;
 }
 message ConditionApplied {
   string actor_id = 1;
   string condition_id = 2;
+  // Never forward source to a player or spectator: it can name an ability
+  // whose user they do not see (SPEC-016).
   string source = 3;
 }
 message ConditionRemoved {
   string actor_id = 1;
   string condition_id = 2;
+  // Never forward reason to a player or spectator: it can name an ability
+  // whose user they do not see (SPEC-016).
   string reason = 3;
 }
 
@@ -520,8 +526,12 @@ message Envelope {
   int64 sequence = 2;
   google.protobuf.Timestamp occurred_at = 3;
   string session_id = 4;
+  // Never forward actor_role to a player or spectator: it names the role that
+  // issued the event (SPEC-016).
   string actor_role = 5;
   // Who caused this event; stamped by the gateway.
+  // Never forward participant_id to a player or spectator: it names who issued
+  // the event (SPEC-016).
   string participant_id = 6;
   oneof payload {
     TokenMoved token_moved = 10;

@@ -1864,12 +1864,14 @@ func (x *AbilityUsed) GetOutcomeSummary() string {
 }
 
 type ResourceChanged struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Resource      string                 `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
-	Delta         int32                  `protobuf:"varint,3,opt,name=delta,proto3" json:"delta,omitempty"`
-	NewValue      int32                  `protobuf:"varint,4,opt,name=new_value,json=newValue,proto3" json:"new_value,omitempty"`
-	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	ActorId  string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Resource string                 `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
+	Delta    int32                  `protobuf:"varint,3,opt,name=delta,proto3" json:"delta,omitempty"`
+	NewValue int32                  `protobuf:"varint,4,opt,name=new_value,json=newValue,proto3" json:"new_value,omitempty"`
+	// Never forward reason to a player or spectator: it can name an ability
+	// whose user they do not see (SPEC-016).
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1940,10 +1942,12 @@ func (x *ResourceChanged) GetReason() string {
 }
 
 type ConditionApplied struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	ConditionId   string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
-	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ConditionId string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	// Never forward source to a player or spectator: it can name an ability
+	// whose user they do not see (SPEC-016).
+	Source        string `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2000,10 +2004,12 @@ func (x *ConditionApplied) GetSource() string {
 }
 
 type ConditionRemoved struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	ConditionId   string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
-	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorId     string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ConditionId string                 `protobuf:"bytes,2,opt,name=condition_id,json=conditionId,proto3" json:"condition_id,omitempty"`
+	// Never forward reason to a player or spectator: it can name an ability
+	// whose user they do not see (SPEC-016).
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2301,8 +2307,12 @@ type Envelope struct {
 	Sequence   int64                  `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	OccurredAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
 	SessionId  string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	ActorRole  string                 `protobuf:"bytes,5,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"`
+	// Never forward actor_role to a player or spectator: it names the role that
+	// issued the event (SPEC-016).
+	ActorRole string `protobuf:"bytes,5,opt,name=actor_role,json=actorRole,proto3" json:"actor_role,omitempty"`
 	// Who caused this event; stamped by the gateway.
+	// Never forward participant_id to a player or spectator: it names who issued
+	// the event (SPEC-016).
 	ParticipantId string `protobuf:"bytes,6,opt,name=participant_id,json=participantId,proto3" json:"participant_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//

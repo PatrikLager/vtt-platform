@@ -220,12 +220,6 @@ func qaMRTokenMoves(frames []*vttv1.Envelope) []*vttv1.Envelope {
 	return out
 }
 
-func qaMRWithoutReason(env *vttv1.Envelope) *vttv1.Envelope {
-	want := proto.Clone(env).(*vttv1.Envelope)
-	want.GetTokenMoved().Reason = ""
-	return want
-}
-
 func qaMRMoveCommand(req, tok string, to *vttv1.GridPosition, reason *string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: tok, To: to, Reason: reason,
@@ -313,12 +307,12 @@ func qaMRRequireStrippedCopy(t *testing.T, tb *qaMRTable, seat string) {
 	const reason = "the floor gives way by the pool"
 	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), reason)
 	got := tb.append(env, qaMRAgent, identity.RoleAgent)[seat]
-	want := qaMRWithoutReason(env)
+	want := forwardedOf(env)
 	if len(got) != 1 {
 		t.Fatalf("%s is sent %d frames for a move in sight, want exactly the move:\n%s", seat, len(got), qaMRText(t, got))
 	}
 	if !proto.Equal(got[0], want) {
-		t.Errorf("%s is sent\n%v\nwant the event with its reason cleared and every other field kept\n%v", seat, got[0], want)
+		t.Errorf("%s is sent\n%v\nwant the event with its reason and issuer cleared and every other field kept\n%v", seat, got[0], want)
 	}
 	if got[0] == env {
 		t.Errorf("%s is sent the shared event itself for a move with a reason, want a copy", seat)
@@ -416,7 +410,7 @@ func TestQAMoveReasonAReasonNamingAnUnseenActorReachesNoPlayerOrSpectator(t *tes
 }
 
 // VTT-206
-func TestQAMoveReasonAMoveWithNoReasonIsForwardedAsTheEventItself(t *testing.T) {
+func TestQAMoveReasonAMoveWithNoReasonIsForwardedLessItsIssuer(t *testing.T) {
 	tb := qaMRNewTable(t)
 	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(3, 1), "")
 	before := proto.Clone(tb.stamp(env, qaMRAgent, identity.RoleAgent)).(*vttv1.Envelope)
@@ -426,21 +420,21 @@ func TestQAMoveReasonAMoveWithNoReasonIsForwardedAsTheEventItself(t *testing.T) 
 		if len(frames) != 1 {
 			t.Fatalf("%s is sent %d frames for a move in sight, want exactly the move:\n%s", seat, len(frames), qaMRText(t, frames))
 		}
-		if !proto.Equal(frames[0], before) {
-			t.Errorf("%s is sent\n%v\nwant the event as appended\n%v", seat, frames[0], before)
+		if !proto.Equal(frames[0], forwardedOf(before)) {
+			t.Errorf("%s is sent\n%v\nwant the event as appended less its issuer\n%v", seat, frames[0], forwardedOf(before))
 		}
 	}
 }
 
-// SPEC-016, How it works: "the event itself, or, for a TokenMoved whose
-// reason is not empty, a copy of it".
-func TestQAMoveReasonAMoveWithNoReasonIsTheSamePointerForAPlayer(t *testing.T) {
+// SPEC-016, How it works: "a copy of the event with its `participant_id` and
+// `actor_role` cleared".
+func TestQAMoveReasonAMoveWithNoReasonIsACopyForAPlayer(t *testing.T) {
 	tb := qaMRNewTable(t)
 	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(3, 1), "")
 	got := tb.append(env, qaMRAgent, identity.RoleAgent)
 	for _, seat := range []string{"player", "perched"} {
-		if len(got[seat]) != 1 || got[seat][0] != env {
-			t.Errorf("%s is not sent the event itself for a move with no reason", seat)
+		if len(got[seat]) != 1 || got[seat][0] == env || !proto.Equal(got[seat][0], forwardedOf(env)) {
+			t.Errorf("%s is not sent a copy of the event less its issuer for a move with no reason", seat)
 		}
 	}
 }
@@ -850,8 +844,8 @@ func qaMRRequireSentWithoutReason(t *testing.T, qc *qaMRConn, seq int64, logged 
 	if len(got) != 1 {
 		t.Fatalf("%s is sent %d frames at seq %d, want exactly the move", qc.name, len(got), seq)
 	}
-	if want := qaMRWithoutReason(logged); !proto.Equal(got[0], want) {
-		t.Errorf("%s is sent\n%v\nwant the logged move with its reason cleared\n%v", qc.name, got[0], want)
+	if want := forwardedOf(logged); !proto.Equal(got[0], want) {
+		t.Errorf("%s is sent\n%v\nwant the logged move with its reason and issuer cleared\n%v", qc.name, got[0], want)
 	}
 	if qc.rawContains(reason) {
 		t.Errorf("%s's wire carries the reason %q", qc.name, reason)
@@ -926,8 +920,12 @@ func TestQAMoveReasonOverTheWireAMoveWithNoReasonAppendsNone(t *testing.T) {
 		t.Errorf("the log holds %v, want %v with no reason", logged.GetTokenMoved(), want)
 	}
 	for _, qc := range l.conns {
-		if got := qc.eventsAt(seq); len(got) != 1 || !proto.Equal(got[0], logged) {
-			t.Errorf("%s is sent %v at seq %d, want the logged move %v", qc.name, got, seq, logged)
+		want := logged
+		if qc == l.player || qc == l.spectator {
+			want = forwardedOf(logged)
+		}
+		if got := qc.eventsAt(seq); len(got) != 1 || !proto.Equal(got[0], want) {
+			t.Errorf("%s is sent %v at seq %d, want %v", qc.name, got, seq, want)
 		}
 	}
 }

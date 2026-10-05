@@ -3,6 +3,8 @@ package gateway
 import (
 	"testing"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
@@ -49,5 +51,47 @@ func TestEveryEnvelopePayloadArmHasAnExplicitRuling(t *testing.T) {
 				"spec §4.4 requires the switch to be exhaustive over the oneof",
 				fd.Name(), fd.Number())
 		}
+	}
+}
+
+// VTT-272
+func TestEveryEnvelopeFieldIsKeptOrClearedByForwardable(t *testing.T) {
+	kept := map[protoreflect.Name]bool{"event_id": true, "sequence": true, "occurred_at": true, "session_id": true}
+	cleared := map[protoreflect.Name]bool{"actor_role": true, "participant_id": true}
+
+	fields := (&vttv1.Envelope{}).ProtoReflect().Descriptor().Fields()
+	ruled := 0
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		if fd.ContainingOneof() != nil {
+			continue
+		}
+		if !kept[fd.Name()] && !cleared[fd.Name()] {
+			t.Errorf("Envelope field %q has no ruling: keep it or clear it in forwardable (SPEC-016)", fd.Name())
+			continue
+		}
+		ruled++
+		env := &vttv1.Envelope{}
+		m := env.ProtoReflect()
+		switch fd.Kind() {
+		case protoreflect.StringKind:
+			m.Set(fd, protoreflect.ValueOfString("x"))
+		case protoreflect.Int64Kind:
+			m.Set(fd, protoreflect.ValueOfInt64(7))
+		case protoreflect.MessageKind:
+			m.Set(fd, m.NewField(fd))
+		default:
+			t.Fatalf("Envelope field %q is of kind %v, which this test cannot set", fd.Name(), fd.Kind())
+		}
+		got := forwardable(env).ProtoReflect()
+		if kept[fd.Name()] && !got.Has(fd) {
+			t.Errorf("forwardable dropped %q, which a forwarded frame keeps", fd.Name())
+		}
+		if cleared[fd.Name()] && got.Has(fd) {
+			t.Errorf("forwardable keeps %q, which names who issued the event", fd.Name())
+		}
+	}
+	if ruled != len(kept)+len(cleared) {
+		t.Errorf("ruled %d Envelope fields, want %d: a ruled field left the contract", ruled, len(kept)+len(cleared))
 	}
 }

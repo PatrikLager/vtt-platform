@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -35,9 +33,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-dee"
     },
-    "actorRole": "dm",
     "eventId": "evt-7",
-    "participantId": "p-dm",
     "sequence": "7",
     "sessionId": "sess-1"
   },
@@ -46,9 +42,7 @@
       "actorId": "act-scout",
       "participantId": "p-dee"
     },
-    "actorRole": "dm",
     "eventId": "evt-13",
-    "participantId": "p-dm",
     "sequence": "13",
     "sessionId": "sess-1"
   }

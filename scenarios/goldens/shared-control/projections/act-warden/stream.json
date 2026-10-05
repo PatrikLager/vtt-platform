@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -25,9 +23,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-ana"
     },
-    "actorRole": "dm",
     "eventId": "evt-4",
-    "participantId": "p-dm",
     "sequence": "4",
     "sessionId": "sess-1"
   },
@@ -398,9 +394,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-bo"
     },
-    "actorRole": "dm",
     "eventId": "evt-8",
-    "participantId": "p-dm",
     "sequence": "8",
     "sessionId": "sess-1"
   },
@@ -410,9 +404,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-bo"
     },
-    "actorRole": "dm",
     "eventId": "evt-9",
-    "participantId": "p-dm",
     "sequence": "9",
     "sessionId": "sess-1"
   },
@@ -421,9 +413,7 @@
       "actorId": "act-warden",
       "participantId": "p-ana"
     },
-    "actorRole": "dm",
     "eventId": "evt-10",
-    "participantId": "p-dm",
     "sequence": "10",
     "sessionId": "sess-1"
   },
@@ -432,9 +422,7 @@
       "actorId": "act-warden",
       "participantId": "p-cy"
     },
-    "actorRole": "dm",
     "eventId": "evt-11",
-    "participantId": "p-dm",
     "sequence": "11",
     "sessionId": "sess-1"
   },
@@ -444,9 +432,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-cy"
     },
-    "actorRole": "dm",
     "eventId": "evt-12",
-    "participantId": "p-dm",
     "sequence": "12",
     "sessionId": "sess-1"
   }

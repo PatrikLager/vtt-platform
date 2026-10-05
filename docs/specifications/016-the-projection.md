@@ -15,7 +15,8 @@ by `internal/gateway/project_test.go`, `project_internal_test.go`,
 `project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
 `server_visibility_test.go`, `qa_note_projection_test.go`,
 `qa_testimony_eyes_test.go`, `qa_testimony_sight_test.go`,
-`qa_testimony_removal_test.go` and `qa_move_reason_test.go`.
+`qa_testimony_removal_test.go`, `qa_move_reason_test.go` and
+`qa_issuer_test.go`.
 
 ## Principles served
 
@@ -37,10 +38,15 @@ spectator it answers a nil state with nothing, and otherwise computes `look`
 over the state and asks `classify` for a verdict. For `unrecognised` it sends
 nothing at all, `transitions`' frames included, since it cannot tell what the
 event did to the world; for `withheld` it sends `transitions`' frames; for
-`forwarded`, those frames and then `forwardable`'s answer: the event itself,
-or, for a `TokenMoved` whose `reason` is not empty, a copy of it with the
-`reason` cleared and every other field as the event has it. `Project` writes to
-neither the event nor the state, and every frame it builds is new (each
+`forwarded`, those frames and then `forwardable`'s answer: a copy of the event
+with its `participant_id` and `actor_role` cleared, a `TokenMoved`'s or a
+`ResourceChanged`'s `reason`, a `ConditionApplied`'s `source` and a
+`ConditionRemoved`'s `reason` cleared, and every other field as the event has
+it. No envelope `Project` sends a player or a spectator carries its own
+`participant_id` or `actor_role`, which name who issued the event; a control
+event's `participant_id` is its subject and is sent. Presence names every
+connected participant (SPEC-011). `Project` writes to neither the event nor the
+state, and every frame it builds is new (each
 `&vttv1.Envelope{`, each element of a `[]*vttv1.Envelope{{` literal, and
 `forwardable`'s `proto.Clone`, in `project.go`): a live event is one envelope,
 since `store.notifyLocked` enqueues the same pointer to every subscriber. Which
@@ -198,13 +204,16 @@ and `DoorClosed` when `canSeeSquare` finds the square in the look. It forwards
 `ActorControlGranted`, `ActorControlRevoked`, `ResourceChanged`,
 `ConditionApplied` and `ConditionRemoved` when every non-empty actor id named
 is in `sighted`, so when the viewer saw each of them before the event; what an
-event brings into sight arrives by introduction or by correction instead. It
-forwards `ActorRemoved` on the same test, so when the viewer saw the actor
-before the event; a viewer that did not see it keeps it, gone, and a fold that
-never held it would refuse its removal. Every other payload, and an envelope
-with none, is `unrecognised`; `TestEveryEnvelopePayloadArmHasAnExplicitRuling`
-walks the envelope's oneof and fails on a payload `classify` answers
-`unrecognised`.
+event brings into sight arrives by introduction or by correction instead. What
+`Project` sends of a `ResourceChanged`, a `ConditionApplied` or a
+`ConditionRemoved` carries no `reason` or `source` (`forwardable`): the cause
+names an ability, a threshold or a hand, and an ability's user may be an actor
+the viewer does not see. It forwards `ActorRemoved` on the same test, so when
+the viewer saw the actor before the event; a viewer that did not see it keeps
+it, gone, and a fold that never held it would refuse its removal. Every other
+payload, and an envelope with none, is `unrecognised`;
+`TestEveryEnvelopePayloadArmHasAnExplicitRuling` walks the envelope's oneof and
+fails on a payload `classify` answers `unrecognised`.
 
 **A perch.** `reperch` sets `Viewpoint` to the actor named, answers a nil
 state with nothing, and otherwise returns `transitions` with no causing event
@@ -262,7 +271,8 @@ A client author, and whoever changes the code, are bound by these:
   arrives as one correction when the actor comes into sight.
 - A frame with no event id is the projection's own: an introduction and the
   bare `ActorRemoved` before one, a correction, a token's departure or
-  arrival, a door's correction, a `SceneSeen` or a note's bare `NoteDeleted`.
+  arrival, a door's correction, a `SceneSeen` or a note's bare `NoteDeleted`;
+  one with an event id is the event less its issuer and its cause.
 - A change undone while the viewer did not see the actor sends nothing when
   it comes into sight.
 - A party member removed while a spectator did not see it stays on that
@@ -287,8 +297,10 @@ A client author, and whoever changes the code, are bound by these:
 - Nothing may write to an envelope a seat is handed: a live event is one
   envelope shared by every seat. Nor to the state `Project` reads, which is
   the seat's own fold and which `perch` reads again.
-- A player's or a spectator's `TokenMoved` never carries a `reason`; the DM
-  and the agent are sent it as the log holds it.
+- No envelope a player or a spectator is sent carries its own
+  `participant_id` or `actor_role`, and no `TokenMoved`, `ResourceChanged`,
+  `ConditionApplied` or `ConditionRemoved` it is sent carries a `reason` or a
+  `source`; the DM and the agent are sent each event as the log holds it.
 - Sight range and tolerance are not supplied. A ruleset that supplies them
   passes them as arguments to `sight.VisibleFrom`; read off
   `Actor.Attributes`, they would be game-system vocabulary in platform code.
@@ -301,4 +313,4 @@ VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218,
 VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226,
 VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
 VTT-241, VTT-242, VTT-243, VTT-244, VTT-245, VTT-246, VTT-247, VTT-248,
-VTT-249, VTT-250, VTT-251, VTT-252, VTT-262.
+VTT-249, VTT-250, VTT-251, VTT-252, VTT-262, VTT-272, VTT-273.

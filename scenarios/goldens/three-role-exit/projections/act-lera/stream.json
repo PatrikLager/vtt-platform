@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -25,9 +23,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-player"
     },
-    "actorRole": "dm",
     "eventId": "evt-5",
-    "participantId": "p-dm",
     "sequence": "5",
     "sessionId": "sess-1"
   },
@@ -582,9 +578,7 @@
     "sequence": "7"
   },
   {
-    "actorRole": "player",
     "eventId": "evt-8",
-    "participantId": "p-player",
     "sequence": "8",
     "sessionId": "sess-1",
     "tokenMoved": {
@@ -601,9 +595,7 @@
     }
   },
   {
-    "actorRole": "agent",
     "eventId": "evt-9",
-    "participantId": "p-agent",
     "sequence": "9",
     "sessionId": "sess-1",
     "tokenMoved": {
@@ -617,9 +609,7 @@
     }
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-10",
-    "participantId": "p-dm",
     "sequence": "10",
     "sessionEnded": {},
     "sessionId": "sess-1"

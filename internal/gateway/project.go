@@ -843,13 +843,21 @@ func sameSet(a, b map[string]bool) bool {
 	return true
 }
 
-// forwardable is env, or for a move with a reason a copy without it (SPEC-016).
+// forwardable is a copy of env without its issuer or any cause (SPEC-016).
 // Clone before clearing: every seat and the DM share env.
 func forwardable(env *vttv1.Envelope) *vttv1.Envelope {
-	if env.GetTokenMoved().GetReason() == "" {
-		return env
-	}
 	c := proto.Clone(env).(*vttv1.Envelope)
-	c.GetTokenMoved().Reason = ""
+	c.ParticipantId = ""
+	c.ActorRole = ""
+	switch p := c.GetPayload().(type) {
+	case *vttv1.Envelope_TokenMoved:
+		p.TokenMoved.Reason = ""
+	case *vttv1.Envelope_ResourceChanged:
+		p.ResourceChanged.Reason = ""
+	case *vttv1.Envelope_ConditionApplied:
+		p.ConditionApplied.Source = ""
+	case *vttv1.Envelope_ConditionRemoved:
+		p.ConditionRemoved.Reason = ""
+	}
 	return c
 }

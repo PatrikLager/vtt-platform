@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -333,9 +331,7 @@
     "sequence": "10"
   },
   {
-    "actorRole": "player",
     "eventId": "evt-12",
-    "participantId": "p-player",
     "sequence": "12",
     "sessionId": "sess-1",
     "tokenMoved": {
@@ -380,9 +376,7 @@
     }
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-15",
-    "participantId": "p-dm",
     "sequence": "15",
     "sessionEnded": {},
     "sessionId": "sess-1"

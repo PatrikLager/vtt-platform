@@ -2165,10 +2165,8 @@ func TestAForwardedMoveCarriesNoReasonAndTheEventKeepsIt(t *testing.T) {
 		if sent == nil {
 			t.Fatalf("%s: the move was not forwarded", v.Role)
 		}
-		want := proto.Clone(in).(*vttv1.Envelope)
-		want.GetTokenMoved().Reason = ""
-		if !proto.Equal(sent, want) {
-			t.Errorf("%s: forwarded %v, want the event less its reason", v.Role, sent)
+		if !proto.Equal(sent, forwardedOf(in)) {
+			t.Errorf("%s: forwarded %v, want the event less its reason and issuer", v.Role, sent)
 		}
 		if !proto.Equal(in, before) {
 			t.Errorf("%s: projecting the move changed the event", v.Role)
@@ -2631,11 +2629,11 @@ func TestAnEventNamingAnUnknownActorIsWithheld(t *testing.T) {
 
 	// The control: the SAME payloads about an actor they do know go through,
 	// or "withhold everything" would satisfy the loop above.
-	known := &vttv1.Envelope{Sequence: 8, Payload: &vttv1.Envelope_ConditionApplied{
+	known := &vttv1.Envelope{Sequence: 8, EventId: "evt-8", Payload: &vttv1.Envelope_ConditionApplied{
 		ConditionApplied: &vttv1.ConditionApplied{ActorId: "hero", ConditionId: "hidden"}}}
 	var forwarded bool
 	for _, e := range pr.Project(known, st) {
-		if e == known {
+		if e.GetEventId() != "" && proto.Equal(e, forwardedOf(known)) {
 			forwarded = true
 		}
 	}
@@ -3440,5 +3438,78 @@ func TestARemovedActorWhoseIdNeverReturnsStaysInTheFold(t *testing.T) {
 	}
 	if _, ok := viewer.Actors["rogue"]; !ok {
 		t.Error("the player's fold dropped the rogue, whose removal it never saw")
+	}
+}
+
+// forwardedOf is env as SPEC-016 says a player or a spectator is sent it.
+func forwardedOf(env *vttv1.Envelope) *vttv1.Envelope {
+	c := proto.Clone(env).(*vttv1.Envelope)
+	c.ParticipantId, c.ActorRole = "", ""
+	if m := c.GetTokenMoved(); m != nil {
+		m.Reason = ""
+	}
+	if r := c.GetResourceChanged(); r != nil {
+		r.Reason = ""
+	}
+	if a := c.GetConditionApplied(); a != nil {
+		a.Source = ""
+	}
+	if r := c.GetConditionRemoved(); r != nil {
+		r.Reason = ""
+	}
+	return c
+}
+
+// VTT-272 VTT-273 VTT-222 VTT-243
+func TestAChangeByAnUnseenUserNamesNoAbilityAndNoIssuer(t *testing.T) {
+	const cause = "ability:claw:hit"
+	steps := testimonyLog(
+		&vttv1.AbilityUsed{ActorId: "goblin", AbilityId: "claw", TargetIds: []string{"rogue"}},
+		&vttv1.ResourceChanged{ActorId: "rogue", Resource: "pool", Delta: -2, NewValue: 3, Reason: cause},
+		&vttv1.ConditionApplied{ActorId: "rogue", ConditionId: "bleeding", Source: cause},
+	)
+	for _, v := range []gateway.Viewer{
+		{ParticipantID: "p-2", Role: identity.RolePlayer},
+		{ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "rogue"},
+	} {
+		st := engine.NewState()
+		pr := gateway.NewProjector(v)
+		for _, s := range steps {
+			in := envelope(s.seq, s.payload)
+			in.EventId, in.ActorRole, in.ParticipantId, in.SessionId = fmt.Sprintf("evt-%d", s.seq), "player", "p-3", "sess-1"
+			before := proto.Clone(in)
+			if err := engine.Apply(st, in); err != nil {
+				t.Fatalf("seq %d: %v", s.seq, err)
+			}
+			out := pr.Project(in, st)
+			if !proto.Equal(in, before) {
+				t.Errorf("%s: projecting seq %d changed the event", v.Role, s.seq)
+			}
+			if s.seq < 11 {
+				continue
+			}
+			var sent *vttv1.Envelope
+			for _, e := range out {
+				if e.GetAbilityUsed() != nil {
+					t.Errorf("%s: sent the ability of a goblin it does not see", v.Role)
+				}
+				if e.GetEventId() != "" {
+					sent = e
+				}
+			}
+			if s.seq == 11 {
+				continue
+			}
+			if sent == nil {
+				t.Fatalf("%s: the change at seq %d on the rogue was not forwarded", v.Role, s.seq)
+			}
+			if sent.GetParticipantId() != "" || sent.GetActorRole() != "" ||
+				sent.GetResourceChanged().GetReason() != "" || sent.GetConditionApplied().GetSource() != "" {
+				t.Errorf("%s: seq %d names its issuer or its cause: %v", v.Role, s.seq, sent)
+			}
+			if !proto.Equal(sent, forwardedOf(in)) {
+				t.Errorf("%s: forwarded %v, want the event less its issuer and its cause", v.Role, sent)
+			}
+		}
 	}
 }

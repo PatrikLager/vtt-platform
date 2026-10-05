@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -38,9 +36,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-watcher"
     },
-    "actorRole": "dm",
     "eventId": "evt-4",
-    "participantId": "p-dm",
     "sequence": "4",
     "sessionId": "sess-1"
   },
@@ -198,7 +194,6 @@
     "sequence": "13"
   },
   {
-    "actorRole": "dm",
     "doorOpened": {
       "at": {
         "x": 3
@@ -206,7 +201,6 @@
       "sceneId": "door-hall"
     },
     "eventId": "evt-13",
-    "participantId": "p-dm",
     "sequence": "13",
     "sessionId": "sess-1"
   },
@@ -247,7 +241,6 @@
     "sequence": "14"
   },
   {
-    "actorRole": "dm",
     "doorClosed": {
       "at": {
         "x": 3
@@ -255,7 +248,6 @@
       "sceneId": "door-hall"
     },
     "eventId": "evt-14",
-    "participantId": "p-dm",
     "sequence": "14",
     "sessionId": "sess-1"
   },
@@ -302,9 +294,7 @@
     }
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-18",
-    "participantId": "p-dm",
     "sequence": "18",
     "sessionEnded": {},
     "sessionId": "sess-1"

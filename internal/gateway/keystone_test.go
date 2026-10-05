@@ -998,7 +998,7 @@ type projectedSeat struct {
 // corpus is, and three separate things are held to it — the Go fold here, the
 // TypeScript fold in client/test, and (for everything but Explored) the
 // independent sight oracle in the keystone above.
-// VTT-217 VTT-219
+// VTT-217 VTT-219 VTT-272 VTT-273
 func TestTheProjectedGoldensAreWhatTheProjectionActuallySends(t *testing.T) {
 	corpus := map[string]keystoneGolden{}
 	for _, g := range keystoneCorpus(t) {

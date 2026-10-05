@@ -39,6 +39,7 @@ type seatUnderTest struct {
 // removal only where it was seen (keystoneRemovalDiff). A fault in a forwarded
 // arm lands on both sides alike and cancels; the DM and agent are a tripwire.
 // VTT-212 VTT-224 VTT-233 VTT-235 VTT-236 VTT-237 VTT-247 VTT-248 VTT-251 VTT-262
+// VTT-272 VTT-273
 func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 	var total walkStats
 	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
@@ -93,6 +94,10 @@ func TestEveryProjectedSeatFoldsToSomethingSoundAgainstTheServer(t *testing.T) {
 		t.Errorf("only %d of 6 seeds forwarded a player a move whose event carried a reason",
 			total.seedsWithReasonedMoves)
 	}
+	if total.seedsWithCausedChanges < 6 {
+		t.Errorf("only %d of 6 seeds forwarded a player a status change whose event carried a cause",
+			total.seedsWithCausedChanges)
+	}
 	t.Logf("player seats ended holding %d scenes and %d tokens; %d withdrawals projected; "+
 		"seeds with tokens/hides/scenes/resource corrections: %d/%d/%d/%d",
 		total.playerScenes, total.playerTokens, total.hides,
@@ -109,6 +114,7 @@ type walkStats struct {
 	seedsWithPublicNotes, seedsWithNoteWithdrawals    int
 	resourceCorrections, seedsWithResourceCorrections int
 	reasonedMoves, seedsWithReasonedMoves             int
+	causedChanges, seedsWithCausedChanges             int
 }
 
 func (w *walkStats) add(o walkStats) {
@@ -135,6 +141,9 @@ func (w *walkStats) add(o walkStats) {
 	}
 	if o.reasonedMoves > 0 {
 		w.seedsWithReasonedMoves++
+	}
+	if o.causedChanges > 0 {
+		w.seedsWithCausedChanges++
 	}
 }
 
@@ -172,6 +181,7 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 
 	worldBefore := map[string]bool{}
 	project := func(env *vttv1.Envelope, action int) {
+		env.ParticipantId = "prop-issuer"
 		for _, s := range seats {
 			heldBefore := actorIDSet(s.live)
 			out := s.pr.Project(env, server)
@@ -207,6 +217,17 @@ func runSeatWalk(t *testing.T, seed int64) walkStats {
 					}
 					if e.GetTokenMoved() != nil && env.GetTokenMoved().GetReason() != "" {
 						stats.reasonedMoves++
+					}
+					if e.GetParticipantId() != "" || e.GetActorRole() != "" {
+						t.Fatalf("action #%d: %s was sent the issuer of seq %d", action, s.name, e.GetSequence())
+					}
+					if e.GetResourceChanged().GetReason() != "" || e.GetConditionApplied().GetSource() != "" ||
+						e.GetConditionRemoved().GetReason() != "" {
+						t.Fatalf("action #%d: %s was sent the cause of seq %d", action, s.name, e.GetSequence())
+					}
+					if e.GetEventId() != "" && (env.GetResourceChanged().GetReason() != "" ||
+						env.GetConditionApplied().GetSource() != "" || env.GetConditionRemoved().GetReason() != "") {
+						stats.causedChanges++
 					}
 				}
 			}
@@ -470,5 +491,5 @@ func injectResourceChange(server *engine.State, seq int64, step int) *vttv1.Enve
 	}
 	return &vttv1.Envelope{Sequence: seq, EventId: fmt.Sprintf("inject-%d", seq),
 		Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
-			ActorId: id, Resource: "pool", Delta: delta, NewValue: pool.GetCurrent() + delta}}}
+			ActorId: id, Resource: "pool", Delta: delta, NewValue: pool.GetCurrent() + delta, Reason: "prop"}}}
 }

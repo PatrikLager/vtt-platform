@@ -1,8 +1,6 @@
 [
   {
-    "actorRole": "dm",
     "eventId": "evt-1",
-    "participantId": "p-dm",
     "sequence": "1",
     "sessionId": "sess-1",
     "sessionStarted": {
@@ -62,9 +60,7 @@
       "kind": "ACTOR_KIND_PARTY_MEMBER",
       "participantId": "p-brawler"
     },
-    "actorRole": "dm",
     "eventId": "evt-5",
-    "participantId": "p-dm",
     "sequence": "5",
     "sessionId": "sess-1"
   },
@@ -258,54 +254,41 @@
         "act-patron"
       ]
     },
-    "actorRole": "player",
     "eventId": "evt-9",
-    "participantId": "p-brawler",
     "sequence": "9",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "player",
     "eventId": "evt-10",
-    "participantId": "p-brawler",
     "resourceChanged": {
       "actorId": "act-patron",
       "delta": 1,
       "newValue": 1,
-      "reason": "ability:fists:hit",
       "resource": "drink"
     },
     "sequence": "10",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "player",
     "conditionApplied": {
       "actorId": "act-patron",
-      "conditionId": "dazed-by-ale",
-      "source": "threshold:drink"
+      "conditionId": "dazed-by-ale"
     },
     "eventId": "evt-11",
-    "participantId": "p-brawler",
     "sequence": "11",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "conditionRemoved": {
       "actorId": "act-patron",
-      "conditionId": "dazed-by-ale",
-      "reason": "manual"
+      "conditionId": "dazed-by-ale"
     },
     "eventId": "evt-12",
-    "participantId": "p-dm",
     "sequence": "12",
     "sessionId": "sess-1"
   },
   {
-    "actorRole": "dm",
     "eventId": "evt-13",
-    "participantId": "p-dm",
     "sequence": "13",
     "sessionEnded": {},
     "sessionId": "sess-1"

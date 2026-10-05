@@ -998,6 +998,9 @@ export type ResourceChanged = Message<"vtt.v1.ResourceChanged"> & {
   newValue: number;
 
   /**
+   * Never forward reason to a player or spectator: it can name an ability
+   * whose user they do not see (SPEC-016).
+   *
    * @generated from field: string reason = 5;
    */
   reason: string;
@@ -1025,6 +1028,9 @@ export type ConditionApplied = Message<"vtt.v1.ConditionApplied"> & {
   conditionId: string;
 
   /**
+   * Never forward source to a player or spectator: it can name an ability
+   * whose user they do not see (SPEC-016).
+   *
    * @generated from field: string source = 3;
    */
   source: string;
@@ -1052,6 +1058,9 @@ export type ConditionRemoved = Message<"vtt.v1.ConditionRemoved"> & {
   conditionId: string;
 
   /**
+   * Never forward reason to a player or spectator: it can name an ability
+   * whose user they do not see (SPEC-016).
+   *
    * @generated from field: string reason = 3;
    */
   reason: string;
@@ -1197,12 +1206,17 @@ export type Envelope = Message<"vtt.v1.Envelope"> & {
   sessionId: string;
 
   /**
+   * Never forward actor_role to a player or spectator: it names the role that
+   * issued the event (SPEC-016).
+   *
    * @generated from field: string actor_role = 5;
    */
   actorRole: string;
 
   /**
    * Who caused this event; stamped by the gateway.
+   * Never forward participant_id to a player or spectator: it names who issued
+   * the event (SPEC-016).
    *
    * @generated from field: string participant_id = 6;
    */

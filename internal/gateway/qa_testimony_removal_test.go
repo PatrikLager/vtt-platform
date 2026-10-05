@@ -138,7 +138,7 @@ func (tbl *rmTable) checkFrames(s *rmSeat, env *vttv1.Envelope, frames []*vttv1.
 	removed := env.GetActorRemoved().GetActorId()
 	forwardedRemovals := 0
 	for i, f := range frames {
-		fwd := proto.Equal(f, env)
+		fwd := proto.Equal(f, forwardedOf(env))
 		where := fmt.Sprintf("seat %s seq %d frame %d %s", s.name, env.GetSequence(), i, rmDescribe(env, f))
 		if f.GetSequence() != env.GetSequence() {
 			tb.Errorf("VTT-221: %s carries sequence %d", where, f.GetSequence())
@@ -360,7 +360,7 @@ func rmNames(f *vttv1.Envelope, id string) bool {
 
 func rmDescribe(env, f *vttv1.Envelope) string {
 	mark := ""
-	if env != nil && proto.Equal(f, env) {
+	if env != nil && (proto.Equal(f, env) || proto.Equal(f, forwardedOf(env))) {
 		mark = "event:"
 	}
 	switch {

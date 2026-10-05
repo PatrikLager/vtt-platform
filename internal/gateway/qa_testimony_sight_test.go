@@ -399,7 +399,7 @@ func (w *qsSightWorld) check(s *qsSightSeat, env *vttv1.Envelope, frames []*vttv
 		if f.GetSequence() != env.GetSequence() {
 			tb.Errorf("VTT-221: %s: frame %d carries sequence %d", where(), i, f.GetSequence())
 		}
-		if f == env || (f.GetEventId() != "" && proto.Equal(f, env)) {
+		if f.GetEventId() != "" && proto.Equal(f, forwardedOf(env)) {
 			fwd = i
 			continue
 		}

@@ -357,8 +357,8 @@ func TestQANoteProjectionAPublicNoteReachesEveryPlayerAndSpectator(t *testing.T)
 		out := tb.must(env)
 		for _, s := range tb.projectedSeats() {
 			got := out[s.name]
-			if len(got) != 1 || !proto.Equal(got[0], env) {
-				t.Errorf("upsert %d: seat %s was sent %v, want the event alone", i, s.name, got)
+			if len(got) != 1 || !proto.Equal(got[0], forwardedOf(env)) {
+				t.Errorf("upsert %d: seat %s was sent %v, want the event alone, less its issuer", i, s.name, got)
 				continue
 			}
 			n, ok := s.fold.Notes[qaNPKeyA]
@@ -429,7 +429,7 @@ func TestQANoteProjectionANoteThatStopsBeingPublicLeavesEveryFoldThatHeldIt(t *t
 			env = qaNPUpsert(qaNPKeyA, vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC)
 			out = tb.must(env)
 			for _, s := range tb.projectedSeats() {
-				if len(out[s.name]) != 1 || !proto.Equal(out[s.name][0], env) {
+				if len(out[s.name]) != 1 || !proto.Equal(out[s.name][0], forwardedOf(env)) {
 					t.Errorf("made public again: seat %s was sent %v", s.name, out[s.name])
 				}
 			}
