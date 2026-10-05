@@ -10,19 +10,9 @@ import (
 )
 
 // newInviteCmd mints a participant + one-time invite token (spec §5, §6):
-// DM-side, CLI-only. All minting logic lives in identity.CreateInvite; this
-// command only wires flags to it and prints the result.
-//
-// --campaign is a campaign DIRECTORY (2026-09-01-create-scene-leaves Task
-// 4, fix round 1): `vtt invite` may be the FIRST command run against a
-// campaign (README's own first worked example), so it opens the campaign
-// the same way `vtt serve` does — campaign.Open(campaignPath), which
-// creates the directory if it does not exist yet — before opening identity
-// on campaign.LogPath(campaignPath) inside it. Without this, invite-first
-// left a bare SQLite file that a later `vtt serve` refused as "is a file",
-// and serve-first left a directory that invite's old identity.Open(campaignPath)
-// could not open as a SQLite file at all — both README sequences were
-// dead. See TestCampaignDirectoryWorksInEitherCLIOrdering (cli_test.go).
+// DM-side, CLI-only. Keep it off campaign.Open: it runs beside the vtt serve
+// that holds the directory (SPEC-019,
+// TestCommandsThatAppendNothingWorkWhileTheCampaignIsServed).
 func newInviteCmd() *cobra.Command {
 	var campaignPath, name, role string
 
@@ -30,11 +20,9 @@ func newInviteCmd() *cobra.Command {
 		Use:   "invite",
 		Short: "Mint a one-time invite token for a new participant",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := campaign.Open(campaignPath)
-			if err != nil {
+			if err := campaign.EnsureDir(campaignPath); err != nil {
 				return fmt.Errorf("vtt invite: open campaign: %w", err)
 			}
-			defer c.Close()
 
 			ids, err := identity.Open(campaign.LogPath(campaignPath))
 			if err != nil {

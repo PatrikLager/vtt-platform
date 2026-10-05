@@ -411,3 +411,38 @@ func TestAPerchOntoAStaleShoulderCorrectsIt(t *testing.T) {
 		t.Errorf("perching on the hurt rogue sent %v, want its pool brought from 5 to 3", fix)
 	}
 }
+
+// VTT-191
+func TestASeatIsSentNothingForAnEventWhoseFoldFails(t *testing.T) {
+	player := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	scene := func(seq int64) *vttv1.Envelope {
+		return &vttv1.Envelope{Sequence: seq, EventId: "e", Payload: &vttv1.Envelope_SceneCreated{
+			SceneCreated: &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 2, GridHeight: 2}}}
+	}
+	narration := func(seq int64) *vttv1.Envelope {
+		return &vttv1.Envelope{Sequence: seq, EventId: "e", Payload: &vttv1.Envelope_NarrationAdded{
+			NarrationAdded: &vttv1.NarrationAdded{Text: "The door creaks."}}}
+	}
+	start := &vttv1.Envelope{Sequence: 1, EventId: "e", Payload: &vttv1.Envelope_SessionStarted{
+		SessionStarted: &vttv1.SessionStarted{Name: "n"}}}
+
+	s := newSeat(player, 0)
+	s.receive(start)
+	s.receive(scene(2))
+	if out := s.receive(narration(3)); len(out) == 0 {
+		t.Fatal("the player must be sent a narration while its log folds")
+	}
+	if out := s.receive(scene(4)); len(out) != 0 {
+		t.Fatalf("a second SceneCreated for one scene does not fold, and was sent: %v", out)
+	}
+	if out := s.receive(narration(5)); len(out) != 0 {
+		t.Fatalf("an event after one whose fold failed was sent: %v", out)
+	}
+
+	fresh := newSeat(player, 0)
+	fresh.receive(start)
+	fresh.receive(scene(2))
+	if out := fresh.receive(narration(5)); len(out) == 0 {
+		t.Fatal("a seat whose prefix folds must be sent the same narration")
+	}
+}

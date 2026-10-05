@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -36,6 +37,9 @@ import (
 // snapshot clone before persisting anything — so poisoning exists as a
 // fail-loud backstop, not an expected state.
 var errPoisoned = errors.New("campaign: poisoned by post-persist failure; reopen required")
+
+// ErrHeld is the refusal of an Open whose directory another Campaign holds.
+var ErrHeld = errors.New("campaign: another writer holds the campaign directory")
 
 // Campaign composes a store.Store (the log) with an engine.State (the live
 // projection). If a post-persist step ever fails — the log was written but
@@ -62,24 +66,18 @@ type Campaign struct {
 	// poisoned is set when a post-persist step fails (see errPoisoned). Once
 	// true, every method fails until the Campaign is reopened.
 	poisoned bool
+
+	// Call release once: a second close of its descriptor can close an
+	// unrelated file.
+	release func() error
 }
 
-// Open opens the campaign in dir. A campaign is a DIRECTORY — its log, its
-// maps and its packs — because a map belongs to the campaign that uses it
-// (spec 2026-09-01-create-scene-leaves-design.md §3), not to a server-wide
-// flag pointing at a shared store.
-//
-// A dir that already exists as a plain FILE is refused rather than adopted:
-// treating a bare log file as a campaign with no maps would be exactly the
-// implicit fallback this platform keeps ruling against (spec §3, "A bare
-// log file is refused, not adopted"). A dir that does not exist yet is
-// created — that is how a brand-new campaign starts; there is no separate
-// "create" step. os.Stat's error path (not found) falls through to
-// MkdirAll deliberately: that fall-through IS campaign creation, not a gap.
-func Open(dir string) (*Campaign, error) {
+// EnsureDir makes dir a campaign directory, creating it if missing and
+// refusing a plain file, and takes no writer hold (SPEC-019).
+func EnsureDir(dir string) error {
 	info, err := os.Stat(dir)
 	if err == nil && !info.IsDir() {
-		return nil, fmt.Errorf("campaign: %s is a file; a campaign is a "+
+		return fmt.Errorf("campaign: %s is a file; a campaign is a "+
 			"directory holding log.db, maps/ and art/ — put it in one", dir)
 	}
 	// A read-only mount must not lose improvisation entirely (spec §12):
@@ -99,21 +97,53 @@ func Open(dir string) (*Campaign, error) {
 	// owner+group access rather than the world-readable default a plain
 	// content directory would.
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("campaign: cannot make %s a usable campaign "+
+		return fmt.Errorf("campaign: cannot make %s a usable campaign "+
 			"directory — a campaign directory must exist and be writable, "+
 			"since installing a map means putting a file in it: %w", dir, err)
 	}
+	return nil
+}
 
-	s, err := store.Open(LogPath(dir))
+// Open opens the campaign in dir as its one writer, refusing a directory
+// another Campaign holds with ErrHeld (SPEC-019).
+func Open(dir string) (*Campaign, error) {
+	if err := EnsureDir(dir); err != nil {
+		return nil, err
+	}
+	release, err := takeHold(dir)
 	if err != nil {
 		return nil, err
 	}
-	c := &Campaign{log: s}
+	s, err := store.Open(LogPath(dir))
+	if err != nil {
+		_ = release()
+		return nil, err
+	}
+	c := &Campaign{log: s, release: release}
 	if err := c.rebuildLocked(); err != nil {
 		_ = s.Close() // rebuild failed; the returned error is what matters
+		_ = release()
 		return nil, err
 	}
 	return c, nil
+}
+
+// Keep O_CLOEXEC: a child process that inherits the descriptor keeps the hold
+// past Close.
+func takeHold(dir string) (func() error, error) {
+	fd, err := syscall.Open(dir, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("campaign: take the writer hold on %s: %w", dir, err)
+	}
+	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = syscall.Close(fd)
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, fmt.Errorf("%w %s; a campaign has one writer at a time, "+
+				"so stop the vtt serve or close the Campaign that has it open", ErrHeld, dir)
+		}
+		return nil, fmt.Errorf("campaign: take the writer hold on %s: %w", dir, err)
+	}
+	return func() error { return syscall.Close(fd) }, nil
 }
 
 // LogPath names the log inside a campaign directory. Exported for callers
@@ -458,8 +488,15 @@ func (c *Campaign) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, no
 	return c.log.SubscribeWithNoProgressTimeout(afterSeq, buffer, noProgress)
 }
 
+// Close closes the log and then ends the writer hold (SPEC-019).
 func (c *Campaign) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.log.Close()
+	if c.release == nil {
+		return nil
+	}
+	logErr := c.log.Close()
+	holdErr := c.release()
+	c.release = nil
+	return errors.Join(logErr, holdErr)
 }

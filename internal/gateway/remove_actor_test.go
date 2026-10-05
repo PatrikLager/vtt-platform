@@ -150,6 +150,11 @@ func TestARemovedActorLeavesALogThatStillFolds(t *testing.T) {
 		t.Fatalf("want ok=true removing actor a1, got %+v", r)
 	}
 
+	dmConn.CloseNow()
+	f.srv.Close()
+	if err := f.campaign.Close(); err != nil {
+		t.Fatal(err)
+	}
 	replayed, err := campaign.Open(f.path)
 	if err != nil {
 		t.Fatalf("reopen campaign (this is the re-fold): %v", err)

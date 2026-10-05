@@ -25,6 +25,9 @@ vtt serve --campaign campaign/ --addr :8080
 vtt revoke --campaign campaign/ --id <participant-id>
 ```
 
+`vtt serve` holds the directory while it runs: a second `vtt serve` on it is
+refused, and `invite`, `revoke`, `join-link` and `art install` work beside it.
+
 Clients connect to `ws://<addr>/ws?token=<token>&after=<sequence>`.
 
 ## Content directories: rulesets, adventures, maps
@@ -99,8 +102,8 @@ either way, so this is about a board that mixes resolutions rather than about ar
 that will not draw.
 
 `vtt serve --campaign` writes a log and identity state into whatever
-directory it opens (`campaign.Open`'s own doc comment), so copy it rather
-than pointing `--campaign` at the checked-in directory directly:
+directory it opens (`campaign.LogPath`, SPEC-019), so copy it rather than
+pointing `--campaign` at the checked-in directory directly:
 `cp -r campaigns/example my-campaign && vtt serve --campaign my-campaign`
 to see a served map without authoring one first.
 

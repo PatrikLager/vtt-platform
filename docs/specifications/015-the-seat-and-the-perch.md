@@ -65,12 +65,10 @@ and the seat is sent no further event frame on that connection. While one
 store's appends (`grep -rn 'c.log.Append'` over `internal/campaign`), and each
 validates its envelopes against a snapshot of the live state under that
 `Campaign`'s mutex before it persists; `campaign.Open` refuses a log that does
-not fold. Nothing locks a campaign directory to one writer (`grep -rn -i
-'flock\|lockfile\|O_EXCL'` over `internal/store`, `internal/campaign` and
-`cmd/vtt` prints nothing), so a second `Campaign` on the same directory, in
-another process or the same one, can append an envelope that does not fold
-after the first's; a seat fed that log reaches this arm, and the next `Open`
-refuses the log (`docs/verification-debt.md`).
+not fold. `campaign.Open` takes the directory's writer hold before it opens
+the log (SPEC-019), so a second `Campaign` on one directory, in this process
+or another, is refused before it can append; a seat reaches this arm only on a log written
+without the hold, and the next `Open` refuses that log too.
 
 **The viewpoint a connection opens with.** `viewerFor` gives the
 participant's id and role and an empty `Viewpoint`. `eyes` reads an empty
@@ -150,8 +148,9 @@ A client author, and whoever changes the code, are bound by these:
   on the server, one fold of the prefix per event.
 - A seat is touched from the pump alone once its catch-up is drained, and
   never from a second goroutine through a lock.
-- Two `Campaign`s, in one process or two, must not append to one campaign
-  directory: nothing prevents it, and the log they write can stop folding.
+- Append to `log.db` only through a `Campaign`: `campaign.Open` alone takes
+  the writer hold (SPEC-019), so a process that appends without one is not
+  stopped, and the log it writes can stop folding.
 
 ## Requirements
 

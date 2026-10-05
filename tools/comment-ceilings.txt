@@ -42,8 +42,8 @@ cmd/vtt/events_tail.go  29.6
 cmd/vtt/events_tail_truncation_test.go  22.6
 cmd/vtt/harness_boot.go  45.0
 cmd/vtt/harness_boot_test.go  24.1
-cmd/vtt/invite.go  35.0
-cmd/vtt/joinlink.go  29.0
+cmd/vtt/invite.go  23.6
+cmd/vtt/joinlink.go  27.4
 cmd/vtt/library_test.go  44.8
 cmd/vtt/main.go  39.2
 cmd/vtt/maps.go  76.3
@@ -56,7 +56,8 @@ cmd/vtt/mcp_ruleset_e2e_test.go  23.1
 cmd/vtt/qa_e2e_wait_test.go  1.4
 cmd/vtt/qa_fixture_startup_test.go  0.0
 cmd/vtt/qa_note_schema_test.go  0.0
-cmd/vtt/revoke.go  16.3
+cmd/vtt/qa_writer_hold_test.go  1.9
+cmd/vtt/revoke.go  5.6
 cmd/vtt/scenario_goldens_test.go  25.7
 cmd/vtt/serve.go  29.0
 cmd/vtt/serve_compose.go  70.2
@@ -66,6 +67,7 @@ cmd/vtt/state_dump.go  45.1
 cmd/vtt/state_dump_cause_test.go  22.5
 cmd/vtt/state_dump_head_test.go  29.8
 cmd/vtt/version.go  15.8
+cmd/vtt/writer_hold_test.go  0.0
 internal/adventure/compile.go  37.3
 internal/adventure/compile_test.go  28.5
 internal/adventure/conformance/conformance.go  29.1
@@ -83,7 +85,7 @@ internal/campaign/append_sequence_validation_test.go  46.4
 internal/campaign/appendbatch_adventure_test.go  31.0
 internal/campaign/appendbatch_session_test.go  22.4
 internal/campaign/appendbatch_test.go  20.3
-internal/campaign/campaign.go  53.5
+internal/campaign/campaign.go  49.3
 internal/campaign/campaign_test.go  20.1
 internal/campaign/foldprefix.go  83.0
 internal/campaign/foldprefix_test.go  32.4
@@ -91,11 +93,13 @@ internal/campaign/forward_only_test.go  49.7
 internal/campaign/head_after_batch_test.go  42.2
 internal/campaign/poison_internal_test.go  14.0
 internal/campaign/property_test.go  49.5
+internal/campaign/qa_writer_hold_test.go  3.9
 internal/campaign/replay_rules_test.go  16.0
 internal/campaign/scenario_test.go  15.4
 internal/campaign/session_stamp_test.go  23.0
 internal/campaign/states_equal_conditions_test.go  17.3
 internal/campaign/states_equal_notes_test.go  12.5
+internal/campaign/writer_hold_test.go  0.0
 internal/campaigncfg/campaigncfg.go  67.0
 internal/campaigncfg/campaigncfg_test.go  33.0
 internal/engine/actor_control_test.go  33.0
@@ -157,7 +161,7 @@ internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/qa_testimony_eyes_test.go  0.0
 internal/gateway/qa_testimony_removal_test.go  0.0
 internal/gateway/qa_testimony_sight_test.go  0.0
-internal/gateway/remove_actor_test.go  37.0
+internal/gateway/remove_actor_test.go  36.4
 internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  24.4
 internal/gateway/scenario_test.go  31.2
@@ -168,7 +172,7 @@ internal/gateway/server_test.go  26.5
 internal/gateway/server_visibility_test.go  27.9
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  22.3
-internal/gateway/viewpoint_internal_test.go  25.8
+internal/gateway/viewpoint_internal_test.go  23.9
 internal/gateway/viewpoint_test.go  45.2
 internal/harness/batch_test.go  30.3
 internal/harness/batch_truncation_internal_test.go  26.4

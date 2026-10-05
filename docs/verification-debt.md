@@ -222,6 +222,43 @@ revocation; none promotes anyone after revoking a connected watcher, so the
 frame is never read for. The mutation gate cannot reach it: the defect is a
 parameter that was never there, not an operator it can rewrite.
 
+## 2026-09-29 — two writers on one campaign directory could write a log that no longer opened
+
+**Two `Campaign`s on one campaign directory can write a log that no longer
+opens.** Nothing locks a campaign directory to one writer: `grep -rn -i
+'flock\|lockfile\|O_EXCL'` over `internal/store`, `internal/campaign` and
+`cmd/vtt` prints nothing, and each `Campaign` validates an append against its
+own in-memory state. Recipe: open two `campaign.Open` handles on one
+directory, in one process or two, and have each append a `SceneCreated` for
+the same scene id; both are accepted, a projected seat fed the log logs
+`campaign: corrupt log at seq 2: engine: scene "s" already exists` and is sent
+no further event, and the next `campaign.Open` refuses the log, so the
+campaign no longer boots. Two writes that do not conflict (two
+`NarrationAdded`) fold, so the damage depends on what the second writer
+appends. VTT-191, a seat withholding an event whose fold fails, is OPEN
+because no test hands a seat a prefix that does not fold. None needs a second
+`Campaign` to: an internal test that calls `receive` with two `SceneCreated`
+for one scene id and then a `NarrationAdded` is sent no frame for either,
+where a fresh seat is sent one for the narration. Which gate should have
+caught it, and why not: the tier-1 tests, and none did. No requirement says a
+campaign has one writer, no fixture gives a seat a prefix that does not fold,
+and no mutation operator adds a second writer. Labels: `test data missing`,
+`spec silent`. Closing it needs a single-writer lock on the campaign
+directory, which is a ticket of its own, and a test that a second `Open` of a
+locked directory is refused; closing VTT-191 needs only the internal test
+above, cited `// VTT-191`. Recorded 2026-09-29 by the verification and review
+of
+`docs/superpowers/specs/2026-09-29-the-seat-and-the-perch-have-a-record-design.md`,
+whose change changes no code line.
+
+**Closed by** `TestASecondOpenInTheSameProcessIsRefused` and
+`TestAnOpenWhileAnotherProcessHoldsIsRefused` in
+`internal/campaign/writer_hold_test.go`, which red when `takeHold`'s
+`syscall.Flock` call is removed, and, for VTT-191,
+`TestASeatIsSentNothingForAnEventWhoseFoldFails` in
+`internal/gateway/viewpoint_internal_test.go`, which reds when `receive`
+forwards an event whose fold failed (both observed 2026-10-05).
+
 ## 2026-09-30 — the deadline fixture failed when its shell started late
 
 **The `TestQAMCPConnect*` deadline fixture fails when its shell starts
@@ -410,33 +447,6 @@ the verification of
 `docs/superpowers/specs/2026-09-28-loading-a-map-has-a-record-design.md`,
 whose change changes no code line; the test waits for the next ticket that
 touches the package's tests.
-
-**Two `Campaign`s on one campaign directory can write a log that no longer
-opens.** Nothing locks a campaign directory to one writer: `grep -rn -i
-'flock\|lockfile\|O_EXCL'` over `internal/store`, `internal/campaign` and
-`cmd/vtt` prints nothing, and each `Campaign` validates an append against its
-own in-memory state. Recipe: open two `campaign.Open` handles on one
-directory, in one process or two, and have each append a `SceneCreated` for
-the same scene id; both are accepted, a projected seat fed the log logs
-`campaign: corrupt log at seq 2: engine: scene "s" already exists` and is sent
-no further event, and the next `campaign.Open` refuses the log, so the
-campaign no longer boots. Two writes that do not conflict (two
-`NarrationAdded`) fold, so the damage depends on what the second writer
-appends. VTT-191, a seat withholding an event whose fold fails, is OPEN
-because no test hands a seat a prefix that does not fold. None needs a second
-`Campaign` to: an internal test that calls `receive` with two `SceneCreated`
-for one scene id and then a `NarrationAdded` is sent no frame for either,
-where a fresh seat is sent one for the narration. Which gate should have
-caught it, and why not: the tier-1 tests, and none did. No requirement says a
-campaign has one writer, no fixture gives a seat a prefix that does not fold,
-and no mutation operator adds a second writer. Labels: `test data missing`,
-`spec silent`. Closing it needs a single-writer lock on the campaign
-directory, which is a ticket of its own, and a test that a second `Open` of a
-locked directory is refused; closing VTT-191 needs only the internal test
-above, cited `// VTT-191`. Recorded 2026-09-29 by the verification and review
-of
-`docs/superpowers/specs/2026-09-29-the-seat-and-the-perch-have-a-record-design.md`,
-whose change changes no code line.
 
 **`perchBox.wake`'s capacity is unobserved.** In `internal/gateway/seat.go`,
 `newPerchBox` makes `wake` with capacity 1, and `set` sends to it without
