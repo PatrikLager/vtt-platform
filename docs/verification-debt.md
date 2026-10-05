@@ -571,3 +571,19 @@ client/test` stay green. No gate compares a copy with its constant, and no
 mutation operator changes two files. Labels: `outside the tool`. Closing it
 needs a test that reads each mirror's number against the engine's. Recorded
 2026-10-04 by the reason-bound report.
+
+**Nothing in the gate builds for another platform.** `task check`, the
+pre-commit and the pre-push hooks build and test for the machine they run on,
+and none sets `GOOS` (`grep -rn GOOS` over `Taskfile.yml`, `.lefthook.yml`
+and `.github` prints nothing); CI runs only when dispatched by hand. Since
+`855fafd`, `internal/campaign` calls `syscall.Flock` and does not build for
+`GOOS=windows`, which SPEC-019 records, and nothing would report that
+changing, or another platform breaking. Recipe: add `_ =
+syscall.F_FULLFSYNC` as the first line of `takeHold` in
+`internal/campaign/campaign.go`; `go build` and `go vet` pass on darwin, and
+`GOOS=linux go build ./internal/campaign/` fails with `undefined:
+syscall.F_FULLFSYNC`. The gate should have caught it, and builds for one
+platform only. Labels: `outside the tool`. Closing it needs a gate step that
+builds `./...` for linux and darwin and asserts the windows build of
+`internal/campaign` fails as SPEC-019 says, or a ruling that it is not
+wanted. Recorded 2026-10-05 by the writer-hold report, the plan's Gap 5.
