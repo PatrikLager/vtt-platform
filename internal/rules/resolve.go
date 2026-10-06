@@ -530,10 +530,10 @@ func (r *resolveState) evalThresholds() ([]*vttv1.Envelope, error) {
 		resources := r.resourcesOf(key.actor)
 		reason := fmt.Sprintf("threshold:%s", key.resource)
 
-		for _, th := range def.Thresholds {
+		for j, th := range def.Thresholds {
 			v, err := Eval(th.When, attrs, resources, r.rng)
 			if err != nil {
-				return nil, fmt.Errorf("rules: resolve: threshold %q on resource %q: %w", th.WhenSrc, key.resource, err)
+				return nil, fmt.Errorf("rules: resolve: threshold %d on resource %q: %w", j, key.resource, err)
 			}
 			switch {
 			case v != 0:

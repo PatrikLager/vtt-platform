@@ -558,17 +558,21 @@ sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
 
 **Nothing ties a byte bound's copies to the engine's constant.**
-`client/src/fold.ts` holds each of the fold's fourteen bounds as a literal in
-a `checkLen` call, `internal/adventure/load.go` holds its own copies of
+`client/src/fold.ts` holds each of the fold's sixteen bounds as a literal in a
+`checkLen` call, `internal/adventure/load.go` holds its own copies of
 `maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes`, `maxNameBytes` and
-`maxIDBytes`, and `internal/mapdef/load.go` its own `maxNameBytes` and
-`maxIDBytes`; each side's tests pin its own numbers
+`maxIDBytes`, `internal/mapdef/load.go` its own `maxNameBytes` and
+`maxIDBytes`, and `internal/rules/load.go` its own `maxIDBytes`, which the
+ruleset schemas state too; each side's tests pin its own numbers
 (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`,
-`TestTheNameBoundMirrorsEngine`, `TestTheIDBoundMirrorsEngine`,
+`TestTheNameBoundMirrorsEngine`, `TestTheIDBoundMirrorsEngine` in
+`internal/adventure` and in `internal/rules`, `TestTheSchemasStateTheIDBound`,
 `TestAMapNameOfExactlyTheBoundLoads`, `TestAMapIDOfExactlyTheBoundLoads`), so
 a bound changed in `internal/engine/apply.go` alone leaves every mirror stale
-and every mirror's own tests green. Only a move's reason, a name and an id
-have a link, from the MCP tools' descriptions to `maxMoveReasonBytes`,
+and every mirror's own tests green, save that
+`TestARulesetAtTheBoundResolvesToEventsTheFoldAccepts` reds when the engine's
+id bound falls below `internal/rules`' copy. Only a move's reason, a name and
+an id have a link, from the MCP tools' descriptions to `maxMoveReasonBytes`,
 `maxNameBytes` and `maxIDBytes` (`TestTheMoveToolStatesTheFoldsReasonBound`,
 `TestTheToolsStateTheFoldsNameBound`, `TestTheToolsStateTheFoldsIDBound`).
 Recipe: set `maxNoteTitleBytes` to 300 in `apply.go`; `go test
@@ -594,6 +598,15 @@ without that resource returns a 70,089-byte error (measured 2026-10-06 on
 `outside the tool`. Closing it needs a bound on a ruleset's names at load, or
 `Clip` at `Resolve`'s interpolations, and a test that reads the refusal off a
 real connection. Recorded 2026-10-06 by the id bound's review.
+
+**Closed by** `TestARulesetNameOfSeventyThousandBytesIsRefusedAtLoad` in
+`internal/rules/load_test.go`, which reds on the recipe above, and by
+`TestAThresholdRefusalNamesItsPositionNotItsExpression` in
+`internal/rules/resolve_test.go` and
+`TestAThresholdRefusalReachesTheIssuerWithoutItsExpression` in
+`internal/gateway/ruleset_test.go`, which hold the one path a bound on names
+leaves, a threshold's expression in a refusal, the second off a real
+connection (observed 2026-10-06).
 
 **Nothing in the gate builds for another platform.** `task check`, the
 pre-commit and the pre-push hooks build and test for the machine they run on,

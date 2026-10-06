@@ -14,10 +14,10 @@ import { FoldError } from "../src/state";
 // claim needs none, and an arm count is the shape that rots by addition.)
 // Said at the level of the EVENT VARIANT, which
 // is the level that matters for parity: `attackRolled` shares its arm BODY
-// with `abilityUsed` and `adventureLoaded`, both of which the corpus does
-// fold, so that code path runs — it is the variant that no corpus stream
-// carries, and client/test/fold-rejections.test.ts's "an event kind the fold
-// does not know is skipped, not fatal" is what folds one directly. Named
+// with `default:` alone, since `abilityUsed` and `adventureLoaded` have arms
+// of their own; it is the variant that no corpus stream carries, and
+// client/test/fold-rejections.test.ts's "an event kind the fold does not
+// know is skipped, not fatal" is what folds one directly. Named
 // rather than cited by line for the reason this file states below: an offset
 // into another file rots the moment anything is inserted above it, and
 // nothing pins it.

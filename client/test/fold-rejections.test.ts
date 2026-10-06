@@ -595,3 +595,44 @@ test("ids of exactly 128 bytes are ACCEPTED", () => {
   ]);
   expect(st.Tokens[id("t")]!.ActorID).toBe(id("a"));
 });
+
+// --- ruleset ids ------------------------------------------------------------
+
+// VTT-285
+test("a condition id over 128 UTF-8 bytes is rejected", () => {
+  rejects([...placeable, env(4, { conditionApplied: { actorId: "a1", conditionId: "é".repeat(64) + "i" } })],
+    "condition id exceeds 128 bytes");
+});
+
+// VTT-285
+test("an ability id longer than 128 bytes is rejected", () => {
+  rejects([...placeable, env(4, { abilityUsed: { actorId: "a1", abilityId: "b".repeat(129) } })],
+    "ability id exceeds 128 bytes");
+});
+
+// VTT-286
+test("an empty condition id is rejected", () => {
+  rejects([...placeable, env(4, { conditionApplied: { actorId: "a1", conditionId: "" } })],
+    "condition id is shorter than 1 bytes");
+});
+
+// VTT-286
+test("an empty ability id is rejected", () => {
+  rejects([...placeable, env(4, { abilityUsed: { actorId: "a1", abilityId: "" } })], "ability id is shorter than 1 bytes");
+});
+
+// VTT-285
+test("a condition id is measured before its actor is looked up", () => {
+  rejects([started, env(2, { conditionApplied: { actorId: "nobody", conditionId: "c".repeat(129) } })],
+    "condition id exceeds 128 bytes");
+});
+
+// VTT-285
+test("condition and ability ids of exactly 128 bytes are ACCEPTED", () => {
+  const st = fold([...placeable,
+    env(4, { conditionApplied: { actorId: "a1", conditionId: "é".repeat(64) } }),
+    env(5, { abilityUsed: { actorId: "a1", abilityId: "b".repeat(128) } }),
+  ]);
+  expect(st.Conditions["a1"]![0]!.ID).toBe("é".repeat(64));
+});
+

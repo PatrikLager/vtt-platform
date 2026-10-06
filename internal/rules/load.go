@@ -29,6 +29,9 @@ var supportedFormatVersions = map[string]bool{"2": true}
 // text a ruleset author would see, not a paraphrase.
 const formatVersion1RejectedMsg = "format v1 is retired (clean break, no external v1 authors — see docs/superpowers/specs/2026-07-25-format-v2-composition-design.md §3/§9); this ruleset must declare \"format_version\": \"2\" and be authored as atoms/compositions (§4)"
 
+// maxIDBytes mirrors internal/engine's bound on an id (SPEC-018).
+const maxIDBytes = 128
+
 // Load reads and fully validates the ruleset directory at dir: strict JSON
 // decoding of ruleset.json/conditions/*.json/atoms/*.json/
 // abilities/*.json-as-compositions (no unknown fields tolerated), the
@@ -181,6 +184,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 	if !supportedFormatVersions[raw.FormatVersion] {
 		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q — %s", raw.FormatVersion, formatVersion1RejectedMsg))
 	}
+	if err := checkManifestBounds(path, &raw); err != nil {
+		return nil, err
+	}
 
 	seenAttr := map[string]bool{}
 	for _, a := range raw.Attributes {
@@ -330,6 +336,9 @@ func loadConditions(dir string) (map[string]*Condition, error) {
 		}
 		if raw.ID == "" {
 			return nil, fieldErr(path, "id", "must not be empty")
+		}
+		if len(raw.ID) > maxIDBytes {
+			return nil, fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
 		}
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")
@@ -800,6 +809,9 @@ func decodeResolutionContribution(path, field string, probe map[string]json.RawM
 		if b == "" {
 			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), "must not be empty")
 		}
+		if len(b) > maxIDBytes {
+			return Contribution{}, fieldErr(path, fmt.Sprintf("%s.branches[%d]", field, i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(b)))
+		}
 		// Reserve "always"/"usage"/"effect" as branch labels (finding R3):
 		// Resolve stamps each outcome event's reason as
 		// "ability:<id>:<phase>", where phase is the branch label for branch
@@ -1001,6 +1013,9 @@ func loadCompositions(dir string) (map[string]*compositionAbility, error) {
 		if raw.ID == "" {
 			return nil, fieldErr(path, "id", "must not be empty")
 		}
+		if len(raw.ID) > maxIDBytes {
+			return nil, fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
+		}
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")
 		}
@@ -1053,6 +1068,25 @@ func decodeStrict(path string, v any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("rules: %s: %w", path, err)
+	}
+	return nil
+}
+
+func checkManifestBounds(path string, raw *manifestJSON) error {
+	for i, a := range raw.Attributes {
+		if len(a) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("attributes[%d]", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(a)))
+		}
+	}
+	for i, d := range raw.Defenses {
+		if len(d) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("defenses[%d]", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(d)))
+		}
+	}
+	for i, r := range raw.Resources {
+		if len(r.Name) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("resources[%d].name", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(r.Name)))
+		}
 	}
 	return nil
 }

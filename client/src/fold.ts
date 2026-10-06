@@ -365,6 +365,7 @@ function apply(st: State, env: Envelope): void {
     }
     case "conditionApplied": {
       const v = p.value;
+      checkLen("condition id", v.conditionId, 1, 128);
       if (!st.Actors[v.actorId]) {
         throw new FoldError(`condition applied to unknown actor "${v.actorId}"`);
       }
@@ -456,10 +457,12 @@ function apply(st: State, env: Envelope): void {
       checkLen("adventure id", p.value.adventureId, 1, 128);
       checkLen("adventure name", p.value.name, 0, 256);
       return;
+    case "abilityUsed":
+      checkLen("ability id", p.value.abilityId, 1, 128);
+      return;
     // Recorded on the log, no effect on derived state; an unknown variant is
     // skipped, as the server's own replay skips it.
     case "attackRolled":
-    case "abilityUsed":
     default:
       return;
   }

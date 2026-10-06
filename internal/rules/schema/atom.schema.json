@@ -102,7 +102,7 @@
           "minItems": 2,
           "maxItems": 2,
           "items": { "type": "string", "minLength": 1, "not": { "const": "always" } },
-          "description": "[ge-label, lt-label] — exactly 2 distinct, ruleset-chosen words; \"always\" is reserved for an unconditional outcome contribution's branch and cannot be used here."
+          "description": "[ge-label, lt-label] — exactly 2 distinct, ruleset-chosen words; \"always\" is reserved for an unconditional outcome contribution's branch and cannot be used here. At most 128 bytes of UTF-8 per label."
         }
       }
     },

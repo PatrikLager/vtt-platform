@@ -3,6 +3,7 @@ package rules_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -559,5 +560,150 @@ func TestLoadRejectsInvalidDefenseIdentifier(t *testing.T) {
 func TestLoadAcceptsValidIdentifierNames(t *testing.T) {
 	if _, err := rules.Load(fixture(t, "valid")); err != nil {
 		t.Fatalf("Load(valid): unexpected error: %v", err)
+	}
+}
+
+type rulesetBound struct {
+	ability, condition, attribute, defense, resource, branch string
+}
+
+func rulesetEdit(t *testing.T, dir, file, old, replacement string) {
+	t.Helper()
+	path := filepath.Join(dir, file)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), old) {
+		t.Fatalf("%s holds no %q", file, old)
+	}
+	writeFile(t, path, strings.ReplaceAll(string(data), old, replacement))
+}
+
+func rulesetCopy(t *testing.T, src string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "ruleset")
+	copyDir(t, src, dir)
+	return dir
+}
+
+func rulesetAtTheBound(t *testing.T) (string, rulesetBound) {
+	t.Helper()
+	b := rulesetBound{
+		ability:   strings.Repeat("b", 128),
+		condition: strings.Repeat("é", 64),
+		attribute: strings.Repeat("x", 128),
+		defense:   strings.Repeat("d", 128),
+		resource:  "p" + strings.Repeat("a", 127),
+		branch:    strings.Repeat("m", 128),
+	}
+	dir := rulesetCopy(t, fixture(t, "valid"))
+	for _, f := range []string{"ruleset.json", "conditions/guarded.json", "atoms/apply-guarded.json", "atoms/remove-guarded.json"} {
+		rulesetEdit(t, dir, f, `"guarded"`, `"`+b.condition+`"`)
+	}
+	for _, f := range []string{"ruleset.json", "atoms/strike-damage.json", "abilities/guard-stance.json"} {
+		rulesetEdit(t, dir, f, "pool_a", b.resource)
+	}
+	rulesetEdit(t, dir, "ruleset.json", `"grit"]`, `"grit", "`+b.attribute+`"]`)
+	rulesetEdit(t, dir, "ruleset.json", `["guard"]`, `["guard", "`+b.defense+`"]`)
+	rulesetEdit(t, dir, "atoms/strike-roll.json", `"miss"`, `"`+b.branch+`"`)
+	writeFile(t, filepath.Join(dir, "abilities", "at-the-bound.json"), `{
+  "id": "`+b.ability+`",
+  "name": "At The Bound",
+  "usage": { "limited": { "resource": "`+b.resource+`", "cost": 1 } },
+  "compose": [
+    { "atom": "self-delivery", "bind": {} },
+    { "atom": "apply-guarded", "bind": {} }
+  ]
+}`)
+	return dir, b
+}
+
+// VTT-283 VTT-284
+func TestARulesetWhoseIDOrNameExceedsTheBoundIsRefused(t *testing.T) {
+	over := strings.Repeat("o", 129)
+	for _, c := range []struct {
+		name, file, field string
+		edit              func(t *testing.T, dir string)
+	}{
+		{"ability id", "strike.json", "id", func(t *testing.T, dir string) {
+			t.Helper()
+			rulesetEdit(t, dir, "abilities/strike.json", `"id": "strike"`, `"id": "`+over+`"`)
+		}},
+		{"condition id", "guarded.json", "id", func(t *testing.T, dir string) {
+			t.Helper()
+			for _, f := range []string{"ruleset.json", "conditions/guarded.json", "atoms/apply-guarded.json", "atoms/remove-guarded.json"} {
+				rulesetEdit(t, dir, f, `"guarded"`, `"`+strings.Repeat("é", 64)+`i"`)
+			}
+		}},
+		{"attribute", "ruleset.json", "attributes[2]", func(t *testing.T, dir string) {
+			t.Helper()
+			rulesetEdit(t, dir, "ruleset.json", `"grit"]`, `"grit", "`+over+`"]`)
+		}},
+		{"defense", "ruleset.json", "defenses[1]", func(t *testing.T, dir string) {
+			t.Helper()
+			rulesetEdit(t, dir, "ruleset.json", `["guard"]`, `["guard", "`+over+`"]`)
+		}},
+		{"resource name", "ruleset.json", "resources[0].name", func(t *testing.T, dir string) {
+			t.Helper()
+			for _, f := range []string{"ruleset.json", "atoms/strike-damage.json", "abilities/guard-stance.json"} {
+				rulesetEdit(t, dir, f, "pool_a", over)
+			}
+		}},
+		{"branch label", "strike-roll.json", "contributes[0].branches[1]", func(t *testing.T, dir string) {
+			t.Helper()
+			rulesetEdit(t, dir, "atoms/strike-roll.json", `"miss"`, `"`+over+`"`)
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := rulesetCopy(t, fixture(t, "valid"))
+			c.edit(t, dir)
+			_, err := rules.Load(dir)
+			want := c.file + `: field "` + c.field + `": must be at most 128 bytes, got 129`
+			if err == nil || !strings.HasSuffix(err.Error(), want) {
+				t.Fatalf("Load = %v, want an error ending %q", err, want)
+			}
+		})
+	}
+}
+
+// VTT-283 VTT-284
+func TestARulesetWhoseIDsAndNamesAreExactlyTheBoundLoads(t *testing.T) {
+	dir, b := rulesetAtTheBound(t)
+	rs, err := rules.Load(dir)
+	if err != nil {
+		t.Fatalf("a ruleset whose ids and names are 128 bytes was refused: %v", err)
+	}
+	if rs.Compiled[b.ability] == nil {
+		t.Errorf("no compiled ability under the 128-byte id")
+	}
+	if rs.Conditions[b.condition] == nil {
+		t.Errorf("no condition under the 128-byte id")
+	}
+	if !slices.Contains(rs.Attributes, b.attribute) || !slices.Contains(rs.Defenses, b.defense) {
+		t.Errorf("attributes %d, defenses %d: the 128-byte names are missing", len(rs.Attributes), len(rs.Defenses))
+	}
+	if len(rs.Resources) != 1 || rs.Resources[0].Name != b.resource {
+		t.Errorf("resources do not hold the 128-byte name")
+	}
+	if strike := rs.Compiled["strike"]; strike == nil || strike.Resolution == nil || strike.Resolution.Branches[1] != b.branch {
+		t.Errorf("strike's resolution does not hold the 128-byte branch label")
+	}
+}
+
+// VTT-283
+func TestARulesetNameOfSeventyThousandBytesIsRefusedAtLoad(t *testing.T) {
+	dir := rulesetCopy(t, filepath.Join("conformance", "testdata", "minimal-smoke-fail"))
+	long := strings.Repeat("f", 70000)
+	for _, f := range []string{"ruleset.json", "abilities/big-move.json"} {
+		rulesetEdit(t, dir, f, `"focus"`, `"`+long+`"`)
+	}
+	_, err := rules.Load(dir)
+	want := `ruleset.json: field "resources[0].name": must be at most 128 bytes, got 70000`
+	if err == nil || !strings.HasSuffix(err.Error(), want) {
+		t.Fatalf("Load = %.200v, want an error ending %q", err, want)
+	}
+	if len(err.Error()) >= len(dir)+128 {
+		t.Fatalf("the refusal is %d bytes, want under the directory's path plus 128", len(err.Error()))
 	}
 }

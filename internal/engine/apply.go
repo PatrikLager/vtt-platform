@@ -434,6 +434,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		return nil // testimony, not state — rules meaning arrives in sub-project 5
 
 	case *vttv1.Envelope_AbilityUsed:
+		if len(p.AbilityUsed.AbilityId) == 0 || len(p.AbilityUsed.AbilityId) > maxIDBytes {
+			return fmt.Errorf("engine: ability id must be 1-%d bytes, got %d", maxIDBytes, len(p.AbilityUsed.AbilityId))
+		}
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)
 
 	case *vttv1.Envelope_AdventureLoaded:
@@ -480,6 +483,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_ConditionApplied:
 		ca := p.ConditionApplied
+		if len(ca.ConditionId) == 0 || len(ca.ConditionId) > maxIDBytes {
+			return fmt.Errorf("engine: condition id must be 1-%d bytes, got %d", maxIDBytes, len(ca.ConditionId))
+		}
 		if _, ok := st.Actors[ca.ActorId]; !ok {
 			return fmt.Errorf("engine: condition applied for unknown actor %q", ca.ActorId)
 		}

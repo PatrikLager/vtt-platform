@@ -7,7 +7,7 @@
   "required": ["id", "name", "usage", "compose"],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "minLength": 1 },
+    "id": { "type": "string", "minLength": 1, "description": "At most 128 bytes of UTF-8." },
     "name": { "type": "string", "minLength": 1 },
     "usage": {
       "description": "Either the bare string \"at_will\", or an object spending a declared resource.",

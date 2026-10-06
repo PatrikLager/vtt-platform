@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -353,5 +354,72 @@ func TestRemoveConditionAppliedThenRemoved(t *testing.T) {
 	sendCommand(t, dmConn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}}})
 	if r3 := readResult(t, dmConn); !r3.Ok {
 		t.Fatalf("want a follow-up ordinary command to still succeed after the absent-condition denial, got %+v", r3)
+	}
+}
+
+// VTT-288 VTT-132
+func TestAThresholdRefusalReachesTheIssuerWithoutItsExpression(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "ruleset")
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "rules", "testdata", "valid"))); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(dir, "ruleset.json")
+	raw, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Replace(string(raw), `"when": "#pool_a"`, `"when": "#pool_a + @brawn`+strings.Repeat(" + 0", 17500)+`"`, 1)
+	if long == string(raw) {
+		t.Fatal("ruleset.json holds no threshold to lengthen")
+	}
+	if err := os.WriteFile(manifest, []byte(long), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := rules.Load(dir)
+	if err != nil {
+		t.Fatalf("rules.Load: %.200v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAppend(t, c, "th-1", &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}})
+	mustAppend(t, c, "th-2", &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+		SceneId: "s1", Name: "S", GridWidth: 3, GridHeight: 3,
+	}})
+	mustAppend(t, c, "th-3", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "a", Name: "A", Resources: map[string]*vttv1.Resource{"pool_a": {Current: 5, Max: 10}},
+	}}})
+	mustAppend(t, c, "th-4", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+		TokenId: "ta", SceneId: "s1", ActorId: "a", Position: &vttv1.GridPosition{X: 0, Y: 0},
+	}})
+	hs := httptest.NewServer(gateway.New(c, ids).WithRuleset(rs).Handler())
+	t.Cleanup(hs.Close)
+	f := &rulesetFixture{t: t, srv: hs, dmToken: dmToken}
+	conn := f.dial(dmToken, 0)
+
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UseAbility{
+		UseAbility: &vttv1.UseAbility{ActorId: "a", AbilityId: "guard-stance", TargetIds: []string{"a"}},
+	}})
+	res := readResult(t, conn)
+	want := `rules: resolve: threshold 0 on resource "pool_a": rules: expr: unknown attribute "brawn"`
+	if res.Ok || res.Error != want {
+		t.Fatalf("ok=%v error=%.200q (%d bytes), want ok=false and %q", res.Ok, res.Error, len(res.Error), want)
+	}
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_EndSession{EndSession: &vttv1.EndSession{}}})
+	if r := readResult(t, conn); !r.Ok {
+		t.Fatalf("the connection did not take the next command: %q", r.Error)
 	}
 }

@@ -910,3 +910,54 @@ func TestResolveRangeIsChebyshevInBothAxes(t *testing.T) {
 		}
 	})
 }
+
+// VTT-285
+func TestARulesetAtTheBoundResolvesToEventsTheFoldAccepts(t *testing.T) {
+	dir, b := rulesetAtTheBound(t)
+	rs, err := rules.Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	st := newTestState()
+	putActor(st, "a", map[string]int32{"brawn": 3}, map[string]*vttv1.Resource{b.resource: res(5, 10)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	envs, err := rules.Resolve(rs, st, useAbility("a", b.ability, "a"), &queueRoller{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for i, e := range envs {
+		e.Sequence = int64(i + 1)
+		if err := engine.Apply(st, e); err != nil {
+			t.Fatalf("the fold refused event %d of the at-bound batch: %v", i, err)
+		}
+	}
+	conds := st.Conditions["a"]
+	if len(conds) == 0 || conds[0].ID != b.condition {
+		t.Fatalf("the 128-byte condition was not stored whole: %+v", conds)
+	}
+}
+
+// VTT-288
+func TestAThresholdRefusalNamesItsPositionNotItsExpression(t *testing.T) {
+	dir := rulesetCopy(t, fixture(t, "valid"))
+	rulesetEdit(t, dir, "ruleset.json", `"when": "#pool_a"`, `"when": "#pool_a + @brawn`+strings.Repeat(" + 0", 17500)+`"`)
+	rs, err := rules.Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %.200v", err)
+	}
+	st := newTestState()
+	putActor(st, "a", nil, map[string]*vttv1.Resource{"pool_a": res(5, 10)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	_, err = rules.Resolve(rs, st, useAbility("a", "guard-stance", "a"), &queueRoller{})
+	want := `rules: resolve: threshold 0 on resource "pool_a": rules: expr: unknown attribute "brawn"`
+	if err == nil || err.Error() != want {
+		t.Fatalf("Resolve = %.200v (%d bytes), want %q", err, len(fmtErr(err)), want)
+	}
+}
+
+func fmtErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

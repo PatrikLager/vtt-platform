@@ -142,3 +142,15 @@ func TestIDsAtCapAreAccepted(t *testing.T) {
 		t.Fatalf("the 128-byte token was not stored whole: %+v ok=%v", tok, ok)
 	}
 }
+
+// VTT-285
+func TestConditionAndAbilityIDsAtCapAreAccepted(t *testing.T) {
+	condition, ability := strings.Repeat("é", 64), strings.Repeat("b", 128)
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+	must(t, engine.Apply(st, env(2, &vttv1.ConditionApplied{ActorId: "a1", ConditionId: condition})))
+	must(t, engine.Apply(st, env(3, &vttv1.AbilityUsed{ActorId: "a1", AbilityId: ability})))
+	if got := st.Conditions["a1"]; len(got) != 1 || got[0].ID != condition {
+		t.Fatalf("the 128-byte condition was not stored whole: %+v", got)
+	}
+}

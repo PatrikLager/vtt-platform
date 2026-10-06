@@ -1150,3 +1150,68 @@ func TestAnEmptySceneTokenOrAdventureIDIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// VTT-285
+func TestAConditionWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+	before := st.Snapshot()
+	err := engine.Apply(st, env(4, &vttv1.ConditionApplied{ActorId: "a1", ConditionId: strings.Repeat("c", 129)}))
+	want := "engine: condition id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused condition must leave the state as it was")
+	}
+}
+
+// VTT-285
+func TestAnAbilityWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.AbilityUsed{ActorId: "a1", AbilityId: strings.Repeat("b", 129)}))
+	want := "engine: ability id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused ability must leave the state as it was")
+	}
+}
+
+// VTT-286
+func TestAnEmptyConditionOrAbilityIDIsRefused(t *testing.T) {
+	cases := map[string]struct {
+		event *vttv1.Envelope
+		want  string
+	}{
+		"condition": {env(4, &vttv1.ConditionApplied{ActorId: "a1", ConditionId: ""}),
+			"engine: condition id must be 1-128 bytes, got 0"},
+		"ability": {env(4, &vttv1.AbilityUsed{ActorId: "a1", AbilityId: ""}),
+			"engine: ability id must be 1-128 bytes, got 0"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			st := seedScene(t)
+			must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+			before := st.Snapshot()
+			if err := engine.Apply(st, c.event); err == nil || err.Error() != c.want {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if !reflect.DeepEqual(before, st.Snapshot()) {
+				t.Fatal("a refused event must leave the state as it was")
+			}
+		})
+	}
+}
+
+// VTT-285
+func TestAConditionIDIsMeasuredBeforeItsActorIsLookedUp(t *testing.T) {
+	st := seedScene(t)
+	err := engine.Apply(st, env(3, &vttv1.ConditionApplied{ActorId: "nobody", ConditionId: strings.Repeat("c", 129)}))
+	want := "engine: condition id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q, the id's refusal before the unknown actor's", err, want)
+	}
+}

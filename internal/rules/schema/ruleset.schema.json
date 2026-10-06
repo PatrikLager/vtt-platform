@@ -16,13 +16,13 @@
     },
     "attributes": {
       "type": "array",
-      "description": "Names usable as '@'-refs in expressions (e.g. attack rolls, damage, default_max_expr). Each name must match ^[A-Za-z_][A-Za-z0-9_]*$ — the expression grammar's IDENT charset (internal/rules/expr.go); NOT the kebab-case used for ability/condition ids, since a hyphenated name would lex as subtraction rather than one identifier (e.g. \"brawn-2\" -> \"brawn\" - 2).",
+      "description": "Names usable as '@'-refs in expressions (e.g. attack rolls, damage, default_max_expr). Each name must match ^[A-Za-z_][A-Za-z0-9_]*$ — the expression grammar's IDENT charset (internal/rules/expr.go); NOT the kebab-case used for ability/condition ids, since a hyphenated name would lex as subtraction rather than one identifier (e.g. \"brawn-2\" -> \"brawn\" - 2). At most 128 bytes of UTF-8 per name.",
       "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "uniqueItems": true
     },
     "defenses": {
       "type": "array",
-      "description": "Names an ability's attack.vs may target. Constrained to the same ^[A-Za-z_][A-Za-z0-9_]*$ charset as attributes/resources for consistency, even though defense names are currently only ever used as plain string field values (attack.vs), never lexed inside an expression.",
+      "description": "Names an ability's attack.vs may target. Constrained to the same ^[A-Za-z_][A-Za-z0-9_]*$ charset as attributes/resources for consistency, even though defense names are currently only ever used as plain string field values (attack.vs), never lexed inside an expression. At most 128 bytes of UTF-8 per name.",
       "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "uniqueItems": true
     },
@@ -37,7 +37,7 @@
             "type": "string",
             "minLength": 1,
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-            "description": "Also usable as a '#'-ref in expressions — must match ^[A-Za-z_][A-Za-z0-9_]*$ (the expression grammar's IDENT charset), not kebab-case."
+            "description": "Also usable as a '#'-ref in expressions — must match ^[A-Za-z_][A-Za-z0-9_]*$ (the expression grammar's IDENT charset), not kebab-case. At most 128 bytes of UTF-8."
           },
           "default_max_expr": {
             "type": "string",
