@@ -83,6 +83,7 @@ var manifest = []toolSpec{
 			"vtt.v1.Actor": {
 				requiredOverride: []string{"actorId", "kind"},
 				fieldDocs: map[string]string{
+					"actorId":       "The new actor's id, unique in the campaign. At most 128 bytes of UTF-8; a longer id refuses the whole command.",
 					"name":          "Optional display label for the actor. At most 256 bytes of UTF-8; a longer name refuses the whole command.",
 					"controllerId":  "DO NOT SET. This command creates an actor; it does not hand it to anyone, and a request that sets this field is REFUSED whatever else it contains. Control is conferred by grant_actor_control, which also says whether the actor is a party member or a monster. Add the actor first, then grant it — two calls, always.",
 					"controllerIds": "DO NOT SET. Refused, exactly as controllerId is, and for the same reason: control is conferred by grant_actor_control after creation, never here.",
@@ -100,6 +101,13 @@ var manifest = []toolSpec{
 		name:        "place_token",
 		description: "Place an actor's token on a scene's grid.",
 		descriptor:  (&vttv1.PlaceToken{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.PlaceToken": {
+				fieldDocs: map[string]string{
+					"tokenId": "The new token's id, unique in the campaign. At most 128 bytes of UTF-8; a longer id refuses the command.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.RemoveToken",

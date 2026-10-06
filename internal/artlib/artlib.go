@@ -366,94 +366,21 @@ func unsupportedFormat(id string, declared int32) error {
 		Clip(id, MaxFragment), sidecarExt, declared, FormatVersion, ErrFormatVersion)
 }
 
-// clip bounds a fragment of author-controlled sidecar text before it is
-// interpolated into a message, and makes it safe to put on the wire.
-//
-// BOUNDED, because those messages ride back to whoever issued load_map on a
-// CommandResult and a sidecar may hold a value of any length — spec §4's own
-// measurement is a load whose warnings did not arrive at all because they
-// exceeded the client read limit.
-//
-// AND VALID UTF-8, which a byte count alone does not give:
-// CommandResult.warnings is a proto3 repeated string, proto3 strings must be
-// valid UTF-8, and there are two ways raw campaign bytes would not be. A
-// json.RawMessage keeps the file's bytes verbatim, so a sidecar written in some
-// other encoding carries whatever it carries; and cutting at a fixed byte
-// offset splits a multi-byte rune in half — {"format_version":
-// "üüüüüüüüüüüüüüüüüüüüü"} is enough, measured. Either one makes protojson
-// refuse to marshal the frame, which is a campaign file deciding that a
-// load_map answer never arrives at all. Both are handled below by the same
-// call, run twice.
-//
-// THE ART AND MAP PATHS HAVE BEEN SURVEYED, and only those. This paragraph
-// replaced "no one has re-surveyed the tree" on 2026-09-09, and the first
-// version of the replacement claimed the whole tree — which was false on the
-// day it was written. Every interpolation reaching a CommandResult from
-// internal/artlib and internal/mapdef now passes through Clip or BoundErr,
-// proven by the invariant tests each package carries and by two boundary tests
-// that read a frame rather than assert a number.
-//
-// STILL UNBOUNDED, found by review after that claim was made, and outstanding:
-// mapdef.LoadInstalled's use of the file's own declared id, internal/rules'
-// ability and resource names reaching a use_ability result, and
-// internal/adventure's collision refusals for an ACTOR id and a TOKEN id.
-// A campaign file reaches a client through those too. They are named here
-// rather than in a transcript so the next reader inherits the list instead of
-// the impression that this is finished.
-//
-// THREE ENTRIES LEFT THIS LIST, and it did not notice two of them. It read
-// "internal/adventure's scene-id prefix and its collision refusals" until
-// 2026-09-10, when the prefix had been bounded by maxIDBytes since 2026-09-09
-// and two of checkCollisions' four arms with it; and it named engine's terrain
-// kind reaching a move_token refusal, which describeBlockage bounded on
-// 2026-09-10. Both commits edited this file and updated only the art spec's
-// copy of the same inventory. A list stated twice is two things that can
-// disagree, no gate reads either, and this one was wrong for a day before a
-// review caught it — which is the argument for the spec's copy being the one
-// that carries the reasoning and this one being kept short.
-//
-// ONE BOUND PER PATH — AND "PATH" IS THE WORD THAT WAS GOT WRONG. Two clips on
-// one path do make both mutants unkillable, and that is real. But artlib
-// bounding an id inside ITS error and mapdef bounding the same id inside ITS
-// warning are two paths, not two bounds: mapdef composes its own sentence and
-// never renders artlib's. Reading the surviving mutants as redundancy deleted
-// the only bound on the warning side, and an override value of any length went
-// straight to a client — measured at 20,041 bytes, with the socket closing on
-// "message too big". A surviving mutant means no test drives the path. Look for
-// the missing test before concluding the guard is spare.
-//
-// TWO ToValidUTF8 PASSES AND NO HAND-ROLLED SCAN, which is the shape the
-// mutation gate argued this into. The first draft backed up over continuation
-// bytes with `for cut > 0 && !utf8.RuneStart(s[cut]) { cut-- }`, and the gate
-// answered with three survivors: `cut > 0` is unreachable-different, because
-// valid UTF-8 backs up at most three bytes and s[0] is always a rune start, so
-// the guard was dead code that only a panic could have distinguished. The
-// second pass says the same thing with no boundary to get wrong — a cut that
-// splits a rune leaves bytes that are not valid UTF-8, and an EMPTY
-// replacement drops exactly those.
-// MaxFragment bounds ONE interpolated value — a kind, a picture name, a tile
-// key. Forty characters is enough to recognise what you typed and far too few
-// to matter on the wire.
-//
-// MaxMessage bounds a whole message whose own text embeds author bytes, which
-// is what a wrapped decode error is: `json: unknown field "…"` quotes a field
-// name straight out of the file. Clipping such an error to MaxFragment would
-// throw away the part that says what went wrong, so it gets its own, larger
-// bound — enough for the platform's sentence plus a recognisable fragment.
+// Pass every author string that reaches a message through Clip or BoundErr.
+// Two packages bounding the same id compose two messages, so a surviving
+// mutant on either clip means a missing test, not a spare guard.
 const (
+	// MaxFragment bounds one interpolated value: a kind, a picture name, a tile key.
 	MaxFragment = 40
-	MaxMessage  = 240
+	// MaxMessage bounds a whole message that quotes author bytes: a wrapped
+	// error, or a loader's message about one field.
+	MaxMessage = 240
 )
 
 // Clip bounds author-controlled text before it is interpolated into a message,
-// and makes it safe to put on the wire. See the package doc and clip below for
-// why both halves are load-bearing.
-//
-// IT LIVES HERE, in the lowest package of the two that need it, because
-// internal/mapdef already imports internal/artlib and the alternative was a new
-// package with its own architecture entry, coverage floor and mutation-gate
-// registration — gate work, which is paused. One implementation is the point;
-// its address is not.
+// and makes it valid UTF-8: a CommandResult's strings must be, and a fixed
+// byte cut can split a rune. Keep both ToValidUTF8 passes; the second drops
+// exactly the bytes of a split rune, with no boundary to get wrong.
 func Clip(s string, limit int) string {
 	s = strings.ToValidUTF8(s, "\uFFFD")
 	if len(s) <= limit {

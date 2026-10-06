@@ -363,3 +363,15 @@ func TestLoadInstalledRefusesAFilenameThatDiffersOnlyInCase(t *testing.T) {
 		t.Errorf("err = %v, want it to name the file on disk", err)
 	}
 }
+
+// VTT-279
+func TestAnInstalledMapWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	id := strings.Repeat("i", 129)
+	mapsDir := filepath.Join(t.TempDir(), "maps")
+	writeInstalled(t, mapsDir, id+".json", validMapJSON(id))
+	_, err := mapdef.LoadInstalled(mapsDir, id, "")
+	want := "maps/" + id + `.json: field "id": must be at most 128 bytes, got 129`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want it to contain %q", err, want)
+	}
+}

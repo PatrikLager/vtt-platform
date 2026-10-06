@@ -127,3 +127,18 @@ func TestNamesAtCapAreAccepted(t *testing.T) {
 		t.Fatalf("the actor's 256-byte name was stored as %d bytes", len(got))
 	}
 }
+
+// VTT-277
+func TestIDsAtCapAreAccepted(t *testing.T) {
+	id := func(c string) string { return strings.Repeat(c, 128) }
+	st := engine.NewState()
+	must(t, engine.Apply(st, env(1, &vttv1.SessionStarted{Name: "n"})))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{SceneId: id("s"), Name: "S", GridWidth: 2, GridHeight: 2})))
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: id("a")}})))
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{TokenId: id("t"), SceneId: id("s"), ActorId: id("a"),
+		Position: &vttv1.GridPosition{X: 1, Y: 1}})))
+	must(t, engine.Apply(st, env(5, &vttv1.AdventureLoaded{AdventureId: id("v"), Name: "A"})))
+	if tok, ok := st.Tokens[id("t")]; !ok || tok.SceneID != id("s") || tok.ActorID != id("a") {
+		t.Fatalf("the 128-byte token was not stored whole: %+v ok=%v", tok, ok)
+	}
+}

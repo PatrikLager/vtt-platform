@@ -72,3 +72,10 @@ func TestTheNameBoundMirrorsEngine(t *testing.T) {
 		t.Errorf("maxNameBytes = %d, want 256, internal/engine's bound on a name", maxNameBytes)
 	}
 }
+
+// VTT-279 VTT-282
+func TestTheIDBoundMirrorsEngine(t *testing.T) {
+	if maxIDBytes != 128 {
+		t.Errorf("maxIDBytes = %d, want 128, internal/engine's bound on an id", maxIDBytes)
+	}
+}

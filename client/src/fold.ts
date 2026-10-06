@@ -76,6 +76,7 @@ function apply(st: State, env: Envelope): void {
     }
     case "sceneCreated": {
       const v = p.value;
+      checkLen("scene id", v.sceneId, 1, 128);
       if (st.Scenes[v.sceneId]) throw new FoldError(`duplicate scene "${v.sceneId}"`);
       checkLen("scene name", v.name, 0, 256);
       // Translate the wire terrain into engine-shaped Tile/SceneObject,
@@ -146,6 +147,7 @@ function apply(st: State, env: Envelope): void {
     case "actorAdded": {
       const a = p.value.actor;
       if (!a || a.actorId === "") throw new FoldError("actor added with no actor or empty id");
+      checkLen("actor id", a.actorId, 0, 128);
       if (st.Actors[a.actorId]) throw new FoldError(`duplicate actor "${a.actorId}"`);
       // CREATION DOES NOT CONFER CONTROL (visibility spec §5.1, Patrik's
       // ruling 2026-08-24), and this is the strict mirror of internal/engine's
@@ -192,7 +194,8 @@ function apply(st: State, env: Envelope): void {
     }
     case "tokenPlaced": {
       const v = p.value;
-      // Error ORDER matters: Go checks duplicate, scene, actor, position.
+      // Error ORDER matters: Go checks the id, duplicate, scene, actor, position.
+      checkLen("token id", v.tokenId, 1, 128);
       if (st.Tokens[v.tokenId]) throw new FoldError(`duplicate token "${v.tokenId}"`);
       if (!st.Scenes[v.sceneId]) throw new FoldError(`token placed on unknown scene "${v.sceneId}"`);
       if (!st.Actors[v.actorId]) throw new FoldError(`token placed for unknown actor "${v.actorId}"`);
@@ -450,6 +453,7 @@ function apply(st: State, env: Envelope): void {
       return;
     }
     case "adventureLoaded":
+      checkLen("adventure id", p.value.adventureId, 1, 128);
       checkLen("adventure name", p.value.name, 0, 256);
       return;
     // Recorded on the log, no effect on derived state; an unknown variant is

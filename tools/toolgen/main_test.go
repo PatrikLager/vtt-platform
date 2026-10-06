@@ -179,8 +179,8 @@ func TestAddActorRequiredOverrideReplacesDerivedList(t *testing.T) {
 // TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication covers the
 // per-field guidance half of the same fix: every field the required
 // override demoted to optional must carry a "description" steering the LLM
-// away from fabricating a value, and the one field that stayed required
-// (actorId) must carry none (nothing to steer it away from).
+// away from fabricating a value, and actorId, which stayed required, must
+// state the fold's bound rather than steer.
 func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	tool := findTool(t, "add_actor")
 	schema := tool["inputSchema"].(map[string]any)
@@ -220,14 +220,14 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	if !ok {
 		t.Fatalf("add_actor actor.properties[\"actorId\"] missing or not an object: %#v", props["actorId"])
 	}
-	if _, hasDoc := actorIDProp["description"]; hasDoc {
-		t.Fatalf("add_actor actor.properties[\"actorId\"] has a description, want none (nothing to steer it away from)")
+	if desc, _ := actorIDProp["description"].(string); !strings.Contains(desc, "At most 128 bytes") || strings.Contains(desc, "Optional") {
+		t.Fatalf("add_actor actor.properties[\"actorId\"].description = %q, want the id bound and no word of it being optional", desc)
 	}
 
-	// kind is required too, and it DOES carry guidance — the only required
-	// field that does. The steer it needs is not "do not fabricate a value"
-	// but "this is not a question about who controls the actor", which is the
-	// confusion this whole arc was made of: a character whose player is away
+	// kind is required too, and it carries a steer, where actorId's description
+	// only states the bound. The steer it needs is not "do not fabricate a
+	// value" but "this is not a question about who controls the actor", which is
+	// the confusion this whole arc was made of: a character whose player is away
 	// is still a party member, and a charmed monster is still a monster.
 	kindProp, ok := props["kind"].(map[string]any)
 	if !ok {
@@ -449,6 +449,29 @@ func TestAddActorAndStartSessionStateTheNameBound(t *testing.T) {
 		}
 		if desc, _ := p["description"].(string); !strings.Contains(desc, "At most 256 bytes") {
 			t.Fatalf("%s name description = %q, want it to state the bound", tool, desc)
+		}
+	}
+}
+
+// VTT-281
+func TestAddActorAndPlaceTokenStateTheIDBound(t *testing.T) {
+	props := func(tool map[string]any) map[string]any {
+		return tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	}
+	actor, ok := props(findTool(t, "add_actor"))["actor"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor has no actor property")
+	}
+	for tool, prop := range map[string]any{
+		"add_actor":   actor["properties"].(map[string]any)["actorId"],
+		"place_token": props(findTool(t, "place_token"))["tokenId"],
+	} {
+		p, ok := prop.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no id property: %#v", tool, prop)
+		}
+		if desc, _ := p["description"].(string); !strings.Contains(desc, "At most 128 bytes") {
+			t.Fatalf("%s id description = %q, want it to state the bound", tool, desc)
 		}
 	}
 }

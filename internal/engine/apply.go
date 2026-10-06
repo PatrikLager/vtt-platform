@@ -44,6 +44,7 @@ const (
 	maxNarrationAsBytes = 256
 	maxMoveReasonBytes  = 256
 	maxNameBytes        = 256
+	maxIDBytes          = 128
 )
 
 // Apply advances st by one event. It validates BEFORE mutating: any error
@@ -83,6 +84,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_SceneCreated:
 		sc := p.SceneCreated
+		if len(sc.SceneId) == 0 || len(sc.SceneId) > maxIDBytes {
+			return fmt.Errorf("engine: scene id must be 1-%d bytes, got %d", maxIDBytes, len(sc.SceneId))
+		}
 		if _, dup := st.Scenes[sc.SceneId]; dup {
 			return fmt.Errorf("engine: scene %q %w", sc.SceneId, ErrSceneExists)
 		}
@@ -126,6 +130,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		a := p.ActorAdded.Actor
 		if a == nil || a.ActorId == "" {
 			return fmt.Errorf("engine: actor_added requires an actor with an id")
+		}
+		if len(a.ActorId) > maxIDBytes {
+			return fmt.Errorf("engine: actor id must be at most %d bytes, got %d", maxIDBytes, len(a.ActorId))
 		}
 		if _, dup := st.Actors[a.ActorId]; dup {
 			return fmt.Errorf("engine: actor %q already exists", a.ActorId)
@@ -236,6 +243,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 
 	case *vttv1.Envelope_TokenPlaced:
 		tp := p.TokenPlaced
+		if len(tp.TokenId) == 0 || len(tp.TokenId) > maxIDBytes {
+			return fmt.Errorf("engine: token id must be 1-%d bytes, got %d", maxIDBytes, len(tp.TokenId))
+		}
 		if _, dup := st.Tokens[tp.TokenId]; dup {
 			return fmt.Errorf("engine: token %q already exists", tp.TokenId)
 		}
@@ -427,6 +437,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		return nil // testimony, not state — meaning arrives via the ResourceChanged/ConditionApplied/ConditionRemoved events in the same batch (ruleset-interpreter spec §3)
 
 	case *vttv1.Envelope_AdventureLoaded:
+		if len(p.AdventureLoaded.AdventureId) == 0 || len(p.AdventureLoaded.AdventureId) > maxIDBytes {
+			return fmt.Errorf("engine: adventure id must be 1-%d bytes, got %d", maxIDBytes, len(p.AdventureLoaded.AdventureId))
+		}
 		if len(p.AdventureLoaded.Name) > maxNameBytes {
 			return fmt.Errorf("engine: adventure name must be at most %d bytes, got %d", maxNameBytes, len(p.AdventureLoaded.Name))
 		}

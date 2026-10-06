@@ -540,3 +540,58 @@ test("names of exactly 256 bytes are ACCEPTED", () => {
   expect(st.Scenes["s1"]!.Name).toBe("é".repeat(128));
   expect(st.Actors["a1"]!.name).toBe("n".repeat(256));
 });
+
+// --- ids --------------------------------------------------------------------
+
+// VTT-277
+test("a scene id over 128 UTF-8 bytes is rejected", () => {
+  rejects([started, env(2, { sceneCreated: { sceneId: "é".repeat(64) + "i", name: "S", gridWidth: 2, gridHeight: 2 } })],
+    "scene id exceeds 128 bytes");
+});
+
+// VTT-277
+test("an actor id longer than 128 bytes is rejected", () => {
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a".repeat(129) } } })], "actor id exceeds 128 bytes");
+});
+
+// VTT-277
+test("a token id longer than 128 bytes is rejected", () => {
+  rejects([...placeable, env(4, { tokenPlaced: { tokenId: "t".repeat(129), sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } })],
+    "token id exceeds 128 bytes");
+});
+
+// VTT-277
+test("an adventure id longer than 128 bytes is rejected", () => {
+  rejects([started, env(2, { adventureLoaded: { adventureId: "v".repeat(129), name: "A" } })],
+    "adventure id exceeds 128 bytes");
+});
+
+// VTT-278
+test("an empty scene id is rejected", () => {
+  rejects([started, env(2, { sceneCreated: { sceneId: "", name: "S", gridWidth: 2, gridHeight: 2 } })],
+    "scene id is shorter than 1 bytes");
+});
+
+// VTT-278
+test("an empty token id is rejected", () => {
+  rejects([...placeable, env(4, { tokenPlaced: { tokenId: "", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } })],
+    "token id is shorter than 1 bytes");
+});
+
+// VTT-278
+test("an empty adventure id is rejected", () => {
+  rejects([started, env(2, { adventureLoaded: { adventureId: "", name: "A" } })], "adventure id is shorter than 1 bytes");
+});
+
+// VTT-277
+test("ids of exactly 128 bytes are ACCEPTED", () => {
+  const id = (c: string) => c.repeat(128);
+  const st = fold([
+    started,
+    env(2, { sceneCreated: { sceneId: id("s"), name: "S", gridWidth: 2, gridHeight: 2 } }),
+    env(3, { actorAdded: { actor: { actorId: id("a") } } }),
+    env(4, { tokenPlaced: { tokenId: id("t"), sceneId: id("s"), actorId: id("a"), position: { x: 1, y: 1 } } }),
+    env(5, { adventureLoaded: { adventureId: id("v"), name: "A" } }),
+  ]);
+  expect(st.Tokens[id("t")]!.ActorID).toBe(id("a"));
+});

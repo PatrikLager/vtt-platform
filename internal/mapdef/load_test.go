@@ -72,7 +72,7 @@ func TestObjectFieldsSurviveTheJSONToMapShapeConversion(t *testing.T) {
 
 // Every refusal in spec §4.4 gets a case. Table-driven over fixture dirs,
 // following internal/rules/testdata/invalid-v2/'s pattern.
-// VTT-275
+// VTT-275 VTT-279 VTT-280
 func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 	for _, c := range []struct{ dir, want string }{
 		{"missing-square", "no tile"},
@@ -128,6 +128,9 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 		// compile_test.go instead (ResolveObjectArt, resolve.go), not here.
 		{"object-art-empty", "must not be empty"},
 		{"name-too-long", `field "name": must be at most 256 bytes, got 257`},
+		{"id-too-long", `field "id": must be at most 128 bytes, got 129`},
+		{"placement-token-id-too-long", `field "placements[0].token_id": must be at most 128 bytes, got 129`},
+		{"placement-token-id-empty", `field "placements[0].token_id": must not be empty`},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			_, err := mapdef.Load(filepath.Join("testdata/invalid", c.dir, "map.json"))
@@ -703,5 +706,20 @@ func TestAMapNameOfExactlyTheBoundLoads(t *testing.T) {
 	}
 	if len(m.Name) != 256 {
 		t.Errorf("Name is %d bytes, want 256", len(m.Name))
+	}
+}
+
+// VTT-279
+func TestAMapIDOfExactlyTheBoundLoads(t *testing.T) {
+	id, token := strings.Repeat("i", 128), strings.Repeat("t", 128)
+	p := filepath.Join(t.TempDir(), "hall.json")
+	writeFile(t, p, fmt.Sprintf(`{"format_version":1,"id":%q,"name":"Hall","grid_width":1,
+		"grid_height":1,"tiles":{"0,0":"stone"},"placements":[{"token_id":%q,"actor_id":"a","x":0,"y":0}]}`, id, token))
+	m, err := mapdef.Load(p)
+	if err != nil {
+		t.Fatalf("a 128-byte id and token id (the bound) were refused: %v", err)
+	}
+	if m.ID != id || len(m.Placements) != 1 || m.Placements[0].TokenID != token {
+		t.Fatalf("loaded id %d bytes, placements %+v", len(m.ID), m.Placements)
 	}
 }

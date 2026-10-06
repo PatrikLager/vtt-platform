@@ -1112,6 +1112,72 @@ func TestASessionWhoseNameExceedsTheBoundAppendsNothing(t *testing.T) {
 	}
 }
 
+// VTT-277 VTT-161 VTT-162
+func TestAnActorWhoseIDExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+	addActor := func(req, id string) {
+		sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_AddActor{
+			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: id, Name: "Bat",
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}}})
+	}
+
+	addActor("long", strings.Repeat("a", 129))
+	r := readResult(t, dmConn)
+	if want := "engine: actor id must be at most 128 bytes, got 129"; r.Ok || r.Error != want {
+		t.Fatalf("129-byte id: ok=%v error=%q, want the fold's refusal %q", r.Ok, r.Error, want)
+	}
+	if got := f.head(t); got != head {
+		t.Fatalf("a refused add_actor moved the log head from %d to %d", head, got)
+	}
+
+	agentConn := f.dial(f.agentToken, head)
+	atCap := strings.Repeat("a", 128)
+	addActor("cap", atCap)
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("128-byte id: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+	if got := readEvent(t, agentConn).GetActorAdded().GetActor().GetActorId(); got != atCap {
+		t.Fatalf("appended id is %d bytes, want the 128 sent", len(got))
+	}
+}
+
+// VTT-277 VTT-278 VTT-161 VTT-162
+func TestATokenWhoseIDExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+	place := func(req, id string) {
+		sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_PlaceToken{
+			PlaceToken: &vttv1.PlaceToken{TokenId: id, SceneId: "scn1", ActorId: "a1",
+				Position: &vttv1.GridPosition{X: 0, Y: 0}}}})
+	}
+
+	for _, tc := range []struct{ id, want string }{
+		{strings.Repeat("t", 129), "engine: token id must be 1-128 bytes, got 129"},
+		{"", "engine: token id must be 1-128 bytes, got 0"},
+	} {
+		place("refused", tc.id)
+		if r := readResult(t, dmConn); r.Ok || r.Error != tc.want {
+			t.Fatalf("%d-byte id: ok=%v error=%q, want the fold's refusal %q", len(tc.id), r.Ok, r.Error, tc.want)
+		}
+		if got := f.head(t); got != head {
+			t.Fatalf("a refused place_token moved the log head from %d to %d", head, got)
+		}
+	}
+
+	agentConn := f.dial(f.agentToken, head)
+	atCap := strings.Repeat("t", 128)
+	place("cap", atCap)
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("128-byte id: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+	if got := readEvent(t, agentConn).GetTokenPlaced().GetTokenId(); got != atCap {
+		t.Fatalf("appended id is %d bytes, want the 128 sent", len(got))
+	}
+}
+
 // TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
 // layer (Task 3) precedent RemoveCondition already set: the gateway forwards
 // add_narration/upsert_note/delete_note through the SAME single-Append path

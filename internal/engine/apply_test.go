@@ -1063,3 +1063,90 @@ func TestASessionWhoseNameExceedsTheBoundIsRefused(t *testing.T) {
 		t.Fatal("a refused session must leave the state as it was")
 	}
 }
+
+// VTT-277
+func TestASceneWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.SceneCreated{SceneId: strings.Repeat("s", 129), Name: "S",
+		GridWidth: 2, GridHeight: 2}))
+	want := "engine: scene id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused scene must leave the state as it was")
+	}
+}
+
+// VTT-277
+func TestAnActorWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: strings.Repeat("a", 129)}}))
+	want := "engine: actor id must be at most 128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused actor must leave the state as it was")
+	}
+}
+
+// VTT-277
+func TestATokenWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+	before := st.Snapshot()
+	err := engine.Apply(st, env(4, &vttv1.TokenPlaced{TokenId: strings.Repeat("t", 129), SceneId: "scn",
+		ActorId: "a1", Position: &vttv1.GridPosition{X: 1, Y: 1}}))
+	want := "engine: token id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused token must leave the state as it was")
+	}
+}
+
+// VTT-277
+func TestAnAdventureWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	st := seedScene(t)
+	before := st.Snapshot()
+	err := engine.Apply(st, env(3, &vttv1.AdventureLoaded{AdventureId: strings.Repeat("v", 129), Name: "A"}))
+	want := "engine: adventure id must be 1-128 bytes, got 129"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused adventure must leave the state as it was")
+	}
+}
+
+// VTT-278
+func TestAnEmptySceneTokenOrAdventureIDIsRefused(t *testing.T) {
+	cases := map[string]struct {
+		event *vttv1.Envelope
+		want  string
+	}{
+		"scene": {env(4, &vttv1.SceneCreated{SceneId: "", Name: "S", GridWidth: 2, GridHeight: 2}),
+			"engine: scene id must be 1-128 bytes, got 0"},
+		"token": {env(4, &vttv1.TokenPlaced{TokenId: "", SceneId: "scn", ActorId: "a1",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}}), "engine: token id must be 1-128 bytes, got 0"},
+		"adventure": {env(4, &vttv1.AdventureLoaded{AdventureId: "", Name: "A"}),
+			"engine: adventure id must be 1-128 bytes, got 0"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			st := seedScene(t)
+			must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+			before := st.Snapshot()
+			if err := engine.Apply(st, c.event); err == nil || err.Error() != c.want {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if !reflect.DeepEqual(before, st.Snapshot()) {
+				t.Fatal("a refused event must leave the state as it was")
+			}
+		})
+	}
+}

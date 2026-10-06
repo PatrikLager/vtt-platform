@@ -558,22 +558,42 @@ sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
 
 **Nothing ties a byte bound's copies to the engine's constant.**
-`client/src/fold.ts` holds each of the fold's ten bounds as a literal in a
-`checkLen` call, `internal/adventure/load.go` holds its own copies of
-`maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes` and `maxNameBytes`, and
-`internal/mapdef/load.go` its own `maxNameBytes`; each side's tests pin its own
-numbers (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`,
-`TestTheNameBoundMirrorsEngine`, `TestAMapNameOfExactlyTheBoundLoads`), so a
-bound changed in `internal/engine/apply.go` alone leaves every mirror stale and
-every mirror's own tests green. Only a move's reason and a name have a link, from
-the MCP tools' descriptions to `maxMoveReasonBytes` and `maxNameBytes`
-(`TestTheMoveToolStatesTheFoldsReasonBound`,
-`TestTheToolsStateTheFoldsNameBound`). Recipe: set `maxNoteTitleBytes`
-to 300 in `apply.go`; `go test ./internal/adventure/...` and `bun test
-client/test` stay green. No gate compares a copy with its constant, and no
-mutation operator changes two files. Labels: `outside the tool`. Closing it
-needs a test that reads each mirror's number against the engine's. Recorded
-2026-10-04 by the reason-bound report.
+`client/src/fold.ts` holds each of the fold's fourteen bounds as a literal in
+a `checkLen` call, `internal/adventure/load.go` holds its own copies of
+`maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes`, `maxNameBytes` and
+`maxIDBytes`, and `internal/mapdef/load.go` its own `maxNameBytes` and
+`maxIDBytes`; each side's tests pin its own numbers
+(`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`,
+`TestTheNameBoundMirrorsEngine`, `TestTheIDBoundMirrorsEngine`,
+`TestAMapNameOfExactlyTheBoundLoads`, `TestAMapIDOfExactlyTheBoundLoads`), so
+a bound changed in `internal/engine/apply.go` alone leaves every mirror stale
+and every mirror's own tests green. Only a move's reason, a name and an id
+have a link, from the MCP tools' descriptions to `maxMoveReasonBytes`,
+`maxNameBytes` and `maxIDBytes` (`TestTheMoveToolStatesTheFoldsReasonBound`,
+`TestTheToolsStateTheFoldsNameBound`, `TestTheToolsStateTheFoldsIDBound`).
+Recipe: set `maxNoteTitleBytes` to 300 in `apply.go`; `go test
+./internal/adventure/...` and `bun test client/test` stay green. No gate
+compares a copy with its constant, and no mutation operator changes two files.
+Labels: `outside the tool`. Closing it needs a test that reads each mirror's
+number against the engine's. Recorded 2026-10-04 by the reason-bound report.
+
+**A ruleset's names reach a `use_ability` refusal at any length.**
+`rules.Load` bounds no ability id and no resource, attribute or defense name,
+and `rules.Resolve` interpolates them into its refusals with `%q` (`has no
+resource %q required by ability %q's usage cost` and its siblings);
+`handleUseAbility` in `internal/gateway/ruleset.go` returns `err.Error()` as
+the result's error, so a ruleset author's text of any length reaches the
+issuer unclipped, where the map and art paths pass theirs through
+`artlib.Clip` or `artlib.BoundErr`. `internal/artlib/artlib.go`'s const-block
+doc listed this path as outstanding until the id bound cut that doc. Recipe:
+in a copy of `internal/rules/conformance/testdata/minimal-smoke-fail`, replace
+`"focus"` in `ruleset.json` and `abilities/big-move.json` with a 70,000-byte
+name; `rules.Load` accepts it, and `rules.Resolve` of `big-move` by an actor
+without that resource returns a 70,089-byte error (measured 2026-10-06 on
+`b9de835`'s `internal/rules`). No gate measures a refusal's size. Labels:
+`outside the tool`. Closing it needs a bound on a ruleset's names at load, or
+`Clip` at `Resolve`'s interpolations, and a test that reads the refusal off a
+real connection. Recorded 2026-10-06 by the id bound's review.
 
 **Nothing in the gate builds for another platform.** `task check`, the
 pre-commit and the pre-push hooks build and test for the machine they run on,

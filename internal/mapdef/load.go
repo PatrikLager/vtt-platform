@@ -125,6 +125,9 @@ func Load(path string) (*Map, error) { return loadAs(path, path) }
 // maxNameBytes mirrors internal/engine's bound on a name (SPEC-018).
 const maxNameBytes = 256
 
+// maxIDBytes mirrors internal/engine's bound on an id (SPEC-018).
+const maxIDBytes = 128
+
 // loadAs is Load with the name its errors carry (display) held separate
 // from the file they read (path) — see decodeStrict's doc comment for why
 // that separation exists and who uses it. Load itself passes the path for
@@ -143,6 +146,9 @@ func loadAs(path, display string) (*Map, error) {
 	if raw.FormatVersion != MapFormatVersion {
 		return nil, fieldErr(display, "format_version", fmt.Sprintf(
 			"declares %d; this server understands %d", raw.FormatVersion, MapFormatVersion))
+	}
+	if len(raw.ID) > maxIDBytes {
+		return nil, fieldErr(display, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
 	}
 
 	// cell_px, when the map declares one (art-is-a-flat-library design spec §6 as
@@ -206,7 +212,14 @@ func loadAs(path, display string) (*Map, error) {
 	}
 
 	placements := make([]Placement, 0, len(raw.Placements))
-	for _, p := range raw.Placements {
+	for i, p := range raw.Placements {
+		field := fmt.Sprintf("placements[%d].token_id", i)
+		if p.TokenID == "" {
+			return nil, fieldErr(display, field, "must not be empty")
+		}
+		if len(p.TokenID) > maxIDBytes {
+			return nil, fieldErr(display, field, fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(p.TokenID)))
+		}
 		placements = append(placements, Placement(p))
 	}
 	if err := CheckPlacementsNotInWalls(placements, raw.Tiles, raw.GridWidth, raw.GridHeight, errf); err != nil {
