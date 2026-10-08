@@ -154,3 +154,32 @@ func TestConditionAndAbilityIDsAtCapAreAccepted(t *testing.T) {
 		t.Fatalf("the 128-byte condition was not stored whole: %+v", got)
 	}
 }
+
+// VTT-289 VTT-290 VTT-291 VTT-293
+func TestCommandAndFileIDsAtCapAreAccepted(t *testing.T) {
+	id := func(c string) string { return strings.Repeat(c, 128) }
+	object := strings.Repeat("é", 64)
+	st := engine.NewState()
+	started := env(1, &vttv1.SessionStarted{Name: "n"})
+	started.SessionId = id("s")
+	must(t, engine.Apply(st, started))
+	must(t, engine.Apply(st, env(2, &vttv1.SceneCreated{SceneId: "scn", Name: "S", GridWidth: 2, GridHeight: 2,
+		Objects: []*vttv1.SceneObject{{ObjectId: object, Kind: "k", At: &vttv1.GridPosition{}, Width: 1, Height: 1}}})))
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1", ModuleId: id("m"),
+		Resources:  map[string]*vttv1.Resource{id("r"): {Current: 1, Max: 1}},
+		Attributes: map[string]int32{id("t"): 1}}})))
+	must(t, engine.Apply(st, env(4, &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: id("p"),
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})))
+	if got := st.Actors["a1"].GetControllerIds(); len(got) != 1 || got[0] != id("p") {
+		t.Fatalf("the 128-byte participant was not stored whole: %v", got)
+	}
+	must(t, engine.Apply(st, env(5, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: id("p")})))
+	must(t, engine.Apply(st, env(6, &vttv1.TokenPlaced{TokenId: "t1", SceneId: "scn", ActorId: "a1",
+		Position: &vttv1.GridPosition{X: 1, Y: 1}})))
+	must(t, engine.Apply(st, env(7, &vttv1.TokenMoved{TokenId: "t1", SceneId: id("v"), To: &vttv1.GridPosition{}})))
+	a := st.Actors["a1"]
+	if st.Sessions[0].ID != id("s") || st.Scenes["scn"].Objects[0].ObjectID != object || a.GetModuleId() != id("m") ||
+		a.GetResources()[id("r")] == nil || a.GetAttributes()[id("t")] != 1 || len(a.GetControllerIds()) != 0 {
+		t.Fatalf("the 128-byte values were not stored whole")
+	}
+}

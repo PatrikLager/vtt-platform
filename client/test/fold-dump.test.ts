@@ -167,7 +167,7 @@ test("every actor and token is stored under a key equal to its own id", () => {
     env(4, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
     env(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
     env(6, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 2, y: 2 } } }),
-    env(7, { tokenMoved: { tokenId: "t1", to: { x: 3, y: 3 } } }),
+    env(7, { tokenMoved: { tokenId: "t1", sceneId: "s1", to: { x: 3, y: 3 } } }),
   ]);
 
   for (const [key, actor] of Object.entries(st.Actors)) expect(actor.actorId).toBe(key);

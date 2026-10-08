@@ -58,10 +58,11 @@ walk (`loadMapsDir`) runs on each `maps/*.json` file with the same art
 directory, so what `LoadInstalled` refuses at boot it refuses on demand, with
 the same reason; an id that is not one plain filename, an id longer than 128
 bytes of UTF-8 (SPEC-018), a filename that differs from the id the file
-declares, a placement whose token id is empty or longer than 128 bytes, and a
-file that does not compile are refused there. The walk's own `os.Stat` of
-each entry and its skipping of a directory are not run on demand.
-`handleMaps` reads the set under the read lock (SPEC-012).
+declares, a placement whose token id is empty or longer than 128 bytes, an
+object whose id is longer than 128 bytes of UTF-8 (SPEC-018), empty or
+repeated in the map, and a file that does not compile are refused there. The
+walk's own `os.Stat` of each entry and its skipping of a directory are not run
+on demand. `handleMaps` reads the set under the read lock (SPEC-012).
 
 **What reaches a client from a refusal.** Four texts are `map.go`'s own: the
 two answers with no maps directory, the not-installed translation, and the
@@ -141,9 +142,9 @@ and the boot walk is `cmd/vtt`'s `loadMapsDir`.
 A DM, an operator and a tool author are bound by these:
 
 - A map is installed by writing `maps/<id>.json`, with an id of at most 128
-  bytes of UTF-8, into the campaign, and enters play by `load_map` with that
-  id, with no restart; a map edited on disk after it joined the set is not
-  read again.
+  bytes of UTF-8 and object ids of 1 to 128 bytes of UTF-8, distinct within
+  the map, into the campaign, and enters play by `load_map` with that id, with
+  no restart; a map edited on disk after it joined the set is not read again.
 - An installed map the boot walk would refuse is refused on demand, with the
   same reason.
 - A second load of a scene id already in play is refused; the remedy is a
@@ -163,4 +164,5 @@ A DM, an operator and a tool author are bound by these:
 ## Requirements
 
 VTT-163, VTT-164, VTT-165, VTT-166, VTT-167, VTT-168, VTT-169, VTT-170,
-VTT-171, VTT-172, VTT-173, VTT-174, VTT-175, VTT-279, VTT-280.
+VTT-171, VTT-172, VTT-173, VTT-174, VTT-175, VTT-279, VTT-280, VTT-294,
+VTT-295.

@@ -279,7 +279,7 @@ func threeRoomLog() []*vttv1.Envelope {
 		return t
 	}
 
-	out := []*vttv1.Envelope{{Sequence: 1, EventId: "e",
+	out := []*vttv1.Envelope{{Sequence: 1, EventId: "e", SessionId: "sess-1",
 		Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "n"}}}}
 	seq := int64(1)
 	add := func(p any) {
@@ -361,6 +361,7 @@ func perchFixtureLog() []*vttv1.Envelope {
 		env := &vttv1.Envelope{Sequence: e.seq, EventId: "e"}
 		switch p := e.p.(type) {
 		case *vttv1.Envelope_SessionStarted:
+			env.SessionId = "sess-1"
 			env.Payload = p
 		case *vttv1.Envelope_SceneCreated:
 			env.Payload = p
@@ -423,7 +424,7 @@ func TestASeatIsSentNothingForAnEventWhoseFoldFails(t *testing.T) {
 		return &vttv1.Envelope{Sequence: seq, EventId: "e", Payload: &vttv1.Envelope_NarrationAdded{
 			NarrationAdded: &vttv1.NarrationAdded{Text: "The door creaks."}}}
 	}
-	start := &vttv1.Envelope{Sequence: 1, EventId: "e", Payload: &vttv1.Envelope_SessionStarted{
+	start := &vttv1.Envelope{Sequence: 1, EventId: "e", SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{
 		SessionStarted: &vttv1.SessionStarted{Name: "n"}}}
 
 	s := newSeat(player, 0)

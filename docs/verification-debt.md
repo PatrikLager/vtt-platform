@@ -558,28 +558,37 @@ sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
 
 **Nothing ties a byte bound's copies to the engine's constant.**
-`client/src/fold.ts` holds each of the fold's sixteen bounds as a literal in a
-`checkLen` call, `internal/adventure/load.go` holds its own copies of
+`client/src/fold.ts` holds each of the fold's twenty-four bounds as a literal
+in a `checkLen` call, `internal/adventure/load.go` holds its own copies of
 `maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes`, `maxNameBytes` and
 `maxIDBytes`, `internal/mapdef/load.go` its own `maxNameBytes` and
-`maxIDBytes`, and `internal/rules/load.go` its own `maxIDBytes`, which the
-ruleset schemas state too; each side's tests pin its own numbers
+`maxIDBytes`, the second also bounding a scene object's id for both loaders
+through `CheckObjectIDs`, and `internal/rules/load.go` its own `maxIDBytes`,
+which the ruleset schemas state too; each side's tests pin its own numbers
 (`fold-rejections.test.ts`, `TestSizeCapsMirrorEngine`,
 `TestTheNameBoundMirrorsEngine`, `TestTheIDBoundMirrorsEngine` in
 `internal/adventure` and in `internal/rules`, `TestTheSchemasStateTheIDBound`,
-`TestAMapNameOfExactlyTheBoundLoads`, `TestAMapIDOfExactlyTheBoundLoads`), so
-a bound changed in `internal/engine/apply.go` alone leaves every mirror stale
-and every mirror's own tests green, save that
-`TestARulesetAtTheBoundResolvesToEventsTheFoldAccepts` reds when the engine's
-id bound falls below `internal/rules`' copy. Only a move's reason, a name and
-an id have a link, from the MCP tools' descriptions to `maxMoveReasonBytes`,
-`maxNameBytes` and `maxIDBytes` (`TestTheMoveToolStatesTheFoldsReasonBound`,
-`TestTheToolsStateTheFoldsNameBound`, `TestTheToolsStateTheFoldsIDBound`).
-Recipe: set `maxNoteTitleBytes` to 300 in `apply.go`; `go test
-./internal/adventure/...` and `bun test client/test` stay green. No gate
-compares a copy with its constant, and no mutation operator changes two files.
-Labels: `outside the tool`. Closing it needs a test that reads each mirror's
-number against the engine's. Recorded 2026-10-04 by the reason-bound report.
+`TestAMapNameOfExactlyTheBoundLoads`, `TestAMapIDOfExactlyTheBoundLoads`,
+`TestAnObjectIDOfExactlyTheBoundLoads`), so a bound changed in
+`internal/engine/apply.go` alone leaves every mirror stale and every mirror's
+own tests green, save that the tests in `internal/rules` and
+`internal/adventure` that fold a loader's at-bound output through
+`engine.Apply` (`TestARulesetAtTheBoundResolvesToEventsTheFoldAccepts`,
+`TestQARuleWhatTheLoaderAcceptsAtTheBoundTheFoldAccepts`,
+`TestQAIDAnAdventureWhoseIDsAreAtTheBoundLoadsCompilesAndFolds`,
+`TestQACmdAnAdventureSceneWithObjectIDsUpToTheBoundLoadsCompilesAndFolds` and
+`TestQACmdAMapWithObjectIDsUpToTheBoundCompilesAndFolds`) red when the
+engine's id bound falls below the loaders' copies. Only a move's reason, a
+name, an id and an actor's module id and keys have a link, from the MCP tools'
+descriptions to `maxMoveReasonBytes`, `maxNameBytes` and `maxIDBytes`
+(`TestTheMoveToolStatesTheFoldsReasonBound`,
+`TestTheToolsStateTheFoldsNameBound`, `TestTheToolsStateTheFoldsIDBound`,
+`TestTheToolsStateTheFoldsBoundOnAnActorsModuleAndKeys`). Recipe: set
+`maxNoteTitleBytes` to 300 in `apply.go`; `go test ./internal/adventure/...`
+and `bun test client/test` stay green. No gate compares a copy with its
+constant, and no mutation operator changes two files. Labels: `outside the
+tool`. Closing it needs a test that reads each mirror's number against the
+engine's. Recorded 2026-10-04 by the reason-bound report.
 
 **A ruleset's names reach a `use_ability` refusal at any length.**
 `rules.Load` bounds no ability id and no resource, attribute or defense name,

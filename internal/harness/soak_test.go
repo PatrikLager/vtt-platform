@@ -321,7 +321,8 @@ func (w *soakWorld) toEnvelope(name string, cmd *vttv1.ClientCommand) *vttv1.Env
 	switch c := cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_MoveToken:
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
-			TokenId: c.MoveToken.GetTokenId(), To: c.MoveToken.GetTo(),
+			TokenId: c.MoveToken.GetTokenId(), SceneId: w.st.Tokens[c.MoveToken.GetTokenId()].SceneID,
+			To: c.MoveToken.GetTo(),
 		}}
 	case *vttv1.ClientCommand_LoadMap:
 		// The real server reads the map off disk and compiles it
@@ -356,6 +357,7 @@ func (w *soakWorld) toEnvelope(name string, cmd *vttv1.ClientCommand) *vttv1.Env
 			ActorId: c.PlaceToken.GetActorId(), Position: c.PlaceToken.GetPosition(),
 		}}
 	case *vttv1.ClientCommand_StartSession:
+		env.SessionId = fmt.Sprintf("sess-%d", w.seq)
 		env.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: c.StartSession.GetName()}}
 	case *vttv1.ClientCommand_EndSession:
 		env.Payload = &vttv1.Envelope_SessionEnded{SessionEnded: &vttv1.SessionEnded{}}

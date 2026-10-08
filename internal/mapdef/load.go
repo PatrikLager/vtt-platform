@@ -56,8 +56,8 @@ type ObjectJSON struct {
 }
 
 // ToObject converts the wire At/Size shape into Object's X/Y/W/H fields. Pure
-// renaming, no validation — CheckObjectFootprints (below) is what a caller
-// runs against the result before trusting it.
+// renaming, no validation — CheckObjectIDs and CheckObjectFootprints (below)
+// are what a caller runs against the result before trusting it.
 func (o ObjectJSON) ToObject() Object {
 	return Object{
 		ID: o.ID, Kind: o.Kind,
@@ -203,6 +203,9 @@ func loadAs(path, display string) (*Map, error) {
 	objects := make([]Object, 0, len(raw.Objects))
 	for _, o := range raw.Objects {
 		objects = append(objects, o.ToObject())
+	}
+	if err := CheckObjectIDs(objects, errf); err != nil {
+		return nil, err
 	}
 	if err := CheckObjectFootprints(objects, raw.GridWidth, raw.GridHeight, errf); err != nil {
 		return nil, err
@@ -432,6 +435,26 @@ func CheckObjectFootprints(objs []Object, w, h int32, errf FieldErrFunc) error {
 			int64(o.Y)+int64(o.H) > int64(h) {
 			return errf(field+".at", "places the object outside the grid")
 		}
+	}
+	return nil
+}
+
+// CheckObjectIDs refuses an object id that is empty, repeated, or longer than
+// maxIDBytes (SPEC-018).
+func CheckObjectIDs(objs []Object, errf FieldErrFunc) error {
+	seen := make(map[string]bool, len(objs))
+	for i, o := range objs {
+		field := fmt.Sprintf("objects[%d].id", i)
+		if o.ID == "" {
+			return errf(field, "must not be empty")
+		}
+		if len(o.ID) > maxIDBytes {
+			return errf(field, fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(o.ID)))
+		}
+		if seen[o.ID] {
+			return errf(field, fmt.Sprintf("duplicate object id %q", o.ID))
+		}
+		seen[o.ID] = true
 	}
 	return nil
 }

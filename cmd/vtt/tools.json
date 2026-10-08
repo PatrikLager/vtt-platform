@@ -48,7 +48,7 @@
               "additionalProperties": {
                 "type": "integer"
               },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
               "type": "object"
             },
             "controllerId": {
@@ -75,7 +75,7 @@
               "type": "object"
             },
             "moduleId": {
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8; a longer one refuses the whole command.",
               "type": "string"
             },
             "name": {
@@ -98,7 +98,7 @@
                 ],
                 "type": "object"
               },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
               "type": "object"
             }
           },

@@ -338,17 +338,18 @@ blocked.
 
 **`at`, `size` and `art` must all be present.** `size` has no default — omit
 it and it reads as `[0, 0]`, which is refused as a footprint smaller than
-1x1 (§10 rule 5). Write `[1, 1]` explicitly for a single-square object.
+1x1 (§10 rule 7). Write `[1, 1]` explicitly for a single-square object.
 
 `rot` defaults to `0`, and `blocks_sight` and `blocks_move` both default to
 `false` — so an object that declares neither is pure decoration that a token
 walks straight through and sees straight past. If you want it solid, say so.
 
-`id` and `kind` are not validated: nothing refuses an empty or duplicated
-`id`, and `kind` is a free string the platform never interprets (§5). Give
-them sensible values anyway — `id` is how a later event will refer to this
-object, and `kind` is what a game master reads when asking what is in the
-room.
+`kind` is not validated: it is a free string the platform never interprets.
+`id` is: every object needs one, at most 128 bytes of UTF-8 and unlike every
+other object's `id` in the map, and a map with an empty, longer or repeated
+object `id` is refused when it loads (§10). Give `kind` a sensible value
+anyway — `id` is how a later event will refer to this object, and `kind` is
+what a game master reads when asking what is in the room.
 
 An object's `art` must name a picture declared in the map's pack — there is
 no standard-vocabulary fallback for objects the way there is for tiles,
@@ -608,9 +609,11 @@ table. In order, roughly:
    no nature for the art to attach to.
 7. Every object's full **footprint** (not just its anchor square) must lie
    inside the grid, and its `size` must be at least `[1, 1]`.
-8. Every `placements` entry must name a square inside the grid, and that
+8. Every object's `id` must be non-empty, at most 128 bytes of UTF-8, and
+   distinct within the map.
+9. Every `placements` entry must name a square inside the grid, and that
    square must not currently be a wall or a closed door.
-9. `tiles` must hold no more than **3600** entries — see §12.
+10. `tiles` must hold no more than **3600** entries — see §12.
 
 **Art that does not resolve is NOT in this list, and that is deliberate.** An
 `overrides` value or an `objects[].art` naming a picture that is not installed

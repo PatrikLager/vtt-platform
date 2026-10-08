@@ -14,6 +14,7 @@ func foldEnv(seq int64, id string, payload any) *vttv1.Envelope {
 	e := &vttv1.Envelope{EventId: id, Sequence: seq, SessionId: "s1"}
 	switch p := payload.(type) {
 	case *vttv1.SessionStarted:
+		e.SessionId = "sess-1"
 		e.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: p}
 	case *vttv1.SceneCreated:
 		e.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: p}

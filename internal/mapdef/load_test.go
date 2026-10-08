@@ -72,7 +72,7 @@ func TestObjectFieldsSurviveTheJSONToMapShapeConversion(t *testing.T) {
 
 // Every refusal in spec §4.4 gets a case. Table-driven over fixture dirs,
 // following internal/rules/testdata/invalid-v2/'s pattern.
-// VTT-275 VTT-279 VTT-280
+// VTT-275 VTT-279 VTT-280 VTT-294 VTT-295
 func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 	for _, c := range []struct{ dir, want string }{
 		{"missing-square", "no tile"},
@@ -131,6 +131,9 @@ func TestInvalidMapsAreRefusedWithAUsefulReason(t *testing.T) {
 		{"id-too-long", `field "id": must be at most 128 bytes, got 129`},
 		{"placement-token-id-too-long", `field "placements[0].token_id": must be at most 128 bytes, got 129`},
 		{"placement-token-id-empty", `field "placements[0].token_id": must not be empty`},
+		{"object-id-too-long", `field "objects[0].id": must be at most 128 bytes, got 129`},
+		{"object-id-empty", `field "objects[0].id": must not be empty`},
+		{"duplicate-object-id", `field "objects[1].id": duplicate object id "boulder-1"`},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			_, err := mapdef.Load(filepath.Join("testdata/invalid", c.dir, "map.json"))
@@ -721,5 +724,21 @@ func TestAMapIDOfExactlyTheBoundLoads(t *testing.T) {
 	}
 	if m.ID != id || len(m.Placements) != 1 || m.Placements[0].TokenID != token {
 		t.Fatalf("loaded id %d bytes, placements %+v", len(m.ID), m.Placements)
+	}
+}
+
+// VTT-294
+func TestAnObjectIDOfExactlyTheBoundLoads(t *testing.T) {
+	id := strings.Repeat("é", 64)
+	p := filepath.Join(t.TempDir(), "hall.json")
+	writeFile(t, p, fmt.Sprintf(`{"format_version":1,"id":"hall","name":"Hall","grid_width":1,"grid_height":1,
+		"tiles":{"0,0":"stone"},"objects":[{"id":%q,"kind":"boulder","at":[0,0],"size":[1,1],"rot":0,
+		"blocks_sight":false,"blocks_move":false,"art":"boulder-mossy-2"}]}`, id))
+	m, err := mapdef.Load(p)
+	if err != nil {
+		t.Fatalf("a 128-byte object id (the bound) was refused: %v", err)
+	}
+	if len(m.Objects) != 1 || m.Objects[0].ID != id {
+		t.Fatalf("loaded objects %+v, want the 128-byte id whole", m.Objects)
 	}
 }

@@ -64,6 +64,7 @@ function apply(st: State, env: Envelope): void {
         throw new FoldError(`session already open at sequence ${seq}`);
       }
       checkLen("session name", p.value.name, 0, 256);
+      checkLen("session id", env.sessionId, 1, 128);
       // ID comes from the ENVELOPE, not the payload.
       st.Sessions.push({ ID: env.sessionId, Name: p.value.name, StartSeq: seq, EndSeq: 0 });
       return;
@@ -79,6 +80,12 @@ function apply(st: State, env: Envelope): void {
       checkLen("scene id", v.sceneId, 1, 128);
       if (st.Scenes[v.sceneId]) throw new FoldError(`duplicate scene "${v.sceneId}"`);
       checkLen("scene name", v.name, 0, 256);
+      const objectIds = new Set<string>();
+      for (const o of v.objects) {
+        checkLen("object id", o.objectId, 1, 128);
+        if (objectIds.has(o.objectId)) throw new FoldError(`duplicate object "${o.objectId}" in scene "${v.sceneId}"`);
+        objectIds.add(o.objectId);
+      }
       // Translate the wire terrain into engine-shaped Tile/SceneObject,
       // mirroring apply.go's SceneCreated arm. tiles/objects may be empty —
       // a terrain-free scene is legal (Patrik's ruling 2026-08-13) — but
@@ -163,6 +170,9 @@ function apply(st: State, env: Envelope): void {
         );
       }
       checkLen("actor name", a.name, 0, 256);
+      checkLen("module id", a.moduleId, 0, 128);
+      checkKeys("resource name", a.resources);
+      checkKeys("attribute name", a.attributes);
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
@@ -215,7 +225,7 @@ function apply(st: State, env: Envelope): void {
       if (!tok) throw new FoldError(`unknown token "${v.tokenId}" moved`);
       if (!v.to) throw new FoldError(`token "${v.tokenId}" moved with no destination`);
       checkLen("move reason", v.reason, 0, 256);
-      // `from` and `sceneId` are ignored entirely, exactly as Go does.
+      checkLen("move scene id", v.sceneId, 1, 128);
       tok.X = v.to.x;
       tok.Y = v.to.y;
       return;
@@ -496,18 +506,19 @@ function ensureOpenDoors(sc: Scene): Record<string, boolean> {
   return sc.OpenDoors;
 }
 
-/**
- * requireControlTarget resolves the actor a control event names, rejecting an
- * unknown actor and an empty participant — the same two rejections
- * internal/engine's controlTarget makes, for the same reasons: an event naming
- * something absent leaves the log meaning nothing, and "" in the set would make
- * controllerIds non-empty while controllerId mirrors an empty string.
- */
+/** requireControlTarget mirrors internal/engine's controlTarget (SPEC-018). */
 function requireControlTarget(st: State, actorId: string, participantId: string, what: string): Actor {
   if (participantId === "") throw new FoldError(`${what} requires a participant id`);
+  checkLen("participant id", participantId, 0, 128);
   const a = st.Actors[actorId];
   if (!a) throw new FoldError(`${what} names unknown actor "${actorId}"`);
   return a;
+}
+
+function checkKeys(what: string, m: Record<string, unknown>): void {
+  const keys = Object.keys(m);
+  if (keys.includes("")) checkLen(what, "", 1, 128);
+  for (const k of keys) checkLen(what, k, 0, 128);
 }
 
 function checkLen(what: string, s: string, min: number, max: number): void {

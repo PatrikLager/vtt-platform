@@ -475,3 +475,21 @@ func TestAddActorAndPlaceTokenStateTheIDBound(t *testing.T) {
 		}
 	}
 }
+
+// VTT-296
+func TestAddActorStatesTheBoundOnItsModuleAndKeys(t *testing.T) {
+	actor, ok := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor has no actor property")
+	}
+	props := actor["properties"].(map[string]any)
+	for _, field := range []string{"moduleId", "attributes", "resources"} {
+		p, ok := props[field].(map[string]any)
+		if !ok {
+			t.Fatalf("add_actor has no %s property", field)
+		}
+		if desc, _ := p["description"].(string); !strings.Contains(desc, "At most 128 bytes") {
+			t.Fatalf("add_actor %s description = %q, want it to state the bound", field, desc)
+		}
+	}
+}

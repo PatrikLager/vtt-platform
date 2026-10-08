@@ -47,7 +47,7 @@ func TestStepLinesAreEmittedAsTheRunProgresses(t *testing.T) {
 
 		seq := int64(0)
 		events := []*vttv1.Envelope{
-			{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
+			{EventId: "e1", Sequence: 1, SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{
 				SessionStarted: &vttv1.SessionStarted{Name: "s"}}},
 			{EventId: "e2", Sequence: 2, Payload: &vttv1.Envelope_SceneCreated{
 				SceneCreated: &vttv1.SceneCreated{SceneId: "scn-1", Name: "H", GridWidth: 4, GridHeight: 4}}},
@@ -116,9 +116,9 @@ func TestSingleDenialLeakDoesNotClaimARange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		leak := &vttv1.Envelope{EventId: "leaked", Sequence: 1,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}}}
 		accepted := &vttv1.Envelope{EventId: "accepted", Sequence: 2,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}}
 		world["player"].send = denySend("not authorized", world, leak, "dm", "player")
 		world["dm"].send = okSend(world, 2, accepted, "dm", "player")
 
@@ -201,7 +201,7 @@ func TestScenarioReportCountersMatchStepResults(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm")}
 		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
 		world["dm"].send = okSend(world, 1, accepted, "dm")
 
 		sc := &harness.Scenario{
@@ -241,7 +241,7 @@ func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		sent := 0
 		events := []*vttv1.Envelope{
-			{EventId: "e1", Sequence: 1, Payload: &vttv1.Envelope_SessionStarted{
+			{EventId: "e1", Sequence: 1, SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{
 				SessionStarted: &vttv1.SessionStarted{Name: "s"}}},
 			{EventId: "e2", Sequence: 2, Payload: &vttv1.Envelope_SceneCreated{
 				SceneCreated: &vttv1.SceneCreated{SceneId: "scn-1", Name: "H", GridWidth: 4, GridHeight: 4}}},
@@ -457,7 +457,7 @@ func TestEveryDialledConnectionIsClosed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
 		world["dm"].send = okSend(world, 1, accepted, "dm", "player")
 
 		sc := &harness.Scenario{
@@ -493,7 +493,7 @@ func TestAuthoredRequestIdIsPreserved(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm")}
 		var seenIDs []string
 		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
 		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 			seenIDs = append(seenIDs, cmd.GetRequestId())
 			broadcast(world, accepted, "dm")
@@ -527,7 +527,7 @@ func TestUnsetRequestIdGetsTheStepDefault(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm")}
 		var seen string
 		accepted := &vttv1.Envelope{EventId: "e1", Sequence: 1,
-			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s"}}}
 		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 			seen = cmd.GetRequestId()
 			broadcast(world, accepted, "dm")

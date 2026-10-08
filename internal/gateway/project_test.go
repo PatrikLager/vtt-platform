@@ -35,6 +35,7 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 	env := &vttv1.Envelope{Sequence: seq}
 	switch p := payload.(type) {
 	case *vttv1.SessionStarted:
+		env.SessionId = "sess-1"
 		env.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: p}
 	case *vttv1.SessionEnded:
 		env.Payload = &vttv1.Envelope_SessionEnded{SessionEnded: p}
@@ -3036,7 +3037,7 @@ func testimonyLog(extra ...proto.Message) []step {
 var testimonyDoor = &vttv1.GridPosition{X: 3, Y: 1}
 
 // rogueLeaves takes the rogue behind the shut door.
-var rogueLeaves = &vttv1.TokenMoved{TokenId: "t-rogue", To: &vttv1.GridPosition{X: 4, Y: 1}}
+var rogueLeaves = &vttv1.TokenMoved{TokenId: "t-rogue", SceneId: "s", To: &vttv1.GridPosition{X: 4, Y: 1}}
 
 // runTestimony projects steps for v as a seat does, each event stamped with
 // the metadata a log carries, so a forwarded frame can be told from a built one.

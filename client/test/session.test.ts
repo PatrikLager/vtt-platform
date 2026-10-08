@@ -139,7 +139,7 @@ test("reconnect redials and resumes from the last folded sequence", async () => 
   let pendingAfter = 0n;
   const all = [
     ...world,
-    { event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 3 } }) }) },
+    { event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", sceneId: "s1", to: { x: 3, y: 3 } }) }) },
   ];
   const server = Bun.serve({
     port: 0,

@@ -46,3 +46,35 @@ func TestTheToolsStateTheFoldsIDBound(t *testing.T) {
 		t.Fatalf("tools.json holds %d of add_actor and place_token, want both", found)
 	}
 }
+
+// VTT-296
+func TestTheToolsStateTheFoldsBoundOnAnActorsModuleAndKeys(t *testing.T) {
+	raw, err := os.ReadFile("../../contract/gen/tools/tools.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type prop struct {
+		Description string          `json:"description"`
+		Properties  map[string]prop `json:"properties"`
+	}
+	var tools []struct {
+		Name        string `json:"name"`
+		InputSchema prop   `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("At most %d bytes", maxIDBytes)
+	for _, tl := range tools {
+		if tl.Name != "add_actor" {
+			continue
+		}
+		for _, field := range []string{"moduleId", "attributes", "resources"} {
+			if desc := tl.InputSchema.Properties["actor"].Properties[field].Description; !strings.Contains(desc, want) {
+				t.Errorf("add_actor's %s description = %q, want it to state %q", field, desc, want)
+			}
+		}
+		return
+	}
+	t.Fatal("tools.json holds no add_actor")
+}

@@ -146,8 +146,8 @@ func denySend(errMsg string, world map[string]*fakeConn, leakEnv *vttv1.Envelope
 
 func sessionStartedEnv(id string) *vttv1.Envelope {
 	return &vttv1.Envelope{
-		EventId: id,
-		Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s1"}},
+		EventId:   id,
+		SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s1"}},
 	}
 }
 
@@ -525,7 +525,7 @@ func runMiniScenario(t *testing.T, probes []harness.Probe) *harness.Report {
 	world := map[string]*fakeConn{"dm": dm}
 
 	dm.send = sequencedSend(world, []scriptedResult{
-		{seq: 1, env: &vttv1.Envelope{EventId: "e1", Payload: &vttv1.Envelope_SessionStarted{
+		{seq: 1, env: &vttv1.Envelope{EventId: "e1", SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{
 			SessionStarted: &vttv1.SessionStarted{Name: "s1"}}}, to: []string{"dm"}},
 		{seq: 2, env: &vttv1.Envelope{EventId: "e2", Payload: &vttv1.Envelope_SceneCreated{
 			SceneCreated: &vttv1.SceneCreated{SceneId: "scn-1", Name: "Hall", GridWidth: 10, GridHeight: 10}}}, to: []string{"dm"}},
@@ -1012,7 +1012,7 @@ func loadMapBatchWorld() map[string]*fakeConn {
 			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 2}, nil
 		case 3:
 			broadcast(world, &vttv1.Envelope{EventId: "e4", Sequence: 4,
-				Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s1"}}}, "dm")
+				SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "s1"}}}, "dm")
 			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 4}, nil
 		}
 		return nil, fmt.Errorf("loadMapBatchWorld: no scripted result for call %d", call)

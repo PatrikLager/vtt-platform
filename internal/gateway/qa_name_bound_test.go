@@ -64,6 +64,7 @@ func qaNameEvent(kind, name string) *vttv1.Envelope {
 	env := &vttv1.Envelope{EventId: "qa-name-event", Sequence: 1}
 	switch kind {
 	case "SessionStarted":
+		env.SessionId = "sess-1"
 		env.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: name}}
 	case "SceneCreated":
 		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{

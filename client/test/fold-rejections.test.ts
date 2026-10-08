@@ -487,7 +487,7 @@ test("a move reason is measured in UTF-8 bytes, not characters", () => {
 
 // VTT-264
 test("a move reason of exactly 256 bytes is ACCEPTED", () => {
-  const st = fold([...placeable, placed, env(5, { tokenMoved: { tokenId: "t1", to: { x: 2, y: 2 }, reason: "é".repeat(128) } })]);
+  const st = fold([...placeable, placed, env(5, { tokenMoved: { tokenId: "t1", sceneId: "s1", to: { x: 2, y: 2 }, reason: "é".repeat(128) } })]);
   expect(st.Tokens["t1"]!.X).toBe(2);
 });
 
@@ -634,5 +634,115 @@ test("condition and ability ids of exactly 128 bytes are ACCEPTED", () => {
     env(5, { abilityUsed: { actorId: "a1", abilityId: "b".repeat(128) } }),
   ]);
   expect(st.Conditions["a1"]![0]!.ID).toBe("é".repeat(64));
+});
+
+// --- command and file ids ---------------------------------------------------
+
+const placedT1 = [...placeable, env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } })];
+const objectAt = (objectId: string, x: number) => ({ objectId, kind: "k", at: { x, y: 0 }, width: 1, height: 1 });
+const sceneWith = (...ids: string[]) =>
+  env(4, { sceneCreated: { sceneId: "s2", name: "S", gridWidth: 4, gridHeight: 4, objects: ids.map((id, i) => objectAt(id, i)) } });
+
+// VTT-289
+test("a participant id longer than 128 bytes is rejected in a grant", () => {
+  rejects([...placeable, env(4, { actorControlGranted: { actorId: "a1", participantId: "p".repeat(129) } })],
+    "participant id exceeds 128 bytes");
+});
+
+// VTT-289
+test("a participant id longer than 128 bytes is rejected in a revoke", () => {
+  rejects([...placeable, env(4, { actorControlRevoked: { actorId: "a1", participantId: "p".repeat(129) } })],
+    "participant id exceeds 128 bytes");
+});
+
+// VTT-289
+test("a participant id is measured before its actor is looked up", () => {
+  rejects([started, env(2, { actorControlGranted: { actorId: "nobody", participantId: "p".repeat(129) } })],
+    "participant id exceeds 128 bytes");
+});
+
+// VTT-290
+test("a module id longer than 128 bytes is rejected", () => {
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", moduleId: "m".repeat(129) } } })],
+    "module id exceeds 128 bytes");
+});
+
+// VTT-290
+test("a resource name longer than 128 bytes is rejected", () => {
+  const resources = { pool_a: { current: 1, max: 1 }, ["k".repeat(129)]: { current: 1, max: 1 } };
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", resources } } })], "resource name exceeds 128 bytes");
+});
+
+// VTT-290
+test("an attribute name longer than 128 bytes is rejected", () => {
+  const attributes = { attr_a: 1, ["k".repeat(129)]: 1 };
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", attributes } } })], "attribute name exceeds 128 bytes");
+});
+
+// VTT-291
+test("an object id over 128 UTF-8 bytes is rejected", () => {
+  rejects([...placeable, sceneWith("o1", "é".repeat(64) + "o")], "object id exceeds 128 bytes");
+});
+
+// VTT-292
+test("an empty object id is rejected", () => {
+  rejects([...placeable, sceneWith("o1", "")], "object id is shorter than 1 bytes");
+});
+
+// VTT-292
+test("a repeated object id is rejected", () => {
+  rejects([...placeable, sceneWith("o1", "o2", "o1")], 'duplicate object "o1" in scene "s2"');
+});
+
+// VTT-293
+test("a session id longer than 128 bytes is rejected", () => {
+  rejects([env(1, { sessionId: "s".repeat(129), sessionStarted: { name: "S" } })], "session id exceeds 128 bytes");
+});
+
+// VTT-293
+test("a move's scene id longer than 128 bytes is rejected", () => {
+  rejects([...placedT1, env(5, { tokenMoved: { tokenId: "t1", sceneId: "s".repeat(129), to: { x: 2, y: 2 } } })],
+    "move scene id exceeds 128 bytes");
+});
+
+// VTT-297
+test("an empty session id is rejected", () => {
+  rejects([env(1, { sessionId: "", sessionStarted: { name: "S" } })], "session id is shorter than 1 bytes");
+});
+
+// VTT-297
+test("an empty move scene id is rejected", () => {
+  rejects([...placedT1, env(5, { tokenMoved: { tokenId: "t1", to: { x: 2, y: 2 } } })], "move scene id is shorter than 1 bytes");
+});
+
+// VTT-297
+test("an empty resource name is rejected", () => {
+  const resources = { pool_a: { current: 1, max: 1 }, "": { current: 1, max: 1 } };
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", resources } } })], "resource name is shorter than 1 bytes");
+});
+
+// VTT-297
+test("an empty attribute name is rejected", () => {
+  const attributes = { attr_a: 1, "": 1 };
+  rejects([started, env(2, { actorAdded: { actor: { actorId: "a1", attributes } } })], "attribute name is shorter than 1 bytes");
+});
+
+// VTT-289 VTT-290 VTT-291 VTT-293
+test("command and file ids of exactly 128 bytes are ACCEPTED", () => {
+  const id = (c: string) => c.repeat(128);
+  const object = "é".repeat(64);
+  const st = fold([
+    env(1, { sessionId: id("s"), sessionStarted: { name: "S" } }),
+    env(2, { sceneCreated: { sceneId: "s1", name: "S", gridWidth: 2, gridHeight: 2, objects: [objectAt(object, 0)] } }),
+    env(3, { actorAdded: { actor: { actorId: "a1", moduleId: id("m"), resources: { [id("r")]: { current: 1, max: 1 } },
+      attributes: { [id("t")]: 1 } } } }),
+    env(4, { actorControlGranted: { actorId: "a1", participantId: id("p") } }),
+    env(5, { actorControlRevoked: { actorId: "a1", participantId: id("p") } }),
+    env(6, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
+    env(7, { tokenMoved: { tokenId: "t1", sceneId: id("v"), to: { x: 0, y: 0 } } }),
+  ]);
+  expect(st.Sessions[0]!.ID).toBe(id("s"));
+  expect(st.Scenes["s1"]!.Objects![0]!.ObjectID).toBe(object);
+  expect(st.Actors["a1"]!.moduleId).toBe(id("m"));
 });
 

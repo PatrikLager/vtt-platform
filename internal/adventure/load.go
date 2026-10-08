@@ -452,6 +452,9 @@ func loadScenes(dir string, actorIDs map[string]bool, artDir string) ([]Adventur
 		for _, oj := range raw.Objects {
 			objects = append(objects, oj.ToObject())
 		}
+		if err := mapdef.CheckObjectIDs(objects, errf); err != nil {
+			return nil, err
+		}
 		if err := mapdef.CheckObjectFootprints(objects, raw.GridWidth, raw.GridHeight, errf); err != nil {
 			return nil, err
 		}

@@ -57,7 +57,7 @@ function qaNamePayload(kind: QaNameKind, name: string): JsonObject {
 
 function qaNameEnvelopes(...payloads: JsonObject[]): Envelope[] {
   return payloads.map((p, i) =>
-    fromJson(EnvelopeSchema, { eventId: `qa-${i + 1}`, sequence: String(i + 1), ...p }),
+    fromJson(EnvelopeSchema, { eventId: `qa-${i + 1}`, sequence: String(i + 1), sessionId: "sess-1", ...p }),
   );
 }
 

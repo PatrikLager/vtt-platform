@@ -69,6 +69,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if len(p.SessionStarted.Name) > maxNameBytes {
 			return fmt.Errorf("engine: session name must be at most %d bytes, got %d", maxNameBytes, len(p.SessionStarted.Name))
 		}
+		if len(env.SessionId) == 0 || len(env.SessionId) > maxIDBytes {
+			return fmt.Errorf("engine: session id must be 1-%d bytes, got %d", maxIDBytes, len(env.SessionId))
+		}
 		st.Sessions = append(st.Sessions, Session{
 			ID: env.SessionId, Name: p.SessionStarted.Name, StartSeq: env.Sequence,
 		})
@@ -103,7 +106,15 @@ func Apply(st *State, env *vttv1.Envelope) error {
 			tiles[k] = Tile{Kind: t.GetKind(), Material: t.GetMaterial(), Art: t.GetArt()}
 		}
 		objects := make([]SceneObject, 0, len(sc.Objects))
+		objectIDs := make(map[string]bool, len(sc.Objects))
 		for _, o := range sc.Objects {
+			if n := len(o.GetObjectId()); n == 0 || n > maxIDBytes {
+				return fmt.Errorf("engine: object id must be 1-%d bytes, got %d", maxIDBytes, n)
+			}
+			if objectIDs[o.GetObjectId()] {
+				return fmt.Errorf("engine: object %q appears twice in scene %q", o.GetObjectId(), sc.SceneId)
+			}
+			objectIDs[o.GetObjectId()] = true
 			objects = append(objects, SceneObject{
 				ObjectID: o.GetObjectId(), Kind: o.GetKind(),
 				X: o.GetAt().GetX(), Y: o.GetAt().GetY(),
@@ -169,6 +180,15 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		if len(a.Name) > maxNameBytes {
 			return fmt.Errorf("engine: actor name must be at most %d bytes, got %d", maxNameBytes, len(a.Name))
+		}
+		if len(a.GetModuleId()) > maxIDBytes {
+			return fmt.Errorf("engine: module id must be at most %d bytes, got %d", maxIDBytes, len(a.GetModuleId()))
+		}
+		if n, ok := keyLength(a.GetResources()); ok && (n == 0 || n > maxIDBytes) {
+			return fmt.Errorf("engine: resource name must be 1-%d bytes, got %d", maxIDBytes, n)
+		}
+		if n, ok := keyLength(a.GetAttributes()); ok && (n == 0 || n > maxIDBytes) {
+			return fmt.Errorf("engine: attribute name must be 1-%d bytes, got %d", maxIDBytes, n)
 		}
 		stored := proto.Clone(a).(*vttv1.Actor)
 		st.Actors[a.ActorId] = stored
@@ -275,6 +295,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		if len(tm.Reason) > maxMoveReasonBytes {
 			return fmt.Errorf("engine: move reason must be at most %d bytes, got %d", maxMoveReasonBytes, len(tm.Reason))
+		}
+		if len(tm.SceneId) == 0 || len(tm.SceneId) > maxIDBytes {
+			return fmt.Errorf("engine: move scene id must be 1-%d bytes, got %d", maxIDBytes, len(tm.SceneId))
 		}
 		tok.X, tok.Y = tm.To.X, tm.To.Y
 		st.Tokens[tm.TokenId] = tok
@@ -645,21 +668,13 @@ func Apply(st *State, env *vttv1.Envelope) error {
 	}
 }
 
-// controlTarget resolves the actor a control event names, rejecting an unknown
-// actor and an empty participant.
-//
-// Unknown actor is an error rather than a no-op for the same reason
-// ConditionApplied/Removed reject one: an event that names something absent
-// leaves the log meaning nothing, and a silent skip makes the divergence
-// surface later, somewhere unrelated.
-//
-// Empty participant is rejected because "" in the set would make
-// controller_ids non-empty while controller_id mirrors an empty string —
-// reintroducing exactly the "is this shared or unowned?" ambiguity the mirror
-// rule exists to prevent.
+// controlTarget resolves the actor a control event names (SPEC-018).
 func controlTarget(st *State, actorID, participantID, event string) (*vttv1.Actor, error) {
 	if participantID == "" {
 		return nil, fmt.Errorf("engine: %s requires a participant id", event)
+	}
+	if len(participantID) > maxIDBytes {
+		return nil, fmt.Errorf("engine: participant id must be at most %d bytes, got %d", maxIDBytes, len(participantID))
 	}
 	actor, ok := st.Actors[actorID]
 	if !ok {
@@ -715,4 +730,19 @@ func mirrorControl(a *vttv1.Actor) {
 		return
 	}
 	a.ControllerId = a.GetControllerIds()[0]
+}
+
+// Keep the maximum: map order is random, and a refusal must name one length
+// on every run.
+func keyLength[V any](m map[string]V) (n int, ok bool) {
+	if len(m) == 0 {
+		return 0, false
+	}
+	if _, empty := m[""]; empty {
+		return 0, true
+	}
+	for k := range m {
+		n = max(n, len(k))
+	}
+	return n, true
 }

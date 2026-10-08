@@ -56,14 +56,14 @@ func TestDeniedCommandLeakFailsTheDeniedStep(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 
 		leak := &vttv1.Envelope{
-			EventId:  "leaked",
-			Sequence: 1,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
+			EventId:   "leaked",
+			Sequence:  1,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
 		}
 		accepted := &vttv1.Envelope{
-			EventId:  "accepted",
-			Sequence: 2,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
+			EventId:   "accepted",
+			Sequence:  2,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
 		}
 
 		// A denied command the server wrongly persists and broadcasts. Both
@@ -158,9 +158,9 @@ func TestDeniedThenCleanAcceptPasses(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		accepted := &vttv1.Envelope{
-			EventId:  "accepted",
-			Sequence: 1,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
+			EventId:   "accepted",
+			Sequence:  1,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
 		}
 
 		// Denied, and correctly silent — no broadcast at all.
@@ -207,9 +207,9 @@ func TestTrailingDenialStillProvesAbsence(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		leak := &vttv1.Envelope{
-			EventId:  "leaked",
-			Sequence: 1,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
+			EventId:   "leaked",
+			Sequence:  1,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
 		}
 		world["player"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 			broadcast(world, leak, "dm", "player")
@@ -262,14 +262,14 @@ func TestConsecutiveDenialsBlameTheEarliestOutstandingDenial(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		leak := &vttv1.Envelope{
-			EventId:  "leaked",
-			Sequence: 1,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
+			EventId:   "leaked",
+			Sequence:  1,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
 		}
 		accepted := &vttv1.Envelope{
-			EventId:  "accepted",
-			Sequence: 2,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
+			EventId:   "accepted",
+			Sequence:  2,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
 		}
 
 		denials := 0
@@ -346,7 +346,7 @@ func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 		sent := 0
 		events := []*vttv1.Envelope{
 			{EventId: "e1", Sequence: 1,
-				Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}},
+				SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}},
 			{EventId: "e2", Sequence: 2,
 				Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
 					SceneId: "scn-1", Name: "Hall", GridWidth: 10, GridHeight: 10}}},
@@ -413,14 +413,14 @@ func TestDefaultLogNamesTheDeniedStep(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
 		leak := &vttv1.Envelope{
-			EventId:  "leaked",
-			Sequence: 1,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
+			EventId:   "leaked",
+			Sequence:  1,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}},
 		}
 		accepted := &vttv1.Envelope{
-			EventId:  "accepted",
-			Sequence: 2,
-			Payload:  &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
+			EventId:   "accepted",
+			Sequence:  2,
+			SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}},
 		}
 		world["player"].send = denySend("not authorized", world, leak, "dm", "player")
 		world["dm"].send = okSend(world, 2, accepted, "dm", "player")

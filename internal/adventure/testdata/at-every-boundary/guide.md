@@ -12,6 +12,7 @@ and every one of them is legal.
 | scene `id` 128 bytes | `maxIDBytes` | `len(raw.ID) > maxIDBytes` |
 | adventure `id`, actor `actor_id`, placement `token_id` 128 bytes | `maxIDBytes` | `len(...) > maxIDBytes` |
 | adventure, scene and actor `name` 256 bytes | `maxNameBytes` | `len(raw.Name) > maxNameBytes` |
+| scene object `id` 128 bytes | `maxIDBytes` (`internal/mapdef`) | `len(o.ID) > maxIDBytes` |
 | `grid_width` / `grid_height` = 1 | smallest legal grid | `raw.GridWidth < 1` |
 | placement at (0,0) | lowest legal cell | `p.Y < 0` |
 | resource `max: 0`, `current: 7` | 0 means unlimited | `rv.Max > 0 && ...` |

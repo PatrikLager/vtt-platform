@@ -152,7 +152,7 @@ func TestLoadValidFixture(t *testing.T) {
 // rules — empty-adventure and unknown-field's strict-decode message — the
 // distinguishing substrings decodeStrict/the empty-adventure check actually
 // produce).
-// VTT-275 VTT-279 VTT-282
+// VTT-275 VTT-279 VTT-282 VTT-294 VTT-295
 func TestLoadInvalidFixtures(t *testing.T) {
 	cases := []struct {
 		dir  string
@@ -245,6 +245,9 @@ func TestLoadInvalidFixtures(t *testing.T) {
 		{"adventure-id-too-long", []string{"adventure.json", `field "id"`, "at most 128 bytes, got 129"}},
 		{"actor-id-too-long", []string{"vim-fighter.json", `field "actor_id"`, "at most 128 bytes, got 129"}},
 		{"placement-token-id-too-long", []string{"cellar.json", `field "placements[0].token_id"`, "at most 128 bytes, got 129"}},
+		{"object-id-too-long", []string{"cellar.json", `field "objects[0].id"`, "at most 128 bytes, got 129"}},
+		{"object-id-empty", []string{"cellar.json", `field "objects[0].id"`, "must not be empty"}},
+		{"duplicate-object-id", []string{"cellar.json", `field "objects[1].id"`, `duplicate object id "boulder-1"`}},
 	}
 
 	rs := loadFixtureRuleset(t)
@@ -296,6 +299,7 @@ func TestLoadInvalidFixturesCatalogueIsComplete(t *testing.T) {
 		"actor-kind-missing", "actor-kind-unknown",
 		"adventure-name-too-long", "scene-name-too-long", "actor-name-too-long",
 		"adventure-id-too-long", "actor-id-too-long", "placement-token-id-too-long",
+		"object-id-too-long", "object-id-empty", "duplicate-object-id",
 	}
 	if len(want) != len(onDisk) {
 		t.Errorf("testdata/invalid has %d dirs, case table names %d", len(onDisk), len(want))
@@ -493,7 +497,7 @@ func copyFixtureDirExcluding(t *testing.T, srcDir string, skip ...string) string
 // inclusive. Keep a value in testdata/at-every-boundary exactly on each byte
 // cap load.go checks, and on its grid, placement and resource limits: a value
 // one under a cap loads either way and pins nothing.
-// VTT-275 VTT-279 VTT-282
+// VTT-275 VTT-279 VTT-282 VTT-294
 func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	rs := loadFixtureRuleset(t)
 	adv, err := adventure.Load("testdata/at-every-boundary", rs)
@@ -568,6 +572,9 @@ func TestLoadAcceptsValuesExactlyOnEveryLimit(t *testing.T) {
 	}
 	if got := len(adv.Scenes[0].Placements[0].TokenID); got != 128 {
 		t.Errorf("placement token id = %d bytes, want 128 (exactly maxIDBytes)", got)
+	}
+	if len(adv.Scenes[0].Objects) != 1 || len(adv.Scenes[0].Objects[0].ID) != 128 {
+		t.Errorf("want one scene object whose id is 128 bytes, got %+v", adv.Scenes[0].Objects)
 	}
 }
 

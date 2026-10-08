@@ -51,6 +51,10 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenHidden{TokenHidden: p}
 	case *vttv1.SceneSeen:
 		e.Payload = &vttv1.Envelope_SceneSeen{SceneSeen: p}
+	case *vttv1.ActorControlGranted:
+		e.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
+	case *vttv1.ActorControlRevoked:
+		e.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
 	}
 	return e
 }
@@ -1214,4 +1218,141 @@ func TestAConditionIDIsMeasuredBeforeItsActorIsLookedUp(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %q, the id's refusal before the unknown actor's", err, want)
 	}
+}
+
+func refusesUnchanged(t *testing.T, st *engine.State, ev *vttv1.Envelope, want string) {
+	t.Helper()
+	before := st.Snapshot()
+	if err := engine.Apply(st, ev); err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("a refused event must leave the state as it was")
+	}
+}
+
+func seedActor(t *testing.T) *engine.State {
+	t.Helper()
+	st := seedScene(t)
+	must(t, engine.Apply(st, env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1"}})))
+	return st
+}
+
+// VTT-289
+func TestAParticipantIDThatExceedsTheBoundIsRefused(t *testing.T) {
+	long := strings.Repeat("p", 129)
+	t.Run("grant", func(t *testing.T) {
+		refusesUnchanged(t, seedActor(t), env(4, &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: long,
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}), "engine: participant id must be at most 128 bytes, got 129")
+	})
+	t.Run("revoke", func(t *testing.T) {
+		refusesUnchanged(t, seedActor(t), env(4, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: long}),
+			"engine: participant id must be at most 128 bytes, got 129")
+	})
+}
+
+// VTT-289
+func TestAParticipantIDIsMeasuredBeforeItsActorIsLookedUp(t *testing.T) {
+	refusesUnchanged(t, seedScene(t), env(3, &vttv1.ActorControlGranted{ActorId: "nobody",
+		ParticipantId: strings.Repeat("p", 129), Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}),
+		"engine: participant id must be at most 128 bytes, got 129")
+}
+
+// VTT-290
+func TestAnActorWhoseModuleIDOrKeyExceedsTheBoundIsRefused(t *testing.T) {
+	long := strings.Repeat("k", 129)
+	res := func(keys ...string) map[string]*vttv1.Resource {
+		m := map[string]*vttv1.Resource{}
+		for _, k := range keys {
+			m[k] = &vttv1.Resource{Current: 1, Max: 1}
+		}
+		return m
+	}
+	for _, c := range []struct {
+		name  string
+		actor *vttv1.Actor
+		want  string
+	}{
+		{"module id", &vttv1.Actor{ActorId: "a1", ModuleId: strings.Repeat("m", 129)},
+			"engine: module id must be at most 128 bytes, got 129"},
+		{"resource name", &vttv1.Actor{ActorId: "a1", Resources: res("pool_a", long)},
+			"engine: resource name must be 1-128 bytes, got 129"},
+		{"attribute name", &vttv1.Actor{ActorId: "a1", Attributes: map[string]int32{"attr_a": 1, long: 1}},
+			"engine: attribute name must be 1-128 bytes, got 129"},
+		{"the longest key is named", &vttv1.Actor{ActorId: "a1", Resources: res(long, strings.Repeat("k", 200), "x")},
+			"engine: resource name must be 1-128 bytes, got 200"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			refusesUnchanged(t, seedScene(t), env(3, &vttv1.ActorAdded{Actor: c.actor}), c.want)
+		})
+	}
+}
+
+func sceneWithObjects(ids ...string) *vttv1.SceneCreated {
+	sc := &vttv1.SceneCreated{SceneId: "scn2", Name: "S", GridWidth: 4, GridHeight: 4}
+	for i, id := range ids {
+		sc.Objects = append(sc.Objects, &vttv1.SceneObject{ObjectId: id, Kind: "k",
+			At: &vttv1.GridPosition{X: int32(i), Y: 0}, Width: 1, Height: 1})
+	}
+	return sc
+}
+
+// VTT-291
+func TestASceneObjectWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	refusesUnchanged(t, seedScene(t), env(3, sceneWithObjects("o1", strings.Repeat("é", 64)+"o")),
+		"engine: object id must be 1-128 bytes, got 129")
+}
+
+// VTT-292
+func TestAnEmptyOrRepeatedSceneObjectIDIsRefused(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		refusesUnchanged(t, seedScene(t), env(3, sceneWithObjects("o1", "")), "engine: object id must be 1-128 bytes, got 0")
+	})
+	t.Run("repeated", func(t *testing.T) {
+		refusesUnchanged(t, seedScene(t), env(3, sceneWithObjects("o1", "o2", "o1")),
+			`engine: object "o1" appears twice in scene "scn2"`)
+	})
+}
+
+// VTT-293
+func TestASessionWhoseIDExceedsTheBoundIsRefused(t *testing.T) {
+	ev := env(1, &vttv1.SessionStarted{Name: "n"})
+	ev.SessionId = strings.Repeat("s", 129)
+	refusesUnchanged(t, engine.NewState(), ev, "engine: session id must be 1-128 bytes, got 129")
+}
+
+func seedToken(t *testing.T) *engine.State {
+	t.Helper()
+	st := seedActor(t)
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{TokenId: "t1", SceneId: "scn", ActorId: "a1",
+		Position: &vttv1.GridPosition{X: 1, Y: 1}})))
+	return st
+}
+
+// VTT-293
+func TestAMoveWhoseSceneIDExceedsTheBoundIsRefused(t *testing.T) {
+	refusesUnchanged(t, seedToken(t), env(5, &vttv1.TokenMoved{TokenId: "t1", SceneId: strings.Repeat("s", 129),
+		To: &vttv1.GridPosition{X: 2, Y: 2}}), "engine: move scene id must be 1-128 bytes, got 129")
+}
+
+// VTT-297
+func TestAnEmptySessionMoveSceneOrActorKeyIsRefused(t *testing.T) {
+	t.Run("session id", func(t *testing.T) {
+		ev := env(1, &vttv1.SessionStarted{Name: "n"})
+		ev.SessionId = ""
+		refusesUnchanged(t, engine.NewState(), ev, "engine: session id must be 1-128 bytes, got 0")
+	})
+	t.Run("move scene id", func(t *testing.T) {
+		refusesUnchanged(t, seedToken(t), env(5, &vttv1.TokenMoved{TokenId: "t1", To: &vttv1.GridPosition{X: 2, Y: 2}}),
+			"engine: move scene id must be 1-128 bytes, got 0")
+	})
+	t.Run("resource name", func(t *testing.T) {
+		refusesUnchanged(t, seedScene(t), env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1",
+			Resources: map[string]*vttv1.Resource{"pool_a": {Current: 1, Max: 1}, "": {Current: 1, Max: 1}}}}),
+			"engine: resource name must be 1-128 bytes, got 0")
+	})
+	t.Run("attribute name", func(t *testing.T) {
+		refusesUnchanged(t, seedScene(t), env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1",
+			Attributes: map[string]int32{"attr_a": 1, "": 1}}}), "engine: attribute name must be 1-128 bytes, got 0")
+	})
 }

@@ -1178,6 +1178,80 @@ func TestATokenWhoseIDExceedsTheBoundAppendsNothing(t *testing.T) {
 	}
 }
 
+// VTT-289 VTT-161 VTT-162
+func TestAControlCommandWhoseParticipantIDExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+	grant := func(req, participant string) *vttv1.ClientCommand {
+		return &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_GrantActorControl{
+			GrantActorControl: &vttv1.GrantActorControl{ActorId: "a1", ParticipantId: participant,
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}}
+	}
+	revoke := func(req, participant string) *vttv1.ClientCommand {
+		return &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_RevokeActorControl{
+			RevokeActorControl: &vttv1.RevokeActorControl{ActorId: "a1", ParticipantId: participant}}}
+	}
+	want := "engine: participant id must be at most 128 bytes, got 129"
+	atCap := strings.Repeat("p", 128)
+	for i, c := range []struct {
+		refused, accepted *vttv1.ClientCommand
+	}{
+		{grant("grant-long", strings.Repeat("p", 129)), grant("grant-cap", atCap)},
+		{revoke("revoke-long", strings.Repeat("p", 129)), revoke("revoke-cap", atCap)},
+	} {
+		sendCommand(t, dmConn, c.refused)
+		if r := readResult(t, dmConn); r.Ok || r.Error != want {
+			t.Fatalf("%s: ok=%v error=%q, want the fold's refusal %q", c.refused.RequestId, r.Ok, r.Error, want)
+		}
+		if got := f.head(t); got != head+int64(i) {
+			t.Fatalf("a refused %s moved the log head from %d to %d", c.refused.RequestId, head+int64(i), got)
+		}
+		sendCommand(t, dmConn, c.accepted)
+		if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+int64(i)+1 {
+			t.Fatalf("%s: ok=%v sequence=%d error=%q, want ok at %d", c.accepted.RequestId, r.Ok, r.Sequence, r.Error, head+int64(i)+1)
+		}
+	}
+}
+
+// VTT-290 VTT-161 VTT-162
+func TestAnActorWhoseModuleIDOrKeyExceedsTheBoundAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dmConn := f.dial(f.dmToken, gwSeedHead)
+	head := f.head(t)
+	add := func(req string, actor *vttv1.Actor) {
+		actor.ActorId, actor.Kind = "a-"+req, vttv1.ActorKind_ACTOR_KIND_NON_PARTY
+		sendCommand(t, dmConn, &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_AddActor{
+			AddActor: &vttv1.AddActor{Actor: actor}}})
+	}
+	long := strings.Repeat("k", 129)
+	for _, c := range []struct {
+		req   string
+		actor *vttv1.Actor
+		want  string
+	}{
+		{"module", &vttv1.Actor{ModuleId: long}, "engine: module id must be at most 128 bytes, got 129"},
+		{"resource", &vttv1.Actor{Resources: map[string]*vttv1.Resource{long: {Current: 1, Max: 1}}},
+			"engine: resource name must be 1-128 bytes, got 129"},
+		{"attribute", &vttv1.Actor{Attributes: map[string]int32{long: 1}},
+			"engine: attribute name must be 1-128 bytes, got 129"},
+	} {
+		add(c.req, c.actor)
+		if r := readResult(t, dmConn); r.Ok || r.Error != c.want {
+			t.Fatalf("%s: ok=%v error=%q, want the fold's refusal %q", c.req, r.Ok, r.Error, c.want)
+		}
+		if got := f.head(t); got != head {
+			t.Fatalf("a refused add_actor moved the log head from %d to %d", head, got)
+		}
+	}
+	atCap := strings.Repeat("k", 128)
+	add("cap", &vttv1.Actor{ModuleId: atCap, Resources: map[string]*vttv1.Resource{atCap: {Current: 1, Max: 1}},
+		Attributes: map[string]int32{atCap: 1}})
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("128-byte module id and keys: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
+	}
+}
+
 // TestNoteAndNarrationRejectionSurfacesCleanNotPoisoned covers the world-
 // layer (Task 3) precedent RemoveCondition already set: the gateway forwards
 // add_narration/upsert_note/delete_note through the SAME single-Append path

@@ -651,9 +651,9 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// Keep the backfill here: engine.Apply never reads SceneId or From from a
-	// TokenMoved, and nothing after this point holds both the pre-move token and
-	// the envelope (VTT-160).
+	// Keep the backfill here: engine.Apply refuses a TokenMoved with no SceneId
+	// and never reads From, and nothing after this point holds both the pre-move
+	// token and the envelope (VTT-160).
 	if tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved); ok {
 		if tok, ok := st.Tokens[tm.TokenMoved.GetTokenId()]; ok {
 			tm.TokenMoved.SceneId = tok.SceneID

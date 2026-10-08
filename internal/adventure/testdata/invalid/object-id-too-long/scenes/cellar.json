@@ -1,0 +1,17 @@
+{
+  "id": "cellar",
+  "name": "The Cellar",
+  "grid_width": 6,
+  "grid_height": 6,
+  "objects": [
+    {"id": "ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo", "kind": "boulder", "at": [0, 0], "size": [1, 1], "rot": 0, "blocks_sight": false, "blocks_move": false, "art": "boulder-mossy-2"}
+  ],
+  "placements": [
+    {
+      "token_id": "tok-scout",
+      "actor_id": "grit-scout",
+      "x": 1,
+      "y": 1
+    }
+  ]
+}

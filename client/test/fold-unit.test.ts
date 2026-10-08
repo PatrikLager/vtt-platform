@@ -295,7 +295,7 @@ test("a second session cannot open while one is still open", () => {
   ).toThrow(FoldError);
 });
 
-test("tokenMoved ignores the event's from and sceneId entirely", () => {
+test("tokenMoved looks nothing up by the event's from or sceneId", () => {
   const st = fold([
     env(1, { sessionStarted: { name: "S" } }),
     env(2, { sceneCreated: { sceneId: "s1", name: "S1", gridWidth: 9, gridHeight: 9 } }),
@@ -1255,7 +1255,7 @@ test("a token whose id names a prototype member is placed and moved like any oth
     env(2, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
     env(3, { actorAdded: { actor: { actorId: "a1", name: "A" } } }),
     env(4, { tokenPlaced: { tokenId: "toString", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }),
-    env(5, { tokenMoved: { tokenId: "toString", to: { x: 3, y: 2 } } }),
+    env(5, { tokenMoved: { tokenId: "toString", sceneId: "s1", to: { x: 3, y: 2 } } }),
   ]);
 
   expect(Object.keys(st.Tokens)).toEqual(["toString"]);

@@ -248,8 +248,8 @@ grant's `kind` and a move's `reason` included, and a move that gave no
 `reason` records none. For a `TokenMoved`, `handleCommand` sets
 `SceneId` and `From` from the snapshot's token before `campaign.Append`, so
 the log records the scene and the square the token left; `engine.Apply`'s
-`TokenMoved` arm reads `TokenId`, `To` and the length of `Reason` (SPEC-018),
-and never `SceneId` or `From`.
+`TokenMoved` arm reads `TokenId`, `To` and the lengths of `Reason` and
+`SceneId` (SPEC-018), and never `From`.
 
 **`set_viewpoint`.** `answerCommand` routes it to `handleSetViewpoint`, which
 runs `authorize` (the spectator's cell and `MayPerch`), then
