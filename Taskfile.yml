@@ -360,7 +360,8 @@ tasks:
       tests over it. macOS 15.7.x and earlier are unaffected.
 
       socket() starts returning ENOBUFS at ~161,000 creations per boot. This
-      gate costs 175 sockets per `bun test client/test` run (measured five
+      gate costs 175 sockets per `bun test client/test` run, an upper bound
+      since Stryker's command bails at the first failure (measured five
       ways -- peak-sampled x3 and post-exit x2, all exactly 175) times 1667
       mutants = ~292,000. That is 1.8x the entire machine budget, so on macOS
       it CANNOT COMPLETE even from a cold boot, and the attempt takes DNS,

@@ -17,11 +17,11 @@ this gate exists alongside check:ts-coverage rather than instead of it.
 
 Why Stryker's command runner
 ----------------------------
-Stryker has no bun test-runner plugin, so it runs `bun test client/test` as an
-opaque command and reads the exit code. The cost is no per-test filtering:
-every mutant runs the whole suite. Measured, that is fine — the suite is
-~700ms, and 1667 mutants complete in minutes. `coverageAnalysis: "off"` is
-mandatory with the command runner, not a tuning choice.
+Stryker has no bun test-runner plugin, so it runs `bun test --bail
+--only-failures client/test` as an opaque command and reads the exit code.
+The cost is no per-test filtering: every mutant is handed the whole suite,
+and `--bail` ends a run at its first failing test. `coverageAnalysis: "off"`
+is mandatory with the command runner, not a tuning choice.
 
 This file parses JSON with the json module and compares two sets. It does not
 implement mutation testing. That boundary is the same one check-mutation.py
@@ -492,9 +492,10 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
     fail = bool(suspect)
 
     # Not covered means NO test reaches the code at all. With the command
-    # runner that should be impossible — every mutant runs the whole suite —
-    # so its appearance means the run was not configured the way this gate
-    # assumes, and the numbers below do not mean what they say.
+    # runner that should be impossible — every mutant is handed the whole
+    # suite, with no per-test selection — so its appearance means the run was
+    # not configured the way this gate assumes, and the numbers below do not
+    # mean what they say.
     for path, where, mutator, _ in no_coverage:
         print(f"check:ts-mutation: {path}:{where} {mutator} reported NoCoverage, which "
               f"the command runner should never produce. The run is misconfigured.", file=err)

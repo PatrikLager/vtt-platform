@@ -671,3 +671,25 @@ file, each with an empty name, their rows in `TestLoadInvalidFixtures`, and
 their names in `TestLoadInvalidFixturesCatalogueIsComplete`'s list.
 Recorded 2026-10-06 by the name-bound plan's Gap 6, by the owner's ruling on
 its Q7.
+
+**A test run that prints more than 1 MiB is a killed mutant.** Stryker's
+command runner (`node_modules/@stryker-mutator/core`'s
+`command-test-runner.js`) starts the test command with `exec` and no
+`maxBuffer`, so Node kills a run whose output passes its 1 MiB default, the
+exit code is null, and Stryker counts a null exit as a failed run, which is
+Killed; `tools/check-ts-mutation.py` reads only the status. The 2026-10-06
+report held 23 killed mutants whose output stops between 1,049,251 and
+1,081,428 bytes with no `(fail)` line: 21 show an assertion failure that
+printed a DOM element before the cut, and for two, a `BooleanLiteral` in
+`client/src/view/player.ts` and a `StringLiteral` in `client/src/app.ts`, the
+output stops among passing tests, so the report does not show what killed
+them. `--only-failures` in `stryker.conf.json`'s command makes a passing run
+print almost nothing, which leaves a test that prints a great deal on its own.
+Recipe: add to any file under `client/test` a test that passes after
+`console.log("x".repeat(1_100_000))`; every mutant `check:ts-mutation` runs is
+then Killed, the surviving ones included, and the gate is green (not run). The
+gate should have caught it, and trusts the exit code it is given. Labels:
+`outside the tool`. Closing it needs `maxBuffer` raised through Stryker's
+configuration if it offers one, or a check in `tools/check-ts-mutation.py`
+that refuses a killed mutant whose output holds no failing test. Recorded
+2026-10-08 by the command-id report, from the review of the `--bail` change.

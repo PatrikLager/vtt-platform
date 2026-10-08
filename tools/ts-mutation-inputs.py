@@ -37,12 +37,12 @@ import re
 import sys
 
 # The report's inputs, as directories walked for a suffix or as single files.
-# client/src and client/test come from stryker.conf.json's own `mutate` list and
-# commandRunner (`bun test client/test`) — read there rather than duplicated
-# here would be better, but the glob syntax is Stryker's and parsing it to stay
-# honest costs more than it saves; test_the_hashed_trees_match_what_stryker_
-# actually_mutates, in ts_mutation_inputs_test.py, pins these against the
-# config instead.
+# client/src and client/test come from stryker.conf.json's own `mutate` list
+# and commandRunner (`bun test --bail --only-failures client/test`) — read
+# there rather than duplicated here would be better, but the glob syntax is
+# Stryker's and parsing it to stay honest costs more than it saves;
+# test_the_hashed_trees_match_what_stryker_actually_mutates, in
+# ts_mutation_inputs_test.py, pins these against the config instead.
 TREES = (("client/src", (".ts", ".tsx", ".mts", ".cts")),
          ("client/test", (".ts", ".tsx", ".mts", ".cts")))
 FILES = ("stryker.conf.json", "package.json", "bun.lock", "bun.lockb",

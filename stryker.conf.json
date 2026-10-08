@@ -11,8 +11,16 @@
   },
   "testRunner": "command",
   "commandRunner": {
-    "command": "bun test client/test"
+    "command": "bun test --bail --only-failures client/test"
   },
+  "_commandRunner_comment": [
+    "--bail and --only-failures are load-bearing. Stryker's command runner",
+    "stores a killed mutant's whole test output in mutation.json, and with",
+    "every passing test printed that report outgrew the container's node heap:",
+    "the gate aborted after every mutant had run. Neither flag moves a verdict.",
+    "bun exits non-zero at a failing test with or without them, and a",
+    "surviving mutant fails no test, so --bail never fires for it."
+  ],
   "coverageAnalysis": "off",
   "_mutate_comment": [
     "BY EXCLUSION, not inclusion. This was a hand-maintained list of every",

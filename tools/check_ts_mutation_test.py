@@ -286,8 +286,9 @@ class Gate(unittest.TestCase):
         self.assertIn("no mutants were measured", msg)
 
     def test_no_coverage_is_an_error_because_the_command_runner_cannot_produce_it(self):
-        # Every mutant runs the whole suite, so NoCoverage means the run was
-        # not configured the way this gate assumes and the counts are lies.
+        # Every mutant is handed the whole suite, with no per-test selection,
+        # so NoCoverage means the run was not configured the way this gate
+        # assumes and the counts are lies.
         code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
                                ("client/src/a.ts", 2, 1, "Eq", "NoCoverage")))
         self.assertEqual(code, 1)
