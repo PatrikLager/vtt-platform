@@ -105,12 +105,63 @@ known actor, then a duplicate; an `AbilityUsed` for its ability id alone; a
 `SessionStarted` for an open session, then its name, then its session id; a
 control event for a participant id, then its length, then a known actor. These
 twenty-four are the only texts `apply.go` bounds above; beyond them it
-requires a scene's object ids to be distinct. Every other text has no bound in
-the fold: one a command carries is bounded by `maxWSFrameBytes`, the read
-limit on a WebSocket frame (SPEC-011); one a map, adventure or ruleset file
-carries is bounded only by what its loader checks. A `ConditionApplied`'s
-`source`, which `Resolve` composes from an ability id and its phase, a branch
-label or `effect`, or from a resource name, is bounded by no fold.
+requires a scene's object ids to be distinct. Every other text has no bound
+of its own in the fold, and what holds each is below.
+
+**A text outside the table has no bound of its own, by decision.** A field
+joins the table when one of two things is shown. The first is that a role
+other than the DM and the agent can put text it chose into the field in the
+log, other than an id that `engine.Apply` or `Resolve` requires to name
+something already folded or declared by the loaded ruleset. The second is,
+by a test or a recipe, that a value of the field written for play rather
+than built to reach a limit, by a command or a file, breaks a frame, a view
+or a refusal that a participant other than its writer receives; a file's
+writer is whoever installs it. The DM, the agent and whoever installs a file
+are trusted with a text's length as they are with its content. No field
+outside the table meets the first: each of SPEC-013's player cells puts text
+it chose into the log only as a field of the table or as an id that
+`engine.Apply` or `Resolve` looks up, also where `Resolve` copies that id
+into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
+`set_viewpoint`, appends nothing. What holds each text instead:
+
+| Field | What holds it |
+|---|---|
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
+| `AbilityUsed.actor_id`, `AbilityUsed.target_ids` | `Resolve` refuses a value that names no folded actor |
+| `ConditionApplied.source`, `ResourceChanged.reason`, `ConditionRemoved.reason` | `Resolve` writes each as `ability:` followed by an ability id and a branch label, `effect` or `usage`, or as `threshold:` followed by a resource name, and `internal/rules/load.go` bounds the id, the label and the name; `ToEvent` writes a `remove_condition`'s reason as `manual` |
+| `AbilityUsed.outcome_summary`, `AbilityUsed.Roll.expression` | `Resolve` writes the first from an ability's display name, each target's id and, for an ability with a resolution, a branch label and two totals, and the second from the ruleset's compiled expressions; no loader bounds a display name or an expression |
+| `TileRef.kind`, `TileRef.material` | `BuildSceneCreated` writes them from `StandardTile`'s vocabulary |
+| `TileRef.art`, `SceneObject.art` | `BuildSceneCreated` writes an art id only when `internal/artlib` resolves it, and `isArtID` refuses one longer than `maxArtIDLen` |
+| `SceneCreated.tiles` keys | `BuildSceneCreated` writes a key only for a square of the grid |
+| `TokenHidden.token_id`, `SceneSeen.scene_id`, `SceneSeen.tiles`, `SceneSeen.visible` | none reaches the log: `internal/gateway/project.go` builds them for one viewer from folded state (SPEC-016) |
+| `Envelope.event_id`, `Envelope.participant_id`, `Envelope.actor_role`, and `Envelope.session_id` but a `SessionStarted`'s | the server writes them: `newEventID`, the issuing participant's id and role, and `stampSessionIDAgainst`, which writes the open session's id or none |
+| `AttackRolled.attacker_id`, `AttackRolled.target_id`, `AttackRolled.expression`, `AttackRolled.versus`, `AttackRolled.outcome`, `Modifier.source` | nothing in production writes an `AttackRolled`, and `engine.Apply` reads none of it |
+| `SceneObject.kind` | nothing: it is a map's or an adventure's object `kind`, which no loader checks, and the fold keeps it; `describeBlockage` clips it where a player's move refusal names it (SPEC-013) |
+| `Actor.module_data` | the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011): `add_actor`, a command of the DM and the agent, is its one writer, and the fold keeps it; its shape is a rule module's (SPEC-007) |
+
+The cells that say nothing or none rest on these searches, each a `git grep`
+over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
+'TokenHidden\{|SceneSeen\{'` prints only `internal/gateway/project.go`;
+`'AttackRolled{'` prints nothing; `ModuleData` prints nothing, so a
+`module_data` reaches the log only inside an `add_actor`'s actor, which
+`ToEvent` copies whole; and `-E 'o\.Kind|obj\.Kind' -- internal/mapdef
+internal/adventure ':!*_test.go'` prints only the loader's and
+`BuildSceneCreated`'s copies of an object's `kind`. `grep -n -E
+'len\([^)]*(Name|Expr|Src|Description)[^)]*\) >' internal/rules/load.go`
+prints only the resource-name bound.
+
+A string a map, an adventure or a ruleset file carries and its loader does not
+bound is under the same decision: a ruleset's display names, descriptions,
+expressions, atom ids, param names and graph keys, its manifest's id and name,
+and its guide; a map's or an adventure's `overrides` values and objects'
+`kind` and `art`; and a map's placement `actor_id`. Where one reaches the log,
+it is only as a field of the two tables above; a ruleset's display names,
+descriptions and manifest id and name reach every participant through
+`/api/ruleset`, and its guide through `/api/ruleset/guide` (SPEC-012). A
+refusal that quotes such a value, or an id a command gave that names nothing,
+goes to the issuer of the command that met it (SPEC-013), or, when a file is
+refused at boot, to whoever starts the server.
 
 **The refusal reaches the issuer.** `campaign.Append` folds the envelope
 before it persists anything and returns the fold's error, so a command whose
@@ -170,7 +221,15 @@ requires them to state it too.
   resource descriptions.
 - A field added to an event without a bound here is bounded by no fold: by the
   WebSocket frame when a command carries it, by nothing when a map, adventure
-  or ruleset file does.
+  or ruleset file does. It goes into the second table above, with what holds
+  it, in the same change. Nothing checks that the second table is complete.
+- No field joins the first table unless one of the two tests in How it works
+  is met. A change that takes away what holds a text in the second table, or
+  that lets a role other than the DM and the agent write one, puts that text
+  to the tests again.
+- A bound added to a field later refuses every log that already holds a
+  longer value, as a lowered bound does; that cost is why a field joins the
+  first table only on one of the two tests.
 
 ## Requirements
 

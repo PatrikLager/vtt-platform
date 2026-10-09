@@ -595,7 +595,8 @@ table. In order, roughly:
    your `overrides` and `objects[].art` values do not change — see §8 for
    where the pictures go.
 2. `format_version` must be present and must be a version this server
-   understands.
+   understands. The map's `id` must be at most 128 bytes of UTF-8, and its
+   `name` at most 256.
 3. `grid_width` and `grid_height` must each be at least `1`.
 4. If `tiles` is non-empty, **every** square in the grid must have an entry
    (§1) — no missing squares, and no extra entries naming a square outside
@@ -611,8 +612,9 @@ table. In order, roughly:
    inside the grid, and its `size` must be at least `[1, 1]`.
 8. Every object's `id` must be non-empty, at most 128 bytes of UTF-8, and
    distinct within the map.
-9. Every `placements` entry must name a square inside the grid, and that
-   square must not currently be a wall or a closed door.
+9. Every `placements` entry must have a `token_id` of 1 to 128 bytes of
+   UTF-8, and must name a square inside the grid, and that square must not
+   currently be a wall or a closed door.
 10. `tiles` must hold no more than **3600** entries — see §12.
 
 **Art that does not resolve is NOT in this list, and that is deliberate.** An
