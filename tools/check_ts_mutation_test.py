@@ -22,33 +22,39 @@ ctm = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ctm)
 
 
-def report(*mutants):
-    """mutants: (file, line, col, mutator, status[, replacement])."""
+def report(*mutants, lines=None, sources=None):
+    """mutants: (file, line, col, mutator, status[, replacement[, span]]); the
+    mutant ends `span` UTF-16 units after its start, on the same line.
+
+    Each file carries its `source`, as Stryker's report does: the fixture text
+    built from `lines` (TS_LINES by default), unless `sources` names it.
+    """
     files = {}
     for m in mutants:
         path, line, col, mutator, status = m[:5]
         replacement = m[5] if len(m) > 5 else "REP"
+        span = m[6] if len(m) > 6 else 1
         files.setdefault(path, {"mutants": []})["mutants"].append({
             "mutatorName": mutator,
             "status": status,
             "replacement": replacement,
-            "location": {"start": {"line": line, "column": col}},
+            "location": {"start": {"line": line, "column": col},
+                         "end": {"line": line, "column": col + span}},
         })
+    for path, entry in files.items():
+        if sources is None:
+            entry["source"] = ts_text(lines or TS_LINES)
+        elif path in sources:
+            entry["source"] = sources[path]
     return {"files": files}
 
 
-# The source every fixture key below is keyed against.
+# The source every fixture below names: written to the tree as client/src/a.ts
+# and b.ts, and carried in each report as the file's `source`.
 #
-# It has to be REAL source at REAL columns, because the gate now reads the tree
-# at each key's line:col and rejects a key that no longer points at a mutant of
-# the kind it names. Blank lines would fail every test here with a position
-# complaint instead of the thing it is about.
-#
-# DELIBERATELY DISTINCT where two keys must stay different claims (10 vs 14),
-# and DELIBERATELY IDENTICAL where a pairing must be possible (30/40/50/60,
-# 90/91). That is the content anchor in a fixture: two keys pair when the
-# source says they are the same statement, never merely because they share a
-# file, a mutator and a replacement.
+# DELIBERATELY DISTINCT where two survivors must sit on different code (10 vs
+# 14), and DELIBERATELY IDENTICAL where one code must stand several times in a
+# file (30/40/50/60, 90/91).
 TS_LINES = {
     9: "const nine = true;",
     10: "if (a > b) c();",          # col 5 opens `a > b`
@@ -78,9 +84,9 @@ TS_LINES = {
                                     # the `a`. Without this line the em-dash
                                     # fixtures pass under either scheme.
     30: 'send("tag");',             # col 6 opens a string literal
-    40: 'send("tag");',             # three more copies of ONE statement, so a
-    50: 'send("tag");',             # move between them is indistinguishable by
-    60: 'send("tag");',             # content and pairable by it
+    40: 'send("tag");',             # three more copies of ONE statement
+    50: 'send("tag");',
+    60: 'send("tag");',
     42: "const fortytwo = true;",
     70: "// a line comment",
     71: "/** a doc comment */",
@@ -89,27 +95,34 @@ TS_LINES = {
     80: "const eighty = notAString;",   # col 16 is an identifier, not a quote
     90: 'label("other");',          # col 7 opens a string literal, on a
     91: 'label("other");',          # statement the `send` lines cannot be
+    95: 'send("a", "b");',          # cols 6 and 11 open strings: two mutants of
+                                    # one mutator, one replacement, one line
 }
 
 
-def source_tree(root):
-    """client/src/a.ts and b.ts, padded so the fixture line numbers are real."""
+def ts_text(lines=TS_LINES):
+    """The fixture file's text, padded so the line numbers are real."""
+    body = []
+    while len(body) < max(lines):
+        body.append(lines.get(len(body) + 1, f"const l{len(body) + 1} = 0;"))
+    return "\n".join(body) + "\n"
+
+
+def source_tree(root, lines=TS_LINES):
+    """client/src/a.ts and b.ts."""
     src = os.path.join(root, "client", "src")
     os.makedirs(src, exist_ok=True)
-    body = []
-    while len(body) < max(TS_LINES):
-        body.append(TS_LINES.get(len(body) + 1, f"const l{len(body) + 1} = 0;"))
     for name in ("a.ts", "b.ts"):
         with open(os.path.join(src, name), "w") as fh:
-            fh.write("\n".join(body) + "\n")
+            fh.write(ts_text(lines))
     return root
 
 
-def run(rep, equivalents=None):
+def run(rep, equivalents=None, lines=TS_LINES):
     out, err = io.StringIO(), io.StringIO()
     with tempfile.TemporaryDirectory() as root:
-        source_tree(root)
-        code = ctm.check(rep, equivalents or {}, out=out, err=err, root=root)
+        source_tree(root, lines)
+        code = ctm.check(rep, equivalents or [], out=out, err=err, root=root)
     return code, out.getvalue() + err.getvalue()
 
 
@@ -120,31 +133,74 @@ def equivalents_file(text):
     return fh.name
 
 
+def entry(path, where, mutator, replacement, reason="reason", lines=TS_LINES, span=1):
+    """One entry in the equivalents format, for the fixture code a mutant at
+    `where` (`line:col`) starts on, covering `span` units as report() makes it.
+    The entry names that code, the offset in it, which copy of it and its count
+    in the file, and no line (SPEC-020)."""
+    line, col = (int(x) for x in where.split(":"))
+    raw = lines[line]
+    code = raw.strip(" \t\r")
+    offset = col - (len(raw) - len(raw.lstrip(" \t\r")))
+    nth = sum(1 for n, v in lines.items() if n <= line and v.strip(" \t\r") == code)
+    copies = sum(1 for v in lines.values() if v.strip(" \t\r") == code)
+    return (f"{path}  {mutator}  offset={offset}  span={span}  nth={nth}  copies={copies}  {replacement}\n"
+            f"    code: {code}\n    {reason}\n")
+
+
+def entries(*texts):
+    return ctm.read_equivalents(equivalents_file("".join(texts)))
+
+
 class Equivalents(unittest.TestCase):
     def test_an_entry_and_its_reason_parse(self):
-        got = ctm.read_equivalents(equivalents_file(
-            "client/src/a.ts 10:5 EqualityOperator a >= b\n    same observable\n"))
-        self.assertEqual(got, {("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"): "same observable"})
+        [e] = entries("client/src/a.ts  EqualityOperator  offset=5  span=5  nth=1  copies=1  a >= b\n"
+                      "    code: if (a > b) c();\n    same observable\n")
+        self.assertEqual(e, ctm.Entry("client/src/a.ts", "EqualityOperator", 5, 5, 1, 1, "a >= b",
+                                      "if (a > b) c();", "same observable"))
 
     def test_an_entry_without_a_reason_is_an_error(self):
-        # An equivalence claim forecloses ever writing a test for that mutant.
-        # Two of four such claims on the Go side were WRONG; a bare entry is
-        # how that happens without anyone noticing.
+        # An equivalence claim forecloses ever writing a test for that mutant;
+        # a bare entry is how a wrong one lands without anyone noticing.
         with self.assertRaises(ctm.EquivalentsError):
-            ctm.read_equivalents(equivalents_file("client/src/a.ts 10:5 EqualityOperator\n"))
+            entries("client/src/a.ts  EqualityOperator  offset=5  span=5  nth=1  copies=1  a >= b\n"
+                    "    code: if (a > b) c();\n")
+
+    def test_an_entry_without_a_code_line_is_fatal(self):
+        with self.assertRaises(ctm.EquivalentsError) as caught:
+            entries("client/src/a.ts  EqualityOperator  offset=5  span=5  nth=1  copies=1  a >= b\n"
+                    "    same observable\n")
+        self.assertIn("code line", str(caught.exception))
 
     def test_a_reason_with_no_entry_is_an_error(self):
         with self.assertRaises(ctm.EquivalentsError):
-            ctm.read_equivalents(equivalents_file("    orphaned reason\n"))
+            entries("    orphaned reason\n")
 
     def test_a_malformed_entry_is_an_error(self):
         with self.assertRaises(ctm.EquivalentsError):
-            ctm.read_equivalents(equivalents_file("client/src/a.ts 10:5\n    reason\n"))
+            entries("client/src/a.ts  EqualityOperator  a >= b\n    code: x\n    reason\n")
 
-    def test_a_duplicate_entry_is_an_error(self):
-        with self.assertRaises(ctm.EquivalentsError):
-            ctm.read_equivalents(equivalents_file(
-                "client/src/a.ts 10:5 Eq x\n    one\nclient/src/a.ts 10:5 Eq x\n    two\n"))
+    def test_the_printed_placeholder_is_refused_as_a_reason(self):
+        """Pasted unedited, the ready entry would excuse a mutant nobody judged."""
+        with self.assertRaises(ctm.EquivalentsError) as caught:
+            entries("client/src/a.ts  EqualityOperator  offset=5  span=5  nth=1  copies=1  a >= b\n"
+                    "    code: if (a > b) c();\n    <the observable that makes it equivalent>\n")
+        self.assertIn("placeholder", str(caught.exception))
+
+    def test_a_code_line_keeps_a_trailing_form_feed_and_no_break_space(self):
+        """The code line is trimmed as the gate trims source, so what the gate
+        prints, pasted back, names the same code."""
+        [e] = entries("client/src/a.ts  StringLiteral  offset=6  span=6  nth=1  copies=1  \"\"\n"
+                      "    code: send(\"x\");\u00a0\x0c\n    reason\n")
+        self.assertEqual(e.code, 'send("x");\u00a0\x0c')
+
+    def test_a_hash_in_a_replacement_or_reason_is_kept(self):
+        """Only a line whose FIRST character is `#` is a comment."""
+        [e] = entries("# a comment\n"
+                      "client/src/a.ts  StringLiteral  offset=6  span=6  nth=1  copies=1  \"#fff\"\n"
+                      "    code: send(\"#000\");\n    a # in a reason is text\n")
+        self.assertEqual((e.replacement, e.code, e.reason),
+                         ('"#fff"', 'send("#000");', "a # in a reason is text"))
 
 
 class Gate(unittest.TestCase):
@@ -158,22 +214,24 @@ class Gate(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("SURVIVED BooleanLiteral at client/src/a.ts:9:5", msg)
 
+    # VTT-298
     def test_an_adjudicated_survivor_passes(self):
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Survived")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "no observable difference"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "REP", "no observable difference")))
         self.assertEqual(code, 0, msg)
 
+    # VTT-301
     def test_an_adjudication_for_a_mutant_that_no_longer_survives_fails(self):
         # Otherwise the entry silently pre-approves whatever mutant later
-        # lands at that line:col — including a real one after an edit shifts
-        # the file.
+        # lands on that code.
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Killed")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "stale"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "REP", "stale")))
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", msg)
 
+    # VTT-301
     def test_an_adjudication_whose_mutant_timed_out_is_not_called_stale(self):
         # A TIMED OUT mutant was NOT EVALUATED, so it is no evidence that the
         # adjudication above it has expired. The gate counts a timeout as a
@@ -201,46 +259,24 @@ class Gate(unittest.TestCase):
         code, msg = run(
             report(("client/src/a.ts", 1, 1, "Eq", "Killed"),
                    ("client/src/a.ts", 9, 5, "BooleanLiteral", "Timeout")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "no observable difference"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "REP", "no observable difference")))
         self.assertEqual(code, 0, msg)
         self.assertNotIn("no longer survives", msg)
         # And it is still reported as unevaluated, because suppressing the
         # staleness complaint must not also suppress the timeout itself.
         self.assertIn("timed out: client/src/a.ts:9:5", msg)
 
-    def test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing(self):
-        # CHARACTERIZATION, not an endorsement. Excusing a timed-out entry also
-        # removes it from what pair_moves searches. So a mutant that genuinely
-        # MOVED, whose OLD key now hosts a same-(file, mutator, replacement)
-        # mutant that times out, is reported as a bare survivor at its new
-        # position and nothing says the entry became it — the reader is steered
-        # to write a NEW adjudication instead of re-keying, which is the mirror
-        # image of the harm the timeout fix exists to prevent.
-        #
-        # The run still FAILS, so nothing ships that would not have. Only the
-        # diagnosis is lost. Fixing it by pairing on `equivalents - survived`
-        # would drag every adjudicated timeout into _pair's count balance and
-        # break pairings that work today (94 timeouts against 73 entries on the
-        # 2026-08-27 report), so the diagnosis is the accepted price. This test
-        # is the record, so the next reader meets a decision, not a surprise.
-        code, msg = run(
-            report(("client/src/a.ts", 90, 7, "StringLiteral", "Timeout",  '""'),
-                   ("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""')),
-            {("client/src/a.ts", "90:7", "StringLiteral", '""'): "exhaustively reasoned"})
-        self.assertEqual(code, 1)
-        self.assertIn("SURVIVED StringLiteral at client/src/a.ts:30:6", msg)
-        self.assertIn("timed out: client/src/a.ts:90:7", msg)
-        self.assertNotIn("ADJUDICATION MOVED", msg)
-
+    # VTT-299
     def test_an_adjudication_is_keyed_by_mutator_not_just_location(self):
         # Two mutators at one location are two different claims; excusing one
         # must not excuse the other.
         code, msg = run(
             report(("client/src/a.ts", 9, 5, "EqualityOperator", "Survived")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "REP"): "different mutator"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "REP", "different mutator")))
         self.assertEqual(code, 1)
         self.assertIn("SURVIVED EqualityOperator", msg)
 
+    # VTT-298
     def test_two_mutants_at_one_location_are_two_separate_claims(self):
         # Stryker emits `-> true` AND `-> false` for one ConditionalExpression.
         # Before the replacement was part of the key these collapsed into one
@@ -248,7 +284,7 @@ class Gate(unittest.TestCase):
         # the duplicate check on client/src/player.ts:20:51.
         rep = report(("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "true"),
                      ("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false"))
-        code, msg = run(rep, {("client/src/a.ts", "20:51", "ConditionalExpression", "true"): "reached only when true"})
+        code, msg = run(rep, entries(entry("client/src/a.ts", "20:51", "ConditionalExpression", "true", "reached only when true")))
         self.assertEqual(code, 1)
         self.assertIn("-> false", msg)
 
@@ -302,350 +338,385 @@ class Gate(unittest.TestCase):
 
 
 
-class MovedAdjudication(unittest.TestCase):
-    """An edit above an adjudicated mutant shifts its line, and the gate used to
-    report that as TWO unrelated failures: a stale entry, and an unadjudicated
-    survivor somewhere else. Nothing said they were the same mutant.
+class Matching(unittest.TestCase):
+    """An entry claims a survivor by the code it starts on, never by its line
+    (SPEC-020). An edit that only moves the code must not force a re-judgment;
+    an edit to the code itself must."""
 
-    That framing is actively dangerous. The obvious response to "this entry no
-    longer survives — remove it" is to delete it, which throws away a reasoned
-    adjudication AND leaves the survivor unexplained. Measured: this happened
-    four separate times in one day's work, across both the Go and TS gates.
-    """
+    # VTT-298
+    def test_a_survivor_whose_line_moved_is_still_claimed(self):
+        eq = entries(entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"))
+        code, msg = run(report(("client/src/a.ts", 10, 5, "EqualityOperator", "Survived", "a >= b")), eq)
+        self.assertEqual(code, 0, msg)
+        shifted = {n + 1: v for n, v in TS_LINES.items()}
+        code, msg = run(report(("client/src/a.ts", 11, 5, "EqualityOperator", "Survived", "a >= b"),
+                               lines=shifted), eq, lines=shifted)
+        self.assertEqual(code, 0, msg)
+        self.assertNotIn("ADJUDICATION MOVED", msg)
 
-    def test_a_moved_adjudication_is_reported_as_a_move_with_its_new_key(self):
+    # VTT-298
+    def test_a_reindented_line_is_still_claimed(self):
+        eq = entries(entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"))
+        indented = {**TS_LINES, 10: "    if (a > b) c();"}
+        code, msg = run(report(("client/src/a.ts", 10, 9, "EqualityOperator", "Survived", "a >= b"),
+                               lines=indented), eq, lines=indented)
+        self.assertEqual(code, 0, msg)
+
+    # VTT-298
+    def test_a_reindented_multi_line_mutant_is_still_claimed(self):
+        """A mutant covering two lines keeps its key when the block is
+        re-indented: its span leaves out each line's indentation."""
+        def lines_at(indent):
+            return {**TS_LINES, 96: indent + "go(a,", 97: indent + "   b);"}
+        flat, deep = lines_at(""), lines_at("        ")
+
+        def rep(lines, col):
+            r = report(("client/src/a.ts", 96, col, "MethodExpression", "Survived", "go(a, b)"), lines=lines)
+            r["files"]["client/src/a.ts"]["mutants"][0]["location"]["end"] = {"line": 97, "column": col + 5}
+            return r
+        eq = entries(entry("client/src/a.ts", "96:1", "MethodExpression", "go(a, b)", lines=flat, span=8))
+        code, msg = run(rep(flat, 1), eq, lines=flat)
+        self.assertEqual(code, 0, msg)
+        code, msg = run(rep(deep, 9), eq, lines=deep)
+        self.assertEqual(code, 0, msg)
+
+    # VTT-299
+    def test_a_conditional_expression_entry_does_not_claim_other_code(self):
+        """Its replacement is `false` whatever the clause, so only the code
+        tells an edited clause from the one that was judged."""
+        eq = entries(entry("client/src/a.ts", "20:51", "ConditionalExpression", "false"))
+        edited = {**TS_LINES, 20: "const twenty = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 8 };"}
+        code, msg = run(report(("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false"),
+                               lines=edited), eq, lines=edited)
+        self.assertEqual(code, 1)
+        self.assertIn("SURVIVED ConditionalExpression at client/src/a.ts:20:51", msg)
+        self.assertIn("g: 7", msg)  # the entry is reported, naming its code
+
+    # VTT-299
+    def test_a_survivor_of_the_entrys_mutator_on_another_statement_is_not_claimed(self):
         code, msg = run(
             report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "false", "reasoned")))
         self.assertEqual(code, 1)
-        self.assertIn("ADJUDICATION MOVED", msg)
-        self.assertIn("9:5", msg)   # where it was
-        self.assertIn("42:5", msg)  # where it is now
-        # And NOT as the two separate failures it used to be, because that is
-        # what makes deleting a real adjudication look like the fix.
-        self.assertNotIn("no longer survives", msg)
-        self.assertNotIn("SURVIVED", msg)
+        self.assertNotIn("ADJUDICATION MOVED", msg)
+        self.assertIn("no longer survives", msg)
+        self.assertIn("SURVIVED", msg)
 
-    def test_a_move_still_fails_the_gate(self):
-        # It is a re-key, not a pass. An entry pointing at the wrong line would
-        # pre-approve whatever later lands there.
-        code, _ = run(
-            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
-        self.assertEqual(code, 1)
-
-    def test_a_different_replacement_is_not_a_move(self):
-        # Same mutator and file, DIFFERENT mutation: two distinct claims, and
-        # pairing them would re-key an adjudication onto a mutant nobody judged.
+    # VTT-298
+    def test_a_survivor_with_another_replacement_at_the_entrys_code_is_not_claimed(self):
         code, msg = run(
-            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "true")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+            report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Survived", "true")),
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "false", "reasoned")))
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", msg)
         self.assertIn("SURVIVED", msg)
 
-    def test_a_move_across_files_is_not_a_move(self):
-        # Same mutator and replacement in a different file is a different
-        # mutant. Pairing across files would silently excuse it.
+    def test_the_same_code_in_another_file_is_not_claimed(self):
         code, msg = run(
             report(("client/src/b.ts", 9, 5, "BooleanLiteral", "Survived", "false")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+            entries(entry("client/src/a.ts", "9:5", "BooleanLiteral", "false", "reasoned")))
         self.assertEqual(code, 1)
-        self.assertNotIn("ADJUDICATION MOVED", msg)
+        self.assertIn("SURVIVED BooleanLiteral at client/src/b.ts:9:5", msg)
 
-    def test_two_candidates_at_once_are_not_paired(self):
-        # Ambiguous: two survivors match one stale entry equally well. Guessing
-        # which is the move would re-key onto a mutant nobody judged, so report
-        # them the old way and let a human decide.
-        code, msg = run(
-            report(("client/src/a.ts", 42, 5, "BooleanLiteral", "Survived", "false"),
-                   ("client/src/a.ts", 77, 5, "BooleanLiteral", "Survived", "false")),
-            {("client/src/a.ts", "9:5", "BooleanLiteral", "false"): "reasoned"})
+    # VTT-299
+    def test_two_mutants_of_one_mutator_on_one_line_are_two_claims(self):
+        """`send("a", "b");` carries two StringLiteral mutants with one
+        replacement, and an entry for the first does not excuse the second."""
+        first = entry("client/src/a.ts", "95:6", "StringLiteral", '""')
+        code, msg = run(report(("client/src/a.ts", 95, 11, "StringLiteral", "Survived", '""')),
+                        entries(first))
         self.assertEqual(code, 1)
-        self.assertNotIn("ADJUDICATION MOVED", msg)
+        self.assertIn("SURVIVED StringLiteral at client/src/a.ts:95:11", msg)
+        code, msg = run(report(("client/src/a.ts", 95, 6, "StringLiteral", "Survived", '""'),
+                               ("client/src/a.ts", 95, 11, "StringLiteral", "Survived", '""')),
+                        entries(first, entry("client/src/a.ts", "95:11", "StringLiteral", '""')))
+        self.assertEqual(code, 0, msg)
+
+    # VTT-299
+    def test_a_second_copy_of_an_adjudicated_line_is_reported_unadjudicated(self):
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""'),
+                   ("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "reasoned")))
+        self.assertEqual(code, 1)
+        unclaimed = [l for l in msg.splitlines() if "SURVIVED" in l]
+        self.assertEqual(len(unclaimed), 1, msg)
+        self.assertIn("client/src/a.ts:40:6", unclaimed[0])
+        self.assertIn("nth=2", msg)
+
+    # VTT-299
+    def test_an_entry_on_one_copy_does_not_claim_another_copys_survivor(self):
+        """The judged copy's mutant is killed and another copy's survives: that
+        survivor is a mutant nobody judged, though its code is the same."""
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Killed", '""'),
+                   ("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "reasoned")))
+        self.assertEqual(code, 1)
+        self.assertIn("SURVIVED StringLiteral at client/src/a.ts:40:6", msg)
         self.assertIn("no longer survives", msg)
 
+    # VTT-299
+    def test_two_mutants_at_one_start_with_different_extents_are_two_claims(self):
+        """A ConditionalExpression on a whole test and one on its left operand
+        start at one column with one replacement; only the extent tells them
+        apart."""
+        whole = entry("client/src/a.ts", "20:51", "ConditionalExpression", "false", span=9)
+        code, msg = run(report(("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false", 3)),
+                        entries(whole))
+        self.assertEqual(code, 1)
+        self.assertIn("SURVIVED ConditionalExpression at client/src/a.ts:20:51", msg)
+        self.assertIn("span=3", msg)
+        both = report(("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false", 3),
+                      ("client/src/a.ts", 20, 51, "ConditionalExpression", "Survived", "false", 9))
+        code, msg = run(both, entries(whole, entry("client/src/a.ts", "20:51", "ConditionalExpression",
+                                                   "false", span=3)))
+        self.assertEqual(code, 0, msg)
 
-class KeyPosition(unittest.TestCase):
-    """A key must still point at a mutant of the kind it names.
+    def test_two_entries_on_two_identical_lines_claim_both(self):
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""'),
+                   ("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "first"),
+                    entry("client/src/a.ts", "40:6", "StringLiteral", '""', "second")))
+        self.assertEqual(code, 0, msg)
 
-    THIS IS THE DANGEROUS CLASS OF DRIFT. A key that merely MOVED fails the
-    gate anyway — a stale entry beside an unadjudicated survivor. A key that
-    landed on a COMMENT fails nothing: Stryker generates no mutant there, so it
-    never appears in the report, and the entry sits in the file pre-approving
-    whatever lands on that line next. One wire.ts pair landed on comment lines
-    in two separate episodes three days apart — one of the two on 2026-08-21,
-    both of them on 2026-08-24; a canvas.ts key landed on one within an hour of
-    being written, because a comment edit above it shifted the line.
+    # VTT-301
+    def test_two_entries_for_one_code_and_one_survivor_leave_one_stale(self):
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "first"),
+                    entry("client/src/a.ts", "40:6", "StringLiteral", '""', "second")))
+        self.assertEqual(code, 1)
+        self.assertIn("no longer survives", msg)
+        self.assertNotIn("SURVIVED", msg)
 
-    The trap these tests are written against is recorded in the equivalents
-    file's own header: the hand-rolled version of this check tested
-    `startswith("//")`, which a `/**` doc comment does not match, and had no
-    branch for the mutator on the entry that had drifted — so it reported "0
-    suspect" TWICE over a genuinely broken key. Every rule below therefore has
-    a DELIBERATELY BROKEN key that must fail, not only a good key that passes.
+    # VTT-299
+    def test_a_string_literal_entry_claims_only_its_own_code(self):
+        """`""` is the replacement for every string literal in a file, so only
+        the code tells `label("other")` from `send("tag")`."""
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""'),
+                   ("client/src/a.ts", 90, 7, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "the send one")))
+        self.assertEqual(code, 1)
+        unclaimed = [l for l in msg.splitlines() if "SURVIVED" in l]
+        self.assertEqual(len(unclaimed), 1, msg)
+        self.assertIn("client/src/a.ts:90:7", unclaimed[0])
+
+    # VTT-300
+    def test_one_entry_claims_one_of_two_survivors_on_its_key(self):
+        """Should two mutants ever share a key, one entry excuses one of them."""
+        e = ctm.Entry("client/src/a.ts", "StringLiteral", 6, 1, 1, 4, '""', 'send("tag");', "reason")
+        key = ctm.entry_key(e)
+        claimed, unadjudicated, stale = ctm.claims([e], [(key, "first"), (key, "second")], [])
+        self.assertEqual((claimed, unadjudicated, stale), (["first"], [(key, "second")], []))
+
+    def test_claims_takes_survivors_before_timeouts(self):
+        """A timeout is not an evaluation, so an entry is not spent on one while
+        a survivor on its key is unclaimed."""
+        e = ctm.Entry("client/src/a.ts", "StringLiteral", 6, 1, 1, 4, '""', 'send("tag");', "reason")
+        key = ctm.entry_key(e)
+        claimed, unadjudicated, stale = ctm.claims([e], [(key, "lived")], [(key, "hung")])
+        self.assertEqual((claimed, unadjudicated, stale), (["lived"], [], []))
+
+    # VTT-303
+    def test_a_survivor_is_resolved_against_the_reports_own_source(self):
+        """The tree has moved since Stryker ran: a line went in at the top. The
+        survivor's position names the source Stryker mutated, which the report
+        carries."""
+        eq = entries(entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"))
+        shifted = {n + 1: v for n, v in TS_LINES.items()}
+        code, msg = run(report(("client/src/a.ts", 10, 5, "EqualityOperator", "Survived", "a >= b")),
+                        eq, lines=shifted)
+        self.assertEqual(code, 0, msg)
+
+    # VTT-304
+    def test_a_report_file_without_its_source_fails_the_gate(self):
+        code, msg = run(report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Survived"), sources={}))
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be read", msg)
+
+    # VTT-304
+    def test_a_survivor_without_an_end_fails_the_gate(self):
+        rep = report(("client/src/a.ts", 9, 5, "BooleanLiteral", "Survived"))
+        del rep["files"]["client/src/a.ts"]["mutants"][0]["location"]["end"]
+        code, msg = run(rep)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be read", msg)
+
+    # VTT-304
+    def test_a_survivor_whose_line_is_not_in_the_source_fails_the_gate(self):
+        code, msg = run(report(("client/src/a.ts", 9999, 5, "BooleanLiteral", "Survived")))
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be read", msg)
+
+    # VTT-304
+    def test_a_survivor_outside_its_trimmed_line_fails_the_gate(self):
+        """A column in the indentation or past the end names no code on the line."""
+        indented = {**TS_LINES, 10: "    if (a > b) c();"}
+        for line, col in ((10, 2), (9, 99)):
+            with self.subTest(line=line, col=col):
+                code, msg = run(report(("client/src/a.ts", line, col, "BooleanLiteral", "Survived"),
+                                       lines=indented), lines=indented)
+                self.assertEqual(code, 1)
+                self.assertIn("cannot be read", msg)
+
+    def test_an_unadjudicated_survivor_is_printed_as_a_ready_entry(self):
+        """Pasted as printed, the entry parses and claims the survivor once its
+        reason is written."""
+        rep = report(("client/src/a.ts", 30, 6, "StringLiteral", "Survived", '""'))
+        code, msg = run(rep)
+        self.assertEqual(code, 1)
+        block = msg.split("stated observable:\n", 1)[1].split("\n")[:3]
+        self.assertEqual(block[:2], ['client/src/a.ts  StringLiteral  offset=6  span=1  nth=1  copies=4  ""',
+                                     '    code: send("tag");'])
+        code, msg = run(rep, entries("\n".join(block[:2]) + "\n    reasoned\n"))
+        self.assertEqual(code, 0, msg)
+
+
+class EntryCheck(unittest.TestCase):
+    """The static check of each entry against the tree, before the report is
+    read (SPEC-020).
+
+    An entry on a comment, or on code its mutator cannot rewrite, names no
+    mutant Stryker makes: it could only ever go stale. Every rule here has a
+    DELIBERATELY BROKEN entry that must fail, not only a sound one that passes.
     """
 
-    def faults(self, *keys):
-        """suspect_positions over a hermetic tree, as {"line:col": complaint}."""
+    def faults(self, *texts, lines=TS_LINES):
+        """entry_faults over a hermetic tree, as the list of fault sentences."""
         with tempfile.TemporaryDirectory() as root:
-            source_tree(root)
-            entries = {k: "reason" for k in keys}
-            return {k[1]: fault for k, fault in ctm.suspect_positions(entries, root=root)}
+            source_tree(root, lines)
+            return [fault for _, fault in ctm.entry_faults(entries(*texts), root=root)]
 
     def test_a_column_is_counted_the_way_stryker_counts_it(self):
-        """Stryker's columns come from Babel, which indexes JS strings — UTF-16
-        code units, NOT bytes.
-
-        source_line's docstring asserted the opposite ("the column is a byte
-        offset"), so any line with a non-ASCII character before the mutant was
-        read at the wrong place: `—` is one character and THREE UTF-8 bytes, so
-        a byte-indexed lookup lands two early and the operator is not where the
-        checker looks.
-
-        The direction is the safe one — a sound key is REJECTED rather than a
-        broken one accepted — but it is still a gate refusing correct work, and
-        this repo's comments are full of em dashes. Line 22 of the fixture puts
-        one before the operator; line 21 puts one after, where byte and
-        character columns agree, so the two together separate "handles
-        non-ASCII" from "happens to work when it appears late"."""
-        self.assertEqual(self.faults(("client/src/a.ts", "22:23", "EqualityOperator", "a >= b")),
-                         {}, "column 23 is where Stryker says the expression starts")
-        self.assertEqual(self.faults(("client/src/a.ts", "21:5", "EqualityOperator", "a >= b")),
-                         {}, "an em dash AFTER the operator must not matter either")
-        # ...and the check still bites on this line: a column that is wrong in
-        # Stryker's own counting is still refused, so the fix widened nothing.
-        self.assertNotEqual(self.faults(("client/src/a.ts", "22:25", "EqualityOperator", "a >= b")),
-                            {}, "byte column 25 is NOT the expression start and must be refused")
-        # THE ASTRAL CASE, and without it this test does not pin its own name.
-        # Every character above is BMP, where UTF-16 units and Python characters
-        # agree — so a character-counting implementation passes all three
-        # assertions and the docstring's design decision goes unchecked. Found
-        # by review, fault-injected to confirm: swapping byte_offset for a
-        # character version leaves those three green and fails only this one.
-        self.assertEqual(self.faults(("client/src/a.ts", "23:21", "EqualityOperator", "a >= b")),
-                         {}, "an emoji is TWO UTF-16 units; column 21 is Babel's answer")
+        """Stryker's columns come from Babel, which indexes JS strings in UTF-16
+        code units, NOT bytes: `—` is one unit and THREE UTF-8 bytes, so a
+        byte-indexed lookup lands two early. Line 22 puts one before the
+        operator and line 21 one after; line 23's emoji is TWO units and one
+        Python character, which separates UTF-16 from character counting."""
+        self.assertEqual(self.faults(entry("client/src/a.ts", "22:23", "EqualityOperator", "a >= b")),
+                         [], "offset 23 is where Stryker says the expression starts")
+        self.assertEqual(self.faults(entry("client/src/a.ts", "21:5", "EqualityOperator", "a >= b")),
+                         [], "an em dash AFTER the operator must not matter either")
+        self.assertNotEqual(self.faults(entry("client/src/a.ts", "22:25", "EqualityOperator", "a >= b")),
+                            [], "byte offset 25 is NOT the expression start and must be refused")
+        self.assertEqual(self.faults(entry("client/src/a.ts", "23:21", "EqualityOperator", "a >= b")),
+                         [], "an emoji is TWO UTF-16 units; offset 21 is Babel's answer")
 
     def test_a_key_on_a_line_comment_is_rejected(self):
-        faults = self.faults(("client/src/a.ts", "70:1", "ConditionalExpression", "false"))
-        self.assertIn("COMMENT", faults.get("70:1", ""))
+        [fault] = self.faults(entry("client/src/a.ts", "70:1", "ConditionalExpression", "false"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_key_on_a_doc_comment_is_rejected(self):
-        """`/**`, the exact opener the shipped `startswith("//")` let through."""
-        faults = self.faults(("client/src/a.ts", "71:1", "ConditionalExpression", "false"))
-        self.assertIn("COMMENT", faults.get("71:1", ""))
+        """`/**`, which a check of `//` alone lets through."""
+        [fault] = self.faults(entry("client/src/a.ts", "71:1", "ConditionalExpression", "false"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_key_on_a_doc_comment_continuation_is_rejected(self):
-        faults = self.faults(("client/src/a.ts", "72:3", "ConditionalExpression", "false"))
-        self.assertIn("COMMENT", faults.get("72:3", ""))
+        [fault] = self.faults(entry("client/src/a.ts", "72:3", "ConditionalExpression", "false"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_mutator_with_no_position_rule_is_still_checked_for_comments(self):
-        """ConditionalExpression spans a whole clause, so its column says
-        nothing about a token — but "not on a comment" still applies, and it is
-        the rule that catches the drift that actually happened.
-
-        BOTH HALVES, because until 2026-08-25 this test asserted only the first
-        and its name was a lie: a key on ORDINARY CODE producing no fault says
-        nothing about whether the comment rule runs. Delete the comment rule
-        entirely and the old single assertion stayed green — a test that cannot
-        fail for the property it names, which is the defect class this whole
-        file exists to pin."""
+        """BOTH HALVES: a NO_POSITION_RULE entry on code passes, and on a
+        comment it still fails."""
         self.assertEqual(
-            self.faults(("client/src/a.ts", "20:51", "ConditionalExpression", "false")), {},
+            self.faults(entry("client/src/a.ts", "20:51", "ConditionalExpression", "false")), [],
             "a NO_POSITION_RULE mutator on real code must not be rejected outright")
-        self.assertIn(
-            "COMMENT",
-            self.faults(("client/src/a.ts", "70:1", "ConditionalExpression", "false")).get("70:1", ""),
-            "...and the comment rule must still apply to it")
+        [fault] = self.faults(entry("client/src/a.ts", "70:1", "ConditionalExpression", "false"))
+        self.assertIn("COMMENT", fault, "...and the comment rule must still apply to it")
 
     def test_a_string_key_whose_column_does_not_open_a_string_is_rejected(self):
-        faults = self.faults(("client/src/a.ts", "80:16", "StringLiteral", '"Stryker was here!"'))
-        self.assertIn("80:16", faults)
+        [fault] = self.faults(entry("client/src/a.ts", "80:16", "StringLiteral", '"Stryker was here!"'))
+        self.assertIn("opens no string", fault)
 
     def test_a_string_key_on_a_quote_is_accepted(self):
-        self.assertEqual(self.faults(("client/src/a.ts", "30:6", "StringLiteral", '""')), {})
+        self.assertEqual(self.faults(entry("client/src/a.ts", "30:6", "StringLiteral", '""')), [])
 
     def test_an_operator_key_is_checked_against_its_own_replacement_text(self):
-        """THE COLUMN IS NOT THE OPERATOR. Stryker reports a binary expression's
-        START, so `undo.ts 39:26` points at the `e` of `e.sequence > best`, not
-        at the `>`. The replacement — `e.sequence >= best` — is what says where
-        the operator is, and comparing the two pins the OPERANDS as well as the
-        operator: a key that drifted onto another comparison is rejected even
-        though a `>` sits in the same place.
-        """
-        good = ("client/src/a.ts", "10:5", "EqualityOperator", "a >= b")
-        self.assertEqual(self.faults(good), {})
+        """THE OFFSET IS NOT THE OPERATOR: Stryker reports the expression's
+        START, and the replacement says where the operator is, which pins the
+        operands too."""
+        self.assertEqual(self.faults(entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b")), [])
         # Line 14 is `if (x > y) z();` — same shape, different operands.
-        drifted = ("client/src/a.ts", "14:5", "EqualityOperator", "a >= b")
-        self.assertIn("14:5", self.faults(drifted))
+        [fault] = self.faults(entry("client/src/a.ts", "14:5", "EqualityOperator", "a >= b"))
+        self.assertIn("does not begin the expression", fault)
 
     def test_a_key_on_the_sibling_comparison_is_rejected(self):
-        """THE WORST OF THE SIX KEYS the 2026-08-21 sweep had to fix, in this
-        file's own words: it "landed on the SIBLING comparison, right shape
-        wrong operand — the worst of the six, because it looks plausible at the
-        new location". `env.sequence > this.seenSeq` one line from
-        `env.sequence > this.lastSeq`.
-
-        Line 15 is that shape against line 10: same left operand, same
-        operator, one operand apart. Checking only what precedes the operator
-        accepts it, which is why what FOLLOWS the operator is compared too.
-        """
-        self.assertIn("15:5", self.faults(("client/src/a.ts", "15:5", "EqualityOperator", "a >= b")))
+        """Line 15 against line 10: same left operand, same operator, one
+        operand apart. What FOLLOWS the operator is compared too."""
+        [fault] = self.faults(entry("client/src/a.ts", "15:5", "EqualityOperator", "a >= b"))
+        self.assertIn("does not begin the expression", fault)
 
     def test_an_operator_key_one_column_off_is_rejected(self):
-        self.assertIn("10:4", self.faults(("client/src/a.ts", "10:4", "EqualityOperator", "a >= b")))
+        self.assertEqual(len(self.faults(entry("client/src/a.ts", "10:4", "EqualityOperator", "a >= b"))), 1)
 
-    def test_a_key_naming_a_line_that_is_not_there_is_rejected(self):
-        self.assertIn("9999:5", self.faults(("client/src/a.ts", "9999:5", "StringLiteral", '""')))
+    # VTT-302
+    def test_an_entry_whose_code_stands_nowhere_in_its_file_is_reported(self):
+        [fault] = self.faults("client/src/a.ts  StringLiteral  offset=6  span=6  nth=1  copies=1  \"\"\n"
+                              "    code: send(\"gone\");\n    reason\n")
+        self.assertIn("stands 0 time(s)", fault)
 
     def test_a_key_naming_a_file_that_is_not_there_is_rejected(self):
-        self.assertIn("9:5", self.faults(("client/src/gone.ts", "9:5", "StringLiteral", '""')))
+        text = entry("client/src/a.ts", "9:5", "BooleanLiteral", "false").replace("a.ts", "gone.ts", 1)
+        [fault] = self.faults(text)
+        self.assertIn("gone.ts", fault)
+
+    # VTT-302
+    def test_an_entry_whose_copies_differ_from_the_tree_is_reported(self):
+        text = entry("client/src/a.ts", "30:6", "StringLiteral", '""').replace("copies=4", "copies=3")
+        [fault] = self.faults(text)
+        self.assertIn("stands 4 time(s)", fault)
+        self.assertIn("copies=3", fault)
+
+    def test_two_entries_for_one_copy_are_reported(self):
+        """One mutant can be excused once; a second entry on its key is a
+        duplicate, not a second claim."""
+        one = entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b")
+        faults = self.faults(one, one)
+        self.assertTrue(faults)
+        self.assertTrue(all("2 entries" in f for f in faults), faults)
+
+    def test_an_entry_whose_nth_exceeds_its_copies_is_reported(self):
+        text = entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b").replace("nth=1", "nth=2")
+        [fault] = self.faults(text)
+        self.assertIn("nth=2", fault)
 
     def test_an_unknown_mutator_is_fatal_rather_than_silently_skipped(self):
-        """THE SECOND HALF OF THE RECORDED BUG: the shipped check had no branch
-        for one entry's mutator and skipped it without a word, which is how it
-        said "0 suspect" over a key that had drifted. A mutator this gate
-        cannot place must FAIL rather than pass — the alternative is the defect.
-        """
-        faults = self.faults(("client/src/a.ts", "9:5", "NoSuchMutator", "x"))
-        self.assertIn("NoSuchMutator", faults.get("9:5", ""))
+        """A mutator this check cannot place must FAIL rather than pass."""
+        [fault] = self.faults(entry("client/src/a.ts", "9:5", "NoSuchMutator", "x"))
+        self.assertIn("NoSuchMutator", fault)
 
     def test_the_gate_itself_fails_and_names_the_key(self):
-        """Through check(), not just the helper: a check nothing calls is a
-        check that does not run."""
+        """Through check(), not just the helper: a check nothing calls does not run."""
         code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed")),
-                        {("client/src/a.ts", "70:1", "ConditionalExpression", "false"): "reasoned"})
+                        entries(entry("client/src/a.ts", "70:1", "ConditionalExpression", "false", "reasoned")))
         self.assertEqual(code, 1)
-        self.assertIn("70:1", msg)
+        self.assertIn("// a line comment", msg)
         self.assertIn("COMMENT", msg)
 
     def test_a_suspect_key_is_not_also_told_to_delete_itself(self):
-        """TWO MESSAGES THAT CONTRADICT EACH OTHER ARE WORSE THAN ONE.
-
-        A key on a comment has no mutant, so it is stale as well as suspect,
-        and the generic stale line fires beside the position one: "re-key it,
-        do not delete it" immediately under "Remove the entry". A reader
-        following the second loses the reasoning, which is the exact harm this
-        whole change exists to stop. The position diagnosis is strictly the
-        more informative of the two, so it is the one that survives — and the
-        entry is still reported, and the gate still fails.
-        """
+        """An entry on a comment is stale as well as faulty; the fault is the
+        one message it gets, since "remove the entry" beside it would lose the
+        reasoning."""
         code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed")),
-                        {("client/src/a.ts", "70:1", "ConditionalExpression", "false"): "reasoned"})
+                        entries(entry("client/src/a.ts", "70:1", "ConditionalExpression", "false", "reasoned")))
         self.assertEqual(code, 1, "a suspect key must still FAIL the gate")
-        self.assertIn("70:1", msg)
-        self.assertNotIn("Remove the entry", msg)
+        self.assertIn("// a line comment", msg)
+        self.assertNotIn("remove the entry", msg.lower())
 
+    # VTT-302
     def test_every_real_adjudication_still_points_at_its_mutant(self):
-        """THE ACCEPTANCE ASSERTION, against the real tree and the real file.
-
-        This is what would have caught the four comment-line keys, and it is
-        also what keeps the table honest: a rule that rejected any of the 73
-        recorded adjudications would be a bug in the rule, not a finding.
-        """
+        """THE ACCEPTANCE ASSERTION, against the real tree and the real file."""
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        entries = ctm.read_equivalents(os.path.join(repo, "tools", "ts-mutation-equivalents.txt"))
-        self.assertGreater(len(entries), 60, "the real file must not have gone empty under this")
-        self.assertEqual(ctm.suspect_positions(entries, root=repo), [],
-                         "every key in tools/ts-mutation-equivalents.txt must still point at the "
-                         "expression its own replacement text names")
+        real = ctm.read_equivalents(os.path.join(repo, "tools", "ts-mutation-equivalents.txt"))
+        self.assertGreater(len(real), 60, "the real file must not have gone empty under this")
+        self.assertEqual(ctm.entry_faults(real, root=repo), [],
+                         "every entry in tools/ts-mutation-equivalents.txt must name code that "
+                         "stands in its file as often as it records, where its own replacement "
+                         "text says")
 
-
-class AmbiguousMove(unittest.TestCase):
-    """Pairing when a signature is not unique, and never advising a deletion
-    when a pairing exists.
-
-    The gate used to refuse every ambiguous group and tell the reader to DELETE
-    the entries. That is the worst of the three options: it destroys reasoning
-    somebody did AND leaves a real survivor unexplained. Measured on
-    2026-08-25, on app.ts's two `history.replaceState` calls — two identical
-    statements whose StringLiteral replacement is `"Stryker was here!"` for
-    every string literal in the file, so no content can tell them apart.
-    """
-
-    def test_two_entries_and_two_survivors_pair_by_position_order(self):
-        """Nothing in the source can say which entry became which survivor, and
-        it does not matter: the statements are identical, so the adjudications
-        are interchangeable. Reported AS an order-based pairing, so a reader
-        who knows better can object."""
-        code, msg = run(
-            report(("client/src/a.ts", 50, 6, "StringLiteral", "Survived", '""'),
-                   ("client/src/a.ts", 60, 6, "StringLiteral", "Survived", '""')),
-            {("client/src/a.ts", "30:6", "StringLiteral", '""'): "first",
-             ("client/src/a.ts", "40:6", "StringLiteral", '""'): "second"})
-        self.assertEqual(code, 1, "a re-key is still a failure, not a pass")
-        self.assertIn("POSITION ORDER", msg)
-        self.assertIn("30:6 -> 50:6", msg)
-        self.assertIn("40:6 -> 60:6", msg)
-        self.assertNotIn("no longer survives", msg)
-
-    def test_an_anchorless_ordered_pairing_does_not_claim_a_shared_source_line(self):
-        """The justification must describe the signature that actually paired.
-
-        pair_moves has two passes: anchored (file, mutator, replacement AND the
-        source line) and coarse (the first three only). The ordered wording
-        claimed all four, which is false whenever the coarse pass is what
-        matched — and that is not an exotic case, it is every entry whose file
-        cannot be read, including the one the test above uses. A reader
-        objecting to an order-based pairing needs to know which facts were
-        actually compared; telling them the source lines matched when nothing
-        read a source line invites them to accept a pairing on evidence that
-        was never gathered."""
-        code, msg = run(
-            report(("client/src/does-not-exist.ts", 50, 6, "StringLiteral", "Survived", '""'),
-                   ("client/src/does-not-exist.ts", 60, 6, "StringLiteral", "Survived", '""')),
-            {("client/src/does-not-exist.ts", "30:6", "StringLiteral", '""'): "first",
-             ("client/src/does-not-exist.ts", "40:6", "StringLiteral", '""'): "second"})
-        self.assertEqual(code, 1)
-        self.assertIn("POSITION ORDER", msg)
-        self.assertNotIn("source line", msg)
-
-    def test_mismatched_counts_still_refuse_to_guess(self):
-        """Two entries, one survivor. There is no pairing, only a choice, and
-        the gate does not make choices — it reports both sides and fails."""
-        code, msg = run(
-            report(("client/src/a.ts", 50, 6, "StringLiteral", "Survived", '""')),
-            {("client/src/a.ts", "30:6", "StringLiteral", '""'): "first",
-             ("client/src/a.ts", "40:6", "StringLiteral", '""'): "second"})
-        self.assertEqual(code, 1)
-        self.assertNotIn("ADJUDICATION MOVED", msg)
-        self.assertNotIn("POSITION ORDER", msg)
-        self.assertIn("no longer survives", msg)
-        self.assertIn("SURVIVED", msg)
-
-    def test_the_anchor_separates_two_statements_sharing_a_replacement(self):
-        """What the anchor buys, and it is a pairing the counts alone refuse.
-
-        Two entries and three survivors share (file, mutator, replacement), so
-        the old signature gives 2-against-3 and gives up on all five. The
-        trimmed source line separates them: `label("other")` has one entry and
-        one survivor and pairs; the three `send("tag")` copies are 1-against-2
-        and are still reported both ways.
-        """
-        code, msg = run(
-            report(("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""'),
-                   ("client/src/a.ts", 50, 6, "StringLiteral", "Survived", '""'),
-                   ("client/src/a.ts", 91, 7, "StringLiteral", "Survived", '""')),
-            {("client/src/a.ts", "30:6", "StringLiteral", '""'): "the send one",
-             ("client/src/a.ts", "90:7", "StringLiteral", '""'): "the label one"})
-        self.assertEqual(code, 1)
-        self.assertIn("ADJUDICATION MOVED", msg)
-        self.assertIn("90:7", msg)
-        self.assertIn("91:7", msg)
-        # The unpairable half is still reported both ways, unguessed.
-        self.assertIn("30:6", msg)
-        self.assertIn("no longer survives", msg)
-
-    def test_a_pairing_is_never_advice_to_delete(self):
-        """The property the whole of Part B is for, asserted on the message
-        rather than inferred from the pairing."""
-        _, msg = run(
-            report(("client/src/a.ts", 50, 6, "StringLiteral", "Survived", '""'),
-                   ("client/src/a.ts", 60, 6, "StringLiteral", "Survived", '""')),
-            {("client/src/a.ts", "30:6", "StringLiteral", '""'): "first",
-             ("client/src/a.ts", "40:6", "StringLiteral", '""'): "second"})
-        self.assertIn("RE-KEY", msg)
-        self.assertNotIn("Remove the entry", msg)
 
 
 class TimeoutAdvice(unittest.TestCase):

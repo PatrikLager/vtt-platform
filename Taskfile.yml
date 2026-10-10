@@ -408,13 +408,14 @@ tasks:
       exported by any sysctl, so the machine reads healthy right up to the
       wall. Do not check pcbcount to decide whether it is safe to run.
     cmds:
-      # ABOVE the platform guard deliberately: this is the gate-checker's own
-      # 44 unit tests, it opens no sockets, it runs in well under a second, and
-      # it runs nowhere else in the repo. FB21686886 is no reason to stop
-      # proving the enforcement code -- check-ts-mutation.py's own header
-      # records that 8 of 9 defects across five review rounds were in
+      # ABOVE the platform guard deliberately: these are the gate-checker's own
+      # unit tests and QA's, they open no sockets, they run in well under a
+      # second, and they run nowhere else in the repo. FB21686886 is no reason
+      # to stop proving the enforcement code -- check-ts-mutation.py's own
+      # header records that 8 of 9 defects across five review rounds were in
       # hand-rolled enforcement rather than in the thing being enforced.
       - python3 tools/check_ts_mutation_test.py -q
+      - python3 tools/check_ts_mutation_qa_test.py -q
       # The split's own decision logic: hashing too little reports a stale
       # report as current, which is the gate silently ceasing to cover the
       # client while still printing a verdict.

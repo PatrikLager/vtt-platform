@@ -28,17 +28,17 @@ implement mutation testing. That boundary is the same one check-mutation.py
 draws, for the same reason recorded there: across five review rounds of the
 coverage gate, 8 of 9 defects were in hand-rolled enforcement code.
 
-IT DOES READ TYPESCRIPT SOURCE, in exactly one way, and this paragraph used to
-say it did not. Each adjudication names a line:col, and the gate now reads that
-one line to check the key still points at a mutant of the kind it names, and to
-derive the anchor that pairs a stale entry to the survivor it became
-(MUTATOR_TOKENS, read_position, pair_moves). That is a byte lookup and a prefix
-comparison against Stryker's own replacement text — no parser, no AST, no
-opinion about what the code means. But "does not interpret TypeScript" was
-false the moment this landed, and a comment that was true when written and
-stopped being so with nothing to notice is this repo's dominant defect.
+IT READS TYPESCRIPT SOURCE, as lines of text and nothing more. An adjudication
+names the code its mutant starts on, not a line (SPEC-020), so the gate reads
+the line Stryker names for each survivor from the report's own copy of the file
+and compares the trimmed text and the offset in it with each entry's. Before
+that it checks each entry against the tree: its code stands in its file as
+often as the entry records, and its offset holds what its mutator rewrites, by
+a prefix comparison against Stryker's replacement text. No parser, no AST, no
+opinion about what the code means.
 """
 
+import collections
 import json
 import sys
 from pathlib import Path
@@ -65,91 +65,125 @@ class EquivalentsError(Exception):
     pass
 
 
-def read_equivalents(path):
-    """{(file, "line:col", mutator, replacement): reason}.
+# An adjudication names the code it excuses, never its line (SPEC-020):
+#
+#     <file>  <mutator>  offset=<n>  span=<n>  nth=<n>  copies=<n>  <replacement, to end of line>
+#         code: <the line the mutant starts on, trimmed>
+#         <reason>
+#
+# `offset` is Stryker's column, in UTF-16 code units, less the line's
+# indentation, so a line that moves or is re-indented keeps its entry and a
+# line that is edited loses it. `span` is how much code the mutant covers, in
+# UTF-16 code units from Stryker's start to its end, leaving out each line's
+# indentation and trailing blanks and counting a line break as one: a
+# ConditionalExpression on a whole test and one on its left operand start at
+# one column. `copies` is how many lines of the file hold that code, and `nth`
+# which of them the entry names, counted from the top: an entry on one copy
+# never excuses a mutant on another. The REPLACEMENT stays in the key: Stryker emits `-> true` AND
+# `-> false` for one ConditionalExpression, and adjudicating the harmless one
+# must not excuse the other.
+Entry = collections.namedtuple("Entry", "file mutator offset span nth copies replacement code reason")
 
-    A header line plus an indented reason. The reason is REQUIRED. An
-    equivalence claim asserts that NO test can ever kill the mutant, so it
-    forecloses writing one; on the Go side two of four such claims were wrong,
-    and a bare entry is how that happens quietly.
+# The reason the gate prints under a ready entry. Refused as a reason: pasted
+# unedited, it would excuse a mutant nobody judged.
+PLACEHOLDER = "<the observable that makes it equivalent>"
+
+
+def entry_key(e):
+    return (e.file, e.mutator, e.replacement, e.offset, e.span, e.nth, e.code)
+
+
+def describe(e):
+    return (f"{e.file} {e.mutator} (-> {e.replacement}) offset={e.offset} span={e.span} "
+            f"nth={e.nth} on `{e.code}`")
+
+
+def read_equivalents(path):
+    """[Entry], in file order.
+
+    A line whose FIRST character is `#` is a comment; a `#` anywhere else is
+    text, in code, replacement and reason alike. Under each entry come its code
+    line and its reason, both required: an equivalence claim forecloses ever
+    writing a test for its mutant, and a bare entry is how a wrong one lands
+    unnoticed.
     """
-    entries = {}
-    pending = None
-    for lineno, raw in enumerate(Path(path).read_text().splitlines(), 1):
-        line = raw.split("#", 1)[0].rstrip()
-        if not line.strip():
+    want = ("want '<file>  <mutator>  offset=<n>  span=<n>  nth=<n>  copies=<n>  <replacement>', "
+            "each <n> at least 1")
+    entries, head, code, head_line = [], None, None, 0
+    # Split on line feeds only, as the gate splits source: splitlines() would
+    # also break a code line at a form feed or U+2028.
+    for lineno, line in enumerate(Path(path).read_text().split("\n"), 1):
+        line = line[:-1] if line.endswith("\r") else line
+        if not line.strip() or line.startswith("#"):
             continue
-        if raw[:1].isspace():
-            if pending is None:
+        if line[0].isspace():
+            text = line.strip()
+            if head is None:
                 raise EquivalentsError(f"{path}:{lineno}: reason with no entry above it")
-            entries[pending] = line.strip()
-            pending = None
+            if code is None:
+                # Trimmed as the gate trims source (INDENT), so a printed entry
+                # pasted back names the same code.
+                text = line.lstrip(INDENT).rstrip(INDENT)
+                if not text.startswith("code: "):
+                    raise EquivalentsError(
+                        f"{path}:{lineno}: entry with no code line under it — the first line "
+                        f"under an entry is `code: <the line its mutant starts on, trimmed>`")
+                code = text[len("code: "):]
+                continue
+            if text == PLACEHOLDER:
+                raise EquivalentsError(
+                    f"{path}:{lineno}: entry with the printed placeholder for its reason — state "
+                    f"the observable that makes it equivalent, or write the test instead")
+            entries.append(Entry(*head, code, text))
+            head, code = None, None
             continue
-        if pending is not None:
-            raise EquivalentsError(f"{path}:{pending_line}: entry with no reason under it")
-        # The REPLACEMENT is part of the key, and is the rest of the line
-        # because it can contain spaces (`a.id <= b.id`).
-        #
-        # Without it, two mutants at one location with one mutator — Stryker
-        # emits `-> true` AND `-> false` for the same ConditionalExpression —
-        # collapse to a single key, and adjudicating either silently excuses
-        # the other. Found by this file's own duplicate check on
-        # client/src/player.ts:20:51, where the two are genuinely different
-        # claims: forcing that branch to `true` returns what it would have
-        # returned anyway, while forcing it to `false` does not.
-        parts = line.split(maxsplit=3)
-        if len(parts) != 4:
-            raise EquivalentsError(
-                f"{path}:{lineno}: want '<file> <line>:<col> <MUTATOR> <replacement>', "
-                f"got {line.strip()!r}")
-        key = (parts[0], parts[1], parts[2], parts[3])
-        if key in entries:
-            raise EquivalentsError(f"{path}:{lineno}: {key} listed twice")
-        pending, pending_line = key, lineno
-    if pending is not None:
-        raise EquivalentsError(f"{path}:{pending_line}: entry with no reason under it")
+        if head is not None:
+            raise EquivalentsError(f"{path}:{head_line}: entry with no "
+                                   f"{'code line' if code is None else 'reason'} under it")
+        parts = line.split(maxsplit=6)
+        try:
+            names = [x.split("=")[0] for x in parts[2:6]]
+            if len(parts) != 7 or names != ["offset", "span", "nth", "copies"]:
+                raise ValueError
+            offset, span, nth, copies = (int(x.split("=", 1)[1]) for x in parts[2:6])
+            if min(offset, span, nth, copies) < 1:
+                raise ValueError
+        except ValueError:
+            raise EquivalentsError(f"{path}:{lineno}: {want}, got {line.strip()!r}") from None
+        # Normalised as mutants() normalises Stryker's, so the two compare.
+        head = (parts[0], parts[1], offset, span, nth, copies, " ".join(parts[6].split()))
+        head_line = lineno
+    if head is not None:
+        raise EquivalentsError(f"{path}:{head_line}: entry with no "
+                               f"{'code line' if code is None else 'reason'} under it")
     return entries
 
 
 def mutants(report):
-    """Yield (file, "line:col", mutator, status) for every mutant."""
+    """Yield (file, "line:col", mutator, replacement, status, end) for every
+    mutant, `end` being Stryker's end as "line:col", or None."""
     for path, entry in sorted(report.get("files", {}).items()):
         for m in entry.get("mutants", []):
             start = m.get("location", {}).get("start", {})
             where = f"{start.get('line', '?')}:{start.get('column', '?')}"
+            stop = m.get("location", {}).get("end")
+            end = f"{stop.get('line', '?')}:{stop.get('column', '?')}" if isinstance(stop, dict) else None
             # Replacement is normalised to one line: it is a key component, and
             # Stryker emits multi-line replacements for block mutants.
             replacement = " ".join(str(m.get("replacement", "")).split())
-            yield path, where, m.get("mutatorName", "?"), replacement, m.get("status", "?")
+            yield path, where, m.get("mutatorName", "?"), replacement, m.get("status", "?"), end
 
 
 # ---------------------------------------------------------------------------
-# DOES THE KEY STILL POINT AT A MUTANT OF THE KIND IT NAMES?
+# WHAT AN ENTRY'S OFFSET MUST HOLD, checked against the tree before the report
+# is read. An entry on a comment, or on code its mutator cannot rewrite, names
+# no mutant Stryker makes, so it could only ever go stale.
 #
-# THE DANGEROUS CLASS OF DRIFT, and not the one the rest of this file worries
-# about. A key that has merely MOVED fails the gate anyway, loudly: a stale
-# entry beside an unadjudicated survivor. A key that has landed on a COMMENT
-# fails NOTHING — Stryker generates no mutant there, so it never appears in the
-# report, and the entry sits in the file silently pre-approving whatever DOES
-# land on that line later. It is an excuse with no mutant behind it.
-#
-# Not hypothetical, and not rare: the wire.ts pair landed on comment lines in
-# TWO separate episodes three days apart — one of the two on 2026-08-21, both
-# of them on 2026-08-24, and the equivalents file's header records each — while
-# a canvas.ts key landed on one within an HOUR of being written, because a
-# comment edit above it shifted the line. Nothing about editing a comment
-# suggests a mutation key is downstream of it, which is why catching it has to
-# be mechanical rather than noticed.
-#
-# THE COLUMN IS NOT THE OPERATOR, which is the one thing to know before reading
-# the rule below. Stryker reports the START of the mutated node, so
-# `undo.ts 39:26` points at the `e` of `e.sequence > best`, not at the `>`.
-# The REPLACEMENT is what says where the operator is: it is the same expression
-# with one operator rewritten, so the first place the source and the
-# replacement diverge IS the operator, and comparing them compares the OPERANDS
-# too — as a prefix test, with the gap that leaves written out on operator_at.
-# A key that drifted onto a different comparison is rejected even when a
-# `>` sits in exactly the same place.
+# THE OFFSET IS NOT THE OPERATOR. Stryker reports the START of the mutated
+# node, so an EqualityOperator mutant on `e.sequence > best` starts at the `e`.
+# The REPLACEMENT says where the operator is: it is the same expression with one
+# operator rewritten, so the first place the code and the replacement diverge
+# IS the operator, and comparing them compares the operands too (operator_at).
 MUTATOR_TOKENS = {
     "EqualityOperator": ("===", "!==", "==", "!=", "<=", ">=", "<", ">"),
     "ArithmeticOperator": ("+", "-", "*", "/", "%"),
@@ -157,27 +191,12 @@ MUTATOR_TOKENS = {
 }
 
 # A StringLiteral mutant replaces the whole literal, so there is no operator to
-# find — but its column must OPEN one, in any of JavaScript's three quotes.
-#
-# WHAT THAT DOES NOT CATCH, measured rather than guessed, by moving every one
-# of the 73 recorded keys a line and a column in each direction and re-running
-# the check: every position-checkable key that lands off its mutant is caught
-# EXCEPT a few StringLiteral ones — at most three in any one direction, and
-# every escape in all four directions was a StringLiteral. They escape for one
-# reason, which is that the replacement is a sentinel (`""`, `"Stryker was
-# here!"`) carrying no information about which literal it was. A key on `case
-# "attackRolled":` moved one line onto `case "abilityUsed":` still opens a
-# string; a key on the opening quote of `""` moved one column lands on its
-# closing quote. Both stay undetectable without something in the file format to
-# compare against, and the design's reason for not adding one is that a stored
-# field would itself drift. The COMMENT rule still covers the drift that has
-# actually bitten here, twice.
+# find — but its offset must OPEN one, in any of JavaScript's three quotes.
 STRING_MUTATORS = ("StringLiteral",)
 
-# Mutators whose column is checked for rule 1 ONLY, each with the reason it
-# cannot take rule 2. This list is not a convenience: an entry here is a
-# NARROWER check, so it is written down per mutator rather than left as a
-# silent default, and a mutator in neither table FAILS (see read_position).
+# Mutators whose offset is checked for the comment rule ONLY, each with the
+# reason it cannot take the column rule. An entry here is a NARROWER check, so
+# it is written down per mutator; a mutator in neither table FAILS.
 #
 #   ConditionalExpression  spans a whole clause — `case "x":`, an `if` test, a
 #                          ternary arm — and its replacement is `true`, `false`
@@ -198,12 +217,8 @@ NO_POSITION_RULE = ("ConditionalExpression", "BlockStatement", "ArrayDeclaration
                     "ObjectLiteral", "BooleanLiteral", "OptionalChaining", "MethodExpression")
 
 # `//`, `/*`, and a line whose first non-space is `*` — the middle of a block
-# comment. THE THIRD ONE IS THE ONE THAT SHIPPED BROKEN: the hand-rolled
-# version of this check tested `startswith("//")`, which neither `/**` nor a
-# continuation matches, and it reported "0 suspect" TWICE over a key that had
-# drifted three lines onto a `/**`. A checker that cannot fail is worse than no
-# checker, which is why every rule here has a test built on a key broken on
-# purpose rather than only on a good key that passes.
+# comment. Test the third: a check of `//` alone misses `/**` and its
+# continuation lines.
 COMMENT_PREFIXES = (b"//", b"/*", b"*")
 
 REPO = Path(__file__).resolve().parent.parent
@@ -233,27 +248,6 @@ def byte_offset(line, col):
     units = text.encode("utf-16-le")
     prefix = units[: max(col - 1, 0) * 2].decode("utf-16-le", "replace")
     return len(prefix.encode("utf-8"))
-
-
-def source_line(root, path, where):
-    """The raw BYTES of the line a key names, or None if it cannot be read.
-
-    Bytes, not text, so the tokens compared against it stay bytes throughout.
-    The COLUMN is converted separately — see byte_offset, and do not index this
-    with a Stryker column directly.
-    """
-    try:
-        wanted = int(where.split(":")[0])
-    except (ValueError, IndexError):
-        return None
-    try:
-        with open(Path(root) / path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
-                if n == wanted:
-                    return raw.rstrip(b"\r\n")
-    except OSError:
-        return None
-    return None
 
 
 def _leading_token(text, tokens):
@@ -308,180 +302,182 @@ def operator_at(tail, replacement, tokens):
     return ""
 
 
-def read_position(root, key):
-    """(fault, anchor) for one key.
+INDENT = " \t\r"
 
-    fault is "" when the position can still host this mutator, and a sentence
-    naming what is wrong when it cannot. anchor is the trimmed text of the line
-    the key sits on — the content half of the pairing signature below.
+
+def _units(text):
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _cut(text, start, stop):
+    """`text` from UTF-16 unit `start` to `stop`, as Stryker's columns count."""
+    return text.encode("utf-16-le")[2 * start:2 * stop].decode("utf-16-le", "replace")
+
+
+def resolve(sources, path, where, mutator, replacement, end):
+    """The key of the mutant Stryker reports from `where` to `end` ("line:col")
+    in `path`, read from the report's own copy of that file, or None when its
+    line cannot be read, its column falls outside the code on it, or its end
+    is missing or outside the source.
+
+    The report's source, not the tree: Stryker's positions name what it
+    mutated, and the tree can have moved since (VTT-303).
     """
-    path, where, mutator, replacement = key
-    line = source_line(root, path, where)
-    if line is None:
-        return (f"there is no such line in the tree — {path} is missing, unreadable, or shorter "
-                f"than that", "")
-    anchor = line.strip().decode("utf-8", "replace")
-    if line.strip().startswith(COMMENT_PREFIXES):
-        return (f"that line is a COMMENT ({anchor!r}), and Stryker generates no mutant on one",
-                anchor)
+    text = sources.get(path)
+    if not isinstance(text, str) or end is None:
+        return None
     try:
-        col = int(where.split(":")[1])
-    except (ValueError, IndexError):
-        return (f"{where!r} is not a line:col", anchor)
-    if mutator in NO_POSITION_RULE:
-        return ("", anchor)
-    off = byte_offset(line, col)
-    if mutator in STRING_MUTATORS:
-        opener = line[off:off + 1] if 1 <= col and off < len(line) else b""
-        if opener not in (b'"', b"'", b"`"):
-            return (f"column {col} of {anchor!r} holds {opener.decode('utf-8', 'replace')!r}, "
-                    f"which opens no string or template literal", anchor)
-        return ("", anchor)
-    tokens = MUTATOR_TOKENS.get(mutator)
-    if tokens is None:
-        # FAIL CLOSED. The shipped version of this check had no branch for one
-        # entry's mutator and skipped it in silence, which is the other half of
-        # how it said "0 suspect" over a broken key. A mutator this gate cannot
-        # place is a gate that is not checking, and it must say so.
-        return (f"{mutator} is in neither MUTATOR_TOKENS nor NO_POSITION_RULE, so this gate "
-                f"cannot say what its column should hold and is not checking this key at all. "
-                f"Add it to whichever it belongs in, with the reason", anchor)
-    if col < 1 or off >= len(line):
-        return (f"column {col} is past the end of {anchor!r}", anchor)
-    was = operator_at(line[off:], replacement.encode(), tokens)
-    if not was:
-        return (f"column {col} of {anchor!r} does not begin the expression {replacement!r} "
-                f"names — no {mutator} operator ({' '.join(tokens)}) stands where the "
-                f"replacement puts one", anchor)
-    return ("", anchor)
+        line, col = (int(x) for x in where.split(":"))
+        eline, ecol = (int(x) for x in end.split(":"))
+    except ValueError:
+        return None
+    lines = text.split("\n")
+    if not 1 <= line <= eline <= len(lines) or not 1 <= ecol <= _units(lines[eline - 1]) + 1:
+        return None
+    raw = lines[line - 1]
+    code = raw.strip(INDENT)
+    offset = col - (len(raw) - len(raw.lstrip(INDENT)))
+    if not code or not 1 <= offset <= _units(code):
+        return None
+    if eline == line:
+        span = ecol - col
+    else:
+        # Each line's indentation and trailing blanks left out, each break one
+        # unit, so re-indenting a block keeps its multi-line mutants' keys.
+        covered = ([_cut(raw, col - 1, _units(raw)).rstrip(INDENT)]
+                   + [x.strip(INDENT) for x in lines[line:eline - 1]]
+                   + [_cut(lines[eline - 1], 0, ecol - 1).lstrip(INDENT)])
+        span = _units("\n".join(covered))
+    if span < 1:
+        return None
+    nth = sum(1 for x in lines[:line] if x.strip(INDENT) == code)
+    return (path, mutator, replacement, offset, span, nth, code)
 
 
-def suspect_positions(entries, root="."):
-    """[(key, fault)] for every entry whose position cannot host its mutator."""
+def copies_in(text, code):
+    """How many lines of `text` hold `code`."""
+    return sum(1 for raw in (text or "").split("\n") if raw.strip(INDENT) == code)
+
+
+def entry_faults(entries, root="."):
+    """[(Entry, fault)] for every entry the tree refutes, before the report is read.
+
+    Refused: a file that cannot be read; code that stands in its file a number
+    of times other than `copies` (VTT-302); an `nth` above `copies`; two
+    entries for one key; code that is a comment; a column rule its mutator
+    fails; a mutator in neither table (fail closed). `span` cannot be checked
+    without a parser: a wrong one matches nothing, and fails as stale.
+    """
+    sharing = collections.Counter(entry_key(e) for e in entries)
+    files = {}
     bad = []
-    for key in sorted(entries):
-        fault, _ = read_position(root, key)
+    for e in entries:
+        if e.file not in files:
+            try:
+                text = (Path(root) / e.file).read_text(encoding="utf-8")
+                files[e.file] = [raw.strip(INDENT) for raw in text.split("\n")]
+            except (OSError, UnicodeDecodeError):
+                files[e.file] = None
+        fault = _entry_fault(e, files[e.file], sharing[entry_key(e)])
         if fault:
-            bad.append((key, fault))
+            bad.append((e, fault))
     return bad
 
 
-# ---------------------------------------------------------------------------
-# PAIRING A STALE ENTRY TO THE SURVIVOR IT BECAME
-#
-# An edit ABOVE an adjudicated mutant shifts its line, and the gate used to
-# report that as two unrelated failures — a stale entry here, an unadjudicated
-# survivor there — with nothing saying they were the same mutant. The obvious
-# response to "no longer survives, remove it" is then to DELETE a reasoned
-# adjudication and leave the survivor unexplained. Measured: four times in one
-# day, across both gates.
-#
-# TWO PASSES, AND THE ORDER IS THE WHOLE DESIGN.
-#
-#   1. (file, mutator, replacement, ANCHOR), the anchor being the trimmed
-#      source line the key sits on. This separates mutants that share a mutator
-#      and a replacement but live on different statements — the case that
-#      defeats StringLiteral, whose replacement is `"Stryker was here!"` for
-#      EVERY string literal in a file. It rescues pairings the counts alone
-#      refuse: two entries against three survivors gives up on all five, while
-#      the anchor can carve out the one-to-one inside it.
-#
-#   2. (file, mutator, replacement) — what this gate has always paired on — for
-#      whatever pass 1 left. The anchor REFINES and never gates, and that is
-#      deliberate rather than lazy: an entry whose line has genuinely shifted
-#      reads its anchor off somebody else's code, so requiring the anchor to
-#      match would break move detection in exactly the case it exists for.
-#
-# COUNTS DECIDE BOTH PASSES. One entry and one survivor is a move. N of each
-# with N > 1 is paired BY POSITION ORDER and said to be — two identical
-# statements in one function (app.ts's two `history.replaceState` calls) cannot
-# be told apart by any content, and their adjudications are interchangeable
-# *because* they are identical, while the alternative this gate used to advise
-# was deleting sound adjudications AND leaving real survivors unexplained.
-# N against M is neither: both sides are reported the old way, unguessed.
-def _by_position(key):
-    try:
-        line, col = key[1].split(":")
-        return (int(line), int(col))
-    except ValueError:
-        return (0, 0)
+def _entry_fault(e, lines, sharing):
+    if lines is None:
+        return f"there is no such file in the tree — {e.file} is missing or unreadable"
+    n = lines.count(e.code)
+    if n != e.copies:
+        return f"`{e.code}` stands {n} time(s) in {e.file}, and the entry records copies={e.copies}"
+    if e.nth > e.copies:
+        return f"it names copy nth={e.nth} of code that stands {e.copies} time(s) in {e.file}"
+    if sharing > 1:
+        return (f"{sharing} entries name this code, copy, mutator, replacement, offset and span, "
+                f"and one mutant can be excused only once")
+    code = e.code.encode("utf-8")
+    if code.startswith(COMMENT_PREFIXES):
+        return "its code is a COMMENT, and Stryker generates no mutant on one"
+    if e.mutator in NO_POSITION_RULE:
+        return ""
+    off = byte_offset(code, e.offset)
+    if e.mutator in STRING_MUTATORS:
+        opener = code[off:off + 1] if off < len(code) else b""
+        if opener not in (b'"', b"'", b"`"):
+            return (f"offset {e.offset} of {e.code!r} holds "
+                    f"{opener.decode('utf-8', 'replace')!r}, which opens no string or template "
+                    f"literal")
+        return ""
+    tokens = MUTATOR_TOKENS.get(e.mutator)
+    if tokens is None:
+        return (f"{e.mutator} is in neither MUTATOR_TOKENS nor NO_POSITION_RULE, so this check "
+                f"cannot say what its offset should hold and is not checking this entry at all. "
+                f"Add it to whichever it belongs in, with the reason")
+    if off >= len(code):
+        return f"offset {e.offset} is past the end of {e.code!r}"
+    if not operator_at(code[off:], e.replacement.encode(), tokens):
+        return (f"offset {e.offset} of {e.code!r} does not begin the expression "
+                f"{e.replacement!r} names — no {e.mutator} operator ({' '.join(tokens)}) stands "
+                f"where the replacement puts one")
+    return ""
 
 
-def _pair(entries, survivors, sig_of, basis):
-    """{entry: (survivor, ordered, basis)} for every group whose sides balance.
+def claims(entries, survivors, timed_out):
+    """(claimed, unadjudicated, stale): entries matched to live mutants by key
+    (SPEC-020).
 
-    `basis` names WHICH facts the signature compared, and it is carried out to
-    the message rather than assumed there. The two passes do not compare the
-    same things — the anchored one reads a source line, the coarse one cannot —
-    so a single fixed justification is false for one of them. It was: the
-    ordered wording claimed the group shared "file, mutator, replacement and
-    source line" no matter which pass matched, which told a reader that lines
-    had been compared when the file could not even be read.
+    `survivors` and `timed_out` are [(key, mutant)]. Per key, survivors are
+    claimed first and one per entry (VTT-300), in the order given; entries left
+    over claim timed-out mutants, since a timeout is a detection and not an
+    evaluation; entries left after that are stale (VTT-301). `unadjudicated` is
+    [(key, mutant)].
     """
-    groups = {}
-    for key in entries:
-        sig = sig_of(key)
-        if sig is not None:
-            groups.setdefault(sig, ([], []))[0].append(key)
-    for key in survivors:
-        sig = sig_of(key)
-        if sig is not None and sig in groups:
-            groups[sig][1].append(key)
-
-    moved = {}
-    for was_side, now_side in groups.values():
-        if len(was_side) != len(now_side):
-            continue
-        for was, now in zip(sorted(was_side, key=_by_position),
-                            sorted(now_side, key=_by_position)):
-            moved[was] = (now, len(was_side) > 1, basis)
-    return moved
+    groups = collections.defaultdict(lambda: ([], [], []))
+    for e in entries:
+        groups[entry_key(e)][0].append(e)
+    for key, mutant in survivors:
+        groups[key][1].append(mutant)
+    for key, mutant in timed_out:
+        groups[key][2].append(mutant)
+    claimed, unadjudicated, stale = [], [], []
+    for key, (named, lived, hung) in groups.items():
+        n = min(len(named), len(lived))
+        claimed += lived[:n]
+        unadjudicated += [(key, m) for m in lived[n:]]
+        k = min(len(named) - n, len(hung))
+        claimed += hung[:k]
+        stale += named[n + k:]
+    return claimed, unadjudicated, stale
 
 
-def pair_moves(stale, unadjudicated, root="."):
-    """{stale key: (survivor key, ordered)} — the re-keys a reader should make."""
-    def coarse(key):
-        return (key[0], key[2], key[3])   # file, mutator, replacement
-
-    def anchored(key):
-        anchor = read_position(root, key)[1]
-        # An anchor that could not be read is not an anchor. Grouping on the
-        # empty string would put every unreadable key in one bucket and pair
-        # them against each other on nothing at all.
-        return coarse(key) + (anchor,) if anchor else None
-
-    moved = {}
-    for sig_of, basis in ((anchored, "anchored"), (coarse, "coarse")):
-        taken = {now for now, _, _ in moved.values()}
-        moved.update(_pair([k for k in stale if k not in moved],
-                           [m for m in unadjudicated if m not in taken], sig_of, basis))
-    return moved
+def _by_position(item):
+    """Sort key of a (key, (path, "line:col", ...)) pair: file, line, column."""
+    path, where = item[1][0], item[1][1]
+    line, col = where.split(":")
+    return (path, int(line), int(col))
 
 
-def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
+def check(report, entries, out=sys.stdout, err=sys.stderr, root=REPO):
     # FIRST, because it does not depend on the report at all: an adjudication
-    # whose key does not describe the code is not excusing the mutant it names,
-    # whatever the run said. Reported and carried, not returned on — the run
-    # still measured the code correctly, and the pairing below is what tells a
-    # reader which survivor each broken key should have been pointing at.
-    suspect = suspect_positions(equivalents, root=root)
-    for key, fault in suspect:
-        print(f"check:ts-mutation: {key[0]}:{key[1]} {key[2]} (-> {key[3]}) is adjudicated "
-              f"equivalent, but {fault}. AN ADJUDICATION THAT DOES NOT POINT AT ITS MUTANT "
-              f"EXCUSES NOTHING AND PRE-APPROVES WHATEVER LANDS THERE NEXT, which is worse than "
-              f"an unadjudicated survivor. Read the source, find the expression this entry's "
-              f"reason describes, and re-key it — do not delete it.", file=err)
+    # the tree refutes excuses nothing, whatever the run said. Reported and
+    # carried, not returned on — the run still measured the code correctly.
+    faults = entry_faults(entries, root=root)
+    for e, fault in faults:
+        print(f"check:ts-mutation: {describe(e)} is adjudicated equivalent, but {fault}. AN "
+              f"ADJUDICATION THE TREE REFUTES EXCUSES NOTHING, which is worse than an "
+              f"unadjudicated survivor. Read the source, find the code this entry's reason "
+              f"describes, and correct the entry — do not delete it.", file=err)
 
     survived, timed_out, killed, no_coverage, not_viable = [], [], 0, [], 0
-    for path, where, mutator, replacement, status in mutants(report):
+    for path, where, mutator, replacement, status, end in mutants(report):
         if status == KILLED:
             killed += 1
         elif status == SURVIVED:
-            survived.append((path, where, mutator, replacement))
+            survived.append((path, where, mutator, replacement, end))
         elif status == TIMEOUT:
-            timed_out.append((path, where, mutator, replacement))
+            timed_out.append((path, where, mutator, replacement, end))
         elif status == NO_COVERAGE:
-            no_coverage.append((path, where, mutator, replacement))
+            no_coverage.append((path, where, mutator, replacement, end))
         elif status in NOT_VIABLE:
             not_viable += 1
         else:
@@ -489,14 +485,14 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
                   f"Refusing to guess whether that is a detection.", file=err)
             return 1
 
-    fail = bool(suspect)
+    fail = bool(faults)
 
     # Not covered means NO test reaches the code at all. With the command
     # runner that should be impossible — every mutant is handed the whole
     # suite, with no per-test selection — so its appearance means the run was
     # not configured the way this gate assumes, and the numbers below do not
     # mean what they say.
-    for path, where, mutator, _ in no_coverage:
+    for path, where, mutator, *_ in no_coverage:
         print(f"check:ts-mutation: {path}:{where} {mutator} reported NoCoverage, which "
               f"the command runner should never produce. The run is misconfigured.", file=err)
         fail = True
@@ -509,7 +505,7 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
 
     # Printed, always. These are the mutants the run did NOT actually evaluate;
     # discarding them silently is how a survivor disappears.
-    for path, where, mutator, _ in timed_out:
+    for path, where, mutator, *_ in timed_out:
         print(f"    timed out: {path}:{where} {mutator} — NOT EVALUATED, counted as killed",
               file=out)
 
@@ -538,106 +534,59 @@ def check(report, equivalents, out=sys.stdout, err=sys.stderr, root=REPO):
               f"on an idle machine before changing a test.", file=err)
         fail = True
 
-    # PAIR BEFORE REPORTING EITHER SIDE — see pair_moves above for what the two
-    # passes are and why the anchor refines rather than gates.
-    # A TIMED OUT MUTANT COUNTS AS LIVE HERE, AND ONLY HERE. A timeout is a
-    # detection for the pass/fail verdict — Patrik, 2026-07-28, and that is
-    # right: a mutant that hangs the suite was detected. It is NOT an
-    # EVALUATION, so it cannot be evidence that an adjudication has expired.
-    #
-    # Reusing "not a survivor" for staleness inverted the gate into advice to
-    # destroy good work. Measured 2026-08-27: three entries on
-    # client/src/view/spectator.ts (364:10, 365:10, 501:59) were reported stale
-    # with "Remove the entry rather than let it pre-approve a future mutant".
-    # All three were applied by hand and SURVIVED the full suite. Deleting them
-    # would have thrown away exhaustive reasoning — one rests on fold.ts
-    # rejecting duplicate actorIds, another on 150 checked permutations — and
-    # they would have come back as UNADJUDICATED survivors the moment the
-    # timeouts were fixed, unexplained.
-    #
-    # UPDATE 2026-08-30: the 501:59 example is now two-thirds valid. Task 4
-    # (dm-hands-and-retraction) proved that ONE of the three — the
-    # equivalence claim, not the timeout finding — was itself false (a
-    # prototype-injected state makes the fallback string observable) and
-    # withdrew it deliberately; it carries no entry today. 364:10 and 365:10
-    # remain sound and still illustrate the point below. The ARGUMENT this
-    # paragraph makes — a timeout is not an evaluation, so it cannot be
-    # evidence an adjudication has expired — is untouched by that: it would
-    # have been just as wrong to delete 501:59 FOR THIS REASON in 2026-08-27,
-    # since a timeout still tells you nothing about whether the reasoning
-    # was ever correct in the first place.
-    #
-    # THE ASYMMETRY IS DELIBERATE: `unadjudicated` below still reads only
-    # `survived`, so a timeout never invents a survivor to complain about
-    # either. Nothing is excused that would otherwise FAIL: an unadjudicated
-    # survivor still fails, and every timeout is still printed and still
-    # counted against MAX_TIMEOUT_FRACTION above.
-    #
-    # ONE THING DOES CHANGE BESIDES THE STALE MESSAGE, and the paragraph above
-    # would otherwise read as exhaustive. `stale_keys` is what pair_moves
-    # searches, so an entry excused here also leaves the pairing. If a mutant
-    # genuinely MOVED and its old key happens to host a same-(file, mutator,
-    # replacement) mutant that times out, the gate reports the survivor at the
-    # new position as a plain SURVIVED and never says the entry became it. The
-    # run still fails; the DIAGNOSIS is what is lost, and it inverts into the
-    # advice this fix exists to stop — write a new adjudication rather than
-    # re-key the old one.
-    #
-    # NOT FIXED, DELIBERATELY. Pairing on `equivalents - survived` instead would
-    # drag every adjudicated timeout into _pair's count balance and break
-    # pairings that work today — 94 timeouts against 73 entries on the
-    # 2026-08-27 report. The lost diagnosis is the price, this is the record,
-    # and test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing pins
-    # it so it stays a decision rather than becoming a surprise.
-    live = set(survived) | set(timed_out)
-    stale_keys = sorted(set(equivalents) - live)
-    unadjudicated = [m for m in survived if m not in equivalents]
+    # A TIMED OUT MUTANT CAN HOLD AN ENTRY. A timeout is a detection for the
+    # verdict (Patrik, 2026-07-28) but NOT an evaluation, so it is no evidence
+    # that an adjudication expired: an entry on its code is not stale. Nothing
+    # is excused that would otherwise fail, since a timed-out mutant never
+    # becomes unadjudicated either.
+    sources = {path: entry.get("source") for path, entry in report.get("files", {}).items()}
+    lived, unreadable = [], []
+    for m in survived:
+        key = resolve(sources, *m)
+        if key is None:
+            unreadable.append(m)
+        else:
+            lived.append((key, m))
+    hung = [(key, m) for m in timed_out if (key := resolve(sources, *m)) is not None]
+    _, unclaimed, stale = claims(entries, sorted(lived, key=_by_position),
+                                 sorted(hung, key=_by_position))
+    # An entry the tree refutes is stale as well, and gets the one message
+    # above: "remove the entry" beside "do not delete it" would lose the reason.
+    faulted = {id(e) for e, _ in faults}
+    stale = [e for e in stale if id(e) not in faulted]
 
-    moved = pair_moves(stale_keys, unadjudicated, root=root)
-    for was, (now, ordered, basis) in sorted(moved.items()):
-        # WHAT WAS ACTUALLY COMPARED, named rather than assumed. An order-based
-        # pairing asks the reader to accept that two adjudications are
-        # interchangeable, so it has to be honest about the evidence: the
-        # anchored pass read and matched the statements, the coarse one never
-        # opened the file. Saying "and source line" in both cases invited
-        # agreement on evidence nobody gathered.
-        shared = ("that file, mutator, replacement and the statement each sits on"
-                  if basis == "anchored" else
-                  "that file, mutator and replacement — the statements themselves could NOT be "
-                  "read and were not compared")
-        why = (f"PAIRED BY POSITION ORDER: several entries and the same number of survivors share "
-               f"{shared}, so nothing can say which became which — and it does not matter, because "
-               f"identical statements have interchangeable reasons. Object if you know better; the "
-               f"alternative is deleting sound adjudications and leaving real survivors unexplained."
-               if ordered else
-               "Same mutator and same mutation, so an edit shifted it.")
-        print(f"check:ts-mutation: ADJUDICATION MOVED {was[0]} {was[2]} (-> {was[3]}): "
-              f"{was[1]} -> {now[1]}. {why} RE-KEY the entry to the new line; do NOT delete it, "
-              f"or its reasoning is lost and the survivor is left unexplained.", file=err)
+    for path, where, mutator, replacement, _ in unreadable:
+        print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} (-> {replacement}), and "
+              f"its line cannot be read from the report's own source, or its column falls "
+              f"outside the code on it, or its end is missing or outside the source, so the "
+              f"gate cannot tell which code it covers. It claims nothing and fails (VTT-304).",
+              file=err)
         fail = True
 
-    paired = {now for now, _, _ in moved.values()}
-    unadjudicated = [m for m in unadjudicated if m not in paired]
-    # `not in moved` because a pairing already told the reader where to re-key.
-    # `not in suspect` because a key on a comment has no mutant, so it is STALE
-    # as well as suspect, and the generic stale line would fire beside the
-    # position one: "re-key it, do not delete it" under "Remove the entry".
-    # Two messages that contradict each other are worse than one, and a reader
-    # following the second loses the reasoning — the exact harm this change
-    # exists to stop. The entry is still reported and the gate still fails.
-    stale_keys = [k for k in stale_keys
-                  if k not in moved and k not in {key for key, _ in suspect}]
-    for path, where, mutator, replacement in unadjudicated:
-        print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} (-> {replacement}) — no "
-              f"test distinguishes the mutated code. Kill it, or adjudicate it equivalent "
-              f"with a stated observable.", file=err)
+    for key, (path, where, mutator, replacement, _) in unclaimed:
+        sharing = sorted(f"{m[0]}:{m[1]}" for k, m in lived if k == key)
+        named = sum(1 for e in entries if entry_key(e) == key)
+        note = ""
+        if len(sharing) > 1:
+            note = (f" ({len(sharing)} survive on that code, at {', '.join(sharing)}, and "
+                    f"{named} {'entry names' if named == 1 else 'entries name'} it)")
+        print(f"check:ts-mutation: SURVIVED {mutator} at {path}:{where} (-> {replacement}){note} "
+              f"— no test distinguishes the mutated code. Kill it, or adjudicate it equivalent "
+              f"with a stated observable:\n"
+              f"{path}  {mutator}  offset={key[3]}  span={key[4]}  nth={key[5]}  "
+              f"copies={copies_in(sources.get(path), key[6])}  {replacement}\n"
+              f"    code: {key[6]}\n"
+              f"    {PLACEHOLDER}", file=err)
         fail = True
 
-    # A stale adjudication excuses whatever later lands at that location.
-    for key in stale_keys:
-        print(f"check:ts-mutation: {key[0]}:{key[1]} {key[2]} (-> {key[3]}) is adjudicated equivalent "
-              f"but no longer survives — it was killed, moved, or the line shifted. "
-              f"Remove the entry rather than let it pre-approve a future mutant.", file=err)
+    # A stale entry names code no surviving or timed-out mutant sits on: the
+    # mutant was killed, or the code was edited.
+    for e in stale:
+        print(f"check:ts-mutation: {describe(e)} is adjudicated equivalent but no longer survives "
+              f"— no surviving or timed-out mutant sits on that code. If the code was edited, "
+              f"re-judge the reason against the new code and re-key the entry; if a test now "
+              f"kills the mutant, remove the entry so it cannot pre-approve a future one.",
+              file=err)
         fail = True
 
     if fail:
