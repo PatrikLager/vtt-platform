@@ -792,6 +792,11 @@ tasks:
           exit 1
         fi
         tail -3 "$LOG"
+        if ! python3 tools/check_mutation_qa_test.py > "$LOG" 2>&1; then
+          cat "$LOG" >&2
+          exit 1
+        fi
+        tail -3 "$LOG"
         python3 tools/check-mutation.py tools/mutation-equivalents.txt
 
   check:doc-owner:

@@ -60,41 +60,38 @@ def equivalents(text):
     return fh.name
 
 
-# The source every equivalents fixture below is keyed against.
+# The source every equivalents fixture below names.
 #
-# It has to be REAL source at REAL columns, because the gate now reads the tree
-# at each key's file:line:col and rejects a key that no longer points at a
-# mutant of the kind it names. A fixture of blank lines would make every test
-# here fail with a position complaint instead of the thing it is about.
+# It has to be REAL source at REAL columns: the gate reads each survivor's code
+# from the tree at the position gremlins reports, and checks each entry's code
+# against the file it names.
 #
 # COLUMNS ARE 1-BASED BYTE OFFSETS and the operator has to land on the one the
-# key already spells, which is why these read `if a<b {` rather than the
-# gofmt-ed `if a < b {`: the historic fixtures in this file say 10:5, and the
-# column is the thing under test.
+# survivor names, which is why these read `if a<b {` rather than the gofmt-ed
+# `if a < b {`.
 #
-# The lines are DELIBERATELY DISTINCT where the tests rely on two keys being
-# different claims (10 vs 11 vs 14), and DELIBERATELY IDENTICAL where they rely
-# on a pairing being possible (30/40/50/60). That is the whole content-anchor
-# idea in a fixture: two keys pair when the source says they are the same
-# statement, and never merely because they share a file and a mutator.
+# The lines are DELIBERATELY DISTINCT where the tests rely on two survivors
+# sitting on different code (10 vs 11 vs 14), and DELIBERATELY IDENTICAL where
+# they rely on one code standing several times in a file (30/40/50/60).
 GO_LINES = {
     10: "if a<b {",            # col 5 is `<`   -- the canonical adjudication
     11: "if c>d {",            # col 5 is `>`   -- one line away, DIFFERENT text
     14: "if e<f {",            # col 5 is `<`   -- same token, different text
     20: "if abcde<f {",        # col 9 is `<`
-    30: "if dup<lim {",        # col 7 is `<`   -- four copies of ONE statement,
-    40: "if dup<lim {",        # col 7 is `<`      so a move between them is
-    50: "if dup<lim {",        # col 7 is `<`      indistinguishable by content
-    60: "if dup<lim {",        # col 7 is `<`      and pairable by it
+    30: "if dup<lim {",        # col 7 is `<`   -- four copies of ONE statement
+    40: "if dup<lim {",        # col 7 is `<`
+    50: "if dup<lim {",        # col 7 is `<`
+    60: "if dup<lim {",        # col 7 is `<`
     70: "// a line comment",
     71: "/* a block comment */",
     72: " * a doc-comment continuation line",
     80: "n := a+b",            # col 7 is `+`
     90: "\tif tab<x {",        # col 8 is `<`, counting the TAB as one byte
+    100: "if a<b && c<d {",    # cols 5 and 12 are `<` -- two mutants on one line
 }
 
 
-def _go_file(path, clause):
+def _go_file(path, clause, lines=GO_LINES):
     """Write GO_LINES out as a .go file, padded so the line numbers are real.
 
     The package clause has to MATCH THE DIRECTORY NAME or unresolvable_packages
@@ -104,18 +101,32 @@ def _go_file(path, clause):
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
     body = [f"package {clause}", "", "func F() {"]
-    while len(body) < max(GO_LINES):
-        body.append(GO_LINES.get(len(body) + 1, "\t_ = 0"))
+    while len(body) < max(lines):
+        body.append(lines.get(len(body) + 1, "\t_ = 0"))
     with open(path, "w") as fh:
         fh.write("\n".join(body) + "\n}\n")
 
 
-def source_tree(root):
-    """The two packages and two files every fixture key in this file names."""
+def source_tree(root, lines=GO_LINES):
+    """The two packages and two files every fixture entry in this file names."""
     for pkg in ("p", "q"):
         for name in ("a.go", "b.go"):
-            _go_file(os.path.join(root, pkg, name), pkg)
+            _go_file(os.path.join(root, pkg, name), pkg, lines)
     return root
+
+
+def entry(pkg, where, mutator, reason="reason", lines=GO_LINES):
+    """One entry in the equivalents format, for the fixture code a survivor at
+    `where` (`file:line:col`) sits on. The entry names that code, the offset in
+    it, which copy of it and its count in the file, and no line (SPEC-020)."""
+    file_, line, col = where.rsplit(":", 2)
+    raw = lines[int(line)]
+    code = raw.strip(" \t\r")
+    offset = int(col) - (len(raw) - len(raw.lstrip(" \t\r")))
+    nth = sum(1 for n, v in lines.items() if n <= int(line) and v.strip(" \t\r") == code)
+    copies = sum(1 for v in lines.values() if v.strip(" \t\r") == code)
+    return (f"{pkg}  {file_}  {mutator}  offset={offset}  nth={nth}  copies={copies}\n"
+            f"    code: {code}\n    {reason}\n")
 
 
 class MutationGateTest(unittest.TestCase):
@@ -147,13 +158,15 @@ class MutationGateTest(unittest.TestCase):
         self.assertIn("a.go:10:5", err)
         self.assertIn("not adjudicated", err)
 
+    # VTT-298
     def test_adjudicated_survivor_passes(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    assigns a value already held\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "assigns a value already held"))
         m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
         code, out, _ = self.gate(eq, m)
         self.assertEqual(code, 0)
         self.assertIn("zero unadjudicated survivors", out)
 
+    # VTT-301
     def test_an_adjudication_whose_mutant_timed_out_is_not_called_stale(self):
         # THE SAME DEFECT FOUND IN check-ts-mutation.py on 2026-08-27. A
         # timeout is a detection for the verdict but NOT an evaluation, so it
@@ -162,7 +175,7 @@ class MutationGateTest(unittest.TestCase):
         # the gate demands the entry's deletion. check-mutation.py already says
         # "a timed-out mutant can be a genuine survivor", directly above the
         # very loop this test is about.
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    assigns a value already held\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "assigns a value already held"))
         m = {"./p/": gremlins_output(killed=9, timed_out=1,
                                      timed_out_locs=(("CONDITIONALS_BOUNDARY", "a.go:10:5"),))}
         code, out, err = self.gate(eq, m)
@@ -170,30 +183,16 @@ class MutationGateTest(unittest.TestCase):
         self.assertNotIn("no longer survives", out + err)
         self.assertIn("timed out", out)
 
-    def test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing(self):
-        # CHARACTERIZATION, not an endorsement — the Go half of the same
-        # accepted price. See the sibling test in check_ts_mutation_test.py and
-        # the paragraph at check-mutation.py's claimed_timeouts for why pairing
-        # on `equivalents - survivors` was rejected rather than overlooked.
-        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    exhaustively reasoned\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"),
-                                     killed=9, timed_out=1,
-                                     timed_out_locs=(("CONDITIONALS_BOUNDARY", "a.go:30:7"),))}
-        code, out, err = self.gate(eq, m)
-        self.assertEqual(code, 1)
-        self.assertIn("a.go:40:7 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", err)
-        self.assertIn("timed out: p a.go:30:7", out)
-        self.assertNotIn("ADJUDICATION MOVED", err)
-
     def test_no_survivors_passes(self):
         eq = equivalents("")
         code, out, _ = self.gate(eq, {"./p/": gremlins_output()})
         self.assertEqual(code, 0)
         self.assertIn("zero unadjudicated survivors", out)
 
+    # VTT-299
     def test_adjudication_is_matched_on_all_three_fields(self):
         """A different mutator or location at the same spot is NOT pre-approved."""
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reason"))
         for survivor in [("ARITHMETIC_BASE", "a.go:10:5"),     # same place, other mutator
                          ("CONDITIONALS_BOUNDARY", "a.go:11:5")]:  # same mutator, other line
             with self.subTest(survivor):
@@ -202,7 +201,7 @@ class MutationGateTest(unittest.TestCase):
                 self.assertIn("not adjudicated", err)
 
     def test_survivor_in_a_different_package_is_not_pre_approved(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reason"))
         m = {"./q/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
         code, _, err = self.gate(eq, m, packages=("./q/",))
         self.assertEqual(code, 1)
@@ -210,138 +209,12 @@ class MutationGateTest(unittest.TestCase):
 
     # --- a stale entry must not silently pre-approve a future survivor ---
 
+    # VTT-301
     def test_stale_entry_fails(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reason"))
         code, _, err = self.gate(eq, {"./p/": gremlins_output()})
         self.assertEqual(code, 1)
         self.assertIn("no longer survives", err)
-
-    def stale_line(self, err):
-        """The one 'no longer survives' line, so a hint assertion is scoped to it.
-
-        Asserting against the whole stream is how these went vacuous: a
-        location named by the hint is ALSO named by its own "SURVIVED and is
-        not adjudicated" line, so `assertIn(loc, err)` passes whether the hint
-        mentions it or not.
-        """
-        lines = [l for l in err.splitlines() if "no longer survives" in l]
-        self.assertEqual(len(lines), 1, f"want exactly one stale-entry line, got {lines}")
-        return lines[0]
-
-    # --- a stale entry beside a same-file survivor gets a HINT, not a claim ---
-    #
-    # The delete-the-adjudication reflex is the harm being addressed. "This
-    # entry no longer survives, remove it" reads as an instruction, and when an
-    # edit has merely SHIFTED the mutant, obeying it throws away reasoning and
-    # leaves the survivor unexplained. Measured: that happened four times in one
-    # day, across both gates.
-    #
-    # THIS IS THE RESIDUE, not the whole answer, and it stopped being the whole
-    # answer when moved_entries landed — see MovedAdjudicationTest below. A
-    # move the SOURCE can prove (same package, file, mutator, operator and line
-    # text) is now reported as a move with its new key. What is left here is
-    # the ordinary shift, where an insertion above leaves the entry's old line
-    # holding somebody else's code and nothing in the tree can pair the two:
-    # the Go key carries no replacement text, so "same file, same mutator" on
-    # its own cannot tell a moved mutant from a different one a line away —
-    # which is precisely what test_adjudication_is_matched_on_all_three_fields
-    # above pins. For that residue the hint changes the MESSAGE and never the
-    # verdict.
-
-    def test_stale_entry_hints_at_a_same_file_survivor(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
-        code, _, err = self.gate(eq, m)
-
-        self.assertEqual(code, 1)
-        hint = self.stale_line(err)
-        self.assertIn("a.go:14:5", hint)
-        self.assertIn("RE-KEY", hint)
-        # A HINT. It must say so, or the next reader takes it for a match and
-        # re-keys an adjudication onto a mutant nobody judged.
-        self.assertIn("hint, not a match", err)
-
-    def test_the_hint_does_not_excuse_anything(self):
-        """The verdict is unchanged: BOTH are still reported, and it still fails.
-
-        This is the invariant the first attempt at this broke. Pairing the two
-        as a move made the survivor stop being reported, which silently
-        pre-approved a mutant nobody had judged — the exact failure the gate
-        exists to prevent, reached by way of a convenience.
-        """
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
-        code, _, err = self.gate(eq, m)
-
-        self.assertEqual(code, 1)
-        self.assertIn("not adjudicated", err)   # the survivor, still unexcused
-        self.assertIn("no longer survives", err)  # the stale entry, still stale
-
-    def test_no_hint_when_nothing_could_have_moved(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        for survivor in [("ARITHMETIC_BASE", "a.go:14:5"),  # other mutator
-                         ("CONDITIONALS_BOUNDARY", "b.go:14:5")]:  # other file
-            with self.subTest(survivor):
-                code, _, err = self.gate(eq, {"./p/": gremlins_output(survivor)})
-                self.assertEqual(code, 1)
-                self.assertNotIn("RE-KEY", err)
-
-    def test_the_hint_names_every_candidate(self):
-        """Never one. Picking a favourite is the guess this design refuses.
-
-        Asserted against the HINT LINE, not the whole stream. Both locations
-        appear in err regardless — each has its own "SURVIVED and is not
-        adjudicated" line — so `assertIn(loc, err)` was satisfied with the hint
-        entirely absent. Proven: naming a single candidate left the suite green.
-        """
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"),
-                                     ("CONDITIONALS_BOUNDARY", "a.go:20:9"))}
-        code, _, err = self.gate(eq, m)
-        self.assertEqual(code, 1)
-        hint = self.stale_line(err)
-        self.assertIn("a.go:14:5", hint)
-        self.assertIn("a.go:20:9", hint)
-
-    def test_no_hint_across_packages(self):
-        """Same file, same mutator, DIFFERENT package is not a candidate.
-
-        Without this, dropping the package check makes the gate point a RE-KEY
-        at a mutant in another package entirely — and the rest of the suite
-        stays green.
-        """
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./q/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
-        code, _, err = self.gate(eq, m, packages=("./q/",))
-        self.assertEqual(code, 1)
-        self.assertNotIn("RE-KEY", err)
-
-    def test_a_package_written_differently_is_diagnosed_as_such(self):
-        """The same location under a differently-spelled package is not a move.
-
-        read_equivalents takes the package verbatim while survivors carry the
-        normalised name, so `./p/` in the file matches nothing and BOTH halves
-        are reported — loudly, but with no clue that the two lines are the same
-        mutant. That cost a real debugging session: the first attempt at
-        pairing silently matched nothing for exactly this reason.
-        """
-        eq = equivalents("./p/  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
-        code, _, err = self.gate(eq, m)
-
-        self.assertEqual(code, 1)
-        hint = self.stale_line(err)
-        # BOTH spellings, so the reader can see the difference rather than
-        # being told there is one. The correction alone leaves them hunting.
-        self.assertIn("'./p/'", hint)
-        self.assertIn("'p'", hint)
-        # Stated as a DEDUCTION, not hedged. If the spellings agreed the keys
-        # would be equal and this entry would not be stale, so the mismatch is
-        # certain — and hedging certain, actionable advice invites the reader
-        # to ignore it.
-        self.assertIn("A DEDUCTION", hint)
-        # Still not excused: the entry does not apply, and the gate says so.
-        self.assertIn("not adjudicated", err)
 
     # --- too little disk is refused BEFORE the run, not discovered after it ---
     #
@@ -672,7 +545,7 @@ class MutationGateTest(unittest.TestCase):
         and the gate said zero unadjudicated survivors — over numbers that
         described partly-unmutated source.
         """
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reason"))
         m = {"./p/": self._with_error("apply", ("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
         code, out, err = self.gate(eq, m)
         self.assertEqual(code, 1)
@@ -687,7 +560,7 @@ class MutationGateTest(unittest.TestCase):
         """
         out = gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))
         noisy = out.replace("      KILLED", "      ERROR: some test logged this\n      KILLED", 1)
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reason"))
         code, out2, err = self.gate(eq, {"./p/": noisy})
         self.assertEqual(code, 0)
         self.assertIn("zero unadjudicated survivors", out2)
@@ -758,16 +631,59 @@ class MutationGateTest(unittest.TestCase):
     # --- an equivalence claim without a stated reason is not a claim ---
 
     def test_entry_without_a_reason_is_fatal(self):
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n")
+        eq = equivalents("p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n    code: if a<b {\n")
         code, _, err = self.gate(eq, {"./p/": gremlins_output()})
         self.assertEqual(code, 1)
         self.assertIn("no reason line", err)
 
     def test_malformed_entry_is_fatal(self):
-        eq = equivalents("p  a.go:10:5\n    reason\n")
+        eq = equivalents("p  a.go  CONDITIONALS_BOUNDARY\n    code: if a<b {\n    reason\n")
         code, _, err = self.gate(eq, {"./p/": gremlins_output()})
         self.assertEqual(code, 1)
         self.assertIn("want", err)
+
+    def test_an_entry_without_a_code_line_is_fatal(self):
+        eq = equivalents("p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n    reason\n")
+        code, _, err = self.gate(eq, {"./p/": gremlins_output()})
+        self.assertEqual(code, 1)
+        self.assertIn("no code line", err)
+
+    def test_the_printed_placeholder_is_refused_as_a_reason(self):
+        """Pasted unedited, the ready entry would excuse a mutant nobody judged."""
+        eq = equivalents("p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n"
+                         "    code: if a<b {\n    <the observable that makes it equivalent>\n")
+        code, out, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))})
+        self.assertEqual(code, 1)
+        self.assertIn("placeholder", err)
+        self.assertNotIn("zero unadjudicated survivors", out)
+
+    def test_a_code_line_keeps_a_trailing_no_break_space(self):
+        """The code line is trimmed as the gate trims source, so what the gate
+        prints, pasted back, names the same code."""
+        path = equivalents("p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n"
+                           "    code: if a<b {\u00a0\n    reason\n")
+        [e] = cm.read_equivalents(path)
+        self.assertEqual(e.code, "if a<b {\u00a0")
+
+    def test_a_hash_inside_code_is_not_a_comment(self):
+        """Only a line whose FIRST character is `#` is a comment; code and
+        reasons may carry one."""
+        path = equivalents('# a comment\n'
+                           'p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n'
+                           '    code: if s<"#" {\n'
+                           '    a # in a reason is text\n')
+        [e] = cm.read_equivalents(path)
+        self.assertEqual(e.code, 'if s<"#" {')
+        self.assertEqual(e.reason, "a # in a reason is text")
+
+    def test_a_package_not_written_as_survivors_carry_it_is_refused(self):
+        """`./p/` would match nothing, since survivors carry `p`; the parse says
+        which spelling to use rather than leaving a stale entry to find."""
+        eq = equivalents("./p/  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n"
+                         "    code: if a<b {\n    reason\n")
+        code, _, err = self.gate(eq, {"./p/": gremlins_output()})
+        self.assertEqual(code, 1)
+        self.assertIn("'p'", err)
 
     def test_missing_equivalents_file_is_fatal(self):
         code, _, err = self.gate("/nonexistent/equivalents.txt", {"./p/": gremlins_output()})
@@ -884,169 +800,135 @@ class MutationGateTest(unittest.TestCase):
         self.assertIn("b.go:2:2", err)
 
 
-class KeyPositionTest(unittest.TestCase):
-    """A key must still point at a mutant of the kind it names.
+class EntryCheckTest(unittest.TestCase):
+    """The static check of each entry against the tree, before any mutation run
+    (SPEC-020).
 
-    THE CLASS OF DRIFT THIS CATCHES IS THE DANGEROUS ONE. A key that has merely
-    MOVED fails the gate anyway, loudly, as a stale entry beside an
-    unadjudicated survivor. A key that has landed on a COMMENT or on a
-    different token fails NOTHING: no mutant lives there, so it never appears
-    in a survivor list, and the entry sits in the file silently pre-approving
-    whatever does land on that line later.
-
-    Measured on the TS side: one wire.ts key pair landed on comment lines in
-    two separate episodes three days apart — one of the two on 2026-08-21, both
-    of them on 2026-08-24 — and a canvas.ts key landed on one WITHIN AN HOUR of
-    being written, because a comment edit above it shifted the line.
-
-    The trap this class is written against is recorded in the equivalents
-    file's own header: the hand-rolled version of this check tested
-    `startswith("//")`, which a `/**` doc comment does not match, and had no
-    branch for the mutator on the entry that had drifted — so it reported "0
-    suspect" TWICE over a genuinely broken key. Every rule below therefore has
-    a DELIBERATELY BROKEN key that must fail, not only a good key that passes.
+    An entry whose code is a comment, or whose offset holds no token its
+    mutator rewrites, names no mutant gremlins makes: it could only ever go
+    stale, and the run takes half an hour to say so. Every rule here has a
+    DELIBERATELY BROKEN entry that must fail, not only a sound one that passes.
     """
 
-    def faults(self, keys):
-        """suspect_positions over a hermetic tree, as {location: complaint}."""
+    def faults(self, text, lines=GO_LINES):
+        """entry_faults over a hermetic tree, as the list of fault sentences."""
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root, lines)
+            entries = cm.read_equivalents(equivalents(text))
+            return [fault for _, fault in cm.entry_faults(entries, root=root)]
+
+    def gate(self, text, mapping=None):
+        out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as root:
             source_tree(root)
-            entries = {k: "reason" for k in keys}
-            return {k[1]: fault for k, fault in cm.suspect_positions(entries, root=root)}
+            code = cm.run(equivalents(text), ["./p/"], runner_for(mapping or {}),
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3,
+                          cache_bytes=0)
+        return code, out.getvalue(), err.getvalue()
 
     def test_a_key_on_a_line_comment_is_rejected(self):
-        faults = self.faults([("p", "a.go:70:1", "CONDITIONALS_BOUNDARY")])
-        self.assertIn("a.go:70:1", faults)
-        self.assertIn("COMMENT", faults["a.go:70:1"])
+        [fault] = self.faults(entry("p", "a.go:70:1", "CONDITIONALS_BOUNDARY"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_key_on_a_block_comment_is_rejected(self):
-        """`/*`, which the shipped check's `startswith("//")` did not match."""
-        faults = self.faults([("p", "a.go:71:1", "CONDITIONALS_BOUNDARY")])
-        self.assertIn("COMMENT", faults.get("a.go:71:1", ""))
+        """`/*`, which a check testing only `//` does not match."""
+        [fault] = self.faults(entry("p", "a.go:71:1", "CONDITIONALS_BOUNDARY"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_key_on_a_doc_comment_continuation_is_rejected(self):
-        """A line whose first non-space is `*` — the middle of a /** block, and
-        the exact shape the drifted key landed on."""
-        faults = self.faults([("p", "a.go:72:3", "CONDITIONALS_BOUNDARY")])
-        self.assertIn("COMMENT", faults.get("a.go:72:3", ""))
+        """A line whose first non-space is `*`, the middle of a /** block."""
+        [fault] = self.faults(entry("p", "a.go:72:3", "CONDITIONALS_BOUNDARY"))
+        self.assertIn("COMMENT", fault)
 
     def test_a_key_whose_column_holds_a_token_the_mutator_cannot_apply_to(self):
-        """80:7 is the `+` of `n := a+b`. ARITHMETIC_BASE lives there;
+        """Offset 7 of `n := a+b` is the `+`. ARITHMETIC_BASE lives there;
         CONDITIONALS_BOUNDARY cannot."""
-        faults = self.faults([("p", "a.go:80:7", "CONDITIONALS_BOUNDARY")])
-        self.assertIn("a.go:80:7", faults)
-        # THE TOKEN AS THE MESSAGE REPORTS IT, not a bare "+" anywhere in the
-        # string. The fault interpolates the whole line as an anchor before it
-        # names what it found — "column 7 of 'n := a+b' holds 'a+b'" — so a
-        # bare assertIn("+") is satisfied by the ANCHOR and survives the found
-        # token being blanked entirely. It passed for a reason unrelated to the
-        # property this test is named for.
-        self.assertIn("holds '+", faults["a.go:80:7"])
+        [fault] = self.faults(entry("p", "a.go:80:7", "CONDITIONALS_BOUNDARY"))
+        # The token as the message reports it: the code is quoted in the same
+        # sentence, so a bare "+" would match the code and not the finding.
+        self.assertIn("holds '+", fault)
 
     def test_the_same_column_is_accepted_for_the_mutator_that_does_live_there(self):
-        """The control that stops the rule above from being 'reject everything'."""
-        self.assertEqual(self.faults([("p", "a.go:80:7", "ARITHMETIC_BASE")]), {})
+        """The control that stops the rule above from refusing everything."""
+        self.assertEqual(self.faults(entry("p", "a.go:80:7", "ARITHMETIC_BASE")), [])
 
     def test_a_key_one_column_off_is_rejected(self):
-        """The near miss, which is what a hand-re-keyed column actually looks
-        like. 10:5 is the `<`; 10:6 is the `b` beside it."""
-        self.assertIn("a.go:10:6", self.faults([("p", "a.go:10:6", "CONDITIONALS_BOUNDARY")]))
+        """Offset 5 of `if a<b {` is the `<`; offset 6 is the `b` beside it."""
+        self.assertEqual(len(self.faults(entry("p", "a.go:10:6", "CONDITIONALS_BOUNDARY"))), 1)
 
     def test_a_sound_key_is_accepted(self):
-        self.assertEqual(self.faults([("p", "a.go:10:5", "CONDITIONALS_BOUNDARY")]), {})
+        self.assertEqual(self.faults(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY")), [])
 
-    def test_the_column_is_a_byte_offset_so_a_tab_counts_as_one(self):
-        """Go source is TAB-indented. Counting a tab as a tab stop puts every
-        key in every indented file at the wrong column, and the check would
-        then reject the whole file — a gate that fails on good data gets
-        loosened, and a loosened gate is how this started.
-
-        90 is `\\tif tab<x {`: the `<` is at byte column 8, not 15.
-        """
-        self.assertEqual(self.faults([("p", "a.go:90:8", "CONDITIONALS_BOUNDARY")]), {})
-        self.assertIn("a.go:90:15", self.faults([("p", "a.go:90:15", "CONDITIONALS_BOUNDARY")]))
-
-    def test_a_key_naming_a_line_that_is_not_there_is_rejected(self):
-        self.assertIn("a.go:9999:5", self.faults([("p", "a.go:9999:5", "CONDITIONALS_BOUNDARY")]))
+    # VTT-302
+    def test_an_entry_whose_code_stands_nowhere_in_its_file_is_reported(self):
+        [fault] = self.faults("p  a.go  CONDITIONALS_BOUNDARY  offset=5  nth=1  copies=1\n"
+                              "    code: if zz<y {\n    reason\n")
+        self.assertIn("stands 0 time(s)", fault)
 
     def test_a_key_naming_a_file_that_is_not_there_is_rejected(self):
-        self.assertIn("gone.go:10:5", self.faults([("p", "gone.go:10:5", "CONDITIONALS_BOUNDARY")]))
+        text = entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY").replace("a.go", "gone.go", 1)
+        [fault] = self.faults(text)
+        self.assertIn("gone.go", fault)
+
+    # VTT-302
+    def test_an_entry_whose_copies_differ_from_the_tree_is_reported(self):
+        text = entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY").replace("copies=1", "copies=2")
+        [fault] = self.faults(text)
+        self.assertIn("stands 1 time(s)", fault)
+        self.assertIn("copies=2", fault)
+
+    def test_two_entries_for_one_copy_are_reported(self):
+        """One mutant can be excused once; a second entry on its key is a
+        duplicate, not a second claim."""
+        one = entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY")
+        faults = self.faults(one + one)
+        self.assertTrue(faults)
+        self.assertTrue(all("2 entries" in f for f in faults), faults)
+
+    def test_an_entry_whose_nth_exceeds_its_copies_is_reported(self):
+        text = entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY").replace("nth=1", "nth=2")
+        [fault] = self.faults(text)
+        self.assertIn("nth=2", fault)
 
     def test_a_mutator_with_no_rule_is_fatal_rather_than_silently_skipped(self):
-        """THE SECOND HALF OF THE RECORDED BUG. The shipped check had no branch
-        for one entry's mutator and skipped it without a word, which is how it
-        reported "0 suspect" over a key that had drifted.
-
-        A mutator this gate cannot place must therefore FAIL rather than pass.
-        Weakening this to "unknown means fine" re-creates the defect exactly.
-        """
-        faults = self.faults([("p", "a.go:10:5", "NO_SUCH_MUTATOR")])
-        self.assertIn("a.go:10:5", faults)
-        self.assertIn("NO_SUCH_MUTATOR", faults["a.go:10:5"])
+        """A mutator this check cannot place must FAIL rather than pass:
+        "unknown means fine" is how a check reports nothing over a broken entry."""
+        [fault] = self.faults(entry("p", "a.go:10:5", "NO_SUCH_MUTATOR"))
+        self.assertIn("NO_SUCH_MUTATOR", fault)
 
     def test_the_gate_itself_fails_and_names_the_key(self):
-        """Through run(), not just the helper: a check nothing calls is a check
-        that does not run."""
-        eq = equivalents("p  a.go:70:1  CONDITIONALS_BOUNDARY\n    reason\n")
-        out, err = io.StringIO(), io.StringIO()
-        with tempfile.TemporaryDirectory() as root:
-            source_tree(root)
-            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
-                          free_bytes=500 * 1024**3, cache_bytes=0)
-        self.assertEqual(code, 1, "a key on a comment must FAIL the gate")
-        self.assertIn("a.go:70:1", err.getvalue())
-        self.assertIn("COMMENT", err.getvalue())
-        self.assertNotIn("zero unadjudicated survivors", out.getvalue())
+        """Through run(), not just the helper: a check nothing calls does not run."""
+        code, out, err = self.gate(entry("p", "a.go:70:1", "CONDITIONALS_BOUNDARY"))
+        self.assertEqual(code, 1, "an entry on a comment must FAIL the gate")
+        self.assertIn("// a line comment", err)
+        self.assertIn("COMMENT", err)
+        self.assertNotIn("zero unadjudicated survivors", out)
 
     def test_a_suspect_key_is_not_also_told_to_delete_itself(self):
-        """TWO MESSAGES THAT CONTRADICT EACH OTHER ARE WORSE THAN ONE.
-
-        A key on a comment has no mutant, so it is stale as well as suspect,
-        and the generic stale line fires beside the position one: "re-key it,
-        do not delete it" immediately under "remove the entry". A reader
-        following the second loses the reasoning, which is the exact harm this
-        whole change exists to stop. The position diagnosis is strictly the
-        more informative of the two, so it is the one that survives.
-
-        It costs the gate nothing: the entry is still reported and the gate
-        still fails.
-        """
-        eq = equivalents("p  a.go:70:1  CONDITIONALS_BOUNDARY\n    reason\n")
-        out, err = io.StringIO(), io.StringIO()
-        with tempfile.TemporaryDirectory() as root:
-            source_tree(root)
-            code = cm.run(eq, ["./p/"], runner_for({}), out=out, err=err, root=root,
-                          free_bytes=500 * 1024**3, cache_bytes=0)
+        """An entry on a comment is stale as well as faulty; the fault is the
+        one message it gets, since "remove the entry" beside it would lose the
+        reasoning."""
+        code, _, err = self.gate(entry("p", "a.go:70:1", "CONDITIONALS_BOUNDARY"))
         self.assertEqual(code, 1, "a suspect key must still FAIL the gate")
-        self.assertIn("a.go:70:1", err.getvalue())
-        self.assertNotIn("remove the entry", err.getvalue())
+        self.assertIn("// a line comment", err)
+        self.assertNotIn("remove the entry", err)
 
     def test_a_sound_file_of_keys_does_not_red_the_gate(self):
-        """The control at the gate level. A position check that refuses good
-        keys would be worked around rather than obeyed."""
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reason\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
-        out, err = io.StringIO(), io.StringIO()
-        with tempfile.TemporaryDirectory() as root:
-            source_tree(root)
-            code = cm.run(eq, ["./p/"], runner_for(m), out=out, err=err, root=root,
-                          free_bytes=500 * 1024**3, cache_bytes=0)
-        self.assertEqual(code, 0, err.getvalue())
+        """The control at the gate level."""
+        code, _, err = self.gate(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"),
+                                 {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))})
+        self.assertEqual(code, 0, err)
 
+    # VTT-302
     def test_every_real_adjudication_still_points_at_its_mutant(self):
-        """THE ACCEPTANCE ASSERTION, against the real tree and the real file.
-
-        This is the one that would have caught all four of the comment-line
-        keys, and it is also the one that keeps the table above honest: a rule
-        that rejected any of the 39 recorded adjudications would be a bug in
-        the rule, not a finding.
-        """
+        """THE ACCEPTANCE ASSERTION, against the real tree and the real file."""
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         entries = cm.read_equivalents(os.path.join(repo, "tools", "mutation-equivalents.txt"))
         self.assertGreater(len(entries), 30, "the real file must not have gone empty under this")
-        self.assertEqual(cm.suspect_positions(entries, root=repo), [],
-                         "every key in tools/mutation-equivalents.txt must still point at a "
-                         "token its mutator can apply to")
+        self.assertEqual(cm.entry_faults(entries, root=repo), [],
+                         "every entry in tools/mutation-equivalents.txt must name code that "
+                         "stands in its file as often as it records, at a token its mutator "
+                         "rewrites")
 
 
 class SkipCacheTest(unittest.TestCase):
@@ -1131,7 +1013,7 @@ class SkipCacheTest(unittest.TestCase):
         # the pass being recorded. Hoisting it above the failure return passes
         # every other test in this file.
         cache = self.cache_file()
-        eq = equivalents("p  a.go:99:9  CONDITIONALS_BOUNDARY\n    names no live mutant\n")
+        eq = equivalents(entry("p", "a.go:14:5", "CONDITIONALS_BOUNDARY", "names no live mutant"))
         code, _, _, ran = self.gate(eq, {}, cache, {"./p/": "fp-1"})
         self.assertEqual(code, 1, "a stale entry must fail the run")
         self.assertEqual(ran, ["./p/"])
@@ -1163,7 +1045,7 @@ class SkipCacheTest(unittest.TestCase):
         # gate must fail on the next run even though nothing was measured.
         cache = self.cache_file()
         m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
-        eq_ok = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    adjudicated\n")
+        eq_ok = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "adjudicated"))
         code, _, _, ran = self.gate(eq_ok, m, cache, {"./p/": "fp-1"})
         self.assertEqual(code, 0)
         self.assertEqual(ran, ["./p/"])
@@ -1178,61 +1060,77 @@ class SkipCacheTest(unittest.TestCase):
         # summary must be the same one a full run would have printed.
         cache = self.cache_file()
         m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    adjudicated\n")
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "adjudicated"))
         self.gate(eq, m, cache, {"./p/": "fp-1"})
         code, out, _, ran = self.gate(eq, m, cache, {"./p/": "fp-1"})
         self.assertEqual((code, ran), (0, []))
         self.assertIn("1 survivor(s)", out)
 
 
-class MovedAdjudicationTest(unittest.TestCase):
-    """Pairing a stale entry to the survivor it became, and never advising a
-    deletion when a pairing exists.
+class MatchingTest(unittest.TestCase):
+    """An entry claims a survivor by the code it sits on, never by its line
+    (SPEC-020). An edit that only moves the code must not force a re-judgment;
+    an edit to the code itself must."""
 
-    THE HARM IS THE DELETE-THE-ADJUDICATION REFLEX. "No longer survives, remove
-    the entry" reads as an instruction; obeying it when the mutant merely moved
-    throws away reasoning somebody did and leaves a real survivor unexplained.
-    Measured: four times in one day, across both gates.
-
-    THE GO KEY CARRIES NO REPLACEMENT TEXT, which is why this gate had only a
-    prose hint for so long — `(package, file, mutator)` cannot tell a moved
-    mutant from a different one a line away. The signature it pairs on now is
-    derived from the SOURCE instead: the operator at the column and the trimmed
-    text of the line. Two keys pair when the tree says they are the same
-    statement, and the hint is what remains for everything else.
-    """
-
-    def gate(self, eq_path, mapping, packages=("./p/",)):
+    def gate(self, eq_path, mapping, lines=GO_LINES, packages=("./p/",)):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as root:
-            source_tree(root)
+            source_tree(root, lines)
             code = cm.run(eq_path, list(packages), runner_for(mapping),
                           out=out, err=err, root=root, free_bytes=500 * 1024**3,
                           cache_bytes=0)
         return code, out.getvalue(), err.getvalue()
 
-    def test_a_move_the_source_can_prove_is_reported_as_a_move(self):
-        """30 and 40 are the same statement, so a mutant that moved between
-        them is pairable by content even with no replacement text in the key."""
-        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    reasoned\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
-        code, _, err = self.gate(eq, m)
-        self.assertEqual(code, 1, "a re-key is still a failure, not a pass")
-        self.assertIn("ADJUDICATION MOVED", err)
-        self.assertIn("30:7", err)   # where it was
-        self.assertIn("40:7", err)   # where it is now
-        # And NOT as the two separate failures it used to be, because that
-        # framing is what makes deleting a sound adjudication look like the fix.
-        self.assertNotIn("no longer survives", err)
-        self.assertNotIn("SURVIVED", err)
+    # VTT-298
+    def test_a_survivor_whose_line_moved_is_still_claimed(self):
+        """A line inserted above an adjudicated mutant moves it and leaves its
+        code as it was."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"))
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))})
+        self.assertEqual(code, 0, err)
+        shifted = {n + 1: v for n, v in GO_LINES.items()}
+        code, out, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:11:5"))},
+                                   lines=shifted)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("ADJUDICATION MOVED", err)
+        self.assertIn("zero unadjudicated survivors", out)
 
+    # VTT-298
+    def test_a_reindented_line_is_still_claimed(self):
+        """Indentation is a move: the offset counts from the trimmed line."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"))
+        indented = {**GO_LINES, 10: "\t\tif a<b {"}
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:7"))},
+                                 lines=indented)
+        self.assertEqual(code, 0, err)
+
+    # VTT-298
+    def test_a_tab_indented_survivor_resolves_to_its_offset_in_the_trimmed_line(self):
+        """`\\tif tab<x {`: gremlins names the `<` at byte column 8, a tab
+        counting one byte, and the entry names offset 7 of the trimmed line."""
+        eq = equivalents(entry("p", "a.go:90:8", "CONDITIONALS_BOUNDARY"))
+        with open(eq) as fh:
+            self.assertIn("offset=7", fh.read())
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:90:8"))})
+        self.assertEqual(code, 0, err)
+
+    # VTT-299
+    def test_a_survivor_on_other_code_at_an_entrys_old_position_is_not_claimed(self):
+        """The code at the entry's position was edited, so a survivor there is
+        a mutant nobody judged, and the entry is reported."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"))
+        edited = {**GO_LINES, 10: "if a<c {"}
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))},
+                                 lines=edited)
+        self.assertEqual(code, 1)
+        self.assertIn("a.go:10:5 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", err)
+        self.assertIn("if a<b {", err)
+
+    # VTT-299
     def test_a_survivor_on_a_different_statement_is_not_paired(self):
-        """THE CAUTION THIS EXTENDS RATHER THAN REPLACES. 10 and 14 carry the
-        same mutator and the same operator one screen apart, and they are
-        DIFFERENT CLAIMS — pairing them would re-key an adjudication onto a
-        mutant nobody judged, which is the failure the gate exists to prevent,
-        arrived at by a convenience."""
-        eq = equivalents("p  a.go:10:5  CONDITIONALS_BOUNDARY\n    reasoned\n")
+        """10 and 14 carry the same mutator and the same operator, and they are
+        DIFFERENT CLAIMS."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY", "reasoned"))
         m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:14:5"))}
         code, _, err = self.gate(eq, m)
         self.assertEqual(code, 1)
@@ -1240,45 +1138,143 @@ class MovedAdjudicationTest(unittest.TestCase):
         self.assertIn("no longer survives", err)
         self.assertIn("not adjudicated", err)
 
-    def test_two_entries_and_two_survivors_pair_by_position_order(self):
-        """The AMBIGUOUS class, and the one the gate used to answer with
-        "delete them". Four copies of one statement: nothing in the source can
-        say which entry became which survivor, and it does not matter, because
-        the statements are identical and so the adjudications are
-        interchangeable. Deleting two sound adjudications and leaving two real
-        survivors unexplained is worse than either ordering."""
-        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    first\n"
-                         "p  a.go:40:7  CONDITIONALS_BOUNDARY\n    second\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:50:7"),
-                                     ("CONDITIONALS_BOUNDARY", "a.go:60:7"))}
-        code, _, err = self.gate(eq, m)
+    # VTT-299
+    def test_two_mutants_of_one_mutator_on_one_line_are_two_claims(self):
+        """`if a<b && c<d {` carries two CONDITIONALS_BOUNDARY mutants, and an
+        entry for the first does not excuse the second."""
+        first = entry("p", "a.go:100:5", "CONDITIONALS_BOUNDARY")
+        code, _, err = self.gate(equivalents(first),
+                                 {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:100:12"))})
         self.assertEqual(code, 1)
-        # Paired in position order, and SAID so, so a reader can object.
-        self.assertIn("POSITION ORDER", err)
-        self.assertIn("30:7 -> 50:7", err)
-        self.assertIn("40:7 -> 60:7", err)
-        self.assertNotIn("no longer survives", err)
+        self.assertIn("a.go:100:12 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", err)
+        both = equivalents(first + entry("p", "a.go:100:12", "CONDITIONALS_BOUNDARY"))
+        code, _, err = self.gate(both, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:100:5"),
+                                                               ("CONDITIONALS_BOUNDARY", "a.go:100:12"))})
+        self.assertEqual(code, 0, err)
 
-    def test_mismatched_counts_still_refuse_to_guess(self):
-        """Two entries, one survivor. There is no pairing, only a choice, and
-        the gate does not make choices — it reports both sides and fails."""
-        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    first\n"
-                         "p  a.go:40:7  CONDITIONALS_BOUNDARY\n    second\n")
-        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:50:7"))}
+    # VTT-300
+    # VTT-299
+    def test_a_second_copy_of_an_adjudicated_line_is_reported_unadjudicated(self):
+        """`if dup<lim {` stands four times. One entry excuses one mutant on it;
+        a second surviving copy is a mutant nobody judged."""
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY"))
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:30:7"),
+                                     ("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
         code, _, err = self.gate(eq, m)
         self.assertEqual(code, 1)
-        self.assertNotIn("ADJUDICATION MOVED", err)
+        unclaimed = [l for l in err.splitlines() if "not adjudicated" in l]
+        self.assertEqual(len(unclaimed), 1, err)
+        self.assertIn("a.go:40:7", unclaimed[0])
+        self.assertIn("nth=2", err)
+
+    # VTT-299
+    def test_an_entry_on_one_copy_does_not_claim_another_copys_survivor(self):
+        """The judged copy's mutant is killed and another copy's survives: that
+        survivor is a mutant nobody judged, though its code is the same."""
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY"))
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))})
+        self.assertEqual(code, 1)
+        self.assertIn("a.go:40:7 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", err)
         self.assertIn("no longer survives", err)
-        self.assertIn("not adjudicated", err)
 
-    def test_a_move_is_never_advice_to_delete(self):
-        """The property the whole of Part B is for, asserted on the message
-        rather than inferred from the pairing."""
-        eq = equivalents("p  a.go:30:7  CONDITIONALS_BOUNDARY\n    reasoned\n")
+    def test_two_entries_on_two_identical_lines_claim_both(self):
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY", "first")
+                         + entry("p", "a.go:40:7", "CONDITIONALS_BOUNDARY", "second"))
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:30:7"),
+                                     ("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
+        code, out, err = self.gate(eq, m)
+        self.assertEqual(code, 0, err)
+        self.assertIn("zero unadjudicated survivors", out)
+
+    # VTT-301
+    def test_two_entries_for_one_code_and_one_survivor_leave_one_stale(self):
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY", "first")
+                         + entry("p", "a.go:40:7", "CONDITIONALS_BOUNDARY", "second"))
+        m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:30:7"))}
+        code, _, err = self.gate(eq, m)
+        self.assertEqual(code, 1)
+        self.assertIn("no longer survives", err)
+        self.assertNotIn("not adjudicated", err)
+
+    # VTT-300
+    def test_one_entry_claims_one_of_two_survivors_on_its_key(self):
+        """Should two mutants ever share a key, one entry excuses one of them."""
+        e = cm.Entry("p", "a.go", "CONDITIONALS_BOUNDARY", 5, 1, 1, "if a<b {", "reason")
+        key = cm.entry_key(e)
+        claimed, unadjudicated, stale = cm.claims([e], [(key, "first"), (key, "second")], [])
+        self.assertEqual((claimed, unadjudicated, stale), (["first"], [(key, "second")], []))
+
+    def test_claims_takes_survivors_before_timeouts(self):
+        """A timeout is not an evaluation, so an entry is not spent on one while
+        a survivor on its key is unclaimed."""
+        e = cm.Entry("p", "a.go", "CONDITIONALS_BOUNDARY", 5, 1, 1, "if a<b {", "reason")
+        key = cm.entry_key(e)
+        claimed, unadjudicated, stale = cm.claims([e], [(key, "lived")], [(key, "hung")])
+        self.assertEqual((claimed, unadjudicated, stale), (["lived"], [], []))
+
+    def test_a_survivor_in_an_ungated_subdirectory_is_claimed(self):
+        """gremlins recurses into a package's ungated subdirectories and names
+        their files relative to the package."""
+        eq = equivalents(entry("p", "sub/c.go:10:5", "CONDITIONALS_BOUNDARY"))
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+            _go_file(os.path.join(root, "p", "sub", "c.go"), "sub")
+            code = cm.run(eq, ["./p/"],
+                          runner_for({"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "sub/c.go:10:5"))}),
+                          out=out, err=err, root=root, free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 0, err.getvalue())
+
+    # VTT-303
+    def test_a_survivor_is_resolved_against_the_source_the_run_measured(self):
+        """The tree is edited while gremlins runs: a line goes in at the top of
+        a.go. The survivor's position names the source gremlins mutated."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"))
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root)
+
+            def runner(pkg):
+                _go_file(os.path.join(root, "p", "a.go"), "p",
+                         {n + 1: v for n, v in GO_LINES.items()})
+                return gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))
+
+            code = cm.run(eq, ["./p/"], runner, out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        self.assertEqual(code, 0, err.getvalue())
+
+    # VTT-304
+    def test_a_survivor_whose_line_cannot_be_read_fails_the_gate(self):
+        for where in ("a.go:9999:5", "gone.go:10:5"):
+            with self.subTest(where):
+                code, out, err = self.gate(equivalents(""),
+                                           {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", where))})
+                self.assertEqual(code, 1)
+                self.assertIn("cannot be read", err)
+                self.assertNotIn("zero unadjudicated survivors", out)
+
+    # VTT-304
+    def test_a_survivor_outside_its_trimmed_line_fails_the_gate(self):
+        """A column in the indentation or past the end names no code on the line."""
+        for where in ("a.go:90:1", "a.go:10:99"):
+            with self.subTest(where):
+                code, out, err = self.gate(equivalents(""),
+                                           {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", where))})
+                self.assertEqual(code, 1)
+                self.assertIn("cannot be read", err)
+                self.assertNotIn("offset=0", err)
+
+    def test_an_unadjudicated_survivor_is_printed_as_a_ready_entry(self):
+        """Pasted as printed, the entry parses and claims the survivor once its
+        reason is written, so nobody works out an offset or a count by hand."""
         m = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))}
-        _, _, err = self.gate(eq, m)
-        self.assertIn("RE-KEY", err)
-        self.assertNotIn("remove the entry", err)
+        code, _, err = self.gate(equivalents(""), m)
+        self.assertEqual(code, 1)
+        block = err.split("with the reason:\n", 1)[1].split("\n")[:2]
+        self.assertEqual(block, ["p  a.go  CONDITIONALS_BOUNDARY  offset=7  nth=2  copies=4",
+                                 "    code: if dup<lim {"])
+        code, _, err = self.gate(equivalents("\n".join(block) + "\n    reasoned\n"), m)
+        self.assertEqual(code, 0, err)
 
 
 def _pkg_dir(root, rel, clause, with_test=True):

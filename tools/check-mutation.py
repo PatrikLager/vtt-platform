@@ -23,18 +23,16 @@ rounds of the coverage gate, 8 of 9 defects were in hand-rolled enforcement
 code, and the fix was always to delete it in favour of the toolchain. Keep this
 file small enough that it cannot hide a bug.
 
-IT DOES READ GO SOURCE, in exactly one way, and this paragraph used to say it
-did not. Each adjudication names a file:line:col, and the gate now reads that
-one line and that one column to check the key still points at a token its
-mutator can apply to, and to derive the signature that pairs a stale entry to
-the survivor it became (MUTATOR_TOKENS, read_position, moved_entries). That is
-a byte lookup and a prefix comparison — no parser, no AST, no opinion about
-what the code means. The line stays: it is not interpreting Go, it is looking
-at one character of it. But "does not read Go source" was false the moment
-this landed, and this file's own history is full of comments that were true
-when written and stopped being so with nothing to notice.
+IT READS GO SOURCE, as lines of bytes and nothing more. An adjudication names
+the code its mutant sits on, not a line (SPEC-020), so the gate reads the line
+gremlins names for each survivor, from the package as it stood when gremlins
+started, and compares the trimmed text and the offset in it with each entry's.
+Before the run it checks each entry against the tree: its code stands in its
+file as often as the entry records, and its offset holds a token its mutator
+rewrites. No parser, no AST, no opinion about what the code means.
 """
 
+import collections
 import hashlib
 import json
 import os
@@ -340,90 +338,113 @@ class EquivalentsError(Exception):
     pass
 
 
-def read_equivalents(path):
-    """Return {(package, location, mutator): reason}.
+# An adjudication names the code it excuses, never its line (SPEC-020):
+#
+#     <package>  <file>  <MUTATOR>  offset=<n>  nth=<n>  copies=<n>
+#         code: <the line the mutant sits on, trimmed>
+#         <reason>
+#
+# `offset` is gremlins' byte column less the line's indentation, so a line that
+# moves or is re-indented keeps its entry and a line that is edited loses it.
+# `copies` is how many lines of the file hold that code, and `nth` which of them
+# the entry names, counted from the top: an entry on one copy never excuses a
+# mutant on another.
+Entry = collections.namedtuple("Entry", "package file mutator offset nth copies code reason")
 
-    Entries are a header line plus an indented reason. The reason is REQUIRED:
-    an equivalence claim without a stated observable is exactly the shape that
+# The reason the gate prints under a ready entry. Refused as a reason: pasted
+# unedited, it would excuse a mutant nobody judged.
+PLACEHOLDER = "<the observable that makes it equivalent>"
+
+
+def entry_key(e):
+    return (e.package, e.file, e.mutator, e.offset, e.nth, e.code)
+
+
+def describe(e):
+    return f"{e.package} {e.file} {e.mutator} offset={e.offset} nth={e.nth} on `{e.code}`"
+
+
+def read_equivalents(path):
+    """[Entry], in file order.
+
+    A line whose FIRST character is `#` is a comment; a `#` anywhere else is
+    text. Under each entry come its code line and its reason, both required:
+    an equivalence claim without a stated observable is the shape that
     produced two wrong adjudications on 2026-07-27.
     """
-    entries = {}
-    pending = None
+    want = "want '<package>  <file>  <MUTATOR>  offset=<n>  nth=<n>  copies=<n>', each <n> at least 1"
+    entries, head, code = [], None, None
     with open(path) as fh:
         for lineno, raw in enumerate(fh, 1):
-            if not raw.strip() or raw.lstrip().startswith("#"):
+            line = raw.rstrip("\r\n")
+            if not line.strip() or line.startswith("#"):
                 continue
-            if raw[0].isspace():
-                if pending is None:
+            if line[0].isspace():
+                text = line.strip()
+                if head is None:
+                    raise EquivalentsError(f"{path}:{lineno}: an indented line with no entry above it")
+                if code is None:
+                    # Trimmed as the gate trims source (INDENT), so a printed
+                    # entry pasted back names the same code.
+                    text = line.lstrip(" \t").rstrip(" \t\r")
+                    if not text.startswith("code: "):
+                        raise EquivalentsError(
+                            f"{path}:{lineno}: entry {head[1]} {head[2]} has no code line — the "
+                            f"first line under an entry is `code: <the line its mutant sits on, "
+                            f"trimmed>`")
+                    code = text[len("code: "):]
+                    continue
+                if text == PLACEHOLDER:
                     raise EquivalentsError(
-                        f"{path}:{lineno}: reason line with no entry above it")
-                entries[pending] = raw.strip()
-                pending = None
+                        f"{path}:{lineno}: entry {head[1]} {head[2]} has the printed placeholder for "
+                        f"its reason — state the observable that makes it equivalent, or write the "
+                        f"test instead")
+                entries.append(Entry(*head, code, text))
+                head, code = None, None
                 continue
-            if pending is not None:
+            if head is not None:
+                raise EquivalentsError(_unfinished(path, lineno, head, code))
+            parts = line.split()
+            try:
+                if len(parts) != 6 or [x.split("=")[0] for x in parts[3:]] != ["offset", "nth", "copies"]:
+                    raise ValueError
+                offset, nth, copies = (int(x.split("=", 1)[1]) for x in parts[3:])
+                if min(offset, nth, copies) < 1:
+                    raise ValueError
+            except ValueError:
+                raise EquivalentsError(f"{path}:{lineno}: {want}, got {line.strip()!r}") from None
+            if parts[0] != _norm_pkg(parts[0]):
                 raise EquivalentsError(
-                    f"{path}:{lineno}: entry {pending[1]} has no reason line — state the "
-                    f"observable that makes it equivalent, or write the test instead")
-            parts = raw.split()
-            if len(parts) != 3:
-                raise EquivalentsError(
-                    f"{path}:{lineno}: want '<package>  <file:line:col>  <MUTATOR>', got {raw.strip()!r}")
-            pending = (parts[0], parts[1], parts[2])
-    if pending is not None:
-        raise EquivalentsError(f"{path}: entry {pending[1]} at end of file has no reason line")
+                    f"{path}:{lineno}: write the package as survivors carry it, "
+                    f"{_norm_pkg(parts[0])!r}, not {parts[0]!r}: as written it matches nothing")
+            head = (parts[0], parts[1], parts[2], offset, nth, copies)
+    if head is not None:
+        raise EquivalentsError(_unfinished(path, "end of file", head, code))
     return entries
 
 
-def _norm_pkg(name):
-    """Normalise a package as written to the form survivors carry.
+def _unfinished(path, where, head, code):
+    if code is None:
+        return (f"{path}:{where}: entry {head[1]} {head[2]} has no code line — the first line "
+                f"under an entry is `code: <the line its mutant sits on, trimmed>`")
+    return (f"{path}:{where}: entry {head[1]} {head[2]} has no reason line — state the observable "
+            f"that makes it equivalent, or write the test instead")
 
-    read_equivalents takes the package VERBATIM while the survivor loop stores
-    `pkg.strip("./").rstrip("/")`, so `./p/` and `p` are different keys. That is
-    a real footgun and the first attempt at pairing here silently matched
-    nothing because of it — so anything comparing the two sides normalises
-    both, and the hint below diagnoses the mismatch by name rather than
-    leaving somebody to find it.
-    """
+
+def _norm_pkg(name):
+    """A package as survivors carry it: `internal/x`, never `./internal/x/`."""
     return name.strip("./").rstrip("/")
 
 
-# ---------------------------------------------------------------------------
-# DOES THE KEY STILL POINT AT A MUTANT OF THE KIND IT NAMES?
+# The operators each mutator rewrites. An entry whose offset holds none of its
+# mutator's tokens names no mutant gremlins makes, so it could only go stale.
 #
-# THE CLASS OF DRIFT THIS CATCHES IS THE DANGEROUS ONE, and it is not the one
-# the rest of this file worries about. A key that has merely MOVED fails the
-# gate anyway, loudly: a stale entry beside an unadjudicated survivor. A key
-# that has landed on a COMMENT, or on a different token, fails NOTHING —
-# gremlins generates no mutant there, so it never appears in a survivor list,
-# and the entry sits in the file silently pre-approving whatever DOES land on
-# that line later. It is an excuse with no mutant behind it.
+# token_at is a byte match with no parser behind it: the `<` of a `<-` passes as
+# CONDITIONALS_BOUNDARY, and a pointer `*` as ARITHMETIC_BASE. This catches the
+# common mistake, not every one.
 #
-# Measured on the TS side, where the same drift is easier to see: a wire.ts
-# pair landed on comment lines in TWO separate episodes three days apart — one
-# of the two on 2026-08-21, both of them on 2026-08-24 — and a canvas.ts key
-# landed on one WITHIN AN HOUR of being written, because a comment edit above it
-# shifted the line. Nothing about editing a comment suggests a mutation key is
-# downstream of it, which is the whole problem.
-#
-# THE TABLE IS SMALL ON PURPOSE and it is evidence, not taste: a probe over all
-# 39 recorded adjudications matched 39 of 39, so this rejects today's bad data
-# and accepts today's good data. check_mutation_test.py asserts that over the
-# real file, so a rule that started rejecting a sound key would red the gate's
-# own tests rather than quietly getting loosened.
-#
-# WHAT IT DOES NOT CATCH, because token_at is a byte match with no parser behind
-# it and the comment rule reads only the line's first non-space bytes. Measured
-# by handing read_position each of these: the `<` of a `<-` channel receive
-# passes as CONDITIONALS_BOUNDARY; a pointer or deref `*` mid-line passes as
-# ARITHMETIC_BASE; and the first `/` of a TRAILING `//` comment passes as
-# ARITHMETIC_BASE, because the line it sits on begins with code. This is the
-# common landing caught mechanically, not a proof that a key points at a mutant.
-#
-# gremlins' columns are 1-BASED BYTE OFFSETS into the line, and Go source is
-# TAB-INDENTED — a tab is one byte and one column, never a tab stop. Getting
-# that wrong puts every key in every indented file at the wrong column, which
-# is a check that fails on good data, and a check that fails on good data gets
-# loosened rather than obeyed.
+# gremlins' columns are 1-BASED BYTE OFFSETS, and Go source is TAB-indented: a
+# tab is one byte, never a tab stop.
 MUTATOR_TOKENS = {
     "CONDITIONALS_BOUNDARY": ("<=", ">=", "<", ">"),
     "CONDITIONALS_NEGATION": ("==", "!=", "<=", ">=", "<", ">"),
@@ -434,55 +455,23 @@ MUTATOR_TOKENS = {
 }
 
 # `//`, `/*`, and a line whose first non-space is `*` — the middle of a block
-# comment. THE THIRD ONE IS THE ONE THAT SHIPPED BROKEN: the hand-rolled
-# version of this check tested `startswith("//")`, which neither `/**` nor a
-# continuation line matches, and it reported "0 suspect" TWICE over a key that
-# had drifted three lines onto a `/**`. A checker that cannot fail is worse
-# than no checker.
+# comment. Test the third: a check of `//` alone misses `/**` and its
+# continuation lines.
 COMMENT_PREFIXES = (b"//", b"/*", b"*")
 
-
-def split_location(location):
-    """(file, line, col) from a key's `file:line:col`, or None if it is not one.
-
-    read_equivalents only counts the FIELDS on the line, so a `a.go:10` or a
-    `a.go:10:x` reaches here intact. Returning None rather than raising keeps
-    the diagnosis with the entry that caused it.
-    """
-    parts = location.rsplit(":", 2)
-    if len(parts) != 3:
-        return None
-    try:
-        return parts[0], int(parts[1]), int(parts[2])
-    except ValueError:
-        return None
+INDENT = b" \t\r"
 
 
-def source_line(root, pkg, location):
-    """The raw BYTES of the line a key names, or None if it cannot be read.
-
-    Bytes, not text: the column is a byte offset, and decoding first would move
-    it on any line containing a non-ASCII character.
-    """
-    where = split_location(location)
-    if where is None:
-        return None
-    file_, wanted, _ = where
-    try:
-        with open(os.path.join(root, _norm_pkg(pkg), file_), "rb") as fh:
-            for n, raw in enumerate(fh, 1):
-                if n == wanted:
-                    return raw.rstrip(b"\r\n")
-    except OSError:
-        return None
-    return None
+def trimmed(raw):
+    """(code, width of the indentation) of one source line, in bytes."""
+    return raw.strip(INDENT), len(raw) - len(raw.lstrip(INDENT))
 
 
 def token_at(line, col, tokens):
     """The longest of `tokens` starting at 1-based BYTE column `col`, or "".
 
-    Longest-first so `<=` is not read as a bare `<` — the two are different
-    mutations and this is the text the pairing signature is built from.
+    Longest-first so `<=` is not read as a bare `<`: they are different
+    mutations.
     """
     if col < 1 or col > len(line):
         return ""
@@ -493,221 +482,142 @@ def token_at(line, col, tokens):
     return ""
 
 
-def read_position(root, pkg, location, mutator):
-    """(fault, token, anchor) for one key.
+def package_source(root, pkg):
+    """{file: [line bytes]} for the .go files under the package's directory as
+    they stand now, each named by its path relative to the package, since
+    gremlins recurses into ungated subdirectories and names their files so.
 
-    fault is "" when the position can still host this mutator, and a sentence
-    naming what is wrong when it cannot. token and anchor are the halves of the
-    pairing signature below: the operator the mutation would rewrite, and the
-    trimmed text of the line it sits on.
+    Read BEFORE gremlins runs: its positions name the source it mutated, and the
+    tree can be edited while it runs (VTT-303).
     """
-    where = split_location(location)
-    if where is None:
-        return (f"{location!r} is not a file:line:col", "", "")
-    file_, _, col = where
-    line = source_line(root, pkg, location)
-    if line is None:
-        return (f"there is no such line in the tree — {os.path.join(_norm_pkg(pkg), file_)} is "
-                f"missing, unreadable, or shorter than that", "", "")
-    anchor = line.strip().decode("utf-8", "replace")
-    if line.strip().startswith(COMMENT_PREFIXES):
-        return (f"that line is a COMMENT ({anchor!r}), and gremlins generates no mutant on one",
-                "", anchor)
-    tokens = MUTATOR_TOKENS.get(mutator)
-    if tokens is None:
-        # FAIL CLOSED. The shipped version of this check had no branch for one
-        # entry's mutator and skipped it in silence, which is the other half of
-        # how it said "0 suspect" over a broken key. A mutator this gate cannot
-        # place is a gate that is not checking, and it must say so.
-        return (f"{mutator} has no entry in MUTATOR_TOKENS, so this gate cannot say which token "
-                f"it applies to and is not checking this key at all. Add it with the operators "
-                f"gremlins rewrites for it", "", anchor)
-    tok = token_at(line, col, tokens)
-    if not tok:
-        got = line[col - 1:col + 7].decode("utf-8", "replace") if col <= len(line) else ""
-        return (f"column {col} of {anchor!r} holds {got!r}, and {mutator} applies only to "
-                f"{' '.join(tokens)}", "", anchor)
-    return ("", tok, anchor)
+    d = os.path.join(root, _norm_pkg(pkg))
+    source = {}
+    for dirpath, _, names in os.walk(d):
+        for name in names:
+            if name.endswith(".go"):
+                path = os.path.join(dirpath, name)
+                try:
+                    with open(path, "rb") as fh:
+                        source[os.path.relpath(path, d).replace(os.sep, "/")] = fh.read().split(b"\n")
+                except OSError:
+                    pass
+    return source
 
 
-def suspect_positions(entries, root="."):
-    """[(key, fault)] for every entry whose position cannot host its mutator."""
+def resolve(source, name, location, mutator):
+    """The key of the mutant gremlins names at `file:line:col`, or None when its
+    line cannot be read from `source` or its column falls outside the code."""
+    parts = location.rsplit(":", 2)
+    if len(parts) != 3:
+        return None
+    file_, line, col = parts
+    try:
+        line, col = int(line), int(col)
+    except ValueError:
+        return None
+    lines = source.get(file_)
+    if lines is None or not 1 <= line <= len(lines):
+        return None
+    code, indent = trimmed(lines[line - 1])
+    try:
+        text = code.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text or not 1 <= col - indent <= len(code):
+        return None
+    nth = sum(1 for raw in lines[:line] if trimmed(raw)[0] == code)
+    return (name, file_, mutator, col - indent, nth, text)
+
+
+def copies_in(source, file_, code):
+    """How many lines of `file_` in `source` hold `code`."""
+    want = code.encode("utf-8")
+    return sum(1 for raw in source.get(file_, ()) if trimmed(raw)[0] == want)
+
+
+def entry_faults(entries, root="."):
+    """[(Entry, fault)] for every entry the tree refutes, before any mutation run.
+
+    Refused: a file that cannot be read; code that stands in its file a number
+    of times other than `copies` (VTT-302); an `nth` above `copies`; two
+    entries for one key; code that is a comment; an offset holding no token its
+    mutator rewrites; a mutator this check cannot place (fail closed).
+    """
+    sharing = collections.Counter(entry_key(e) for e in entries)
+    files = {}
     bad = []
-    for key in sorted(entries):
-        fault, _, _ = read_position(root, key[0], key[1], key[2])
+    for e in entries:
+        path = os.path.join(root, e.package, e.file)
+        if path not in files:
+            try:
+                with open(path, "rb") as fh:
+                    files[path] = [trimmed(raw)[0] for raw in fh.read().split(b"\n")]
+            except OSError:
+                files[path] = None
+        fault = _entry_fault(e, path, files[path], sharing[entry_key(e)])
         if fault:
-            bad.append((key, fault))
+            bad.append((e, fault))
     return bad
 
 
-# ---------------------------------------------------------------------------
-# PAIRING A STALE ENTRY TO THE SURVIVOR IT BECAME
-#
-# THE HARM IS THE DELETE-THE-ADJUDICATION REFLEX. "No longer survives, remove
-# the entry" reads as an instruction, and when an edit has merely SHIFTED the
-# mutant, obeying it throws away reasoning somebody did and leaves a real
-# survivor unexplained. Measured: four times in one day, across both gates.
-#
-# THIS GATE HAD ONLY A PROSE HINT FOR SO LONG BECAUSE ITS KEYS CARRY NO
-# REPLACEMENT TEXT — gremlins supplies none, and its JSON report carries only
-# {type, status, line, column}, so `(package, file, mutator)` genuinely cannot
-# tell a moved mutant from a different one a line away. The signature is
-# derived from the SOURCE instead: the operator at the column and the trimmed
-# text of the line, both of which read_position already computes for the
-# position check above. Two keys pair when the tree says they are the same
-# statement, and never merely because they share a file and a mutator.
-#
-# WHAT THAT DOES AND DOES NOT REACH, stated because the previous version of
-# this comment claimed something that stopped being true and nothing caught it.
-# It pairs a mutant that moved BETWEEN two identical statements, and a group of
-# identical statements that shifted as a block. It does NOT pair the ordinary
-# shift, where an insertion above leaves the entry's old line holding somebody
-# else's code: that entry's anchor is then a different statement, so no pairing
-# is claimed, the position check above reports it as a key that no longer
-# points at its mutant, and stale_entry_hint still offers the same lead it
-# always did. A hint is what remains where a pairing cannot be proved, which is
-# the honest division — pairing on less would re-key an adjudication onto a
-# mutant nobody judged, which is the failure this gate exists to prevent,
-# arrived at by a convenience.
-def pair_signature(root, key):
-    """(package, file, mutator, token, anchor) — what makes two keys the same."""
-    pkg, location, mutator = key
-    where = split_location(location)
-    _, token, anchor = read_position(root, pkg, location, mutator)
-    return (_norm_pkg(pkg), where[0] if where else location, mutator, token, anchor)
-
-
-def _by_position(key):
-    where = split_location(key[1])
-    return where if where else (key[1], 0, 0)
-
-
-def moved_entries(stale, unadjudicated, root="."):
-    """{stale key: (survivor key, ordered)} — the re-keys the source can prove.
-
-    `ordered` is True when the pairing came from POSITION ORDER within a group
-    of otherwise indistinguishable keys rather than from a one-to-one match.
-    """
-    groups = {}
-    for key in stale:
-        groups.setdefault(pair_signature(root, key), ([], []))[0].append(key)
-    for key in unadjudicated:
-        sig = pair_signature(root, key)
-        if sig in groups:
-            groups[sig][1].append(key)
-
-    moved = {}
-    for entries, survivors in groups.values():
-        # An entry and a survivor at the SAME location are not a move — they
-        # are the package-spelling mismatch stale_entry_hint diagnoses by name,
-        # and calling that a move would replace a deduction with a guess.
-        shared = {e[1] for e in entries} & {s[1] for s in survivors}
-        entries = sorted((e for e in entries if e[1] not in shared), key=_by_position)
-        survivors = sorted((s for s in survivors if s[1] not in shared), key=_by_position)
-        # WHEN THE COUNTS DO NOT MATCH, REFUSE. There is no pairing there, only
-        # a choice, and the gate does not make choices: both sides are reported
-        # the old way and a human decides.
-        #
-        # When they DO match and there is more than one, pair by position
-        # order. Two identical statements in one function cannot be told apart
-        # by any content, and their adjudications are interchangeable *because*
-        # they are identical — while the alternative, which this gate used to
-        # advise, is deleting sound adjudications AND leaving real survivors
-        # unexplained. That is worse than either ordering, so the ordering is
-        # taken and REPORTED AS AN ORDERING, for a reader to object to.
-        if not entries or len(entries) != len(survivors):
-            continue
-        for was, now in zip(entries, survivors):
-            moved[was] = (now, len(entries) > 1)
-    return moved
-
-
-def line_col(location):
-    """`line:col` — a key's position with the file stripped off, for a message
-    that has already named the file once.
-
-    Falls back to the whole location when it does not parse, here and in
-    location_file below, so a malformed key gets a diagnosis rather than a
-    traceback. read_equivalents counts a line's FIELDS and nothing more, so
-    `p  a.go  CONDITIONALS_BOUNDARY` reaches this code intact.
-    """
-    where = split_location(location)
-    return f"{where[1]}:{where[2]}" if where else location
-
-
-def location_file(location):
-    where = split_location(location)
-    return where[0] if where else location
-
-
-def stale_entry_hint(name, location, mutator, unadjudicated):
-    """A HINT that a stale adjudication may be the same mutant, moved. Never a claim.
-
-    THE HARM THIS ADDRESSES is the delete-the-adjudication reflex. "No longer
-    survives, remove the entry" reads as an instruction, and when an edit has
-    merely SHIFTED a mutant, obeying it throws away reasoning somebody did and
-    leaves the survivor unexplained. That happened four times in one day.
-
-    THIS IS WHAT IS LEFT AFTER moved_entries HAS TRIED. Anything that gate can
-    PROVE is a move — same package, file, mutator, operator and source line —
-    is reported as one, with the new key spelled out, and never reaches here.
-    What reaches here is the case that cannot be proved from the tree: an
-    ordinary shift, where an insertion above has left the entry's old line
-    holding somebody else's code, so its anchor is a different statement.
-
-    THE KEY CARRIES NO REPLACEMENT TEXT, which is why the residue is a hint
-    rather than a claim. gremlins supplies none — its JSON report carries only
-    {type, status, line, column} — so "same file, same mutator" on its own
-    cannot tell a moved mutant from a different one a line away, and
-    check_mutation_test.py's test_adjudication_is_matched_on_all_three_fields
-    exists precisely to pin that a survivor one line from an adjudication is a
-    DIFFERENT claim. An earlier attempt paired them on that alone and broke
-    that test; editing the test to fit would have been weakening a gate's own
-    test to pass a change.
-
-    So this returns TEXT and nothing else. Both the stale entry and the
-    unadjudicated survivor are still reported, and the gate still fails. The
-    reader gets a lead; the gate keeps its verdict.
-    """
-    pkg = _norm_pkg(name)
-    file_ = location.rsplit(":", 2)[0]
-
-    spelling, elsewhere = False, []
-    for other_name, other_loc, other_mutator in unadjudicated:
-        if _norm_pkg(other_name) != pkg or other_mutator != mutator:
-            continue
-        if other_loc == location:
-            # Same normalised package, same location, same mutator — and the
-            # entry is stale while this one is unadjudicated. The two package
-            # strings must therefore differ VERBATIM. Checked rather than
-            # assumed, so a future caller passing an identical spelling cannot
-            # be told its spelling is wrong.
-            spelling = spelling or other_name != name
-        elif other_loc.rsplit(":", 2)[0] == file_:
-            elsewhere.append(other_loc)
-
-    if spelling:
-        # NOT a move, and not a guess either. If the two spellings agreed the
-        # keys would be equal, the survivor would be claimed and this entry
-        # would not be stale — so the mismatch is deduced, not suspected.
-        # Hedging it would invite the reader to ignore correct, actionable
-        # advice, which is why the "hint, not a match" wording belongs on the
-        # other branch and not this one.
-        return (f". THE SAME MUTANT SURVIVES UNADJUDICATED AT THAT EXACT LOCATION: this entry "
-                f"spells the package {name!r} while survivors carry {pkg!r}, so it matches "
-                f"nothing. Write it as {pkg!r} rather than deleting the entry. A DEDUCTION, not "
-                f"a guess: were the spellings equal the keys would be equal, the survivor would "
-                f"be claimed, and this entry would not be stale.")
-    if elsewhere:
-        where = ", ".join(sorted(set(elsewhere)))
-        return (f". NOTE: {mutator} also survives unadjudicated in that file, at {where} — if an "
-                f"edit SHIFTED this mutant, RE-KEY this entry and re-check that its reason still "
-                f"holds, rather than deleting it. This is a hint, not a match: the source at this "
-                f"entry's own line is no longer the statement any of those survivors sit on, so "
-                f"the pairing above could not prove a move, and these keys carry no replacement "
-                f"text to settle it — same-file-same-mutator alone cannot tell a moved mutant "
-                f"from a different one a line away.")
+def _entry_fault(e, path, lines, sharing):
+    if lines is None:
+        return f"{path} cannot be read"
+    code = e.code.encode("utf-8")
+    n = lines.count(code)
+    if n != e.copies:
+        return f"`{e.code}` stands {n} time(s) in {path}, and the entry records copies={e.copies}"
+    if e.nth > e.copies:
+        return f"it names copy nth={e.nth} of code that stands {e.copies} time(s) in {path}"
+    if sharing > 1:
+        return (f"{sharing} entries name this code, copy, mutator and offset, and one mutant can "
+                f"be excused only once")
+    if code.startswith(COMMENT_PREFIXES):
+        return "its code is a COMMENT, and gremlins generates no mutant on one"
+    tokens = MUTATOR_TOKENS.get(e.mutator)
+    if tokens is None:
+        return (f"{e.mutator} has no entry in MUTATOR_TOKENS, so this check cannot say which token "
+                f"it applies to and is not checking this entry at all. Add it with the operators "
+                f"gremlins rewrites for it")
+    if not token_at(code, e.offset, tokens):
+        got = code[e.offset - 1:e.offset + 7].decode("utf-8", "replace") if e.offset <= len(code) else ""
+        return (f"offset {e.offset} of {e.code!r} holds {got!r}, and {e.mutator} applies only to "
+                f"{' '.join(tokens)}")
     return ""
+
+
+def claims(entries, survivors, timed_out):
+    """(claimed, unadjudicated, stale): entries matched to live mutants by key
+    (SPEC-020).
+
+    `survivors` and `timed_out` are [(key, mutant)], `mutant` being however the
+    caller names one. Per key, survivors are claimed first and one per entry
+    (VTT-300), in the order given; entries left over claim timed-out mutants,
+    since a timeout is a detection and not an evaluation; entries left after
+    that are stale (VTT-301). `unadjudicated` is [(key, mutant)].
+    """
+    groups = collections.defaultdict(lambda: ([], [], []))
+    for e in entries:
+        groups[entry_key(e)][0].append(e)
+    for key, mutant in survivors:
+        groups[key][1].append(mutant)
+    for key, mutant in timed_out:
+        groups[key][2].append(mutant)
+    claimed, unadjudicated, stale = [], [], []
+    for key, (named, lived, hung) in groups.items():
+        n = min(len(named), len(lived))
+        claimed += lived[:n]
+        unadjudicated += [(key, m) for m in lived[n:]]
+        k = min(len(named) - n, len(hung))
+        claimed += hung[:k]
+        stale += named[n + k:]
+    return claimed, unadjudicated, stale
+
+
+def _by_position(item):
+    """Sort key of a (key, (location, mutator)) pair: file, line, column."""
+    file_, line, col = item[1][0].rsplit(":", 2)
+    return (file_, int(line), int(col))
 
 
 def _first_io_error(out):
@@ -1088,11 +998,11 @@ def clear_test_cache():
 # A mutation run costs ~32 minutes across twelve packages, which is why the
 # whole TASK gets skipped, and that is how ddf2d96 landed red and survived three
 # commits on top of it (nine by 2026-08-28). Note what that does NOT claim: the
-# check that caught ddf2d96 is suspect_positions, which runs BEFORE gremlins and
-# costs milliseconds, so the 32 minutes never delayed the finding — they deterred
-# the run that would have produced it. The fix is not to run less carefully; it
-# is to stop paying for packages whose verdict cannot have changed, so that
-# running the gate stops being a decision. Nothing here may ever make the gate
+# check that caught ddf2d96 was suspect_positions, now entry_faults, which runs
+# BEFORE gremlins and costs milliseconds, so the 32 minutes never delayed the
+# finding — they deterred the run that would have produced it. The fix is not
+# to run less carefully; it is to stop paying for packages whose verdict cannot
+# have changed, so that running the gate stops being a decision. Nothing here may ever make the gate
 # QUIETER: a skip prints a line naming what was reused, so a thinner summary is
 # never a silent one.
 #
@@ -1360,28 +1270,26 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         return 1
 
     try:
-        equivalents = read_equivalents(equivalents_path)
+        entries = read_equivalents(equivalents_path)
     except (EquivalentsError, OSError) as exc:
         print(f"check:mutation: {exc}", file=err)
         return 1
 
     # BEFORE the run, because it costs milliseconds and the reader should have
-    # it in front of them for the ~32 minutes the run takes. NOT a `return`, though,
-    # and that is deliberate: the run still measures the code correctly — only
-    # the adjudication file is suspect — and stopping here would mean fixing a
-    # key blind and spending the hour again to find out whether the guess was
-    # right. The same invocation goes on to name the survivor each key should
-    # have been pointing at.
-    suspect = suspect_positions(equivalents, root=root)
-    for (pkg, location, mutator), fault in suspect:
-        print(f"check:mutation: {equivalents_path} lists {pkg} {location} {mutator}, but "
-              f"{fault}. AN ADJUDICATION THAT DOES NOT POINT AT ITS MUTANT EXCUSES NOTHING AND "
-              f"PRE-APPROVES WHATEVER LANDS THERE NEXT, which is worse than an unadjudicated "
-              f"survivor. Read the source, find the expression this entry's reason describes, "
-              f"and re-key it — do not delete it.", file=err)
+    # it in front of them for the half hour the run takes. NOT a `return`: the
+    # run still measures the code correctly, and the same invocation goes on to
+    # print each unadjudicated survivor's code ready to compare with the entry.
+    faults = entry_faults(entries, root=root)
+    for e, fault in faults:
+        print(f"check:mutation: {equivalents_path} lists {describe(e)}, but {fault}. AN "
+              f"ADJUDICATION THE TREE REFUTES EXCUSES NOTHING, which is worse than an "
+              f"unadjudicated survivor. Read the source, find the code this entry's reason "
+              f"describes, and correct the entry — do not delete it.", file=err)
 
     unadjudicated = []
-    claimed = set()
+    unreadable = []
+    stale = []
+    seen = set()
     unevaluated = 0
     skip_cache = load_skip_cache(skip_cache_path)
     fresh_cache = {}
@@ -1390,6 +1298,7 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
         fp = None
         if fingerprint is not None:
             fp = fingerprint(pkg)
+        source = package_source(root, pkg)
         reused = reusable_result(skip_cache, name, fp)
         if reused is not None:
             survivors, timed_out = reused
@@ -1403,61 +1312,44 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
             except EquivalentsError as exc:
                 print(f"check:mutation: {exc}", file=err)
                 return 1
-        before = len(unadjudicated)
+        survivors = [tuple(s) for s in survivors]
+        timed_out = [tuple(t) for t in timed_out]
+        lived, cannot = [], []
         for location, mutator in survivors:
-            key = (name, location, mutator)
-            if key in equivalents:
-                claimed.add(key)
+            key = resolve(source, name, location, mutator)
+            if key is None:
+                cannot.append((name, location, mutator))
             else:
-                unadjudicated.append(key)
-        if fp is not None and len(unadjudicated) == before:
+                lived.append((key, (location, mutator)))
+        # A timed-out mutant whose line cannot be read is no survivor, so it
+        # fails nothing; it just cannot hold an entry.
+        hung = [(key, t) for t in timed_out
+                if (key := resolve(source, name, t[0], t[1])) is not None]
+        mine = [e for e in entries if e.package == name]
+        seen.add(name)
+        claimed, unclaimed, gone = claims(mine, sorted(lived, key=_by_position),
+                                          sorted(hung, key=_by_position))
+        stale += gone
+        unreadable += cannot
+        for key, mutant in unclaimed:
+            sharing = sorted(m[0] for k, m in lived if k == key)
+            named = sum(1 for e in mine if entry_key(e) == key)
+            unadjudicated.append((name, mutant, key, sharing, named,
+                                  copies_in(source, key[1], key[5])))
+        if fp is not None and not unclaimed and not cannot:
             fresh_cache[name] = {
                 "fingerprint": fp,
                 "survivors": [list(s) for s in survivors],
                 "timed_out": [list(t) for t in timed_out],
             }
-        # A TIMED OUT MUTANT COUNTS AS CLAIMED, which is the other consequence
-        # of the "genuine survivor" sentence below and was missing for as long
-        # as that sentence has been here. A timeout is a detection for the
-        # pass/fail verdict — Patrik, 2026-07-28, and that is right: a mutant
-        # that hangs the suite was detected. It is NOT an EVALUATION, so it is
-        # no evidence that an adjudication expired. Without this, `claimed` is
-        # built from survivors alone and a timed-out adjudicated mutant is
-        # reported stale with "remove the entry" — advice to delete a sound
-        # adjudication on the strength of a mutant nobody ran.
-        #
-        # FOUND ON THE TS SIDE FIRST, 2026-08-27, where it was live rather than
-        # latent: three entries on client/src/view/spectator.ts were flagged
-        # stale, and all three were applied by hand and SURVIVED the full suite.
-        # No instance among the GATED packages here, only because no adjudicated
-        # Go mutant in them has happened to time out — but it was predicted in
-        # writing all the same. The header at line 74 records soak.go:611
-        # flipping between LIVED and TIMED OUT across runs, "so even an
-        # adjudication for it goes stale at random", and gives that as one
-        # reason internal/harness is not gated. This removes that obstacle.
-        #
-        # NOTHING IS EXCUSED THAT WOULD OTHERWISE FAIL. There is deliberately no
-        # else-branch: a timed-out mutant that is NOT adjudicated does not join
-        # `unadjudicated` either, because an unevaluated mutant is no evidence
-        # in that direction either. Every timeout is still printed, and still
-        # counted against MAX_TIMEOUT_FRACTION.
-        #
-        # ONE THING DOES CHANGE BESIDES THE STALE MESSAGE. `stale` is what
-        # moved_entries searches, so an entry claimed here also leaves the
-        # pairing: a mutant that genuinely MOVED, whose old key now hosts a
-        # timing-out mutant of the same mutator, is reported as a plain
-        # unadjudicated survivor at its new position with nothing saying the
-        # entry became it. The run still fails; the DIAGNOSIS is what is lost.
-        # Pairing on `equivalents - survivors` instead would drag every
-        # adjudicated timeout into the count balance and break pairings that
-        # work today, so this is the price and this is the record —
-        # test_a_timeout_at_a_moved_entrys_old_key_costs_the_move_pairing pins
-        # it so it stays a decision rather than becoming a surprise.
-        claimed_timeouts = [(loc, mut) for loc, mut in timed_out
-                            if (name, loc, mut) in equivalents]
-        claimed.update((name, loc, mut) for loc, mut in claimed_timeouts)
+        # A TIMED OUT MUTANT CAN HOLD AN ENTRY. A timeout is a detection for
+        # the verdict (Patrik, 2026-07-28) but NOT an evaluation, so it is no
+        # evidence that an adjudication expired: an entry on its code is not
+        # stale. Nothing is excused that would otherwise fail, since a timed-out
+        # mutant never joins `unadjudicated` either.
+        claimed_timeouts = [t for t in timed_out if t in claimed]
 
-        adjudicated = len([s for s in survivors if (name, s[0], s[1]) in equivalents])
+        adjudicated = len(survivors) - len(unclaimed) - len(cannot)
         note = f", {len(timed_out)} TIMED OUT (counted as killed, NOT measured)" if timed_out else ""
         if claimed_timeouts:
             note += (f"; {len(claimed_timeouts)} of those hold an adjudication this run "
@@ -1499,51 +1391,40 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
               f"tools/mutation-scope.md: compare like with like, and state the cache state.",
               file=out)
 
-    failed = bool(suspect)
+    failed = bool(faults) or bool(unreadable)
+    stale += [e for e in entries if e.package not in seen]
+    # An entry the tree refutes is stale as well, and gets the one message
+    # above: "remove the entry" beside "do not delete it" would lose the reason.
+    faulted = {id(e) for e, _ in faults}
+    stale = [e for e in stale if id(e) not in faulted]
 
-    # PAIR BEFORE REPORTING EITHER SIDE. A move reported as two unrelated
-    # failures — a stale entry here, an unadjudicated survivor there — is what
-    # makes deleting a sound adjudication look like the fix.
-    stale = sorted(set(equivalents) - claimed)
-    moved = moved_entries(stale, unadjudicated, root=root)
-    # A key on a comment has no mutant, so it is STALE as well as suspect, and
-    # the generic stale line would fire beside the position one: "re-key it, do
-    # not delete it" under "remove the entry". Two messages that contradict
-    # each other are worse than one, and a reader following the second loses
-    # the reasoning — the exact harm this change exists to stop. The position
-    # diagnosis is strictly the more informative, so it is the one that
-    # survives. The entry is still reported and the gate still fails.
-    stale = [k for k in stale if k not in {key for key, _ in suspect}]
-    for was, (now, ordered) in sorted(moved.items()):
-        why = ("PAIRED BY POSITION ORDER: several entries and the same number of survivors share "
-               "that package, file, mutator, operator and source line, so nothing in the tree can "
-               "say which became which — and it does not matter, because identical statements "
-               "have interchangeable reasons. Object if you know better; the alternative is "
-               "deleting sound adjudications and leaving real survivors unexplained."
-               if ordered else
-               "Same operator on the same source line, so an edit shifted it.")
-        print(f"check:mutation: ADJUDICATION MOVED {_norm_pkg(was[0])} {location_file(was[1])} "
-              f"{was[2]}: {line_col(was[1])} -> {line_col(now[1])}. {why} RE-KEY the entry to the "
-              f"new line and re-check that its reason still holds; do NOT delete it, or its "
-              f"reasoning is lost and the survivor is left unexplained.", file=err)
+    for name, location, mutator in unreadable:
+        print(f"check:mutation: {name} {location} {mutator} SURVIVED, and its line cannot be read "
+              f"from the source the run measured, or its column falls outside the code on it, so "
+              f"the gate cannot tell which code it sits on. It claims nothing and fails (VTT-304).",
+              file=err)
         failed = True
-    paired = {now for now, _ in moved.values()}
-    unadjudicated = [s for s in unadjudicated if s not in paired]
-    stale = [k for k in stale if k not in moved]
 
-    for name, location, mutator in unadjudicated:
-        print(f"check:mutation: {name} {location} {mutator} SURVIVED and is not adjudicated — "
+    for name, (location, mutator), key, sharing, named, copies in unadjudicated:
+        note = ""
+        if len(sharing) > 1:
+            note = (f" ({len(sharing)} survive on that code, at {', '.join(sharing)}, and "
+                    f"{named} {'entry names' if named == 1 else 'entries name'} it)")
+        print(f"check:mutation: {name} {location} {mutator} SURVIVED and is not adjudicated{note} — "
               f"write a test that kills it, or (only if no observable can distinguish it) add it "
-              f"to {equivalents_path} with the reason", file=err)
+              f"to {equivalents_path} with the reason:\n"
+              f"{name}  {key[1]}  {mutator}  offset={key[3]}  nth={key[4]}  copies={copies}\n"
+              f"    code: {key[5]}\n"
+              f"    {PLACEHOLDER}", file=err)
         failed = True
 
-    # A stale entry means the mutant is gone — the code changed, or someone
-    # finally killed it. Left in place it silently pre-approves a future
-    # survivor at the same location.
-    for name, location, mutator in stale:
-        print(f"check:mutation: {equivalents_path} lists {name} {location} {mutator}, which no "
-              f"longer survives — remove the entry so it cannot pre-approve a future survivor "
-              f"at that location{stale_entry_hint(name, location, mutator, unadjudicated)}",
+    # A stale entry names code no surviving or timed-out mutant sits on: the
+    # mutant was killed, or the code was edited.
+    for e in stale:
+        print(f"check:mutation: {equivalents_path} lists {describe(e)}, which no longer survives: "
+              f"no surviving or timed-out mutant sits on that code. If the code was edited, "
+              f"re-judge the reason against the new code and re-key the entry; if a test now "
+              f"kills the mutant, remove the entry so it cannot pre-approve a future one.",
               file=err)
         failed = True
 
