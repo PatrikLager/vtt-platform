@@ -1152,7 +1152,6 @@ class MatchingTest(unittest.TestCase):
                                                                ("CONDITIONALS_BOUNDARY", "a.go:100:12"))})
         self.assertEqual(code, 0, err)
 
-    # VTT-300
     # VTT-299
     def test_a_second_copy_of_an_adjudicated_line_is_reported_unadjudicated(self):
         """`if dup<lim {` stands four times. One entry excuses one mutant on it;

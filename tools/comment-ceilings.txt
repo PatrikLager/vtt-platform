@@ -69,7 +69,7 @@ cmd/vtt/state_dump_head_test.go  29.8
 cmd/vtt/version.go  15.8
 cmd/vtt/writer_hold_test.go  0.0
 internal/adventure/compile.go  37.3
-internal/adventure/compile_test.go  28.5
+internal/adventure/compile_test.go  24.5
 internal/adventure/conformance/conformance.go  29.1
 internal/adventure/conformance/conformance_test.go  27.4
 internal/adventure/conformance/dump_test.go  39.1

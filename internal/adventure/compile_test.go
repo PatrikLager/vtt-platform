@@ -384,36 +384,12 @@ func TestCompileCollisions(t *testing.T) {
 	}
 }
 
-// TestCompileHandlesLopsidedAdventureShapes drives Compile with adventures
-// where ONE part dominates: many scenes and nothing else, many actors, many
-// placements of a single actor, many notes.
-//
-// These are all legal adventures — a scene-setting chapter with no actors, a
-// roster with no map yet, a crowd scene reusing one statblock, a lore dump —
-// so Compile owes them an answer rather than a crash. The reason to write them
-// as one table is compile.go's envelope slice, whose capacity is
-// `1+len(Scenes)+len(Actors)+countPlacements(adv)+len(Notes)+1`. Every term
-// there is a mutation site, and `make([]T, 0, n)` PANICS for negative n
-// (unlike a map hint, which gc tolerates — see the campaign entries in
-// tools/mutation-equivalents.txt, which are maps and are genuinely
-// unobservable). A shape where one term dominates the rest drives the
-// corresponding mutant negative and turns a silent arithmetic slip into a
-// crash this test catches.
-//
-// CAPACITY IS ASSERTED, not just the count. A slice's cap is part of its
-// value and Compile returns the slice, so `cap == len` is directly observable
-// by any caller -- unlike a map's capacity hint, which is why the
-// internal/campaign entries in tools/mutation-equivalents.txt are genuinely
-// equivalent and this line's mutants are not. It also pins what the
-// expression is FOR: one exactly-sized allocation. Without it, a hint that is
-// wrong but still positive (the trailing `+1` flipped to `-1`, which floors at
-// 0 and so never panics) is invisible -- an earlier version of this test
-// asserted only the count and that mutant was adjudicated equivalent on the
-// strength of "nothing reads cap()". Nothing did; something can.
-//
-// A negative capacity panics rather than failing an assertion, which takes the
-// whole test binary down: a regression in one of the four dominating terms
-// surfaces as "the adventure package crashed", not as a named subtest.
+// TestCompileHandlesLopsidedAdventureShapes drives Compile with legal
+// adventures where ONE part dominates, which Compile owes an answer rather
+// than a crash. Each `+` in compile.go's envelope capacity is a mutation site
+// and `make([]T, 0, n)` panics for negative n, so a dominating term can turn
+// an arithmetic mutant into a crash. Capacity is asserted, not only the count:
+// a wrong but positive hint is otherwise invisible.
 func TestCompileHandlesLopsidedAdventureShapes(t *testing.T) {
 	scene := func(i int, placements ...adventure.Placement) adventure.AdventureScene {
 		return adventure.AdventureScene{
