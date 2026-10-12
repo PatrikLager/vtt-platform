@@ -482,8 +482,8 @@ owner ruled on 2026-10-11 that the box-level test closes it. Since `904f79b`
 the recipe no longer leaves the package green on every run: it reds connection
 tests that perch a spectator before the pump waits, and which ones varies by
 run. The seven `TestQAMoveReasonOverTheWire...` tests that commit brought
-redden rarely (the reading review counted 18 red in 1,050 runs of them, across
-five of the seven); `TestAPlayerAndASpectatorAreToldNoIssuerAndNoCause` and
+redden rarely (19 red in 1,050 runs of them under the recipe, across all
+seven); `TestAPlayerAndASpectatorAreToldNoIssuerAndNoCause` and
 `TestQAIssALivePlayerAndAPerchedSpectatorAreSentNoIssuerOrCause`, which
 `a0c48c9` brought, were each seen red in six to eight runs of eight.
 
