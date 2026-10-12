@@ -70,4 +70,4 @@ general, and that an actor's conditions leave with it, is `engine.Apply`'s.
 
 ## Requirements
 
-VTT-254, VTT-255, VTT-258, VTT-259.
+VTT-254, VTT-255, VTT-258, VTT-259, VTT-307.

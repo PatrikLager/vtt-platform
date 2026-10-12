@@ -156,4 +156,4 @@ A client author, and whoever changes the code, are bound by these:
 
 VTT-176, VTT-177, VTT-178, VTT-179, VTT-180, VTT-181, VTT-182, VTT-183,
 VTT-184, VTT-185, VTT-186, VTT-187, VTT-188, VTT-189, VTT-190, VTT-191,
-VTT-192, VTT-193.
+VTT-192, VTT-193, VTT-306.
