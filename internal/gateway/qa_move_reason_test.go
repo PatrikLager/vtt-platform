@@ -600,10 +600,11 @@ type qaMRWire struct {
 }
 
 type qaMRConn struct {
-	name string
-	conn *websocket.Conn
-	in   chan qaMRWire
-	seen []qaMRWire
+	name     string
+	conn     *websocket.Conn
+	in       chan qaMRWire
+	seen     []qaMRWire
+	lookedAt int
 }
 
 func qaMRDial(t *testing.T, ctx context.Context, base, name, token string, after int64) *qaMRConn {
@@ -636,23 +637,34 @@ func qaMRDial(t *testing.T, ctx context.Context, base, name, token string, after
 	return qc
 }
 
+func (qc *qaMRConn) read(t *testing.T, ctx context.Context, what string) *vttv1.ServerFrame {
+	t.Helper()
+	select {
+	case w, ok := <-qc.in:
+		if !ok {
+			t.Fatalf("%s: connection closed while waiting for %s", qc.name, what)
+		}
+		qc.seen = append(qc.seen, w)
+		if w.frame == nil {
+			t.Fatalf("%s: undecodable frame %s", qc.name, w.raw)
+		}
+		return w.frame
+	case <-ctx.Done():
+		t.Fatalf("%s: timed out waiting for %s", qc.name, what)
+	}
+	return nil
+}
+
 func (qc *qaMRConn) until(t *testing.T, ctx context.Context, what string, match func(*vttv1.ServerFrame) bool) *vttv1.ServerFrame {
 	t.Helper()
 	for {
-		select {
-		case w, ok := <-qc.in:
-			if !ok {
-				t.Fatalf("%s: connection closed while waiting for %s", qc.name, what)
-			}
-			qc.seen = append(qc.seen, w)
-			if w.frame == nil {
-				t.Fatalf("%s: undecodable frame %s", qc.name, w.raw)
-			}
-			if match(w.frame) {
-				return w.frame
-			}
-		case <-ctx.Done():
-			t.Fatalf("%s: timed out waiting for %s", qc.name, what)
+		if qc.lookedAt == len(qc.seen) {
+			qc.read(t, ctx, what)
+		}
+		f := qc.seen[qc.lookedAt].frame
+		qc.lookedAt++
+		if match(f) {
+			return f
 		}
 	}
 }
@@ -666,9 +678,12 @@ func (qc *qaMRConn) command(t *testing.T, ctx context.Context, cmd *vttv1.Client
 	if err := qc.conn.Write(ctx, websocket.MessageText, raw); err != nil {
 		t.Fatalf("%s: write: %v", qc.name, err)
 	}
-	return qc.until(t, ctx, "result "+cmd.GetRequestId(), func(f *vttv1.ServerFrame) bool {
-		return f.GetResult().GetRequestId() == cmd.GetRequestId()
-	}).GetResult()
+	for {
+		f := qc.read(t, ctx, "result "+cmd.GetRequestId())
+		if f.GetResult().GetRequestId() == cmd.GetRequestId() {
+			return f.GetResult()
+		}
+	}
 }
 
 func (qc *qaMRConn) eventsAt(seq int64) []*vttv1.Envelope {

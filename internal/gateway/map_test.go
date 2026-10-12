@@ -1337,6 +1337,45 @@ func TestArtInstalledAfterBootDrawsWithoutARestart(t *testing.T) {
 	}
 }
 
+// TestAMapInTheSetWhoseArtStoppedCompilingIsRefused drives handleLoadMap's own
+// compile, past a lookup the set answers (SPEC-014). Keep the map in the set
+// from boot: looked up on demand, LoadInstalled refuses broken art first. Keep
+// act-fighter seeded: without it the fold refuses the load whatever the art.
+// VTT-168 VTT-305
+func TestAMapInTheSetWhoseArtStoppedCompilingIsRefused(t *testing.T) {
+	f := newMapFixture(t, true)
+	conn := f.dial(f.dmToken, 0)
+
+	sendCommand(t, conn, &vttv1.ClientCommand{
+		RequestId: "seed-fighter",
+		Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{
+			Actor: &vttv1.Actor{ActorId: "act-fighter", Name: "Fighter",
+				Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		}},
+	})
+	if r := readResult(t, conn); !r.Ok {
+		t.Fatalf("seed AddActor act-fighter: %s", r.Error)
+	}
+	before := expectCatchUpHead(t, f.dial(f.dmToken, 0))
+
+	installArt(t, f.artDir, "masonry-1", `{"format_version":99,"kind":"wall"}`)
+
+	sendCommand(t, conn, loadMapCmdFor("cellar"))
+	res := readResult(t, conn)
+	if res.GetOk() {
+		t.Fatal("a map in the set loaded although its art declares a later format")
+	}
+	if !strings.Contains(res.GetError(), "masonry-1") {
+		t.Errorf("error = %q, want it to name the art it refused", res.GetError())
+	}
+	if strings.Contains(res.GetError(), f.artDir) || strings.Contains(res.GetError(), os.TempDir()) {
+		t.Errorf("a client was told where the campaign lives:\n  %s", res.GetError())
+	}
+	if after := expectCatchUpHead(t, f.dial(f.dmToken, 0)); after != before {
+		t.Fatalf("log head moved from %d to %d over a refused load: a refusal appends nothing", before, after)
+	}
+}
+
 // TestAPackInstalledAfterBootSaysToRestart is GONE, and its absence is the
 // requirement now. It pinned I2: packs were read once at startup, so a map
 // naming a pack installed since then was refused, and this handler was the

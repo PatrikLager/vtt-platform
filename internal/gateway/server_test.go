@@ -2175,6 +2175,27 @@ func TestAnUnspecifiedDoorIsRefusedRatherThanGuessedAt(t *testing.T) {
 	}
 }
 
+// TestAnUnspecifiedDoorLeavesAnOpenDoorOpen starts from an open door. Keep it
+// so: from a shut door, a refusal that shuts the door changes nothing this can
+// read.
+// VTT-256
+func TestAnUnspecifiedDoorLeavesAnOpenDoorOpen(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	if res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_OPEN); !res.GetOk() {
+		t.Fatalf("setup: the DM could not open the door: %s", res.GetError())
+	}
+	if !f.ids.JoinOpen() {
+		t.Fatal("setup: the door must stand open before the refusal")
+	}
+	if res := setDoor(t, dm, vttv1.JoinDoor_JOIN_DOOR_UNSPECIFIED); res.GetOk() {
+		t.Fatal("an unspecified door must be refused, not resolved to a default")
+	}
+	if !f.ids.JoinOpen() {
+		t.Fatal("a refused set_join_door shut a door that stood open")
+	}
+}
+
 // VTT-020 VTT-043
 func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
 	// The property spec §2 calls close to required: a LEAKED link must be

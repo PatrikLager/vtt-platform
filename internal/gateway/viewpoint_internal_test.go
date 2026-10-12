@@ -120,6 +120,24 @@ func TestARapidHopIsCoalescedToTheShoulderItEndedOn(t *testing.T) {
 	}
 }
 
+// TestAPerchSetWhileNothingWaitsStillWakesThePump holds wake's capacity
+// (SPEC-015). Receive from wake without blocking: a blocking receive hangs
+// where this must fail.
+// VTT-306
+func TestAPerchSetWhileNothingWaitsStillWakesThePump(t *testing.T) {
+	b := newPerchBox()
+	b.set("hero")
+
+	select {
+	case <-b.wake:
+	default:
+		t.Fatal("a perch set while nothing waited on wake left no wake-up for the pump")
+	}
+	if got, ok := b.take(); !ok || got != "hero" {
+		t.Fatalf("the wake-up must hand the pump the shoulder set, got %q (ok=%v)", got, ok)
+	}
+}
+
 // TestAPerchArrivesWithTheDoorsItCanSeeAlreadyOpen is Task 4's I-1 defect one
 // seat over, and it is the claim reperch's own comment makes: no door is
 // SKIPPED on the perch path, because the skip exists only for the door event
@@ -260,6 +278,40 @@ func TestAShoulderABurstFlewPastIsRestoredByHoppingBackToIt(t *testing.T) {
 	if got := len(seen.GetTiles()); got != 9 {
 		t.Fatalf("the whole of the room this shoulder can see must arrive with it, "+
 			"got %d of 9 tiles", got)
+	}
+}
+
+// TestAShoulderSatOnAndLeftIsRestoredByHoppingBackToIt holds the hop back to a
+// shoulder the projector's memory did hold (SPEC-016). Keep the hop away
+// between the two perches: without it the second has nothing to send.
+// VTT-195
+func TestAShoulderSatOnAndLeftIsRestoredByHoppingBackToIt(t *testing.T) {
+	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
+	for _, env := range threeRoomLog() {
+		s.receive(env)
+	}
+	if len(s.perch("a-a")) == 0 {
+		t.Fatal("the watcher must be on the first shoulder before they can leave it")
+	}
+	if len(s.perch("a-b")) == 0 {
+		t.Fatal("the watcher must have hopped away before they can hop back")
+	}
+
+	var seen *vttv1.SceneSeen
+	var placed bool
+	for _, e := range s.perch("a-a") {
+		if ss := e.GetSceneSeen(); ss != nil && ss.GetSceneId() == "r-a" {
+			seen = ss
+		}
+		if tp := e.GetTokenPlaced(); tp != nil && tp.GetTokenId() == "t-a-a" {
+			placed = true
+		}
+	}
+	if got := len(seen.GetTiles()); got != 9 {
+		t.Fatalf("hopping back must light the first shoulder's room again, got %d of 9 tiles", got)
+	}
+	if !placed {
+		t.Fatal("hopping back must place the first shoulder's token again")
 	}
 }
 

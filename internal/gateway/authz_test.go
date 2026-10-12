@@ -779,6 +779,34 @@ func TestAuthorizePlayerMayNotWorkDiagonallyDistantDoor(t *testing.T) {
 	}
 }
 
+// TestAuthorizePlayerMayNotWorkADoorTwoSquaresOffOnOneAxis holds each bound
+// from above on its own. Keep the other delta at 1 in every row: at 2 on both
+// axes either bound alone refuses.
+// VTT-149
+func TestAuthorizePlayerMayNotWorkADoorTwoSquaresOffOnOneAxis(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	if err := gateway.Authorize(p, openDoorCmd("scn", 3, 3), doorFixture(4, 4)); err != nil {
+		t.Fatalf("fixture: a token one square off on each axis must be allowed: %v", err)
+	}
+	for _, c := range []struct {
+		name       string
+		tokX, tokY int32
+	}{
+		{"dx 1, dy 2", 4, 5},
+		{"dx 2, dy 1", 5, 4},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			st := doorFixture(c.tokX, c.tokY)
+			if err := gateway.Authorize(p, openDoorCmd("scn", 3, 3), st); err == nil {
+				t.Fatalf("opening the door at (3,3) from (%d,%d) was allowed", c.tokX, c.tokY)
+			}
+			if err := gateway.Authorize(p, closeDoorCmd("scn", 3, 3), st); err == nil {
+				t.Fatalf("closing the door at (3,3) from (%d,%d) was allowed", c.tokX, c.tokY)
+			}
+		})
+	}
+}
+
 // --- set_viewpoint: which shoulders exist (visibility Task 6) -------------
 
 // TestAuthorizeSpectatorMayNotPerchOnAnNpc is the direction the matrix cell

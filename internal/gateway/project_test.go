@@ -943,6 +943,22 @@ func TestAnUnrecognisedPayloadIsWithheldFromAPlayer(t *testing.T) {
 	}
 }
 
+// TestAnUnrecognisedPayloadIsWithheldFromASpectator is the spectator's half of
+// TestAnUnrecognisedPayloadIsWithheldFromAPlayer. Keep the control: a fixture
+// with nothing to send passes the first check whatever Project does.
+// VTT-227
+func TestAnUnrecognisedPayloadIsWithheldFromASpectator(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(gateway.Viewer{
+		ParticipantID: "sp-1", Role: identity.RoleSpectator, Viewpoint: "hero"})
+	if out := pr.Project(&vttv1.Envelope{Sequence: 99}, st); len(out) != 0 {
+		t.Fatalf("an unknown payload must be withheld from a spectator, got %d frames", len(out))
+	}
+	if sceneSeenIn(firstPlace(pr, st), "s") == nil {
+		t.Fatal("the control fails: the next recognised event must bring the shoulder's board")
+	}
+}
+
 // --- everything below is this task's own, beyond the brief -------------------
 
 // firstPlace runs the projector over the goblin's placement, which is the
@@ -1108,6 +1124,36 @@ func TestASceneAlreadyReportedDarkIsNotReportedDarkAgain(t *testing.T) {
 	again := pr.Project(envelope(9, &vttv1.NarrationAdded{Text: "the room falls quiet"}), st)
 	if ss := sceneSeenIn(again, "s"); ss != nil {
 		t.Errorf("a scene already reported dark must stay silent, got %v", ss)
+	}
+}
+
+// TestAVisibleSetThatBecomesAnotherOfTheSameSizeIsSentAgain holds sameSet's
+// membership test. Keep the two sets the same size, and keep the check that
+// they are: a set that grows or shrinks is caught by the lengths alone.
+// VTT-201
+func TestAVisibleSetThatBecomesAnotherOfTheSameSizeIsSentAgain(t *testing.T) {
+	st := twoRooms()
+	pr := gateway.NewProjector(player())
+	before := sceneSeenIn(firstPlace(pr, st), "s")
+	if before == nil {
+		t.Fatal("the control fails: the hero's room must be reported lit first")
+	}
+
+	move := &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s",
+		From: &vttv1.GridPosition{X: 1, Y: 1}, To: &vttv1.GridPosition{X: 4, Y: 1}}
+	mustApply(st, 8, move)
+	after := sceneSeenIn(pr.Project(envelope(8, move), st), "s")
+	if after == nil {
+		t.Fatal("the squares the hero sees changed to as many others and no SceneSeen was sent")
+	}
+	if len(after.GetVisible()) != len(before.GetVisible()) || sameStrings(after.GetVisible(), before.GetVisible()) {
+		t.Fatalf("fixture: want two different sets of one size, got %v then %v",
+			before.GetVisible(), after.GetVisible())
+	}
+	want := sceneSeenIn(firstPlace(gateway.NewProjector(player()), st), "s")
+	if !proto.Equal(after, want) {
+		t.Errorf("the SceneSeen carries %v, want the whole set a fresh look gives, %v",
+			after.GetVisible(), want.GetVisible())
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
 // removeActorCmdFor builds a RemoveActor ClientCommand for id.
@@ -340,5 +341,39 @@ func TestRemovingAnActorWithNoTokensYieldsABatchOfOne(t *testing.T) {
 	}
 	if res.GetSequence() != before+1 {
 		t.Fatalf("result.Sequence = %d, want %d (the batch's first and only event)", res.GetSequence(), before+1)
+	}
+}
+
+// TestARemovalBatchCarriesItsIssuersParticipantAndRole reads the batch off an
+// unprojected seat, which is sent the log as it is. Keep both issuers: with
+// one, a batch stamped with a fixed role passes.
+// VTT-307
+func TestARemovalBatchCarriesItsIssuersParticipantAndRole(t *testing.T) {
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
+		t.Run(string(role), func(t *testing.T) {
+			f := newGWFixture(t)
+			issuerToken, readerToken := f.dmToken, f.agentToken
+			if role == identity.RoleAgent {
+				issuerToken, readerToken = f.agentToken, f.dmToken
+			}
+			reader := f.dial(readerToken, f.head(t))
+			issuer := f.dial(issuerToken, f.head(t))
+
+			sendCommand(t, issuer, removeActorCmdFor("r-remove", "a1"))
+			if res := readResult(t, issuer); !res.Ok {
+				t.Fatalf("want ok=true removing actor a1, got %+v", res)
+			}
+			wantID := f.playerIDFor(t, issuerToken)
+			for i, kind := range []string{"tokenRemoved", "actorRemoved"} {
+				env := readEvent(t, reader)
+				if got := removalPayloadKind(env); got != kind {
+					t.Fatalf("batch envelope %d kind = %q, want %q", i, got, kind)
+				}
+				if env.GetParticipantId() != wantID || env.GetActorRole() != string(role) {
+					t.Fatalf("batch envelope %d carries participant %q and role %q, want %q and %q",
+						i, env.GetParticipantId(), env.GetActorRole(), wantID, role)
+				}
+			}
+		})
 	}
 }

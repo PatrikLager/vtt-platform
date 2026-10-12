@@ -429,6 +429,11 @@ each refused. Recorded 2026-09-28 by the breaks in
 (`8128a61`) changes no code line; the test waits for the next ticket that
 touches the package's tests.
 
+**Closed by** `TestAuthorizePlayerMayNotWorkADoorTwoSquaresOffOnOneAxis` in
+`internal/gateway/authz_test.go`, which reds on the recipe above at its row
+two squares off on the y axis, and on the x bound made `<= 2` at its other row
+(observed 2026-10-11).
+
 **`handleLoadMap`'s `Compile` refusal arm is driven by no test.** In
 `internal/gateway/map.go`, a `mapdef.Compile` error is answered ok=false with
 the error's text. Recipe: make that arm return `Ok: true` instead; `go test
@@ -448,6 +453,11 @@ the verification of
 whose change changes no code line; the test waits for the next ticket that
 touches the package's tests.
 
+**Closed by** `TestAMapInTheSetWhoseArtStoppedCompilingIsRefused` in
+`internal/gateway/map_test.go`, which reds on the recipe above: it boots with
+the map in the set, overwrites one of its art sidecars with `format_version`
+99, and loads the map (observed 2026-10-11). The rule is VTT-305.
+
 **`perchBox.wake`'s capacity is unobserved.** In `internal/gateway/seat.go`,
 `newPerchBox` makes `wake` with capacity 1, and `set` sends to it without
 blocking. Recipe: make it `make(chan struct{})`; `go test -count=1
@@ -461,6 +471,21 @@ while the pump is busy delivering, sends nothing else, and asserts the new
 shoulder's frames arrive. Recorded 2026-09-29 by the Phase 4b review recorded
 in `docs/reports/2026-09-29-the-seat-and-the-perch-have-a-record.md`, whose
 change (`7be685a`) changes no code line.
+
+**Closed by** `TestAPerchSetWhileNothingWaitsStillWakesThePump` in
+`internal/gateway/viewpoint_internal_test.go`, which reds on the recipe above
+in thirty runs of thirty (observed 2026-10-11). It holds the box: a perch set
+while nothing waits on `wake` leaves a wake-up, and `take` then hands the
+shoulder over (VTT-306). No test holds a connection whose pump is busy
+delivering when the perch is set, which is what this entry asked for; the
+owner ruled on 2026-10-11 that the box-level test closes it. Since `904f79b`
+the recipe no longer leaves the package green on every run: it reds connection
+tests that perch a spectator before the pump waits, and which ones varies by
+run. The seven `TestQAMoveReasonOverTheWire...` tests that commit brought
+redden rarely (the reading review counted 18 red in 1,050 runs of them, across
+five of the seven); `TestAPlayerAndASpectatorAreToldNoIssuerAndNoCause` and
+`TestQAIssALivePlayerAndAPerchedSpectatorAreSentNoIssuerOrCause`, which
+`a0c48c9` brought, were each seen red in six to eight runs of eight.
 
 **No test asks for a shoulder a spectator sat on and left.** SPEC-015 states
 that naming a shoulder again restores it;
@@ -478,6 +503,13 @@ perches on a shoulder, hops away, hops back, and asserts the first shoulder's
 board is served again. Recorded 2026-09-29 by the Phase 4b review recorded in
 `docs/reports/2026-09-29-the-seat-and-the-perch-have-a-record.md`.
 
+**Closed by** `TestAShoulderSatOnAndLeftIsRestoredByHoppingBackToIt` in
+`internal/gateway/viewpoint_internal_test.go`, which reds at once on the
+recipe above (observed 2026-10-11); the rule is VTT-195's. Since `ce31229` the
+recipe also reds `TestQANoteProjectionAPerchChangesNothingAboutNotes` in
+`internal/gateway/qa_note_projection_test.go`, by its 30-second deadline: that
+test's fourth perch names its first shoulder again.
+
 **A visible set that becomes another of the same size is unobserved.** In
 `internal/gateway/project.go`, `transitions` sends a scene's `SceneSeen` only
 when `sameSet` finds the squares a viewer sees there now differ from those
@@ -494,6 +526,14 @@ new set. Recorded 2026-09-29 by the verification of
 `docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`,
 whose change changes no code line.
 
+**Closed by** `TestAVisibleSetThatBecomesAnotherOfTheSameSizeIsSentAgain` in
+`internal/gateway/project_test.go`, which reds on the recipe above and is
+VTT-201's evidence (observed 2026-10-11). Since `390239a` the recipe also reds
+`TestQATestimonySightEveryPairOfStepsKeepsEachSeatToWhatItSees`,
+`TestQATestimonySightEveryRandomWalkKeepsEachSeatToWhatItSees` and
+`TestQATestimonySightAChangeUndoneOutOfSightSendsNothingOnSight` in
+`internal/gateway/qa_testimony_sight_test.go`, in eight runs of eight.
+
 **No test sends a spectator an event whose payload the build does not know.**
 In `internal/gateway/project.go`, `Project` sends nothing for an
 `unrecognised` verdict, to a player and a spectator alike. Recipe: make `if v
@@ -506,6 +546,10 @@ half, alone. The mutation gate does not add a condition. Labels: `test data
 missing`, `outside the tool`. Closing it needs that test's shape for a
 spectator perched on a party member. Recorded 2026-09-29 by the Phase 4b
 review recorded in `docs/reports/2026-09-29-the-projection-has-a-record.md`.
+
+**Closed by** `TestAnUnrecognisedPayloadIsWithheldFromASpectator` in
+`internal/gateway/project_test.go`, which reds on the recipe above and is
+VTT-227's evidence (observed 2026-10-11).
 
 **No golden log carries an actor's removal, so the keystone holds none.**
 `TestFoldingAProjectionEqualsWhatTheServerThinksTheViewerSees` runs
@@ -556,6 +600,12 @@ the door. Closing it needs a removal test that reads the batch's envelopes
 back for their participant and role, and a door test that opens the door,
 sends an unspecified door, and asserts the door is still open. Recorded
 2026-10-02 by the removal record's report.
+
+**Closed by** `TestARemovalBatchCarriesItsIssuersParticipantAndRole` in
+`internal/gateway/remove_actor_test.go`, which reds on the first recipe above
+(VTT-307), and by `TestAnUnspecifiedDoorLeavesAnOpenDoorOpen` in
+`internal/gateway/server_test.go`, which starts from an open door and reds on
+the second (observed 2026-10-11).
 
 **Nothing ties a byte bound's copies to the engine's constant.**
 `client/src/fold.ts` holds each of the fold's twenty-four bounds as a literal
