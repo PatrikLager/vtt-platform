@@ -80,6 +80,20 @@ matching still runs, and the entry is not also reported stale.
 header in column 1, the `code:` line and a placeholder reason indented four
 spaces. With its reason written, the block parses and claims the survivor.
 
+**A stale entry's line names where the same run settles its remedy**
+(VTT-308). After the entry's description the line is the same for every stale
+entry and in both gates, and picks nothing from what the gate holds. It says
+that the run reports no surviving or timed-out mutant under the entry's key
+and that this alone does not say the mutant was killed, and it sends its
+reader to the survivors the same run prints above it for the entry's file. It
+says that one printed unadjudicated may be the entry's mutant under another
+key, and that the entry is then re-keyed to the printed header and code line
+if its reason describes that mutant and holds where the mutant stands, and
+removed if the reason describes it and no longer holds; that one the gate
+cannot read (VTT-304) leaves the entry as it is; and that with no survivor
+that is its mutant the entry is removed only once a test is seen to kill the
+mutation made by hand.
+
 ## Consequences
 
 - A line other than a copy of the mutant's code, added or removed above it,
@@ -92,6 +106,9 @@ spaces. With its reason written, the block parses and claims the survivor.
 - A copy of the code added or removed anywhere in the file changes `copies`,
   and one above the mutant changes `nth` too; the static check refuses the
   entry until it is corrected.
+- A stale entry's line does not say why the entry is stale. Neither gate
+  looks up what the run recorded for the mutant under an entry's key, so the
+  line gives its reader the same instruction whatever the run saw.
 - An entry names no line number, so `CLAUDE.md` rule 8 makes no exception for
   these files. Their reasons carry no coordinate either; over both files this
   prints nothing:
@@ -116,4 +133,4 @@ spaces. With its reason written, the block parses and claims the survivor.
 
 ## Requirements
 
-VTT-298, VTT-299, VTT-300, VTT-301, VTT-302, VTT-303, VTT-304.
+VTT-298, VTT-299, VTT-300, VTT-301, VTT-302, VTT-303, VTT-304, VTT-308.
