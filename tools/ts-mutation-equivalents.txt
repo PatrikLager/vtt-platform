@@ -51,9 +51,11 @@
 # it and leaves its entry valid. A copy of its code added or removed anywhere in
 # the file changes `copies`, and one above it changes `nth` too. Two different
 # mutations on one code are two separate claims, by mutator and by replacement.
-# A stale entry — one no surviving or timed-out mutant sits on, because the
-# mutant was killed or the code was edited — is a hard error: re-judge the
-# reason against the new code before writing the new code line.
+# A stale entry — one whose key no surviving or timed-out mutant has — is a
+# hard error, and the gate's line for it says where in the same run to look
+# before the entry is re-keyed or removed. An edit to the code itself leaves
+# the entry naming code that no longer stands, and the gate fails:
+# re-judge the reason against the new code before writing the new code line.
 #
 # TWO ADJUDICATIONS WERE FILED AND WITHDRAWN during the dm-hands-and-retraction
 # arc (Task 4, 2026-08-30): one on view/player.ts and one on view/spectator.ts,

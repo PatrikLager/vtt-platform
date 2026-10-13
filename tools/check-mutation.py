@@ -1418,13 +1418,34 @@ def run(equivalents_path, packages=PACKAGES, runner=default_runner,
               f"    {PLACEHOLDER}", file=err)
         failed = True
 
-    # A stale entry names code no surviving or timed-out mutant sits on: the
-    # mutant was killed, or the code was edited.
+    # A stale entry is one no surviving or timed-out mutant has the key of
+    # (VTT-301). DO NOT have this line say why, or pick a remedy from the
+    # survivors printed above it: the gate does not look up what became of
+    # the mutant under the key, and a survivor beside the entry may be
+    # nobody's, so the line names where the reader looks (VTT-308).
     for e in stale:
-        print(f"check:mutation: {equivalents_path} lists {describe(e)}, which no longer survives: "
-              f"no surviving or timed-out mutant sits on that code. If the code was edited, "
-              f"re-judge the reason against the new code and re-key the entry; if a test now "
-              f"kills the mutant, remove the entry so it cannot pre-approve a future one.",
+        print(f"check:mutation: {equivalents_path} lists {describe(e)}, which no longer survives "
+              f"under that key (the fields and code just named): this run reports no surviving "
+              f"or timed-out mutant under it, and that alone does not say the mutant was "
+              f"killed. This run found this entry's code in that file on as many lines as the "
+              f"entry records, so a survivor printed on other code is on another line than "
+              f"that code, unless the file changed between that count and the measuring of its "
+              f"mutants. Look above, in this same run's output, for a survivor in that file. "
+              f"If one is printed unadjudicated, with an entry ready to paste under it, "
+              f"compare its header and code line with this entry's: it may be this entry's "
+              f"mutant under another key. Read this entry's reason against that mutant where "
+              f"it stands in the file, not against the code line printed there alone. If the "
+              f"reason describes that mutant and holds there, re-key this entry instead of "
+              f"deleting it: give it the header and code line printed there. If it describes "
+              f"that mutant and no longer holds, this entry is wrong: remove it. If it does "
+              f"not describe that mutant, the survivor is another mutant. In both of those "
+              f"cases that survivor needs a test or an entry of its own. If one is printed as "
+              f"a survivor the gate cannot read (VTT-304), it may be this entry's mutant too: "
+              f"leave this entry as it is until a run can read that survivor. When no survivor "
+              f"above is this entry's mutant, make the mutation by hand and run the tests, "
+              f"since this run's output does not show a kill: if a test now kills the mutant, "
+              f"remove the entry so it cannot pre-approve a future survivor; if none does, "
+              f"leave the entry and find out why this run did not report its mutant.",
               file=err)
         failed = True
 

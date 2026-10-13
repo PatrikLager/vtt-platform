@@ -576,8 +576,8 @@ class Matching(unittest.TestCase):
 
 
 class EntryCheck(unittest.TestCase):
-    """The static check of each entry against the tree, before the report is
-    read (SPEC-020).
+    """The static check of each entry against the tree, before check() goes
+    through the report's mutants (SPEC-020).
 
     An entry on a comment, or on code its mutator cannot rewrite, names no
     mutant Stryker makes: it could only ever go stale. Every rule here has a
@@ -759,6 +759,107 @@ class TimeoutAdvice(unittest.TestCase):
         code, msg = run(report(("client/src/a.ts", 1, 1, "Eq", "Killed")))
         self.assertEqual(code, 0, msg)
         self.assertNotIn("starved", msg.lower())
+
+
+class StaleLine(unittest.TestCase):
+    """What the stale line tells its reader (VTT-308). The gate does not look
+    up what became of the mutant under an entry's key, and a survivor beside
+    the entry may be nobody's, so the line names where to look and picks no
+    remedy itself. SENTENCES is the line after "no longer survives", whole."""
+
+    SENTENCES = (
+        "under that key (the fields and code just named): this run reports no surviving "
+        "or timed-out mutant under it, and that alone does not say the mutant was "
+        "killed.",
+        "This run found this entry's code in that file on as many lines as the entry "
+        "records, so a survivor printed on other code is on another line than that "
+        "code, unless the file changed between that count and the measuring of its "
+        "mutants.",
+        "Look above, in this same run's output, for a survivor in that file.",
+        "If one is printed unadjudicated, with an entry ready to paste under it, "
+        "compare its header and code line with this entry's: it may be this entry's "
+        "mutant under another key.",
+        "Read this entry's reason against that mutant where it stands in the file, not "
+        "against the code line printed there alone.",
+        "If the reason describes that mutant and holds there, re-key this entry instead "
+        "of deleting it: give it the header and code line printed there.",
+        "If it describes that mutant and no longer holds, this entry is wrong: remove "
+        "it.",
+        "If it does not describe that mutant, the survivor is another mutant.",
+        "In both of those cases that survivor needs a test or an entry of its own.",
+        "If one is printed as a survivor the gate cannot read (VTT-304), it may be this "
+        "entry's mutant too: leave this entry as it is until a run can read that "
+        "survivor.",
+        "When no survivor above is this entry's mutant, make the mutation by hand and "
+        "run the tests, since this run's output does not show a kill: if a test now "
+        "kills the mutant, remove the entry so it cannot pre-approve a future survivor; "
+        "if none does, leave the entry and find out why this run did not report its "
+        "mutant.",
+    )
+
+    def split(self, msg):
+        """(the stale lines, every other line of the output joined)."""
+        lines = msg.splitlines()
+        return ([l for l in lines if "no longer survives" in l],
+                "\n".join(l for l in lines if "no longer survives" not in l))
+
+    # VTT-308
+    def test_a_stale_line_names_the_same_runs_unadjudicated_survivor_in_its_file(self):
+        code, msg = run(
+            report(("client/src/a.ts", 30, 6, "StringLiteral", "Killed", '""'),
+                   ("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""')),
+            entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "reasoned")))
+        self.assertEqual(code, 1)
+        [stale], rest = self.split(msg)
+        self.assertIn("SURVIVED StringLiteral at client/src/a.ts:40:6", rest)
+        self.assertLess(msg.index("client/src/a.ts:40:6"), msg.index(stale),
+                        "the survivor is printed above")
+        self.assertIn('client/src/a.ts StringLiteral (-> "") offset=6 span=1 nth=1 on `send("tag");`', stale)
+        for sentence in self.SENTENCES:
+            with self.subTest(sentence[:48]):
+                self.assertIn(sentence, stale)
+                self.assertNotIn(sentence, rest)
+        self.assertTrue(stale.endswith("no longer survives " + " ".join(self.SENTENCES)), stale)
+        self.assertNotIn("If the code was edited", stale)
+        self.assertLess(stale.index("in this same run's output"), stale.index("remove the entry"),
+                        "where to look comes before the removal")
+        self.assertEqual(stale.count("no longer survives"), 1)
+        self.assertNotIn("SURVIVED", stale)
+
+    def test_the_stale_line_is_the_same_with_and_without_a_survivor_beside_it(self):
+        """The gate picks no message from what it holds: beside an unadjudicated
+        survivor, beside one it cannot read, or alone, the entry gets one line."""
+        eq = entries(entry("client/src/a.ts", "30:6", "StringLiteral", '""', "reasoned"))
+        killed = ("client/src/a.ts", 30, 6, "StringLiteral", "Killed", '""')
+        _, beside = run(report(killed, ("client/src/a.ts", 40, 6, "StringLiteral", "Survived", '""')), eq)
+        _, unread = run(report(killed, ("client/src/a.ts", 9999, 6, "StringLiteral", "Survived", '""')), eq)
+        _, alone = run(report(killed), eq)
+        [with_survivor], _ = self.split(beside)
+        [with_unreadable], others = self.split(unread)
+        [without], rest = self.split(alone)
+        self.assertEqual(with_survivor, without)
+        self.assertEqual(with_unreadable, without)
+        self.assertIn("cannot be read", others)
+        self.assertLess(unread.index("cannot be read"), unread.index(with_unreadable),
+                        "the survivor the gate cannot read is printed above")
+        self.assertEqual(rest, "")
+
+    def test_a_refused_entry_and_a_claimed_one_get_no_stale_line(self):
+        """The other direction. An entry whose own code was edited away is
+        refused and told to correct itself; an entry that claims its survivor
+        is told nothing."""
+        eq = entries(entry("client/src/a.ts", "10:5", "EqualityOperator", "a >= b"))
+        edited = {**TS_LINES, 10: "if (a > q2) c();"}
+        code, msg = run(report(("client/src/a.ts", 10, 5, "EqualityOperator", "Survived", "a >= q2"),
+                               lines=edited), eq, lines=edited)
+        self.assertEqual(code, 1)
+        self.assertIn("stands 0 time(s)", msg)
+        code_ok, msg_ok = run(report(("client/src/a.ts", 10, 5, "EqualityOperator", "Survived", "a >= b")), eq)
+        self.assertEqual(code_ok, 0, msg_ok)
+        for text in (msg, msg_ok):
+            for phrase in ("no longer survives", "remove the entry") + self.SENTENCES:
+                with self.subTest(phrase[:48]):
+                    self.assertNotIn(phrase, text)
 
 
 if __name__ == "__main__":

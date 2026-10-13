@@ -1638,5 +1638,109 @@ class TimeoutAdviceTest(unittest.TestCase):
         self.assertNotIn("starved", out.lower())
 
 
+class StaleLineTest(unittest.TestCase):
+    """What the stale line tells its reader (VTT-308). The gate does not look
+    up what became of the mutant under an entry's key, and a survivor beside
+    the entry may be nobody's, so the line names where to look and picks no
+    remedy itself. SENTENCES is the line after "no longer survives", whole."""
+
+    SENTENCES = (
+        "under that key (the fields and code just named): this run reports no surviving "
+        "or timed-out mutant under it, and that alone does not say the mutant was "
+        "killed.",
+        "This run found this entry's code in that file on as many lines as the entry "
+        "records, so a survivor printed on other code is on another line than that "
+        "code, unless the file changed between that count and the measuring of its "
+        "mutants.",
+        "Look above, in this same run's output, for a survivor in that file.",
+        "If one is printed unadjudicated, with an entry ready to paste under it, "
+        "compare its header and code line with this entry's: it may be this entry's "
+        "mutant under another key.",
+        "Read this entry's reason against that mutant where it stands in the file, not "
+        "against the code line printed there alone.",
+        "If the reason describes that mutant and holds there, re-key this entry instead "
+        "of deleting it: give it the header and code line printed there.",
+        "If it describes that mutant and no longer holds, this entry is wrong: remove "
+        "it.",
+        "If it does not describe that mutant, the survivor is another mutant.",
+        "In both of those cases that survivor needs a test or an entry of its own.",
+        "If one is printed as a survivor the gate cannot read (VTT-304), it may be this "
+        "entry's mutant too: leave this entry as it is until a run can read that "
+        "survivor.",
+        "When no survivor above is this entry's mutant, make the mutation by hand and "
+        "run the tests, since this run's output does not show a kill: if a test now "
+        "kills the mutant, remove the entry so it cannot pre-approve a future survivor; "
+        "if none does, leave the entry and find out why this run did not report its "
+        "mutant.",
+    )
+
+    def gate(self, eq_path, mapping, lines=GO_LINES):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            source_tree(root, lines)
+            code = cm.run(eq_path, ["./p/"], runner_for(mapping), out=out, err=err, root=root,
+                          free_bytes=500 * 1024**3, cache_bytes=0)
+        return code, out.getvalue(), err.getvalue()
+
+    def split(self, err):
+        """(the stale lines, every other line of the output joined)."""
+        lines = err.splitlines()
+        return ([l for l in lines if "no longer survives" in l],
+                "\n".join(l for l in lines if "no longer survives" not in l))
+
+    # VTT-308
+    def test_a_stale_line_names_the_same_runs_unadjudicated_survivor_in_its_file(self):
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY"))
+        code, _, err = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))})
+        self.assertEqual(code, 1)
+        [stale], rest = self.split(err)
+        self.assertIn("a.go:40:7 CONDITIONALS_BOUNDARY SURVIVED and is not adjudicated", rest)
+        self.assertLess(err.index("a.go:40:7"), err.index(stale), "the survivor is printed above")
+        self.assertIn("p a.go CONDITIONALS_BOUNDARY offset=7 nth=1 on `if dup<lim {`", stale)
+        for sentence in self.SENTENCES:
+            with self.subTest(sentence[:48]):
+                self.assertIn(sentence, stale)
+                self.assertNotIn(sentence, rest)
+        self.assertTrue(stale.endswith("no longer survives " + " ".join(self.SENTENCES)), stale)
+        self.assertNotIn("If the code was edited", stale)
+        self.assertLess(stale.index("in this same run's output"), stale.index("remove the entry"),
+                        "where to look comes before the removal")
+        self.assertEqual(stale.count("no longer survives"), 1)
+        self.assertNotIn("not adjudicated", stale)
+
+    def test_the_stale_line_is_the_same_with_and_without_a_survivor_beside_it(self):
+        """The gate picks no message from what it holds: beside an unadjudicated
+        survivor, beside one it cannot read, or alone, the entry gets one line."""
+        eq = equivalents(entry("p", "a.go:30:7", "CONDITIONALS_BOUNDARY"))
+        _, _, beside = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:40:7"))})
+        _, _, unread = self.gate(eq, {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:30:99"))})
+        _, _, alone = self.gate(eq, {"./p/": gremlins_output()})
+        [with_survivor], _ = self.split(beside)
+        [with_unreadable], others = self.split(unread)
+        [without], rest = self.split(alone)
+        self.assertEqual(with_survivor, without)
+        self.assertEqual(with_unreadable, without)
+        self.assertIn("cannot be read", others)
+        self.assertLess(unread.index("cannot be read"), unread.index(with_unreadable),
+                        "the survivor the gate cannot read is printed above")
+        self.assertEqual(rest, "")
+
+    def test_a_refused_entry_and_a_claimed_one_get_no_stale_line(self):
+        """The other direction. An entry whose own code was edited away is
+        refused and told to correct itself; an entry that claims its survivor
+        is told nothing."""
+        eq = equivalents(entry("p", "a.go:10:5", "CONDITIONALS_BOUNDARY"))
+        survivor = {"./p/": gremlins_output(("CONDITIONALS_BOUNDARY", "a.go:10:5"))}
+        code, out, err = self.gate(eq, survivor, lines={**GO_LINES, 10: "if a<c {"})
+        self.assertEqual(code, 1)
+        self.assertIn("stands 0 time(s)", err)
+        code_ok, out_ok, err_ok = self.gate(eq, survivor)
+        self.assertEqual(code_ok, 0, err_ok)
+        for text in (out + err, out_ok + err_ok):
+            for phrase in ("no longer survives", "remove the entry") + self.SENTENCES:
+                with self.subTest(phrase[:48]):
+                    self.assertNotIn(phrase, text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
