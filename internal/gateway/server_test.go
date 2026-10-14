@@ -2376,7 +2376,7 @@ func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 	}
 
 	// Read on the PROMOTED person's own socket: they are the one who most
-	// needs this, and broadcast excludes nobody for exactly that reason.
+	// needs this, and the fan-out does not exclude them for exactly that reason.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if time.Now().After(deadline) {
@@ -2455,6 +2455,56 @@ func TestARevokedWatcherIsNotEvenToldWhoElseArrives(t *testing.T) {
 	expectPresenceChanged(t, witness, dmID, vttv1.PresenceState_PRESENCE_STATE_CONNECTED)
 
 	// The revoked stranger is not.
+	expectNoPresenceWithin(t, stranger, 500*time.Millisecond)
+}
+
+// TestAPromotionIsNotAnnouncedToARevokedWatcher holds VTT-032 for the frame a
+// promotion sends (SPEC-009).
+// VTT-032
+func TestAPromotionIsNotAnnouncedToARevokedWatcher(t *testing.T) {
+	f := newGWFixture(t)
+	const connected = vttv1.PresenceState_PRESENCE_STATE_CONNECTED
+	targetID := f.playerIDFor(t, f.otherPlayerToken)
+
+	stranger := f.dial(f.spectatorToken, 0)
+	expectCatchUpHead(t, stranger)
+	expectPresenceSnapshot(t, stranger)
+
+	witness := f.dial(f.playerToken, 0)
+	expectCatchUpHead(t, witness)
+	expectPresenceSnapshot(t, witness)
+	expectPresenceChanged(t, stranger, f.playerIDFor(t, f.playerToken), connected)
+
+	// Read the target's arrival on the witness here: a promotion's frame equals
+	// it, and a witness still holding the arrival would pass on that alone.
+	target := f.dial(f.otherPlayerToken, 0)
+	expectCatchUpHead(t, target)
+	expectPresenceSnapshot(t, target)
+	expectPresenceChanged(t, stranger, targetID, connected)
+	expectPresenceChanged(t, witness, targetID, connected)
+
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	expectPresenceChanged(t, stranger, f.playerIDFor(t, f.dmToken), connected)
+
+	// Revoke only once the stranger has read every arrival: the last read below
+	// fails on any PresenceChanged.
+	if err := f.ids.Revoke(f.playerIDFor(t, f.spectatorToken)); err != nil {
+		t.Fatal(err)
+	}
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "r-promote",
+		Command: &vttv1.ClientCommand_PromoteParticipant{
+			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: targetID, Role: "spectator"},
+		},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("promotion refused: %s", res.GetError())
+	}
+
+	expectPresenceChanged(t, witness, targetID, connected)
 	expectNoPresenceWithin(t, stranger, 500*time.Millisecond)
 }
 

@@ -728,12 +728,12 @@ func (s *Server) revoked() map[string]bool {
 	return out
 }
 
-// announcePromotion re-announces a promoted participant to every connection,
-// theirs included (SPEC-009, VTT-047).
+// announcePromotion re-announces a promoted participant to every connection of
+// a participant not revoked, theirs included (SPEC-009, VTT-032, VTT-047).
 func (s *Server) announcePromotion(participantID string) {
-	// Resolve, encode and send inside announceIfPresent, never as separate
-	// steps: a connection that unwinds between them leaves a ghost (SPEC-011).
-	s.presence.announceIfPresent(participantID, func(name string) []byte {
+	// Resolve revoked out here, never under the registry's locks; resolve the name,
+	// encode and send inside, or an unwinding connection leaves a ghost (SPEC-011).
+	s.presence.announceIfPresent(participantID, s.revoked(), func(name string) []byte {
 		b, err := s.encodeFrame(&vttv1.ServerFrame{
 			Frame: &vttv1.ServerFrame_PresenceChanged{
 				PresenceChanged: &vttv1.PresenceChanged{

@@ -156,7 +156,7 @@ internal/gateway/metadata.go  11.8
 internal/gateway/metadata_test.go  25.0
 internal/gateway/note_validate.go  12.5
 internal/gateway/note_validate_test.go  0.0
-internal/gateway/presence.go  16.1
+internal/gateway/presence.go  15.9
 internal/gateway/presence_internal_test.go  30.5
 internal/gateway/project.go  18.5
 internal/gateway/project_internal_test.go  18.2
@@ -172,6 +172,7 @@ internal/gateway/qa_name_bound_test.go  1.9
 internal/gateway/qa_note_adventure_test.go  0.0
 internal/gateway/qa_note_projection_test.go  1.1
 internal/gateway/qa_note_refusal_test.go  0.4
+internal/gateway/qa_promotion_revoked_test.go  5.2
 internal/gateway/qa_ruleset_bound_test.go  0.0
 internal/gateway/qa_testimony_eyes_test.go  0.0
 internal/gateway/qa_testimony_removal_test.go  0.0
@@ -183,7 +184,7 @@ internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  29.6
 internal/gateway/server.go  25.3
 internal/gateway/server_internal_test.go  34.6
-internal/gateway/server_test.go  24.4
+internal/gateway/server_test.go  24.3
 internal/gateway/server_visibility_test.go  26.6
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  22.3

@@ -128,7 +128,7 @@ func (r *presenceRegistry) leave(c *presenceConn) (last bool) {
 
 // Take fanOut before mu and hold it through the sends: a departure's DISCONNECTED
 // must queue behind this frame, or the table keeps a ghost (SPEC-011).
-func (r *presenceRegistry) announceIfPresent(participantID string, frame func(displayName string) []byte) bool {
+func (r *presenceRegistry) announceIfPresent(participantID string, deny map[string]bool, frame func(displayName string) []byte) bool {
 	r.fanOut.Lock()
 	defer r.fanOut.Unlock()
 
@@ -144,6 +144,9 @@ func (r *presenceRegistry) announceIfPresent(participantID string, frame func(di
 	if found {
 		targets = make([]*presenceConn, 0, len(r.conns))
 		for conn := range r.conns {
+			if deny[conn.participantID] {
+				continue
+			}
 			targets = append(targets, conn)
 		}
 	}
@@ -198,7 +201,7 @@ func (r *presenceRegistry) announceIfAbsent(participantID string, deny map[strin
 }
 
 // Callers resolve the deny set from this before taking fanOut, never inside a
-// fan-out (announceIfAbsent, broadcast).
+// fan-out (announceIfAbsent, announceIfPresent, broadcast).
 func (r *presenceRegistry) participantIDs() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()

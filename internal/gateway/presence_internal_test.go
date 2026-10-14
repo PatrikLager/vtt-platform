@@ -360,7 +360,7 @@ func TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT(t *testing.T) {
 	r.joinAndSend(watcher, func([]*vttv1.PresenceChanged) []byte { return nil })
 	r.joinAndSend(going, func([]*vttv1.PresenceChanged) []byte { return nil })
 
-	if !r.announceIfPresent("p-go", func(name string) []byte {
+	if !r.announceIfPresent("p-go", nil, func(name string) []byte {
 		if name != "Kim" {
 			t.Errorf("announced name = %q, want Kim", name)
 		}
@@ -376,7 +376,7 @@ func TestAnnounceIfPresentSaysNothingAboutSomebodyWhoHasLEFT(t *testing.T) {
 	// somebody the table has already been told is gone.
 	r.leave(going)
 	built := false
-	if r.announceIfPresent("p-go", func(string) []byte {
+	if r.announceIfPresent("p-go", nil, func(string) []byte {
 		built = true
 		return []byte("ghost")
 	}) {
@@ -550,7 +550,7 @@ func TestAPromotionInFlightIsNotOvertakenByTheDeparture(t *testing.T) {
 	resolved, release, promoDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(promoDone)
-		r.announceIfPresent("p-go", func(string) []byte {
+		r.announceIfPresent("p-go", nil, func(string) []byte {
 			close(resolved)
 			<-release // hold the fan-out open across the departure below
 			return []byte("CONNECTED p-go")

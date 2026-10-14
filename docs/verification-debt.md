@@ -222,6 +222,12 @@ revocation; none promotes anyone after revoking a connected watcher, so the
 frame is never read for. The mutation gate cannot reach it: the defect is a
 parameter that was never there, not an operator it can rewrite.
 
+**Closed by** `TestAPromotionIsNotAnnouncedToARevokedWatcher` in
+`internal/gateway/server_test.go`. It reds when `announcePromotion` hands
+`announceIfPresent` an empty deny set in place of `s.revoked()`, which is the
+edit that puts the defect back, and when `announceIfPresent` ignores the set
+it is handed (observed 2026-10-14).
+
 ## 2026-09-29 — two writers on one campaign directory could write a log that no longer opened
 
 **Two `Campaign`s on one campaign directory can write a log that no longer
