@@ -749,3 +749,19 @@ gate should have caught it, and trusts the exit code it is given. Labels:
 configuration if it offers one, or a check in `tools/check-ts-mutation.py`
 that refuses a killed mutant whose output holds no failing test. Recorded
 2026-10-08 by the command-id report, from the review of the `--bail` change.
+
+**The contract's doc comment on `PromoteParticipant` says it is the only
+command that appends no event.** `contract/vtt/v1/commands.proto` documents
+`PromoteParticipant` as "the only command that changes IDENTITY rather than
+campaign state, and so the only one that produces NO EVENT", and the comment
+is generated into `contract/gen/go/vtt/v1/commands.pb.go` and
+`contract/gen/ts/vtt/v1/commands_pb.ts`. SPEC-007 lists four commands that
+append nothing, `set_viewpoint`, `set_join_door`, `rotate_join_link` and
+`promote_participant`, and `set_join_door` and `rotate_join_link` write the
+identity store too, through `identity.DB.SetJoinOpen` and
+`identity.DB.RotateJoinSecret`. It is in the tree; nothing puts it back. No
+gate reads a comment in the contract against SPEC-007. Labels: `outside the
+tool`. Closing it needs the comment corrected in `commands.proto` and the
+generated code regenerated with `task generate:contract`, as a contract change
+of its own. Recorded 2026-10-14 by the promotion report, from its QA agent's
+finding, on the owner's ruling.
