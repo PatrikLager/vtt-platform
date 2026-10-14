@@ -10,6 +10,7 @@ checks the rows under Requirements name, in
 `internal/identity/fault_internal_test.go`,
 `internal/identity/identity_failure_test.go`, `internal/gateway/join_test.go`,
 `internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
+`internal/gateway/qa_promotion_revoked_test.go`,
 `internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
 ## Principles served
@@ -45,13 +46,13 @@ upgraded. From then on the participant is re-resolved through
 `identity.Lookup`: in the read loop before every command, through
 `credentialGone` before the backlog and before every event taken from the log
 (the frames a `set_viewpoint` perch delivers are not re-checked; the command
-that placed the perch was), and through `revoked` before a connect or departure
-announcement in `announcePresence` and `announceDeparture`. The promotion nudge
-`announcePromotion` sends to every connection without consulting `revoked`: it
-is the one presence frame that does not re-resolve, and
-`docs/verification-debt.md`'s entry dated 2026-09-24 carries it as a defect
-against VTT-032. A lookup that answers `identity.ErrInvalidToken` ends the
-connection, from the read loop with a policy-violation close and from delivery
+that placed the perch was), and through `revoked` before every presence
+announcement: an arrival or a departure in `announcePresence` and
+`announceDeparture`, and a promotion in `announcePromotion`. An announcement
+skips a revoked participant's connections and leaves them open; their next
+command or delivered event closes them. A lookup that answers
+`identity.ErrInvalidToken` ends the connection, from the read loop with a
+policy-violation close and from delivery
 through `credentialGone`. Any other lookup error is operational:
 `answerCommand` refuses that one command with `gateway: identity unavailable`
 and the connection stays; the delivery and presence checks match
@@ -119,13 +120,16 @@ column it added.
 like every other command (`TestEveryClientCommandHasRoleCells` holds that no
 command is missing from it). The role it may grant is bounded in
 `authorizePromotionTarget`, to player or spectator; the role it may act upon is
-bounded in `handlePromotion`, which refuses a target whose current role is dm
-or agent, because `Authorize` performs no I/O and cannot read the target's row.
+bounded in `handlePromotion`, which looks the target up and refuses one
+`identity.Lookup` does not answer, a revoked participant among them, and one
+whose current role is dm or agent, because `Authorize` performs no I/O and
+cannot read the target's row.
 `identity.SetRole` changes the role column and nothing else, reports a
 participant it did not find, and leaves a revoked participant revoked. When the
 promoted participant is connected, the handler then sends a `PresenceChanged`
-frame naming them to every connection through `announcePromotion`, theirs
-included; when they are not, nothing is sent. It appends nothing; SPEC-007
+frame naming them through `announcePromotion` to every connection whose
+participant is not revoked, theirs included (VTT-309); when they are not,
+nothing is sent (VTT-310). It appends nothing; SPEC-007
 names the commands that append nothing and this is one of them.
 
 **Revoked participants are not listed.** `identity.List` reads `WHERE revoked =
@@ -181,4 +185,5 @@ VTT-029, VTT-030, VTT-031, VTT-032, VTT-033, VTT-034, VTT-036, VTT-037,
 VTT-038, VTT-039, VTT-040, VTT-041, VTT-042, VTT-043, VTT-044, VTT-045,
 VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061, VTT-062, VTT-063,
 VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069, VTT-070, VTT-071,
-VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256.
+VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256, VTT-309,
+VTT-310.
