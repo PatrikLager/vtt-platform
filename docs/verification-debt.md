@@ -558,7 +558,8 @@ new set. Recorded 2026-09-29 by the verification of
 `docs/superpowers/specs/2026-09-29-the-projection-has-a-record-design.md`,
 whose change changes no code line.
 
-**Closed by** `TestAVisibleSetThatBecomesAnotherOfTheSameSizeIsSentAgain` in
+**Closed by** `TestAVisibleSetThatBecomesAnotherOfTheSameSizeIsSentAgain`, in
+`internal/perceive/board_test.go` since it moved from
 `internal/gateway/project_test.go`, which reds on the recipe above and is
 VTT-201's evidence (observed 2026-10-11). Since `390239a` the recipe also reds
 `TestQATestimonySightEveryPairOfStepsKeepsEachSeatToWhatItSees`,
@@ -579,7 +580,8 @@ missing`, `outside the tool`. Closing it needs that test's shape for a
 spectator perched on a party member. Recorded 2026-09-29 by the Phase 4b
 review recorded in `docs/reports/2026-09-29-the-projection-has-a-record.md`.
 
-**Closed by** `TestAnUnrecognisedPayloadIsWithheldFromASpectator` in
+**Closed by** `TestAnUnrecognisedPayloadIsWithheldFromASpectator`, in
+`internal/perceive/roster_test.go` since it moved from
 `internal/gateway/project_test.go`, which reds on the recipe above and is
 VTT-227's evidence (observed 2026-10-11).
 

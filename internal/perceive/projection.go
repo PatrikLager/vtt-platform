@@ -28,8 +28,7 @@ type Eyes struct {
 type Projection struct {
 	through Eyes
 
-	// Rely on the rules below within one call only: recall rebuilds every map
-	// but sighted at each Event and Perch (VTT-312).
+	// Rely on the rules below within one call: recall rebuilds all but sighted (VTT-312).
 
 	// Never delete from scenes: a scene introduced twice is a fold error. Forget
 	// an actor only in transitions' forgetting loop, after classify forwarded its

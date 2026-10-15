@@ -206,6 +206,25 @@ func runLog(tb testing.TB, eyes perceive.Eyes, steps []step) []*vttv1.Envelope {
 	return out
 }
 
+// forwardedOf is env as a player or a spectator is sent it (SPEC-016).
+func forwardedOf(env *vttv1.Envelope) *vttv1.Envelope {
+	c := proto.Clone(env).(*vttv1.Envelope)
+	c.ParticipantId, c.ActorRole = "", ""
+	if m := c.GetTokenMoved(); m != nil {
+		m.Reason = ""
+	}
+	if r := c.GetResourceChanged(); r != nil {
+		r.Reason = ""
+	}
+	if a := c.GetConditionApplied(); a != nil {
+		a.Source = ""
+	}
+	if r := c.GetConditionRemoved(); r != nil {
+		r.Reason = ""
+	}
+	return c
+}
+
 func sameStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
