@@ -199,9 +199,12 @@ campaign. `vtt serve`'s `RunE`, on SIGINT or SIGTERM, calls `srv.Shutdown`
 under `serveShutdownTimeout`, then `srv.Close`, then `closeFn`, whether or not
 a connection is still unwinding. `http.Server.Shutdown` waits for HTTP
 handlers and not for hijacked connections, which every WebSocket connection
-is, so a connection mid-teardown can see its handles closed under it. That
-gap is recorded in `docs/verification-debt.md`; `cmd/vtt/serve_e2e_test.go`
-closes its one connection before `Shutdown`.
+is, so a connection mid-teardown can see its handles closed under it. The gap
+is accepted by the owner's ruling of 2026-10-15, which closes its entry in
+`docs/verification-debt.md`: the process exits once `RunE` returns, and
+nothing the connection sends in the gap is half-written: it lands whole, is
+refused, or is cut off by the exit before it reaches the log.
+`cmd/vtt/serve_e2e_test.go` closes its one connection before `Shutdown`.
 
 ## Consequences
 
@@ -220,9 +223,9 @@ closes its one connection before `Shutdown`.
 - Every frame a connection receives was queued by one goroutine per source and
   written by one writer, so a client may rely on queue order and never on
   arrival timing across kinds (SPEC-007).
-- A process shutdown may close the store under a connection still unwinding;
-  until the debt above is closed, a caller of `closeFn` closes every
-  connection first or accepts the race.
+- A process shutdown may close the store under a connection still unwinding.
+  `vtt serve` accepts that by the ruling above; any other caller of `closeFn`
+  closes every connection first or accepts the race.
 
 ## Requirements
 

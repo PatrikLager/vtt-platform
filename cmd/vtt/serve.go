@@ -10,10 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// serveShutdownTimeout bounds how long RunE waits for srv.Shutdown to drain
-// active HTTP handlers once cmd.Context() is canceled (SIGINT/SIGTERM — see
-// main.go), before forcing anything still open closed via srv.Close (see
-// RunE's own comment on why Shutdown alone cannot be trusted to finish).
+// Keep serveShutdownTimeout finite: the process exits only once RunE returns
+// (SPEC-011).
 const serveShutdownTimeout = 5 * time.Second
 
 // newServeCmd runs the gateway over one campaign (spec §6: one campaign per
@@ -50,19 +48,10 @@ func newServeCmd() *cobra.Command {
 				}
 				return nil
 			case <-cmd.Context().Done():
-				// Ctrl-C / SIGTERM (main.go wires both into cmd.Context() via
-				// signal.NotifyContext): shut down gracefully, bounded by
-				// serveShutdownTimeout, then srv.Close the listener and any
-				// non-hijacked conns. NOTE: neither Shutdown nor Close touches
-				// HIJACKED WebSocket connections (Go stdlib contract; see
-				// composeServer's doc comment) — those die with the process
-				// exit that follows. The exit itself never depends on them:
-				// this RunE returns within serveShutdownTimeout regardless.
-				// context.Background() is deliberate, not an oversight:
-				// cmd.Context() is ALREADY CANCELLED — that is why this branch
-				// is running — so deriving the shutdown deadline from it would
-				// hand Shutdown an expired context and it would return
-				// instantly, turning graceful shutdown into an abrupt one.
+				// cmd.Context() is already cancelled here, so derive the deadline from
+				// context.Background(): a derived one is already cancelled. Shutdown and
+				// Close leave hijacked WebSocket connections open, and closeFn runs under
+				// them (SPEC-011).
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), serveShutdownTimeout)
 				defer cancel()
 				shutdownErr := srv.Shutdown(shutdownCtx)

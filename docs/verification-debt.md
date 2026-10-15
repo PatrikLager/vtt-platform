@@ -384,6 +384,20 @@ Closing it needs `Shutdown` to drain every gateway connection, or `closeFn` to
 wait for them, and a test that holds a connection open across `Shutdown`.
 Recorded 2026-09-27, moved here from the comment at `composeServer`.
 
+**Closed 2026-10-15 by the owner's ruling, not by a change.** The gap stays.
+It opens only when `vtt serve` is stopped while a client is connected, and
+`main` returns once `RunE` has, so the process exits with the connection in
+it. The ruling's ground is a reading of the code, not a test: `Campaign.Close`
+takes the campaign's lock, which `Append` and `AppendBatch` hold for the whole
+append, so an append already under way finishes before the log closes; a
+command read after `closeFn` has closed the identity handle is refused with
+"gateway: identity unavailable" (VTT-033); and one that passed `Lookup`
+before then and appends after `Campaign.Close` gets the closed database's
+error and is answered with `ok` false, as is an identity write that passed
+`Lookup` and runs after the identity handle closes. A command the exit
+overtakes never reaches the log. Should a table ever need the gap closed, the
+sentence above beginning "Closing it needs" says what that takes.
+
 **The busy skip's wiring in `serve` is unpinned.** `keepAlive` skips a tick
 while `busy` reports the writer mid-frame, and `serve` wires that through
 `stampedWrite` around its real write and `activity.busy` into

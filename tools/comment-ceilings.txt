@@ -59,7 +59,7 @@ cmd/vtt/qa_note_schema_test.go  0.0
 cmd/vtt/qa_writer_hold_test.go  1.9
 cmd/vtt/revoke.go  5.6
 cmd/vtt/scenario_goldens_test.go  25.7
-cmd/vtt/serve.go  29.0
+cmd/vtt/serve.go  17.0
 cmd/vtt/serve_compose.go  70.2
 cmd/vtt/serve_e2e_test.go  20.9
 cmd/vtt/serve_test.go  37.8
