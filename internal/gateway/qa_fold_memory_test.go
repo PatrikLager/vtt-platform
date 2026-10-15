@@ -26,7 +26,7 @@ const (
 	qaNonParty = vttv1.ActorKind_ACTOR_KIND_NON_PARTY
 )
 
-// ---------------------------------------------------------------- the log
+// ------------ the log
 
 type qafmLog struct{ envs []*vttv1.Envelope }
 
@@ -110,7 +110,7 @@ func qafmLurker() *vttv1.Actor {
 		ModuleData: md}
 }
 
-// ---------------------------------------------------------------- the run
+// ------------ the run
 
 type qafmRun struct {
 	envs   []*vttv1.Envelope
@@ -193,7 +193,7 @@ func (r *qafmRun) viewerFold(t *testing.T, upTo int) *engine.State {
 	return st
 }
 
-// ---------------------------------------------------------------- describing frames
+// ------------ describing frames
 
 func qafmKind(k vttv1.ActorKind) string {
 	switch k {
@@ -260,7 +260,7 @@ func qafmExpectFrames(t *testing.T, why string, r *qafmRun, idx int, want []stri
 	}
 }
 
-// ---------------------------------------------------------------- comparing an actor
+// ------------ comparing an actor
 
 func qafmCondIDs(st *engine.State, id string) []string {
 	out := []string{}
@@ -327,7 +327,7 @@ func qafmSameActorAsSets(t *testing.T, why string, viewer, world *engine.State, 
 	}
 }
 
-// ================================================================ VTT-313: corrected
+// ============ VTT-313: corrected
 
 // qafmReAddHistory: x1 seen with condition "dazed" and controller u2, its token
 // taken away (unseen), removed while unseen, added again as `again`, granted
@@ -418,7 +418,7 @@ func TestQAFoldMemoryAnActorAddedAgainDifferingOnlyInStatusIsCorrected(t *testin
 	}
 }
 
-// ================================================================ VTT-313: introduced afresh
+// ============ VTT-313: introduced afresh
 
 // VTT-313 VTT-252
 func TestQAFoldMemoryAnActorAddedAgainDifferingInAnAddOnlyFieldIsIntroducedAfresh(t *testing.T) {
@@ -510,7 +510,7 @@ func TestQAFoldMemoryAnActorTheViewerNeverHeldIsIntroducedWithoutABareRemoval(t 
 	}
 }
 
-// ================================================================ neighbour: removed while SEEN
+// ============ neighbour: removed while SEEN
 
 // An eye's removal is forwarded (VTT-251, SPEC-016 Consequences "A forwarded
 // ActorRemoved reaches only a viewer whose eye the actor is"), so the viewer no
@@ -555,7 +555,7 @@ func TestQAFoldMemoryAShoulderRemovedAndAddedAgainIsIntroducedPlainly(t *testing
 	}
 }
 
-// ================================================================ neighbour: a party member
+// ============ neighbour: a party member
 
 func TestQAFoldMemoryAPartyMemberRemovedUnseenAndAddedAgain(t *testing.T) {
 	kin := func(name string) *vttv1.Actor {
@@ -593,7 +593,7 @@ func TestQAFoldMemoryAPartyMemberRemovedUnseenAndAddedAgain(t *testing.T) {
 	}
 }
 
-// ================================================================ correction order
+// ============ correction order
 
 // qafmTwoConditionOrders arranges for x1's conditions to sit in the viewer's
 // fold in one order and in the world in the other, then hides x1 again.
@@ -713,7 +713,7 @@ func TestQAFoldMemoryAKindRestatementNamesTheViewersFirstController(t *testing.T
 	}
 }
 
-// ================================================================ accepted limit
+// ============ accepted limit
 
 // Conditions and controllers that cross an unchanged re-add: sets only.
 func TestQAFoldMemoryConditionsCrossingAnUnchangedReAddArriveAsSets(t *testing.T) {
@@ -745,7 +745,7 @@ func TestQAFoldMemoryConditionsCrossingAnUnchangedReAddArriveAsSets(t *testing.T
 	}
 }
 
-// ================================================================ VTT-314
+// ============ VTT-314
 
 // VTT-314
 func TestQAFoldMemoryAViewerWhoseFoldFailsIsSentNothing(t *testing.T) {

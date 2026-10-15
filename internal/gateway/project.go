@@ -17,7 +17,7 @@ type Viewer struct {
 	Viewpoint     string
 }
 
-// Projector is one connection's projection of the log, fed from its first event (SPEC-016).
+// Projector is a connection's projection, fed from the log's first event (SPEC-016).
 type Projector struct {
 	viewer Viewer
 	// Append every frame sent here and nothing else: its fold is the memory (VTT-312).
@@ -42,7 +42,7 @@ func eyesFor(v Viewer) perceive.Eyes {
 }
 
 // Project returns the frames this viewer is sent for env, judged against st, the
-// state after it. Never write to env (TestProjectingChangesNeitherTheEventNorTheState).
+// state after it. Never write to env, which every seat shares (SPEC-016, VTT-222).
 func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Envelope {
 	if env == nil {
 		return nil

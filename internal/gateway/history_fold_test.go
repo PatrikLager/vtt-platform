@@ -114,7 +114,7 @@ func historyFolds() []historyFold {
 	}
 }
 
-// canonicalJSON sorts object keys and keeps array order, the only order that matters.
+// canonicalJSON sorts keys and keeps array order, the only order that matters.
 func canonicalJSON(t *testing.T, b []byte) []byte {
 	t.Helper()
 	var v any

@@ -28,12 +28,13 @@ type Eyes struct {
 type Projection struct {
 	through Eyes
 
-	// Rely on the rules below within one call: recall rebuilds all but sighted (VTT-312).
+	// Rely on these rules within one call: recall rebuilds all but sighted (VTT-312).
 
-	// Never delete from scenes: a scene introduced twice is a fold error. Forget
+	// Never delete from scenes: a scene introduced twice is a fold error, and a
+	// world that can lose one needs a forgetting loop here first; see
+	// docs/reports/2026-10-15-the-perception-decision-leaves-the-gateway.md. Forget
 	// an actor only in transitions' forgetting loop, after classify forwarded its
-	// ActorRemoved, or in withdraw, which sends one (SPEC-016). A world that can
-	// lose a scene needs a forgetting loop here (docs/reports/2026-10-15-the-perception-decision-leaves-the-gateway.md).
+	// ActorRemoved, or in withdraw, which sends one (SPEC-016).
 	scenes map[string]bool
 	actors map[string]bool
 	tokens map[string]bool
@@ -86,9 +87,8 @@ func (pr *Projection) Event(eyes Eyes, env *vttv1.Envelope, shown, st *engine.St
 	return out
 }
 
-// Perch moves the projection to eyes and returns the frames that bring the
-// viewer, whose non-nil fold is shown, to what they see in the non-nil st, each
-// carrying seq (SPEC-016).
+// Perch moves the projection to eyes and returns what brings the viewer, whose
+// non-nil fold is shown, to what they see in the non-nil st, at seq (SPEC-016).
 func (pr *Projection) Perch(eyes Eyes, shown, st *engine.State, seq int64) []*vttv1.Envelope {
 	pr.through = eyes
 	pr.recall(shown, st)

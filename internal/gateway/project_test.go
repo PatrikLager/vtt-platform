@@ -460,7 +460,7 @@ func TestTheProjectionFailsClosedWhenItHasNothingToGoOn(t *testing.T) {
 	}
 }
 
-// forwardedOf is env as a player or spectator is sent it (SPEC-016); keep it equal to perceive's.
+// forwardedOf is env as a player or spectator gets it; keep it equal to perceive's.
 func forwardedOf(env *vttv1.Envelope) *vttv1.Envelope {
 	c := proto.Clone(env).(*vttv1.Envelope)
 	c.ParticipantId, c.ActorRole = "", ""
