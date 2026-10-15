@@ -33,7 +33,8 @@ type Projection struct {
 
 	// Never delete from scenes: a scene introduced twice is a fold error. Forget
 	// an actor only in transitions' forgetting loop, after classify forwarded its
-	// ActorRemoved, or in withdraw, which sends one (SPEC-016).
+	// ActorRemoved, or in withdraw, which sends one (SPEC-016). A world that can
+	// lose a scene needs a forgetting loop here (docs/reports/2026-10-15-the-perception-decision-leaves-the-gateway.md).
 	scenes map[string]bool
 	actors map[string]bool
 	tokens map[string]bool

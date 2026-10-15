@@ -86,20 +86,6 @@ type keystoneSeat struct {
 // this test is the identity arm: the dm and agent seats, whose fold is compared
 // against the committed hand-derived state.json.
 //
-// THE PACKAGE IS NOT BLIND TO IT, and the first draft of this paragraph said
-// something close to that by listing only the gates it liked and concluding
-// "what a shared dependency breaks, only a hand-derived fixture catches". FALSE,
-// and counted: the injection reds SEVEN top-level tests here. Two are
-// fixture-backed — this one and
-// TestTheProjectedGoldensAreWhatTheProjectionActuallySends, with
-// internal/harness's golden gate failing a package over — and FIVE are
-// ordinary behavioural tests that never open a golden
-// (TestSteppingIntoViewArrivesRatherThanMoves,
-// TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView,
-// TestAPlayerMayOnlyWorkADoorTheyAreNextTo,
-// TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway,
-// TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee).
-//
 // So the claim that survives is about THIS TEST and not about the suite: where a
 // dependency is shared by both sides of the equation, the equation itself stops
 // being the thing that catches a bug in it, and what catches it here is the
@@ -711,13 +697,6 @@ func keystoneDiff(got *engine.State, want oracleView, everKnownActors, everSeenS
 	// and no actor — it is the §4.2 leak in its purest form, a player handed the
 	// map of a room they have not walked into — and with this block disabled the
 	// keystone passes it. Every other comparison above lets it through.
-	//
-	// The keystone is NOT the only thing that catches it, and saying so is the
-	// difference between a measurement and a boast: making sceneSeenFor walk
-	// sc.Tiles instead of the visible squares also reds seven existing tests in
-	// this package, TestSceneSeenCarriesOnlyTheSquaresInSight among them. What
-	// this block adds is that the keystone's own equation stops having a hole in
-	// it.
 	//
 	// One direction only, deliberately. The lower bound does not hold and must
 	// not be asserted: a visible square carrying no terrain is never remembered,
