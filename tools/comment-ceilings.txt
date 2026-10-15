@@ -143,7 +143,7 @@ internal/gateway/convert_test.go  14.3
 internal/gateway/export_test.go  47.0
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  40.7
-internal/gateway/history_fold_test.go  3.7
+internal/gateway/history_fold_test.go  2.8
 internal/gateway/join.go  17.9
 internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  22.7
@@ -162,7 +162,7 @@ internal/gateway/presence_internal_test.go  30.5
 internal/gateway/project.go  17.7
 internal/gateway/project_internal_test.go  2.5
 internal/gateway/project_property_test.go  19.2
-internal/gateway/project_test.go  14.1
+internal/gateway/project_test.go  13.9
 internal/gateway/qa_cmd_id_bound_test.go  0.0
 internal/gateway/qa_fold_memory_test.go  9.8
 internal/gateway/qa_id_bound_test.go  0.0
@@ -257,8 +257,10 @@ internal/perceive/deps_test.go  3.8
 internal/perceive/history_test.go  3.8
 internal/perceive/projection.go  18.2
 internal/perceive/projection_internal_test.go  6.6
+internal/perceive/qa_testimony_eyes_test.go  0.0
 internal/perceive/roster_test.go  7.3
 internal/perceive/status_test.go  1.8
+internal/perceive/unseen_test.go  2.6
 internal/perceive/viewer_test.go  12.4
 internal/rules/compile.go  32.0
 internal/rules/compile_test.go  25.4
