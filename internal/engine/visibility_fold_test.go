@@ -260,7 +260,7 @@ func TestSceneSeenReplacesTheVisibleSetWithoutForgettingTheExploredOne(t *testin
 
 // TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain is the wire message
 // the projection sends when a seat can no longer see anything of a scene it has
-// been in (internal/gateway's transitions). It must land as "you see nothing
+// been in (internal/perceive's transitions). It must land as "you see nothing
 // here now", NOT as "you were never here" — the second would erase a player's
 // map every time they walked out of a room.
 func TestAnEmptySceneSeenDarkensTheSceneAndForgetsNoTerrain(t *testing.T) {

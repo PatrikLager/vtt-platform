@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"testing"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -33,6 +34,26 @@ func TestASeatPerchesOnlyAgainstAWorldItHasSeen(t *testing.T) {
 	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
 	if got := s.perch("a1"); len(got) != 0 {
 		t.Fatalf("a seat shown nothing has nothing to re-show, got %d frame(s)", len(got))
+	}
+}
+
+// A perch that comes before the seat's world sends nothing, and still names the
+// eyes every later event is judged by (SPEC-015).
+func TestAPerchBeforeTheSeatHasAWorldStillMovesItsEyes(t *testing.T) {
+	s := newSeat(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, 0)
+	if got := s.perch("hero"); len(got) != 0 {
+		t.Fatalf("a seat shown nothing has nothing to re-show, got %d frame(s)", len(got))
+	}
+	placed := 0
+	for _, env := range perchFixtureLog() {
+		for _, f := range s.receive(env) {
+			if f.GetTokenPlaced() != nil {
+				placed++
+			}
+		}
+	}
+	if placed == 0 {
+		t.Fatal("a seat perched on hero before it had a world was shown no token once the world arrived")
 	}
 }
 
@@ -499,3 +520,6 @@ func TestASeatIsSentNothingForAnEventWhoseFoldFails(t *testing.T) {
 		t.Fatal("a seat whose prefix folds must be sent the same narration")
 	}
 }
+
+// squareKey must build the key sight.VisibleFrom builds, column then row.
+func squareKey(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }

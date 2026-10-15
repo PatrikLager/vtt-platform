@@ -9,6 +9,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
 // Leave Viewpoint empty: a spectator watches nobody until a perch names a
@@ -148,11 +149,10 @@ func (s *seat) perch(actorID string) []*vttv1.Envelope {
 	return s.pr.reperch(actorID, s.world)
 }
 
-// Build a fresh Projector per question: canSee must record nothing a seat was
+// Ask perceive afresh per question: canSee must record nothing a seat was
 // shown (SPEC-015).
 func canSee(v Viewer, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
-	pr := NewProjector(v)
-	return pr.canSeeSquare(pr.look(st), sceneID, at)
+	return perceive.CanSee(eyesFor(v), st, sceneID, at)
 }
 
 // catchUp is the catch-up SPEC-011 states; a projected seat's head is the last
