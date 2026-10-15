@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/sight"
@@ -24,11 +26,18 @@ type Viewer struct {
 }
 
 // Projector is one connection's projection of the log (SPEC-016).
-// Feed it the log from the first event, never a snapshot of engine.State:
-// its actors map remembers what left sight, and both folds refuse a second
+// Feed it the log from the first event: its memory is the fold of the frames
+// it sent, which is what its viewer holds, and both folds refuse a second
 // introduction (TestAReconnectingSeatIsCaughtUpToExactlyWhatItMissed).
 type Projector struct {
 	viewer Viewer
+
+	// Append every frame Project and reperch return, and nothing else: recall
+	// folds it as the viewer's own fold (VTT-312).
+	sent []*vttv1.Envelope
+
+	// Rely on the rules below within one call only: recall rebuilds every map
+	// but sighted at each Project and reperch (VTT-312).
 
 	// Never delete from scenes: a scene introduced twice is a fold error. Forget
 	// an actor only in transitions' forgetting loop, after classify forwarded its
@@ -44,10 +53,11 @@ type Projector struct {
 	// Forget a key only in noteTransitions, which sends its NoteDeleted: a key
 	// forgotten anywhere else stays in the viewer's fold (SPEC-016).
 	notes map[string]bool
-	// Replace sighted only in snapshotSighted: classify judges every
+	// Replace sighted only at the end of transitions: classify judges every
 	// actor-naming payload against it (SPEC-016).
 	sighted map[string]bool
-	// Write a belief only where the viewer's fold equals st (snapshotSighted).
+	// Read a belief only from the viewer's fold (recall): a correction follows
+	// the order the viewer holds.
 	belief map[string]actorBelief
 	// Withdraw a gone actor only before its id is introduced again: a bare
 	// ActorRemoved at any other time reports a removal the viewer did not see.
@@ -97,6 +107,14 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	if st == nil {
 		return nil
 	}
+	if err := pr.recall(st); err != nil {
+		// Withhold the event when the viewer's fold fails: frames judged against a
+		// memory that does not fold are the leak (VTT-314).
+		// #nosec G706 -- the sequence is an int64 given as a structured attribute.
+		slog.Error("gateway: viewer fold failed; withholding event",
+			"sequence", env.GetSequence(), "error", err)
+		return nil
+	}
 
 	now := pr.look(st)
 	v := pr.classify(env, now)
@@ -109,7 +127,74 @@ func (pr *Projector) Project(env *vttv1.Envelope, st *engine.State) []*vttv1.Env
 	if v == forwarded {
 		out = append(out, forwardable(env))
 	}
+	pr.sent = append(pr.sent, out...)
 	return out
+}
+
+// recall sets every map but sighted from the viewer's fold of sent, and gone
+// from that fold against st, and returns the fold's error (VTT-312, VTT-314).
+func (pr *Projector) recall(st *engine.State) error {
+	shown, err := campaign.FoldPrefix(pr.sent)
+	if err != nil {
+		return err
+	}
+	pr.scenes, pr.actors, pr.tokens = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	pr.seen, pr.doors = map[string]map[string]bool{}, map[string]map[string]bool{}
+	pr.notes, pr.belief, pr.gone = map[string]bool{}, map[string]actorBelief{}, map[string]bool{}
+	for id, sc := range shown.Scenes {
+		pr.scenes[id] = true
+		if lit := trueKeys(sc.Visible); len(lit) > 0 {
+			pr.seen[id] = lit
+		}
+		pr.doors[id] = trueKeys(sc.OpenDoors)
+	}
+	for id := range shown.Tokens {
+		pr.tokens[id] = true
+	}
+	for key := range shown.Notes {
+		pr.notes[key] = true
+	}
+	for id, a := range shown.Actors {
+		pr.actors[id] = true
+		pr.belief[id] = beliefOf(a, shown.Conditions[id])
+		// Mark gone the actor the world added again as another: the viewer never
+		// saw it removed, so it is withdrawn before it is introduced (VTT-313).
+		if w, ok := st.Actors[id]; ok && !sameIncarnation(a, w) {
+			pr.gone[id] = true
+		}
+	}
+	return nil
+}
+
+func trueKeys(m map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for k, on := range m {
+		if on {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+// sameIncarnation reports whether a and b agree on every field only
+// ActorAdded writes, so that one may stand for the other (VTT-313).
+func sameIncarnation(a, b *vttv1.Actor) bool {
+	if a.GetName() != b.GetName() || a.GetModuleId() != b.GetModuleId() ||
+		!proto.Equal(a.GetModuleData(), b.GetModuleData()) ||
+		len(a.GetAttributes()) != len(b.GetAttributes()) || len(a.GetResources()) != len(b.GetResources()) {
+		return false
+	}
+	for k, v := range a.GetAttributes() {
+		if w, ok := b.GetAttributes()[k]; !ok || w != v {
+			return false
+		}
+	}
+	for k, r := range a.GetResources() {
+		if w, ok := b.GetResources()[k]; !ok || w.GetMax() != r.GetMax() {
+			return false
+		}
+	}
+	return true
 }
 
 // perchSequence is the sequence of every frame a perch sends (SPEC-015).
@@ -128,7 +213,14 @@ func (pr *Projector) reperch(actorID string, st *engine.State) []*vttv1.Envelope
 		// folded nothing panics (TestASeatPerchesOnlyAgainstAWorldItHasSeen).
 		return nil
 	}
-	return pr.transitions(nil, perchSequence, pr.look(st), st)
+	if err := pr.recall(st); err != nil {
+		// Send no perch over a memory that does not fold (VTT-314).
+		slog.Error("gateway: viewer fold failed; withholding perch", "error", err)
+		return nil
+	}
+	out := pr.transitions(nil, perchSequence, pr.look(st), st)
+	pr.sent = append(pr.sent, out...)
+	return out
 }
 
 // sightView is one look at the world through this viewer's eyes (SPEC-016).
@@ -327,7 +419,7 @@ func (pr *Projector) transitions(cause *vttv1.Envelope, seq int64, now sightView
 		pr.seen[id] = lit
 	}
 
-	pr.snapshotSighted(now, st)
+	pr.sighted = now.sees
 	return append(out, pr.noteTransitions(cause, seq, st)...)
 }
 
@@ -674,7 +766,6 @@ func (pr *Projector) introduce(id string, seq int64, a *vttv1.Actor, st *engine.
 				ActorId: id, ConditionId: c.ID}}})
 	}
 	pr.actors[id] = true
-	pr.belief[id] = beliefOf(a, st.Conditions[id])
 	return out
 }
 
@@ -711,19 +802,6 @@ func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
 	return b
 }
 
-// snapshotSighted records the belief of every held actor this event's frames
-// left equal to st: one seen before the event, or seen now (SPEC-016).
-func (pr *Projector) snapshotSighted(now sightView, st *engine.State) {
-	for _, set := range []map[string]bool{pr.sighted, now.sees} {
-		for id := range set {
-			if a, ok := st.Actors[id]; ok && pr.actors[id] {
-				pr.belief[id] = beliefOf(a, st.Conditions[id])
-			}
-		}
-	}
-	pr.sighted = now.sees
-}
-
 // correct brings the viewer's fold of a held actor that comes into sight to
 // its present status, in frames carrying seq and nothing that says who or what
 // changed it (SPEC-016).
@@ -734,7 +812,6 @@ func (pr *Projector) correct(id string, seq int64, a *vttv1.Actor, st *engine.St
 		// Re-introduce what no grant can carry.
 		return append([]*vttv1.Envelope{pr.withdraw(id, seq)}, pr.introduce(id, seq, a, st)...)
 	}
-	pr.belief[id] = beliefOf(a, st.Conditions[id])
 	return fix
 }
 

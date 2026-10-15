@@ -216,7 +216,7 @@ func (tbl *rmTable) advance(s *rmSeat, env *vttv1.Envelope, frames []*vttv1.Enve
 			i := rmRemovalIndex(frames, id)
 			if i < 0 || frames[i].GetEventId() != "" || i+1 >= len(frames) ||
 				frames[i+1].GetActorAdded().GetActor().GetActorId() != id {
-				tb.Errorf("VTT-211 VTT-252: seat %s seq %d meets %s again without a bare removal first: %v",
+				tb.Errorf("VTT-313 VTT-252: seat %s seq %d meets %s again without a bare removal first: %v",
 					s.name, env.GetSequence(), id, rmDescribeAll(env, frames))
 			}
 			delete(s.ghost, id)
@@ -229,7 +229,7 @@ func (tbl *rmTable) advance(s *rmSeat, env *vttv1.Envelope, frames []*vttv1.Enve
 		}
 	}
 	if got, want := rmKeys(s.fold.Actors), rmKeys(s.held); !slices.Equal(got, want) {
-		tb.Errorf("VTT-247 VTT-251 VTT-211: seat %s after seq %d holds %v, want %v",
+		tb.Errorf("VTT-247 VTT-251 VTT-313: seat %s after seq %d holds %v, want %v",
 			s.name, env.GetSequence(), got, want)
 	}
 	for _, id := range rmKeys(s.held) {
@@ -610,7 +610,7 @@ func TestQATestimonyRemovalBatchReachesNoSeatThatWatchedOnlyTheToken(t *testing.
 	tbl.want("VTT-176", "ag1", gone, "event:ActorRemoved(mob)")
 }
 
-// VTT-251 VTT-246 VTT-215 VTT-247 VTT-205 VTT-224 VTT-176 VTT-211 VTT-252 VTT-248
+// VTT-251 VTT-246 VTT-215 VTT-247 VTT-205 VTT-224 VTT-176 VTT-313 VTT-252 VTT-248
 func TestQATestimonyRemovalBatchOfAControlledActorReachesItsOwnEyes(t *testing.T) {
 	tbl := rmStandard(t)
 	tbl.emit(rmDoor(true))
@@ -632,15 +632,15 @@ func TestQATestimonyRemovalBatchOfAControlledActorReachesItsOwnEyes(t *testing.T
 	tbl.wantHeld("VTT-251 VTT-247", "p2", "pc1", rmStatus{name: "pc1", res: "pool=10/10", kind: rmParty})
 	back := tbl.emit(rmAdd("pc1", "pc1-again", rmParty, 5))
 	for _, s := range []string{"p2", "p3", "sp2", "sp3"} {
-		tbl.wantBareBefore("VTT-211 VTT-252", s, back, "pc1")
+		tbl.wantBareBefore("VTT-313 VTT-252", s, back, "pc1")
 	}
 	for _, s := range []string{"p1", "sp1"} {
 		if got := tbl.frames(s, back); len(got) == 0 || got[0] != "ActorAdded(pc1)" {
-			t.Errorf("VTT-211 VTT-252: seat %s at the return of pc1 got %v, want a plain introduction", s, got)
+			t.Errorf("VTT-313 VTT-252: seat %s at the return of pc1 got %v, want a plain introduction", s, got)
 		}
 	}
 	for _, s := range []string{"p1", "p2", "p3", "sp1", "sp2", "sp3"} {
-		tbl.wantHeld("VTT-211 VTT-248", s, "pc1", rmStatus{name: "pc1-again", res: "pool=5/5", kind: rmParty})
+		tbl.wantHeld("VTT-313 VTT-248", s, "pc1", rmStatus{name: "pc1-again", res: "pool=5/5", kind: rmParty})
 	}
 }
 
@@ -716,7 +716,7 @@ func TestQATestimonyRemovalFarAwayOrInAnotherSceneIsNotReported(t *testing.T) {
 	tbl.want("VTT-251", "sp2", gone, "event:ActorRemoved(pc2)")
 }
 
-// VTT-211 VTT-252 VTT-251 VTT-247 VTT-248 VTT-221 VTT-249 VTT-224 VTT-176 VTT-215
+// VTT-313 VTT-252 VTT-251 VTT-247 VTT-248 VTT-221 VTT-249 VTT-224 VTT-176 VTT-215
 func TestQATestimonyRemovalThenReuseWaitsUnseenThenComesAfterABareRemoval(t *testing.T) {
 	tbl := rmStandard(t)
 	tbl.emit(rmAdd("mob", "mob-1", rmOther, 10))
@@ -740,13 +740,13 @@ func TestQATestimonyRemovalThenReuseWaitsUnseenThenComesAfterABareRemoval(t *tes
 	}
 	open := tbl.emit(rmDoor(true))
 	for _, s := range []string{"p1", "sp1"} {
-		tbl.wantBareBefore("VTT-211 VTT-252 VTT-221 VTT-249", s, open, "mob")
-		tbl.wantHeld("VTT-211 VTT-248", s, "mob", rmMob("mob-2", 4, "other", rmOther, ""))
+		tbl.wantBareBefore("VTT-313 VTT-252 VTT-221 VTT-249", s, open, "mob")
+		tbl.wantHeld("VTT-313 VTT-248", s, "mob", rmMob("mob-2", 4, "other", rmOther, ""))
 	}
 	tbl.want("VTT-251", "p2", open)
 }
 
-// VTT-211 VTT-252 VTT-251 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215
+// VTT-313 VTT-252 VTT-251 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215
 func TestQATestimonyRemovalThenReuseAsAPartyMemberIsIntroducedAtOnce(t *testing.T) {
 	tbl := rmStandard(t)
 	tbl.emit(rmAdd("mob", "mob-1", rmOther, 10))
@@ -754,7 +754,7 @@ func TestQATestimonyRemovalThenReuseAsAPartyMemberIsIntroducedAtOnce(t *testing.
 	tbl.removeActor("mob")
 	back := tbl.emit(rmAdd("mob", "mob-3", rmParty, 6))
 	for _, s := range []string{"p1", "sp1"} {
-		tbl.wantBareBefore("VTT-211 VTT-252", s, back, "mob")
+		tbl.wantBareBefore("VTT-313 VTT-252", s, back, "mob")
 	}
 	for _, s := range []string{"p2", "p3", "sp2", "sp3"} {
 		if got := tbl.frames(s, back); len(got) == 0 || got[0] != "ActorAdded(mob)" {
@@ -762,11 +762,11 @@ func TestQATestimonyRemovalThenReuseAsAPartyMemberIsIntroducedAtOnce(t *testing.
 		}
 	}
 	for _, s := range []string{"p1", "p2", "p3", "sp1", "sp2", "sp3"} {
-		tbl.wantHeld("VTT-211", s, "mob", rmMob("mob-3", 6, "", rmParty, ""))
+		tbl.wantHeld("VTT-313", s, "mob", rmMob("mob-3", 6, "", rmParty, ""))
 	}
 }
 
-// VTT-211 VTT-252 VTT-251 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215
+// VTT-313 VTT-252 VTT-251 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215
 func TestQATestimonyRemovalThenReuseTwiceIsIntroducedAfreshEachTime(t *testing.T) {
 	tbl := rmStandard(t)
 	tbl.emit(rmAdd("mob", "mob-1", rmOther, 10))
@@ -774,7 +774,7 @@ func TestQATestimonyRemovalThenReuseTwiceIsIntroducedAfreshEachTime(t *testing.T
 	tbl.removeActor("mob")
 	tbl.emit(rmAdd("mob", "mob-2", rmOther, 4))
 	second := tbl.emit(rmPlace("t-mob2", rmKeep, "mob", rmWest))
-	tbl.wantBareBefore("VTT-211 VTT-252", "p1", second, "mob")
+	tbl.wantBareBefore("VTT-313 VTT-252", "p1", second, "mob")
 	tbl.change("mob", -1)
 	tbl.removeActor("mob")
 	tbl.emit(rmAdd("mob", "mob-x", rmOther, 9))
@@ -783,11 +783,11 @@ func TestQATestimonyRemovalThenReuseTwiceIsIntroducedAfreshEachTime(t *testing.T
 	tbl.wantHeld("VTT-247", "p1", "mob", rmMob("mob-2", 3, "", rmOther, ""))
 	tbl.emit(rmAdd("mob", "mob-3", rmOther, 6))
 	fourth := tbl.emit(rmPlace("t-mob4", rmKeep, "mob", rmWest))
-	tbl.wantBareBefore("VTT-211 VTT-252", "p1", fourth, "mob")
+	tbl.wantBareBefore("VTT-313 VTT-252", "p1", fourth, "mob")
 	if n := strings.Count(strings.Join(tbl.frames("p1", fourth), " "), "ActorRemoved(mob)"); n != 1 {
 		t.Errorf("VTT-252: seat p1 got %d removals of mob at its fourth arrival, want 1", n)
 	}
-	tbl.wantHeld("VTT-211 VTT-248", "p1", "mob", rmMob("mob-3", 6, "", rmOther, ""))
+	tbl.wantHeld("VTT-313 VTT-248", "p1", "mob", rmMob("mob-3", 6, "", rmOther, ""))
 }
 
 // VTT-251 VTT-252 VTT-247 VTT-224 VTT-176 VTT-215 VTT-205
@@ -857,7 +857,7 @@ func TestQATestimonyRemovalUnseenCannotBeToldFromNoRemoval(t *testing.T) {
 	}
 }
 
-// VTT-252 VTT-221 VTT-249 VTT-211 VTT-251 VTT-224 VTT-247 VTT-248
+// VTT-252 VTT-221 VTT-249 VTT-313 VTT-251 VTT-224 VTT-247 VTT-248
 func TestQATestimonyRemovalTimeIsNotToldWhenTheIdReturns(t *testing.T) {
 	run := func(tb testing.TB, early bool) (*rmTable, *vttv1.Envelope) {
 		tb.Helper()
@@ -894,7 +894,7 @@ func TestQATestimonyRemovalTimeIsNotToldWhenTheIdReturns(t *testing.T) {
 	}
 }
 
-// VTT-252 VTT-248 VTT-249 VTT-247 VTT-245 VTT-224 VTT-176 VTT-211
+// VTT-252 VTT-248 VTT-249 VTT-247 VTT-245 VTT-224 VTT-176 VTT-313
 func TestQATestimonyRemovalBareAlsoPrecedesACorrectionsReintroduction(t *testing.T) {
 	tbl := rmStandard(t)
 	tbl.emit(rmDoor(true))
@@ -1005,7 +1005,7 @@ func rmRunOps(tb testing.TB, ops []int) {
 	}
 }
 
-// VTT-251 VTT-252 VTT-211 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215 VTT-205 VTT-221
+// VTT-251 VTT-252 VTT-313 VTT-247 VTT-248 VTT-224 VTT-176 VTT-215 VTT-205 VTT-221
 func TestQATestimonyRemovalHoldsOverEverySmallSequence(t *testing.T) {
 	var seqs [][]int
 	var walk func(m rmModel, prefix []int, depth int)

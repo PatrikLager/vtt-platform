@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -156,5 +160,136 @@ func TestEachHistoryFoldAViewerIsSentIsTheOneDerivedByHand(t *testing.T) {
 				t.Errorf("%s\n\nthe viewer's fold is\n%s\nwant\n%s", h.why, got, canonicalJSON(t, want))
 			}
 		})
+	}
+}
+
+// historyFrames runs events through a projector for hero's spectator, as
+// TestEachHistoryFoldAViewerIsSentIsTheOneDerivedByHand does, and returns the
+// frames each event was sent and the world after the last.
+func historyFrames(t *testing.T, events []any) ([][]*vttv1.Envelope, *engine.State) {
+	t.Helper()
+	pr := gateway.NewProjector(gateway.Viewer{ParticipantID: "w", Role: identity.RoleSpectator, Viewpoint: "hero"})
+	var log []*vttv1.Envelope
+	var world *engine.State
+	out := make([][]*vttv1.Envelope, len(events))
+	for i, p := range events {
+		log = append(log, historyEnvelope(int64(i+1), p))
+		var err error
+		if world, err = campaign.FoldPrefix(log); err != nil {
+			t.Fatalf("the world does not fold at %d: %v", i+1, err)
+		}
+		out[i] = pr.Project(log[i], world)
+	}
+	return out, world
+}
+
+// frameNames names each frame by its payload and the ids it carries, in order.
+func frameNames(es []*vttv1.Envelope) []string {
+	var out []string
+	for _, e := range es {
+		switch p := e.GetPayload().(type) {
+		case *vttv1.Envelope_ActorRemoved:
+			out = append(out, "ActorRemoved "+p.ActorRemoved.GetActorId())
+		case *vttv1.Envelope_ActorAdded:
+			out = append(out, "ActorAdded "+p.ActorAdded.GetActor().GetActorId()+" "+p.ActorAdded.GetActor().GetName())
+		case *vttv1.Envelope_TokenPlaced:
+			out = append(out, "TokenPlaced "+p.TokenPlaced.GetTokenId())
+		case *vttv1.Envelope_ConditionApplied:
+			out = append(out, "ConditionApplied "+p.ConditionApplied.GetConditionId())
+		case *vttv1.Envelope_ConditionRemoved:
+			out = append(out, "ConditionRemoved "+p.ConditionRemoved.GetConditionId())
+		case *vttv1.Envelope_ActorControlGranted:
+			g := p.ActorControlGranted
+			out = append(out, "ActorControlGranted "+g.GetParticipantId()+" "+g.GetKind().String())
+		default:
+			out = append(out, fmt.Sprintf("%T", p))
+		}
+	}
+	return out
+}
+
+func historyByName(t *testing.T, name string) historyFold {
+	t.Helper()
+	for _, h := range historyFolds() {
+		if h.name == name {
+			return h
+		}
+	}
+	t.Fatalf("no history %q", name)
+	return historyFold{}
+}
+
+// VTT-313
+func TestAnActorAddedAgainIsIntroducedAfreshOnlyWhenItIsAnother(t *testing.T) {
+	for name, want := range map[string][]string{
+		"reuse-identical": {"TokenPlaced t-gob2"},
+		"reuse-renamed":   {"ActorRemoved gob", "ActorAdded gob New Gob", "TokenPlaced t-gob2"},
+		"reuse-module-id": {"ActorRemoved gob", "ActorAdded gob Old Gob", "TokenPlaced t-gob2"},
+	} {
+		frames, _ := historyFrames(t, historyByName(t, name).events)
+		if got := frameNames(frames[len(frames)-1]); !slices.Equal(got, want) {
+			t.Errorf("%s: the event that brings gob back is sent %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestACorrectionFollowsTheOrderTheViewerHolds(t *testing.T) {
+	condition := func(id string) *vttv1.ConditionApplied {
+		return &vttv1.ConditionApplied{ActorId: "gob", ConditionId: id}
+	}
+	uncondition := func(id string) *vttv1.ConditionRemoved {
+		return &vttv1.ConditionRemoved{ActorId: "gob", ConditionId: id}
+	}
+	for _, c := range []struct {
+		name   string
+		events []any
+		want   []string
+	}{
+		{"conditions the world reordered unseen", historyByName(t, "condition-order").events,
+			[]string{"ConditionRemoved A", "ConditionRemoved B", "TokenPlaced t-gob3"}},
+		{"controllers the world reordered unseen", historyByName(t, "controller-restatement").events,
+			[]string{"ActorControlGranted p1 ACTOR_KIND_PARTY_MEMBER", "TokenPlaced t-gob3"}},
+		{"conditions removed unseen, not sorted", historyBase(condition("B"), condition("A"),
+			&vttv1.TokenRemoved{TokenId: "t-gob"}, uncondition("B"), uncondition("A"), historyPlace("t-gob2")),
+			[]string{"ConditionRemoved B", "ConditionRemoved A", "TokenPlaced t-gob2"}},
+	} {
+		frames, _ := historyFrames(t, c.events)
+		if got := frameNames(frames[len(frames)-1]); !slices.Equal(got, c.want) {
+			t.Errorf("%s: gob coming back into sight is sent %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// VTT-248
+func TestAnActorAddedAgainUnchangedWithItsConditionsReachesTheViewerAsTheWorldHoldsIt(t *testing.T) {
+	condition := func(id string) *vttv1.ConditionApplied {
+		return &vttv1.ConditionApplied{ActorId: "gob", ConditionId: id}
+	}
+	events := historyBase(condition("A"), condition("B"), &vttv1.TokenRemoved{TokenId: "t-gob"},
+		&vttv1.ActorRemoved{ActorId: "gob"}, historyGob("Old Gob", ""), condition("B"), condition("A"),
+		historyPlace("t-gob2"))
+	frames, world := historyFrames(t, events)
+	var sent []*vttv1.Envelope
+	for _, f := range frames {
+		sent = append(sent, f...)
+	}
+	shown, err := campaign.FoldPrefix(sent)
+	if err != nil {
+		t.Fatalf("the viewer's frames do not fold: %v", err)
+	}
+	ids := func(cs []engine.ActorCondition) []string {
+		var out []string
+		for _, c := range cs {
+			out = append(out, c.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	if got, want := ids(shown.Conditions["gob"]), ids(world.Conditions["gob"]); !slices.Equal(got, want) {
+		t.Errorf("the viewer holds gob's conditions %q, the world %q", got, want)
+	}
+	got, want := shown.Actors["gob"], world.Actors["gob"]
+	if !proto.Equal(got, want) {
+		t.Errorf("the viewer holds gob as %v, the world as %v", got, want)
 	}
 }
