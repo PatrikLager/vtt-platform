@@ -66,10 +66,9 @@ func New(eyes Eyes, world *engine.State) *Projection {
 	return pr
 }
 
-// Event returns the frames the viewer, seeing through eyes, is sent for env,
-// given shown, the non-nil fold of every frame it was sent before, and st, the
-// non-nil state after env (SPEC-016). Never write to env, shown or st: a live
-// event is one envelope shared by every viewer.
+// Event returns the frames the viewer, seeing through eyes, is sent for env, given
+// shown, the non-nil fold of what it was sent before, and st, the non-nil world
+// after env (SPEC-016). Never write to any of them: every viewer shares env.
 func (pr *Projection) Event(eyes Eyes, env *vttv1.Envelope, shown, st *engine.State) []*vttv1.Envelope {
 	pr.through = eyes
 	pr.recall(shown, st)
@@ -368,7 +367,7 @@ func (pr *Projection) transitions(cause *vttv1.Envelope, seq int64, now sightVie
 	}
 
 	pr.sighted = now.sees
-	return append(out, pr.noteTransitions(cause, seq, st)...)
+	return append(out, pr.noteTransitions(seq, st)...)
 }
 
 // sceneSeenFor is the whole of what this viewer sees of sc now, never a
@@ -670,7 +669,7 @@ func sortedSceneIDsUnion(a, b map[string]map[string]bool) []string {
 }
 
 // noteTransitions keeps this viewer's notes to the public ones (SPEC-016).
-func (pr *Projection) noteTransitions(cause *vttv1.Envelope, seq int64, st *engine.State) []*vttv1.Envelope {
+func (pr *Projection) noteTransitions(seq int64, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	for _, key := range sortedSet(pr.notes) {
 		n, ok := st.Notes[key]
@@ -680,9 +679,6 @@ func (pr *Projection) noteTransitions(cause *vttv1.Envelope, seq int64, st *engi
 		delete(pr.notes, key)
 		out = append(out, &vttv1.Envelope{Sequence: seq,
 			Payload: &vttv1.Envelope_NoteDeleted{NoteDeleted: &vttv1.NoteDeleted{Key: key}}})
-	}
-	if nu := cause.GetNoteUpserted(); nu.GetVisibility() == vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC {
-		pr.notes[nu.GetKey()] = true
 	}
 	return out
 }

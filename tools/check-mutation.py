@@ -126,6 +126,10 @@ PACKAGES = [
     "./internal/rules/conformance/",       # ~48s
     "./internal/gateway/",                 # ~57s
     "./internal/adventure/",               # ~60s
+    # internal/perceive: the perception decision, moved out of internal/gateway
+    # with its own tests (docs/superpowers/plans/2026-10-15-the-perception-decision-leaves-the-gateway.md).
+    # One timeout is expected, a non-terminating objectInSight loop (tools/mutation-scope.md).
+    "./internal/perceive/",                # ~87s
     "./internal/campaign/",                # ~91s
     # internal/sight (visibility): pure geometry with no I/O — exactly what a
     # mutation gate is best at, and gated from its FIRST commit. internal/mapdef
@@ -139,8 +143,8 @@ PACKAGES = [
     # is baseline x TIMEOUT_COEFFICIENT, so it moves with how warm the cache was
     # AND with the suite's own runtime — which is why the spread is over two
     # minutes on code that only grew by a third. See tools/mutation-scope.md on
-    # why those four are the one honest case in this repo for counting a timeout
-    # as a detection.
+    # why those four, with internal/perceive's one, are the honest cases in this
+    # repo for counting a timeout as a detection.
     "./internal/sight/",                   # ~335s, much of it four unkillable timeouts
     "./internal/rules/",                   # ~393s -- the interpreter, 553 mutants
     "./internal/mcp/",                     # ~857s

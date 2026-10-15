@@ -260,7 +260,7 @@ internal/perceive/projection_internal_test.go  6.6
 internal/perceive/qa_testimony_eyes_test.go  0.0
 internal/perceive/roster_test.go  7.3
 internal/perceive/status_test.go  1.8
-internal/perceive/unseen_test.go  2.6
+internal/perceive/unseen_test.go  2.1
 internal/perceive/viewer_test.go  12.4
 internal/rules/compile.go  32.0
 internal/rules/compile_test.go  25.4

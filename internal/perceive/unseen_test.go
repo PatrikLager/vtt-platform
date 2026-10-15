@@ -10,8 +10,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
-// unseenWorld feeds a player who controls hero, standing at (1,1) before the
-// shut door at (3,1), every event it is handed, from an empty world.
+// unseenWorld feeds every event to a player whose hero stands before the shut door.
 type unseenWorld struct {
 	tb  testing.TB
 	st  *engine.State
@@ -127,5 +126,35 @@ func TestAnActorAddedAgainWithAnotherAttributeIsIntroducedAfresh(t *testing.T) {
 	}
 	if got := w.v.shown.Actors["scout"].GetAttributes()["weight"]; got != 2 {
 		t.Errorf("the viewer must hold the new scout's weight 2, holds %d", got)
+	}
+}
+
+// VTT-312
+func TestAProjectionStartedOverFromItsViewersFoldSendsWhatTheContinuingOneSends(t *testing.T) {
+	w := newUnseenWorld(t)
+	w.addScout(1)
+	eyes := perceive.Eyes{Controller: "p-1"}
+	resumed := perceive.New(eyes, w.st.Snapshot())
+	shown := w.v.shown.Snapshot()
+
+	w.seq++
+	// Keep the event id: it tells a forwarded frame from a correction.
+	env := envelope(w.seq, &vttv1.ConditionApplied{ActorId: "scout", ConditionId: "dazed"})
+	env.EventId = "e-dazed"
+	if err := engine.Apply(w.st, env); err != nil {
+		t.Fatal(err)
+	}
+	want := w.v.event(env, w.st)
+	if len(want) == 0 || want[len(want)-1].GetEventId() != "e-dazed" {
+		t.Fatalf("fixture: the continuing projection must forward the condition, sent %v", want)
+	}
+	got := resumed.Event(eyes, env, shown, w.st)
+	if len(got) != len(want) {
+		t.Fatalf("started over, the projection sent %d frames, the continuing one %d: %v", len(got), len(want), got)
+	}
+	for i := range got {
+		if !proto.Equal(got[i], want[i]) {
+			t.Errorf("frame %d: started over %v, continuing %v", i, got[i], want[i])
+		}
 	}
 }

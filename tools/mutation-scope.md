@@ -551,7 +551,7 @@ see *The timeouts were STARVATION* at the foot of this file. Both gates now name
 every cause they have evidence for, once per run rather than on every line, and
 both say not to change a test on the strength of one run's count.
 
-`internal/sight`, gated 2026-08-18, is the one entry here whose timeouts are
+`internal/sight`, gated 2026-08-18, was the first entry here whose timeouts are
 NOT a slow or blocked test and will not respond to a test change. It prints **4**, and the
 same 4 on every run rather than a figure that moves: they are the
 `INCREMENT_DECREMENT` mutants on the four grid-walk loop counters (`x++`/`y++`
@@ -560,6 +560,12 @@ the bound. That is genuine non-termination, not a slow test, so no test can be
 made to fail fast under them — the suite cannot fail under a mutant that never
 returns to it. They are the honest case for the ruling that a timeout counts as
 a detection.
+
+`internal/perceive`, gated 2026-10-15, has one of the same kind and prints **1**:
+`INCREMENT_DECREMENT` on `y++` in objectInSight's footprint walk, which counts
+down from a non-negative start until int32 wraps. It is NOT equivalent (an
+object lit only on a lower row would go unrevealed), so it is never to be
+adjudicated; its `x++` twin is killed.
 
 ## The order, and why gating is the LAST step
 
