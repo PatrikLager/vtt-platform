@@ -2,18 +2,27 @@
 
 ## Status
 
-Accepted. Implemented by `internal/gateway/project.go` (`Viewer`, `Projector`,
-`NewProjector`, `Project`, `perchSequence`, `reperch`, `sightView`, `look`,
-`eyes`, `transitions`, `sceneSeenFor`, `objectInSight`, `verdict`, `passIf`,
-`classify`, `canSeeSquare`, `doorTransitions`, `doorSubject`, `squareAt`,
-`squareKey`, `sortedSet`, `sortedSceneIDs`, `sortedSceneIDsUnion`,
-`noteTransitions`, `introduce`, `withdraw`, `actorBelief`, `beliefOf`,
-`snapshotSighted`, `correct`, `statusFrames`, `sameSet`, `forwardable`), over
-`internal/sight`'s `VisibleFrom` and `engine.IsPartyMember`; called from
+Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
+`Projection`, `New`, `Event`, `Perch`, `CanSee`, `recall`, `sameIncarnation`,
+`trueKeys`, `sightView`, `look`, `eyes`, `transitions`, `sceneSeenFor`,
+`objectInSight`, `verdict`, `passIf`, `classify`, `canSeeSquare`,
+`doorTransitions`, `doorSubject`, `squareAt`, `squareKey`, `sortedSet`,
+`sortedSceneIDs`, `sortedSceneIDsUnion`, `noteTransitions`, `introduce`,
+`withdraw`, `actorBelief`, `beliefOf`, `correct`, `statusFrames`, `sameSet`,
+`forwardable`), over `internal/sight`'s `VisibleFrom` and
+`engine.IsPartyMember`, and by `internal/gateway/project.go` (`Viewer`,
+`Projector`, `NewProjector`, `eyesFor`, `Project`, `perchSequence`,
+`reperch`), over `campaign.FoldPrefix`; called from
 `internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
-by `internal/gateway/project_test.go`, `project_internal_test.go`,
+by `internal/perceive/board_test.go`, `roster_test.go`, `status_test.go`,
+`history_test.go`, `unseen_test.go`, `deps_test.go`,
+`projection_internal_test.go` and `qa_testimony_eyes_test.go`, through the
+harness in `viewer_test.go`, and by
+`internal/gateway/project_test.go`, `project_internal_test.go`,
 `project_property_test.go`, `keystone_test.go`, `viewpoint_internal_test.go`,
-`server_visibility_test.go`, `qa_note_projection_test.go`,
+`server_visibility_test.go`, `resume_test.go`, `history_fold_test.go`,
+`qa_fold_memory_test.go`, `qa_note_projection_test.go`,
+`qa_note_adventure_test.go`,
 `qa_testimony_eyes_test.go`, `qa_testimony_sight_test.go`,
 `qa_testimony_removal_test.go`, `qa_move_reason_test.go` and
 `qa_issuer_test.go`.
@@ -34,32 +43,40 @@ with the event itself, the same pointer, and reads no state. It answers any
 role but those and `identity.RolePlayer` and `identity.RoleSpectator` with
 nothing; `identity.Role` is a string, and `identity.Verify` keeps a stored role
 that does not parse from reaching a seat (SPEC-009). For a player or a
-spectator it answers a nil state with nothing, and otherwise computes `look`
-over the state and asks `classify` for a verdict. For `unrecognised` it sends
-nothing at all, `transitions`' frames included, since it cannot tell what the
-event did to the world; for `withheld` it sends `transitions`' frames; for
-`forwarded`, those frames and then `forwardable`'s answer: a copy of the event
-with its `participant_id` and `actor_role` cleared, a `TokenMoved`'s or a
+spectator it answers a nil state with nothing; otherwise it folds the frames
+it has sent with `campaign.FoldPrefix`, which is the viewer's fold, answers
+nothing when that fold fails (below), and hands `Projection.Event` the
+viewer's eyes, the event, that fold and the state, and adds what it returns to
+the frames it has sent. `Event` rebuilds its memory from the viewer's fold
+(`recall`), computes `look` over the state and asks `classify` for a verdict.
+For `unrecognised` it sends nothing at all, `transitions`' frames included,
+since it cannot tell what the event did to the world; for `withheld` it sends
+`transitions`' frames; for `forwarded`, those frames and then
+`forwardable`'s answer: a copy of the event with its `participant_id` and
+`actor_role` cleared, a `TokenMoved`'s or a
 `ResourceChanged`'s `reason`, a `ConditionApplied`'s `source` and a
 `ConditionRemoved`'s `reason` cleared, and every other field as the event has
 it. No envelope `Project` sends a player or a spectator carries its own
 `participant_id` or `actor_role`, which name who issued the event; a control
 event's `participant_id` is its subject and is sent. Presence names every
-connected participant (SPEC-011). `Project` writes to neither the event nor the
-state, and every frame it builds is new (each
+connected participant (SPEC-011). `Event` writes to none of the event, the
+viewer's fold and the state, and every frame it builds is new (each
 `&vttv1.Envelope{`, each element of a `[]*vttv1.Envelope{{` literal, and
-`forwardable`'s `proto.Clone`, in `project.go`): a live event is one envelope,
-since `store.notifyLocked` enqueues the same pointer to every subscriber. Which
-seats call `Project` (`seat.receive` alone: `grep -rn '\.Project('` over the
-non-test Go files) and with which state is SPEC-015's.
+`forwardable`'s `proto.Clone`, in `projection.go`): a live event is one
+envelope, since `store.notifyLocked` enqueues the same pointer to every
+subscriber. Which seats call `Project` (`seat.receive` alone: `grep -rn
+'\.Project('` over the non-test Go files) and with which state is SPEC-015's.
 
-**Whose eyes a viewer has.** `eyes` gives a player every actor in `st.Actors`
-whose `ControllerIds` holds the player's participant id, sorted, and ignores
-`Viewpoint`, which comes from the client. It gives a spectator the actor its
-`Viewpoint` names when `st.Actors` holds it and `engine.IsPartyMember` accepts
-it, and otherwise none, the empty viewpoint included. `MayPerch` refuses a
-player's perch and a non-party shoulder first (SPEC-015), and `eyes` refuses a
-non-party shoulder again with the same predicate. Every other role has none.
+**Whose eyes a viewer has.** `eyesFor` turns a `Viewer` into `perceive.Eyes`:
+a player's participant id as `Controller`, ignoring `Viewpoint`, which comes
+from the client; a spectator's `Viewpoint` as `Shoulder`; and for every other
+role neither. `eyes` gives a `Controller` every actor in `st.Actors` whose
+`ControllerIds` holds it, sorted. Without one, it gives a `Shoulder` the actor
+it names when `st.Actors` holds it and `engine.IsPartyMember` accepts it, and
+otherwise none, the empty shoulder included. `MayPerch` refuses a player's
+perch and a non-party shoulder first (SPEC-015), and `eyes` refuses a
+non-party shoulder again with the same predicate. `perceive` knows no role:
+it does not import `internal/identity` (VTT-311).
 
 **What a look sees.** `look` walks each eye's tokens that stand in a scene
 `st` holds. Each such scene gets an entry whether or not anything is visible
@@ -74,38 +91,49 @@ to every actor it controls, with a token in sight or none. Its `sees` are the
 viewer's eyes and those tokens' actors, the party members no eye sees left
 out. `look` runs on every call, keeps no memo, and writes nothing to `st`.
 `canSeeSquare` answers whether one square of one scene is in a look, and false
-for a missing position.
+for a missing position. `CanSee` asks it of a fresh `Projection`'s look, so it
+records nothing.
 
-**What the projector remembers.** `NewProjector` gives a `Projector` its maps,
-each empty. `scenes` holds the scenes introduced to the viewer and loses none
-(`grep -n 'delete(pr.scenes' internal/gateway/project.go` prints nothing, and
-no code under `internal/` deletes from a state's `Scenes`). `actors` holds the
-actors introduced, and loses one only when `st` no longer holds it and
-`sighted` does, or when `withdraw` takes it out before an introduction (`grep
--n 'delete(pr.actors' internal/gateway/project.go` prints those two lines).
-`gone` marks an actor in `actors` that the world removed while `sighted` did
-not hold it: the viewer was not told, so it stays in `actors` with its belief
-frozen until `withdraw`, even once `st` holds the id again. `tokens` holds the
-tokens on the viewer's board now. `seen` holds, per scene, the visible set
-last sent. `doors` holds, per scene, the door squares the viewer believes
-open. `notes` holds the keys of the notes the viewer holds; `noteTransitions`
-removes a key when `st` no longer holds the note or holds it with any
-visibility but `NOTE_VISIBILITY_PUBLIC`. `sighted` holds the look's `sees` as
-the last `transitions` left it, by an event or by a perch. `belief` holds, per
-actor in `actors`, an `actorBelief`: the current value of each resource, its
-condition ids, its controllers and its kind, the four things of an actor an
-event can change, since `ActorAdded` alone writes its name, attributes and
-each resource's maximum. A belief is written by `beliefOf` from `st` only
-where the viewer's fold equals `st` for that actor: when `introduce` sends it
-or `correct` brings it up to date, and, in `snapshotSighted` after every
-`transitions`, for each actor in `sighted`, every event about which was
-forwarded, and each in the new `sees`, which an introduction or a correction
-has just brought up to date. So an actor no eye sees keeps the belief it had
-when the viewer last saw it. The maps are a function of the whole log prefix
-the projector was fed, of the viewer, and of the perches applied along the
-way, not of the current state: an actor seen and then hidden stays in
-`actors`, which no state records. So a projector is fed the log from its first
-event and never seeded from a state; the seat feeds it so (SPEC-015).
+**What the projection remembers.** The `Projector` keeps `sent`, every frame
+`Project` and `reperch` have returned to a player or a spectator and nothing
+else (`grep -n 'pr.sent =' internal/gateway/project.go` prints their two
+appends), and folds it at every event and perch it projects; that fold, the
+viewer's, is the projection's memory. `Event` and `Perch` start with `recall`, which rebuilds every map but
+`sighted` from it: `scenes` holds its scenes; `seen`, per scene, the squares
+its `Visible` marks, a scene with none left out; `doors`, per scene, the
+squares its `OpenDoors` marks open; `tokens` its tokens; `notes` its notes'
+keys; `actors` its actors; and `belief`, per actor, `beliefOf`'s
+`actorBelief`: the current value of each resource, its condition ids and its
+controllers in the order the fold holds them, and its kind, the four things of
+an actor an event can change, since `ActorAdded` alone writes its name, module
+id, attributes, module data, and its resources' names and maxima. `recall` marks
+`gone` each actor the fold holds that `st` holds as another, one that differs
+in a field only `ActorAdded` writes (`sameIncarnation`); the viewer never saw
+it removed. Within one call, `transitions` forgets an actor the fold holds and
+`st` does not when `sighted` holds it, since `classify` forwarded its
+`ActorRemoved`, and marks every other such actor gone; `withdraw` takes an
+actor out of `actors`, `belief` and `gone`, and `introduce` puts one into
+`actors`, as each sends. So an actor no eye sees keeps, in the fold, the
+status it had when the viewer last saw it, and an
+actor removed while the viewer did not see it stays there until `withdraw`
+sends its bare `ActorRemoved`, which happens only before its id is introduced
+again; when `st` adds it again as the same actor, it is not gone, and it is
+corrected when it comes into sight. `sighted` alone is carried from call to
+call: the look's `sees` as the last `transitions` left it, by an event or by a
+perch. `New` starts it empty, or, handed a world, with the `sees` of a look at
+that world. So what a projection sends is a function of the viewer's fold, the
+world, the eyes and the last look's `sees`, and a `Projection` built by `New`
+from the world at any prefix of the log, and handed the fold of the frames
+sent to that point, sends from then on what one fed from the first event
+sends (VTT-312). The `Projector` starts from nothing, and the seat feeds it
+from the log's first event (SPEC-015).
+
+**When the viewer's fold fails.** When `campaign.FoldPrefix` refuses `sent`,
+`Project` logs the event's sequence and the error with `slog.Error`, and
+`reperch` the error, and each sends nothing (VTT-314). The frames that broke
+the fold were returned by the call that produced them, and every later fold
+includes them, so the seat is sent no further event or perch frame on that
+connection, as SPEC-015 says of the world's fold.
 
 **What `transitions` sends, in order.** `transitions` first forgets each actor
 `actors` holds that `st` does not and `sighted` does, and marks gone each
@@ -130,8 +158,9 @@ has one; and every object of the scene any square of whose footprint is
 visible, so an object is sent whole, and one with a width or height below one
 is never sent, as `sight.Blockers` casts no shadow for it. A scene no eye
 stands in any more is sent an empty `SceneSeen` and leaves `seen`, so it is
-reported dark once; when the set last sent was already empty, nothing is sent
-and the scene stays in `seen`. Each scene therefore precedes the doors, tokens
+reported dark once; a scene whose last set sent was empty is not in `seen`,
+which `recall` leaves it out of, so nothing is sent. Each scene therefore
+precedes the doors, tokens
 and `SceneSeen` in it, and each actor its grants, conditions and tokens, the
 order `engine.Apply` and `client/src/fold.ts` both require. A token's
 departure precedes any arrival, which no fold requires, so the board never
@@ -140,26 +169,30 @@ frames is over a sorted set or a slice, so one log projects to one stream of
 frames. Last, `noteTransitions` walks `notes` by key: a key whose note `st` no
 longer holds, or holds with any visibility but `NOTE_VISIBILITY_PUBLIC`, is
 forgotten and sent as a `NoteDeleted` carrying that key and the event's
-sequence and nothing else; and the key of a causing `NoteUpserted` whose
-visibility is `NOTE_VISIBILITY_PUBLIC` is remembered. A perch changes no note,
+sequence and nothing else. A `NoteUpserted` `classify` forwards reaches
+`notes` through the viewer's fold at the next call. A perch changes no note,
 so it sends no note frame.
 
 **The correction on sight.** `correct` hands `statusFrames` the actor's belief
 and its present state, and sends what it returns, each frame carrying the
 event's sequence and nothing else of an envelope, no event id, time, role,
-participant or session, and no reason or source: one `ResourceChanged` per
-resource whose current value differs, by name, with `delta` the difference and
-`new_value` the present value, and, where the difference does not fit `int32`,
-first one with `delta` 0 and `new_value` 0, which the fold's floor makes true
-from a value below zero; one `ConditionRemoved` per condition the belief holds
-and `st` does not, in the belief's order, then one `ConditionApplied` per
-condition `st` holds and the belief does not, in `st`'s order; one
-`ActorControlGranted` per controller `st` holds and the belief does not,
-carrying the present kind, and, when the kind differs and no such grant is
-sent, one re-stating the belief's first controller with the present kind; then
-one `ActorControlRevoked` per controller the belief holds and `st` does not.
-Conditions and controllers are compared as sets, so a change undone while the
-viewer did not see it sends nothing. When the belief's resources are not the
+participant or session, and no reason or source. First, one `ResourceChanged`
+per resource whose current value differs, in sorted name order, with `delta`
+the difference and `new_value` the present value, and, where the difference
+does not fit `int32`, first one with `delta` 0 and `new_value` 0, which the
+fold's floor makes true from a value below zero. Then one `ConditionRemoved`
+per condition the belief holds and `st` does not, in the order the viewer's
+fold holds them. Then one `ConditionApplied` per condition `st` holds and the
+belief does not, in `st`'s order. Then one `ActorControlGranted` per
+controller `st` holds and the belief does not, in `st`'s order, carrying the
+present kind, and, when the kind differs and no such grant is sent, one
+re-stating the first controller the viewer's fold holds, with the present
+kind. Then one `ActorControlRevoked` per controller the belief holds and `st`
+does not, in the fold's order. Conditions and controllers are compared as
+sets, so a change undone while the viewer did not see it sends nothing, and
+the viewer's fold can hold an actor's conditions and controllers, and so the
+first controller `engine.Apply` mirrors into `controller_id`, in another order
+than `st` holds them. When the belief's resources are not the
 actor's, or the kind differs, no grant carries it, and the belief holds no
 controller or the present kind is unspecified, `correct` sends `withdraw`'s
 bare `ActorRemoved` and then `introduce`'s frames instead; both folds accept
@@ -187,7 +220,7 @@ table, and `add_narration` is open to the player, the DM and the agent
 that held the token a `TokenHidden` once `st` no longer has it; `TokenHidden`
 and `SceneSeen`, which only the projection issues (`grep -rn
 'Envelope_TokenHidden{\|Envelope_SceneSeen{'` over the non-test Go under
-`internal/` and `cmd/` prints only `project.go`); and `AdventureLoaded`, a
+`internal/` and `cmd/` prints only `projection.go`); and `AdventureLoaded`, a
 no-op for `engine.Apply` whose batch's events are each projected on their own.
 It forwards `NoteUpserted` when its visibility is `NOTE_VISIBILITY_PUBLIC` and
 withholds it for every other value, `NOTE_VISIBILITY_UNSPECIFIED` included, so
@@ -216,22 +249,24 @@ payload, and an envelope with none, is `unrecognised`;
 fails on a payload `classify` answers `unrecognised`.
 
 **A perch.** `reperch` sets `Viewpoint` to the actor named, answers a nil
-state with nothing, and otherwise returns `transitions` with no causing event
-and `perchSequence` against a fresh look. So what the new eyes see that the
-projector's memory lacks is introduced, a held actor they see that `sighted`
+state with nothing, and otherwise folds `sent` and hands `Projection.Perch`
+the new eyes, that fold, the state and `perchSequence`; `Perch` rebuilds its
+memory as `Event` does and returns `transitions` with no causing event against
+a fresh look. So what the new eyes see that the viewer's fold lacks is
+introduced, a held actor they see that `sighted`
 does not hold is corrected, the new shoulder itself included, a token they do
 not see leaves the board as a `TokenHidden`, a scene no eye stands in any more
 is reported dark, and no terrain is withdrawn, since no frame withdraws it.
-What the memory never held is served in full whenever it comes into sight, so
+What the fold never held is served in full whenever it comes into sight, so
 a shoulder a burst of perches flew past (SPEC-015) is served in full when
 named again. When a perch runs, and against which state, is SPEC-015's.
 
-**The sequence every frame carries.** `Project` hands `transitions` the
+**The sequence every frame carries.** `Event` hands `transitions` the
 event's sequence, and every frame it builds carries it, as the forwarded event
 does: one event's frames share one sequence, and a condition an introduction
 carries, or a change a correction carries, bears that frame's sequence, not
-the one it was applied at. `reperch` hands `transitions` `perchSequence`,
-which is 0. What a resume cursor does with either is SPEC-015's.
+the one it was applied at. `reperch` hands `Perch` `perchSequence`, which is
+0. What a resume cursor does with either is SPEC-015's.
 
 **What this record does not decide.** Which seats are projected, the state a
 seat hands `Project`, what its resume cursor drops, when a perch is taken and
@@ -251,8 +286,11 @@ A client author, and whoever changes the code, are bound by these:
   share one sequence.
 - A viewer learns of a scene, an actor or a token only from the projection's
   introductions, and is never introduced to one it holds; both folds refuse a
-  second. A token that leaves sight is placed again when it returns, and an
-  actor id the world uses again is introduced afresh.
+  second. A token that leaves sight is placed again when it returns. An actor
+  the world adds again is introduced afresh when the viewer no longer holds
+  its id, or holds one that differs in a field only `ActorAdded` writes, and
+  is corrected otherwise; a party member added again as another is introduced
+  at once, seen or not, since it is on every roster.
 - A scene once introduced is never withdrawn, and its terrain arrives only as
   it is seen.
 - The newest `SceneSeen` of a scene is the viewer's visible set there; an
@@ -283,11 +321,14 @@ A client author, and whoever changes the code, are bound by these:
   `remove_actor` takes the tokens first, and an actor no token stands for is
   seen only as an eye.
 - An actor removed while the viewer did not see it stays in the viewer's fold,
-  with the status it had when last seen, until its id is introduced again; a
-  bare `ActorRemoved` precedes that introduction and is sent at no other time
-  but a correction's re-introduction.
-- The conditions and controllers a correction brings need not keep the
-  server's order, and a corrected condition carries no source.
+  with the status it had when last seen. When the world adds its id again as
+  another actor, a bare `ActorRemoved` precedes the introduction; added again
+  as the same actor, it is corrected when it comes into sight. A bare
+  `ActorRemoved` is sent at no other time than these two: before that
+  introduction, and before a correction's re-introduction.
+- A viewer's fold need not hold an actor's conditions and controllers, nor so
+  its `controller_id`, in the server's order, and a corrected condition
+  carries no source.
 - A player's and a spectator's fold holds exactly the notes whose visibility
   is `NOTE_VISIBILITY_PUBLIC`. A note that stops being public and a note that
   is deleted reach them as the same bare `NoteDeleted`, so they cannot tell
@@ -297,6 +338,17 @@ A client author, and whoever changes the code, are bound by these:
 - Nothing may write to an envelope a seat is handed: a live event is one
   envelope shared by every seat. Nor to the state `Project` reads, which is
   the seat's own fold and which `perch` reads again.
+- Every frame a `Projector` returns to a player or a spectator is added to
+  `sent`, and nothing else is: its fold stands for what the viewer holds, and
+  is the projection's memory.
+- A projection can be started at any prefix of the log from the world and the
+  fold of what its viewer was sent, and sends what one fed from the first
+  event sends.
+- A seat whose sent frames stop folding is sent no further event or perch
+  frame on that connection.
+- No file of `internal/perceive`, test files included, imports a package of
+  this module but its own, `contract`, `engine` and `sight`;
+  `.go-arch-lint.yml`'s `perceive` component allows the same.
 - No envelope a player or a spectator is sent carries its own
   `participant_id` or `actor_role`, and no `TokenMoved`, `ResourceChanged`,
   `ConditionApplied` or `ConditionRemoved` it is sent carries a `reason` or a
@@ -309,8 +361,9 @@ A client author, and whoever changes the code, are bound by these:
 
 VTT-194, VTT-195, VTT-196, VTT-197, VTT-198, VTT-199, VTT-200, VTT-201,
 VTT-202, VTT-203, VTT-204, VTT-205, VTT-206, VTT-208, VTT-209, VTT-210,
-VTT-211, VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218,
-VTT-219, VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226,
-VTT-227, VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
-VTT-241, VTT-242, VTT-243, VTT-244, VTT-245, VTT-246, VTT-247, VTT-248,
-VTT-249, VTT-250, VTT-251, VTT-252, VTT-262, VTT-272, VTT-273.
+VTT-212, VTT-213, VTT-214, VTT-215, VTT-216, VTT-217, VTT-218, VTT-219,
+VTT-220, VTT-221, VTT-222, VTT-223, VTT-224, VTT-225, VTT-226, VTT-227,
+VTT-233, VTT-234, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239, VTT-241,
+VTT-242, VTT-243, VTT-244, VTT-245, VTT-246, VTT-247, VTT-248, VTT-249,
+VTT-250, VTT-251, VTT-252, VTT-262, VTT-272, VTT-273, VTT-311, VTT-312,
+VTT-313, VTT-314.

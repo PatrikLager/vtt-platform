@@ -6,7 +6,8 @@ Accepted. Implemented by `internal/gateway/seat.go` (`viewerFor`, `projected`,
 `seat`, `perchBox`, `newPerchBox`, `set`, `take`, `newSeat`, `subscribeFrom`,
 `receive`, `pastResume`, `perch`, `canSee`, `catchUp`) and
 `internal/gateway/viewpoint.go` (`MayPerch`), over `internal/campaign`'s
-`FoldPrefix` and the `Projector` in `internal/gateway/project.go`; called from
+`FoldPrefix`, the `Projector` in `internal/gateway/project.go` and
+`internal/perceive`'s `CanSee`; called from
 `internal/gateway/server.go` (`serve`, `handleSetViewpoint`, `handleCommand`)
 and `authz.go` (`Authorize`); pinned by `internal/gateway/viewpoint_test.go`,
 `viewpoint_internal_test.go`, `server_visibility_test.go` and
@@ -42,9 +43,10 @@ folds the whole slice with `campaign.FoldPrefix`, hands `Project` the event and
 that state, and keeps the state as `world`: each event is judged against the
 state after it, from what this seat has received, and never against
 `campaign.State()`, which during catch-up is ahead of the event being judged.
-Every event folds the whole prefix received so far, with campaign's fold; the
-gateway keeps none of its own. That a projector must be fed from the start of
-the log is the `Projector`'s (SPEC-016).
+Every event folds the whole prefix received so far with campaign's fold, and
+the `Projector` folds the frames it has sent with the same fold (SPEC-016);
+the gateway keeps no fold of its own. A `Projector` starts having sent
+nothing, so the seat feeds it the log from its first event.
 
 **What a projected seat drops.** `pastResume` keeps the frames whose sequence
 is strictly greater than `resume`, as `store.Subscribe` keeps `seq >
@@ -68,11 +70,14 @@ validates its envelopes against a snapshot of the live state under that
 not fold. `campaign.Open` takes the directory's writer hold before it opens
 the log (SPEC-019), so a second `Campaign` on one directory, in this process
 or another, is refused before it can append; a seat reaches this arm only on a log written
-without the hold, and the next `Open` refuses that log too.
+without the hold, and the next `Open` refuses that log too. When the fold of
+the frames a `Projector` has sent fails instead, it sends nothing for the
+event and nothing after (SPEC-016).
 
 **The viewpoint a connection opens with.** `viewerFor` gives the
-participant's id and role and an empty `Viewpoint`. `eyes` reads an empty
-viewpoint as no eyes, and ignores `Viewpoint` for a player (SPEC-016), so a
+participant's id and role and an empty `Viewpoint`. `eyesFor` ignores
+`Viewpoint` for a player, and `eyes` reads an empty shoulder as no eyes
+(SPEC-016), so a
 spectator's connection is shown no board until a perch names a shoulder, and no
 shoulder is chosen for them. The viewpoint lives in the seat, which `serve`
 makes per connection.
@@ -110,12 +115,13 @@ frame of a perch carries `perchSequence`, which is 0, and a perch's output
 never passes `pastResume`, so no resume cursor filters it. Neither
 `handleSetViewpoint` nor `perch` appends to the log (SPEC-007 names
 `set_viewpoint` among the commands that append nothing). What `reperch` sends,
-and that a shoulder named again is served in full, since the projector's
-memory never held it, are SPEC-016's.
+and that a shoulder named again is served in full, since the viewer's fold
+never held it, are SPEC-016's.
 
-**`canSee`.** `canSee` builds a fresh `Projector` for the viewer, asks `look`
-once and answers `canSeeSquare` for one square, so no seat's projector is
-touched. The move gate in `handleCommand` is its one production caller
+**`canSee`.** `canSee` hands `perceive.CanSee` the viewer's eyes (`eyesFor`),
+which asks a fresh `Projection`'s `look` once and answers `canSeeSquare` for
+one square, so no seat's projection is touched. The move gate in
+`handleCommand` is its one production caller
 (`grep -rn 'canSee('` over the non-test files; SPEC-013).
 
 **A projected seat's catch-up.** For a projected seat `catchUp` runs each
@@ -130,8 +136,8 @@ command path to `MayPerch` and `perchBox.set` and the role table are
 SPEC-013's; that `set_viewpoint` appends nothing and what `CatchUpHead` means
 to a client are SPEC-007's; re-resolution, and that a perch's frames are not
 re-checked, are SPEC-009's; what a projection computes (`Project`, `reperch`,
-`eyes`, `look`, `canSeeSquare`, `perchSequence`, the `Viewer` type) is
-SPEC-016's; what a party member is, is
+`eyesFor`, `eyes`, `look`, `canSeeSquare`, `CanSee`, `perchSequence`, the
+`Viewer` type) is SPEC-016's; what a party member is, is
 `engine.IsPartyMember`'s.
 
 ## Consequences
@@ -145,7 +151,8 @@ A client author, and whoever changes the code, are bound by these:
 - A perch refusal says nothing about whether the actor exists.
 - The DM's and the agent's streams are the log.
 - Every connection of a player or a spectator replays the log from its start
-  on the server, one fold of the prefix per event.
+  on the server, with two folds per event: of the prefix, and of the frames
+  it was sent.
 - A seat is touched from the pump alone once its catch-up is drained, and
   never from a second goroutine through a lock.
 - Append to `log.db` only through a `Campaign`: `campaign.Open` alone takes

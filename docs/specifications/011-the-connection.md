@@ -77,7 +77,8 @@ Each of these ends the one connection it happened on and no other.
 **The catch-up head is the seat's, not the log's.** `newSeat` decides what the
 connection may receive and where its subscription starts: the DM and the agent
 are unprojected and subscribe from `after`; a projected seat subscribes from 0
-so the projector can fold the prefix, and frames at or below `after` are
+so it can fold the prefix and feed its projector from the log's first event
+(SPEC-015), and frames at or below `after` are
 dropped on the way out. `seat.catchUp` returns the store's catch-up head
 untouched for an unprojected seat and drains nothing: the last sequence queued
 for it, or `after` itself when the log holds nothing newer. For a projected

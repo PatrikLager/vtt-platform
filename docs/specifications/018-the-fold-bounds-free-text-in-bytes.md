@@ -134,7 +134,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `TileRef.kind`, `TileRef.material` | `BuildSceneCreated` writes them from `StandardTile`'s vocabulary |
 | `TileRef.art`, `SceneObject.art` | `BuildSceneCreated` writes an art id only when `internal/artlib` resolves it, and `isArtID` refuses one longer than `maxArtIDLen` |
 | `SceneCreated.tiles` keys | `BuildSceneCreated` writes a key only for a square of the grid |
-| `TokenHidden.token_id`, `SceneSeen.scene_id`, `SceneSeen.tiles`, `SceneSeen.visible` | none reaches the log: `internal/gateway/project.go` builds them for one viewer from folded state (SPEC-016) |
+| `TokenHidden.token_id`, `SceneSeen.scene_id`, `SceneSeen.tiles`, `SceneSeen.visible` | none reaches the log: `internal/perceive/projection.go` builds them for one viewer from folded state (SPEC-016) |
 | `Envelope.event_id`, `Envelope.participant_id`, `Envelope.actor_role`, and `Envelope.session_id` but a `SessionStarted`'s | the server writes them: `newEventID`, the issuing participant's id and role, and `stampSessionIDAgainst`, which writes the open session's id or none |
 | `AttackRolled.attacker_id`, `AttackRolled.target_id`, `AttackRolled.expression`, `AttackRolled.versus`, `AttackRolled.outcome`, `Modifier.source` | nothing in production writes an `AttackRolled`, and `engine.Apply` reads none of it |
 | `SceneObject.kind` | nothing: it is a map's or an adventure's object `kind`, which no loader checks, and the fold keeps it; `describeBlockage` clips it where a player's move refusal names it (SPEC-013) |
@@ -142,7 +142,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 The cells that say nothing or none rest on these searches, each a `git grep`
 over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
-'TokenHidden\{|SceneSeen\{'` prints only `internal/gateway/project.go`;
+'TokenHidden\{|SceneSeen\{'` prints only `internal/perceive/projection.go`;
 `'AttackRolled{'` prints nothing; `ModuleData` prints nothing, so a
 `module_data` reaches the log only inside an `add_actor`'s actor, which
 `ToEvent` copies whole; and `-E 'o\.Kind|obj\.Kind' -- internal/mapdef
