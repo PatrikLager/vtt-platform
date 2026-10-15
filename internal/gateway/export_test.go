@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -66,4 +67,9 @@ func PlayerRuleCommandsForTest() []string {
 // otherwise be a guard nobody drives.
 func AuthorizeUndecidedForTest(p *identity.Participant, name string) error {
 	return authorizePlayer(p, nil, nil, name)
+}
+
+// ReperchForTest drives the perch path for VTT-312's test.
+func (pr *Projector) ReperchForTest(actorID string, st *engine.State) []*vttv1.Envelope {
+	return pr.reperch(actorID, st)
 }

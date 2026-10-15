@@ -140,7 +140,7 @@ internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
 internal/gateway/convert.go  8.6
 internal/gateway/convert_test.go  14.3
-internal/gateway/export_test.go  49.2
+internal/gateway/export_test.go  47.0
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  40.7
 internal/gateway/history_fold_test.go  3.7
@@ -180,6 +180,7 @@ internal/gateway/qa_testimony_eyes_test.go  0.0
 internal/gateway/qa_testimony_removal_test.go  0.0
 internal/gateway/qa_testimony_sight_test.go  0.0
 internal/gateway/remove_actor_test.go  34.0
+internal/gateway/resume_test.go  3.2
 internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  20.4
 internal/gateway/scenario_test.go  31.2
