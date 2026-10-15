@@ -1,0 +1,90 @@
+{
+  "Actors": {
+    "gob": {
+      "actor_id": "gob",
+      "controller_id": "p1",
+      "controller_ids": [
+        "p1",
+        "p2"
+      ],
+      "kind": 1,
+      "name": "Old Gob",
+      "resources": {
+        "vigor": {
+          "current": 5,
+          "max": 5
+        }
+      }
+    },
+    "hero": {
+      "actor_id": "hero",
+      "kind": 1,
+      "name": "hero"
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "s1": {
+      "GridHeight": 5,
+      "GridWidth": 5,
+      "ID": "s1",
+      "Name": "s1",
+      "Objects": [],
+      "OpenDoors": {},
+      "Tiles": {},
+      "Visible": {
+        "0,0": true,
+        "0,1": true,
+        "0,2": true,
+        "0,3": true,
+        "0,4": true,
+        "1,0": true,
+        "1,1": true,
+        "1,2": true,
+        "1,3": true,
+        "1,4": true,
+        "2,0": true,
+        "2,1": true,
+        "2,2": true,
+        "2,3": true,
+        "2,4": true,
+        "3,0": true,
+        "3,1": true,
+        "3,2": true,
+        "3,3": true,
+        "3,4": true,
+        "4,0": true,
+        "4,1": true,
+        "4,2": true,
+        "4,3": true,
+        "4,4": true
+      }
+    }
+  },
+  "Sessions": [
+    {
+      "EndSeq": 0,
+      "ID": "s",
+      "Name": "n",
+      "StartSeq": 1
+    }
+  ],
+  "Tokens": {
+    "t-gob3": {
+      "ActorID": "gob",
+      "ID": "t-gob3",
+      "SceneID": "s1",
+      "X": 3,
+      "Y": 1
+    },
+    "t-hero": {
+      "ActorID": "hero",
+      "ID": "t-hero",
+      "SceneID": "s1",
+      "X": 1,
+      "Y": 1
+    }
+  },
+  "headSequence": 15
+}
