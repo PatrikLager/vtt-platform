@@ -185,7 +185,10 @@ against a fresh snapshot under its own lock, where `engine.Apply`'s
 its `NoteUpserted` arm upserts. So a second load of the same adventure is
 refused by `checkCollisions`, or by the re-fold when its snapshot predates the
 first, and a note upserted on the same key between the two calls is overwritten
-rather than refused. `docs/verification-debt.md` carries it under Open debt.
+rather than refused. The overwrite is accepted by the owner's ruling of
+2026-10-15, which closes its entry in `docs/verification-debt.md`: the
+adventure's note, public, then holds the key, and the log keeps the note it
+replaced.
 
 ## Consequences
 

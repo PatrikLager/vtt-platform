@@ -419,6 +419,18 @@ so the overwrite also replaces a DM-only note on that key with the
 adventure's public one: the DM's text leaves the current state, the log keeps
 it, and no frame a player or spectator is sent carries it.
 
+**Closed 2026-10-15 by the owner's ruling, not by a change.** The overwrite
+stays. It needs a second connection of the DM or the agent to upsert a note,
+on a key the adventure declares, between one `load_adventure`'s `authorize`
+and its `AppendBatch`; one connection's read loop answers a command before it
+reads the next (SPEC-013). The ruling's ground is that such a write must land
+within that window, on that key, and that a table has either a human or an
+agent as its DM, which the gateway does not enforce. Should a table ever need
+it closed, the check has to run under the campaign's lock in the same hold as
+the append: re-reading the state in `handleLoadAdventure` before `AppendBatch`
+only narrows the window, and the recipe's test passes on that all the same
+(measured 2026-10-15 in a copy of `8217272`).
+
 **VTT-149's door bound is unobserved from above on the y axis.** `mayWorkDoor`
 in `internal/gateway/authz.go` accepts a player's door command when a
 controlled token on the door's scene stands at most one square from it on each
