@@ -793,3 +793,26 @@ tool`. Closing it needs the comment corrected in `commands.proto` and the
 generated code regenerated with `task generate:contract`, as a contract change
 of its own. Recorded 2026-10-14 by the promotion report, from its QA agent's
 finding, on the owner's ruling.
+
+**After a dropped frame set, a restart handed the world before the event
+goes unseen.** When a character's frames do not fold onto its log,
+`fanOutLocked` in `internal/campaign/fanout.go` resumes its decision with
+`perceive.Resume(eyesOf(id), l.fold, world)`, the world after the event. The
+world before would let `classify` forward a status event about an actor that
+has just left sight, from the previous `sighted`. Recipe: replace `world`
+with `before` in that call; the campaign and gateway suites stay green.
+Labels: `test data missing`. It needs a drop at an event that changes the
+character's sight, which no forged drop reached; closing it needs such a
+fixture under VTT-320. Recorded 2026-10-16 by the each-party-member-keeps-
+its-own-log ticket's Task 8 review.
+
+**A failed resume lead in `fanOutLocked` is unreachable and unheld.** When a
+paused log resumes, its session bridge and hides are folded first, and the
+branch for a lead that does not fold leaves the log paused. No history
+reaches it: each entry folds by construction (the bridge ends a session only
+when the log holds one open and starts one only after that end or when it
+holds none, and `TokenHidden` is a no-op for an absent token). Were it
+reached, the pause would exist only in memory, and a reopen would resume the
+log through `perceive.Resume` without its bridge or hides. Labels:
+`outside the tool`. Closing it needs a fault inside the fold of a resume's
+lead. Recorded 2026-10-16 by the same ticket's Task 6 review.
