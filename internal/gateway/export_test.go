@@ -6,6 +6,7 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
 // Test hooks for the three hand-written lists that authorization depends on:
@@ -72,4 +73,10 @@ func AuthorizeUndecidedForTest(p *identity.Participant, name string) error {
 // ReperchForTest drives the perch path for VTT-312's test.
 func (pr *Projector) ReperchForTest(actorID string, st *engine.State) []*vttv1.Envelope {
 	return pr.reperch(actorID, st)
+}
+
+// NewProjectorWithSentForTest is a Projector for v that has sent sent and sees
+// nothing yet: a character log's decision at its opening or a resume (VTT-319).
+func NewProjectorWithSentForTest(v Viewer, sent []*vttv1.Envelope) *Projector {
+	return &Projector{viewer: v, sent: append([]*vttv1.Envelope(nil), sent...), projection: perceive.New(eyesFor(v), nil)}
 }

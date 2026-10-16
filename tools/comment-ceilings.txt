@@ -142,11 +142,12 @@ internal/gateway/adventure_test.go  26.8
 internal/gateway/artfile_internal_test.go  28.8
 internal/gateway/authz.go  13.3
 internal/gateway/authz_test.go  36.4
+internal/gateway/character_log_test.go  5.5
 internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
 internal/gateway/convert.go  8.6
 internal/gateway/convert_test.go  14.3
-internal/gateway/export_test.go  47.0
+internal/gateway/export_test.go  45.9
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  40.7
 internal/gateway/history_fold_test.go  2.8
