@@ -272,6 +272,9 @@ func (c *Campaign) appendLocked(envs []*vttv1.Envelope) (int64, error) {
 	for _, env := range envs {
 		c.log.Notify(env)
 	}
+	for _, e := range entries {
+		c.log.NotifyCharacter(e.ActorID, e.Env)
+	}
 	return firstSeq, nil
 }
 
@@ -346,6 +349,17 @@ func (c *Campaign) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, no
 		return nil, nil, 0, errPoisoned
 	}
 	return c.log.SubscribeWithNoProgressTimeout(afterSeq, buffer, noProgress)
+}
+
+// SubscribeCharacter is store.Store.SubscribeCharacter, refused while poisoned.
+// Keep c.mu held across the store's subscribe (VTT-332, VTT-333).
+func (c *Campaign) SubscribeCharacter(actorID string, afterSeq int64, buffer int, noProgress time.Duration) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poisoned {
+		return nil, nil, 0, errPoisoned
+	}
+	return c.log.SubscribeCharacter(actorID, afterSeq, buffer, noProgress)
 }
 
 // Close closes the log and then ends the writer hold (SPEC-019).

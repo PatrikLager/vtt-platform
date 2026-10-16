@@ -52,3 +52,17 @@ func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 		t.Fatalf("CharacterLog on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 }
+
+// VTT-334
+func TestAPoisonedCampaignRefusesACharacterSubscription(t *testing.T) {
+	c, err := Open(filepath.Join(t.TempDir(), "campaign"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	c.poisoned = true
+	if _, _, _, err := c.SubscribeCharacter("hero", 0, 4, 0); !errors.Is(err, errPoisoned) {
+		t.Fatalf("SubscribeCharacter on poisoned Campaign: got %v, want errPoisoned", err)
+	}
+}
