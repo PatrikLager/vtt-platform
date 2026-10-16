@@ -230,44 +230,17 @@ func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	if err := c.stampSessionID(env); err != nil {
 		return 0, err
 	}
-	// Validate a CLONE stamped with the provisional sequence the store is
-	// about to assign (c.head + 1) — the SAME fix, and the SAME
-	// equivalence proof, as AppendBatch's clone-and-stamp validation below
-	// (see AppendBatch's doc comment for the full argument): c.head is
-	// maintained to equal store's MAX(seq) after every append/rebuild,
-	// this whole call holds c.mu, and every log-appending path (Append and
-	// AppendBatch, the only two) runs under c.mu, so no other append can advance
-	// MAX(seq) between reading c.head here and store.Append's own
-	// MAX(seq)+1 read — same lock ⇒ same head ⇒ identical sequence.
-	//
-	// This matters because some folds are sequence-DEPENDENT for a
-	// REJECTION decision, not just a stored value: NarrationAdded's
-	// anchor-sanity check (internal/engine/apply.go) rejects when
-	// anchor_to_seq >= env.Sequence, so validating against an unstamped,
-	// Sequence==0 envelope rejected EVERY anchored narration regardless of
-	// anchor validity (world-layer sub-project 8, P11 Task 3's finding —
-	// see .superpowers/sdd/p11-task-3-report.md) — the single-Append twin
-	// of the F1/5c AppendBatch double-SessionEnded bug
-	// (appendbatch_session_test.go). Folds that only WRITE using
-	// env.Sequence (SessionStarted's StartSeq, SessionEnded's EndSeq,
-	// ConditionApplied's AppliedSeq, NoteUpserted's UpdatedSeq) were never
-	// observably broken by this: the throwaway validation clone's written
-	// value is discarded either way, and the live env's actual stored
-	// value always comes from the SECOND (post-persist) engine.Apply call
-	// below, which always saw the correct store-assigned Sequence, before
-	// and after this fix (see
-	// TestSessionEndedEndSeqUnaffectedByValidationSequence,
-	// append_sequence_validation_test.go, for the proof). The real env
-	// keeps Sequence==0 (store.Append requires that and stamps it itself);
-	// only the throwaway clone carries the provisional sequence, used
-	// solely to drive validation — a rejection still cannot half-mutate
-	// live state, since only the clone is folded here.
+	// Validate a clone stamped c.head+1, the sequence the store assigns next:
+	// c.head equals the store's MAX(seq) under c.mu, which every append holds,
+	// and some folds reject by the event's own sequence
+	// (TestAppendAcceptsAnchoredNarrationPointingAtRealPriorSequence). Keep env
+	// unstamped: the store requires Sequence 0 and stamps it itself.
 	clone := proto.Clone(env).(*vttv1.Envelope)
 	clone.Sequence = c.head + 1
 	if err := engine.Apply(c.state.Snapshot(), clone); err != nil {
 		return 0, err
 	}
-	seq, err := c.log.Append(env) // persists; does not notify
+	seq, err := c.log.AppendBatch([]*vttv1.Envelope{env}, nil) // persists; does not notify
 	if err != nil {
 		return 0, err
 	}
@@ -424,7 +397,7 @@ func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
 			return 0, err
 		}
 	}
-	firstSeq, err := c.log.AppendBatch(envs) // persists; does not notify
+	firstSeq, err := c.log.AppendBatch(envs, nil) // persists; does not notify
 	if err != nil {
 		return 0, err
 	}

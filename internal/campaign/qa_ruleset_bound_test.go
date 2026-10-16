@@ -61,8 +61,8 @@ func qaRuleLog(t *testing.T, envs []*vttv1.Envelope) string {
 	}
 	for i, env := range envs {
 		env.EventId = fmt.Sprintf("qa-rule-log-%d", i)
-		if _, err := s.Append(env); err != nil {
-			t.Fatalf("store.Append %d: %v", i, err)
+		if _, err := s.AppendBatch([]*vttv1.Envelope{env}, nil); err != nil {
+			t.Fatalf("store.AppendBatch %d: %v", i, err)
 		}
 	}
 	if err := s.Close(); err != nil {

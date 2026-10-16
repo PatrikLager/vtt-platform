@@ -65,7 +65,7 @@ func TestOpenRejectsFileThatIsNotADatabase(t *testing.T) {
 // inputs, so this uses bytes that cannot parse as a message.
 func TestReadAfterFailsLoudlyOnCorruptPayload(t *testing.T) {
 	s, path := openTempWithPath(t)
-	if _, err := s.Append(newEnv("evt-1")); err != nil {
+	if _, err := appendOne(s, newEnv("evt-1")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,11 +96,6 @@ func TestReadAfterFailsLoudlyOnCorruptPayload(t *testing.T) {
 // TestAppendPersistsOccurredAt. Both timestamp branches are exercised in ONE
 // batch — a set OccurredAt must round-trip, a nil one must persist as the
 // empty string, never as the Unix epoch.
-//
-// PROVENANCE: gremlins found the `ts != nil` guard at store.go:150 surviving
-// inside AppendBatch while its Append twin (store.go:79) was killed — the
-// single-envelope path was tested and the batch path assumed. Same shape as
-// the at-cap gaps in internal/engine: a variant covered, its sibling not.
 func TestAppendBatchPersistsOccurredAt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	s, err := store.Open(path)
@@ -112,7 +107,7 @@ func TestAppendBatchPersistsOccurredAt(t *testing.T) {
 	withTime.OccurredAt = timestamppb.New(time.Date(2026, 7, 24, 10, 30, 0, 0, time.UTC))
 	withoutTime := newEnv("batch-without-ts")
 
-	if _, err := s.AppendBatch([]*vttv1.Envelope{withTime, withoutTime}); err != nil {
+	if _, err := s.AppendBatch([]*vttv1.Envelope{withTime, withoutTime}, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -151,25 +146,36 @@ func TestOperationsFailAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Append(newEnv("evt-1")); err != nil {
+	if _, err := appendOne(s, newEnv("evt-1")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Run("Append", func(t *testing.T) {
-		if _, err := s.Append(newEnv("evt-2")); err == nil {
+	t.Run("AppendBatch with entries", func(t *testing.T) {
+		entries := []store.Entry{{ActorID: "a", Cause: 0, Env: entryEnv("a1")}}
+		if _, err := s.AppendBatch([]*vttv1.Envelope{newEnv("evt-2")}, entries); err == nil {
 			t.Error("want error after Close")
 		}
 	})
 	t.Run("AppendBatch", func(t *testing.T) {
-		if _, err := s.AppendBatch([]*vttv1.Envelope{newEnv("evt-3")}); err == nil {
+		if _, err := s.AppendBatch([]*vttv1.Envelope{newEnv("evt-3")}, nil); err == nil {
 			t.Error("want error after Close")
 		}
 	})
 	t.Run("ReadAfter", func(t *testing.T) {
 		if _, err := s.ReadAfter(0); err == nil {
+			t.Error("want error after Close")
+		}
+	})
+	t.Run("ReadCharacterAfter", func(t *testing.T) {
+		if _, err := s.ReadCharacterAfter("a", 0); err == nil {
+			t.Error("want error after Close")
+		}
+	})
+	t.Run("ReadCharacterLogs", func(t *testing.T) {
+		if _, err := s.ReadCharacterLogs(); err == nil {
 			t.Error("want error after Close")
 		}
 	})

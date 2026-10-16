@@ -24,6 +24,10 @@ func newEnv(id string) *vttv1.Envelope {
 	}
 }
 
+func appendOne(s *store.Store, env *vttv1.Envelope) (int64, error) {
+	return s.AppendBatch([]*vttv1.Envelope{env}, nil)
+}
+
 func openTemp(t *testing.T) *store.Store {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "campaign.db"))
@@ -38,7 +42,7 @@ func TestAppendAssignsSequentialSequence(t *testing.T) {
 	s := openTemp(t)
 	for want := int64(1); want <= 3; want++ {
 		env := newEnv(string(rune('a' + want)))
-		got, err := s.Append(env)
+		got, err := appendOne(s, env)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,20 +56,20 @@ func TestAppendRejectsNonZeroSequence(t *testing.T) {
 	s := openTemp(t)
 	env := newEnv("x")
 	env.Sequence = 9
-	if _, err := s.Append(env); err == nil {
+	if _, err := appendOne(s, env); err == nil {
 		t.Fatal("want error for non-zero sequence")
 	}
 }
 
 func TestAppendRejectsEmptyAndDuplicateEventID(t *testing.T) {
 	s := openTemp(t)
-	if _, err := s.Append(newEnv("")); err == nil {
+	if _, err := appendOne(s, newEnv("")); err == nil {
 		t.Fatal("want error for empty event_id")
 	}
-	if _, err := s.Append(newEnv("dup")); err != nil {
+	if _, err := appendOne(s, newEnv("dup")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Append(newEnv("dup")); err == nil {
+	if _, err := appendOne(s, newEnv("dup")); err == nil {
 		t.Fatal("want error for duplicate event_id")
 	}
 }
@@ -85,12 +89,12 @@ func TestAppendPersistsOccurredAt(t *testing.T) {
 
 	withTime := newEnv("with-ts")
 	withTime.OccurredAt = timestamppb.New(time.Date(2026, 7, 24, 10, 30, 0, 0, time.UTC))
-	if _, err := s.Append(withTime); err != nil {
+	if _, err := appendOne(s, withTime); err != nil {
 		t.Fatal(err)
 	}
 
 	withoutTime := newEnv("without-ts")
-	if _, err := s.Append(withoutTime); err != nil {
+	if _, err := appendOne(s, withoutTime); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -125,11 +129,11 @@ func TestReadAfterAndPersistenceAcrossReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := newEnv("e1")
-	if _, err := s.Append(first); err != nil {
+	if _, err := appendOne(s, first); err != nil {
 		t.Fatal(err)
 	}
 	second := newEnv("e2")
-	if _, err := s.Append(second); err != nil {
+	if _, err := appendOne(s, second); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

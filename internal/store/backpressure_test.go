@@ -45,7 +45,7 @@ func TestABurstLargerThanTheBufferDoesNotDropAKeepingUpSubscriber(t *testing.T) 
 	const burst = 200
 	for i := range burst {
 		env := newEnv(envID(i))
-		s.Append(env)
+		appendOne(s, env)
 		s.Notify(env)
 	}
 
@@ -69,7 +69,7 @@ func TestOneWedgedSubscriberDoesNotAffectTheOthers(t *testing.T) {
 	const burst = 50
 	for i := range burst {
 		env := newEnv(envID(i))
-		s.Append(env)
+		appendOne(s, env)
 		s.Notify(env) // must return promptly despite `wedged` never reading
 	}
 
@@ -104,7 +104,7 @@ func TestASubscriberThatNeverReadsIsDroppedAfterTheNoProgressTimeout(t *testing.
 
 		for i := range 8 {
 			env := newEnv(envID(i))
-			s.Append(env)
+			appendOne(s, env)
 			s.Notify(env)
 		}
 
@@ -151,7 +151,7 @@ func TestASubscriberThatKeepsConsumingIsNeverDropped(t *testing.T) {
 
 		for i := range 6 {
 			env := newEnv(envID(i))
-			s.Append(env)
+			appendOne(s, env)
 			s.Notify(env)
 
 			// Dawdle for most of the budget, then consume. Repeated, this far

@@ -205,7 +205,7 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 			SessionStarted: &vttv1.SessionStarted{Name: "test"},
 		},
 	}
-	if _, err := s.Append(env); err != nil {
+	if _, err := s.AppendBatch([]*vttv1.Envelope{env}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.ReadAfter(0)

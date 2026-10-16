@@ -25,8 +25,8 @@ func recv(t *testing.T, ch <-chan *vttv1.Envelope) *vttv1.Envelope {
 
 func TestSubscribeCatchUpThenLive(t *testing.T) {
 	s := openTemp(t)
-	s.Append(newEnv("e1"))
-	s.Append(newEnv("e2"))
+	appendOne(s, newEnv("e1"))
+	appendOne(s, newEnv("e2"))
 
 	ch, unsubscribe, _, err := s.Subscribe(1, 8)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSubscribeCatchUpThenLive(t *testing.T) {
 		t.Fatalf("catch-up: got %s, want e2", got.EventId)
 	}
 	e3 := newEnv("e3")
-	s.Append(e3)
+	appendOne(s, e3)
 	s.Notify(e3)
 	if got := recv(t, ch); got.EventId != "e3" {
 		t.Fatalf("live: got %s, want e3", got.EventId)
@@ -65,7 +65,7 @@ func TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber(t *testing.T) {
 
 		for i := range 4 {
 			env := newEnv(string(rune('a' + i)))
-			s.Append(env)
+			appendOne(s, env)
 			s.Notify(env)
 		}
 
@@ -99,7 +99,7 @@ func TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber(t *testing.T) {
 
 		// And the healthy one is still live afterwards.
 		env := newEnv("after")
-		s.Append(env)
+		appendOne(s, env)
 		s.Notify(env)
 		if got := recv(t, healthy); got.EventId != "after" {
 			t.Fatalf("healthy subscriber = %q, want it still delivering after its peer was reaped", got.EventId)
@@ -114,8 +114,8 @@ func TestAWedgedSubscriberIsDroppedAndOnlyThatSubscriber(t *testing.T) {
 // itself unexercised.
 func TestSubscribeAcceptsZeroBuffer(t *testing.T) {
 	s := openTemp(t)
-	s.Append(newEnv("e1"))
-	s.Append(newEnv("e2"))
+	appendOne(s, newEnv("e1"))
+	appendOne(s, newEnv("e2"))
 
 	ch, unsubscribe, _, err := s.Subscribe(0, 0)
 	if err != nil {
@@ -138,8 +138,8 @@ func TestSubscribeRejectsNegativeBuffer(t *testing.T) {
 	}
 }
 
-// TestAppendDoesNotNotify covers the decoupling itself: Append persists but
-// no longer notifies. A subscriber established before Append must see
+// TestAppendDoesNotNotify covers the decoupling itself: an append persists
+// but does not notify. A subscriber established before the append must see
 // nothing until the caller explicitly calls Notify.
 func TestAppendDoesNotNotify(t *testing.T) {
 	s := openTemp(t)
@@ -150,13 +150,13 @@ func TestAppendDoesNotNotify(t *testing.T) {
 	defer unsubscribe()
 
 	env := newEnv("e1")
-	if _, err := s.Append(env); err != nil {
+	if _, err := appendOne(s, env); err != nil {
 		t.Fatal(err)
 	}
 
 	select {
 	case got := <-ch:
-		t.Fatalf("want no delivery from Append alone, got %v", got)
+		t.Fatalf("want no delivery from an append alone, got %v", got)
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -174,7 +174,7 @@ func TestAppendDoesNotNotify(t *testing.T) {
 func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 	s := openTemp(t)
 	env := newEnv("e1")
-	if _, err := s.Append(env); err != nil {
+	if _, err := appendOne(s, env); err != nil {
 		t.Fatal(err)
 	}
 
@@ -201,27 +201,11 @@ func TestNotifyAfterApplyOrdering_NoDuplicateOnRace(t *testing.T) {
 	}
 }
 
-// TestNotifyIgnoresZeroSequence covers defensive hardening on the public
-// Notify method: an envelope whose Sequence is the proto3 zero value (0) —
-// never a value Append assigns, since Append's next-sequence query is
-// COALESCE(MAX(seq),0)+1, minimum 1 — is silently dropped rather than fanned
-// out, protecting against a caller that invokes Notify without ever having
-// persisted the event via Append.
-//
-// The subscriber below is caught up from afterSeq=-1, not the realistic
-// afterSeq=0: with afterSeq=0 the pre-existing per-subscriber dedupe
-// (notifyLocked's env.Sequence <= sub.lastSeq check) already happens to
-// swallow a zero-sequence envelope on its own (0 <= 0), which would mask
-// whether Notify's own guard fired at all. afterSeq=-1 gives the subscriber
-// lastSeq=-1, so 0 <= -1 is false and the dedupe does NOT intercept it —
-// isolating the guard as the only thing that can still stop delivery.
-//
-// This test's teeth therefore depend on Subscribe accepting a NEGATIVE
-// afterSeq unclamped (see Subscribe's doc comment in subscribe.go) — it is
-// deliberately load-bearing for this isolation, not incidental: if Subscribe
-// ever added a floor/clamp on afterSeq (e.g. treating negative values as 0),
-// this test would silently fall back to the masked afterSeq=0 case above and
-// stop proving anything about the guard.
+// TestNotifyIgnoresZeroSequence: Notify drops an envelope of sequence 0,
+// which no append assigns. Keep the subscriber at afterSeq=-1: at 0 the
+// subscriber's own dedupe (0 <= lastSeq) swallows the envelope and hides
+// whether Notify's guard fired, so the test depends on Subscribe accepting a
+// negative afterSeq unclamped.
 func TestNotifyIgnoresZeroSequence(t *testing.T) {
 	s := openTemp(t)
 	ch, unsubscribe, _, err := s.Subscribe(-1, 8)
@@ -248,7 +232,7 @@ func TestNotifyIgnoresZeroSequence(t *testing.T) {
 	// A normal, correctly-stamped envelope still delivers afterward — the
 	// guard must not disable the subscriber or the store.
 	live := newEnv("e-real")
-	if _, err := s.Append(live); err != nil {
+	if _, err := appendOne(s, live); err != nil {
 		t.Fatal(err)
 	}
 	s.Notify(live)
@@ -262,7 +246,7 @@ func TestUnsubscribeStopsDelivery(t *testing.T) {
 	ch, unsubscribe, _, _ := s.Subscribe(0, 4)
 	unsubscribe()
 	after := newEnv("after")
-	s.Append(after)
+	appendOne(s, after)
 	s.Notify(after)
 	select {
 	case _, ok := <-ch:

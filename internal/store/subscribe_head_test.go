@@ -14,7 +14,7 @@ import "testing"
 func TestSubscribeHeadIsTheHighestPreloadedSequence(t *testing.T) {
 	s := openTemp(t)
 	for _, id := range []string{"e1", "e2", "e3", "e4", "e5"} {
-		s.Append(newEnv(id))
+		appendOne(s, newEnv(id))
 	}
 
 	ch, unsubscribe, head, err := s.Subscribe(0, 8)
@@ -42,7 +42,7 @@ func TestSubscribeHeadIsTheHighestPreloadedSequence(t *testing.T) {
 func TestSubscribeHeadIsTheLogHeadNotTheCursor(t *testing.T) {
 	s := openTemp(t)
 	for _, id := range []string{"e1", "e2", "e3", "e4"} {
-		s.Append(newEnv(id))
+		appendOne(s, newEnv(id))
 	}
 	_, unsubscribe, head, err := s.Subscribe(2, 8)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestSubscribeHeadExcludesEventsAppendedAfterwards(t *testing.T) {
 	// make a client wait for an event that was never part of catch-up — which
 	// on a quiet table means waiting until the backstop timeout.
 	s := openTemp(t)
-	s.Append(newEnv("e1"))
+	appendOne(s, newEnv("e1"))
 
 	_, unsubscribe, head, err := s.Subscribe(0, 8)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestSubscribeHeadExcludesEventsAppendedAfterwards(t *testing.T) {
 	defer unsubscribe()
 
 	later := newEnv("e2")
-	s.Append(later)
+	appendOne(s, later)
 	s.Notify(later)
 
 	if head != 1 {

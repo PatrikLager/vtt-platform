@@ -423,7 +423,7 @@ kinds are refused. Labels: `test data missing`, `outside the tool`: no
 fixture holds an `upsert_note` between the two calls, and no mutation operator
 opens the window. Recipe for the test that would show it: an internal test in
 `internal/gateway` that takes `st := c.State()`, appends a `NoteUpserted` on
-key K through `c.Append`, with the `EventId` `store.Append` requires, calls `s.handleLoadAdventure(..., st, ...)` for an
+key K through `c.Append`, with the `EventId` `store.AppendBatch` requires, calls `s.handleLoadAdventure(..., st, ...)` for an
 adventure declaring K (`goblin-ambush` declares `ravine-trail-warning`), and
 asserts ok=false; today it answers ok=true and the
 note is overwritten. Recorded 2026-09-27, moved here from the comment at

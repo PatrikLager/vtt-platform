@@ -1,28 +1,5 @@
 package campaign_test
 
-// append_sequence_validation_test.go pins the fix for the single-Append
-// twin of the F1/5c AppendBatch bug (appendbatch_session_test.go's
-// TestAppendBatchDoubleSessionEndedRejectsCleanlyWithoutBricking's own doc
-// comment describes the general shape): Campaign.Append validated the
-// caller's envelope directly while its Sequence field was still 0 (the
-// store assigns the real value strictly AFTER that validating call — see
-// store.Store.Append's own "envelope sequence must be 0 on append" guard).
-// Any fold that is sequence-DEPENDENT for a REJECTION decision (not just a
-// stored VALUE) validated against the wrong number.
-//
-// world-layer Task 3's investigation (see .superpowers/sdd/
-// p11-task-3-report.md's "Critical finding" section) found exactly this
-// for NarrationAdded's anchor-sanity check (internal/engine/apply.go):
-// `anchor_to_seq >= env.Sequence` compared against 0 at validation time,
-// so ANY anchored narration (anchor_to_seq > 0) was rejected regardless of
-// whether the anchor was otherwise perfectly valid. Controller-adjudicated
-// as the same bug class as F1/5c, fixed here the same way: Append now
-// validates a proto.Clone stamped with the provisional sequence c.head+1
-// — provably identical to what store.Append is about to assign, by the
-// SAME equivalence AppendBatch's own doc comment already proves (c.head
-// tracks store's MAX(seq) under the same c.mu every log-appending path
-// holds for its whole call).
-
 import (
 	"path/filepath"
 	"testing"

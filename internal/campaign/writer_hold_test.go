@@ -187,7 +187,7 @@ func TestAnOpenThatFailsReleasesTheHold(t *testing.T) {
 				cenv(nextID(), &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 2, GridHeight: 2}),
 				cenv(nextID(), &vttv1.SceneCreated{SceneId: "s", Name: "S", GridWidth: 2, GridHeight: 2}),
 			} {
-				if _, err := s.Append(e); err != nil {
+				if _, err := s.AppendBatch([]*vttv1.Envelope{e}, nil); err != nil {
 					t.Fatal(err)
 				}
 			}

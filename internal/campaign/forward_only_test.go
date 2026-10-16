@@ -126,7 +126,7 @@ func TestOpenRefusesALogThatDoesNotReplay(t *testing.T) {
 			To:   &vttv1.GridPosition{X: 2, Y: 2},
 		}),
 	} {
-		if _, err := s.Append(env); err != nil {
+		if _, err := s.AppendBatch([]*vttv1.Envelope{env}, nil); err != nil {
 			t.Fatalf("seeding the raw store: %v", err)
 		}
 	}

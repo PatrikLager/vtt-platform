@@ -23,13 +23,13 @@ func batchEnvs(n int, prefix string) []*vttv1.Envelope {
 func TestAppendBatchAssignsContiguousSequences(t *testing.T) {
 	s := openTemp(t)
 
-	// A prior single Append occupies seq 1, so the batch must start at 2.
-	if _, err := s.Append(newEnv("solo")); err != nil {
+	// A prior one-envelope batch occupies seq 1, so this batch must start at 2.
+	if _, err := appendOne(s, newEnv("solo")); err != nil {
 		t.Fatal(err)
 	}
 
 	envs := batchEnvs(3, "batch1-")
-	first, err := s.AppendBatch(envs)
+	first, err := s.AppendBatch(envs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,23 +57,21 @@ func TestAppendBatchAssignsContiguousSequences(t *testing.T) {
 // error rather than silently succeeding with nothing persisted.
 func TestAppendBatchRejectsEmptyBatch(t *testing.T) {
 	s := openTemp(t)
-	if _, err := s.AppendBatch(nil); err == nil {
+	if _, err := s.AppendBatch(nil, nil); err == nil {
 		t.Fatal("want error for empty (nil) batch")
 	}
-	if _, err := s.AppendBatch([]*vttv1.Envelope{}); err == nil {
+	if _, err := s.AppendBatch([]*vttv1.Envelope{}, nil); err == nil {
 		t.Fatal("want error for empty (zero-length) batch")
 	}
 }
 
-// TestAppendBatchRejectsNonZeroSequence mirrors Append's per-envelope
-// sequence guard: any envelope in the batch carrying a caller-supplied
-// non-zero sequence is rejected, and NOTHING in the batch is persisted
-// (not just the offending envelope).
+// TestAppendBatchRejectsNonZeroSequence: one envelope with a caller-supplied
+// sequence refuses the batch, and nothing in it is persisted.
 func TestAppendBatchRejectsNonZeroSequence(t *testing.T) {
 	s := openTemp(t)
 	envs := batchEnvs(3, "bad-seq-")
 	envs[1].Sequence = 9
-	if _, err := s.AppendBatch(envs); err == nil {
+	if _, err := s.AppendBatch(envs, nil); err == nil {
 		t.Fatal("want error for non-zero sequence on a batch member")
 	}
 	all, err := s.ReadAfter(0)
@@ -85,36 +83,31 @@ func TestAppendBatchRejectsNonZeroSequence(t *testing.T) {
 	}
 }
 
-// TestAppendBatchRejectsEmptyEventID mirrors Append's per-envelope
-// event_id guard, applied across the whole batch.
+// TestAppendBatchRejectsEmptyEventID applies the event_id guard across the
+// whole batch.
 func TestAppendBatchRejectsEmptyEventID(t *testing.T) {
 	s := openTemp(t)
 	envs := batchEnvs(3, "empty-id-")
 	envs[2].EventId = ""
-	if _, err := s.AppendBatch(envs); err == nil {
+	if _, err := s.AppendBatch(envs, nil); err == nil {
 		t.Fatal("want error for empty event_id on a batch member")
 	}
 }
 
-// TestAppendBatchDuplicateEventIDRollsBackAndResetsSequences exercises a
-// NATURALLY reachable (no fault injection needed) mid-transaction failure:
-// the third envelope's event_id collides with one already persisted, so
-// the INSERT for it fails inside the transaction after the first two
-// envelopes were already stamped and inserted (but not yet committed).
-// Verifies: (1) the whole batch is rolled back — zero NEW rows persisted,
-// (2) EVERY envelope's Sequence is reset to 0, including the two that were
-// successfully inserted before the failing third, and (3) the store is
-// still fully usable afterward (a following Append succeeds normally).
+// TestAppendBatchDuplicateEventIDRollsBackAndResetsSequences: a third
+// envelope's duplicate event_id fails the transaction after two inserts. The
+// whole batch rolls back, every Sequence is reset to 0, and the store stays
+// usable.
 func TestAppendBatchDuplicateEventIDRollsBackAndResetsSequences(t *testing.T) {
 	s := openTemp(t)
-	if _, err := s.Append(newEnv("existing")); err != nil {
+	if _, err := appendOne(s, newEnv("existing")); err != nil {
 		t.Fatal(err)
 	}
 
 	envs := batchEnvs(2, "dup-")
 	envs = append(envs, newEnv("existing")) // collides with the row above
 
-	if _, err := s.AppendBatch(envs); err == nil {
+	if _, err := s.AppendBatch(envs, nil); err == nil {
 		t.Fatal("want error for a batch containing a duplicate event_id")
 	}
 	for i, env := range envs {
@@ -131,15 +124,15 @@ func TestAppendBatchDuplicateEventIDRollsBackAndResetsSequences(t *testing.T) {
 		t.Fatalf("ReadAfter(0) after rolled-back batch: got %d events, want 1 (only the pre-existing row)", len(all))
 	}
 
-	// Store remains usable: a normal Append still works.
-	if _, err := s.Append(newEnv("after-rollback")); err != nil {
-		t.Fatalf("Append after rolled-back batch: %v", err)
+	// Store remains usable: a normal append still works.
+	if _, err := appendOne(s, newEnv("after-rollback")); err != nil {
+		t.Fatalf("append after rolled-back batch: %v", err)
 	}
 }
 
 // TestAppendBatchPersistsAcrossReopen proves the batch's rows survive a
-// close/reopen with the same contiguous sequences, exactly like Append's
-// TestReadAfterAndPersistenceAcrossReopen.
+// close/reopen with the same contiguous sequences, as
+// TestReadAfterAndPersistenceAcrossReopen does for single appends.
 func TestAppendBatchPersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "campaign.db")
@@ -149,7 +142,7 @@ func TestAppendBatchPersistsAcrossReopen(t *testing.T) {
 	}
 
 	envs := batchEnvs(3, "reopen-")
-	first, err := s.AppendBatch(envs)
+	first, err := s.AppendBatch(envs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +184,7 @@ func TestAppendBatchThenNotifyDeliversContiguousToSubscriber(t *testing.T) {
 	defer unsubscribe()
 
 	envs := batchEnvs(3, "notify-")
-	if _, err := s.AppendBatch(envs); err != nil {
+	if _, err := s.AppendBatch(envs, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, env := range envs {
@@ -221,7 +214,7 @@ func TestAppendBatchDoesNotNotify(t *testing.T) {
 	defer unsubscribe()
 
 	envs := batchEnvs(2, "silent-")
-	if _, err := s.AppendBatch(envs); err != nil {
+	if _, err := s.AppendBatch(envs, nil); err != nil {
 		t.Fatal(err)
 	}
 
