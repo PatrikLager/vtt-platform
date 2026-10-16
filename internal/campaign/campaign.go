@@ -57,6 +57,9 @@ type Campaign struct {
 	// true, every method fails until the Campaign is reopened.
 	poisoned bool
 
+	logs      map[string]*characterLog
+	discarded int
+
 	// Call release once: a second close of its descriptor can close an
 	// unrelated file.
 	release func() error
@@ -162,7 +165,7 @@ func (c *Campaign) rebuildLocked() error {
 	if n := len(events); n > 0 {
 		c.head = events[n-1].Sequence
 	}
-	return nil
+	return c.loadCharacterLogsLocked()
 }
 
 // foldEvents folds events into a fresh engine.State, applying every envelope
@@ -243,11 +246,18 @@ func (c *Campaign) appendLocked(envs []*vttv1.Envelope) (int64, error) {
 			return 0, err
 		}
 	}
-	firstSeq, err := c.log.AppendBatch(envs, nil) // persists; does not notify
+	entries, logs, dropped, err := c.fanOutLocked(envs)
 	if err != nil {
+		c.restartDecisionsLocked()
+		return 0, err
+	}
+	firstSeq, err := c.log.AppendBatch(envs, entries) // persists; does not notify
+	if err != nil {
+		c.restartDecisionsLocked()
 		return 0, err
 	}
 	c.head = firstSeq + int64(len(envs)) - 1
+	c.logs, c.discarded = logs, c.discarded+dropped
 	for _, env := range envs {
 		if err := engine.Apply(c.state, env); err != nil {
 			// Unreachable while validation folds the same envelopes at the same
@@ -287,12 +297,8 @@ func stampSessionIDAgainst(env *vttv1.Envelope, st *engine.State) error {
 // openSessionID returns the id of st's currently open session (the one
 // whose EndSeq is still 0), or "", false if none is open.
 func openSessionID(st *engine.State) (string, bool) {
-	for _, s := range st.Sessions {
-		if s.EndSeq == 0 {
-			return s.ID, true
-		}
-	}
-	return "", false
+	s, ok := openSession(st)
+	return s.ID, ok
 }
 
 // newSessionID returns a fresh, random "sess-"-prefixed hex session id (16

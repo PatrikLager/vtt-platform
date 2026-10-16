@@ -47,4 +47,8 @@ func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 	if _, _, _, err := c.Subscribe(0, 4); !errors.Is(err, errPoisoned) {
 		t.Fatalf("Subscribe on poisoned Campaign: got %v, want errPoisoned", err)
 	}
+
+	if _, err := c.CharacterLog("a"); !errors.Is(err, errPoisoned) {
+		t.Fatalf("CharacterLog on poisoned Campaign: got %v, want errPoisoned", err)
+	}
 }

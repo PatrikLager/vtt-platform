@@ -67,6 +67,24 @@ func New(eyes Eyes, world *engine.State) *Projection {
 	return pr
 }
 
+// Resume starts a projection through eyes for a viewer whose non-nil fold is
+// shown, seeing as the non-nil world does only when shown holds every actor in
+// sight as world does, and otherwise nothing yet (VTT-325).
+func Resume(eyes Eyes, shown, world *engine.State) *Projection {
+	pr := New(eyes, world)
+	for id := range pr.sighted {
+		held, holds := shown.Actors[id]
+		a := world.Actors[id]
+		if !holds || !sameIncarnation(held, a) {
+			return New(eyes, nil)
+		}
+		if fix, ok := statusFrames(id, 0, beliefOf(held, shown.Conditions[id]), a, world.Conditions[id]); !ok || len(fix) > 0 {
+			return New(eyes, nil)
+		}
+	}
+	return pr
+}
+
 // Event returns the frames the viewer, seeing through eyes, is sent for env, given
 // shown, the non-nil fold of what it was sent before, and st, the non-nil world
 // after env (SPEC-016). Never write to any of them: every viewer shares env.

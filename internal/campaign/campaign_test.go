@@ -68,6 +68,8 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
 	case *vttv1.ActorRemoved:
 		e.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
+	case *vttv1.TokenHidden:
+		e.Payload = &vttv1.Envelope_TokenHidden{TokenHidden: p}
 	default:
 		// Panic on a payload with no case: an envelope with a nil payload is
 		// refused by campaign's nil-payload guard as "unknown event variant",
