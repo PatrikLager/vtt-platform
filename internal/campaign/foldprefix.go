@@ -45,5 +45,5 @@ import (
 // read-time projection and the seat's projector, which between them are this
 // function's only non-test caller.
 func FoldPrefix(events []*vttv1.Envelope) (*engine.State, error) {
-	return foldEvents(events)
+	return foldEvents(events, nil)
 }

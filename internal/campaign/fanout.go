@@ -26,9 +26,12 @@ type characterLog struct {
 	fold     *engine.State
 	head     int64
 	decision *perceive.Projection // nil while the log is paused
-	// Give a working copy caused through a three-index slice, or its appends
-	// write into the array c.logs holds (fanOutLocked).
+	// Give a working copy caused and resumes through a three-index slice, or
+	// its appends write into the arrays c.logs holds (fanOutLocked).
 	caused []causedEntry
+	// resumes are the world events at which the log resumed. Open finds more,
+	// from before the log's first caused entry, where none moves an anchor.
+	resumes []int64
 }
 
 // causedEntry is an entry a world event caused, which an anchor may name (VTT-322).
@@ -62,26 +65,20 @@ func isPartyMember(st *engine.State, id string) bool {
 
 // loadCharacterLogsLocked folds every stored log; call it once c.state is the
 // world at the log's head (VTT-312, VTT-327).
-func (c *Campaign) loadCharacterLogsLocked() error {
-	stored, err := c.log.ReadCharacterLogs()
-	if err != nil {
-		return err
-	}
+func (c *Campaign) loadCharacterLogsLocked(stored map[string][]store.CharacterEntry, resumed map[string][]int64) error {
 	c.logs = map[string]*characterLog{}
 	for id, entries := range stored {
 		envs := make([]*vttv1.Envelope, len(entries))
 		for i, e := range entries {
 			envs[i] = e.Env
 		}
-		fold, err := foldEvents(envs)
+		fold, err := foldEvents(envs, nil)
 		if err != nil {
 			return fmt.Errorf("campaign: the character log of %s does not fold: %w", id, err)
 		}
-		l := &characterLog{fold: fold, head: envs[len(envs)-1].Sequence}
+		l := &characterLog{fold: fold, head: envs[len(envs)-1].Sequence, resumes: resumed[id]}
 		for _, e := range entries {
-			if e.WorldSeq != 0 {
-				l.caused = append(l.caused, causedEntry{world: e.WorldSeq, seq: e.Env.GetSequence()})
-			}
+			l.record(e.WorldSeq, e.Env.GetSequence())
 		}
 		if isPartyMember(c.state, id) {
 			l.decision = perceive.Resume(eyesOf(id), fold, c.state)
@@ -101,6 +98,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 	for id, l := range c.logs {
 		cp := *l
 		cp.caused = l.caused[:len(l.caused):len(l.caused)]
+		cp.resumes = l.resumes[:len(l.resumes):len(l.resumes)]
 		logs[id] = &cp
 	}
 	var entries []store.Entry
@@ -130,14 +128,23 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 				lead = opening(before)
 				l.decision = perceive.New(eyesOf(id), nil)
 			case l.decision == nil:
+				lead = resume(l.fold, before)
+				l.resumes = append(l.resumes, ev.Sequence)
+				// Start from nothing seen, never from world: a held actor that changed
+				// while paused is corrected only then (VTT-318).
 				l.decision = perceive.New(eyesOf(id), nil)
 			}
 			fold, out, err := trial(l.fold, l.head, lead)
 			if err != nil {
-				slog.Error("campaign: a character log's opening does not fold; nothing written",
+				// Leave the log as it was: unopened, or paused to resume again.
+				slog.Error("campaign: a character log's opening or resume does not fold; nothing written",
 					"actor", id, "world_seq", ev.Sequence, "err", err)
 				dropped++
-				delete(logs, id)
+				if l.head == 0 {
+					delete(logs, id)
+				} else {
+					l.decision = nil
+				}
 				continue
 			}
 			entries = appendEntries(entries, id, -1, out)
@@ -156,7 +163,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 			}
 			entries = appendEntries(entries, id, i, out)
 			for _, e := range out {
-				l.caused = append(l.caused, causedEntry{world: ev.Sequence, seq: e.Sequence})
+				l.record(ev.Sequence, e.Sequence)
 			}
 			l.fold, l.head = fold, l.head+int64(len(out))
 		}
@@ -175,6 +182,12 @@ func (l *characterLog) reanchor(frames []*vttv1.Envelope) []*vttv1.Envelope {
 		}
 		from := sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world >= n.AnchorFromSeq })
 		to := sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world > n.AnchorToSeq })
+		// Name only what the latest resume in the range and the events after it
+		// caused (VTT-328).
+		if r := sort.Search(len(l.resumes), func(k int) bool { return l.resumes[k] > n.AnchorToSeq }); r > 0 {
+			at := l.resumes[r-1]
+			from = max(from, sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world >= at }))
+		}
 		if from < to {
 			n.AnchorFromSeq, n.AnchorToSeq = l.caused[from].seq, l.caused[to-1].seq
 		} else {
@@ -255,6 +268,63 @@ func opening(before *engine.State) []*vttv1.Envelope {
 		n := before.Notes[k]
 		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
 			Key: k, Title: n.Title, Text: n.Text, Visibility: n.Visibility}}})
+	}
+	return out
+}
+
+// record notes an entry of seq written for the world event world, 0 for none.
+func (l *characterLog) record(world, seq int64) {
+	if world != 0 {
+		l.caused = append(l.caused, causedEntry{world: world, seq: seq})
+	}
+}
+
+// resumeScan finds, while the world log is folded on Open, the world events
+// after which each stored log's actor turns party member again (VTT-328).
+type resumeScan struct {
+	member map[string]bool
+	at     map[string][]int64
+}
+
+func resumesOf(stored map[string][]store.CharacterEntry) *resumeScan {
+	r := &resumeScan{member: map[string]bool{}, at: map[string][]int64{}}
+	for id := range stored {
+		r.member[id] = false
+	}
+	return r
+}
+
+func (r *resumeScan) observe(st *engine.State, env *vttv1.Envelope) {
+	for id, was := range r.member {
+		now := isPartyMember(st, id)
+		if now && !was {
+			r.at[id] = append(r.at[id], env.Sequence)
+		}
+		r.member[id] = now
+	}
+}
+
+// resume brings a paused log to the world's open session in before, then
+// hides every token it holds, so the decision places what it sees on its
+// present square (VTT-318).
+func resume(fold, before *engine.State) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	held, holds := openSession(fold)
+	open, isOpen := openSession(before)
+	if holds && (!isOpen || held.ID != open.ID) {
+		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_SessionEnded{SessionEnded: &vttv1.SessionEnded{}}})
+	}
+	if isOpen && (!holds || held.ID != open.ID) {
+		out = append(out, &vttv1.Envelope{SessionId: open.ID,
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: open.Name}}})
+	}
+	ids := make([]string, 0, len(fold.Tokens))
+	for id := range fold.Tokens {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_TokenHidden{TokenHidden: &vttv1.TokenHidden{TokenId: id}}})
 	}
 	return out
 }

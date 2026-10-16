@@ -31,6 +31,8 @@ character experiences. On 2026-10-16 he ruled further:
 - Frames that would not fold onto a log are not written to it.
 - The cost of deciding at append time is accepted for now, and measured again
   after the third ticket.
+- An anchor whose range spans a resume names only the entries that events
+  at or after the latest resume in that range caused.
 
 On `main` at `4fe0472`, the tree stops that in four places:
 
@@ -114,7 +116,9 @@ How MapTool solves this, per CLAUDE.md rule 9, is answered in the section
    range in a character log. The range runs from the first to the last of
    that log's entries that the anchored world events caused, leaving out
    opening entries. When none of those events reached the log, the narration
-   is unanchored.
+   is unanchored. When the range spans a resume of the log, the anchor names
+   only the entries that events at or after the latest resume in it caused,
+   and none when they caused none.
 7. **Every character log folds standalone at every prefix.** A new test,
    `TestEveryCharacterLogFoldsAtEveryPrefix`, runs `campaign.FoldPrefix` on
    every prefix of every character log, over `internal/eventgen` seeds and
@@ -176,6 +180,8 @@ How MapTool solves this, per CLAUDE.md rule 9, is answered in the section
 - An anchored narration in a character log names the entries of that log
   that the anchored world events caused, leaving out the opening. It is
   unanchored when there are none.
+- An anchored narration whose range spans a resume names only the entries
+  that events at or after the latest resume in that range caused.
 - Every character log folds standalone at every prefix.
 - After a reopen, a character's memory is the fold of its log, and the next
   entries introduce nothing that log already holds.

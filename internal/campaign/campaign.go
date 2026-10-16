@@ -155,7 +155,12 @@ func (c *Campaign) rebuildLocked() error {
 	if err != nil {
 		return err
 	}
-	st, err := foldEvents(events)
+	stored, err := c.log.ReadCharacterLogs()
+	if err != nil {
+		return err
+	}
+	resumes := resumesOf(stored)
+	st, err := foldEvents(events, resumes.observe)
 	if err != nil {
 		return err
 	}
@@ -165,21 +170,14 @@ func (c *Campaign) rebuildLocked() error {
 	if n := len(events); n > 0 {
 		c.head = events[n-1].Sequence
 	}
-	return c.loadCharacterLogsLocked()
+	return c.loadCharacterLogsLocked(stored, resumes.at)
 }
 
-// foldEvents folds events into a fresh engine.State, applying every envelope
-// it is given in the order it is given them. Unknown variants are skipped
-// with a warning (forward compatibility, spec §7); any other apply error
-// means the resulting fold does not replay cleanly. This is the single fold,
-// reached two ways — rebuildLocked's on-open rebuild and FoldPrefix's answer
-// for the gateway — because the codebase's core principle is one fold, not
-// two copies of the same loop (CLAUDE.md rule 4).
-//
-// NOTHING IS SKIPPED BY SEQUENCE any more (2026-08-31: the log only goes
-// forward). It took a set of retracted sequences until then, and dropping
-// that parameter is the whole of retraction's departure from this loop.
-func foldEvents(events []*vttv1.Envelope) (*engine.State, error) {
+// foldEvents folds events into a fresh engine.State in the order given,
+// skipping an unknown variant with a warning, and hands after the state and
+// each event it applied. It is the one fold (CLAUDE.md rule 4): never write to
+// the state in after.
+func foldEvents(events []*vttv1.Envelope, after func(*engine.State, *vttv1.Envelope)) (*engine.State, error) {
 	st := engine.NewState()
 	for _, env := range events {
 		if err := engine.Apply(st, env); err != nil {
@@ -189,6 +187,9 @@ func foldEvents(events []*vttv1.Envelope) (*engine.State, error) {
 				continue
 			}
 			return nil, fmt.Errorf("campaign: corrupt log at seq %d: %w", env.Sequence, err)
+		}
+		if after != nil {
+			after(st, env)
 		}
 	}
 	return st, nil

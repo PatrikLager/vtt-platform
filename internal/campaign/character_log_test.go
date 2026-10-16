@@ -11,6 +11,7 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
@@ -93,6 +94,8 @@ func describe(env *vttv1.Envelope) string {
 		return "NoteUpserted " + p.NoteUpserted.GetKey()
 	case *vttv1.Envelope_NarrationAdded:
 		return "NarrationAdded " + p.NarrationAdded.GetText()
+	case *vttv1.Envelope_ActorRemoved:
+		return "ActorRemoved " + p.ActorRemoved.GetActorId()
 	default:
 		return fmt.Sprintf("%T", p)
 	}
@@ -732,4 +735,197 @@ func TestAnAnchoredNarrationNamesTheEntriesOfItsOwnLog(t *testing.T) {
 		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
 		assertNoneDropped(t, c)
 	})
+}
+
+func grant(actorID string, kind vttv1.ActorKind) *vttv1.ActorControlGranted {
+	return &vttv1.ActorControlGranted{ActorId: actorID, ParticipantId: "p-1", Kind: kind}
+}
+
+// assertBoardAndSessionAsTheWorld requires actorID's log to hold the world's
+// open session, and every token it holds on the world's square.
+func assertBoardAndSessionAsTheWorld(t *testing.T, c *campaign.Campaign, actorID string) {
+	t.Helper()
+	held, world := c.CharacterFoldForTest(actorID), c.State()
+	open := func(sessions []engine.Session) string {
+		for _, s := range sessions {
+			if s.EndSeq == 0 {
+				return s.ID
+			}
+		}
+		return ""
+	}
+	if h, w := open(held.Sessions), open(world.Sessions); h != w {
+		t.Errorf("%s's log holds open session %q, the world %q", actorID, h, w)
+	}
+	for id, tok := range held.Tokens {
+		if w, ok := world.Tokens[id]; !ok || w.X != tok.X || w.Y != tok.Y || w.SceneID != tok.SceneID {
+			t.Errorf("%s's log holds %s at %d,%d; the world at %+v", actorID, id, tok.X, tok.Y, w)
+		}
+	}
+}
+
+// VTT-316 VTT-318
+func TestALogPausesWhileItsActorIsNotAPartyMember(t *testing.T) {
+	for _, reuse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "moves and a new session", true: "an id reused while paused"}[reuse], func(t *testing.T) {
+			c := openTemp(t)
+			must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "one"}))
+			hallWithHero(t, c, 2)
+			pause := must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_NON_PARTY)))
+			held := len(logOf(t, c, "hero"))
+			must(t, c, cenv(nextID(), &vttv1.NarrationAdded{Text: "while possessed"}))
+			must(t, c, cenv(nextID(), &vttv1.SessionEnded{}))
+			must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "two"}))
+			if reuse {
+				if _, err := c.AppendBatch([]*vttv1.Envelope{
+					cenv(nextID(), &vttv1.TokenRemoved{TokenId: "t-gob"}),
+					cenv(nextID(), &vttv1.ActorRemoved{ActorId: "goblin"}),
+				}); err != nil {
+					t.Fatal(err)
+				}
+				changeling := nonParty("goblin")
+				changeling.Actor.Name = "Changeling"
+				must(t, c, cenv(nextID(), changeling))
+				must(t, c, cenv(nextID(), &vttv1.TokenPlaced{TokenId: "t-gob-2", SceneId: "s", ActorId: "goblin", Position: at(1, 1)}))
+			} else {
+				must(t, c, cenv(nextID(), &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s", From: at(2, 1), To: at(1, 1)}))
+			}
+			must(t, c, cenv(nextID(), &vttv1.TokenMoved{TokenId: "t-hero", SceneId: "s", From: at(1, 1), To: at(2, 1)}))
+			if got := logOf(t, c, "hero"); len(got) != held {
+				t.Fatalf("the paused log grew: %v", kindsOf(got[held:]))
+			}
+			resume := must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)))
+			got := logOf(t, c, "hero")
+			for _, e := range got {
+				if e.WorldSeq >= pause && e.WorldSeq < resume {
+					t.Errorf("%s was written at world event %d, while the hero was paused", describe(e.Env), e.WorldSeq)
+				}
+			}
+			for _, e := range got[held:] {
+				switch d := describe(e.Env); d {
+				case "ActorAdded hero", "SceneCreated s", "SessionStarted":
+					if d != "SessionStarted" || e.WorldSeq != 0 {
+						t.Errorf("the resume wrote %s, a second opening", d)
+					}
+				}
+			}
+			assertBoardAndSessionAsTheWorld(t, c, "hero")
+			if reuse && c.CharacterFoldForTest("hero").Actors["goblin"].GetName() != "Changeling" {
+				t.Errorf("the hero's log holds the old goblin after the resume")
+			}
+			assertFoldsAtEveryPrefix(t, "the hero's log", got)
+			assertNoneDropped(t, c)
+		})
+	}
+}
+
+// VTT-318
+func TestANewActorUnderAnOldIdContinuesItsLog(t *testing.T) {
+	c := openTemp(t)
+	hallWithHero(t, c, 2)
+	if _, err := c.AppendBatch([]*vttv1.Envelope{
+		cenv(nextID(), &vttv1.TokenRemoved{TokenId: "t-hero"}),
+		cenv(nextID(), &vttv1.ActorRemoved{ActorId: "hero"}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	held := len(logOf(t, c, "hero"))
+	second := partyMember("hero")
+	second.Actor.Name = "Second hero"
+	must(t, c, cenv(nextID(), second))
+	must(t, c, cenv(nextID(), &vttv1.TokenPlaced{TokenId: "t-hero-2", SceneId: "s", ActorId: "hero", Position: at(1, 1)}))
+	got := logOf(t, c, "hero")
+	if len(got) <= held || got[held].Env.GetSequence() != int64(held+1) {
+		t.Fatalf("the log did not continue after entry %d: %v", held, kindsOf(got))
+	}
+	removed, added := -1, -1
+	for i, e := range got[held:] {
+		switch describe(e.Env) {
+		case "ActorRemoved hero":
+			if removed < 0 {
+				removed = i
+			}
+		case "ActorAdded hero":
+			added = i
+		}
+	}
+	if removed < 0 || added < removed {
+		t.Fatalf("the old hero is not withdrawn before the new one is introduced: %v", kindsOf(got[held:]))
+	}
+	if name := c.CharacterFoldForTest("hero").Actors["hero"].GetName(); name != "Second hero" {
+		t.Errorf("the log holds hero %q", name)
+	}
+	assertFoldsAtEveryPrefix(t, "the hero's log", got)
+	assertNoneDropped(t, c)
+}
+
+// VTT-328
+func TestAnAnchorAcrossAPauseNamesOnlyWhatCameAfterTheResume(t *testing.T) {
+	for _, reopen := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live", true: "after a reopen"}[reopen], func(t *testing.T) {
+			anchorAcrossAPause(t, reopen)
+		})
+	}
+}
+
+func anchorAcrossAPause(t *testing.T, reopen bool) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "campaign")
+	c := openAt(t, dir)
+	hallWithHero(t, c, 2)
+	from := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}))
+	must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_NON_PARTY)))
+	must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "poisoned"}))
+	resumed := must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)))
+	to := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "slowed"}))
+	if reopen {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+		c = openAt(t, dir)
+	}
+	must(t, c, cenv(nextID(), &vttv1.NarrationAdded{Text: "the hero waits"}))
+	must(t, c, cenv(nextID(), anchored("the fight was hard", from, to)))
+	hero := logOf(t, c, "hero")
+
+	// What the resuming event and those after it caused, never what came before.
+	_, all := anchoredIn(t, hero, "the fight was hard", from, to)
+	got, want := anchoredIn(t, hero, "the fight was hard", resumed, to)
+	if want[0] <= all[0] || got != want {
+		t.Fatalf("anchor %v, want %v: from the resume at world event %d, not the dazed entry %d", got, want, resumed, all[0])
+	}
+	assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+	assertNoneDropped(t, c)
+}
+
+// VTT-328
+func TestAnAnchorEndingAtAResumeThatCausedNothingIsUnanchored(t *testing.T) {
+	for _, reopen := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live", true: "after a reopen"}[reopen], func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "campaign")
+			c := openAt(t, dir)
+			must(t, c, cenv(nextID(), partyMember("hero")))
+			must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)))
+			from := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "hero", ConditionId: "dazed"}))
+			must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_NON_PARTY)))
+			resumed := must(t, c, cenv(nextID(), grant("hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)))
+			if reopen {
+				if err := c.Close(); err != nil {
+					t.Fatal(err)
+				}
+				c = openAt(t, dir)
+			}
+			must(t, c, cenv(nextID(), anchored("across", from, resumed)))
+			hero := logOf(t, c, "hero")
+			for _, e := range hero {
+				if e.WorldSeq == resumed {
+					t.Fatalf("fixture: the resume caused %s, so this proves nothing", describe(e.Env))
+				}
+			}
+			if got, all := anchoredIn(t, hero, "across", from, resumed); got != [2]int64{} || all == ([2]int64{}) {
+				t.Fatalf("anchor %v, want unanchored: the range holds %v, all before the pause", got, all)
+			}
+			assertNoneDropped(t, c)
+		})
+	}
 }
