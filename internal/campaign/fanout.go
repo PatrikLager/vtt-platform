@@ -177,7 +177,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 func (l *characterLog) reanchor(frames []*vttv1.Envelope) []*vttv1.Envelope {
 	for _, f := range frames {
 		n := f.GetNarrationAdded()
-		if n == nil || (n.AnchorFromSeq == 0 && n.AnchorToSeq == 0) {
+		if n == nil {
 			continue
 		}
 		from := sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world >= n.AnchorFromSeq })

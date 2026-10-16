@@ -31,7 +31,7 @@ github.com/PatrikLager/vtt-platform/cmd/vtt                          85.0
 github.com/PatrikLager/vtt-platform/internal/adventure               89.5
 github.com/PatrikLager/vtt-platform/internal/adventure/conformance   89.0
 github.com/PatrikLager/vtt-platform/internal/artlib                  99.0
-github.com/PatrikLager/vtt-platform/internal/campaign                85.5
+github.com/PatrikLager/vtt-platform/internal/campaign                92.5
 github.com/PatrikLager/vtt-platform/internal/campaigncfg             99.0
 github.com/PatrikLager/vtt-platform/internal/engine                  97.5
 github.com/PatrikLager/vtt-platform/internal/eventgen                98.0
@@ -45,6 +45,6 @@ github.com/PatrikLager/vtt-platform/internal/perceive                94.5
 github.com/PatrikLager/vtt-platform/internal/rules                   89.0
 github.com/PatrikLager/vtt-platform/internal/rules/conformance       85.5
 github.com/PatrikLager/vtt-platform/internal/sight                   99.7
-github.com/PatrikLager/vtt-platform/internal/store                   90.0
+github.com/PatrikLager/vtt-platform/internal/store                   94.0
 github.com/PatrikLager/vtt-platform/tools/toolgen                    85.0
 github.com/PatrikLager/vtt-platform/tools/genmappack                 90.0
