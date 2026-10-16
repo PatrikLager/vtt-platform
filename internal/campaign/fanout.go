@@ -26,7 +26,13 @@ type characterLog struct {
 	fold     *engine.State
 	head     int64
 	decision *perceive.Projection // nil while the log is paused
+	// Give a working copy caused through a three-index slice, or its appends
+	// write into the array c.logs holds (fanOutLocked).
+	caused []causedEntry
 }
+
+// causedEntry is an entry a world event caused, which an anchor may name (VTT-322).
+type causedEntry struct{ world, seq int64 }
 
 // CharacterLog returns actorID's character log in its own order; an actor
 // that has none reads empty.
@@ -72,6 +78,11 @@ func (c *Campaign) loadCharacterLogsLocked() error {
 			return fmt.Errorf("campaign: the character log of %s does not fold: %w", id, err)
 		}
 		l := &characterLog{fold: fold, head: envs[len(envs)-1].Sequence}
+		for _, e := range entries {
+			if e.WorldSeq != 0 {
+				l.caused = append(l.caused, causedEntry{world: e.WorldSeq, seq: e.Env.GetSequence()})
+			}
+		}
 		if isPartyMember(c.state, id) {
 			l.decision = perceive.Resume(eyesOf(id), fold, c.state)
 		}
@@ -89,6 +100,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 	logs := make(map[string]*characterLog, len(c.logs))
 	for id, l := range c.logs {
 		cp := *l
+		cp.caused = l.caused[:len(l.caused):len(l.caused)]
 		logs[id] = &cp
 	}
 	var entries []store.Entry
@@ -131,7 +143,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 			entries = appendEntries(entries, id, -1, out)
 			l.fold, l.head = fold, l.head+int64(len(out))
 
-			frames := l.decision.Event(eyesOf(id), ev, l.fold, world)
+			frames := l.reanchor(l.decision.Event(eyesOf(id), ev, l.fold, world))
 			fold, out, err = trial(l.fold, l.head, frames)
 			if err != nil {
 				// VTT-320: write nothing, and resume the decision from the log, since
@@ -143,10 +155,33 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 				continue
 			}
 			entries = appendEntries(entries, id, i, out)
+			for _, e := range out {
+				l.caused = append(l.caused, causedEntry{world: ev.Sequence, seq: e.Sequence})
+			}
 			l.fold, l.head = fold, l.head+int64(len(out))
 		}
 	}
 	return entries, logs, dropped, nil
+}
+
+// reanchor rewrites each anchored narration in frames onto the entries of
+// this log its world range caused, or makes it unanchored when there are
+// none (VTT-322). Rewrite only frames the decision made for this log alone.
+func (l *characterLog) reanchor(frames []*vttv1.Envelope) []*vttv1.Envelope {
+	for _, f := range frames {
+		n := f.GetNarrationAdded()
+		if n == nil || (n.AnchorFromSeq == 0 && n.AnchorToSeq == 0) {
+			continue
+		}
+		from := sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world >= n.AnchorFromSeq })
+		to := sort.Search(len(l.caused), func(k int) bool { return l.caused[k].world > n.AnchorToSeq })
+		if from < to {
+			n.AnchorFromSeq, n.AnchorToSeq = l.caused[from].seq, l.caused[to-1].seq
+		} else {
+			n.AnchorFromSeq, n.AnchorToSeq = 0, 0
+		}
+	}
+	return frames
 }
 
 // logIDs are the actors with a log and the party members of world, sorted.

@@ -588,3 +588,148 @@ func TestADropThatLeftEveryActorHeldKeepsForwardingWhatTheCharacterSees(t *testi
 	}
 	assertFoldsAtEveryPrefix(t, "the hero's log", got)
 }
+
+// anchoredIn returns the anchor range of the narration text in entries, and
+// the range VTT-322 asks for: the first to the last entry whose world event
+// lies in [from, to], leaving out the opening, or 0, 0 when none does.
+func anchoredIn(t *testing.T, entries []campaign.CharacterEntry, text string, from, to int64) (got, want [2]int64) {
+	t.Helper()
+	found := false
+	for _, e := range entries {
+		if n := e.Env.GetNarrationAdded(); n != nil && n.GetText() == text {
+			got, found = [2]int64{n.GetAnchorFromSeq(), n.GetAnchorToSeq()}, true
+		}
+		if e.WorldSeq != 0 && e.WorldSeq >= from && e.WorldSeq <= to {
+			if want[0] == 0 {
+				want[0] = e.Env.GetSequence()
+			}
+			want[1] = e.Env.GetSequence()
+		}
+	}
+	if !found {
+		t.Fatalf("the log holds no narration %q: %v", text, kindsOf(entries))
+	}
+	return got, want
+}
+
+func assertNoneDropped(t *testing.T, c *campaign.Campaign) {
+	t.Helper()
+	if n := c.DiscardedForTest(); n != 0 {
+		t.Errorf("%d frame set(s) dropped", n)
+	}
+}
+
+func anchored(text string, from, to int64) *vttv1.NarrationAdded {
+	return &vttv1.NarrationAdded{Text: text, AnchorFromSeq: from, AnchorToSeq: to}
+}
+
+// VTT-322
+func TestAnAnchoredNarrationNamesTheEntriesOfItsOwnLog(t *testing.T) {
+	t.Run("a range wholly seen", func(t *testing.T) {
+		c := openTemp(t)
+		hallWithHero(t, c, 2)
+		from := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}))
+		to := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "poisoned"}))
+		// A seen event after the range, so its end is not the log's last entry.
+		must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "slowed"}))
+		must(t, c, cenv(nextID(), anchored("the goblin reels", from, to)))
+		hero := logOf(t, c, "hero")
+		got, want := anchoredIn(t, hero, "the goblin reels", from, to)
+		if want[0] == 0 || want[0] == want[1] || got != want {
+			t.Fatalf("anchor %v, want %v (two entries apart)", got, want)
+		}
+		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+		assertNoneDropped(t, c)
+	})
+	t.Run("a range with several entries for one world event", func(t *testing.T) {
+		c := openTemp(t)
+		hallWithHero(t, c, 5)
+		door := must(t, c, cenv(nextID(), &vttv1.DoorOpened{SceneId: "s", At: at(3, 1)}))
+		must(t, c, cenv(nextID(), anchored("the door swings wide", door, door)))
+		hero := logOf(t, c, "hero")
+		got, want := anchoredIn(t, hero, "the door swings wide", door, door)
+		if want[0] == want[1] || got != want {
+			t.Fatalf("anchor %v, want %v (every entry the door gave)", got, want)
+		}
+		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+		assertNoneDropped(t, c)
+	})
+	t.Run("a range that starts before the log opened", func(t *testing.T) {
+		c := openTemp(t)
+		hallWithHero(t, c, 2)
+		from := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}))
+		must(t, c, cenv(nextID(), partyMember("asme")))
+		to := must(t, c, cenv(nextID(), &vttv1.TokenPlaced{TokenId: "t-asme", SceneId: "s", ActorId: "asme", Position: at(2, 1)}))
+		must(t, c, cenv(nextID(), anchored("asme arrives", from, to)))
+		asme := logOf(t, c, "asme")
+		got, want := anchoredIn(t, asme, "asme arrives", from, to)
+		if want[0] <= 1 || got != want {
+			t.Fatalf("anchor %v, want %v (no opening entry)", got, want)
+		}
+		assertFoldsAtEveryPrefix(t, "asme's log", asme)
+		// The hero is handed the same narration: its range is its own.
+		hero := logOf(t, c, "hero")
+		if got, want := anchoredIn(t, hero, "asme arrives", from, to); got != want || got == ([2]int64{}) {
+			t.Fatalf("the hero's anchor %v, want %v", got, want)
+		}
+		assertNoneDropped(t, c)
+	})
+	t.Run("a range in the same batch", func(t *testing.T) {
+		c := openTemp(t)
+		hallWithHero(t, c, 2)
+		first, err := c.AppendBatch([]*vttv1.Envelope{
+			cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}),
+			cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "poisoned"}),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.AppendBatch([]*vttv1.Envelope{
+			cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "slowed"}),
+			cenv(nextID(), anchored("the goblin staggers", first, first+2)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		hero := logOf(t, c, "hero")
+		got, want := anchoredIn(t, hero, "the goblin staggers", first, first+2)
+		if want[1]-want[0] != 2 || got != want {
+			t.Fatalf("anchor %v, want %v (across the two batches)", got, want)
+		}
+		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+		assertNoneDropped(t, c)
+	})
+	t.Run("a range across a reopen", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "campaign")
+		c := openAt(t, dir)
+		hallWithHero(t, c, 2)
+		from := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}))
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+		c = openAt(t, dir)
+		to := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "poisoned"}))
+		must(t, c, cenv(nextID(), anchored("the goblin sags", from, to)))
+		hero := logOf(t, c, "hero")
+		got, want := anchoredIn(t, hero, "the goblin sags", from, to)
+		if want[0] == want[1] || got != want {
+			t.Fatalf("anchor %v, want %v (the entry before the reopen included)", got, want)
+		}
+		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+		assertNoneDropped(t, c)
+	})
+	t.Run("a range none of whose events reached the log", func(t *testing.T) {
+		c := openTemp(t)
+		hallWithHero(t, c, 5)
+		unseen := must(t, c, cenv(nextID(), &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"}))
+		// A seen event after the range, so an anchor running to the log's last
+		// entry is not mistaken for none.
+		must(t, c, cenv(nextID(), &vttv1.NarrationAdded{Text: "the hero waits"}))
+		must(t, c, cenv(nextID(), anchored("far off, a groan", unseen, unseen)))
+		hero := logOf(t, c, "hero")
+		if got, _ := anchoredIn(t, hero, "far off, a groan", unseen, unseen); got != [2]int64{} {
+			t.Fatalf("anchor %v, want unanchored", got)
+		}
+		assertFoldsAtEveryPrefix(t, "the hero's log", hero)
+		assertNoneDropped(t, c)
+	})
+}
