@@ -63,10 +63,12 @@ and the seat is sent no further event frame on that connection. While one
 `Campaign` is the only writer of a log, every prefix a seat receives folds:
 `internal/campaign` is the only non-test importer of `internal/store` (`grep
 -rln 'vtt-platform/internal/store"'` over the non-test Go files),
-`campaign.Append` and `campaign.AppendBatch` are its only callers of the
-store's appends (`grep -rn 'c.log.Append'` over `internal/campaign`), and each
-validates its envelopes against a snapshot of the live state under that
-`Campaign`'s mutex before it persists; `campaign.Open` refuses a log that does
+`campaign.Append` and `campaign.AppendBatch` reach the store's one append
+only through `Campaign.appendLocked` (`grep -rn 'c.log.Append'` over
+`internal/campaign` prints its one call, and `grep -rn 'appendLocked('` over
+`internal/campaign` prints it and its two calls), which validates the
+envelopes against a snapshot of the live state under that `Campaign`'s mutex
+before it persists; `campaign.Open` refuses a log that does
 not fold. `campaign.Open` takes the directory's writer hold before it opens
 the log (SPEC-019), so a second `Campaign` on one directory, in this process
 or another, is refused before it can append; a seat reaches this arm only on a log written

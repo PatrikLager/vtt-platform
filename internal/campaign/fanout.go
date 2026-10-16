@@ -30,7 +30,7 @@ type characterLog struct {
 	// its appends write into the arrays c.logs holds (fanOutLocked).
 	caused []causedEntry
 	// resumes are the world events at which the log resumed. Open finds more,
-	// from before the log's first caused entry, where none moves an anchor.
+	// at or before the log's first caused entry, where none moves an anchor.
 	resumes []int64
 }
 

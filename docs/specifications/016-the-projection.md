@@ -3,7 +3,8 @@
 ## Status
 
 Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
-`Projection`, `New`, `Event`, `Perch`, `CanSee`, `recall`, `sameIncarnation`,
+`Projection`, `New`, `Resume`, `Event`, `Perch`, `CanSee`, `recall`,
+`sameIncarnation`,
 `trueKeys`, `sightView`, `look`, `eyes`, `transitions`, `sceneSeenFor`,
 `objectInSight`, `verdict`, `passIf`, `classify`, `canSeeSquare`,
 `doorTransitions`, `doorSubject`, `squareAt`, `squareKey`, `sortedSet`,
@@ -13,9 +14,13 @@ Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
 `engine.IsPartyMember`, and by `internal/gateway/project.go` (`Viewer`,
 `Projector`, `NewProjector`, `eyesFor`, `Project`, `perchSequence`,
 `reperch`), over `campaign.FoldPrefix`; called from
-`internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`); pinned
+`internal/gateway/seat.go` (`newSeat`, `receive`, `perch`, `canSee`) and,
+for the character logs, from `internal/campaign/fanout.go`
+(`loadCharacterLogsLocked`, `fanOutLocked`, `restartDecisionsLocked`,
+`opening`; SPEC-021); pinned
 by `internal/perceive/board_test.go`, `roster_test.go`, `status_test.go`,
-`history_test.go`, `unseen_test.go`, `deps_test.go`,
+`history_test.go`, `unseen_test.go`, `resume_from_fold_test.go`,
+`deps_test.go`,
 `projection_internal_test.go` and `qa_testimony_eyes_test.go`, through the
 harness in `viewer_test.go`, and by
 `internal/gateway/project_test.go`, `project_internal_test.go`,
@@ -121,7 +126,13 @@ again; when `st` adds it again as the same actor, it is not gone, and it is
 corrected when it comes into sight. `sighted` alone is carried from call to
 call: the look's `sees` as the last `transitions` left it, by an event or by a
 perch. `New` starts it empty, or, handed a world, with the `sees` of a look at
-that world. So what a projection sends is a function of the viewer's fold, the
+that world. `Resume`, handed the viewer's fold and a world, starts it as
+`New` does with that world when the fold holds every actor in that look's
+`sees` as the world holds it, the same incarnation and one for which
+`statusFrames` answers no frame and true, and empty otherwise: a fold that
+lags the world for an actor in sight is then corrected rather than forwarded
+what it would refuse, which a character log relies on after a dropped frame
+set, a failed write and a reopen (SPEC-021). So what a projection sends is a function of the viewer's fold, the
 world, the eyes and the last look's `sees`, and a `Projection` built by `New`
 from the world at any prefix of the log, and handed the fold of the frames
 sent to that point, sends from then on what one fed from the first event
@@ -276,7 +287,9 @@ against which state, and `canSee` are SPEC-015's. What a square can see
 SPEC-007's; delivery is SPEC-011's; who may issue each command, the move
 gate, and the refusal of an `upsert_note` that names no visibility are
 SPEC-013's; what a party member is, is `engine.IsPartyMember`'s;
-what each fold refuses is `engine.Apply`'s and `client/src/fold.ts`'s.
+what each fold refuses is `engine.Apply`'s and `client/src/fold.ts`'s. Which
+character logs exist, when the decision runs at append, and what an entry of
+one carries are SPEC-021's.
 
 ## Consequences
 
