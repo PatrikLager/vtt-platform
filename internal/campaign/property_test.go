@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/eventgen"
 )
@@ -109,6 +111,7 @@ func propertySeeds(t *testing.T) (seeds []int64, guardEachWalk, guardEnsemble bo
 // ActorControlGranted.ParticipantId corrupted. That is the whole of what those
 // twelve event types buy by being drawn at all, and it is worth having — none
 // of them reached a generated walk before.
+// VTT-326
 func TestRebuildEqualsLiveProperty(t *testing.T) {
 	seeds, guardEachWalk, guardEnsemble := propertySeeds(t)
 
@@ -224,6 +227,20 @@ func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 	// way.
 }
 
+// assertPrefixUnchanged requires every entry of before to stand in after as it
+// was (VTT-326).
+func assertPrefixUnchanged(t *testing.T, seed int64, id string, before, after []campaign.CharacterEntry) {
+	t.Helper()
+	if len(after) < len(before) {
+		t.Fatalf("property test (seed=%d): %s's log shrank from %d to %d entries", seed, id, len(before), len(after))
+	}
+	for k := range before {
+		if !proto.Equal(before[k].Env, after[k].Env) || before[k].WorldSeq != after[k].WorldSeq {
+			t.Fatalf("property test (seed=%d): %s's entry %d changed", seed, id, k+1)
+		}
+	}
+}
+
 // runPropertyWalk is one seed's walk: propertyEventCount model-driven actions
 // against a real campaign file, closing and reopening every propertyCheckEvery
 // to check that the state rebuilt from the log equals the state held live.
@@ -249,12 +266,25 @@ func runPropertyWalk(t *testing.T, seed int64) map[string]int {
 
 	m := eventgen.New()
 	counts := map[string]int{}
+	ids := map[string]bool{}
+	held := map[string][]campaign.CharacterEntry{}
 
 	for i := 0; i < propertyEventCount; i++ {
-		applyDrawn(t, c, m, m.Step(rng, i), i, counts)
+		a := m.Step(rng, i)
+		if a.Env != nil {
+			noteActor(ids, a.Env)
+		}
+		applyDrawn(t, c, m, a, i, counts)
 
 		if (i+1)%propertyCheckEvery == 0 {
 			snapshot := c.State()
+			assertNoneDropped(t, c)
+			logs := map[string][]campaign.CharacterEntry{}
+			for id := range ids {
+				logs[id] = logOf(t, c, id)
+				assertPrefixUnchanged(t, seed, id, held[id], logs[id])
+			}
+			held = logs
 
 			if err := c.Close(); err != nil {
 				t.Fatalf("property test (seed=%d): close after action #%d: %v", seed, i, err)
@@ -265,6 +295,13 @@ func runPropertyWalk(t *testing.T, seed int64) map[string]int {
 			}
 
 			live := c.State()
+			for id, before := range logs {
+				after := logOf(t, c, id)
+				if len(after) != len(before) {
+					t.Fatalf("property test (seed=%d): %s's log read back %d entries after a reopen, held %d", seed, id, len(after), len(before))
+				}
+				assertPrefixUnchanged(t, seed, id, before, after)
+			}
 			if !statesEqual(snapshot, live) {
 				t.Fatalf("property test (seed=%d): rebuild != live after action #%d\nsnapshot: %+v\nlive:     %+v\n"+
 					"reproduce: VTT_PROPERTY_SEED=%d go test -run TestRebuildEqualsLiveProperty ./internal/campaign/",

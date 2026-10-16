@@ -1308,7 +1308,7 @@ func TestQAPauseAnAnchorAcrossAResumeWithNoResumeEntries(t *testing.T) {
 // VTT-318 with VTT-320 and VTT-323: status that changed during the pause, on an
 // actor in view and on the eye itself, does not stop the next events about
 // them from being written after the resume.
-// VTT-318
+// VTT-318 VTT-323
 func TestQAPauseStatusChangedDuringThePauseStillFoldsAfterTheResume(t *testing.T) {
 	w := qaPauseOpen(t)
 	qaPauseBase(w, true)
