@@ -28,14 +28,9 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
-// errPoisoned is returned by every Campaign method once poisoned is set.
-// The two paths that set it are both post-persist: the log already holds an
-// event that the live projection failed to fold. At that point c.state no
-// longer reliably reflects the log, and continuing to serve reads/writes
-// from it risks compounding the divergence. Both trigger paths are
-// defensively unreachable by design — Append and AppendBatch each fold a
-// snapshot clone before persisting anything — so poisoning exists as a
-// fail-loud backstop, not an expected state.
+// errPoisoned is returned by every Campaign method once poisoned is set. Only
+// appendLocked sets it, after a persist, when the live state fails to fold what
+// validation folded: unreachable by design, and kept as a fail-loud backstop.
 var errPoisoned = errors.New("campaign: poisoned by post-persist failure; reopen required")
 
 // ErrHeld is the refusal of an Open whose directory another Campaign holds.
@@ -54,13 +49,8 @@ type Campaign struct {
 	log   *store.Store
 	state *engine.State
 
-	// head is the highest sequence the store has assigned so far — i.e.
-	// store's SELECT MAX(seq) — maintained under c.mu on every successful
-	// rebuild/append. It exists so AppendBatch can validate against clones
-	// stamped with the SAME contiguous sequences the store is about to
-	// assign (head+1..head+N); see AppendBatch for why that equivalence
-	// holds. head counts every persisted row — nothing is ever deleted from
-	// the log — exactly as store's MAX(seq) does.
+	// Keep head equal to the store's MAX(seq) under c.mu: appendLocked validates
+	// clones stamped head+1.., the sequences the store assigns next.
 	head int64
 
 	// poisoned is set when a post-persist step fails (see errPoisoned). Once
@@ -201,89 +191,82 @@ func foldEvents(events []*vttv1.Envelope) (*engine.State, error) {
 	return st, nil
 }
 
-// Append validates against the projection, persists (the commit point), then
-// advances the live projection. Any validation error writes nothing (spec §7).
-// Returns errPoisoned without touching the log if the Campaign is poisoned
-// (see the Campaign doc comment) — reopen the Campaign to recover.
-//
-// THERE IS NO EventsRetracted GUARD ANY MORE, and the reason it could go is
-// worth stating rather than inferring from its absence. Append and AppendBatch
-// each refused that payload outright for one day — the marker's writer had
-// left but the message had not, and engine.Apply's no-op arm would have let
-// one validate and persist into a log where it meant nothing. Both the arm and
-// the message left the contract on 2026-08-31 (spec
-// 2026-08-30-retraction-leaves), so no envelope can carry the payload at all
-// and the guard has nothing left to guard: the type system now says what the
-// runtime check said.
+// Append validates env against a snapshot of the live state, persists it,
+// then applies it live and notifies. A refusal writes nothing; a failure
+// after the write poisons the Campaign, and every later call returns
+// errPoisoned.
 func (c *Campaign) Append(env *vttv1.Envelope) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.poisoned {
 		return 0, errPoisoned
 	}
-	if env.Payload == nil {
-		return 0, engine.ErrUnknownVariant
+	return c.appendLocked([]*vttv1.Envelope{env})
+}
+
+// AppendBatch is Append for a non-empty batch, all or nothing: one envelope
+// that does not fold refuses the whole batch.
+func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poisoned {
+		return 0, errPoisoned
 	}
-	// Stamp session_id before validation, so validation (and the live apply
-	// below) always see the final envelope (merge-gate decision, sub-project
-	// 4): the campaign is authoritative over session_id, not the caller.
-	if err := c.stampSessionID(env); err != nil {
-		return 0, err
+	if len(envs) == 0 {
+		return 0, errors.New("campaign: append batch must not be empty")
 	}
-	// Validate a clone stamped c.head+1, the sequence the store assigns next:
-	// c.head equals the store's MAX(seq) under c.mu, which every append holds,
-	// and some folds reject by the event's own sequence
-	// (TestAppendAcceptsAnchoredNarrationPointingAtRealPriorSequence). Keep env
-	// unstamped: the store requires Sequence 0 and stamps it itself.
-	clone := proto.Clone(env).(*vttv1.Envelope)
-	clone.Sequence = c.head + 1
-	if err := engine.Apply(c.state.Snapshot(), clone); err != nil {
-		return 0, err
+	return c.appendLocked(envs)
+}
+
+// Hold c.mu for the whole call: c.head stands for the store's MAX(seq) only
+// while no other append can run.
+func (c *Campaign) appendLocked(envs []*vttv1.Envelope) (int64, error) {
+	for _, env := range envs {
+		if env.Payload == nil {
+			return 0, engine.ErrUnknownVariant
+		}
 	}
-	seq, err := c.log.AppendBatch([]*vttv1.Envelope{env}, nil) // persists; does not notify
+	snap := c.state.Snapshot()
+	for i, env := range envs {
+		// Stamp against the evolving snapshot: a SessionStarted earlier in the
+		// batch opens the session for the envelopes after it.
+		if err := stampSessionIDAgainst(env, snap); err != nil {
+			return 0, err
+		}
+		// Validate a clone stamped with the sequence the store assigns next, as
+		// some folds reject by the event's own sequence
+		// (TestAppendAcceptsAnchoredNarrationPointingAtRealPriorSequence). Keep
+		// env unstamped: the store requires Sequence 0 and stamps it itself.
+		clone := proto.Clone(env).(*vttv1.Envelope)
+		clone.Sequence = c.head + int64(i) + 1
+		if err := engine.Apply(snap, clone); err != nil {
+			return 0, err
+		}
+	}
+	firstSeq, err := c.log.AppendBatch(envs, nil) // persists; does not notify
 	if err != nil {
 		return 0, err
 	}
-	c.head = seq // the store just assigned this as the new log head
-	if err := engine.Apply(c.state, env); err != nil {
-		// Snapshot-validated, so this is unreachable; fail loudly if not.
-		// The event is already persisted (commit point above) but the live
-		// projection could not be advanced to match — poison the Campaign
-		// rather than serve a projection that has silently fallen behind
-		// the log. Do not notify: a poisoned campaign must not advertise an
-		// event its own projection couldn't fold.
-		c.poisoned = true
-		return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
+	c.head = firstSeq + int64(len(envs)) - 1
+	for _, env := range envs {
+		if err := engine.Apply(c.state, env); err != nil {
+			// Unreachable while validation folds the same envelopes at the same
+			// sequences. Poison rather than serve a state behind the log, and
+			// notify nothing.
+			c.poisoned = true
+			return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
+		}
 	}
-	// Notify only after the live projection reflects env, so a subscriber
-	// that observes this event can always read state >= it (see
-	// store.Store.Notify's doc comment).
-	c.log.Notify(env)
-	return seq, nil
+	// Notify only once the live state holds the whole batch (Store.Notify).
+	for _, env := range envs {
+		c.log.Notify(env)
+	}
+	return firstSeq, nil
 }
 
-// stampSessionID stamps env.SessionId under c.mu, before validation/persist
-// (merge-gate decision, sub-project 4; corrected to match spec §1.1 during
-// workflow-level final review — see docs/superpowers/specs/
-// 2026-07-24-hardening-design.md): a SessionStarted event gets a fresh,
-// generated id; every other event gets the currently open session's id,
-// overwriting any caller-supplied value (the campaign is authoritative, not
-// the caller). With no session open, the incoming value is CLEARED to ""
-// rather than left as-is: a closed (or never-opened) session must never let
-// a stale or caller-supplied id ride along on an out-of-session event (spec:
-// "no open session → empty" — legitimate, e.g. table setup before the first
-// SessionStarted).
-func (c *Campaign) stampSessionID(env *vttv1.Envelope) error {
-	return stampSessionIDAgainst(env, c.state)
-}
-
-// stampSessionIDAgainst is stampSessionID's logic parameterized on WHICH
-// state's Sessions to read the open session from. Single-event Append
-// always checks the live c.state (via stampSessionID above). AppendBatch
-// instead passes an evolving snapshot clone that it folds against event by
-// event, so a SessionStarted earlier in the SAME batch is already visible
-// (session considered open) when a later envelope in that batch is stamped
-// — matching what two sequential Append calls would produce.
+// Overwrite whatever SessionId the caller sent: a fresh id for a
+// SessionStarted, else the session open in st or "". SPEC-018 leaves
+// session_id unbounded because the server writes it.
 func stampSessionIDAgainst(env *vttv1.Envelope, st *engine.State) error {
 	if _, ok := env.Payload.(*vttv1.Envelope_SessionStarted); ok {
 		id, err := newSessionID()
@@ -321,109 +304,6 @@ func newSessionID() (string, error) {
 		return "", fmt.Errorf("campaign: generate session id: %w", err)
 	}
 	return "sess-" + hex.EncodeToString(b), nil
-}
-
-// AppendBatch validates and persists a batch of events atomically (spec
-// §6, data-integrity-core review depth): the WHOLE batch is folded
-// sequentially against ONE snapshot clone before anything persists — any
-// single event failing rejects the entire batch, writing nothing — then
-// persisted via store.AppendBatch (one transaction, contiguous sequences),
-// then live-applied to the live projection, then notified in order. All of
-// this happens under ONE acquisition of c.mu — the SAME mutex Append uses,
-// held for the whole call with no unlock between validate and persist — so
-// no other Campaign operation can run concurrently with it, let alone
-// interleave a foreign event into this batch's notify run.
-//
-// Session ids are stamped envelope by envelope against the evolving
-// snapshot (not the live state) as it is folded, so a SessionStarted
-// earlier in the SAME batch is already visible to a later envelope's
-// session-open check — exactly as two sequential Append calls would behave
-// (see stampSessionIDAgainst).
-//
-// Rejects a zero-length batch, and rejects an envelope with no payload at all
-// exactly as Append does per-event (see Append's doc comment for the guard
-// that used to stand beside that one and why it no longer needs to). Returns
-// errPoisoned without touching the log if the Campaign is poisoned (see the
-// Campaign doc comment) — reopen the Campaign to recover.
-// A post-persist live-apply failure poisons the Campaign, exactly matching
-// Append's poison contract.
-func (c *Campaign) AppendBatch(envs []*vttv1.Envelope) (int64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.poisoned {
-		return 0, errPoisoned
-	}
-	if len(envs) == 0 {
-		return 0, errors.New("campaign: append batch must not be empty")
-	}
-	for _, env := range envs {
-		if env.Payload == nil {
-			return 0, engine.ErrUnknownVariant
-		}
-	}
-	// Stamp session_id and validate each envelope IN ORDER against one
-	// evolving snapshot clone: any envelope failing to fold rejects the
-	// entire batch untouched (nothing stamped survives past this loop's
-	// error return except in the caller's own envelope objects — matching
-	// Append's own behavior, where a rejected event's stamped session_id
-	// is not reverted either).
-	//
-	// The validation fold MUST see the same sequence each envelope will
-	// carry when it is later live-applied, because some folds are
-	// sequence-dependent (SessionEnded writes EndSeq = env.Sequence, and
-	// EndSeq==0 is the "session still open" sentinel — folding an unstamped,
-	// Sequence==0 SessionEnded would leave the session looking open and
-	// validate differently than it live-applies). We fold CLONES stamped
-	// with provisional contiguous sequences head+1..head+N.
-	//
-	// Those provisional values are PROVABLY identical to what store.AppendBatch
-	// will assign below: the store assigns MAX(seq)+1..MAX(seq)+N, and c.head
-	// is maintained to equal store's MAX(seq) after every append/rebuild.
-	// The whole call holds c.mu, and every path that appends to the log
-	// (Append and AppendBatch, the only two) runs under c.mu, so no other
-	// append can advance MAX(seq) between reading c.head here and store.AppendBatch's
-	// own MAX(seq) read — same lock ⇒ same head ⇒ identical sequences. The
-	// real envelopes keep Sequence==0 (store.AppendBatch requires that and
-	// stamps them itself); only the throwaway clones carry the provisional
-	// sequence, used solely to drive validation.
-	snap := c.state.Snapshot()
-	for i, env := range envs {
-		if err := stampSessionIDAgainst(env, snap); err != nil {
-			return 0, err
-		}
-		clone := proto.Clone(env).(*vttv1.Envelope)
-		clone.Sequence = c.head + int64(i) + 1
-		if err := engine.Apply(snap, clone); err != nil {
-			return 0, err
-		}
-	}
-	firstSeq, err := c.log.AppendBatch(envs, nil) // persists; does not notify
-	if err != nil {
-		return 0, err
-	}
-	c.head = firstSeq + int64(len(envs)) - 1 // store just assigned this run
-	for _, env := range envs {
-		if err := engine.Apply(c.state, env); err != nil {
-			// Genuinely unreachable now: validation folded clones carrying
-			// the exact sequences store.AppendBatch just assigned (proven
-			// above), so a fold that passed validation cannot fail here.
-			// Kept as a fail-loud backstop. The batch is already persisted
-			// (commit point above) but the live projection could not be
-			// advanced to match — poison the Campaign rather than serve a
-			// projection that has silently fallen behind the log. Do not
-			// notify anything: a poisoned campaign must not advertise events
-			// its own projection couldn't fold.
-			c.poisoned = true
-			return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
-		}
-	}
-	// Notify only after the live projection reflects the WHOLE batch, so a
-	// subscriber that observes any one of these events can always read
-	// state >= it (see store.Store.Notify's doc comment).
-	for _, env := range envs {
-		c.log.Notify(env)
-	}
-	return firstSeq, nil
 }
 
 // State returns a snapshot of the live projection, or nil if the Campaign is

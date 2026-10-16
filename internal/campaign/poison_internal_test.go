@@ -9,11 +9,9 @@ import (
 )
 
 // TestPoisonedCampaignRejectsAllOperations is a white-box test (package
-// campaign, not campaign_test): the two paths that set poisoned are both
-// post-persist and defensively unreachable in normal operation — Append and
-// AppendBatch each fold a snapshot clone before persisting anything — so
-// there is no way to reach a poisoned Campaign through the public API alone.
-// This test sets c.poisoned directly to exercise the guard on every method.
+// campaign): poisoned is set only after a persist that appendLocked's
+// validation makes unreachable, so no public call reaches a poisoned
+// Campaign. This test sets c.poisoned directly to exercise every guard.
 func TestPoisonedCampaignRejectsAllOperations(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "campaign.db")

@@ -6,26 +6,9 @@ import (
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
-// c.head after AppendBatch was completely unasserted. Mutating its arithmetic
-// at campaign.go:357 — `c.head = firstSeq + int64(len(envs)) - 1` — survived
-// three separate mutations (INVERT_NEGATIVES and two ARITHMETIC_BASE), which
-// is to say: the batch could leave the campaign's sequence cursor at the wrong
-// value and the entire suite stayed green.
-//
-// head is not directly observable — it is unexported with no accessor — but it
-// is far from internal. Every subsequent append validates a CLONE stamped with
-// `c.head + 1` (campaign.go:190, :348), and NarrationAdded's anchor rule is
-// sequence-dependent: an anchor must point strictly BEFORE the narrating
-// event's own sequence (engine/apply.go:194). So a head that is off by one
-// shifts the provisional sequence, and an anchor exactly at the boundary flips
-// from accepted to rejected.
-//
-// That is the observable these tests use, and it is the same mechanism as the
-// P11 platform bug where single Append validated folds with Sequence=0 and
-// made anchored narration impossible. Getting head wrong would also corrupt
-// subscription catch-up and the headSequence staleness contract internal/mcp's
-// read tools depend on — but those are farther from this package, and the
-// anchor boundary pins it exactly.
+// c.head is unexported, so these tests observe it through the anchor rule:
+// every append validates a clone stamped c.head+1, so an anchor exactly at the
+// boundary flips between accepted and refused when c.head is off by one.
 
 // appendBatchOfN appends n scene-creation events as one batch and returns the
 // first assigned sequence.
@@ -122,25 +105,9 @@ func TestHeadAfterConsecutiveBatchesStaysContiguous(t *testing.T) {
 	}
 }
 
-// TestRejectedAnchorAfterBatchDoesNotPoisonTheCampaign is the test that
-// actually kills the `- 1` in c.head's batch arithmetic, and it took finding
-// the right observable to write.
-//
-// The obvious assertions do not work. head is corrected on the next single
-// Append (campaign.go:198, `c.head = seq` from the store), and the sequence
-// Append RETURNS comes from the store too — so a batch that leaves head wrong
-// looks identical from the outside for one append, then heals.
-//
-// The damage happens inside that one window. Append validates a CLONE stamped
-// `c.head + 1` (campaign.go:190) before persisting. If head is too high, an
-// anchor that should be rejected passes validation, the event is PERSISTED,
-// and only then does the real fold reject it — which by that function's own
-// contract poisons the Campaign rather than serving a projection behind the
-// log. So the difference between correct and mutated is not "does this
-// append fail" (both fail) but "is the campaign still usable afterwards".
-//
-// That makes this a safety property worth pinning for its own sake: a
-// rejection must be clean.
+// TestRejectedAnchorAfterBatchDoesNotPoisonTheCampaign: a c.head a batch left
+// too high lets a refused anchor pass validation and poison the campaign after
+// it persists, so assert the campaign is still usable after the refusal.
 func TestRejectedAnchorAfterBatchDoesNotPoisonTheCampaign(t *testing.T) {
 	c := openTemp(t)
 

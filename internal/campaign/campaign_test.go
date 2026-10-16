@@ -69,19 +69,9 @@ func cenv(id string, payload any) *vttv1.Envelope {
 	case *vttv1.ActorRemoved:
 		e.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
 	default:
-		// AN UNHANDLED PAYLOAD USED TO RETURN A NIL-PAYLOAD ENVELOPE, and the
-		// failure then surfaced as "unknown event variant" — which reads as a
-		// missing ARM in the fold rather than a missing case in a test helper.
-		// Measured 2026-09-12: the property walk gained four add/remove pairs
-		// and this switch gained SIX cases for them (two were already here),
-		// and every engine arm was present the whole time.
-		//
-		// THE ERROR DOES NOT COME FROM engine.Apply, which a first draft of
-		// this comment said: a nil payload never reaches it. campaign.Append
-		// returns engine.ErrUnknownVariant from its own env.Payload == nil
-		// guard before folding, and AppendBatch does the same in its pre-loop.
-		// The text a reader sees is identical either way, which is exactly how
-		// the wrong thing gets blamed — the failure this comment is about.
+		// Panic on a payload with no case: an envelope with a nil payload is
+		// refused by campaign's nil-payload guard as "unknown event variant",
+		// which blames the fold for a case missing here.
 		panic(fmt.Sprintf("cenv: no case for payload %T — add one; a nil-payload "+
 			"envelope fails later and blames the engine", payload))
 	}
