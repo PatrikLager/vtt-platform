@@ -51,16 +51,15 @@ type CharacterEntry struct {
 }
 
 type Store struct {
-	mu   sync.Mutex
-	db   *sql.DB
-	subs []*subscriber
+	mu    sync.Mutex
+	db    *sql.DB
+	subs  []*subscriber
+	chars map[string][]*subscriber
 }
 
 func Open(path string) (*Store, error) {
-	// busy_timeout(5000): a concurrent SQLITE_BUSY (another handle on the
-	// same file mid-write — intra-process, e.g. Store+identity.DB both open
-	// on one campaign, or cross-process) retries for up to 5s instead of
-	// failing immediately (ledgered carry-forward, P6 Task 4 review).
+	// busy_timeout(5000): while another handle writes the file, such as
+	// identity.DB on one campaign, retry for up to 5s rather than fail.
 	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
@@ -69,7 +68,7 @@ func Open(path string) (*Store, error) {
 		_ = db.Close() // closing a handle whose schema init just failed
 		return nil, fmt.Errorf("store: init schema: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, chars: map[string][]*subscriber{}}, nil
 }
 
 // AppendBatch stamps the next world sequences into envs and each entry's next
@@ -194,9 +193,6 @@ func resetBatchSequences(envs []*vttv1.Envelope, entries []Entry) {
 // N can always read state >= N. It ignores an envelope of Sequence 0, which no
 // append assigns, so one never persisted reaches nobody.
 func (s *Store) Notify(env *vttv1.Envelope) {
-	if env.Sequence == 0 {
-		return
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.notifyLocked(env)
@@ -235,6 +231,10 @@ func (s *Store) readAfterLocked(afterSeq int64) ([]*vttv1.Envelope, error) {
 func (s *Store) ReadCharacterAfter(actorID string, afterSeq int64) ([]CharacterEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.readCharacterLocked(actorID, afterSeq)
+}
+
+func (s *Store) readCharacterLocked(actorID string, afterSeq int64) ([]CharacterEntry, error) {
 	logs, err := s.readCharactersLocked(
 		`SELECT actor_id, world_seq, payload FROM character_events WHERE actor_id = ? AND seq > ? ORDER BY seq`,
 		actorID, afterSeq)
@@ -281,5 +281,12 @@ func (s *Store) Close() error {
 		s.dropLocked(sub)
 	}
 	s.subs = nil
+	for _, subs := range s.chars {
+		for _, sub := range subs {
+			s.dropLocked(sub)
+		}
+	}
+	// Empty it, never nil it: NotifyCharacter may still write after Close.
+	clear(s.chars)
 	return s.db.Close()
 }

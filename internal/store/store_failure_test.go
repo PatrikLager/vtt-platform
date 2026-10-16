@@ -179,4 +179,14 @@ func TestOperationsFailAfterClose(t *testing.T) {
 			t.Error("want error after Close")
 		}
 	})
+	t.Run("SubscribeCharacter", func(t *testing.T) {
+		if _, _, _, err := s.SubscribeCharacter("a", 0, 0, 0); err == nil {
+			t.Error("want error after Close")
+		}
+	})
+	t.Run("NotifyCharacter", func(t *testing.T) {
+		env := entryEnv("a2")
+		env.Sequence = 2
+		s.NotifyCharacter("a", env)
+	})
 }

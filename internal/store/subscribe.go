@@ -209,31 +209,14 @@ func (s *Store) Subscribe(afterSeq int64, buffer int) (events <-chan *vttv1.Enve
 // than a wall-clock half-minute. Tests elsewhere use Subscribe and get the
 // default.
 func (s *Store) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noProgress time.Duration) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
-	if noProgress <= 0 {
-		noProgress = SubscriberNoProgressTimeout
-	}
-	if buffer < 0 {
-		return nil, nil, 0, fmt.Errorf("store: negative subscribe buffer %d", buffer)
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	history, err := s.readAfterLocked(afterSeq)
+	sub, err := startSubscriber(afterSeq, buffer, noProgress, s.readAfterLocked)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	sub := &subscriber{
-		ch:      make(chan *vttv1.Envelope, buffer),
-		done:    make(chan struct{}),
-		wake:    make(chan struct{}, 1),
-		pending: history,
-		lastSeq: afterSeq,
-	}
-	if n := len(history); n > 0 {
-		sub.lastSeq = history[n-1].Sequence
-	}
 	s.subs = append(s.subs, sub)
-	go sub.pump(noProgress)
 
 	// NOT `cancel`. It reads as a context.CancelFunc to any Go programmer, and
 	// it is not one — it ends a SUBSCRIPTION and touches no context. That
@@ -264,17 +247,84 @@ func (s *Store) SubscribeWithNoProgressTimeout(afterSeq int64, buffer int, noPro
 // caller's later Notify call: the catch-up preload already queued the event,
 // so the raced Notify is a no-op for that subscriber.
 func (s *Store) notifyLocked(env *vttv1.Envelope) {
-	for _, sub := range s.subs {
+	s.subs = enqueueAll(s.subs, env)
+}
+
+// SubscribeCharacter is SubscribeWithNoProgressTimeout for actorID's
+// character log, by that log's own sequence (SPEC-021).
+func (s *Store) SubscribeCharacter(actorID string, afterSeq int64, buffer int, noProgress time.Duration) (events <-chan *vttv1.Envelope, unsubscribe func(), catchUpHead int64, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sub, err := startSubscriber(afterSeq, buffer, noProgress, func(after int64) ([]*vttv1.Envelope, error) {
+		entries, err := s.readCharacterLocked(actorID, after)
+		envs := make([]*vttv1.Envelope, len(entries))
+		for i, e := range entries {
+			envs[i] = e.Env
+		}
+		return envs, err
+	})
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	s.chars[actorID] = append(s.chars[actorID], sub)
+	unsubscribe = func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.dropLocked(sub)
+	}
+	return sub.ch, unsubscribe, sub.lastSeq, nil
+}
+
+// NotifyCharacter is Notify for actorID's character log.
+func (s *Store) NotifyCharacter(actorID string, env *vttv1.Envelope) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chars[actorID] = enqueueAll(s.chars[actorID], env)
+}
+
+// Call with s.mu held, and register the subscriber before releasing it.
+func startSubscriber(afterSeq int64, buffer int, noProgress time.Duration, read func(afterSeq int64) ([]*vttv1.Envelope, error)) (*subscriber, error) {
+	if noProgress <= 0 {
+		noProgress = SubscriberNoProgressTimeout
+	}
+	if buffer < 0 {
+		return nil, fmt.Errorf("store: negative subscribe buffer %d", buffer)
+	}
+	history, err := read(afterSeq)
+	if err != nil {
+		return nil, err
+	}
+	sub := &subscriber{
+		ch:      make(chan *vttv1.Envelope, buffer),
+		done:    make(chan struct{}),
+		wake:    make(chan struct{}, 1),
+		pending: history,
+		lastSeq: afterSeq,
+	}
+	if n := len(history); n > 0 {
+		sub.lastSeq = history[n-1].Sequence
+	}
+	go sub.pump(noProgress)
+	return sub, nil
+}
+
+// Store the result: enqueueAll compacts subs in place. It is the one home of
+// the zero-sequence guard Notify's doc describes.
+func enqueueAll(subs []*subscriber, env *vttv1.Envelope) []*subscriber {
+	if env.Sequence == 0 {
+		return subs
+	}
+	for _, sub := range subs {
 		sub.enqueue(env)
 	}
-	// compact stopped subscribers
-	live := s.subs[:0]
-	for _, sub := range s.subs {
+	live := subs[:0]
+	for _, sub := range subs {
 		if !sub.isClosed() {
 			live = append(live, sub)
 		}
 	}
-	s.subs = live
+	return live
 }
 
 func (s *Store) dropLocked(sub *subscriber) {
