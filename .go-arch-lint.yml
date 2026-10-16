@@ -142,7 +142,9 @@ components:
 deps:
   store:    { mayDependOn: [contract, store] }
   engine:   { mayDependOn: [contract, engine] }
-  campaign: { mayDependOn: [contract, store, engine, campaign, eventgen] }
+  # campaign may reach perceive to write each party member's log at append
+  # (docs/superpowers/specs/2026-10-16-each-party-member-keeps-its-own-log-design.md).
+  campaign: { mayDependOn: [contract, store, engine, campaign, eventgen, perceive] }
   # eventgen lists ITSELF for the reason store, engine and campaign do: its
   # tests are an external package (eventgen_test) so they exercise only the
   # exported surface, and that import reads to go-arch-lint as a component
@@ -305,8 +307,8 @@ deps:
   # internal/perceive: contract, engine and sight, and not identity, gateway,
   # campaign or store (VTT-311). The code it holds left the gateway, whose
   # list above is a superset of this one, so the gateway's added edge to it
-  # reaches nothing the gateway could not already reach. campaign gains its
-  # edge in the ticket that calls it, not before.
+  # reaches nothing the gateway could not already reach. campaign's edge to
+  # it is the one its own entry above names.
   perceive: { mayDependOn: [contract, engine, sight, perceive] }
   # internal/artlib: self-only. It reads the campaign's art/ directory by
   # filename and nothing else — no contract (it returns a plain Piece, not
