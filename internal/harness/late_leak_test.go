@@ -10,6 +10,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
@@ -128,8 +130,9 @@ func TestDeniedCommandLeakFailsTheDeniedStep(t *testing.T) {
 		if d := rep.Steps[0].Detail; !strings.Contains(d, "unexpected broadcast") {
 			t.Errorf("denied step's detail should name the unexpected broadcast, got %q", d)
 		}
-		if d := rep.Steps[0].Detail; !strings.Contains(d, "dm") || !strings.Contains(d, "player") {
-			t.Errorf("detail should name every participant that received it, got %q", d)
+		// Read the world seat alone: a character seat's sequences need not be the world's.
+		if d := rep.Steps[0].Detail; !strings.Contains(d, "observed by dm") || strings.Contains(d, "player") {
+			t.Errorf("detail should name the world seat that received it and no character seat, got %q", d)
 		}
 		// The witness step is collateral — it read the leaked event instead of
 		// its own — and says so, so nobody investigates it first.
@@ -331,12 +334,14 @@ func TestConsecutiveDenialsBlameTheEarliestOutstandingDenial(t *testing.T) {
 // A panic here is `vtt client run` crashing on an operator's scenario file.
 func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		world := map[string]*fakeConn{
+			"dm": newFakeConn("dm"), "agent": newFakeConn("agent"), "player": newFakeConn("player")}
 
 		// A redialled connection whose channel is already closed: catch-up reads
 		// nothing, so runReconnectStep takes the timedOut path and rebuilds
-		// history["player"] SHORTER than the pending denial's snapshot.
-		dead := newFakeConn("player-redialled")
+		// history["agent"] SHORTER than the pending denial's snapshot. Keep the
+		// redialled seat a world seat: leakedSince reads no character seat.
+		dead := newFakeConn("agent-redialled")
 		_ = dead.Close() // via Close, not close(dead.events): Close is what marks
 		// the conn closed, and RunScenario closes every conn on the way out.
 
@@ -354,7 +359,7 @@ func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 			env := events[sent]
 			sent++
-			broadcast(world, env, "dm", "player")
+			broadcast(world, env, "dm", "agent", "player")
 			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: env.Sequence}, nil
 		}
 		world["player"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
@@ -362,23 +367,24 @@ func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 		}
 
 		sc := &harness.Scenario{
-			Name:         "denial-then-reconnect",
-			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
+			Name: "denial-then-reconnect",
+			Participants: []harness.Participant{
+				{Name: "dm", Role: "dm"}, {Name: "agent", Role: "agent"}, {Name: "player", Role: "player"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: []byte(`{"startSession":{"name":"a"}}`), Expect: &harness.Expect{OK: true}},
 				{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
 					Expect: &harness.Expect{DeniedContaining: "not authorized"}},
-				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
+				{By: "agent", Reconnect: &harness.ReconnectSpec{AfterSequence: 0}},
 				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-1"}}`),
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
 
-		playerDials := 0
+		agentDials := 0
 		dial := func(name string, _ int64) (harness.Conn, error) {
-			if name == "player" {
-				playerDials++
-				if playerDials > 1 {
+			if name == "agent" {
+				agentDials++
+				if agentDials > 1 {
 					return dead, nil
 				}
 			}
@@ -456,4 +462,112 @@ func TestDefaultLogNamesTheDeniedStep(t *testing.T) {
 			t.Errorf("the witness step's line must point back at the denied step, got %q", log.String())
 		}
 	})
+}
+
+// VTT-358
+func TestADenialWithNoWorldSeatIsUnprovable(t *testing.T) {
+	run := func(t *testing.T, participants []harness.Participant) *harness.Report {
+		t.Helper()
+		world := map[string]*fakeConn{}
+		for _, p := range participants {
+			world[p.Name] = newFakeConn(p.Name)
+		}
+		world["player"].send = denySend("not authorized", world, nil)
+		sc := &harness.Scenario{
+			Name:         "no-world-seat",
+			Participants: participants,
+			Steps: []harness.Step{{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
+				Expect: &harness.Expect{DeniedContaining: "not authorized"}}},
+		}
+		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		return rep
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		rep := run(t, []harness.Participant{{Name: "player", Role: "player"}, {Name: "watcher", Role: "spectator"}})
+		if rep.Pass || rep.Steps[0].Pass {
+			t.Fatal("a denial with only character seats connected passed; nothing could have seen a leak")
+		}
+		if d := rep.Steps[0].Detail; !strings.Contains(d, "unprovable") || !strings.Contains(d, "no world seat") {
+			t.Errorf("the denied step should say it is unprovable for want of a world seat, got %q", d)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		rep := run(t, []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}})
+		if !rep.Pass {
+			t.Fatalf("the same denial with a world seat connected failed: %+v", rep.Steps)
+		}
+	})
+	// Count seats by name: one name listed as dm and as player is one character
+	// seat, which no ordering proof reads.
+	synctest.Test(t, func(t *testing.T) {
+		rep := run(t, []harness.Participant{{Name: "player", Role: "dm"}, {Name: "player", Role: "player"}})
+		if rep.Pass || !strings.Contains(rep.Steps[0].Detail, "no world seat") {
+			t.Fatalf("a name listed as dm and as player counted as a world seat: %+v", rep.Steps)
+		}
+	})
+}
+
+func TestALeakTheWorldSeatSawFailsTheDenialWhateverACharacterSeatSaw(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		leak := &vttv1.Envelope{EventId: "leaked", Sequence: 1, SessionId: "sess-1",
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "leaked"}}}
+		accepted := &vttv1.Envelope{EventId: "accepted", Sequence: 2, SessionId: "sess-1",
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}}
+		world["player"].send = denySend("not authorized", world, leak, "dm")
+		world["dm"].send = okSend(world, 2, accepted, "dm")
+
+		rep := runDenialThenAccept(t, world)
+		if rep.Pass || rep.Steps[0].Pass {
+			t.Fatal("a leak the world seat received passed because no character seat received it")
+		}
+		if d := rep.Steps[0].Detail; !strings.Contains(d, "observed by dm") {
+			t.Errorf("the denied step should name the world seat that received the leak, got %q", d)
+		}
+	})
+}
+
+func TestACharacterSeatsOwnSequencesAreNoLeak(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		accepted := &vttv1.Envelope{EventId: "accepted", Sequence: 7, SessionId: "sess-1",
+			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "ok"}}}
+		entry := proto.Clone(accepted).(*vttv1.Envelope)
+		entry.Sequence = 1
+		world["player"].send = denySend("not authorized", world, nil)
+		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+			broadcast(world, accepted, "dm")
+			broadcast(world, entry, "player")
+			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: 7}, nil
+		}
+
+		rep := runDenialThenAccept(t, world)
+		if !rep.Pass {
+			t.Fatalf("a character seat's first entry, numbered by its own log, was read as a leak: %+v", rep.Steps)
+		}
+	})
+}
+
+func runDenialThenAccept(t *testing.T, world map[string]*fakeConn) *harness.Report {
+	t.Helper()
+	sc := &harness.Scenario{
+		Name:         "denial-then-accept",
+		Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
+		Steps: []harness.Step{
+			{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
+				Expect: &harness.Expect{DeniedContaining: "not authorized"}},
+			{By: "dm", Command: []byte(`{"startSession":{"name":"ok"}}`), Expect: &harness.Expect{OK: true}},
+		},
+	}
+	dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScenario: %v", err)
+	}
+	return rep
 }

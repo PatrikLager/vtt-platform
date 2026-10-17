@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -276,6 +277,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	conns := make(map[string]Conn, len(sc.Participants))
 	history := make(map[string][]*vttv1.Envelope, len(sc.Participants))
 	projected := projectedSeats(sc.Participants)
+	worldSeat := slices.ContainsFunc(sc.Participants, func(p Participant) bool { return !projected[p.Name] })
 	for _, p := range sc.Participants {
 		c, err := dial(p.Name, 0)
 		if err != nil {
@@ -348,7 +350,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 		// all precede it, so anything they wrongly produced carries a lower
 		// sequence and must already have arrived.
 		if len(pending) > 0 && sr.firstSeq > 0 {
-			if leaked := leakedSince(history, pending[0].lens, sr.firstSeq); len(leaked) > 0 {
+			if leaked := leakedSince(history, pending[0].lens, sr.firstSeq, projected); len(leaked) > 0 {
 				markLeaked(rep, pending, leaked)
 				// The witness step is collateral: it read the leaked event
 				// instead of its own, so its "not observed" message would
@@ -359,7 +361,10 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 			}
 			pending = nil
 		}
-		if sr.absenceUnproven {
+		switch {
+		case sr.absenceUnproven && !worldSeat:
+			markNoWorldSeat(rep, i)
+		case sr.absenceUnproven:
 			pending = append(pending, pendingDenial{idx: i, lens: historyLens(history)})
 		}
 
@@ -464,6 +469,14 @@ func markUnprovableSilence(rep *Report, pending []pendingDenial, ended []string)
 	rep.Pass = false
 }
 
+// markNoWorldSeat fails a denial that no world seat can settle (VTT-358).
+func markNoWorldSeat(rep *Report, idx int) {
+	rep.Steps[idx].Pass = false
+	rep.Steps[idx].Detail = "denial unprovable: no world seat is connected, so no world " +
+		"sequence orders what the denied command might have produced"
+	rep.Pass = false
+}
+
 // historyLens snapshots how many envelopes each participant has observed.
 func historyLens(history map[string][]*vttv1.Envelope) map[string]int {
 	out := make(map[string]int, len(history))
@@ -473,19 +486,16 @@ func historyLens(history map[string][]*vttv1.Envelope) map[string]int {
 	return out
 }
 
-// leakedSince returns the participants who received an envelope with a
-// sequence BELOW witnessSeq after the snapshot in lens — i.e. an event that
-// was already in the log before the accepted step's own, and therefore was
-// produced by the denied command that preceded it.
-//
-// This is the ordering proof. Per-connection delivery is sequence-ordered and
-// the gateway broadcasts only from the store subscription, so anything a
-// denied command wrongly produced must arrive before the next accepted event.
-// Finding none by the time that event lands is proof of absence — no waiting,
-// and no dependence on how fast the server happens to be.
-func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witnessSeq int64) []string {
+// leakedSince names the world seats that received, after lens, an envelope
+// below witnessSeq: one the denied command before the witness produced. Keep
+// the character seats in skip out of it: their sequences need not be the
+// world's (VTT-321).
+func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witnessSeq int64, skip map[string]bool) []string {
 	var leaked []string
 	for name, envs := range history {
+		if skip[name] {
+			continue
+		}
 		// min: a reconnect step REBUILDS history from what the redialled
 		// connection actually replayed, so it can be SHORTER than a pending
 		// denial's snapshot. Indexing that unguarded panicked — the soak twin

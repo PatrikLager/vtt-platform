@@ -126,6 +126,9 @@ type soakWorld struct {
 	leakOnDenial func(ordinal int) bool
 	denials      int
 	leaked       int
+	// leakOnlyTo, when set, delivers a leak to that participant alone.
+	leakOnlyTo  string
+	leakTargets map[*vttv1.Envelope]string
 
 	// slowBroadcast, when > 0, delivers ACCEPTED broadcasts from a goroutine
 	// after that delay instead of inline — modelling a server whose fan-out
@@ -194,6 +197,7 @@ func newSoakWorld(ids map[string]string) *soakWorld {
 		// TestRunSoakErrorsOnPreExistingCatchUpEvents already sets to a
 		// nonzero value before a run.
 		pendingBroadcast: map[int64]*vttv1.Envelope{},
+		leakTargets:      map[*vttv1.Envelope]string{},
 	}
 }
 
@@ -402,6 +406,9 @@ func (w *soakWorld) maybeLeak() {
 	// deliverInOrder exists to remove. Routing it through the same gate
 	// keeps every envelope this fake ever hands to a participant, leaked or
 	// legitimate, on one consistent delivery order.
+	if w.leakOnlyTo != "" {
+		w.leakTargets[env] = w.leakOnlyTo
+	}
 	w.deliverEnvelope(env)
 
 	// Give the per-participant drain goroutines time to consume it before the
@@ -442,6 +449,9 @@ func (w *soakWorld) maybeLeak() {
 
 func (w *soakWorld) broadcast(env *vttv1.Envelope) {
 	for _, c := range w.conns {
+		if to, ok := w.leakTargets[env]; ok && c.name != to {
+			continue
+		}
 		// trySend, not a bare channel send: conns keeps every connection ever
 		// dialled, including the checkpoint's throwaway one after it closes.
 		c.trySend(env)
@@ -1071,6 +1081,32 @@ func TestRunSoakKeystoneHoldsAcrossAnOverflowDisconnect(t *testing.T) {
 		// the ordinary path wearing an overflow's name.
 		if w.overflowFreshCatchUpAfter != 0 {
 			t.Error("the scripted overflow was never consumed — no fresh catch-up dial happened")
+		}
+	})
+}
+
+func TestRunSoakCatchesALeakOnTheAgentsStreamAlone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const seed, events = 22, 60
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.leakOnDenial = func(ordinal int) bool { return ordinal == 1 }
+		w.leakOnlyTo = "agent"
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: seed, Events: events, CheckEvery: events + 1, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if w.leaked != 1 {
+			t.Fatalf("fixture broke: the fake leaked %d times, want exactly 1", w.leaked)
+		}
+		if rep.Pass {
+			t.Fatal("a leak only the agent received passed the soak")
+		}
+		if !regexp.MustCompile(`unexpected broadcast observed by agent after a denied command`).MatchString(log.String()) {
+			t.Errorf("the soak should blame the leak on the agent's stream alone, log:\n%s", log.String())
 		}
 	})
 }

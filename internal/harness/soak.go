@@ -365,11 +365,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 					fmt.Fprintf(report, "[action %d] FAIL: not every unprojected participant observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
 						i, result.Sequence, observeTimeout)
 				}
-				// The projected seats cannot be waited on by sequence, but
-				// their late envelopes are exactly what leakedBelow would
-				// misread, so they are settled instead.
-				histories.settle(projectedNames, denialAbsenceWindow, observeTimeout)
-				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence); len(leaked) > 0 {
+				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence, projected); len(leaked) > 0 {
 					rep.Pass = false
 					fmt.Fprint(report, deniedLeakLine(pending, leaked))
 				}
@@ -765,21 +761,17 @@ func (h *soakHistories) lengths() map[string]int {
 	return out
 }
 
-// leakedBelow reports (sorted) which participants received an envelope with a
-// sequence BELOW witnessSeq since the snapshot in before — an event that was
-// already in the log before the next accepted action's own, and therefore
-// produced by the denied action that preceded it.
-//
-// This replaces grewSince's unconditional sleep on the denial path. Per
-// connection, delivery is sequence-ordered and the gateway broadcasts only
-// from the store subscription, so anything a denied command wrongly produced
-// must arrive before the next accepted event. Finding none by then is a proof,
-// not a timeout: no wait, and it holds however slow the server is.
-func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64) []string {
+// leakedBelow is leakedSince for the soak: the world seats, sorted, that
+// received since before an envelope below witnessSeq. Keep the character seats
+// in skip out of it (VTT-321).
+func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64, skip map[string]bool) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var leaked []string
 	for name, envs := range h.data {
+		if skip[name] {
+			continue
+		}
 		for _, env := range envs[min(before[name], len(envs)):] {
 			if env.GetSequence() < witnessSeq {
 				leaked = append(leaked, name)
