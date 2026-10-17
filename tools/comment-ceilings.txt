@@ -186,8 +186,8 @@ internal/gateway/ruleset.go  10.6
 internal/gateway/ruleset_test.go  20.4
 internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  16.5
-internal/gateway/seat_internal_test.go  3.9
-internal/gateway/server.go  22.5
+internal/gateway/seat_internal_test.go  3.7
+internal/gateway/server.go  22.4
 internal/gateway/server_internal_test.go  33.5
 internal/gateway/server_test.go  24.3
 internal/gateway/server_visibility_test.go  15.5

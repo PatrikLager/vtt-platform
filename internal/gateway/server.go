@@ -438,7 +438,8 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 // CloseNow.
 func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, stop <-chan struct{},
 	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) {
-	ps := &pumpState{s: s, sub: sub, id: p.ID, outCh: outCh, writerDone: writerDone, conn: conn, closing: closing}
+	ps := &pumpState{s: s, sub: sub, id: p.ID, lookup: s.ids.Lookup, outCh: outCh, writerDone: writerDone,
+		conn: conn, closing: closing}
 	if ps.revoked() {
 		return
 	}
@@ -473,6 +474,7 @@ type pumpState struct {
 	s          *Server
 	sub        *seat
 	id         string
+	lookup     func(id string) (*identity.Participant, error)
 	outCh      chan<- []byte
 	writerDone <-chan struct{}
 	conn       *websocket.Conn
@@ -483,7 +485,7 @@ type pumpState struct {
 // judging by their current role otherwise (SPEC-009, VTT-031, VTT-032).
 // ErrInvalidToken only: an operational failure must not drop an entry.
 func (ps *pumpState) revoked() bool {
-	now, err := ps.s.ids.Lookup(ps.id)
+	now, err := ps.lookup(ps.id)
 	if !errors.Is(err, identity.ErrInvalidToken) {
 		if err == nil {
 			ps.sub.p = now

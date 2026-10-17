@@ -479,3 +479,91 @@ func TestAMoveOnAConnectionOpenedOnALogIsJudgedByThatLog(t *testing.T) {
 		t.Fatalf("opened on bo, a move onto a square bo sees and ana, the default, does not: %s", r.GetError())
 	}
 }
+
+// VTT-349
+func TestAWakeWaitingAsASeatOpensKeepsTheCursorItNamed(t *testing.T) {
+	_, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
+	seatAppend(t, c, "one", &vttv1.NarrationAdded{Text: "one"})
+	seatAppend(t, c, "two", &vttv1.NarrationAdded{Text: "two"})
+	sub, _, err := openSeat(c, p, "a1", 3, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	// Leave this append's wake waiting while watch subscribes, as one can at open.
+	seatAppend(t, c, "three", &vttv1.NarrationAdded{Text: "three"})
+	if _, err := sub.watch("a1", 3); err != nil {
+		t.Fatal(err)
+	}
+	if env := seatTake(t, sub.events, "the first entry after the cursor"); env.GetSequence() != 4 {
+		t.Fatalf("watching a1 after 3 with a wake waiting, the first entry is %d, want 4", env.GetSequence())
+	}
+}
+
+// VTT-348
+func TestASwitchRacingItsOwnLossSettlesOnTheDefault(t *testing.T) {
+	_, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
+	seatParty(t, c, "b1", p.ID)
+	seatParty(t, c, "c1", p.ID)
+	sub, _, err := openSeat(c, p, "c1", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	seatAppend(t, c, "lost", &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: p.ID})
+	if _, err := sub.watch("a1", 0); err != nil {
+		t.Fatal(err)
+	}
+	seatAppend(t, c, "after", &vttv1.NarrationAdded{Text: "after"})
+	for env := seatTake(t, sub.events, "the stream"); env.GetEventId() != "after"; env = seatTake(t, sub.events, "the stream") {
+		if env.GetEventId() == "lost" {
+			t.Fatalf("a switch onto a1 whose revocation's wake waited sent the revocation (shows %q)", sub.shown)
+		}
+	}
+	if sub.shown != "b1" {
+		t.Fatalf("a switch onto a1 whose revocation's wake waited shows %q, want b1", sub.shown)
+	}
+}
+
+// Start no pump here: the credential must go between the pump's two lookups.
+// VTT-352
+func TestAnEntryTakenAsTheCredentialGoesIsNotSent(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
+	sub, head, err := openSeat(c, p, "", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+	for i := int64(0); i < head; i++ {
+		seatTake(t, sub.events, "catch-up")
+	}
+	seatAppend(t, c, "late", &vttv1.NarrationAdded{Text: "late"})
+	env := seatTake(t, sub.events, "the narration")
+
+	if len(sub.wake) != 1 {
+		t.Fatal("fixture: no wake waits for admit to take")
+	}
+	lookups := 0
+	var closing atomic.Bool
+	closing.Store(true)
+	out := make(chan []byte, 8)
+	ps := &pumpState{s: s, sub: sub, id: p.ID, outCh: out, writerDone: make(chan struct{}), closing: &closing,
+		lookup: func(string) (*identity.Participant, error) {
+			lookups++
+			if lookups == 1 {
+				return p, nil
+			}
+			return nil, identity.ErrInvalidToken
+		}}
+	if ps.onEntry(env) {
+		t.Fatal("the pump went on after admit took a wake with the credential gone")
+	}
+	if len(out) != 0 {
+		t.Fatalf("an entry taken as the credential went was delivered (%d frames queued)", len(out))
+	}
+}
