@@ -331,6 +331,12 @@ message CatchUpHead {
   int64 head_sequence = 1;
 }
 
+// ViewpointChanged names the character log this connection is sent from here
+// on; an empty actor_id is nobody (SPEC-007).
+message ViewpointChanged {
+  string actor_id = 1;
+}
+
 // The server->client frame; the oneof key is the frame discriminator.
 // ServerFrame is everything the server sends on a connection.
 //
@@ -368,6 +374,7 @@ message ServerFrame {
     CatchUpHead catch_up_head = 3;
     PresenceSnapshot presence_snapshot = 4;
     PresenceChanged presence_changed = 5;
+    ViewpointChanged viewpoint_changed = 6;
   }
 }
 

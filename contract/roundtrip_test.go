@@ -148,6 +148,16 @@ func TestCatchUpHeadZeroSerializesAsAnEmptyMessage(t *testing.T) {
 	}
 }
 
+func TestServerFrameViewpointChangedRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_viewpoint_changed.json", &vttv1.ServerFrame{})
+}
+
+// Keep the empty case: the arm's presence is the frame, and an empty
+// actor_id is nobody, at the open or on a switch (SPEC-007).
+func TestServerFrameViewpointChangedToNobodyRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_viewpoint_changed_nobody.json", &vttv1.ServerFrame{})
+}
+
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")
 	var env vttv1.Envelope
