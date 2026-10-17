@@ -1176,3 +1176,34 @@ func TestTheLastSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
 			secondLast, log)
 	}
 }
+
+// VTT-359
+func TestAPeriodicSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
+	run := func(t *testing.T, skip int64) (log string, beforeLast int64) {
+		t.Helper()
+		synctest.Test(t, func(t *testing.T) {
+			ids := soakTestIDs()
+			w := newSoakWorld(ids)
+			w.slowBroadcast = 50 * time.Millisecond
+			if skip > 0 {
+				w.skipFor = map[string]int64{"player1": skip}
+			}
+			var out bytes.Buffer
+			if _, err := harness.RunSoak(context.Background(),
+				harness.SoakConfig{Seed: 5, Events: 120, CheckEvery: 50, IDs: ids}, w.dial, &out); err != nil {
+				t.Fatalf("RunSoak: %v", err)
+			}
+			w.bcWG.Wait()
+			log, beforeLast = out.String(), w.history[48].Sequence
+		})
+		return log, beforeLast
+	}
+	clean, skip := run(t, 0)
+	if strings.Contains(clean, "FAIL") {
+		t.Fatalf("fixture: the clean run failed:\n%s", clean)
+	}
+	if log, _ := run(t, skip); !strings.Contains(log, "[checkpoint 1] FAIL: player1's stream breaks its log") {
+		t.Fatalf("player1 was never sent %d, the event before checkpoint 1's last, and checkpoint 1 did not say so:\n%s",
+			skip, log)
+	}
+}

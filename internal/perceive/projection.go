@@ -268,7 +268,7 @@ func (pr *Projection) eyes(st *engine.State) []string {
 		sort.Strings(ids)
 		return ids
 	case pr.through.Shoulder != "":
-		// Refuse a shoulder that is not a party member here too, with MayPerch's
+		// Refuse a shoulder that is not a party member here too, with MayWatch's
 		// predicate, so the two refusals cannot drift (SPEC-015).
 		a, ok := st.Actors[pr.through.Shoulder]
 		if !ok || !engine.IsPartyMember(a) {

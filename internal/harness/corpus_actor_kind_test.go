@@ -62,15 +62,8 @@ func TestTheCorpusNeverConfersControlAtCreationNorGrantsInSilence(t *testing.T) 
 }
 
 // TestAnActorCreatedHoldingAControllerIsCaught is fault injection for the first
-// of the three rules: it is the exact shape the corpus carried before this arc
-// converted it.
-//
-// MEASURED, at 18b7212 (the commit before Task 4's conversion): 12 such events
-// across 7 golden streams. That is not the figure the plan carries — it says 8
-// across 5 — and the difference is the whole of session-zero's two PROJECTION
-// streams, 4 events the plan's count walked straight past. Which is the case
-// for matching by key at any depth rather than by file: the number that missed
-// the projections was produced by a human doing this by hand once.
+// of the three rules: the exact shape the corpus carried before it was
+// converted.
 func TestAnActorCreatedHoldingAControllerIsCaught(t *testing.T) {
 	corpus := cleanCorpus()
 	requireClean(t, corpus)
@@ -208,21 +201,9 @@ func TestAnEmptyCorpusIsAFailureRatherThanAPass(t *testing.T) {
 }
 
 // TestACorpusMissingAnyOneOfTheFourShapesIsAFailureRatherThanAPass is the
-// second and sharper vacuity check: files that parse, and one whole shape
-// unexercised among them.
-//
-// This is the defect one level up from an empty corpus, and this arc has
-// shipped it twice — TestARapidHopIsCoalescedToTheShoulderItEndedOn passed
-// against the first-wins box it was written to reject, and
-// TestTheVisibleSetIsSentInAStableOrder passed against its own stub because
-// sort.StringsAreSorted(nil) is true. Both were nil-or-empty cases.
-//
-// PER SHAPE, NOT POOLED, which is the same distinction Task 8's projected
-// gate had to make ("that guard catches the corpus EMPTYING; it does not catch
-// a new golden diluting it"). A pooled counter is propped up by whichever
-// shape is most numerous: the corpus holds 19 addActor COMMANDS, so pooling
-// them with events would keep the count far from zero while every recorded
-// stream — the history half, which is the half §5.1 is about — went unchecked.
+// second vacuity check: files that parse, with one whole shape unexercised.
+// Keep it per shape, never pooled: the corpus's addActor commands would hold a
+// pooled count up while every recorded stream went unchecked.
 func TestACorpusMissingAnyOneOfTheFourShapesIsAFailureRatherThanAPass(t *testing.T) {
 	for _, shape := range corpusShapes {
 		t.Run(shape.Name, func(t *testing.T) {
@@ -574,29 +555,9 @@ var shapesByKey = func() map[string]*corpusShape {
 }()
 
 // auditActorKind walks every .json file under root and holds every actor
-// creation and every grant it finds to spec §5.1.
-//
-// IT WALKS BY KEY, NOT BY FILE KIND, and that is the design rather than a
-// shortcut. The corpus holds FIVE kinds of JSON — scenario definitions,
-// recorded event streams, hand-derived states, seat declarations, and (since
-// 2026-09-02) map files under scenarios/maps/. This said "four kinds ... and a
-// fifth arriving next month is exactly what an audit that switched on filename
-// would skip in silence". The fifth arrived, on schedule and unannounced, when
-// create_scene left the corpus and every scene became a file — and this walk
-// picked it up with no edit, which is the argument holding rather than an
-// argument still being made. Matching the key wherever it appears covers
-// projections/, a
-// nesting level nobody has invented yet, and any new .json file, and it needs
-// no list of files the rule applies to. It also catches what a hand count
-// misses: the plan's own pre-conversion measurement walked past session-zero's
-// projection streams and undercounted by a third.
-//
-// THERE IS NO EXEMPTION LIST, deliberately. Task 8 of the visibility arc is the
-// precedent: its projected-fixture gate asks "does this golden hide a
-// creature?" and requires projections only where the answer is yes, so it has
-// nothing to maintain and nothing to rot. A list of fixtures exempt from this
-// rule is the artifact that goes stale silently, which is the very failure this
-// gate exists to prevent.
+// creation and every grant it finds to the corpus rules. Keep it matching by
+// key at any depth, never by file kind or name: a new kind of file or nesting
+// is then covered with no list to keep, and no exemption list goes stale.
 func auditActorKind(root string) (actorKindAudit, error) {
 	audit := actorKindAudit{Held: map[string]int{}}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

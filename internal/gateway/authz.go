@@ -1,6 +1,6 @@
 // Package gateway is the WebSocket and HTTP gateway over vtt.v1 commands and
 // events: authorization, conversion, the connection, the read surface and the
-// seat's projection.
+// seat a connection watches through.
 package gateway
 
 import (

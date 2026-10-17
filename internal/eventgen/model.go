@@ -1,18 +1,8 @@
-// Package eventgen draws valid campaign histories for property tests.
-//
-// IT EMITS, IT DOES NOT APPEND, and that split is the whole reason the package
-// exists. The model lived inside internal/campaign's property test until
-// 2026-09-12, where every action both built an event AND appended it to a
-// campaign, judging the response inline. A _test.go file cannot be imported, so
-// internal/gateway's own property test could not reuse a line of it, and the
-// alternative was a second generator that would disagree with this one within
-// a month.
-//
-// A caller drives it with Step, applies the returned Action however it likes —
-// campaign.Append for the rebuild-equals-live property, engine.Apply plus a
-// Projector for the per-seat one — and reports the sequence back with
-// Accepted. The model tracks only what it needs to choose a LEGAL target, and
-// says with MustFail when it has deliberately chosen an illegal one.
+// Package eventgen draws valid campaign histories for property tests. It emits
+// and never appends: internal/campaign's properties drive it with Step, apply
+// each returned Action and report the sequence back with Accepted. The model
+// tracks only what it needs to choose a LEGAL target, and says with MustFail
+// when it has deliberately chosen an illegal one.
 package eventgen
 
 import (
@@ -50,20 +40,10 @@ type Action struct {
 // decides what to draw next. Keeping it out of the assertion is what stops a
 // bug in the model from quietly becoming the expected answer.
 type Model struct {
-	// SessionID and ActorRole are stamped on every envelope, and whether they
-	// matter depends entirely on what the caller does with it.
-	//
-	// UNDER campaign.Append THEY ARE INERT: stampSessionIDAgainst overwrites
-	// SessionId unconditionally — a fresh id for SessionStarted, the open
-	// session's id otherwise, "" when none is open — so the value here is never
-	// honoured, and nothing in engine, campaign or store reads ActorRole at all.
-	//
-	// UNDER A CALLER DRIVING engine.Apply DIRECTLY they are not. That arm folds
-	// SessionStarted as ID: env.SessionId, so leaving this at its default names
-	// every session in the walk "sess-1", and a per-seat property would see
-	// "dm" on events it means to have come from a player. They are fields
-	// rather than constants so the second consumer this package was extracted
-	// for can set them; the defaults keep campaign's walk exactly as it was.
+	// SessionID and ActorRole are stamped on every envelope. campaign.Append
+	// overwrites SessionId (stampSessionIDAgainst) and nothing in engine,
+	// campaign or store reads ActorRole, so they matter only to a caller that
+	// drives engine.Apply directly, whose SessionStarted arm keeps env.SessionId.
 	SessionID string
 	ActorRole string
 

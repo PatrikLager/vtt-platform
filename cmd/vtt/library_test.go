@@ -70,58 +70,11 @@ func TestScenarioLibraryRunsSelfContained(t *testing.T) {
 	}
 }
 
-// TestEveryScenarioFileIsActuallyRun fails if a scenario exists that the glob
-// above does not execute.
-//
-// THE GLOB IS ONE DIRECTORY DEEP AND NOTHING SAID SO. `scenarios/*.json` does
-// not descend, while the corpus guard that validates this library
-// (internal/harness/corpus_actor_kind_test.go) walks every .json under
-// scenarios/ AT ANY DEPTH. So a scenario committed to scenarios/arcs/foo.json
-// would be validated, would appear in the library to anyone reading the
-// directory, and would run ZERO TIMES — the shape this repo keeps finding:
-// something that looks covered and is not. Latent when written (all scenarios
-// sit at the top level), exactly as a byte-vs-character column was latent while
-// every key happened to be ASCII.
-//
-// The existing "no scenarios found" guard above does not cover this. It catches
-// the glob matching NOTHING; this catches it matching only SOME.
-//
-// TWO subdirectories are excluded, and both hold .json that is not a
-// scenario. Feeding either to LoadScenario is a category error.
-//
-// maps/ holds MAP FILES (2026-09-01-create-scene-leaves Task 7) — the
-// mapdef format, one standalone map per file named by its own id, which the
-// runner installs into a scenario's campaign so its load_map steps have
-// something to name. They are INPUTS to the corpus the way rulesets/ and
-// adventures/ are, and they live under scenarios/ rather than beside those
-// because they exist only to serve this library. Nothing about them is a
-// scenario: they declare no participants and no steps.
-// TestEveryMapTheCorpusNamesIsInstalledAndUsed below is what holds them to
-// the library instead, in both directions, so excluding them here does not
-// leave them unchecked.
-//
-// goldens/ is excluded because its contents are not scenarios either. How
-// each was produced differs, and the differences are load-bearing rather
-// than trivia (scenarios/goldens/README.md):
-//
-//	state.json                    HAND-DERIVED from the scenario definition
-//	<name>/stream.json            RECORDED from a real server run
-//	<name>/projections/*/stream.json  DERIVED from that recording, and
-//	                              byte-pinned by recomputing it
-//	<name>/projections/*/viewer.json  DECLARED — which seat a projection is
-//	                              for; a perch never reaches the log, so it
-//	                              cannot be derived from the stream beside it
-//
-// The hand-derived state and the recorded stream are arrived at INDEPENDENTLY,
-// and that independence is what makes their agreement evidence instead of a
-// tautology — regenerating state.json from a run would quietly destroy the
-// property the fold gate exists to test. Feeding any of these to LoadScenario
-// would be a category error.
-//
-// The exclusion is deliberately narrow: two NAMED subdirectories, not "any
-// subdirectory", so a new subdirectory holding a .json is a failure and
-// somebody has to decide what it is. maps/ became the second one by exactly
-// that route — it failed here first, and this comment is the decision.
+// TestEveryScenarioFileIsActuallyRun fails on a .json under scenarios/ that the
+// one-directory glob does not run, outside two subdirectories that hold no
+// scenario: goldens/, the fold gate's streams and states (its README), and
+// maps/, the map files TestEveryMapTheCorpusNamesIsInstalledAndUsed holds.
+// Name a new subdirectory here.
 func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
 	run := map[string]bool{}
 	paths, err := filepath.Glob(scenarioLibraryGlob)
@@ -211,29 +164,10 @@ func TestEveryScenarioFileIsActuallyRun(t *testing.T) {
 }
 
 // TestEveryMapTheCorpusNamesIsInstalledAndUsed holds scenarios/maps/ to the
-// library in BOTH directions: every map id a scenario's load_map names has a
-// file, and every file is named by some scenario.
-//
-// THE FIRST DIRECTION EXISTS BECAUSE A DENIAL CANNOT CHECK IT. Authorize runs
-// before any map lookup (internal/gateway's handleCommand, then
-// handleLoadMap), so a player's load_map naming a map that does not exist is
-// still refused with "not authorized" — which means scenarios/denials.json's
-// two refused load_map steps would go on passing, green and vacuous, if their
-// map id were misspelled or the file were deleted. MEASURED 2026-09-02, not
-// reasoned: misspell that id and TestScenarioLibraryRunsSelfContained/
-// denials.json stays GREEN, and this gate is the only thing that reds. Nothing
-// INSIDE a scenario can catch it, because every wrong id produces the identical
-// refusal — which is why the check has to come from outside, by requiring the
-// file.
-//
-// The second direction catches the leftover: rename a scene and the old map
-// keeps loading and validating at every boot with nothing naming it, which is
-// dead weight that reads as coverage.
-//
-// DERIVED, WITH NO EXEMPTION LIST, on the same reasoning
-// internal/harness/corpus_actor_kind_test.go states for its own gate and
-// internal/gateway's projected-fixture guard states for its: a list of files
-// the rule does not apply to is the artifact that goes stale silently.
+// library both ways: every load_map id has a file, and every file is named.
+// Keep the first direction: Authorize refuses a player's load_map before any
+// lookup, so a misspelled id in scenarios/denials.json stays green without it.
+// Keep it derived, with no exemption list, as auditActorKind is.
 func TestEveryMapTheCorpusNamesIsInstalledAndUsed(t *testing.T) {
 	paths, err := filepath.Glob(scenarioLibraryGlob)
 	if err != nil {

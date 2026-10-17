@@ -255,12 +255,8 @@ func TestClientSoakMissingRequiredFlagsErrors(t *testing.T) {
 type liveFixture struct {
 	wsURL   string
 	dmToken string
-	// spectatorToken is a PROJECTED seat, and it is here for one assertion
-	// the DM's token cannot make: since the visibility projection landed, a
-	// seat's stream is not the log, so the catch-up boundary a client reads to
-	// is not the log's head either. A spectator perched on nobody receives no
-	// board at all, which makes it the sharpest case — its whole catch-up is
-	// empty, and a client told to wait for the log's head would wait out its
+	// spectatorToken watches nobody, so its catch-up is empty and its head is 0
+	// (VTT-374): a client that waited for the world's head would wait out its
 	// deadline.
 	spectatorToken string
 }
@@ -400,35 +396,23 @@ func TestClientRunLiveModeAgainstComposeServer(t *testing.T) {
 	t.Run("state dump prints the expected token position", func(t *testing.T) {
 		testStateDumpAgainstFixture(t, fx)
 	})
-	t.Run("state dump completes for a projected seat", func(t *testing.T) {
-		testStateDumpForAProjectedSeat(t, fx)
+	t.Run("state dump completes for a seat watching nobody", func(t *testing.T) {
+		testStateDumpForASeatWatchingNobody(t, fx)
 	})
 }
 
-// testStateDumpForAProjectedSeat is the CLI half of a regression the
-// visibility projection introduced and the gateway now closes.
-//
-// `vtt state dump` reads until it has seen the sequence CatchUpHead named
-// (state_dump.go's drainToHead, following commands.proto's own contract). That
-// number used to be the LOG's head, which every seat received. A projected
-// seat does not: this spectator perches on nobody, so it receives no board at
-// all and the log's head never reaches it — the command waited out its full
-// 30-second deadline and returned errCatchUpDeadline, deterministically, for
-// any player or spectator token.
-//
-// Two assertions, because "no error" alone would pass on a 30-second success
-// nobody would tolerate: it must SUCCEED, and it must succeed promptly. The
-// snapshot itself is legitimately empty — a spectator with no perch has no
-// board, and that is Task 6's to give them.
-func testStateDumpForAProjectedSeat(t *testing.T, fx liveFixture) {
+// Keep both assertions, success and speed: `vtt state dump` reads to the head
+// CatchUpHead names, a seat watching nobody is sent no entry, and a 30-second
+// success would pass "no error" alone.
+func testStateDumpForASeatWatchingNobody(t *testing.T, fx liveFixture) {
 	t.Helper()
 	started := time.Now()
 	out, err := runCLI(t, "state", "dump", "--server", fx.wsURL, "--token", fx.spectatorToken)
 	if err != nil {
-		t.Fatalf("state dump on a projected seat: %v (output: %s)", err, out)
+		t.Fatalf("state dump on a seat watching nobody: %v (output: %s)", err, out)
 	}
 	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("state dump on a projected seat took %s — it is waiting out a deadline for a "+
+		t.Fatalf("state dump on a seat watching nobody took %s — it is waiting out a deadline for a "+
 			"sequence its stream will never carry, not doing work", elapsed)
 	}
 	var st dumpStateShape
@@ -436,7 +420,7 @@ func testStateDumpForAProjectedSeat(t *testing.T, fx liveFixture) {
 		t.Fatalf("state dump did not print JSON: %v (output: %s)", err, out)
 	}
 	if len(st.Tokens) != 0 {
-		t.Fatalf("a spectator perched on nobody was given %d token(s): %s", len(st.Tokens), out)
+		t.Fatalf("a spectator watching nobody was given %d token(s): %s", len(st.Tokens), out)
 	}
 }
 

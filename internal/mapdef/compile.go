@@ -97,79 +97,12 @@ func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 	return envs, warnings, nil
 }
 
-// BuildSceneCreated is the one place a map FILE's tile names are resolved into
-// TileRefs (maps-as-geometry Task 4's point): both Compile above (the
-// standalone map path) and internal/adventure/compile.go (the
-// adventure-embedded path) call this exact function, so the two load paths
-// cannot drift out of shape with each other —
-// TestBothLoadPathsEmitIdenticalSceneEvents (internal/adventure/compile_test.go)
-// pins it.
-//
-// IT IS NOT THE ONLY PLACE A SceneCreated IS BUILT, and this comment has now
-// claimed otherwise twice. Grep and see for yourself — the whole tree, not the
-// file you are editing:
-//
-//	grep -rn 'vttv1\.SceneCreated{' --include='*.go' . | grep -v _test.go | grep -v /gen/
-//
-// Two live sites answer, and they have different inputs, which is why neither
-// can be folded into the other:
-//
-//   - HERE. A map FILE's tile names, resolved against the standard vocabulary
-//     into TileRefs, with art names resolved against artDir. Plus its objects.
-//     The full room.
-//   - internal/gateway/project.go's per-viewer scene introduction. A REDACTED
-//     outline — id, name, grid width and height, and deliberately NO tiles and
-//     NO objects at all (visibility spec §4.2: "of course there is a board, but
-//     you do not know what is in the black area before you enter the black
-//     area"). Its squares arrive later, one at a time, through SceneSeen. It
-//     landed 2026-08-20 (83c9c8f) and has been a second construction site ever
-//     since.
-//
-// The count was two on 2026-08-18 as well, when a "there is literally one
-// construction site" claim was CORRECTED here — but the site named then was
-// internal/gateway/convert.go, building one from a create_scene COMMAND whose
-// Tiles arrived already resolved. That command left the platform on 2026-09-02
-// (Patrik's ruling, 2026-09-01), its conversion arm went with it, and the
-// correction's own list went stale rather than its conclusion: the tally never
-// dropped to one, because project.go had joined it in between.
-//
-// ADDING A FIELD TO SceneCreated MEANS TOUCHING BOTH, or deciding in writing
-// that the projected seat is not supposed to have it. Update only this one and
-// every DM sees the field while every projected seat gets the zero value, and
-// nothing in this package would say so: TestBothLoadPathsEmitIdenticalSceneEvents
-// holds the map path against the adventure path, and BOTH of those come through
-// this function, so it cannot see the redacted builder at all. The corpus's
-// reach WAS narrow too — until 2026-09-16 scenarios/goldens/session-zero was
-// the only scenario carrying projections/*/state.json, so its player and
-// spectator were the only projected seats anything folded. Sub-project 14's
-// Task 1 widened that to a character oracle per party member across most of the
-// corpus, so the gap this paragraph describes is now narrower than it was; the
-// argument above it, that this function cannot see the redacted builder, is
-// unchanged.
-//
-// artDir may be empty, name a directory that does not exist, or name one this
-// process cannot open: a campaign that has installed no art is ordinary, and
-// its maps still load and draw plain. Every override then degrades to its base
-// tile (art-is-a-flat-library spec §4), and the DM gets ONE warning per
-// distinct reason rather than one per square — see Resolve's own doc comment
-// for the line between that and the one sidecar failure that still refuses,
-// and warningTally below for why the count matters.
-//
-// Squares are resolved in ROW-MAJOR order (y outer, x inner, both from 0),
-// walking the grid rather than ranging m.Tiles: Go map iteration order is
-// randomized per run, and while the returned Tiles value is itself a map
-// (so its own iteration order is not observable on the wire), the ORDER
-// warnings accumulate in — and, for a broken map, WHICH square's error is
-// reported first — would flake between runs without a fixed traversal.
-// Golden-file stability depends on this being deterministic.
-//
-// m.Tiles empty means m declared no terrain at all (Patrik's ruling,
-// 2026-08-13: tiles is optional, and a map with none has no terrain,
-// exactly as every map did before this format existed). The square loop is
-// skipped entirely in that case — calling Resolve per square would
-// otherwise fail "square has no tile" for every one of them, since Resolve
-// has no notion of "this map opted out of terrain" — and Tiles ships empty
-// on the wire.
+// BuildSceneCreated resolves a map file's tiles and objects into its scene, for
+// both load paths (TestBothLoadPathsEmitIdenticalSceneEvents). Give a new
+// SceneCreated field to internal/perceive's redacted introduction too, or no
+// character log carries it. Keep the square walk row-major: the order of the
+// warnings, and which broken square is reported, depend on it
+// (TestWarningsSurfaceInRowMajorOrder).
 func BuildSceneCreated(m *Map, artDir string) (*vttv1.SceneCreated, []string, error) {
 	// BEFORE the square loop, so an oversized map costs one comparison rather
 	// than resolving thousands of tiles it can never deliver.

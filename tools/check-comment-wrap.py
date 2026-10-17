@@ -54,9 +54,9 @@ COMMENT = re.compile(r"^\s*(//+|\*|#)\s?(.*)$")
 # A block of aligned columns is a DIAGRAM, not prose — this repo draws grid maps
 # in comments — and a diagram may be any width. Runs of interior whitespace are
 # the signature, and it is checked over the NEIGHBOURING lines too because a
-# diagram comes in blocks: the header row of project_test.go's map has four
-# spaces between columns while its data rows have two, so testing each line in
-# isolation exempts the header and flags the rows under it.
+# diagram comes in blocks: a grid map's header row may have four spaces between
+# columns while its data rows have two, so testing each line in isolation
+# exempts the header and flags the rows under it.
 DIAGRAM = re.compile(r"\S {2,}\S")
 # A line that ends a paragraph or a sentence is allowed to be short.
 ENDS = (".", ":", ";", ")", "]", "|", "-", ">", "—")

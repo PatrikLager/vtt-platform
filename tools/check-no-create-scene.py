@@ -13,7 +13,7 @@ what stops it coming back one helper at a time.
 
 WHAT IS REMOVED IS THE COMMAND, NOT THE EVENT, and that distinction is this
 gate's whole shape. `SceneCreated` is alive: mapdef.Compile emits it, the
-adventure loader emits it, engine.Apply folds it, gateway/project.go builds a
+adventure loader emits it, engine.Apply folds it, internal/perceive builds a
 redacted per-viewer copy of it, and it is on the wire. A needle matching
 "scene" — or "create" anywhere near "scene" — would red on the healthy half of
 the platform and be switched off inside a day. So the needle is the joined

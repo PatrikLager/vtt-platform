@@ -244,7 +244,7 @@ func startArtCampaign(t *testing.T, campaignPath string) *artCampaign {
 		t.Fatal(err)
 	}
 	// RoleAgent, not a second DM: an agent seat receives the log unfiltered
-	// (visibility spec §3.1), which a player seat deliberately does not — a
+	// (SPEC-015), which a player seat deliberately does not — a
 	// load_map batch is a room nobody has walked into yet.
 	viewToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
 	if err != nil {

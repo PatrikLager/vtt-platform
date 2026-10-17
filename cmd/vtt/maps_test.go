@@ -346,16 +346,11 @@ func TestEveryArtProblemIsReportedAtBootAndTheServerStartsAnyway(t *testing.T) {
 	}
 }
 
-// captureBootLog redirects the default slog logger into a buffer for one test,
-// which is how composeServer's art report is read back: it is a WARNING and
-// not an error, so it cannot come back through composeServer's return values,
-// and slog is where internal/ already puts "the platform continues and here is
-// what is wrong" (internal/campaign's replay skip, internal/gateway's withheld
-// projection).
-//
-// syncBuffer rather than a bytes.Buffer: another test's server may still be
-// draining a goroutine that logs, and the default logger is process-wide.
-// Nothing in this package runs t.Parallel, so the swap itself is safe.
+// captureBootLog redirects the default slog logger into a buffer for one test:
+// composeServer's art report is a warning, so it comes back through slog and
+// not its return values. Keep syncBuffer: another test's server may still log
+// from a draining goroutine, and the default logger is process-wide. Never
+// call it from a t.Parallel test.
 func captureBootLog(t *testing.T) *syncBuffer {
 	t.Helper()
 	buf := newSyncBuffer()

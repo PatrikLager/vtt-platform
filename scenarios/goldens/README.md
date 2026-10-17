@@ -13,9 +13,6 @@ was produced from the other, agreement is evidence rather than a tautology: if
 the recording were wrong, folding it would not reproduce a state derived
 without looking at it.
 
-A scenario may also carry a `projections/` subdirectory — one seat per
-directory inside it. See **Projected seats** below.
-
 ## Where a scene comes from
 
 Nowhere in this corpus does a scenario CREATE a scene. Since 2026-09-02 every
@@ -55,8 +52,9 @@ red.
 ## What no fixture here may contain
 
 `internal/harness.TestTheCorpusNeverConfersControlAtCreationNorGrantsInSilence`
-walks every `.json` under `scenarios/` — definitions, streams, projections, all
-of it — and holds each actor creation and each grant to visibility spec §5.1:
+walks every `.json` under `scenarios/` — definitions, streams, states and map
+files, all of it — and holds each actor creation and each grant to visibility
+spec §5.1:
 
 - **an actor is never created holding a controller.** Creation makes a
   character; control is conferred once, by a grant.
@@ -70,12 +68,12 @@ of it — and holds each actor creation and each grant to visibility spec §5.1:
 
 It matches by KEY wherever the key appears, in both wire spellings, so a new
 file kind or a nesting level nobody has invented yet is covered without anyone
-adding it to a list. **There is no exemption list**, on the same reasoning as
-the projected-fixture gate below: a list of fixtures the rule does not apply to
-is the artifact that goes stale silently. The one apparent exception is derived
-instead — `scenarios/denials.json` sends both forbidden shapes on purpose and
-asserts the server refuses them, and a step that pins a REFUSAL is defending the
-rule rather than breaking it, because a refused command never becomes history.
+adding it to a list. **There is no exemption list**: a list of fixtures the
+rule does not apply to is the artifact that goes stale silently. The one
+apparent exception is derived instead — `scenarios/denials.json` sends both
+forbidden shapes on purpose and asserts the server refuses them, and a step
+that pins a REFUSAL is defending the rule rather than breaking it, because a
+refused command never becomes history.
 
 **A step must pin THAT shape's refusal, not merely some refusal.** `Authorize`
 runs before the shape validators, so a player's `add_actor` is turned away as
@@ -130,152 +128,6 @@ makes a character and a grant hands it over — so the id now travels on the
 grant instead. The rule is unchanged and the reason for it is unchanged; only
 the payload it lives in has moved.)
 
-## Projected seats
-
-`<scenario>/projections/<seat>/` is what ONE viewer receives of that scenario's
-log — the right-hand side of the wire rather than the log itself. Three files:
-
-| File | What it is | Who derives it | Gate |
-|---|---|---|---|
-| `viewer.json` | Which seat: participant, role, and a spectator's perch | Declared. **A perch never reaches the log** (it is connection state, `internal/gateway/seat.go`), so it cannot be derived from the stream beside it | — |
-| `stream.json` | What `gateway.Projector` emits for that seat | **Derived**, and pinned by `internal/gateway.TestTheProjectedGoldensAreWhatTheProjectionActuallySends`, which recomputes it and compares bytes | that test |
-| `state.json` | Folded state + `headSequence` | **A human, by hand**, same rule as every other `state.json` here | Go fold (same test) + `client/test/projection-parity.test.ts` |
-
-**`stream.json` here is NOT an independent recording, and that difference
-matters.** The log-level `stream.json` one directory up is testimony from a real
-server run; this one is a derivation of it. It is committed for one reason:
-**TypeScript has no projector and is never going to have one** — spec §6.2's
-"server decides what you may see; the client draws it" — so the only way
-`client/src/fold.ts` can be held to the same bytes the Go fold sees is for those
-bytes to be on disk. The independence that makes agreement evidence lives in
-`state.json`, which was hand-derived and which THREE things are held to: the Go
-fold, the TypeScript fold, and (for everything but `Explored`) the independent
-sight oracle in `internal/gateway/keystone_test.go`.
-
-### Why the corpus needed them
-
-Until `session-zero` landed, `grep -ric sceneseen scenarios/` returned zero.
-Every scene in the corpus was untiled or entirely floor, with no wall, no closed
-door and no `blocks_sight` object anywhere — so nothing was ever hidden from
-anyone, and the keystone (visibility spec §4.3) could not tell a correct
-projection from one that forwards the whole log to everybody.
-`internal/gateway.TestTheKeystoneCorpusCanTellAProjectionFromAPassthrough` is
-that guard, kept as a test so the corpus cannot quietly regress to it.
-
-MEASURED, by deleting `session-zero` and re-running **six** fault injections
-against the keystone: **three then pass unnoticed, and all three are OVER-SEND**
-— a projection that shows every creature in any scene the viewer can see part of
-(session zero itself), one that ignores sight blockers entirely, and one that
-ships a scene's whole tile map. All three under-send and roster faults survived
-the deletion. Every fault the old corpus missed was an over-send, and over-send
-is the direction this arc exists to close.
-
-### What `session-zero` deliberately does NOT do
-
-**It never retracted an event that CAUSED an introduction**, and that was an
-exclusion rather than an oversight — the two look identical in a diff a year
-from now, so it was written down here rather than only in a task report. It is
-kept as a CLOSED record: sub-project 13 removed retraction from the platform
-outright (spec `2026-08-30-retraction-leaves`), so there is no longer a command,
-a marker, or a scenario step that could reach the shape below.
-
-**What the hazard was.** Synthesized envelopes carry the sequence of the event
-that caused them (visibility spec §4.2), so retracting the event that first
-revealed a scene deleted the viewer's own `SceneCreated` for it. `transitions`
-then still emitted an empty `SceneSeen` for that scene at the retraction's
-sequence — its union walk keeps a scene in play for one more step — and the
-recipient's fold rejected it with `scene seen for unknown scene`. Both folds are
-strict and `client/src/session.ts` re-folds its whole log on every event, so that
-was a permanent freeze rather than one bad frame. Putting it into a scenario
-would have left the gate red on a design decision that belonged to whoever made
-it, not to a corpus entry.
-
-The corpus's own three retraction steps went with the platform's: two in
-`denials` that were authorization probes, refused before they reached a log, and
-`three-role-exit`'s, which landed. That one retracted an ordinary MOVE and folded
-cleanly, which is exactly what made the point above legible — retraction itself
-was never the hazard here, only a retraction landing on an event that CAUSED an
-introduction was.
-
-**Two things this section used to cite are gone**, said plainly so that the next
-reader does not go hunting for them. It quoted a prediction from `transitions`'
-doc comment ("spec §4.3's keystone is where it is catchable"), which was
-rewritten when retraction left the gateway on 2026-08-31; and it warned readers
-off the forgetting loop further down that same function, which shared the `scene
-seen for unknown scene` string while answering a different case. That loop was
-deleted the same day, because nothing removes a scene from the world — spec
-`2026-08-30-retraction-leaves` §5.3: there is no `delete_scene`.
-
-### Deriving a projected golden
-
-`Explored` is unioned from each `sceneSeen`'s **`tiles` keys**, never from its
-`visible` list.
-
-- `ambush` declares terrain on all 180 of its squares, so its `Explored` grows
-  to exactly the 36 squares the player can see.
-- `camp` declares all 9 of its own, so its `Explored` is all 9 — the whole room
-  is in sight from where the healer stands.
-
-**THESE TWO NO LONGER DISCRIMINATE THE MECHANISM THEY ARE CITED FOR.** In all
-three of the corpus's `sceneSeen` the tile keys, the visible list and the
-explored set are now the same set of squares, key for key — so a fold that built
-`Explored` from `visible` instead of from `tiles` would reproduce every one of
-these fixtures exactly. They still pin what the projection SENDS; they no longer
-witness where `Explored` comes from. That property is pinned by constructed
-tests instead, named at the end of this section.
-
-**The bare-canvas half of that contrast is gone from this corpus, and it left
-on purpose.** `camp` used to declare NO terrain, and it sat beside `ambush` so
-that the "`Explored` comes from tiles, not from `visible`" rule was a fixture
-rather than a sentence: its `Explored` stayed EMPTY however much of it was
-visible. It went on 2026-09-01, when `create_scene` began refusing a scene that
-leaves a square undeclared (spec `2026-08-30-retraction-leaves` §6 — *a wall
-nobody declared is an invisible barrier*) and `camp` had to declare its nine.
-
-**CORRECTED 2026-09-02: that reason has expired, and the constraint with it.**
-No scenario issues `create_scene` any more, and since the same day none can —
-sub-project 15 took the command off the platform, its Task 7 having converted
-this corpus first. Every scene here
-now arrives from a map FILE, and a map file MAY legally omit tiles, so the
-bare-canvas shape is REACHABLE in this corpus again. It is simply not written:
-every map under `scenarios/maps/` declares its whole grid. Which changes nothing
-about where the rule is pinned — that had already moved to the constructed tests
-below, and it is worth noticing the move survived both the constraint arriving
-and the constraint leaving. A fixture whose premise can expire twice inside two
-days was the wrong place for it.
-
-The rule did not change and the shape is still reachable — a map FILE may still
-omit tiles, which is the exemption that keeps files authored before
-maps-as-geometry loading, and spec §6.2's "a token is a FREE OBJECT and needs no
-terrain to exist" still holds. What changed is where the rule is pinned: it is
-CONSTRUCTED rather than exhibited, in three tests, each of which builds a
-`sceneSeen` that lists visible squares and carries no tiles and asserts
-`Explored` stays empty:
-
-- `internal/engine`'s `TestVisibleComesFromItsOwnFieldNotFromTheTiles`
-- `client/test/visibility.test.ts`'s "a token on a bare canvas is drawn" —
-  **pre-existing**, and it means the fixture was never the only cover
-- `client/test/fold-unit.test.ts`'s "a sceneSeen with visible squares and no
-  terrain remembers nothing" — added 2026-09-01 as the assertion-for-assertion
-  mirror of the Go one, because the other TS case is a DRAWING test that
-  happens to assert the property on its way elsewhere.
-
-MEASURED, after an earlier draft of this paragraph claimed the wrong number:
-injecting `Explored` follows `Visible` into `client/src/fold.ts`'s `sceneSeen`
-arm reds **two** tests across `client/test`, the last two above.
-
-`session-zero`'s sight is a rule rather than a table, which is what makes 36
-squares hand-derivable: a solid wall fills column `x=3` for the full height of
-the grid, so from anywhere west of it every square with `x <= 2` is reachable, a
-square OF the wall is reachable (`sight.Clear` exempts a blocker containing the
-target — "without this you cannot see the wall you are standing against"), and
-every square with `x >= 4` is behind the full-height slab. The Goblin Archer
-stands at **(19,8)** — session zero's own square — and at sequence 11, where
-it is placed, neither seat's stream carries one byte about it. It breaks cover
-at sequence 13 and returns at 14, which is what puts a `tokenHidden` and a
-never-forgotten roster
-entry in the fixture.
-
 ## Coverage
 
 The goldens cover a subset of the contract's command types, **not all of
@@ -296,12 +148,9 @@ gap by diffing the scenarios' command keys against
 `contract/gen/tools/tools.json` rather than trusting a list written here,
 which is how this sentence went wrong in the first place.
 
-`session-zero` was added 2026-08-22 with the visibility arc's keystone. It is
-the only scenario in the corpus with a WALL, the only one with two
-scenes, and the only one whose player controls two actors standing in different
-ones — which is what makes its spectator seat (perched on the actor in `camp`)
-see a strictly smaller world than its player seat rather than the same one
-twice.
+`session-zero` is the only scenario in the corpus with a WALL, the only one
+with two scenes, and the only one whose player controls two actors standing in
+different ones.
 
 `shared-control` was added 2026-08-07 with `grant_actor_control` and
 `revoke_actor_control`, and it exists because the corpus was SILENT on both:

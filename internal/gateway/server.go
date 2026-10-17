@@ -633,8 +633,8 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 }
 
 // Hand the perch to the pump and apply nothing here: a frame emitted from this
-// goroutine lands inside a projected batch and the watcher's fold stops
-// (SPEC-011, SPEC-013).
+// goroutine can land among a log's entries, out of the order the seat changed
+// in (SPEC-011, SPEC-015).
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
 	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
 	if _, refusal := s.authorize(p, cmd); refusal != nil {

@@ -11,20 +11,11 @@ import (
 
 var ErrUnknownVariant = errors.New("engine: unknown event variant")
 
-// ErrSceneExists is the duplicate-scene refusal, given a name so a CALLER can
-// recognise it without matching on prose. The fold remains the only thing that
-// catches the collision — internal/gateway's handleLoadMap does no pre-check,
-// deliberately, because TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned
-// exists to prove this backstop engages for the standalone-map path and a
-// pre-check would quietly retire that proof. What the sentinel buys is a
-// gateway able to say something a DM can act on, without reading this string.
-//
-// THE SENTINEL IS THE TAIL, not the whole sentence, so the wrap below still
-// reads `engine: scene "cellar" already exists` exactly as it did before it had
-// a name. That is deliberate: internal/gateway/project.go quotes this format
-// string, and client/src/wire.ts and client/test/app.test.ts carry it as dated
-// measurements. Giving the sentinel the full text would have reformatted the
-// message and made all four quotations false in the same commit that added it.
+// ErrSceneExists is the duplicate-scene refusal's tail, named so a caller can
+// recognise it without matching on prose. Keep it the tail: client/src/wire.ts
+// and client/test/app.test.ts quote the whole `engine: scene %q already exists`.
+// Add no pre-check in handleLoadMap: the fold is the backstop
+// TestLoadMapDoubleLoadCollisionRejectedCleanNotPoisoned proves.
 var ErrSceneExists = errors.New("already exists")
 
 // Inclusive byte bounds on an event's free text (SPEC-018). Never lower one: a
@@ -148,31 +139,10 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if _, dup := st.Actors[a.ActorId]; dup {
 			return fmt.Errorf("engine: actor %q already exists", a.ActorId)
 		}
-		// CREATION DOES NOT CONFER CONTROL, and an event that says otherwise is
-		// an error rather than something to interpret (visibility spec §5.1,
-		// Patrik's ruling 2026-08-24). Control is conferred exactly once, by
-		// ActorControlGranted, which declares what the actor IS in the same
-		// breath.
-		//
-		// This arm used to SEED the control set from a declared controller_id.
-		// That is what made the archer leak reachable through a second door:
-		// an actor created with a controller and no kind was a party member
-		// with nobody having said so — the whole cloned Actor on every
-		// player's roster, MayPerch and eyes() open on it. The gateway refuses
-		// the COMMAND (validateAddActor) so the caller gets a message naming
-		// the command that does confer control; this refuses the EVENT, which
-		// is the invariant rather than the manners. No log can contain the
-		// shape at all.
-		//
-		// REFUSED, NOT IGNORED. Folding the actor with the field dropped is
-		// quieter and worse: the writer believes they handed a character over
-		// and the log disagrees, silently, forever. Fail closed AND loudly.
-		//
-		// BOTH SPELLINGS, including a declared-but-empty set. `controller_ids:
-		// [""]` would confer no control — this arm used to strip such ids for
-		// exactly that reason — but the answer to "creation does not hand the
-		// actor to anyone" must not depend on whether the id the writer chose
-		// happened to be usable.
+		// Refuse an actor created holding a controller, by controller_id or by
+		// any controller_ids entry, an empty string included: only
+		// ActorControlGranted confers control (SPEC-013). validateAddActor
+		// refuses the command; this refuses the event.
 		if a.GetControllerId() != "" || len(a.GetControllerIds()) > 0 {
 			return fmt.Errorf("engine: actor_added: actor %q declares a controller — creating an "+
 				"actor does not hand it to anyone; control is conferred by actor_control_granted, "+
@@ -573,29 +543,10 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		return nil
 
 	case *vttv1.Envelope_TokenHidden:
-		// PROJECTION-ONLY (visibility spec §4.2): a viewer is being told a
-		// token left their view. Deleting an absent token is deliberately
-		// NOT an error — deleting a map key that is already gone is
-		// naturally a no-op, and nothing about TokenHidden's own shape (spec
-		// §5: `message TokenHidden { string token_id = 1; }`, a bare id)
-		// requires refusing a second one the way it might if the message
-		// carried state to reconcile. Unlike SceneSeen, whose idempotency
-		// spec §5 derives structurally from carrying the whole current
-		// visible set every time, TokenHidden's comes from the operation
-		// itself: the projection may legitimately re-send a hide —
-		// recomputed visibility that already excluded the token,
-		// at-least-once delivery — and this arm stays tolerant in lockstep
-		// with fold.ts's mirror of it: whichever language folds a re-sent
-		// hide, the outcome must be the same no-op. Refusing it here would fail
-		// the keystone equality (spec §4.3) over traffic the projection
-		// itself considers ordinary. Spec §8 names the failure a STRICT fold
-		// produces as the worst available for this arc — "the strict fold
-		// throws, taking the whole client down" — verified concretely on
-		// the TS side (client/src/fold.ts, client/src/session.ts): Session
-		// re-folds its ENTIRE accumulated log on every new event, so one
-		// throw would not just fail the offending event, it would recur on
-		// every future fold and freeze that viewer's derived state for the
-		// rest of the session.
+		// Tolerate a hide of a token already gone, as client/src/fold.ts's
+		// mirror does: a re-sent hide is ordinary, and a strict fold throws on
+		// every later re-fold (client/src/session.ts re-folds its whole log)
+		// and freezes that viewer.
 		delete(st.Tokens, p.TokenHidden.GetTokenId())
 		return nil
 

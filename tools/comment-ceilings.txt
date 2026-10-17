@@ -32,7 +32,7 @@ cmd/vtt/adventures_test.go  25.2
 cmd/vtt/art.go  43.2
 cmd/vtt/art_test.go  30.9
 cmd/vtt/cli_test.go  25.6
-cmd/vtt/client_e2e_test.go  34.7
+cmd/vtt/client_e2e_test.go  33.3
 cmd/vtt/client_run.go  23.3
 cmd/vtt/client_soak.go  31.1
 cmd/vtt/dialer_test.go  14.7
@@ -44,11 +44,11 @@ cmd/vtt/harness_boot.go  45.0
 cmd/vtt/harness_boot_test.go  24.1
 cmd/vtt/invite.go  23.6
 cmd/vtt/joinlink.go  27.4
-cmd/vtt/library_test.go  44.8
+cmd/vtt/library_test.go  35.7
 cmd/vtt/main.go  39.2
 cmd/vtt/maps.go  76.3
 cmd/vtt/maps_e2e_test.go  28.3
-cmd/vtt/maps_test.go  46.9
+cmd/vtt/maps_test.go  46.5
 cmd/vtt/mcp.go  46.6
 cmd/vtt/mcp_adventure_e2e_test.go  25.8
 cmd/vtt/mcp_e2e_test.go  25.3
@@ -121,9 +121,9 @@ internal/campaign/writer_hold_test.go  0.0
 internal/campaigncfg/campaigncfg.go  67.0
 internal/campaigncfg/campaigncfg_test.go  33.0
 internal/engine/actor_control_test.go  33.0
-internal/engine/actorkind.go  89.4
+internal/engine/actorkind.go  36.4
 internal/engine/actorkind_test.go  38.5
-internal/engine/apply.go  37.9
+internal/engine/apply.go  33.3
 internal/engine/apply_boundary_test.go  14.2
 internal/engine/apply_int32_test.go  32.3
 internal/engine/apply_test.go  9.8
@@ -135,11 +135,11 @@ internal/engine/qa_note_visibility_test.go  2.4
 internal/engine/qa_role_test.go  7.4
 internal/engine/qa_ruleset_bound_test.go  0.0
 internal/engine/role_test.go  7.4
-internal/engine/state.go  57.9
+internal/engine/state.go  42.9
 internal/engine/terrain.go  52.3
 internal/engine/terrain_test.go  29.4
 internal/engine/visibility_fold_test.go  27.1
-internal/eventgen/model.go  29.1
+internal/eventgen/model.go  26.5
 internal/eventgen/model_test.go  14.7
 internal/gateway/add_actor_validate.go  25.0
 internal/gateway/add_actor_validate_test.go  48.8
@@ -164,7 +164,7 @@ internal/gateway/map.go  18.8
 internal/gateway/map_internal_test.go  24.6
 internal/gateway/map_test.go  42.5
 internal/gateway/metadata.go  11.8
-internal/gateway/metadata_test.go  25.0
+internal/gateway/metadata_test.go  24.3
 internal/gateway/note_validate.go  12.5
 internal/gateway/note_validate_test.go  0.0
 internal/gateway/presence.go  15.9
@@ -188,7 +188,7 @@ internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  16.5
 internal/gateway/seat_internal_test.go  3.9
 internal/gateway/server.go  22.5
-internal/gateway/server_internal_test.go  34.4
+internal/gateway/server_internal_test.go  33.5
 internal/gateway/server_test.go  24.3
 internal/gateway/server_visibility_test.go  15.5
 internal/gateway/static_test.go  15.6
@@ -200,7 +200,7 @@ internal/harness/batch_truncation_internal_test.go  24.7
 internal/harness/client.go  48.3
 internal/harness/client_pending_internal_test.go  42.5
 internal/harness/client_test.go  26.6
-internal/harness/corpus_actor_kind_test.go  38.6
+internal/harness/corpus_actor_kind_test.go  35.6
 internal/harness/engine.go  30.1
 internal/harness/engine_test.go  17.6
 internal/harness/fold.go  48.7
@@ -214,7 +214,7 @@ internal/harness/scenario.go  49.4
 internal/harness/scenario_test.go  19.8
 internal/harness/soak.go  42.7
 internal/harness/soak_drain_internal_test.go  24.6
-internal/harness/soak_test.go  35.8
+internal/harness/soak_test.go  34.9
 internal/harness/states_equal_conditions_internal_test.go  17.3
 internal/harness/states_equal_notes_internal_test.go  12.5
 internal/identity/fault_internal_test.go  7.4
@@ -224,7 +224,7 @@ internal/identity/identity_test.go  2.5
 internal/identity/qa_joining_internal_test.go  12.2
 internal/mapdef/apidoc_test.go  30.0
 internal/mapdef/boundary_test.go  32.6
-internal/mapdef/compile.go  63.1
+internal/mapdef/compile.go  54.7
 internal/mapdef/compile_test.go  33.0
 internal/mapdef/format.go  85.2
 internal/mapdef/installed.go  70.2

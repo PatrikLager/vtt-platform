@@ -1306,27 +1306,10 @@ func TestDescribeBlockageRewritesTheTwoNonProseReasonsAndPassesTheRestThrough(t 
 	}
 }
 
-// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch pins what happens
-// when one envelope of a batch cannot be encoded, which since the visibility
-// projection landed is a question with two possible answers.
-//
-// The pump used to `continue` past a frame it could not encode. That was
-// harmless while one log event was exactly one frame: the client missed one
-// event and the stream stayed coherent. It stopped being harmless when a
-// projected seat began receiving SEVERAL envelopes per event, because
-// project.go's order within them is load-bearing — an actor before its token,
-// a scene before what stands in it. Skipping one and sending the next delivers
-// "token placed for unknown actor" to both folds, which is the permanent
-// client freeze this arc keeps returning to. Delivering an incoherent stream
-// is worse than delivering none, so the connection goes instead.
-//
-// UNREACHABLE IN PRODUCTION AND STILL WORTH DRIVING, exactly like
-// TestCatchUpHeadEncodeFailureClosesTheConnection above: protojson does not
-// fail on envelopes the projection builds. What makes it testable at all is
-// that enqueueEvents takes Server.encodeFrame's seam rather than calling the
-// package-level EncodeFrame — until it did, this branch was unreachable by
-// WIRING rather than by construction, and its behaviour was a claim in a
-// comment that nothing checked.
+// TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch drives the pump's
+// encode-failure arm through Server.encodeFrame's seam, since protojson does not
+// fail in production: a stream that skipped one entry of a batch could deliver
+// a token before its actor, so the connection must close instead.
 // VTT-088
 func TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "campaign.db")

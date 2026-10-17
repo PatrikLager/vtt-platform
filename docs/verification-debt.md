@@ -331,6 +331,30 @@ missing`, `outside the tool`.
 `client/test/fold-rejections.test.ts`, which reds when that line is deleted
 (observed 2026-10-04, in `a4543e6`'s breaks).
 
+## 2026-10-17 — a soak checkpoint read a log seat's stream before it had drained
+
+**`runSoakCheckpoint` checked the log seats without settling them.** The soak
+drains each connection in its own goroutine (`soakHistories.start`), so at a
+periodic checkpoint a player's history could still lack entries the server had
+sent, and a break in them was reported by a later checkpoint under its own
+number; `ece9014` settled the log seats before the final checkpoint only.
+Recipe: in `internal/harness/soak.go`, move
+`histories.settle(logNames, denialAbsenceWindow, observeTimeout)` out of
+`runSoakCheckpoint` and put it back before `RunSoak`'s final
+`runSoakCheckpoint` call. Tier-1 `go test` should have caught it, through
+`TestASoakCheckpointFailsACharacterStreamThatSkips` and
+`TestQALSSoakPlayerStreamBrokenMidRunFailsItsCheckpoint`, and did not: both
+fail on it only when the drain goroutines lag, which on this machine means
+GOMAXPROCS 1 (every run) or 2 (some), never the default 8, and every run
+before the commit was at the default. Task 7's commit hook, under load, was
+the first to see it. Labels: `test data missing`, `outside the tool`.
+
+**Closed by** `TestAPeriodicSoakCheckpointReadsWhatALateFanOutDelivers` in
+`internal/harness/soak_test.go`, whose fan-out lands on timers that synctest
+holds until the main goroutine blocks, so it reds on the recipe at every
+GOMAXPROCS (60 of 60 across 1, 2 and 8, observed 2026-10-17 by the fix's
+reading review).
+
 ## Open debt
 
 **The harness cannot see a log seat switched on its old subscription.**
@@ -619,6 +643,13 @@ whose eventgen walk removes actors, and by unit tests; a reused id
 seats saw and others did not, and one that adds an actor under a removed id.
 Recorded 2026-10-01 by the testimony change's reading review.
 
+**Closed 2026-10-17 by deletion, not by a test.** The keystone and
+`project_property_test.go` left with the gateway's projection in ticket 3b
+(`docs/superpowers/specs/2026-10-17-a-seat-streams-its-characters-log-design.md`),
+so no gate runs a removal clause over the corpus any more. VTT-251 and VTT-252
+are held by `internal/perceive`'s unit tests, which their rows name; the
+corpus still holds no `ActorRemoved` and reuses no actor id.
+
 **`check:doc-owner` does not read test files, so a test can take another's
 doc comment.** `tools/check-doc-owner.py` skips every file ending
 `_test.go`. A new test inserted directly above an existing test's `// VTT-NNN`
@@ -737,8 +768,8 @@ builds `./...` for linux and darwin and asserts the windows build of
 wanted. Recorded 2026-10-05 by the writer-hold report, the plan's Gap 5.
 
 **`AttackRolled.Modifier.source` reaches a player as the log holds it.**
-`forwardable` in `internal/gateway/project.go` clears an envelope's issuer and
-the cause of a `TokenMoved`, `ResourceChanged`, `ConditionApplied` or
+`forwardable` in `internal/perceive/projection.go` clears an envelope's issuer
+and the cause of a `TokenMoved`, `ResourceChanged`, `ConditionApplied` or
 `ConditionRemoved` and keeps every other field, and `classify` forwards an
 `AttackRolled` when the viewer saw its attacker and its target, so each
 `Modifier.source` reaches a player or a spectator as written. Nothing in

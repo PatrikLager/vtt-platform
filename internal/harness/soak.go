@@ -383,8 +383,6 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 		settleTrailingDenials(rep, histories, pending, report)
 	}
 
-	// Settle the log seats first: no checkpoint follows to read what arrives late.
-	histories.settle(logNames, denialAbsenceWindow, observeTimeout)
 	if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, logNames, report); err != nil {
 		return nil, err
 	}
@@ -447,6 +445,9 @@ type deniedPending struct {
 func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, waitForSeq int64, logNames []string, report io.Writer) error {
 	// Count first: every line this checkpoint writes carries its own number.
 	rep.Checkpoints++
+	// Settle the log seats before reading them: an entry already sent is this
+	// checkpoint's to report, not a later checkpoint's (VTT-359).
+	histories.settle(logNames, denialAbsenceWindow, observeTimeout)
 	for _, broken := range histories.brokenLogs(logNames) {
 		rep.Pass = false
 		fmt.Fprintf(report, "[checkpoint %d] FAIL: %s\n", rep.Checkpoints, broken)
