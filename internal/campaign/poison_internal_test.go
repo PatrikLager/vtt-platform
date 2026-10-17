@@ -66,3 +66,20 @@ func TestAPoisonedCampaignRefusesACharacterSubscription(t *testing.T) {
 		t.Fatalf("SubscribeCharacter on poisoned Campaign: got %v, want errPoisoned", err)
 	}
 }
+
+// VTT-357
+func TestAPoisonedCampaignRefusesAWatcherAndHasNoActors(t *testing.T) {
+	c, err := Open(filepath.Join(t.TempDir(), "campaign"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+
+	c.poisoned = true
+	if _, _, err := c.WatchAppends(); !errors.Is(err, errPoisoned) {
+		t.Fatalf("WatchAppends on poisoned Campaign: got %v, want errPoisoned", err)
+	}
+	if got := c.Actors(); got != nil {
+		t.Fatalf("Actors on poisoned Campaign = %v, want nil", got)
+	}
+}

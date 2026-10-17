@@ -172,7 +172,7 @@ func TestANonPartyActorHasNoLog(t *testing.T) {
 	}
 }
 
-// VTT-317
+// VTT-317 VTT-372
 func TestALateLogOpensWithThePresent(t *testing.T) {
 	c := openTemp(t)
 	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "Night one"}))

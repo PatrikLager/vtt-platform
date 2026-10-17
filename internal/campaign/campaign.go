@@ -28,22 +28,20 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/store"
 )
 
-// errPoisoned is returned by every Campaign method once poisoned is set. Only
-// appendLocked sets it, after a persist, when the live state fails to fold what
-// validation folded: unreachable by design, and kept as a fail-loud backstop.
+// errPoisoned is what every Campaign method but Close, State and Actors returns
+// once poisoned is set. Only appendLocked sets it, after a persist, when the live
+// state fails to fold what validation folded: unreachable by design, a backstop.
 var errPoisoned = errors.New("campaign: poisoned by post-persist failure; reopen required")
+
+var errClosed = errors.New("campaign: closed")
 
 // ErrHeld is the refusal of an Open whose directory another Campaign holds.
 var ErrHeld = errors.New("campaign: another writer holds the campaign directory")
 
 // Campaign composes a store.Store (the log) with an engine.State (the live
-// projection). If a post-persist step ever fails — the log was written but
-// the in-memory projection could not be advanced to match — the Campaign
-// marks itself poisoned: every subsequent Append, AppendBatch, State, and
-// Subscribe call fails (State returns nil) rather than serve state that may
-// no longer match the log. There is no in-process recovery from a poisoned Campaign;
-// the caller must Close and Open it again, which rebuilds the projection
-// from the log from scratch.
+// projection). A failure after a persist poisons it: every method but Close
+// then fails, State and Actors returning nil, until it is closed and opened
+// again (errPoisoned).
 type Campaign struct {
 	mu    sync.Mutex
 	log   *store.Store
@@ -59,6 +57,7 @@ type Campaign struct {
 
 	logs      map[string]*characterLog
 	discarded int
+	watches   map[chan struct{}]struct{}
 
 	// Call release once: a second close of its descriptor can close an
 	// unrelated file.
@@ -112,7 +111,7 @@ func Open(dir string) (*Campaign, error) {
 		_ = release()
 		return nil, err
 	}
-	c := &Campaign{log: s, release: release}
+	c := &Campaign{log: s, release: release, watches: map[chan struct{}]struct{}{}}
 	if err := c.rebuildLocked(); err != nil {
 		_ = s.Close() // rebuild failed; the returned error is what matters
 		_ = release()
@@ -268,6 +267,13 @@ func (c *Campaign) appendLocked(envs []*vttv1.Envelope) (int64, error) {
 			return 0, fmt.Errorf("campaign: live apply diverged from validation: %w", err)
 		}
 	}
+	// Keep the wake before both Notify loops (VTT-355).
+	for w := range c.watches {
+		select {
+		case w <- struct{}{}:
+		default:
+		}
+	}
 	// Notify only once the live state holds the whole batch (Store.Notify).
 	for _, env := range envs {
 		c.log.Notify(env)
@@ -362,6 +368,42 @@ func (c *Campaign) SubscribeCharacter(actorID string, afterSeq int64, buffer int
 	return c.log.SubscribeCharacter(actorID, afterSeq, buffer, noProgress)
 }
 
+// WatchAppends wakes, without blocking, after each successful append's live
+// apply, one waiting signal standing for any number of appends, and closes with
+// the campaign; stop ends the watch (VTT-353, VTT-356).
+func (c *Campaign) WatchAppends() (wake <-chan struct{}, stop func(), err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poisoned {
+		return nil, nil, errPoisoned
+	}
+	if c.release == nil {
+		return nil, nil, errClosed
+	}
+	ch := make(chan struct{}, 1)
+	c.watches[ch] = struct{}{}
+	stop = func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		delete(c.watches, ch)
+	}
+	return ch, stop, nil
+}
+
+// Actors returns a copy of the live actors, or nil while poisoned.
+func (c *Campaign) Actors() map[string]*vttv1.Actor {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.poisoned {
+		return nil
+	}
+	out := make(map[string]*vttv1.Actor, len(c.state.Actors))
+	for id, a := range c.state.Actors {
+		out[id] = proto.Clone(a).(*vttv1.Actor)
+	}
+	return out
+}
+
 // Close closes the log and then ends the writer hold (SPEC-019).
 func (c *Campaign) Close() error {
 	c.mu.Lock()
@@ -369,6 +411,10 @@ func (c *Campaign) Close() error {
 	if c.release == nil {
 		return nil
 	}
+	for w := range c.watches {
+		close(w)
+	}
+	clear(c.watches)
 	logErr := c.log.Close()
 	holdErr := c.release()
 	c.release = nil

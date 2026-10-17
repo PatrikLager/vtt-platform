@@ -1043,7 +1043,7 @@ func TestQALogFramesThatWouldNotFoldAreNotWritten(t *testing.T) {
 }
 
 // TestQALogFramesThatWouldNotFoldAreNotWrittenWithinABatch pins VTT-320.
-// VTT-320
+// VTT-320 VTT-371 VTT-372
 func TestQALogFramesThatWouldNotFoldAreNotWrittenWithinABatch(t *testing.T) {
 	tb := qaLogNew(t, "p", "q")
 	g := &qaLogGen{}
