@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -24,8 +25,8 @@ func watchesALog(r identity.Role) bool {
 
 var errWatchEnded = errors.New("gateway: the campaign ended this seat's watch")
 
-// Touch a seat from the pump alone once serve has queued its head: frames must
-// leave in the order the seat changed (SPEC-011, SPEC-015).
+// Touch a seat from the pump alone once serve has queued its head, told aside:
+// frames must leave in the order the seat changed (SPEC-011, SPEC-015).
 type seat struct {
 	c          *campaign.Campaign
 	p          *identity.Participant
@@ -39,6 +40,8 @@ type seat struct {
 	wake     <-chan struct{}
 	stopWake func()
 	shown    string
+	// Read told from any goroutine; watch stores it before a frame names it (VTT-351).
+	told atomic.Pointer[string]
 }
 
 // openSeat subscribes p's connection: the world for the DM and the agent, else
@@ -79,7 +82,9 @@ func openSeat(c *campaign.Campaign, p *identity.Participant, named string, after
 func (s *seat) watch(actorID string, cursor int64) (int64, error) {
 	for {
 		s.drop()
-		s.shown = actorID
+		shown := actorID
+		s.shown = shown
+		s.told.Store(&shown)
 		var head int64
 		if actorID != "" {
 			events, unsub, h, err := s.c.SubscribeCharacter(actorID, cursor, s.buffer, s.noProgress)
@@ -191,8 +196,20 @@ func (b *perchBox) take() (actorID string, ok bool) {
 	return actorID, ok
 }
 
+// judgedBy is the told viewpoint while p may watch it, else p's default (VTT-351).
+func (s *seat) judgedBy(p *identity.Participant, actors map[string]*vttv1.Actor) string {
+	viewpoint := ""
+	if told := s.told.Load(); told != nil {
+		viewpoint = *told
+	}
+	if MayWatch(p, viewpoint, actors) != nil {
+		return defaultViewpoint(p, actors)
+	}
+	return viewpoint
+}
+
 // Ask perceive afresh per question: canSee must record nothing a seat was
 // shown (SPEC-015).
-func canSee(eyes perceive.Eyes, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
-	return perceive.CanSee(eyes, st, sceneID, at)
+func canSee(viewpoint string, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
+	return perceive.CanSee(perceive.Eyes{Shoulder: viewpoint}, st, sceneID, at)
 }

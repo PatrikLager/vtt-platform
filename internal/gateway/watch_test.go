@@ -29,7 +29,8 @@ type watchConn struct {
 	req     int
 }
 
-func (f *gwFixture) watch(token string, after int64, log string) *watchConn {
+// dialOn is dial opening on log, as a reconnect names it (VTT-339).
+func (f *gwFixture) dialOn(token string, after int64, log string) *websocket.Conn {
 	f.t.Helper()
 	u, err := url.Parse(f.wsURL(token, after))
 	if err != nil {
@@ -47,8 +48,14 @@ func (f *gwFixture) watch(token string, after int64, log string) *watchConn {
 		f.t.Fatalf("dial: %v", err)
 	}
 	conn.SetReadLimit(200 * 1024)
-	w := &watchConn{t: f.t, conn: conn, frames: make(chan *vttv1.ServerFrame, 1024), closed: make(chan struct{})}
 	f.t.Cleanup(func() { conn.CloseNow() })
+	return conn
+}
+
+func (f *gwFixture) watch(token string, after int64, log string) *watchConn {
+	f.t.Helper()
+	conn := f.dialOn(token, after, log)
+	w := &watchConn{t: f.t, conn: conn, frames: make(chan *vttv1.ServerFrame, 1024), closed: make(chan struct{})}
 	go func() {
 		defer close(w.closed)
 		for {
@@ -126,8 +133,7 @@ func (w *watchConn) entries(n int) []*vttv1.Envelope {
 	return out
 }
 
-// untilViewpoint reads to the next ViewpointChanged, returning the entries
-// before it.
+// untilViewpoint reads to a ViewpointChanged: its actor, and the entries before it.
 func (w *watchConn) untilViewpoint() (string, []*vttv1.Envelope) {
 	w.t.Helper()
 	var before []*vttv1.Envelope
@@ -174,6 +180,25 @@ func (w *watchConn) command(cmd *vttv1.ClientCommand) *vttv1.CommandResult {
 func setViewpoint(actorID string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_SetViewpoint{
 		SetViewpoint: &vttv1.SetViewpoint{ActorId: actorID}}}
+}
+
+func moveTo(tokenID string, x, y int32) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
+		TokenId: tokenID, To: &vttv1.GridPosition{X: x, Y: y}}}}
+}
+
+const unseenSquare = "gateway: cannot move there — you cannot see that square"
+
+// appendTwoRooms appends twoRoomsTiles as scene "rooms".
+func appendTwoRooms(t *testing.T, f *gwFixture) {
+	t.Helper()
+	appendEvents(t, f.campaign, &vttv1.SceneCreated{SceneId: "rooms", Name: "Rooms", GridWidth: 7, GridHeight: 3,
+		Tiles: twoRoomsTiles()})
+}
+
+func tokenAt(tokenID, actorID string, x, y int32) *vttv1.TokenPlaced {
+	return &vttv1.TokenPlaced{TokenId: tokenID, SceneId: "rooms", ActorId: actorID,
+		Position: &vttv1.GridPosition{X: x, Y: y}}
 }
 
 var watchEventID atomic.Int64
@@ -544,4 +569,53 @@ func TestAPromotedSpectatorWatchesTheirFirstPartyMember(t *testing.T) {
 	}
 	want := logOf(t, f, "c1")
 	requireLog(t, "the granted log", w.entries(len(want)), want)
+}
+
+// VTT-350
+func TestAPlayersMoveIsJudgedByTheCharacterTheyWatch(t *testing.T) {
+	f := newGWFixture(t)
+	ivo := participantID(t, f, f.otherPlayerToken)
+	appendTwoRooms(t, f)
+	appendEvents(t, f.campaign, partyMemberOf("ana", ivo)...)
+	appendEvents(t, f.campaign, partyMemberOf("bo", ivo)...)
+	appendEvents(t, f.campaign, tokenAt("tok-ana", "ana", 1, 1), tokenAt("tok-bo", "bo", 5, 1))
+
+	w := f.watch(f.otherPlayerToken, 0, "")
+	if _, vp := w.opening(); vp != "ana" {
+		t.Fatalf("opens on %q, want ana", vp)
+	}
+	if r := w.command(moveTo("tok-bo", 4, 1)); r.GetOk() || r.GetError() != unseenSquare {
+		t.Fatalf("watching ana, a move onto a square only bo sees: ok=%v %q, want %q",
+			r.GetOk(), r.GetError(), unseenSquare)
+	}
+	if r := w.command(setViewpoint("bo")); !r.GetOk() {
+		t.Fatalf("switching to their own bo was refused: %s", r.GetError())
+	}
+	if vp, _ := w.untilViewpoint(); vp != "bo" {
+		t.Fatalf("switched to %q, want bo", vp)
+	}
+	if r := w.command(moveTo("tok-bo", 4, 1)); !r.GetOk() {
+		t.Fatalf("watching bo, the same move was refused: %s", r.GetError())
+	}
+}
+
+// VTT-370
+func TestAPlayerWithNoPartyMemberMovesNothing(t *testing.T) {
+	f := newGWFixture(t)
+	ivo := participantID(t, f, f.otherPlayerToken)
+	appendTwoRooms(t, f)
+	appendEvents(t, f.campaign,
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wolf", Name: "Wolf", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
+		&vttv1.ActorControlGranted{ActorId: "wolf", ParticipantId: ivo, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		tokenAt("tok-wolf", "wolf", 1, 1))
+
+	w := f.watch(f.otherPlayerToken, 0, "")
+	if _, vp := w.opening(); vp != "" {
+		t.Fatalf("opens on %q, want nobody", vp)
+	}
+	for _, to := range [][2]int32{{2, 1}, {1, 0}, {4, 1}} {
+		if r := w.command(moveTo("tok-wolf", to[0], to[1])); r.GetOk() || r.GetError() != unseenSquare {
+			t.Fatalf("the wolf's controller moved it to %v: ok=%v %q, want %q", to, r.GetOk(), r.GetError(), unseenSquare)
+		}
+	}
 }

@@ -686,6 +686,7 @@ func (f *gwFixture) seedCellarWithSceneryKind(t *testing.T, kind string) int64 {
 	if !r2.Ok {
 		t.Fatalf("seed AddActor act-fighter: %s", r2.Error)
 	}
+	// Dial the player onto act-fighter: their default, a1, sees nothing here.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-grant-fighter",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
@@ -732,7 +733,7 @@ func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 	f := newGWFixture(t)
 	after := f.seedCellar(t) // tok-fighter at (2,1); walls across the top row
 
-	playerConn := f.dial(f.playerToken, after)
+	playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "r-wall",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
@@ -777,9 +778,9 @@ func TestAPlayerCannotWalkIntoAWallButTheDMCan(t *testing.T) {
 // VTT-157
 func TestAPlayerCannotWalkOntoBlockingSceneryAndTheRefusalNamesIt(t *testing.T) {
 	f := newGWFixture(t)
-	after := f.seedCellar(t) // tok-fighter at (2,1); boulder (BlocksMove) at (1,1)
+	f.seedCellar(t) // tok-fighter at (2,1); boulder (BlocksMove) at (1,1)
 
-	playerConn := f.dial(f.playerToken, after)
+	playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "r-boulder",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
@@ -2752,8 +2753,8 @@ func TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind(t *testing.T) {
 	refusal := func(t *testing.T, kind string) string {
 		t.Helper()
 		f := newGWFixture(t)
-		after := f.seedCellarWithSceneryKind(t, kind)
-		playerConn := f.dial(f.playerToken, after)
+		f.seedCellarWithSceneryKind(t, kind)
+		playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 		sendCommand(t, playerConn, &vttv1.ClientCommand{
 			RequestId: "r-scenery",
 			Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{

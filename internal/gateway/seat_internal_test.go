@@ -327,8 +327,8 @@ func frameOf(t *testing.T, out chan []byte) *vttv1.ServerFrame {
 	return nil
 }
 
-// VTT-343
-func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
+func seatServer(t *testing.T) (*Server, *campaign.Campaign, *identity.Participant) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 	c, err := campaign.Open(path)
 	if err != nil {
@@ -344,10 +344,16 @@ func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seatParty(t, c, "a1", playerID)
+	return New(c, ids), c, &identity.Participant{ID: playerID, Role: identity.RolePlayer}
+}
+
+// VTT-343
+func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
 	seatParty(t, c, "b1", "someone-else")
 
-	perches, out := pumpUnderTest(t, New(c, ids), &identity.Participant{ID: playerID, Role: identity.RolePlayer})
+	perches, out := pumpUnderTest(t, s, p)
 	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "a1" {
 		t.Fatalf("the seat opened on %v, want a1", vc)
 	}
@@ -377,5 +383,99 @@ func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
 	f := frameOf(t, out)
 	if f.GetViewpointChanged() != nil || f.GetEvent().GetNarrationAdded().GetText() != "after the perch" {
 		t.Fatalf("a perch onto another's party member was applied: got %v", f)
+	}
+}
+
+func seatRooms(t *testing.T, c *campaign.Campaign) {
+	t.Helper()
+	tiles := map[string]*vttv1.TileRef{}
+	for y := range int32(3) {
+		for x := range int32(7) {
+			kind := "floor"
+			if x == 3 {
+				kind = "wall"
+			}
+			tiles[strconv.Itoa(int(x))+","+strconv.Itoa(int(y))] = &vttv1.TileRef{Kind: kind}
+		}
+	}
+	seatAppend(t, c, "rooms", &vttv1.SceneCreated{SceneId: "rooms", Name: "Rooms", GridWidth: 7, GridHeight: 3,
+		Tiles: tiles})
+	for id, x := range map[string]int32{"ana": 1, "bo": 5} {
+		seatAppend(t, c, id+"-actor", &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: id, Name: id,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+		seatAppend(t, c, id+"-token", &vttv1.TokenPlaced{TokenId: "tok-" + id, SceneId: "rooms", ActorId: id,
+			Position: &vttv1.GridPosition{X: x, Y: 1}})
+	}
+}
+
+func seatGrant(t *testing.T, c *campaign.Campaign, actorID, participantID string) {
+	t.Helper()
+	seatAppend(t, c, actorID+"-granted", &vttv1.ActorControlGranted{ActorId: actorID, ParticipantId: participantID,
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+}
+
+func seatMove(tokenID string, x int32) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{RequestId: "move", Command: &vttv1.ClientCommand_MoveToken{
+		MoveToken: &vttv1.MoveTokenRequest{TokenId: tokenID, To: &vttv1.GridPosition{X: x, Y: 1}}}}
+}
+
+// Start no pump here: the seat must not have read the grant's wake.
+// VTT-351
+func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatRooms(t, c)
+	sub, _, err := openSeat(c, p, "", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	seatGrant(t, c, "ana", p.ID)
+	if sub.shown != "" {
+		t.Fatalf("fixture: the seat shows %q, want nobody", sub.shown)
+	}
+	if r := s.handleCommand(p, seatMove("tok-ana", 2), sub); !r.GetOk() {
+		t.Fatalf("a move of the granted character's token onto a square it sees: %s", r.GetError())
+	}
+}
+
+// Start no pump here: the seat must still show ana when the move is judged.
+// VTT-351
+func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatRooms(t, c)
+	seatGrant(t, c, "ana", p.ID)
+	seatGrant(t, c, "bo", p.ID)
+	sub, _, err := openSeat(c, p, "", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	seatAppend(t, c, "lost", &vttv1.ActorControlRevoked{ActorId: "ana", ParticipantId: p.ID})
+	if sub.shown != "ana" {
+		t.Fatalf("fixture: the seat shows %q, want ana", sub.shown)
+	}
+	const unseen = "gateway: cannot move there — you cannot see that square"
+	if r := s.handleCommand(p, seatMove("tok-bo", 2), sub); r.GetOk() || r.GetError() != unseen {
+		t.Fatalf("bo's move onto a square only ana sees: ok=%v %q, want %q", r.GetOk(), r.GetError(), unseen)
+	}
+}
+
+// Start no pump here: the move must be judged before any frame is sent.
+// VTT-351
+func TestAMoveOnAConnectionOpenedOnALogIsJudgedByThatLog(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatRooms(t, c)
+	seatGrant(t, c, "ana", p.ID)
+	seatGrant(t, c, "bo", p.ID)
+	sub, _, err := openSeat(c, p, "bo", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	if r := s.handleCommand(p, seatMove("tok-bo", 4), sub); !r.GetOk() {
+		t.Fatalf("opened on bo, a move onto a square bo sees and ana, the default, does not: %s", r.GetError())
 	}
 }

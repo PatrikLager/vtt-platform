@@ -23,7 +23,6 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
-	"github.com/PatrikLager/vtt-platform/internal/perceive"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -420,7 +419,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// Any other lookup error is operational: refuse the command and keep the
 		// connection (VTT-033). A dead writer, seen on the result's writerDone arm,
 		// costs the connection.
-		result := s.answerCommand(now, err, cmd, perches)
+		result := s.answerCommand(now, err, cmd, perches, sub)
 		b, err := EncodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Result{Result: result}})
 		if err != nil {
 			continue
@@ -599,7 +598,7 @@ func describeBlockage(why string) string {
 // Never enqueue a frame here: the pump is the only producer of a connection's
 // envelopes (SPEC-011).
 func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vttv1.ClientCommand,
-	perches *perchBox) *vttv1.CommandResult {
+	perches *perchBox, sub *seat) *vttv1.CommandResult {
 	switch sv, isPerch := cmd.GetCommand().(*vttv1.ClientCommand_SetViewpoint); {
 	case lookupErr != nil:
 		// Refuse this command and keep the connection (SPEC-009, VTT-033).
@@ -615,7 +614,7 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 		return s.handleSetViewpoint(p, cmd, sv.SetViewpoint, perches)
 
 	default:
-		return s.handleCommand(p, cmd)
+		return s.handleCommand(p, cmd, sub)
 	}
 }
 
@@ -648,7 +647,7 @@ func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCo
 // handleCommand runs the command path SPEC-013 states, in its order. Never
 // close the connection or write to the wire here: serve owns transport
 // (SPEC-011).
-func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand) *vttv1.CommandResult {
+func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand, sub *seat) *vttv1.CommandResult {
 	requestID := cmd.GetRequestId()
 
 	st, refusal := s.authorize(p, cmd)
@@ -665,7 +664,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 				// Ask sight FIRST and answer with one string: a refusal that varies with
 				// the occupant is a terrain oracle
 				// (TestAPlayerCannotProbeTheDarkWithMoveCommands).
-				if !canSee(perceive.Eyes{Controller: p.ID}, st, tok.SceneID, to) {
+				if !canSee(sub.judgedBy(p, st.Actors), st, tok.SceneID, to) {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — you cannot see that square",

@@ -430,8 +430,7 @@ func qaSeatMinLen(t *testing.T, what string, log []*vttv1.Envelope, n int) {
 	}
 }
 
-// VTT-340 VTT-338 VTT-368 VTT-349 VTT-086
-// VTT-378
+// VTT-340 VTT-338 VTT-368 VTT-349 VTT-086 VTT-378
 func TestQASeatAPlayerOpensOnTheirFirstPartyMemberByID(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	hero := tb.log(t, "hero")
@@ -533,8 +532,7 @@ func TestQASeatACursorAtTheHeadSendsNoHistory(t *testing.T) {
 	q.expect(t, next, "scout live", tb.log(t, "scout")[len(scout):])
 }
 
-// VTT-341 VTT-180 VTT-369 VTT-342
-// VTT-374
+// VTT-341 VTT-180 VTT-369 VTT-342 VTT-374
 func TestQASeatASpectatorWatchesNobodyUntilItPerches(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	for _, query := range []string{
@@ -567,8 +565,7 @@ func TestQASeatASpectatorWatchesNobodyUntilItPerches(t *testing.T) {
 	}
 }
 
-// VTT-340 VTT-341 VTT-342 VTT-338
-// VTT-374
+// VTT-340 VTT-341 VTT-342 VTT-338 VTT-374
 func TestQASeatAPlayerWithNoPartyMemberWatchesNobodyUntilGranted(t *testing.T) {
 	tb := qaSeatOpen(t, false)
 	tb.append(t, tb.grant("goblin", qaSeatNP))
@@ -589,8 +586,7 @@ func TestQASeatAPlayerWithNoPartyMemberWatchesNobodyUntilGranted(t *testing.T) {
 	q.expect(t, next, "hero live", tb.log(t, "hero")[len(hero):])
 }
 
-// VTT-342 VTT-343 VTT-367 VTT-184
-// VTT-375
+// VTT-342 VTT-367 VTT-184 VTT-375
 func TestQASeatSetViewpointSwitchesToTheNewLogFromItsFirstEntry(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	q := tb.dial(t, identity.RolePlayer, "after=3&log=hero")
@@ -682,8 +678,7 @@ func TestQASeatARefusedPlayerPerchLeavesTheWatcherWhereItWas(t *testing.T) {
 	q.follow(t, tb, next, "hero", &seen)
 }
 
-// VTT-181 VTT-182 VTT-345 VTT-342 VTT-193 VTT-341
-// VTT-375
+// VTT-181 VTT-182 VTT-345 VTT-342 VTT-193 VTT-341 VTT-375
 func TestQASeatASpectatorPerchesOnlyOnAPartyMember(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	q := tb.dial(t, identity.RoleSpectator, "after=0&log=hero")
@@ -784,8 +779,7 @@ func TestQASeatAShoulderThatStopsBeingAPartyMemberSwitchesItsWatchers(t *testing
 	spec.expect(t, ns, "scout from its first entry", tb.log(t, "scout"))
 }
 
-// VTT-352
-// VTT-376
+// VTT-352 VTT-376
 func TestQASeatARevokedConnectionClosesAtTheNextAppend(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -827,8 +821,7 @@ func TestQASeatARevokedConnectionClosesAtTheNextAppend(t *testing.T) {
 	}
 }
 
-// VTT-176 VTT-140
-// VTT-377
+// VTT-176 VTT-140 VTT-377
 func TestQASeatTheDMAndTheAgentAreSentTheWorldAndIgnoreLog(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	for _, c := range []struct {

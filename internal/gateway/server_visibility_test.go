@@ -78,6 +78,7 @@ func (f *gwFixture) seedAmbush(t *testing.T) {
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("seed AddActor act-fighter: %s", r.Error)
 	}
+	// Dial the player onto act-fighter: their default, a1, sees nothing here.
 	sendCommand(t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-ambush-grant-fighter",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
@@ -257,12 +258,12 @@ func (f *gwFixture) log(t *testing.T) []*vttv1.Envelope {
 // rule about the square. "Hard for players, free for DM" (maps-as-geometry
 // spec §6) governs sight exactly as it governs stone, and a DM staging a
 // creature across the map is a legitimate thing to do.
-// VTT-155 VTT-158
+// VTT-350 VTT-158
 func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 
-	playerConn := f.dial(f.playerToken, 0)
+	playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "player-reaches-past-the-wall",
 		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
@@ -273,8 +274,7 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	if r.Ok {
 		t.Fatal("a player reached a square on the far side of a wall they cannot see through")
 	}
-	// The refusal says WHY, and what it says is a fact the player already holds
-	// (SPEC-013).
+	// The refusal names the sight rule, which the player already holds (SPEC-013).
 	if !strings.Contains(r.Error, "cannot see") {
 		t.Fatalf("refusal = %q, want it to name the sight rule", r.Error)
 	}
@@ -660,7 +660,7 @@ func TestPerchingAppendsNothingToTheLog(t *testing.T) {
 func TestAPlayerCannotProbeTheDarkWithMoveCommands(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
-	playerConn := f.dial(f.playerToken, 0)
+	playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 
 	probe := func(id string, x, y int32) string {
 		t.Helper()
@@ -747,12 +747,12 @@ func TestAPlayerIsSentAMoveWithoutItsReasonAndTheDMWithIt(t *testing.T) {
 // Keep the destination a remembered square, not an unseen one: its terrain was
 // sent, and SPEC-013 refuses the move anyway. Change this test only with that
 // rule.
-// VTT-155
+// VTT-350
 func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 	dmConn := f.dial(f.dmToken, 0)
-	playerConn := f.dial(f.playerToken, 0)
+	playerConn := f.dialOn(f.playerToken, 0, "act-fighter")
 
 	// The fighter starts at (5,5) and its SceneSeen carries that square's
 	// tile, so this player demonstrably HOLDS that terrain — without this the

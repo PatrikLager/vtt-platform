@@ -18,8 +18,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
-// oracleSeat is a decision through one character's eyes that remembers what it
-// gave, kept apart from the fan-out's own memory of the log.
+// oracleSeat is one character's decision, with a memory apart from the fan-out's.
 type oracleSeat struct {
 	eyes     perceive.Eyes
 	sent     []*vttv1.Envelope
