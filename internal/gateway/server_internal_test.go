@@ -854,6 +854,20 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 
 	watcher := dial(dmToken)
 	defer watcher.CloseNow()
+	// Wait for the watcher's snapshot: a dial returns before serve joins
+	// presence, and a laptop that joins first is in the snapshot, not announced.
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, b, rerr := watcher.Read(ctx)
+		cancel()
+		if rerr != nil {
+			t.Fatalf("waiting for the watcher's snapshot: %v", rerr)
+		}
+		var f vttv1.ServerFrame
+		if protojson.Unmarshal(b, &f) == nil && f.GetPresenceSnapshot() != nil {
+			break
+		}
+	}
 
 	laptop := dial(playerToken)
 	defer laptop.CloseNow()

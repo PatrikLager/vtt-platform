@@ -2,7 +2,6 @@ package gateway_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +16,6 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
-	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -33,44 +31,6 @@ const (
 	qaIssDazed   = "dazed-by-ale"
 )
 
-var qaIssForwardedKinds = []string{
-	"session_started", "session_ended", "narration_added", "note_upserted",
-	"token_moved", "door_opened", "door_closed", "attack_rolled",
-	"ability_used", "actor_control_granted", "actor_control_revoked",
-	"resource_changed", "condition_applied", "condition_removed",
-	"actor_removed",
-}
-
-type qaIssScript struct {
-	log []*vttv1.Envelope
-	ids map[string]string
-}
-
-type qaIssBuilder struct {
-	t   *testing.T
-	st  *engine.State
-	seq int64
-	out qaIssScript
-}
-
-func (b *qaIssBuilder) emit(name, pid string, role identity.Role, env *vttv1.Envelope) {
-	b.t.Helper()
-	b.seq++
-	env.EventId = fmt.Sprintf("qa-iss-ev-%02d", b.seq)
-	env.Sequence = b.seq
-	env.OccurredAt = timestamppb.New(time.Unix(1_800_000_000+b.seq, 0))
-	env.SessionId = qaIssSession
-	env.ParticipantId = pid
-	env.ActorRole = string(role)
-	b.out.log = append(b.out.log, proto.Clone(env).(*vttv1.Envelope))
-	if err := engine.Apply(b.st, proto.Clone(env).(*vttv1.Envelope)); err != nil {
-		b.t.Fatalf("fixture event %d (%s) does not fold: %v", b.seq, name, err)
-	}
-	if name != "" {
-		b.out.ids[name] = env.EventId
-	}
-}
-
 func qaIssActor(id string, kind vttv1.ActorKind) *vttv1.Actor {
 	return &vttv1.Actor{
 		ActorId:    id,
@@ -85,154 +45,6 @@ func qaIssActor(id string, kind vttv1.ActorKind) *vttv1.Actor {
 }
 
 func qaIssAt(x, y int32) *vttv1.GridPosition { return &vttv1.GridPosition{X: x, Y: y} }
-
-func qaIssRC(actor, resource string, delta, now int32, reason string) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
-		ActorId: actor, Resource: resource, Delta: delta, NewValue: now, Reason: reason,
-	}}}
-}
-
-func qaIssCA(actor, source string) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
-		ActorId: actor, ConditionId: qaIssDazed, Source: source,
-	}}}
-}
-
-func qaIssCR(actor, reason string) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{
-		ActorId: actor, ConditionId: qaIssDazed, Reason: reason,
-	}}}
-}
-
-func qaIssPlaced(tok, scene, actor string, x, y int32) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
-		TokenId: tok, SceneId: scene, ActorId: actor, Position: qaIssAt(x, y),
-	}}}
-}
-
-func qaIssGrant(actor, pid string, kind vttv1.ActorKind) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
-		ActorId: actor, ParticipantId: pid, Kind: kind,
-	}}}
-}
-
-func qaIssUsed(actor, ability, summary string) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_AbilityUsed{AbilityUsed: &vttv1.AbilityUsed{
-		ActorId: actor, AbilityId: ability, TargetIds: []string{"patron"},
-		Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.brawn", Results: []int32{9}, Total: 12}},
-		OutcomeSummary: summary,
-	}}}
-}
-
-func qaIssBuildScript(t *testing.T) qaIssScript {
-	t.Helper()
-	b := &qaIssBuilder{t: t, st: engine.NewState(), out: qaIssScript{ids: map[string]string{}}}
-	dm := func(name string, env *vttv1.Envelope) { b.t.Helper(); b.emit(name, qaIssDM, identity.RoleDM, env) }
-	p1 := func(name string, env *vttv1.Envelope) { b.t.Helper(); b.emit(name, qaIssP1, identity.RolePlayer, env) }
-	party, other := vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_NON_PARTY
-
-	dm("session-started", &vttv1.Envelope{Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "qa night"}}})
-	dm("", &vttv1.Envelope{Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-		SceneId: "hall", Name: "Hall", GridWidth: 10, GridHeight: 10,
-		Tiles: map[string]*vttv1.TileRef{"6,1": {Kind: "door"}},
-	}}})
-	dm("", &vttv1.Envelope{Payload: &vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
-		SceneId: "cellar", Name: "Cellar", GridWidth: 4, GridHeight: 4,
-	}}})
-	for _, a := range []*vttv1.Actor{qaIssActor("hero", party), qaIssActor("patron", other), qaIssActor("lurker", other), qaIssActor("familiar", other)} {
-		dm("", &vttv1.Envelope{Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: a}}})
-	}
-	dm("", qaIssGrant("hero", qaIssP1, party))
-	dm("", qaIssGrant("familiar", qaIssP1, other))
-	dm("", qaIssPlaced("hero-tok", "hall", "hero", 1, 1))
-	dm("", qaIssPlaced("patron-tok", "hall", "patron", 3, 1))
-	dm("", qaIssPlaced("lurker-tok", "cellar", "lurker", 1, 1))
-
-	p1("own-narration", &vttv1.Envelope{Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
-		Text: "knuckles crack", As: "Hero", AnchorFromSeq: 1, AnchorToSeq: 2,
-	}}})
-	p1("own-move", &vttv1.Envelope{Payload: &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
-		TokenId: "hero-tok", SceneId: "hall", From: qaIssAt(1, 1), To: qaIssAt(2, 1), Reason: "edging toward the bar",
-	}}})
-	p1("seen-used", qaIssUsed("hero", "fists", "Fists on patron: hit (12 vs 0)"))
-	p1("seen-rc", qaIssRC("patron", "drink", 1, 1, "ability:fists:hit"))
-	p1("seen-ca", qaIssCA("patron", "threshold:drink"))
-
-	dm("unseen-used", qaIssUsed("lurker", "chair-swing", "Chair Swing on patron: hit (12 vs 0)"))
-	dm("unseen-usage", qaIssRC("lurker", "stamina", -1, 1, "ability:chair-swing:usage"))
-	dm("unseen-rc", qaIssRC("patron", "drink", 3, 4, "ability:chair-swing:hit"))
-	dm("unseen-cr", qaIssCR("patron", "ability:splash-of-water:effect"))
-	dm("unseen-ca", qaIssCA("patron", "ability:chair-swing:hit"))
-	dm("by-hand-cr", qaIssCR("patron", "removed by hand"))
-
-	b.emit("attack", qaIssAgent, identity.RoleAgent, &vttv1.Envelope{Payload: &vttv1.Envelope_AttackRolled{AttackRolled: &vttv1.AttackRolled{
-		AttackerId: "hero", TargetId: "patron", Expression: "1d20+3",
-		Rolls:     []*vttv1.DieRoll{{Die: 20, Result: 9}},
-		Modifiers: []*vttv1.Modifier{{Source: "brawn", Value: 3}},
-		Total:     12, Versus: "footing", Outcome: "hit",
-	}}})
-	dm("door-opened", &vttv1.Envelope{Payload: &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{SceneId: "hall", At: qaIssAt(6, 1)}}})
-	dm("door-closed", &vttv1.Envelope{Payload: &vttv1.Envelope_DoorClosed{DoorClosed: &vttv1.DoorClosed{SceneId: "hall", At: qaIssAt(6, 1)}}})
-	dm("public-note", &vttv1.Envelope{Payload: &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
-		Key: "rumour", Title: "Rumour", Text: "the cellar is not empty", Visibility: vttv1.NoteVisibility_NOTE_VISIBILITY_PUBLIC,
-	}}})
-	dm("grant-other", qaIssGrant("patron", qaIssP2, other))
-	dm("revoke-other", &vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
-		ActorId: "patron", ParticipantId: qaIssP2,
-	}}})
-	dm("eye-removed", &vttv1.Envelope{Payload: &vttv1.Envelope_ActorRemoved{ActorRemoved: &vttv1.ActorRemoved{ActorId: "familiar"}}})
-
-	dm("", &vttv1.Envelope{Payload: &vttv1.Envelope_TokenRemoved{TokenRemoved: &vttv1.TokenRemoved{TokenId: "patron-tok"}}})
-	dm("hidden-rc", qaIssRC("patron", "drink", 1, 5, "ability:fists:hit"))
-	dm("hidden-ca", qaIssCA("patron", "threshold:drink"))
-	dm("patron-back", qaIssPlaced("patron-tok-b", "hall", "patron", 3, 1))
-
-	dm("", qaIssCA("lurker", "ability:chair-swing:hit"))
-	dm("", &vttv1.Envelope{Payload: &vttv1.Envelope_TokenRemoved{TokenRemoved: &vttv1.TokenRemoved{TokenId: "lurker-tok"}}})
-	dm("lurker-arrives", qaIssPlaced("lurker-tok-b", "hall", "lurker", 5, 1))
-	dm("session-ended", &vttv1.Envelope{Payload: &vttv1.Envelope_SessionEnded{SessionEnded: &vttv1.SessionEnded{}}})
-	return b.out
-}
-
-type qaIssFrame struct {
-	cause *vttv1.Envelope
-	frame *vttv1.Envelope
-}
-
-func qaIssStateJSON(t *testing.T, st *engine.State) string {
-	t.Helper()
-	b, err := json.Marshal(st)
-	if err != nil {
-		t.Fatalf("marshal state: %v", err)
-	}
-	return string(b)
-}
-
-func qaIssReplay(t *testing.T, v gateway.Viewer, log []*vttv1.Envelope) []qaIssFrame {
-	t.Helper()
-	pr := gateway.NewProjector(v)
-	st := engine.NewState()
-	var out []qaIssFrame
-	for _, orig := range log {
-		env := proto.Clone(orig).(*vttv1.Envelope)
-		if err := engine.Apply(st, proto.Clone(orig).(*vttv1.Envelope)); err != nil {
-			t.Fatalf("replay %s: %v", orig.GetEventId(), err)
-		}
-		envBefore := proto.Clone(env).(*vttv1.Envelope)
-		stBefore := qaIssStateJSON(t, st)
-		frames := pr.Project(env, st)
-		if !proto.Equal(env, envBefore) {
-			t.Errorf("%s: projecting %s changed the event:\nbefore %v\nafter  %v", v.Role, env.GetEventId(), envBefore, env)
-		}
-		if got := qaIssStateJSON(t, st); got != stBefore {
-			t.Errorf("%s: projecting %s changed the state", v.Role, env.GetEventId())
-		}
-		for _, f := range frames {
-			out = append(out, qaIssFrame{cause: env, frame: f})
-		}
-	}
-	return out
-}
 
 func qaIssKind(env *vttv1.Envelope) string {
 	m := env.ProtoReflect()
@@ -272,249 +84,6 @@ func qaIssLessIssuerAndCause(env *vttv1.Envelope) *vttv1.Envelope {
 		p.ConditionRemoved.Reason = ""
 	}
 	return want
-}
-
-func qaIssCheckFrames(t *testing.T, who string, got []qaIssFrame) map[string]*vttv1.Envelope {
-	t.Helper()
-	forwarded := map[string]*vttv1.Envelope{}
-	for _, g := range got {
-		f := g.frame
-		if f.GetParticipantId() != "" || f.GetActorRole() != "" {
-			t.Errorf("%s: frame %s (cause %s) carries issuer participant=%q role=%q",
-				who, qaIssKind(f), g.cause.GetEventId(), f.GetParticipantId(), f.GetActorRole())
-		}
-		if c := qaIssCause(f); c != "" {
-			t.Errorf("%s: frame %s (cause %s) carries cause %q", who, qaIssKind(f), g.cause.GetEventId(), c)
-		}
-		if f.GetEventId() == "" {
-			continue
-		}
-		if f.GetEventId() != g.cause.GetEventId() {
-			t.Errorf("%s: frame for %s carries event id %q", who, g.cause.GetEventId(), f.GetEventId())
-		}
-		if want := qaIssLessIssuerAndCause(g.cause); !proto.Equal(f, want) {
-			t.Errorf("%s: forwarded %s is not the event less issuer and cause:\n got  %v\n want %v", who, f.GetEventId(), f, want)
-		}
-		forwarded[f.GetEventId()] = f
-	}
-	return forwarded
-}
-
-// SPEC-016 How it works: "No envelope `Project` sends a player or a spectator
-// carries its own `participant_id` or `actor_role`".
-// VTT-272 VTT-273 VTT-262 VTT-222
-func TestQAIssEveryForwardedKindReachesAPlayerWithoutIssuerOrCause(t *testing.T) {
-	s := qaIssBuildScript(t)
-	got := qaIssReplay(t, gateway.Viewer{ParticipantID: qaIssP1, Role: identity.RolePlayer}, s.log)
-	forwarded := qaIssCheckFrames(t, "player", got)
-
-	kinds := map[string]bool{}
-	for _, f := range forwarded {
-		kinds[qaIssKind(f)] = true
-	}
-	for _, k := range qaIssForwardedKinds {
-		if !kinds[k] {
-			t.Errorf("player: no %s was forwarded, so its issuer was never put to the test", k)
-		}
-	}
-	for _, name := range []string{"own-narration", "own-move", "seen-used", "seen-rc", "seen-ca"} {
-		if forwarded[s.ids[name]] == nil {
-			t.Errorf("player: its own %s (%s) was not echoed back", name, s.ids[name])
-		}
-	}
-}
-
-// SPEC-016 How each payload is ruled: "an ability's user may be an actor the
-// viewer does not see".
-// VTT-273 VTT-243 VTT-244
-func TestQAIssAStatusChangeArrivesWithoutCauseWhetherOrNotItsUserIsSeen(t *testing.T) {
-	s := qaIssBuildScript(t)
-	viewers := []gateway.Viewer{
-		{ParticipantID: qaIssP1, Role: identity.RolePlayer},
-		{ParticipantID: qaIssSpec, Role: identity.RoleSpectator, Viewpoint: "hero"},
-	}
-	for _, v := range viewers {
-		forwarded := qaIssCheckFrames(t, string(v.Role), qaIssReplay(t, v, s.log))
-		for _, name := range []string{"seen-rc", "seen-ca", "unseen-rc", "unseen-cr", "unseen-ca", "by-hand-cr"} {
-			f := forwarded[s.ids[name]]
-			if f == nil {
-				t.Errorf("%s: %s (%s) did not arrive", v.Role, name, s.ids[name])
-				continue
-			}
-			if c := qaIssCause(f); c != "" {
-				t.Errorf("%s: %s arrived with cause %q", v.Role, name, c)
-			}
-		}
-		for _, name := range []string{"unseen-used", "unseen-usage", "hidden-rc", "hidden-ca"} {
-			if forwarded[s.ids[name]] != nil {
-				t.Errorf("%s: %s (%s) names an actor it did not see, and was forwarded", v.Role, name, s.ids[name])
-			}
-		}
-	}
-}
-
-// SPEC-016 Consequences: "one with an event id is the event less its issuer
-// and its cause".
-// VTT-272 VTT-273 VTT-262
-func TestQAIssAPerchedSpectatorAndABystanderAreSentNoIssuer(t *testing.T) {
-	s := qaIssBuildScript(t)
-	spec := qaIssCheckFrames(t, "spectator", qaIssReplay(t,
-		gateway.Viewer{ParticipantID: qaIssSpec, Role: identity.RoleSpectator, Viewpoint: "hero"}, s.log))
-	for _, name := range []string{"own-move", "own-narration", "seen-used", "attack", "grant-other", "session-ended"} {
-		if spec[s.ids[name]] == nil {
-			t.Errorf("perched spectator: %s (%s) did not arrive", name, s.ids[name])
-		}
-	}
-	other := qaIssCheckFrames(t, "player-two", qaIssReplay(t,
-		gateway.Viewer{ParticipantID: qaIssP2, Role: identity.RolePlayer}, s.log))
-	for _, name := range []string{"session-started", "own-narration", "public-note"} {
-		if other[s.ids[name]] == nil {
-			t.Errorf("player-two: %s (%s) did not arrive", name, s.ids[name])
-		}
-	}
-}
-
-// SPEC-016 How it works: "every other field as the event has it"
-func TestQAIssAForwardedFrameKeepsEverythingButIssuerAndCause(t *testing.T) {
-	s := qaIssBuildScript(t)
-	byID := map[string]*vttv1.Envelope{}
-	for _, e := range s.log {
-		byID[e.GetEventId()] = e
-	}
-	forwarded := qaIssCheckFrames(t, "player", qaIssReplay(t, gateway.Viewer{ParticipantID: qaIssP1, Role: identity.RolePlayer}, s.log))
-	for _, name := range []string{"own-move", "unseen-rc", "attack", "grant-other"} {
-		f, e := forwarded[s.ids[name]], byID[s.ids[name]]
-		if f == nil {
-			t.Fatalf("%s was not forwarded", name)
-		}
-		if f.GetSequence() != e.GetSequence() || f.GetSessionId() != qaIssSession ||
-			!proto.Equal(f.GetOccurredAt(), e.GetOccurredAt()) || f.GetEventId() != e.GetEventId() {
-			t.Errorf("%s lost its event id, sequence, time or session: %v", name, f)
-		}
-	}
-	if m := forwarded[s.ids["attack"]].GetAttackRolled().GetModifiers(); len(m) != 1 || m[0].GetSource() != "brawn" {
-		t.Errorf("an attack's modifier source is a field of the payload and was not kept: %v", m)
-	}
-	if p := forwarded[s.ids["grant-other"]].GetActorControlGranted().GetParticipantId(); p != qaIssP2 {
-		t.Errorf("a grant's own participant_id is not the issuer and was not kept: %q", p)
-	}
-	if p := forwarded[s.ids["revoke-other"]].GetActorControlRevoked().GetParticipantId(); p != qaIssP2 {
-		t.Errorf("a revocation's own participant_id is not the issuer and was not kept: %q", p)
-	}
-	if n := forwarded[s.ids["own-narration"]].GetNarrationAdded(); n.GetAs() != "Hero" || n.GetAnchorToSeq() != 2 {
-		t.Errorf("a narration's own fields were not kept: %v", n)
-	}
-	if mv := forwarded[s.ids["own-move"]].GetTokenMoved(); mv.GetTo().GetX() != 2 || mv.GetFrom().GetX() != 1 {
-		t.Errorf("a move's ends were not kept: %v", mv)
-	}
-}
-
-// SPEC-016 How it works: "every frame it builds is new"
-func TestQAIssAForwardedFrameIsACopyNotTheEvent(t *testing.T) {
-	s := qaIssBuildScript(t)
-	for _, g := range qaIssReplay(t, gateway.Viewer{ParticipantID: qaIssP1, Role: identity.RolePlayer}, s.log) {
-		if g.frame.GetEventId() == "" {
-			continue
-		}
-		if g.frame == g.cause {
-			t.Errorf("forwarded %s is the event itself", g.cause.GetEventId())
-		}
-		if rc := g.frame.GetResourceChanged(); rc != nil && rc == g.cause.GetResourceChanged() {
-			t.Errorf("forwarded %s shares its payload with the event", g.cause.GetEventId())
-		}
-	}
-}
-
-// SPEC-016 The correction on sight: "no event id, time, role, participant or
-// session, and no reason or source".
-// VTT-249
-func TestQAIssACorrectionCarriesNothingOfAnEnvelopeButItsSequence(t *testing.T) {
-	s := qaIssBuildScript(t)
-	viewers := []gateway.Viewer{
-		{ParticipantID: qaIssP1, Role: identity.RolePlayer},
-		{ParticipantID: qaIssSpec, Role: identity.RoleSpectator, Viewpoint: "hero"},
-	}
-	for _, v := range viewers {
-		var rc, ca int
-		for _, g := range qaIssReplay(t, v, s.log) {
-			if g.cause.GetEventId() != s.ids["patron-back"] || g.frame.GetEventId() != "" {
-				continue
-			}
-			f := g.frame
-			switch {
-			case f.GetResourceChanged().GetActorId() == "patron":
-				rc++
-				if f.GetResourceChanged().GetNewValue() != 5 {
-					t.Errorf("%s: correction %v does not bring drink to 5", v.Role, f)
-				}
-			case f.GetConditionApplied().GetActorId() == "patron":
-				ca++
-			default:
-				continue
-			}
-			if f.GetSequence() != g.cause.GetSequence() || f.GetOccurredAt() != nil || f.GetSessionId() != "" ||
-				f.GetParticipantId() != "" || f.GetActorRole() != "" || qaIssCause(f) != "" {
-				t.Errorf("%s: correction carries more than its sequence: %v", v.Role, f)
-			}
-		}
-		if rc != 1 || ca != 1 {
-			t.Errorf("%s: patron's return sent %d resource and %d condition corrections, want 1 and 1", v.Role, rc, ca)
-		}
-	}
-}
-
-// SPEC-016 What transitions sends: "one `ConditionApplied` per condition `st`
-// holds for it, carrying its id and no source"
-func TestQAIssAnIntroducedConditionCarriesNoSource(t *testing.T) {
-	s := qaIssBuildScript(t)
-	var n int
-	for _, g := range qaIssReplay(t, gateway.Viewer{ParticipantID: qaIssP1, Role: identity.RolePlayer}, s.log) {
-		ca := g.frame.GetConditionApplied()
-		if g.cause.GetEventId() != s.ids["lurker-arrives"] || ca.GetActorId() != "lurker" {
-			continue
-		}
-		n++
-		if ca.GetSource() != "" || ca.GetConditionId() != qaIssDazed || g.frame.GetEventId() != "" ||
-			g.frame.GetParticipantId() != "" || g.frame.GetActorRole() != "" {
-			t.Errorf("introduced condition carries more than its id: %v", g.frame)
-		}
-	}
-	if n != 1 {
-		t.Errorf("lurker's introduction carried %d conditions, want 1", n)
-	}
-}
-
-// SPEC-016 How it works: "It answers `identity.RoleDM` and `identity.RoleAgent`
-// with the event itself, the same pointer, and reads no state".
-// VTT-176 VTT-222
-func TestQAIssTheDMAndTheAgentAreSentTheEventItself(t *testing.T) {
-	s := qaIssBuildScript(t)
-	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
-		pr := gateway.NewProjector(gateway.Viewer{ParticipantID: "qa-iss-" + string(role), Role: role})
-		var issued, caused, logged int
-		for _, orig := range s.log {
-			if qaIssCause(orig) != "" {
-				logged++
-			}
-			env := proto.Clone(orig).(*vttv1.Envelope)
-			got := pr.Project(env, nil)
-			if len(got) != 1 || got[0] != env {
-				t.Fatalf("%s: %s answered %d frames, not the event itself", role, env.GetEventId(), len(got))
-			}
-			if !proto.Equal(env, orig) {
-				t.Errorf("%s: projecting %s changed it", role, env.GetEventId())
-			}
-			if got[0].GetParticipantId() != "" && got[0].GetActorRole() != "" {
-				issued++
-			}
-			if qaIssCause(got[0]) != "" {
-				caused++
-			}
-		}
-		if issued != len(s.log) || caused != logged || logged == 0 {
-			t.Errorf("%s: %d of %d events kept their issuer and %d of %d their cause", role, issued, len(s.log), caused, logged)
-		}
-	}
 }
 
 type qaIssConn struct {
@@ -820,7 +389,10 @@ func qaIssCheckWire(t *testing.T, who string, c *qaIssConn, log []*vttv1.Envelop
 			t.Errorf("%s: sent event id %q the log does not hold", who, f.GetEventId())
 			continue
 		}
-		if want := qaIssLessIssuerAndCause(e); !proto.Equal(f, want) {
+		// Take the entry's sequence: a log numbers its entries itself (VTT-321, VTT-371).
+		want := qaIssLessIssuerAndCause(e)
+		want.Sequence = f.GetSequence()
+		if !proto.Equal(f, want) {
 			t.Errorf("%s: sent %s that is not the logged event less issuer and cause:\n got  %v\n want %v", who, f.GetEventId(), f, want)
 		}
 		sent[f.GetEventId()] = true
@@ -874,16 +446,16 @@ func TestQAIssACatchUpIsSentNoIssuerOrCause(t *testing.T) {
 	p1.untilNarration(qaIssMarker)
 	qaIssCheckWire(t, "catch-up player", p1, log, pl.actsAt)
 
+	// Perch before waiting: a spectator watching nobody is sent nothing (VTT-341).
 	sp := pl.tb.dial(identity.RoleSpectator)
-	sp.untilNarration(qaIssMarker)
 	sp.must(qaIssCmdPerch("hero"))
-	sp.until("hero's stamina correction", func(f *vttv1.ServerFrame) bool {
-		e := f.GetEvent()
-		return e.GetEventId() == "" && e.GetResourceChanged().GetActorId() == "hero"
-	})
-	sp.until("patron's introduced condition", func(f *vttv1.ServerFrame) bool {
-		e := f.GetEvent()
-		return e.GetEventId() == "" && e.GetConditionApplied().GetActorId() == "patron"
+	sp.untilNarration(qaIssMarker)
+	hero, err := pl.tb.c.CharacterLog("hero")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp.until("hero's whole log", func(f *vttv1.ServerFrame) bool {
+		return f.GetEvent().GetSequence() == int64(len(hero))
 	})
 	for _, e := range sp.events() {
 		if e.GetParticipantId() != "" || e.GetActorRole() != "" || qaIssCause(e) != "" {

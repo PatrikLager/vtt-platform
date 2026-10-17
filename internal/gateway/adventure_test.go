@@ -363,14 +363,9 @@ func adventurePayloadKind(env *vttv1.Envelope) string {
 func TestLoadAdventureProducesBatchFirstSequenceReachesAllParticipants(t *testing.T) {
 	f := newAdventureFixture(t, true)
 	dmConn := f.dial(f.dmToken, 0)
-	// The AGENT is the second connection, not the player. The batch this test
-	// follows envelope for envelope is a whole adventure — a scene the player
-	// has not entered and three actors they have not met — and the visibility
-	// projection withholds exactly that. What is under test here is that a
-	// BATCH fans out whole and in Compile's order, which the agent seat proves
-	// (spec §3.1: agent and DM receive the log unchanged); what a player
-	// receives of an adventure is the projection's business and is pinned in
-	// project_test.go and server_visibility_test.go.
+	// Read the agent, not the player: the agent is sent the log unchanged, and
+	// what a character log holds of an adventure is pinned by internal/campaign's
+	// TestEveryActiveLogIsToldWhatTheTableIsTold (VTT-219).
 	agentConn := f.dial(f.agentToken, 0)
 
 	sendCommand(t, dmConn, loadAdventureCmdFor("goblin-ambush"))

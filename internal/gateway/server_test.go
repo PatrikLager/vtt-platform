@@ -937,6 +937,8 @@ func TestMalformedFrameClosesOnlyThatConnection(t *testing.T) {
 func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	f := newGWFixture(t)
 	playerConn := f.dial(f.playerToken, gwSeedHead)
+	// Read the DM's stream: it is the log, and a player's is its character's.
+	dmConn := f.dial(f.dmToken, gwSeedHead)
 
 	sendCommand(t, playerConn, &vttv1.ClientCommand{
 		RequestId: "r-move",
@@ -949,7 +951,7 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 		t.Fatalf("want ok=true moving own token, got error %q", result.Error)
 	}
 
-	env := readEvent(t, playerConn)
+	env := readEvent(t, dmConn)
 	tm, ok := env.Payload.(*vttv1.Envelope_TokenMoved)
 	if !ok {
 		t.Fatalf("payload = %T, want TokenMoved", env.Payload)
@@ -2011,7 +2013,7 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 // DELIVERY is where a spectator meets the server, so delivery is where it has
 // to bite. Not on a timer and not on connect: on the next thing the table
 // would have shown them.
-// VTT-032
+// VTT-032 VTT-352
 func TestARevokedSpectatorStopsSeeingTheTable(t *testing.T) {
 	f := newGWFixture(t)
 	conn := f.dial(f.spectatorToken, 0)

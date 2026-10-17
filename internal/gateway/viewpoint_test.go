@@ -1,152 +1,244 @@
 package gateway_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
-// watcher is the participant every test in this file asks about: someone with
-// no character of their own, which is the seat perching exists for.
-func watcher() *identity.Participant {
+// key must format a square as the wire does, column then row, as engine's
+// gridKey and sight do.
+func key(x, y int32) string { return fmt.Sprintf("%d,%d", x, y) }
+
+// envelope wraps payload at seq. Keep the panic on an unknown payload: an empty
+// Envelope fails later and blames the fold.
+func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
+	env := &vttv1.Envelope{Sequence: seq}
+	switch p := payload.(type) {
+	case *vttv1.SessionStarted:
+		env.SessionId = "sess-1"
+		env.Payload = &vttv1.Envelope_SessionStarted{SessionStarted: p}
+	case *vttv1.SessionEnded:
+		env.Payload = &vttv1.Envelope_SessionEnded{SessionEnded: p}
+	case *vttv1.SceneCreated:
+		env.Payload = &vttv1.Envelope_SceneCreated{SceneCreated: p}
+	case *vttv1.ActorAdded:
+		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: p}
+	case *vttv1.TokenPlaced:
+		env.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
+	case *vttv1.TokenMoved:
+		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
+	case *vttv1.TokenRemoved:
+		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.ActorRemoved:
+		env.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
+	case *vttv1.DoorOpened:
+		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: p}
+	case *vttv1.DoorClosed:
+		env.Payload = &vttv1.Envelope_DoorClosed{DoorClosed: p}
+	case *vttv1.NarrationAdded:
+		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: p}
+	case *vttv1.NoteUpserted:
+		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: p}
+	case *vttv1.NoteDeleted:
+		env.Payload = &vttv1.Envelope_NoteDeleted{NoteDeleted: p}
+	case *vttv1.ActorControlGranted:
+		env.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
+	case *vttv1.ActorControlRevoked:
+		env.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
+	case *vttv1.SceneSeen:
+		env.Payload = &vttv1.Envelope_SceneSeen{SceneSeen: p}
+	case *vttv1.ConditionApplied:
+		env.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
+	case *vttv1.ConditionRemoved:
+		env.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
+	case *vttv1.ResourceChanged:
+		env.Payload = &vttv1.Envelope_ResourceChanged{ResourceChanged: p}
+	case *vttv1.AttackRolled:
+		env.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
+	case *vttv1.AbilityUsed:
+		env.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
+	default:
+		panic(fmt.Sprintf("envelope: no oneof arm wired for %T", payload))
+	}
+	return env
+}
+
+// mustApply folds one event into st, panicking on rejection. Panicking rather
+// than taking a *testing.T is forced by the fixtures below, which build a
+// state outside any test's scope — and it is the right failure anyway: a
+// fixture the fold refuses is a broken fixture, not a failing assertion.
+func mustApply(st *engine.State, seq int64, payload proto.Message) {
+	if err := engine.Apply(st, envelope(seq, payload)); err != nil {
+		panic(fmt.Sprintf("mustApply seq %d: %v", seq, err))
+	}
+}
+
+// twoRooms: 7x3, a dividing wall at x=3 with a CLOSED door at 3,1.
+//
+//	 x: 0    1    2    3     4    5    6
+//	y=0 wall wall wall wall  wall wall wall
+//	y=1 wall flr  flr  door  flr  flr  wall
+//	y=2 wall wall wall wall  wall wall wall
+func twoRoomsTiles() map[string]*vttv1.TileRef {
+	tiles := map[string]*vttv1.TileRef{}
+	for x := int32(0); x < 7; x++ {
+		tiles[key(x, 0)] = &vttv1.TileRef{Kind: "wall"}
+		tiles[key(x, 2)] = &vttv1.TileRef{Kind: "wall"}
+	}
+	tiles[key(0, 1)] = &vttv1.TileRef{Kind: "wall"}
+	tiles[key(6, 1)] = &vttv1.TileRef{Kind: "wall"}
+	for _, x := range []int32{1, 2, 4, 5} {
+		tiles[key(x, 1)] = &vttv1.TileRef{Kind: "floor"}
+	}
+	tiles[key(3, 1)] = &vttv1.TileRef{Kind: "door"}
+	return tiles
+}
+
+func twoRooms() *engine.State {
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+	// Keep every actor's kind declared and its control a grant at the end: an
+	// absent kind is no party member, and only a grant confers control (SPEC-013).
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "goblin", Name: "Goblin",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}) // never granted: an NPC
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 5, Y: 1}})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	return st
+}
+
+// Keep every test's world twoRooms: hero is a party member p-1 controls, goblin
+// an NPC nobody holds.
+func spectator() *identity.Participant {
 	return &identity.Participant{ID: "s-1", Role: identity.RoleSpectator}
+}
+
+func owner() *identity.Participant {
+	return &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 }
 
 // VTT-181
 func TestASpectatorMayPerchOnAPartyMemberButNotOnAnNPC(t *testing.T) {
-	// twoRooms (project_test.go) gives "hero" a controller and "goblin" none.
 	st := twoRooms()
-
-	if err := gateway.MayPerch(watcher(), "hero", st); err != nil {
-		t.Errorf("a spectator may ride a party member: %v", err)
+	if err := gateway.MayWatch(spectator(), "hero", st.Actors); err != nil {
+		t.Errorf("a spectator may watch a party member: %v", err)
 	}
-	// THE CONSTRAINT THE WHOLE IDEA RESTS ON (spec §3.1.1). A spectator
-	// perched on the Goblin Archer watches the ambush from inside it, and the
-	// arc is undone in a single click.
-	if err := gateway.MayPerch(watcher(), "goblin", st); err == nil {
-		t.Fatal("perching on an NPC must be REFUSED by the server, not merely absent from a menu")
+	if err := gateway.MayWatch(spectator(), "goblin", st.Actors); err == nil {
+		t.Fatal("watching an NPC must be refused by the server")
 	}
 }
 
 // VTT-181
 func TestASpectatorMayNotPerchOnAnNPCTheDMControls(t *testing.T) {
-	// The rule above, held to what an actor IS rather than to whether anyone
-	// holds it (spec §5.1). A DM taking control of the Goblin Archer is an
-	// ordinary act — grant_actor_control constrains the issuer, not the target
-	// — and under "has any controller" it made that monster a shoulder any
-	// watcher could sit on, which §3.1.1 calls the constraint the whole idea
-	// rests on. Demonstrated in review; this is the test for it.
 	st := twoRooms()
-	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1"})
-
-	if err := gateway.MayPerch(watcher(), "goblin", st); err == nil {
-		t.Fatal("a monster the DM holds is still a monster: perching on it must be refused")
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "dm-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	if err := gateway.MayWatch(spectator(), "goblin", st.Actors); err == nil {
+		t.Fatal("a monster the DM holds is still a monster: watching it must be refused")
 	}
 }
 
-// TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt is the INVERSION
-// of TestAnActorFromBeforeTheKindFieldIsStillPerchableWhenControlled, which
-// stood here until 2026-08-24 and asserted the opposite.
-//
-// That test pinned the migration rule at the perch: an actor with no kind but
-// a controller was a party member, so a spectator could ride it. The rule
-// existed to keep logs written before the kind field behaving as they had,
-// there are none, and it is deleted — an absent kind is NOT a party member,
-// always, and nothing reads controller_ids to decide.
-//
-// THE PERCH IS WHERE THAT MATTERS MOST, which is why the inverted test stays
-// rather than being dropped: §3.1.1 calls this the constraint the whole idea
-// rests on. A spectator perched on the Goblin Archer watches the ambush from
-// inside it, and "somebody controls it" was one of the two ways to become
-// perchable without anyone saying what the actor was.
 // VTT-181
 func TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt(t *testing.T) {
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wisp", Name: "Wisp"}})
-	if k := st.Actors["wisp"].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
-		t.Fatalf("fixture check: the wisp must declare NO kind, got %v", k)
-	}
-	// A kindless grant, which the command boundary refuses and the fold still
-	// accepts: the only remaining way to hold an actor while saying nothing.
-	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "p-2"})
-	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "dm-1"})
-
-	if err := gateway.MayPerch(watcher(), "wisp", st); err == nil {
-		t.Error("an actor that never said what it is is no shoulder to sit on, " +
-			"however many participants hold it")
-	}
-	// The control, and it is load-bearing: a MayPerch that refused everything
-	// would satisfy the assertion above while deleting the feature.
-	if err := gateway.MayPerch(watcher(), "hero", st); err != nil {
-		t.Errorf("a declared party member is still a shoulder to sit on: %v", err)
-	}
-}
-
-// TestAPerchRefusalDoesNotSayWhetherTheActorExists is the oracle half of the
-// rule above, and it is Task 5's move_token lesson one command over: a refusal
-// that VARIES tells the asker something, and a spectator may send as many as
-// they like.
-//
-// The differential is the SAME id against two worlds — one where "goblin" is an
-// NPC standing in the far room, one where no such actor was ever added. If
-// those answers differ, a watcher can enumerate the DM's cast by perching on
-// guesses and reading the refusals, which is exactly the knowledge spec §2
-// refuses to model.
-//
-// Byte-equality rather than a substring check, for the reason
-// TestAPlayerCannotProbeTheDarkWithMoveCommands gives: a message that merely
-// avoided the word "NPC" would still be an oracle. Nothing is lost by it — the
-// refusal names the id the spectator themselves just sent, so it stays
-// actionable while telling them nothing they did not already hold.
-// VTT-182
-func TestAPerchRefusalDoesNotSayWhetherTheActorExists(t *testing.T) {
-	present := twoRooms()
-
-	absent := twoRooms()
-	delete(absent.Actors, "goblin")
-	delete(absent.Tokens, "t-gob")
-
-	npc := gateway.MayPerch(watcher(), "goblin", present)
-	unknown := gateway.MayPerch(watcher(), "goblin", absent)
-	if npc == nil || unknown == nil {
-		t.Fatalf("both must be refused (npc=%v unknown=%v)", npc, unknown)
-	}
-	if npc.Error() != unknown.Error() {
-		t.Fatalf("a perch refusal must not say whether the actor exists:\n"+
-			" npc: %s\n absent: %s", npc, unknown)
-	}
-}
-
-// TestOnlyASpectatorRidesAShoulder pins the other half of MayPerch's subject.
-//
-// "An unassigned PLAYER does not perch" (spec §3.1.1): their answer to an empty
-// board is to be given a character, and honouring a viewpoint for them would
-// make Viewpoint a client-settable field naming any actor at the table — which
-// is session zero with an extra step.
-//
-// commandRoles already denies set_viewpoint to every non-spectator, so this
-// arm is not what stops a player over the wire today. It is here because
-// MayPerch is EXPORTED and its subject is p: a caller who reaches it by
-// another route must not be told something the table would not say.
-func TestOnlyASpectatorRidesAShoulder(t *testing.T) {
-	st := twoRooms()
-	for _, role := range []identity.Role{
-		identity.RolePlayer, identity.RoleDM, identity.RoleAgent,
-	} {
-		p := &identity.Participant{ID: "p-1", Role: role}
-		if err := gateway.MayPerch(p, "hero", st); err == nil {
-			t.Errorf("role %q must not perch: perching is the spectator's affordance", role)
+	// A kindless grant: the command boundary refuses it and the fold accepts it.
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "s-1"})
+	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "p-1"})
+	for _, p := range []*identity.Participant{spectator(), owner()} {
+		if err := gateway.MayWatch(p, "wisp", st.Actors); err == nil {
+			t.Errorf("%s may watch an actor that never said what it is", p.Role)
+		}
+		// Keep the control: a MayWatch refusing everything passes the line above.
+		if err := gateway.MayWatch(p, "hero", st.Actors); err != nil {
+			t.Errorf("%s may not watch a declared party member it may watch: %v", p.Role, err)
 		}
 	}
 }
 
-// TestUnperchingNamesNoActorAndIsAllowed covers the empty id, which is how a
-// spectator gets OFF a shoulder without immediately sitting on another.
-// VTT-183
+// VTT-343
+func TestAPlayerMayWatchOnlyThePartyMembersTheyControl(t *testing.T) {
+	st := twoRooms()
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-2",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	if err := gateway.MayWatch(owner(), "hero", st.Actors); err != nil {
+		t.Errorf("a player may watch the party member they control: %v", err)
+	}
+	if err := gateway.MayWatch(owner(), "scout", st.Actors); err == nil {
+		t.Error("a player may not watch another player's party member")
+	}
+}
+
+// Compare bytes: a message that merely avoids naming the reason is still an
+// oracle (TestAPlayerCannotProbeTheDarkWithMoveCommands).
+// VTT-182 VTT-347
+func TestAPerchRefusalDoesNotSayWhetherTheActorExists(t *testing.T) {
+	present := twoRooms()
+	mustApply(present, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	mustApply(present, 9, &vttv1.ActorControlGranted{ActorId: "scout", ParticipantId: "p-2",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	absent := twoRooms()
+	delete(absent.Actors, "goblin")
+	delete(absent.Tokens, "t-gob")
+
+	for _, p := range []*identity.Participant{spectator(), owner()} {
+		npc := gateway.MayWatch(p, "goblin", present.Actors)
+		unknown := gateway.MayWatch(p, "goblin", absent.Actors)
+		if npc == nil || unknown == nil {
+			t.Fatalf("%s: both must be refused (npc=%v unknown=%v)", p.Role, npc, unknown)
+		}
+		if npc.Error() != unknown.Error() {
+			t.Fatalf("%s: a refusal says whether the actor exists:\n npc: %s\n absent: %s", p.Role, npc, unknown)
+		}
+	}
+	others := gateway.MayWatch(owner(), "scout", present.Actors)
+	npc := gateway.MayWatch(owner(), "goblin", present.Actors)
+	if others == nil || others.Error() != gateway.MayWatch(owner(), "scout", absent.Actors).Error() ||
+		strings.ReplaceAll(others.Error(), "scout", "goblin") != npc.Error() {
+		t.Fatalf("a player's refusal says whose party member it is: %v / %v", others, npc)
+	}
+}
+
+// VTT-140
+func TestTheDMAndTheAgentWatchNoCharacterLog(t *testing.T) {
+	st := twoRooms()
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
+		p := &identity.Participant{ID: "p-1", Role: role}
+		if err := gateway.MayWatch(p, "hero", st.Actors); err == nil {
+			t.Errorf("role %q may watch a character log: it is sent the world", role)
+		}
+	}
+}
+
+// VTT-345
 func TestUnperchingNamesNoActorAndIsAllowed(t *testing.T) {
-	if err := gateway.MayPerch(watcher(), "", twoRooms()); err != nil {
-		t.Fatalf("naming no actor is how a bird leaves a shoulder: %v", err)
+	if err := gateway.MayWatch(spectator(), "", twoRooms().Actors); err != nil {
+		t.Fatalf("naming no actor is how a spectator leaves a shoulder: %v", err)
+	}
+}
+
+// VTT-346
+func TestAPlayerMayNotWatchNobody(t *testing.T) {
+	if err := gateway.MayWatch(owner(), "", twoRooms().Actors); err == nil {
+		t.Fatal("a player's set_viewpoint naming no actor was accepted")
 	}
 }

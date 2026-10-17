@@ -318,7 +318,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.SetViewpoint",
 		name:        "set_viewpoint",
-		description: "Perch a spectator on a party member's shoulder, to see what that character sees (visibility spec §3.1.1). Send an empty actor_id to un-perch. The target must be a PARTY MEMBER — perching on a monster or NPC is refused server-side, whoever happens to control it. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
+		description: "Choose the character log this connection is sent: a spectator may watch any PARTY MEMBER, or nobody with an empty actor_id; a player may watch only a party member they control. The DM and the agent are refused, since they are sent the world. A monster or NPC is refused whoever controls it, with one message whether the actor exists or not. The switch is announced by a ViewpointChanged frame and followed by that log from its first entry. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
 		descriptor:  (&vttv1.SetViewpoint{}).ProtoReflect().Descriptor(),
 		// requiredOverride check (the fabrication-trap lesson — see
 		// add_actor/add_narration above): SetViewpoint has exactly one

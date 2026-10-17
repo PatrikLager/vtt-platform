@@ -23,6 +23,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
+	"github.com/PatrikLager/vtt-platform/internal/perceive"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -247,7 +248,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// Pin the read limit: the library's default is unpinned (SPEC-011).
 	conn.SetReadLimit(maxWSFrameBytes)
 
-	s.serve(r.Context(), conn, p, after)
+	s.serve(r.Context(), conn, p, after, r.URL.Query().Get("log"))
 }
 
 func parseAfter(raw string) (int64, error) {
@@ -259,16 +260,13 @@ func parseAfter(raw string) (int64, error) {
 
 // SPEC-011 holds this lifecycle. Keep every write on outCh: the read loop, the
 // pump, the presence registry and the head frame hand bytes to one writer.
-func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64) {
+func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Participant, after int64, named string) {
 	defer func() { _ = conn.CloseNow() }()
 	if s.onServeDone != nil {
 		defer s.onServeDone()
 	}
 
-	// Keep the seat deciding both what this connection receives and where the
-	// subscription starts: for a projected seat they differ (seat.go).
-	sub := newSeat(p, after)
-	events, unsubscribe, catchUpHead, err := s.campaign.SubscribeWithNoProgressTimeout(sub.subscribeFrom(after), s.buffer, s.noProgress)
+	sub, catchUpHead, err := openSeat(s.campaign, p, named, after, s.buffer, s.noProgress)
 	if err != nil {
 		_ = conn.Close(websocket.StatusInternalError, "gateway: subscribe failed")
 		return
@@ -297,11 +295,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		writeUntilFlushed(outCh, flush, write)
 	}()
 
-	// Project the backlog first, so the head below is a sequence this seat can
-	// reach (seat.catchUp).
-	backlog, catchUpHead := sub.catchUp(ctx, events, catchUpHead)
-
-	// Queue the head first, before any backlog, and unconditionally, head 0 included
+	// Queue the head first, before any entry, and unconditionally, head 0 included
 	// (SPEC-007, SPEC-011).
 	b, err := s.encodeFrame(&vttv1.ServerFrame{
 		Frame: &vttv1.ServerFrame_CatchUpHead{CatchUpHead: &vttv1.CatchUpHead{HeadSequence: catchUpHead}},
@@ -310,7 +304,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		// Fail closed: a connection that cannot announce its head hangs a caller with no
 		// deadline (`vtt state dump`). Stop the writer first so it cannot outlive the
 		// connection.
-		unsubscribe()
+		sub.close()
 		close(flush)
 		<-writerDone
 		_ = conn.Close(websocket.StatusInternalError, "gateway: encode catch-up head failed")
@@ -352,81 +346,21 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 	defer leavePresence()
 
-	// closing tells the pump a closed events was shutdown's doing, not the
-	// store's no-progress drop; set it before unsubscribing.
+	// closing tells the pump that its end is shutdown's doing, not the store's
+	// no-progress drop or the campaign's close; set it before stopping the pump.
 	var closing atomic.Bool
 
-	// Keep the pump the only producer of this connection's envelopes: a perch queued
-	// from the command goroutine reorders batches (handleSetViewpoint, perchBox).
+	// Keep the pump the only producer of this connection's entries and switches: a
+	// switch applied from the command goroutine reorders them (handleSetViewpoint,
+	// perchBox).
 	perches := newPerchBox()
+	stopPump := make(chan struct{})
 
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
-
-		// Keep env outside the loop: the perches arm does not assign it.
-		var env *vttv1.Envelope
-
-		// Send the projected backlog from here, behind the same revocation check and
-		// writer as everything else. Do not guard the check on len(backlog): every DM
-		// connection has an empty one, and the mutation gate cannot see the guard.
-		if s.credentialGone(pc.participantID) {
-			if !closing.Load() {
-				_ = conn.Close(websocket.StatusPolicyViolation,
-					"gateway: credential no longer valid")
-			}
-			return
-		}
-		if !deliver(s.encodeFrame, backlog, outCh, writerDone, conn, &closing) {
-			return
-		}
-
-		// Keep projecting and sending in this one goroutine: the order envelopes leave
-		// in must be the order the projector's memory changed in (SPEC-011).
-	pumping:
-		for {
-			select {
-			case <-perches.wake:
-				// Apply the perch here, not only send it: sub.perch moves the eyes and computes
-				// what they newly see, beside sub.receive.
-				actorID, ok := perches.take()
-				if ok && !deliver(s.encodeFrame, sub.perch(actorID), outCh, writerDone, conn, &closing) {
-					return
-				}
-				continue
-			case e, ok := <-events:
-				if !ok {
-					break pumping
-				}
-				env = e
-			}
-			// Re-resolve on every delivery: a spectator issues no command, so this is where
-			// revocation reaches one (SPEC-009, VTT-032). ErrInvalidToken only: an
-			// operational failure must not drop an event.
-			if s.credentialGone(pc.participantID) {
-				// Close with a reason, as the command loop does, or which path fires decides
-				// whether the peer is told why. conn.Close, not shutdown: shutdown waits on
-				// this pump.
-				if !closing.Load() {
-					_ = conn.Close(websocket.StatusPolicyViolation,
-						"gateway: credential no longer valid")
-				}
-				return
-			}
-
-			// Marshal per connection, in this goroutine: a seat's projection is per
-			// recipient, and one event can be zero, one or several frames (SPEC-011). Do
-			// not share bytes across seats with different projections.
-			if !deliver(s.encodeFrame, sub.receive(env), outCh, writerDone, conn, &closing) {
-				return
-			}
-		}
-		// events closed without shutdown: the store dropped this subscription. Force the
-		// socket closed so conn.Read fails and the read loop runs shutdown; a wedged
-		// writer exits by its own path (SPEC-011).
-		if !closing.Load() {
-			_ = conn.CloseNow()
-		}
+		defer sub.close()
+		s.pump(sub, p, perches, stopPump, outCh, writerDone, conn, &closing)
 	}()
 
 	// Announce after the pump is running, and synchronously: before it, N wedged
@@ -436,15 +370,15 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		s.announcePresence(pc)
 	}
 
-	// Keep this order: leave presence, mark closing, unsubscribe, drain the pump,
-	// flush the writer. close(flush) has one caller per path; closing a channel
-	// twice panics.
+	// Keep this order: leave presence, mark closing, stop the pump, drain it, flush
+	// the writer. close(flush) has one caller per path; closing a channel twice
+	// panics.
 	shutdown := func() {
 		// Leave first: pc.done lets a fan-out holding this connection abandon it
 		// before the writer stops (SPEC-011).
 		leavePresence()
 		closing.Store(true)
-		unsubscribe()
+		close(stopPump)
 		<-pumpDone
 		close(flush)
 		<-writerDone
@@ -497,6 +431,155 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			shutdown()
 			return
 		}
+	}
+}
+
+// pump is the one producer of a connection's entries and ViewpointChanged frames
+// (SPEC-011). Return with the socket closed by reason, or let it fall through to
+// CloseNow.
+func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, stop <-chan struct{},
+	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) {
+	ps := &pumpState{s: s, sub: sub, id: p.ID, outCh: outCh, writerDone: writerDone, conn: conn, closing: closing}
+	if ps.revoked() {
+		return
+	}
+	if sub.wake != nil && !ps.announce() {
+		return
+	}
+	for {
+		select {
+		case <-stop:
+			return
+		case <-perches.wake:
+			if actorID, ok := perches.take(); ok && !ps.onPerch(actorID) {
+				return
+			}
+		case _, ok := <-sub.wake:
+			if !ok || !ps.onWake() {
+				ps.lostUnless(ok)
+				return
+			}
+		// A closed events channel is the store's drop or the campaign's close (SPEC-011).
+		case env, ok := <-sub.events:
+			if !ok || !ps.onEntry(env) {
+				ps.lostUnless(ok)
+				return
+			}
+		}
+	}
+}
+
+// pumpState is what one pump needs between frames; touch it from that pump alone.
+type pumpState struct {
+	s          *Server
+	sub        *seat
+	id         string
+	outCh      chan<- []byte
+	writerDone <-chan struct{}
+	conn       *websocket.Conn
+	closing    *atomic.Bool
+}
+
+// revoked re-resolves the participant, closing on a gone credential and
+// judging by their current role otherwise (SPEC-009, VTT-031, VTT-032).
+// ErrInvalidToken only: an operational failure must not drop an entry.
+func (ps *pumpState) revoked() bool {
+	now, err := ps.s.ids.Lookup(ps.id)
+	if !errors.Is(err, identity.ErrInvalidToken) {
+		if err == nil {
+			ps.sub.p = now
+		}
+		return false
+	}
+	// conn.Close, not shutdown: shutdown waits on this pump.
+	if !ps.closing.Load() {
+		_ = ps.conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
+	}
+	return true
+}
+
+// lostUnless force-closes for a stream that ended (ok false); a pump that
+// stopped for a reason has already closed or left it to serve.
+func (ps *pumpState) lostUnless(ok bool) {
+	if !ok {
+		ps.s.lost(ps.conn, ps.closing)
+	}
+}
+
+func (ps *pumpState) announce() bool {
+	return ps.s.sendViewpoint(ps.sub.shown, ps.outCh, ps.writerDone, ps.conn, ps.closing)
+}
+
+// moved re-checks the credential once a switch may have taken further wakes.
+func (ps *pumpState) moved(switched bool, err error) bool {
+	if err != nil {
+		ps.s.lost(ps.conn, ps.closing)
+		return false
+	}
+	return !switched || (!ps.revoked() && ps.announce())
+}
+
+// onWake re-reads the actors after an append (VTT-340, VTT-348).
+func (ps *pumpState) onWake() bool {
+	if ps.revoked() {
+		return false
+	}
+	return ps.moved(ps.sub.recheck())
+}
+
+// Re-check the right at apply time: Authorize judged an older snapshot.
+func (ps *pumpState) onPerch(actorID string) bool {
+	if ps.revoked() {
+		return false
+	}
+	if actorID == ps.sub.shown || MayWatch(ps.sub.p, actorID, ps.s.campaign.Actors()) != nil {
+		return true
+	}
+	_, err := ps.sub.watch(actorID, 0)
+	return ps.moved(true, err)
+}
+
+// Re-resolve before admit judges with the role, and after it, since it may
+// have taken the entry's wake (VTT-031, VTT-352).
+func (ps *pumpState) onEntry(env *vttv1.Envelope) bool {
+	if ps.revoked() {
+		return false
+	}
+	send, moved, err := ps.sub.admit()
+	if err == nil && ps.revoked() {
+		return false
+	}
+	if !ps.moved(moved, err) {
+		return false
+	}
+	return !send || deliver(ps.s.encodeFrame, []*vttv1.Envelope{env}, ps.outCh, ps.writerDone, ps.conn, ps.closing)
+}
+
+// lost force-closes a socket whose stream ended without shutdown, so conn.Read
+// fails and the read loop runs shutdown (SPEC-011).
+func (s *Server) lost(conn *websocket.Conn, closing *atomic.Bool) {
+	if !closing.Load() {
+		_ = conn.CloseNow()
+	}
+}
+
+// sendViewpoint queues the ViewpointChanged naming actorID (SPEC-007, VTT-342).
+func (s *Server) sendViewpoint(actorID string, outCh chan<- []byte, writerDone <-chan struct{},
+	conn *websocket.Conn, closing *atomic.Bool) bool {
+	b, err := s.encodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_ViewpointChanged{
+		ViewpointChanged: &vttv1.ViewpointChanged{ActorId: actorID},
+	}})
+	if err != nil {
+		if !closing.Load() {
+			_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")
+		}
+		return false
+	}
+	select {
+	case outCh <- b:
+		return true
+	case <-writerDone:
+		return false
 	}
 }
 
@@ -582,7 +665,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 				// Ask sight FIRST and answer with one string: a refusal that varies with
 				// the occupant is a terrain oracle
 				// (TestAPlayerCannotProbeTheDarkWithMoveCommands).
-				if !canSee(viewerFor(p), st, tok.SceneID, to) {
+				if !canSee(perceive.Eyes{Controller: p.ID}, st, tok.SceneID, to) {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — you cannot see that square",
@@ -849,14 +932,6 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
-// credentialGone reports whether Lookup answers ErrInvalidToken for the
-// participant (SPEC-009). Match nothing else: an operational failure must not
-// drop a frame (VTT-033).
-func (s *Server) credentialGone(participantID string) bool {
-	_, err := s.ids.Lookup(participantID)
-	return errors.Is(err, identity.ErrInvalidToken)
-}
-
 // Keep these two apart: deliver closes with a reason for errEncodeFrame alone
 // (SPEC-011).
 var (
@@ -878,9 +953,9 @@ func deliver(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Enve
 	return false
 }
 
-// Stop at the first failure, never skip: a projected batch's order is
-// load-bearing for the client's fold (SPEC-011). Keep the encoder injected, or
-// the error arm is unreachable by wiring.
+// Stop at the first failure, never skip: an envelope after a skipped one may not
+// fold for the client (SPEC-011). Keep the encoder injected, or the error arm is
+// unreachable by wiring.
 func enqueueEvents(encode func(*vttv1.ServerFrame) ([]byte, error), envs []*vttv1.Envelope, outCh chan<- []byte, writerDone <-chan struct{}) error {
 	for _, pe := range envs {
 		b, err := encode(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_Event{Event: pe}})

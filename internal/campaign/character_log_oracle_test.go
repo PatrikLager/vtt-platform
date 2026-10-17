@@ -1,30 +1,73 @@
-package gateway_test
+package campaign_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/eventgen"
-	"github.com/PatrikLager/vtt-platform/internal/gateway"
-	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
+// oracleSeat is a decision through one character's eyes that remembers what it
+// gave, kept apart from the fan-out's own memory of the log.
+type oracleSeat struct {
+	eyes     perceive.Eyes
+	sent     []*vttv1.Envelope
+	decision *perceive.Projection
+}
+
+func (s *oracleSeat) project(t *testing.T, env *vttv1.Envelope, st *engine.State) []*vttv1.Envelope {
+	t.Helper()
+	shown, err := campaign.FoldPrefix(s.sent)
+	if err != nil {
+		t.Fatalf("the oracle's own frames do not fold: %v", err)
+	}
+	out := s.decision.Event(s.eyes, env, shown, st)
+	s.sent = append(s.sent, out...)
+	return out
+}
+
+func readEnvelopes(t *testing.T, path string) []*vttv1.Envelope {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	out := make([]*vttv1.Envelope, 0, len(msgs))
+	for i, m := range msgs {
+		env := &vttv1.Envelope{}
+		if err := protojson.Unmarshal(m, env); err != nil {
+			t.Fatalf("%s[%d]: %v", path, i, err)
+		}
+		out = append(out, env)
+	}
+	return out
+}
+
 // logOracle appends events and, after each event, compares every party
-// member's new log entries with what a spectator perched on it is sent.
+// member's new log entries with what a fresh decision through its eyes, fed the
+// world event by event and its own frames, gives.
 type logOracle struct {
 	t        *testing.T
 	c        *campaign.Campaign
 	landed   []*vttv1.Envelope
 	ids      map[string]bool
 	member   map[string]bool
-	seats    map[string]*gateway.Projector
+	seats    map[string]*oracleSeat
 	compared map[string]int
 	resumed  map[string]bool
 }
@@ -37,7 +80,7 @@ func newLogOracle(t *testing.T) *logOracle {
 	}
 	t.Cleanup(func() { c.Close() })
 	return &logOracle{t: t, c: c, ids: map[string]bool{}, member: map[string]bool{},
-		seats: map[string]*gateway.Projector{}, compared: map[string]int{}, resumed: map[string]bool{}}
+		seats: map[string]*oracleSeat{}, compared: map[string]int{}, resumed: map[string]bool{}}
 }
 
 func (o *logOracle) log(id string) []campaign.CharacterEntry {
@@ -124,12 +167,12 @@ func (o *logOracle) event(id string, seq int64, env *vttv1.Envelope, st *engine.
 		for _, e := range entries[:lead] {
 			sent = append(sent, e.Env)
 		}
-		o.seats[id] = gateway.NewProjectorWithSentForTest(gateway.Viewer{
-			ParticipantID: "oracle", Role: identity.RoleSpectator, Viewpoint: id}, sent)
+		o.seats[id] = &oracleSeat{eyes: perceive.Eyes{Shoulder: id}, sent: sent,
+			decision: perceive.New(perceive.Eyes{Shoulder: id}, nil)}
 		at[id] = lead
 		o.member[id] = true
 	}
-	frames := o.seats[id].Project(env, st)
+	frames := o.seats[id].project(o.t, env, st)
 	if at[id]+len(frames) > len(entries) {
 		o.t.Fatalf("world event %d: %s's log holds %d more entries, the perched spectator is sent %d: %v",
 			seq, id, len(entries)-at[id], len(frames), frames)
@@ -137,7 +180,7 @@ func (o *logOracle) event(id string, seq int64, env *vttv1.Envelope, st *engine.
 	for i, frame := range frames {
 		e := entries[at[id]+i]
 		if !sameFrame(e.Env, frame) || e.WorldSeq != seq {
-			o.t.Fatalf("world event %d: %s's entry %d is %v (world %d), the perched spectator's frame %v",
+			o.t.Fatalf("world event %d: %s's entry %d is %v (world %d), the oracle's frame %v",
 				seq, id, at[id]+i+1, e.Env, e.WorldSeq, frame)
 		}
 	}
@@ -147,7 +190,7 @@ func (o *logOracle) event(id string, seq int64, env *vttv1.Envelope, st *engine.
 	}
 }
 
-// sameFrame compares a log entry with a spectator's frame, apart from the
+// sameFrame compares a log entry with the oracle's frame, apart from the
 // sequence each carries and a narration's anchor range (VTT-319, VTT-322).
 func sameFrame(entry, frame *vttv1.Envelope) bool {
 	a, b := proto.Clone(entry).(*vttv1.Envelope), proto.Clone(frame).(*vttv1.Envelope)
@@ -192,9 +235,7 @@ var oracleID int
 
 func oracleEnv(payload proto.Message) *vttv1.Envelope {
 	oracleID++
-	env := envelope(0, payload)
-	env.EventId, env.ActorRole = fmt.Sprintf("oracle-%d", oracleID), "dm"
-	return env
+	return cenv(fmt.Sprintf("oracle-%d", oracleID), payload)
 }
 
 // pausingHistory pauses the hero by a grant and resumes it, then removes the
@@ -238,7 +279,7 @@ func pausingHistory() []*vttv1.Envelope {
 }
 
 // VTT-319
-func TestACharacterLogIsWhatASpectatorPerchedOnItIsSent(t *testing.T) {
+func TestACharacterLogIsWhatItsCharactersEyesAreGiven(t *testing.T) {
 	ran, seedLogs, corpusLogs := 0, 0, 0
 	for seed := int64(1); seed <= 6; seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {

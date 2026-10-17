@@ -1,9 +1,9 @@
 package gateway
 
 import (
-	"context"
-	"log/slog"
+	"errors"
 	"sync"
+	"time"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -12,15 +12,9 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/perceive"
 )
 
-// Leave Viewpoint empty: a spectator watches nobody until a perch names a
-// shoulder (SPEC-015).
-func viewerFor(p *identity.Participant) Viewer {
-	return Viewer{ParticipantID: p.ID, Role: p.Role}
-}
-
-// Answer false for the DM and the agent alone: a player answered false is sent
-// the whole log (TestSessionZeroCannotHappenAgain).
-func projected(r identity.Role) bool {
+// Answer false for the DM and the agent alone: every other role is sent one
+// character log, never the world (SPEC-015, VTT-366).
+func watchesALog(r identity.Role) bool {
 	switch r {
 	case identity.RoleDM, identity.RoleAgent:
 		return false
@@ -28,20 +22,137 @@ func projected(r identity.Role) bool {
 	return true
 }
 
-// Touch a seat from the pump alone once serve has drained its catch-up, and
-// hand it anything else through a channel, never a lock: frames must leave in
-// the order its projector changed (SPEC-011, SPEC-015).
-type seat struct {
-	// Keep pr nil for an unprojected seat: receive then folds nothing (SPEC-015).
-	pr *Projector
-	// Drop output at or below resume, never input (pastResume, SPEC-015).
-	resume int64
-	// Fold these with campaign.FoldPrefix, never with a loop of your own
-	// (SPEC-015).
-	received []*vttv1.Envelope
+var errWatchEnded = errors.New("gateway: the campaign ended this seat's watch")
 
-	// See receive, which sets it, and perch, which reads it (SPEC-015).
-	world *engine.State
+// Touch a seat from the pump alone once serve has queued its head: frames must
+// leave in the order the seat changed (SPEC-011, SPEC-015).
+type seat struct {
+	c          *campaign.Campaign
+	p          *identity.Participant
+	buffer     int
+	noProgress time.Duration
+
+	events <-chan *vttv1.Envelope
+	unsub  func()
+
+	// Keep wake nil for a seat sent the world: only a log seat switches.
+	wake     <-chan struct{}
+	stopWake func()
+	shown    string
+}
+
+// openSeat subscribes p's connection: the world for the DM and the agent, else
+// the log named when p may watch it, or p's default (SPEC-015, VTT-339).
+func openSeat(c *campaign.Campaign, p *identity.Participant, named string, after int64,
+	buffer int, noProgress time.Duration) (*seat, int64, error) {
+	s := &seat{c: c, p: p, buffer: buffer, noProgress: noProgress}
+	if !watchesALog(p.Role) {
+		events, unsub, head, err := c.SubscribeWithNoProgressTimeout(after, buffer, noProgress)
+		if err != nil {
+			return nil, 0, err
+		}
+		s.events, s.unsub = events, unsub
+		return s, head, nil
+	}
+	wake, stop, err := c.WatchAppends()
+	if err != nil {
+		return nil, 0, err
+	}
+	s.wake, s.stopWake = wake, stop
+	actors := c.Actors()
+	target, cursor := defaultViewpoint(p, actors), int64(0)
+	if named != "" && MayWatch(p, named, actors) == nil {
+		// Honour the cursor in the log it names alone (VTT-349).
+		target, cursor = named, after
+	}
+	head, err := s.watch(target, cursor)
+	if err != nil {
+		s.close()
+		return nil, 0, err
+	}
+	return s, head, nil
+}
+
+// watch moves the seat onto actorID's log after cursor, and keeps moving while a
+// waiting wake resolves elsewhere, so the head it returns is the log it shows
+// (VTT-086).
+func (s *seat) watch(actorID string, cursor int64) (int64, error) {
+	for {
+		s.drop()
+		s.shown = actorID
+		var head int64
+		if actorID != "" {
+			events, unsub, h, err := s.c.SubscribeCharacter(actorID, cursor, s.buffer, s.noProgress)
+			if err != nil {
+				return 0, err
+			}
+			s.events, s.unsub, head = events, unsub, h
+		}
+		select {
+		case _, ok := <-s.wake:
+			if !ok {
+				return 0, errWatchEnded
+			}
+			next := s.resolve(s.c.Actors())
+			if next == actorID {
+				return head, nil
+			}
+			actorID, cursor = next, 0
+		default:
+			return head, nil
+		}
+	}
+}
+
+// resolve keeps what the seat shows while p may watch it, else p's default
+// (VTT-340).
+func (s *seat) resolve(actors map[string]*vttv1.Actor) string {
+	if s.shown != "" && MayWatch(s.p, s.shown, actors) == nil {
+		return s.shown
+	}
+	return defaultViewpoint(s.p, actors)
+}
+
+// recheck reports whether the actors after a wake moved the seat (VTT-348).
+func (s *seat) recheck() (bool, error) {
+	next := s.resolve(s.c.Actors())
+	if next == s.shown {
+		return false, nil
+	}
+	_, err := s.watch(next, 0)
+	return true, err
+}
+
+// admit decides an entry the pump has taken: a waiting wake is read first, since
+// its append raised it before any entry it caused, and an entry of a log the
+// seat has just left is not sent (VTT-348, VTT-355).
+func (s *seat) admit() (send, moved bool, err error) {
+	select {
+	case _, ok := <-s.wake:
+		if !ok {
+			return false, false, errWatchEnded
+		}
+		moved, err := s.recheck()
+		return !moved && err == nil, moved, err
+	default:
+		return true, false, nil
+	}
+}
+
+// Nil the channel with the subscription: a dropped subscription's channel
+// closes, and the pump reads a closed one as the store's drop.
+func (s *seat) drop() {
+	if s.unsub != nil {
+		s.unsub()
+	}
+	s.events, s.unsub = nil, nil
+}
+
+func (s *seat) close() {
+	s.drop()
+	if s.stopWake != nil {
+		s.stopWake()
+	}
 }
 
 // Keep one slot, latest wins, and never block set: a queue's depth is the
@@ -80,110 +191,8 @@ func (b *perchBox) take() (actorID string, ok bool) {
 	return actorID, ok
 }
 
-// newSeat builds the seat SPEC-015 states for p's connection.
-func newSeat(p *identity.Participant, after int64) *seat {
-	if !projected(p.Role) {
-		return &seat{}
-	}
-	return &seat{pr: NewProjector(viewerFor(p)), resume: after}
-}
-
-// subscribeFrom is where the seat's subscription starts (SPEC-011), not where
-// its output starts (pastResume).
-func (s *seat) subscribeFrom(after int64) int64 {
-	if s.pr == nil {
-		return after
-	}
-	return 0
-}
-
-// Return an unprojected seat's event itself, unchanged: the DM's and the
-// agent's streams are the log
-// (TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection).
-func (s *seat) receive(env *vttv1.Envelope) []*vttv1.Envelope {
-	if s.pr == nil {
-		return []*vttv1.Envelope{env}
-	}
-
-	s.received = append(s.received, env)
-	// Hand Project the state after env, folded from what this seat received, never
-	// campaign.State(): during catch-up the head is the future (SPEC-015).
-	world, err := campaign.FoldPrefix(s.received)
-	if err != nil {
-		// Withhold the event when the fold fails: forwarding one nobody judged is the
-		// leak (SPEC-015).
-		// #nosec G706 -- the sequence is an int64 given as a structured attribute.
-		slog.Error("gateway: projection fold failed; withholding event",
-			"sequence", env.GetSequence(), "error", err)
-		return nil
-	}
-
-	// Set world only after a fold succeeded: perch keeps the last good one.
-	s.world = world
-
-	return s.pastResume(s.pr.Project(env, world))
-}
-
-// Add no fast path for resume 0: the filter already keeps every envelope there,
-// and the guard would be a mutant no test can kill.
-func (s *seat) pastResume(out []*vttv1.Envelope) []*vttv1.Envelope {
-	kept := make([]*vttv1.Envelope, 0, len(out))
-	for _, e := range out {
-		// Keep this strictly greater, as store.Subscribe's is: after=N means the
-		// client holds N.
-		if e.GetSequence() > s.resume {
-			kept = append(kept, e)
-		}
-	}
-	return kept
-}
-
-// Call perch from the pump alone, beside receive, and never pass its output
-// through pastResume: its frames carry sequence 0 (SPEC-015).
-func (s *seat) perch(actorID string) []*vttv1.Envelope {
-	if s.pr == nil {
-		// Return nothing: an unprojected seat has no projection to move
-		// (TestAnUnprojectedSeatCannotBePerched).
-		return nil
-	}
-	return s.pr.reperch(actorID, s.world)
-}
-
 // Ask perceive afresh per question: canSee must record nothing a seat was
 // shown (SPEC-015).
-func canSee(v Viewer, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
-	return perceive.CanSee(eyesFor(v), st, sceneID, at)
-}
-
-// catchUp is the catch-up SPEC-011 states; a projected seat's head is the last
-// sequence it returns, never the log's (VTT-086).
-func (s *seat) catchUp(ctx context.Context, events <-chan *vttv1.Envelope, logHead int64) ([]*vttv1.Envelope, int64) {
-	if s.pr == nil || logHead <= 0 {
-		return nil, logHead
-	}
-	var out []*vttv1.Envelope
-	var head int64
-	for {
-		select {
-		case env, ok := <-events:
-			if !ok {
-				// Answer what this seat got: a head it cannot reach is a second failure.
-				return out, head
-			}
-			projected := s.receive(env)
-			out = append(out, projected...)
-			// Take the last frame's sequence, not a max: one event's frames share its
-			// sequence, and a max comparison is a mutant no test can kill.
-			if n := len(projected); n > 0 {
-				head = projected[n-1].GetSequence()
-			}
-			// Stop at the first envelope at or past the log's head: the pump sends the
-			// rest.
-			if env.GetSequence() >= logHead {
-				return out, head
-			}
-		case <-ctx.Done():
-			return out, head
-		}
-	}
+func canSee(eyes perceive.Eyes, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
+	return perceive.CanSee(eyes, st, sceneID, at)
 }

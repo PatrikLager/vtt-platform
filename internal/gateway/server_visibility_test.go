@@ -13,15 +13,7 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
-	"github.com/PatrikLager/vtt-platform/internal/engine"
 )
-
-// --- session zero ---------------------------------------------------------
-//
-// Every test in this file needs a PLAYER seat. The DM and the agent receive the
-// identity projection (spec §3.1, exit criterion 8), so a test that exercises
-// only a DM proves nothing about the projection — it would pass unchanged
-// against the server that leaked the goblin.
 
 // seedAmbush builds session zero's shape on the fixture's campaign: a 32x32
 // grid split by a solid wall, the fixture player's fighter west of it, and a
@@ -140,9 +132,8 @@ func gridKeyForTest(x, y int32) string {
 // been quiet for `quiet`. Results are left in the queue untouched, so a caller
 // may still read a CommandResult afterwards.
 //
-// A quiet window rather than a count: the whole point of a projected stream is
-// that the number of envelopes a seat receives is NOT the number the log holds,
-// so any fixed count would encode today's projection into the test.
+// Wait for quiet, never a count: a character log holds what its character
+// perceived, not one entry per world event.
 func drainEvents(t *testing.T, conn *websocket.Conn, quiet time.Duration) []*vttv1.Envelope {
 	t.Helper()
 	q := queueFor(conn)
@@ -181,89 +172,8 @@ func mentions(t *testing.T, stream []*vttv1.Envelope, needle string) bool {
 	return false
 }
 
-// TestSessionZeroCannotHappenAgain replays the defect this whole arc exists
-// for. Session zero, 2026-08-12: at seq 20 a player put tok-fighter on (19,8),
-// the Goblin Archer's exact square on a 32x32 grid, having simply looked at the
-// board — "Landing precisely on the archer's hidden square isn't a plausible
-// accident."
-//
-// Exit criterion 7 has three clauses and this test has three assertions, one
-// each: the goblin is NOT ON THE WIRE reaching a player, its square CANNOT BE
-// TARGETED by a player who cannot see it, and — the control that keeps the
-// other two from passing vacuously — the same player still receives its own
-// board and can still move on it.
-// VTT-177 VTT-203 VTT-218
-func TestSessionZeroCannotHappenAgain(t *testing.T) {
-	f := newGWFixture(t)
-	f.seedAmbush(t)
-
-	dmConn := f.dial(f.dmToken, 0)
-	playerConn := f.dial(f.playerToken, 0)
-
-	dmStream := drainEvents(t, dmConn, 500*time.Millisecond)
-	playerStream := drainEvents(t, playerConn, 500*time.Millisecond)
-
-	// The seed reached the wire at all. Without this the first assertion below
-	// passes on a server that broadcasts nothing.
-	if !mentions(t, dmStream, "goblin") {
-		t.Fatalf("the DM must receive the goblin (identity projection, exit criterion 8); "+
-			"got %d envelopes and none names it", len(dmStream))
-	}
-	// The control, and it is load-bearing: a projection that sends a player
-	// NOTHING would satisfy the goblin assertion perfectly.
-	if !mentions(t, playerStream, "tok-fighter") {
-		t.Fatalf("the player must still receive their own token; got %d envelopes and none names it",
-			len(playerStream))
-	}
-	if !mentions(t, playerStream, "ambush") {
-		t.Fatalf("the player must still receive the board they stand on; got %d envelopes and none names it",
-			len(playerStream))
-	}
-
-	// Clause 1: not on the wire.
-	if mentions(t, playerStream, "goblin") {
-		for _, e := range playerStream {
-			raw, _ := protojson.Marshal(e)
-			if strings.Contains(strings.ToLower(string(raw)), "goblin") {
-				t.Errorf("the goblin reached a player's connection: %s", raw)
-			}
-		}
-		t.Fatalf("session zero: the Goblin Archer is on a player's wire")
-	}
-
-	// Clause 2: its square cannot be targeted by a player who cannot see it.
-	sendCommand(t, playerConn, &vttv1.ClientCommand{
-		RequestId: "seq-20",
-		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 19, Y: 8},
-		}},
-	})
-	if r := readResult(t, playerConn); r.Ok {
-		t.Fatalf("session zero seq 20: a player moved onto the hidden archer's square (19,8)")
-	}
-
-	// The control for clause 2. A check that refuses every move would satisfy
-	// it and take the game with it.
-	sendCommand(t, playerConn, &vttv1.ClientCommand{
-		RequestId: "an-ordinary-step",
-		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-			TokenId: "tok-fighter", To: &vttv1.GridPosition{X: 6, Y: 5},
-		}},
-	})
-	if r := readResult(t, playerConn); !r.Ok {
-		t.Fatalf("a player must still be able to step onto a square they can see: %s", r.Error)
-	}
-}
-
-// TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection is exit criterion 8,
-// and it is the test that has to exist for every other test in this file to
-// mean anything: the projection is now in the delivery path of EVERY
-// connection, so "the DM sees everything" stopped being a property of the
-// server's shape and became a property of one switch.
-//
-// Compared BYTE FOR BYTE against the log itself — protojson of each envelope,
-// in order — rather than by counting frames or spot-checking payload kinds. A
-// redaction that dropped one field would survive both of those.
+// Compare byte for byte against the log: a redaction that dropped one field
+// would survive a count or a spot check.
 // VTT-176
 func TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection(t *testing.T) {
 	f := newGWFixture(t)
@@ -302,19 +212,13 @@ func TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection(t *testing.T) {
 				}
 			}
 
-			// AND THEIR RESUME IS UNCHANGED TOO, which is a separate claim and
-			// was the half a from-zero comparison could not see. A projected
-			// seat is subscribed from the beginning whatever `after` it asked
-			// for, because its projector has to be fed the log to know what
-			// that seat holds. An unprojected seat must NOT be: it needs no
-			// such memory, and replaying history to a client that already
-			// folded it is the duplicate-introduction freeze from the other
-			// direction.
+			// Resume in the world log: replaying history to a client that already
+			// folded it is a duplicate-introduction freeze.
 			resume := log[len(log)-1].GetSequence() - 1
 			tail := drainEvents(t, f.dial(seat.token, resume), 500*time.Millisecond)
 			if len(tail) != 1 {
 				t.Fatalf("%s resuming at after=%d received %d envelopes, want exactly 1 — "+
-					"an unprojected seat resumes where it asked to", seat.name, resume, len(tail))
+					"a world seat resumes where it asked to", seat.name, resume, len(tail))
 			}
 			if tail[0].GetSequence() != log[len(log)-1].GetSequence() {
 				t.Fatalf("%s resuming at after=%d received sequence %d, want %d",
@@ -324,8 +228,8 @@ func TestTheDMAndTheAgentStreamsAreUnchangedByTheProjection(t *testing.T) {
 	}
 }
 
-// log returns the whole campaign log in order, as the source of truth an
-// unprojected stream is compared against.
+// log returns the whole campaign log in order, which a world seat's stream is
+// compared against.
 func (f *gwFixture) log(t *testing.T) []*vttv1.Envelope {
 	t.Helper()
 	events, unsubscribe, head, err := f.campaign.Subscribe(0, 512)
@@ -346,169 +250,6 @@ func (f *gwFixture) log(t *testing.T) []*vttv1.Envelope {
 		}
 	}
 	return out
-}
-
-// TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway is the seeding
-// contract, asserted where it bites: on a real socket, across a real
-// reconnect.
-//
-// A projected seat's projector MUST be fed the log from the beginning and have
-// its output discarded up to the resume point — never constructed AT the
-// resume point. The difference is invisible in every other test and is exactly
-// one leak: a token that was on the player's board when they dropped, and left
-// view while they were gone, gets its TokenHidden from the replay of the gap.
-// A projector built at the resume point never knew the token was there, so it
-// synthesizes no departure and the enemy stays on that player's board for the
-// rest of the session — the direction spec §4.4 forbids.
-// VTT-178 VTT-179 VTT-190 VTT-204 VTT-206
-func TestAReconnectingPlayerIsToldWhatLeftViewWhileItWasAway(t *testing.T) {
-	f := newGWFixture(t)
-	f.seedAmbush(t)
-
-	// The goblin starts WEST of the wall, in plain sight of the fighter at
-	// (5,5), so the player's board legitimately holds it.
-	dmConn := f.dial(f.dmToken, 0)
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "goblin-steps-into-view",
-		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-			TokenId: "tok-goblin-archer", To: &vttv1.GridPosition{X: 14, Y: 8},
-		}},
-	})
-	if r := readResult(t, dmConn); !r.Ok {
-		t.Fatalf("moving the goblin into view: %s", r.Error)
-	}
-
-	playerConn := f.dial(f.playerToken, 0)
-	seen := drainEvents(t, playerConn, 500*time.Millisecond)
-	if !mentions(t, seen, "tok-goblin-archer") {
-		t.Fatal("precondition: the player must be able to see the goblin at (14,8) — " +
-			"nothing below tests anything if it was never on their board")
-	}
-	// The resume cursor a client would carry: the highest sequence it saw.
-	var resume int64
-	for _, e := range seen {
-		if e.GetSequence() > resume {
-			resume = e.GetSequence()
-		}
-	}
-	playerConn.CloseNow()
-
-	// GONE WHILE THEY WERE AWAY: the goblin steps back behind the wall.
-	sendCommand(t, dmConn, &vttv1.ClientCommand{
-		RequestId: "goblin-steps-back",
-		Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-			TokenId: "tok-goblin-archer", To: &vttv1.GridPosition{X: 19, Y: 8},
-		}},
-	})
-	if r := readResult(t, dmConn); !r.Ok {
-		t.Fatalf("moving the goblin out of view: %s", r.Error)
-	}
-
-	back := drainEvents(t, f.dial(f.playerToken, resume), 500*time.Millisecond)
-	hidden := false
-	for _, e := range back {
-		if e.GetTokenHidden().GetTokenId() == "tok-goblin-archer" {
-			hidden = true
-		}
-	}
-	if !hidden {
-		var got []string
-		for _, e := range back {
-			raw, _ := protojson.Marshal(e)
-			got = append(got, string(raw))
-		}
-		t.Fatalf("a reconnecting player was never told the goblin left view — it is still on their board.\n"+
-			"catch-up from after=%d was:\n%s", resume, strings.Join(got, "\n"))
-	}
-	// And nothing about where it went.
-	if mentions(t, back, "\"x\":19") {
-		t.Fatal("the catch-up named the square the goblin retreated to")
-	}
-
-	// AND NOTHING IT ALREADY HAD, which is the other half of the seeding
-	// contract and the half that has no second chance. The projector is fed
-	// the whole log so that it KNOWS what this seat holds; if its output is
-	// not discarded up to the resume point the seat is handed its own
-	// introductions a second time, and a duplicate ActorAdded is a hard error
-	// in both folds — engine.Apply's "actor %q already exists" and
-	// client/src/fold.ts's `duplicate actor` — which freezes that client's
-	// state permanently, because Session re-folds its whole append-only log
-	// on every event that follows.
-	for _, e := range back {
-		if e.GetSequence() <= resume {
-			raw, _ := protojson.Marshal(e)
-			t.Fatalf("catch-up from after=%d re-sent something the seat already holds: %s", resume, raw)
-		}
-	}
-}
-
-// TestAPlayersCatchUpIsTheSameStreamItWouldHaveSeenLive is spec §7's PURITY
-// property at the wire: "the projection computed live and from catch-up are
-// identical. That is what makes a mid-fight reconnect safe."
-//
-// It is also the test that pins WHICH state the pump projects against. Every
-// event has to be judged against the state that event produced — the fold of
-// the log so far — and the tempting shortcut is the live projection, which the
-// server already has in its hand. That shortcut is invisible on a live
-// connection, where head and now are the same thing, and wrong on every
-// catch-up, where head is the future. Here the two streams have to match, so
-// it cannot hide.
-// VTT-190
-func TestAPlayersCatchUpIsTheSameStreamItWouldHaveSeenLive(t *testing.T) {
-	f := newGWFixture(t)
-	f.seedAmbush(t)
-
-	live := f.dial(f.playerToken, 0)
-	drainEvents(t, live, 300*time.Millisecond) // settle the seed
-
-	dmConn := f.dial(f.dmToken, 0)
-	for _, step := range []struct {
-		id    string
-		token string
-		x, y  int32
-	}{
-		// Into view, along the wall, and back out of it — the "partial
-		// visibility of a moving token" edge spec §8 says to watch hardest.
-		{"g-in", "tok-goblin-archer", 14, 8},
-		{"g-along", "tok-goblin-archer", 14, 5},
-		{"g-out", "tok-goblin-archer", 19, 8},
-		{"f-steps", "tok-fighter", 6, 6},
-	} {
-		sendCommand(t, dmConn, &vttv1.ClientCommand{
-			RequestId: step.id,
-			Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
-				TokenId: step.token, To: &vttv1.GridPosition{X: step.x, Y: step.y},
-			}},
-		})
-		if r := readResult(t, dmConn); !r.Ok {
-			t.Fatalf("%s: %s", step.id, r.Error)
-		}
-	}
-
-	liveStream := drainEvents(t, live, 500*time.Millisecond)
-	catchUp := drainEvents(t, f.dial(f.playerToken, 0), 500*time.Millisecond)
-
-	// The live connection's own seed was drained above, so compare the tail.
-	if len(catchUp) < len(liveStream) {
-		t.Fatalf("catch-up produced %d envelopes, fewer than the %d seen live", len(catchUp), len(liveStream))
-	}
-	tail := catchUp[len(catchUp)-len(liveStream):]
-	if len(liveStream) == 0 {
-		t.Fatal("the scenario must reach this player at all, or this test compares nothing")
-	}
-	for i := range liveStream {
-		want, err := protojson.Marshal(liveStream[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := protojson.Marshal(tail[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(got) != string(want) {
-			t.Fatalf("catch-up envelope %d differs from the one seen live:\n got %s\nwant %s", i, got, want)
-		}
-	}
 }
 
 // TestAPlayerCannotStepWhereItCannotSeeButTheDMCan is the other half of
@@ -550,22 +291,7 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	}
 }
 
-// TestASpectatorWithNoPerchReceivesNoBoard records the behaviour four
-// transport tests in this package had to be re-seated around, so that it is
-// pinned rather than merely relied upon.
-//
-// A spectator rides a shoulder (spec §3.1.1), and a connection opens perched
-// on NOBODY: SetViewpoint exists, but until this watcher sends one they have no
-// eyes and therefore no board. That is the fail-closed direction and the only
-// one available — the alternative is a shoulder the server picked for them, and
-// a spectator perched on the Goblin Archer would watch the ambush from inside
-// it. TestASpectatorHopsFromOneShoulderToAnother is the other half: what
-// arrives once they do choose.
-//
-// They still receive what is addressed to the table rather than drawn on the
-// board — narration is the case that matters, because withholding it would
-// leave a watcher with no game at all rather than merely no map.
-// VTT-177 VTT-180 VTT-216
+// VTT-180 VTT-341
 func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -582,17 +308,8 @@ func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	if r := readResult(t, dmConn); !r.Ok {
 		t.Fatalf("dm narration: %s", r.Error)
 	}
-
-	stream := drainEvents(t, watcher, 500*time.Millisecond)
-	if mentions(t, stream, "ambush") || mentions(t, stream, "tok-") {
-		for _, e := range stream {
-			raw, _ := protojson.Marshal(e)
-			t.Logf("spectator received: %s", raw)
-		}
-		t.Fatal("a spectator perched on nobody was given a board")
-	}
-	if !mentions(t, stream, "The corridor narrows.") {
-		t.Fatal("a spectator must still hear the table: narration is addressed, not drawn")
+	if stream := drainEvents(t, watcher, 500*time.Millisecond); len(stream) != 0 {
+		t.Fatalf("a spectator perched on nobody was sent %d events, the first %v", len(stream), stream[0])
 	}
 }
 
@@ -661,46 +378,15 @@ func (f *gwFixture) perch(t *testing.T, conn *websocket.Conn, requestID, actorID
 	return drainEvents(t, conn, 500*time.Millisecond)
 }
 
-// hides reports whether the stream tells this viewer that tokenID left view.
-func hides(stream []*vttv1.Envelope, tokenID string) bool {
-	for _, e := range stream {
-		if th := e.GetTokenHidden(); th != nil && th.GetTokenId() == tokenID {
-			return true
-		}
-	}
-	return false
-}
-
-// TestASpectatorHopsFromOneShoulderToAnother is spec §3.1.1 end to end, and it
-// is Patrik's own image: "you as a spectator can jump between tokens — like a
-// bird hopping from one shoulder to another. You can sit on any of the
-// characters, and you can choose to shift to another character's view,
-// whenever — but you will only know as much as the party does, not what the DM
-// has planned to happen."
-//
-// Four claims, and the assertions below follow them in order. The watcher is
-// offered the party to choose from; sitting on Asme shows Asme's room AND NOT
-// the archer behind the wall; hopping to Armak shows the archer and takes Asme
-// away, because creatures are pure line of sight; and the terrain of BOTH rooms
-// is still theirs at the end, because the bird remembers every shoulder it has
-// sat on.
-// VTT-180 VTT-192 VTT-195 VTT-218
+// VTT-180 VTT-192 VTT-195 VTT-342
 func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 	f.seedArmak(t)
 
 	watcher := f.dial(f.spectatorToken, 0)
-
-	// WHAT A WATCHER GETS FOR FREE: the roster, and nothing drawn. You cannot
-	// choose a shoulder you have not been told about (spec §5 — party members
-	// are always known, §5.1).
-	roster := drainEvents(t, watcher, 500*time.Millisecond)
-	if !mentions(t, roster, "act-fighter") || !mentions(t, roster, "act-scout") {
-		t.Fatal("a watcher must be told which characters the party has, or there is no shoulder to choose")
-	}
-	if mentions(t, roster, "tok-") || mentions(t, roster, "ambush") {
-		t.Fatal("a spectator perched on nobody must have no board at all")
+	if roster := drainEvents(t, watcher, 300*time.Millisecond); len(roster) != 0 {
+		t.Fatalf("a spectator perched on nobody was sent %d events", len(roster))
 	}
 
 	west := f.perch(t, watcher, "perch-asme", "act-fighter")
@@ -708,45 +394,29 @@ func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 		t.Fatal("sitting on Asme must show Asme's board, and show it at once")
 	}
 	if mentions(t, west, "goblin") {
-		t.Fatal("the Goblin Archer is behind the wall from Asme's shoulder: " +
-			"a watcher knows as much as the party does, not what the DM has planned")
+		t.Fatal("the Goblin Archer is behind the wall from Asme's shoulder")
 	}
 
 	east := f.perch(t, watcher, "perch-armak", "act-scout")
 	if !mentions(t, east, "tok-goblin-archer") {
 		t.Fatal("from Armak's shoulder the archer is one square away and in plain sight")
 	}
-	if !hides(east, "tok-fighter") {
-		t.Fatal("Asme is behind the wall from Armak's shoulder, and creatures are pure " +
-			"line of sight: her token must be taken off the watcher's board")
+	if mentions(t, east, "tok-fighter") {
+		t.Fatal("Asme is behind the wall from Armak's shoulder, and his log never placed her")
 	}
-
-	// THE BIRD REMEMBERS EVERY SHOULDER IT HAS SAT ON (spec §3.1.1/§3.2).
-	// Folded with the engine's own fold — the one client/src/fold.ts mirrors —
-	// the watcher's stream leaves them holding both rooms. Over an evening that
-	// converges on what the party collectively knows, and never on what the DM
-	// has planned, because there is no shoulder on the DM's side of the screen.
-	stream := make([]*vttv1.Envelope, 0, len(roster)+len(west)+len(east))
-	stream = append(stream, roster...)
-	stream = append(stream, west...)
-	stream = append(stream, east...)
-
-	viewed := engine.NewState()
-	for i, e := range stream {
-		if err := engine.Apply(viewed, e); err != nil {
-			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
+	for name, run := range map[string][]*vttv1.Envelope{"Asme's": west, "Armak's": east} {
+		for i, e := range run {
+			if e.GetSequence() != int64(i+1) {
+				t.Fatalf("%s log is sent from entry %d at position %d, want its first entry first", name, e.GetSequence(), i+1)
+			}
 		}
-	}
-	explored := viewed.Scenes["ambush"].Explored
-	if !explored[gridKeyForTest(5, 5)] {
-		t.Error("hopping away from Asme must not un-explore the room she stands in")
-	}
-	if !explored[gridKeyForTest(20, 8)] {
-		t.Error("Armak's room must be explored once the watcher has sat on his shoulder")
+		if _, err := campaign.FoldPrefix(run); err != nil {
+			t.Fatalf("%s log does not fold on its own: %v", name, err)
+		}
 	}
 }
 
-// VTT-234
+// VTT-364
 func TestAPublicNoteReachesAPlayersConnectionAndASecretOneDoesNot(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, gwSeedHead)
@@ -776,20 +446,15 @@ func TestAPublicNoteReachesAPlayersConnectionAndASecretOneDoesNot(t *testing.T) 
 	}
 }
 
-// TestASpectatorMayNotPerchOnTheGoblinArcher is THE CONSTRAINT THE WHOLE IDEA
-// RESTS ON, end to end and over the real wire: MayPerch is unit-tested in
-// viewpoint_test.go, and this proves the server actually asks it before moving
-// anybody's eyes.
-//
-// A watcher inside the archer sees the ambush the party is walking into, which
-// is session zero with a different seat number.
+// Over the real wire: MayWatch is unit-tested in viewpoint_test.go, and this
+// proves the server asks it before moving anybody's eyes.
 // VTT-181
 func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 
 	watcher := f.dial(f.spectatorToken, 0)
-	drainEvents(t, watcher, 500*time.Millisecond) // the roster, which is theirs
+	drainEvents(t, watcher, 500*time.Millisecond)
 
 	sendCommand(t, watcher, &vttv1.ClientCommand{
 		RequestId: "perch-archer",
@@ -811,39 +476,19 @@ func TestASpectatorMayNotPerchOnTheGoblinArcher(t *testing.T) {
 	}
 }
 
-// TestHoppingWhileTheTableIsBusyKeepsOneOrder is the regression for a defect
-// review found and this commit fixes: TWO GOROUTINES WERE WRITING ONE SOCKET.
-//
-// Perch frames were computed on the command goroutine and enqueued there, while
-// the pump enqueued its own — so two batches computed in one order could reach
-// the wire in the other. A pump frame landed INSIDE a perch batch, and a
-// TokenMoved computed before a TokenHidden was delivered after it. The cost is
-// not a cosmetic reordering: the watcher's own stream stops folding, and on the
-// browser client that freeze is permanent (session.ts re-folds its whole log on
-// every event).
-//
-// THE ASSERTION IS THAT THE STREAM FOLDS, which is the property that actually
-// matters and the one a client would lose. Ordering is asserted through it
-// rather than directly, because "in the order the projector changed" is not
-// observable from outside — a fold that succeeds is exactly what it buys.
-//
-// It hops while the table is BUSY on purpose: the inversion needs both
-// producers active at once. Measured before the fix at 1 failure in 10 plain
-// runs and 2 in 2 under -race; after it, 25 plain runs and 8 under -race, clean.
-// VTT-189
+// Hop while the table is busy: a switch and a live entry must not interleave.
+// VTT-189 VTT-342 VTT-367
 func TestHoppingWhileTheTableIsBusyKeepsOneOrder(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
 	f.seedArmak(t)
 
-	watcher := f.dial(f.spectatorToken, 0)
-	roster := drainEvents(t, watcher, 400*time.Millisecond)
+	w := f.watch(f.spectatorToken, 0, "")
+	w.opening()
 
 	dmConn := f.dial(f.dmToken, 0)
 	drainEvents(t, dmConn, 300*time.Millisecond)
 
-	// The table moves a token back and forth while the watcher hops, so the
-	// pump always has its own frames to interleave with the perch's.
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -870,53 +515,43 @@ func TestHoppingWhileTheTableIsBusyKeepsOneOrder(t *testing.T) {
 
 	shoulders := []string{"act-fighter", "act-scout", "", "act-fighter", ""}
 	for i := range 40 {
-		sendCommand(t, watcher, &vttv1.ClientCommand{
-			RequestId: "hop",
-			Command: &vttv1.ClientCommand_SetViewpoint{
-				SetViewpoint: &vttv1.SetViewpoint{ActorId: shoulders[i%len(shoulders)]},
-			},
-		})
-		if r := readResult(t, watcher); !r.Ok {
-			t.Fatalf("hop %d refused: %s", i, r.Error)
+		if r := w.command(setViewpoint(shoulders[i%len(shoulders)])); !r.GetOk() {
+			t.Fatalf("hop %d refused: %s", i, r.GetError())
 		}
 	}
 	close(stop)
 	wg.Wait()
 
-	stream := append(roster, drainEvents(t, watcher, 1500*time.Millisecond)...)
-	viewed := engine.NewState()
-	for i, e := range stream {
-		if err := engine.Apply(viewed, e); err != nil {
-			t.Fatalf("the watcher's own stream stops folding at envelope %d of %d: %v",
-				i, len(stream), err)
+	var run []*vttv1.Envelope
+	runs := 0
+	check := func() {
+		for i, e := range run {
+			if e.GetSequence() != int64(i+1) {
+				t.Fatalf("run %d: entry %d arrived at position %d", runs, e.GetSequence(), i+1)
+			}
 		}
+		if _, err := campaign.FoldPrefix(run); err != nil {
+			t.Fatalf("run %d of the watcher's stream does not fold: %v", runs, err)
+		}
+	}
+	for fr := w.next(1500 * time.Millisecond); fr != nil; fr = w.next(1500 * time.Millisecond) {
+		switch {
+		case fr.GetViewpointChanged() != nil:
+			check()
+			run, runs = nil, runs+1
+		case fr.GetEvent() != nil:
+			run = append(run, fr.GetEvent())
+		}
+	}
+	check()
+	if runs < 2 {
+		t.Fatalf("the watcher was switched %d times, want the hops to land", runs)
 	}
 }
 
-// TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt REPLACES
-// TestAnUndoOfTheSeatsOwnHeadLeavesThePerchedBoardAlone, which drove the same
-// path with a retraction of the seat's own head.
-//
-// It was the regression for the second defect review found: perch frames
-// BORROWED a live sequence, and an undo naming that number deleted envelopes no
-// event had ever caused — the watcher's board emptied with no message, and the
-// party's next move then dangled against a token they no longer had. There is
-// no undo to name a number with any more (2026-08-31: the log only goes
-// forward), so the retraction is dropped and the REST of the sequence is kept:
-// a spectator perches, the table plays on, and their own stream — roster, perch
-// frames, live tail — must still fold whole.
-//
-// Kept rather than deleted because the perch/tail interleaving it walks is not
-// about retraction at all: a perched stream is folded here with live traffic
-// stacked on top of it, over a real socket, and that composition is what this
-// asserts.
-//
-// IT DOES NOT PIN perchSequence, and an earlier version of this comment implied
-// it did by calling that constant "what makes those two composable". The design
-// claim is sound and the test is indifferent to it — MEASURED, by review:
-// setting perchSequence to 7 leaves this test passing, and the only failure in
-// the package is TestAPerchCarriesNoSequenceAtAll, which is where that constant
-// is actually pinned. Background, not this test's reason to exist.
+// A spectator perches and the table plays on: the shoulder's log and its live
+// tail fold as one stream.
+// VTT-342
 func TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -957,13 +592,9 @@ func TestAPerchedBoardSurvivesTheTablePlayingOnWithoutIt(t *testing.T) {
 	}
 }
 
-// TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard is the third of
-// review's findings: the server said yes and sent nothing.
-//
-// A spectator who dials with a cursor at the log's head — which a reconnecting
-// client legitimately does — had every perch frame dropped by the resume
-// filter, and got ok=true with an empty board and no way to tell.
-// VTT-187
+// A spectator dialled at the world's head who then perches is sent the
+// shoulder's log from its first entry: a cursor counts in the log it names.
+// VTT-342 VTT-349
 func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -979,18 +610,9 @@ func TestAPerchOnAConnectionThatResumedAtHeadStillSendsTheBoard(t *testing.T) {
 	}
 }
 
-// TestPerchingAppendsNothingToTheLog is the same shape as handleJoinDoor, whose
-// comment says it appends NOTHING, and it is Patrik's ruling: "we do not need
-// to log anything about what/where the spectator sees."
-//
-// Where a watcher points their camera is not a fact about the campaign. Logged,
-// it would replay forever and put rows in the story panel — and the log only
-// goes forward, so it would be there for good.
-//
-// Two assertions, because "nothing was appended" and "nobody was told" are
-// different claims: the log's own length, and a DM sitting at the table who
-// must hear nothing at all while the watcher hops.
-// VTT-183 VTT-184
+// Where a watcher points their camera is not a fact about the campaign: the log
+// does not grow, and a DM at the table hears nothing of it.
+// VTT-184 VTT-345
 func TestPerchingAppendsNothingToTheLog(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -1171,21 +793,9 @@ func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
 	}
 }
 
-// TestEverySeatCanReachTheCatchUpHeadItIsGiven closes a promise the server
-// could no longer keep.
-//
-// CatchUpHead is the boundary a client reads to: commands.proto says "a client
-// that wants a point-in-time snapshot reads until it has seen head_sequence",
-// and `vtt state dump` does exactly that (cmd/vtt/state_dump.go's drainToHead).
-// The head was the LOG's head, which was the same thing as this seat's head
-// while every seat received every event. It stopped being the same thing the
-// moment a seat's stream became a projection: the last few log events may be
-// entirely withheld from a player, so the number they are told to wait for
-// never arrives and the CLI burns its 30-second deadline before failing.
-//
-// It fails CLOSED, which is the right direction and not a defence — a
-// deterministic 30s failure on a shipped command is still a regression. So the
-// head a seat is given is now the last sequence THAT SEAT's catch-up carries.
+// A client reads to the head it is given (cmd/vtt/state_dump.go's drainToHead):
+// a head above the seat's last catch-up entry hangs it, one below truncates it.
+// Give every seat the last sequence its own catch-up carries.
 // VTT-086
 func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 	f := newGWFixture(t)
@@ -1229,8 +839,7 @@ func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 		})
 	}
 
-	// AND THE UNPROJECTED SEATS STILL GET THE LOG'S OWN HEAD, unchanged. The
-	// fix must not quietly turn the DM's boundary into something derived.
+	// Give the world seats the world log's own head.
 	for _, seat := range []struct {
 		name  string
 		token string

@@ -276,7 +276,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 
 	conns := make(map[string]Conn, len(sc.Participants))
 	history := make(map[string][]*vttv1.Envelope, len(sc.Participants))
-	projected := projectedSeats(sc.Participants)
+	projected := characterSeats(sc.Participants)
 	worldSeat := slices.ContainsFunc(sc.Participants, func(p Participant) bool { return !projected[p.Name] })
 	for _, p := range sc.Participants {
 		c, err := dial(p.Name, 0)
@@ -1219,32 +1219,11 @@ func evaluateProbe(idx int, p Probe, state *engine.State) ProbeResult {
 	}
 }
 
-// projectedSeats names the participants whose stream is a PROJECTION of the
-// log rather than the log itself (visibility spec §3.1): a player sees what
-// their actors can see, a spectator sees over the shoulder they are perched
-// on, and the DM and the agent receive every event unchanged (exit criterion
-// 8).
-//
-// BY NAMING THE PROJECTED ROLES, which is the OPPOSITE direction from
-// gateway.projected — and the difference is deliberate rather than an
-// oversight. The gateway decides what goes on a wire, so an unrecognised role
-// there must receive nothing: fail closed, silently, on the safe side. This is
-// a TEST HARNESS, and its job is to notice. An unrecognised role here is
-// treated as an ordinary observer, so a scenario that introduces one FAILS its
-// steps ("not observed matching by: ...") instead of quietly asserting nothing
-// about it. Both defaults put the failure where it can be seen; they differ
-// because "seen" means different things at the two ends.
-//
-// An EMPTY role is likewise an ordinary observer: identity mints no invite for
-// one, so it cannot reach a real gateway — it only ever names a hand-built
-// connection in this package's own tests, where every participant is an
-// observer by construction.
-//
-// Role strings, not identity.Role: this package may not import
-// internal/identity (the P1 boundary — the harness proves a client can drive a
-// table using the wire constitution alone), and the scenario format carries
-// the role as the same string the invite does.
-func projectedSeats(ps []Participant) map[string]bool {
+// characterSeats names the participants whose stream is one character's log, the
+// players and spectators; every other role, the empty one included, is a world
+// seat (VTT-358). Name the character roles, not the world ones: a scenario with
+// a role this does not know then fails its steps rather than asserting nothing.
+func characterSeats(ps []Participant) map[string]bool {
 	out := make(map[string]bool, len(ps))
 	for _, p := range ps {
 		switch p.Role {

@@ -67,23 +67,9 @@ func TestRemoveActorEmitsEveryTokenThenTheActor(t *testing.T) {
 		t.Fatalf("seed place_token t0: %s", r.Error)
 	}
 
-	// Read the batch back off a SECOND connection, dialled HERE — after the
-	// seeding, at the current head — so that everything it ever receives is
-	// this command's batch. That is the whole reason for it: newGWFixture
-	// seeds scn1/a1/t1, and dmConn resumed from 0, so dmConn's event queue
-	// already holds that history plus the place_token broadcast just made,
-	// and reading positionally off it would assert against the seed.
-	//
-	// NOT because readResult would swallow anything. It would not: the
-	// helpers run a per-connection demultiplexer with separate result and
-	// event channels, and readResult's own doc comment says "Events that
-	// arrive first are queued, not discarded, so a later readEvent still sees
-	// them". The claim that it discards them survives in stale comments
-	// elsewhere in this package and is corrected there too (fix round 1, I3).
-	//
-	// The AGENT seat, not the player: the agent receives the log unfiltered
-	// (spec §3.1, exit criterion 8), and a projected player's stream is a
-	// different thing with its own tests (project_test.go).
+	// Read the batch off a second connection dialled here, at the head, so that
+	// everything it receives is this command's batch. Read the agent, not the
+	// player: the agent is sent the log unchanged, a player its character's log.
 	agentConn := f.dial(f.agentToken, f.head(t))
 
 	sendCommand(t, dmConn, removeActorCmdFor("r-remove", "a1"))

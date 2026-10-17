@@ -225,7 +225,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	// what makes the denial snapshots meaningful, and the projected seats
 	// still have to be SETTLED before those snapshots (see settle) or their
 	// legitimately-late envelopes are read as a leak.
-	projected := projectedSeats(participants)
+	projected := characterSeats(participants)
 	unprojectedNames := make([]string, 0, len(participants))
 	projectedNames := make([]string, 0, len(participants))
 	conns := make(map[string]Conn, len(participants))

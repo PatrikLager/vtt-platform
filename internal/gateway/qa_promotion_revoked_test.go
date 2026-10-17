@@ -34,7 +34,10 @@ const (
 
 const qaPRPromotionRule = "SPEC-009, Promotion is a command"
 
-type qaPRWho struct{ id, name, token string }
+type qaPRWho struct {
+	id, name, token string
+	role            identity.Role
+}
 
 type qaPRTable struct {
 	t    *testing.T
@@ -90,7 +93,7 @@ func (tb *qaPRTable) mint(name string, role identity.Role) qaPRWho {
 	if err != nil {
 		tb.t.Fatalf("invite %s as %s: %v", name, role, err)
 	}
-	return qaPRWho{id: id, name: name, token: token}
+	return qaPRWho{id: id, name: name, token: token, role: role}
 }
 
 // Keep the event host appends: every later connection waits for it as its
@@ -141,7 +144,13 @@ func (tb *qaPRTable) connect(who qaPRWho, label string) *qaPRConn {
 	if head == nil {
 		tb.t.Fatalf("SPEC-007: %s: the connection opened with %s, want catch_up_head", label, qaPRDescribe(frames[:1]))
 	}
-	if head.GetHeadSequence() > 0 {
+	switch {
+	case who.role == identity.RolePlayer || who.role == identity.RoleSpectator:
+		c.await("its viewpoint", func(frames []*vttv1.ServerFrame, _ bool) bool {
+			return slices.ContainsFunc(frames, func(f *vttv1.ServerFrame) bool { return f.GetViewpointChanged() != nil })
+		})
+		c.caughtUp = true
+	case head.GetHeadSequence() > 0:
 		c.await(fmt.Sprintf("backlog event %d", head.GetHeadSequence()), func(frames []*vttv1.ServerFrame, _ bool) bool {
 			return slices.Contains(qaPREvents(frames), head.GetHeadSequence())
 		})
@@ -480,7 +489,7 @@ func TestQAPromoRevokedPromotingARevokedParticipantSendsThemNothing(t *testing.T
 	qaPRWantTold(t, "VTT-032", own, tb.refuse(own), target)
 }
 
-// VTT-032
+// VTT-032 VTT-352
 func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoPromotion(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()

@@ -37,7 +37,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"rotate_join_link":     {identity.RoleDM: true, identity.RoleAgent: true},
 	"open_door":            {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"close_door":           {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"set_viewpoint":        {identity.RoleSpectator: true},
+	"set_viewpoint":        {identity.RolePlayer: true, identity.RoleSpectator: true},
 }
 
 // ErrUnauthorized is wrapped by every denial Authorize returns.
@@ -61,7 +61,7 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	// Check this for every role: a spectator never reaches the player half below
 	// (SPEC-013).
 	if name == "set_viewpoint" {
-		if err := MayPerch(p, cmd.GetSetViewpoint().GetActorId(), st); err != nil {
+		if err := MayWatch(p, cmd.GetSetViewpoint().GetActorId(), st.Actors); err != nil {
 			return err
 		}
 	}
@@ -109,6 +109,7 @@ var playerRules = map[string]playerRule{
 		return mayWorkDoor(p, st, cd.GetSceneId(), cd.GetAt())
 	},
 	"add_narration": unrestricted,
+	"set_viewpoint": unrestricted,
 }
 
 func errUndecided(p *identity.Participant, name string) error {

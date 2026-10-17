@@ -2,7 +2,6 @@ package gateway_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +16,6 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
-	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
@@ -80,144 +78,6 @@ func qaMRSetupEvents(player string) []*vttv1.Envelope {
 		qaMRPlace(qaMRNearTok, qaMRNearAct, 3, 2),
 		qaMRPlace(qaMRFarTok, qaMRFarAct, 9, 2),
 	}
-}
-
-func qaMRMove(tok string, from, to *vttv1.GridPosition, reason string) *vttv1.Envelope {
-	return &vttv1.Envelope{Payload: &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{
-		TokenId: tok, SceneId: qaMRScene, From: from, To: to, Reason: reason,
-	}}}
-}
-
-type qaMRSeat struct {
-	name   string
-	pr     *gateway.Projector
-	frames []*vttv1.Envelope
-}
-
-type qaMRTable struct {
-	t     *testing.T
-	st    *engine.State
-	log   []*vttv1.Envelope
-	seats []*qaMRSeat
-}
-
-func qaMRNewTable(t *testing.T) *qaMRTable {
-	t.Helper()
-	tb := &qaMRTable{t: t, st: engine.NewState()}
-	for _, v := range []struct {
-		name string
-		v    gateway.Viewer
-	}{
-		{"player", gateway.Viewer{ParticipantID: qaMRPlayer, Role: identity.RolePlayer}},
-		{"perched", gateway.Viewer{ParticipantID: qaMRSpec, Role: identity.RoleSpectator, Viewpoint: qaMRShoulder}},
-		{"bare", gateway.Viewer{ParticipantID: qaMRSpecBare, Role: identity.RoleSpectator}},
-		{"idle", gateway.Viewer{ParticipantID: qaMRIdle, Role: identity.RolePlayer}},
-		{"dm", gateway.Viewer{ParticipantID: qaMRDM, Role: identity.RoleDM}},
-		{"agent", gateway.Viewer{ParticipantID: qaMRAgent, Role: identity.RoleAgent}},
-	} {
-		tb.seats = append(tb.seats, &qaMRSeat{name: v.name, pr: gateway.NewProjector(v.v)})
-	}
-	for _, env := range qaMRSetupEvents(qaMRPlayer) {
-		tb.append(env, qaMRDM, identity.RoleDM)
-	}
-	all := []string{qaMROwnTok, qaMRNearTok, qaMRFarTok}
-	tb.requireBoard("player", []string{qaMROwnTok, qaMRNearTok}, []string{qaMRFarTok})
-	tb.requireBoard("perched", []string{qaMROwnTok, qaMRNearTok}, []string{qaMRFarTok})
-	tb.requireBoard("bare", nil, all)
-	tb.requireBoard("idle", nil, all)
-	return tb
-}
-
-func (tb *qaMRTable) stamp(env *vttv1.Envelope, participant string, role identity.Role) *vttv1.Envelope {
-	seq := int64(len(tb.log) + 1)
-	env.EventId = fmt.Sprintf("evt-qa-%d", seq)
-	env.Sequence = seq
-	env.OccurredAt = timestamppb.New(time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC).Add(time.Duration(seq) * time.Second))
-	env.SessionId = "sess-qa"
-	env.ActorRole = string(role)
-	env.ParticipantId = participant
-	return env
-}
-
-func (tb *qaMRTable) append(env *vttv1.Envelope, participant string, role identity.Role) map[string][]*vttv1.Envelope {
-	tb.t.Helper()
-	tb.stamp(env, participant, role)
-	seq := env.GetSequence()
-	if err := engine.Apply(tb.st, env); err != nil {
-		tb.t.Fatalf("setup: engine.Apply(seq %d): %v", seq, err)
-	}
-	tb.log = append(tb.log, env)
-	out := map[string][]*vttv1.Envelope{}
-	for _, s := range tb.seats {
-		got := s.pr.Project(env, tb.st)
-		s.frames = append(s.frames, got...)
-		out[s.name] = got
-	}
-	return out
-}
-
-func (tb *qaMRTable) seat(name string) *qaMRSeat {
-	for _, s := range tb.seats {
-		if s.name == name {
-			return s
-		}
-	}
-	tb.t.Fatalf("no seat %q", name)
-	return nil
-}
-
-func qaMRBoard(frames []*vttv1.Envelope) map[string]bool {
-	board := map[string]bool{}
-	for _, f := range frames {
-		switch {
-		case f.GetTokenPlaced() != nil:
-			board[f.GetTokenPlaced().GetTokenId()] = true
-		case f.GetTokenHidden() != nil:
-			delete(board, f.GetTokenHidden().GetTokenId())
-		case f.GetTokenRemoved() != nil:
-			delete(board, f.GetTokenRemoved().GetTokenId())
-		}
-	}
-	return board
-}
-
-func (tb *qaMRTable) requireBoard(name string, on, off []string) {
-	tb.t.Helper()
-	board := qaMRBoard(tb.seat(name).frames)
-	for _, tok := range on {
-		if !board[tok] {
-			tb.t.Fatalf("setup: %s's board lacks %s after setup (board %v); the fixture's sight assumption is wrong", name, tok, board)
-		}
-	}
-	for _, tok := range off {
-		if board[tok] {
-			tb.t.Fatalf("setup: %s's board holds %s after setup (board %v); the fixture's sight assumption is wrong", name, tok, board)
-		}
-	}
-}
-
-func qaMRText(t *testing.T, frames []*vttv1.Envelope) string {
-	t.Helper()
-	var b strings.Builder
-	for _, f := range frames {
-		raw, err := protojson.Marshal(f)
-		if err != nil {
-			t.Fatalf("protojson.Marshal: %v", err)
-		}
-		b.Write(raw)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func qaMRTokenMoves(frames []*vttv1.Envelope) []*vttv1.Envelope {
-	var out []*vttv1.Envelope
-	for _, f := range frames {
-		if f.GetTokenMoved() != nil {
-			out = append(out, f)
-		}
-	}
-	return out
 }
 
 func qaMRMoveCommand(req, tok string, to *vttv1.GridPosition, reason *string) *vttv1.ClientCommand {
@@ -299,298 +159,6 @@ func TestQAMoveReasonToEventWithNoReasonRecordsNone(t *testing.T) {
 				t.Errorf("TokenMoved = %v, want token %s to (4,1)", tm, qaMRNearTok)
 			}
 		})
-	}
-}
-
-func qaMRRequireStrippedCopy(t *testing.T, tb *qaMRTable, seat string) {
-	t.Helper()
-	const reason = "the floor gives way by the pool"
-	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), reason)
-	got := tb.append(env, qaMRAgent, identity.RoleAgent)[seat]
-	want := forwardedOf(env)
-	if len(got) != 1 {
-		t.Fatalf("%s is sent %d frames for a move in sight, want exactly the move:\n%s", seat, len(got), qaMRText(t, got))
-	}
-	if !proto.Equal(got[0], want) {
-		t.Errorf("%s is sent\n%v\nwant the event with its reason and issuer cleared and every other field kept\n%v", seat, got[0], want)
-	}
-	if got[0] == env {
-		t.Errorf("%s is sent the shared event itself for a move with a reason, want a copy", seat)
-	}
-}
-
-// VTT-262
-func TestQAMoveReasonPlayerIsSentTheMoveWithItsReasonCleared(t *testing.T) {
-	qaMRRequireStrippedCopy(t, qaMRNewTable(t), "player")
-}
-
-// VTT-262
-func TestQAMoveReasonPerchedSpectatorIsSentTheMoveWithItsReasonCleared(t *testing.T) {
-	qaMRRequireStrippedCopy(t, qaMRNewTable(t), "perched")
-}
-
-// VTT-176
-func TestQAMoveReasonDMAndAgentAreSentEveryEventAsTheLogHoldsIt(t *testing.T) {
-	tb := qaMRNewTable(t)
-	moves := []*vttv1.Envelope{
-		qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), "the floor gives way by the pool"),
-		qaMRMove(qaMRFarTok, qaMRPos(9, 2), qaMRPos(10, 3), "it slides toward the hidden pool"),
-		qaMRMove(qaMRNearTok, qaMRPos(4, 3), qaMRPos(3, 1), ""),
-		qaMRMove(qaMRNearTok, qaMRPos(3, 1), qaMRPos(9, 1), "it is dragged beyond the wall"),
-		qaMRMove(qaMRFarTok, qaMRPos(10, 3), qaMRPos(2, 3), "it climbs out of the pool"),
-	}
-	for _, env := range moves {
-		before := proto.Clone(tb.stamp(env, qaMRAgent, identity.RoleAgent)).(*vttv1.Envelope)
-		got := tb.append(env, qaMRAgent, identity.RoleAgent)
-		for _, seat := range []string{"dm", "agent"} {
-			frames := got[seat]
-			if len(frames) != 1 || frames[0] != env {
-				t.Errorf("seq %d: %s is sent %d frames, want exactly the shared event:\n%s", env.GetSequence(), seat, len(frames), qaMRText(t, frames))
-				continue
-			}
-			if !proto.Equal(frames[0], before) {
-				t.Errorf("seq %d: %s is sent\n%v\nwant the event as appended\n%v", env.GetSequence(), seat, frames[0], before)
-			}
-		}
-	}
-	for _, seat := range []string{"dm", "agent"} {
-		frames := tb.seat(seat).frames
-		if len(frames) != len(tb.log) {
-			t.Fatalf("%s holds %d frames over a log of %d events", seat, len(frames), len(tb.log))
-		}
-		for i := range frames {
-			if frames[i] != tb.log[i] {
-				t.Errorf("%s frame %d is not the log's event %d", seat, i, tb.log[i].GetSequence())
-			}
-		}
-	}
-}
-
-// VTT-206
-func TestQAMoveReasonAHiddenMoveIsSentToNoPlayerOrSpectator(t *testing.T) {
-	tb := qaMRNewTable(t)
-	const reason = "it slides toward the hidden pool"
-	got := tb.append(qaMRMove(qaMRFarTok, qaMRPos(9, 2), qaMRPos(10, 3), reason), qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched", "bare", "idle"} {
-		if len(got[seat]) != 0 {
-			t.Errorf("%s is sent %d frames for a move it saw neither end of, want none:\n%s", seat, len(got[seat]), qaMRText(t, got[seat]))
-		}
-		if text := qaMRText(t, tb.seat(seat).frames); strings.Contains(text, reason) {
-			t.Errorf("%s's stream carries the reason %q", seat, reason)
-		}
-	}
-	if dm := got["dm"]; len(dm) != 1 || dm[0].GetTokenMoved().GetReason() != reason {
-		t.Errorf("dm is sent %v, want the move with its reason", dm)
-	}
-}
-
-// VTT-262
-func TestQAMoveReasonAReasonNamingAnUnseenActorReachesNoPlayerOrSpectator(t *testing.T) {
-	tb := qaMRNewTable(t)
-	for _, seat := range []string{"player", "perched"} {
-		if strings.Contains(qaMRText(t, tb.seat(seat).frames), qaMRFarAct) {
-			t.Fatalf("setup: %s already holds %s before the move", seat, qaMRFarAct)
-		}
-	}
-	reason := qaMRFarAct + " shoves it from beyond the wall"
-	got := tb.append(qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), reason), qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched"} {
-		if len(qaMRTokenMoves(got[seat])) != 1 {
-			t.Fatalf("%s is sent %d moves for a move in sight, want 1", seat, len(qaMRTokenMoves(got[seat])))
-		}
-		if strings.Contains(qaMRText(t, tb.seat(seat).frames), qaMRFarAct) {
-			t.Errorf("%s's stream names %s, which it does not see", seat, qaMRFarAct)
-		}
-	}
-	for _, seat := range []string{"dm", "agent"} {
-		if g := got[seat]; len(g) != 1 || g[0].GetTokenMoved().GetReason() != reason {
-			t.Errorf("%s is sent %v, want the move with its reason", seat, g)
-		}
-	}
-}
-
-// VTT-206
-func TestQAMoveReasonAMoveWithNoReasonIsForwardedLessItsIssuer(t *testing.T) {
-	tb := qaMRNewTable(t)
-	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(3, 1), "")
-	before := proto.Clone(tb.stamp(env, qaMRAgent, identity.RoleAgent)).(*vttv1.Envelope)
-	got := tb.append(env, qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched"} {
-		frames := got[seat]
-		if len(frames) != 1 {
-			t.Fatalf("%s is sent %d frames for a move in sight, want exactly the move:\n%s", seat, len(frames), qaMRText(t, frames))
-		}
-		if !proto.Equal(frames[0], forwardedOf(before)) {
-			t.Errorf("%s is sent\n%v\nwant the event as appended less its issuer\n%v", seat, frames[0], forwardedOf(before))
-		}
-	}
-}
-
-// SPEC-016, How it works: "a copy of the event with its `participant_id` and
-// `actor_role` cleared".
-func TestQAMoveReasonAMoveWithNoReasonIsACopyForAPlayer(t *testing.T) {
-	tb := qaMRNewTable(t)
-	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(3, 1), "")
-	got := tb.append(env, qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched"} {
-		if len(got[seat]) != 1 || got[seat][0] == env || !proto.Equal(got[seat][0], forwardedOf(env)) {
-			t.Errorf("%s is not sent a copy of the event less its issuer for a move with no reason", seat)
-		}
-	}
-}
-
-// VTT-206
-func TestQAMoveReasonAMoveOutOfSightSendsAHidingAndNoReason(t *testing.T) {
-	tb := qaMRNewTable(t)
-	const reason = "it is dragged beyond the wall"
-	got := tb.append(qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(9, 1), reason), qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched"} {
-		frames := got[seat]
-		if n := len(qaMRTokenMoves(frames)); n != 0 {
-			t.Errorf("%s is sent %d moves for a token that left its sight, want 0", seat, n)
-		}
-		hidden := false
-		for _, f := range frames {
-			if f.GetTokenHidden().GetTokenId() == qaMRNearTok {
-				hidden = true
-			}
-		}
-		if !hidden {
-			t.Errorf("%s is sent no TokenHidden for %s:\n%s", seat, qaMRNearTok, qaMRText(t, frames))
-		}
-		if strings.Contains(qaMRText(t, tb.seat(seat).frames), reason) {
-			t.Errorf("%s's stream carries the reason %q", seat, reason)
-		}
-	}
-}
-
-// VTT-206
-func TestQAMoveReasonAMoveIntoSightSendsAPlacingAndNoReason(t *testing.T) {
-	tb := qaMRNewTable(t)
-	const reason = "it climbs out of the pool"
-	got := tb.append(qaMRMove(qaMRFarTok, qaMRPos(9, 2), qaMRPos(2, 3), reason), qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"player", "perched"} {
-		frames := got[seat]
-		if n := len(qaMRTokenMoves(frames)); n != 0 {
-			t.Errorf("%s is sent %d moves for a token that was not on its board, want 0", seat, n)
-		}
-		placed := false
-		for _, f := range frames {
-			if tp := f.GetTokenPlaced(); tp.GetTokenId() == qaMRFarTok && proto.Equal(tp.GetPosition(), qaMRPos(2, 3)) {
-				placed = true
-			}
-		}
-		if !placed {
-			t.Errorf("%s is sent no TokenPlaced for %s at (2,3):\n%s", seat, qaMRFarTok, qaMRText(t, frames))
-		}
-		if strings.Contains(qaMRText(t, tb.seat(seat).frames), reason) {
-			t.Errorf("%s's stream carries the reason %q", seat, reason)
-		}
-	}
-}
-
-// VTT-262
-func TestQAMoveReasonSeatsWithoutEyesAreSentNoMoveAndNoReason(t *testing.T) {
-	tb := qaMRNewTable(t)
-	reasons := []string{"the floor gives way by the pool", "it slides toward the hidden pool", "it is dragged beyond the wall"}
-	tb.append(qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), reasons[0]), qaMRAgent, identity.RoleAgent)
-	tb.append(qaMRMove(qaMRFarTok, qaMRPos(9, 2), qaMRPos(10, 3), reasons[1]), qaMRAgent, identity.RoleAgent)
-	tb.append(qaMRMove(qaMRNearTok, qaMRPos(4, 3), qaMRPos(9, 1), reasons[2]), qaMRAgent, identity.RoleAgent)
-	for _, seat := range []string{"bare", "idle"} {
-		frames := tb.seat(seat).frames
-		if n := len(qaMRTokenMoves(frames)); n != 0 {
-			t.Errorf("%s, with no eyes, is sent %d moves", seat, n)
-		}
-		text := qaMRText(t, frames)
-		for _, r := range reasons {
-			if strings.Contains(text, r) {
-				t.Errorf("%s's stream carries the reason %q", seat, r)
-			}
-		}
-	}
-}
-
-// SPEC-016, How it works: "It answers any role but those and
-// identity.RolePlayer and identity.RoleSpectator with nothing".
-func TestQAMoveReasonAnUnknownRoleOrAMissingStateIsSentNothing(t *testing.T) {
-	tb := qaMRNewTable(t)
-	odd := gateway.NewProjector(gateway.Viewer{ParticipantID: "p-odd", Role: identity.Role("observer")})
-	for _, env := range tb.log {
-		if got := odd.Project(env, tb.st); len(got) != 0 {
-			t.Fatalf("an unknown role is sent %d frames for seq %d", len(got), env.GetSequence())
-		}
-	}
-	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), "the floor gives way by the pool")
-	tb.append(env, qaMRAgent, identity.RoleAgent)
-	if got := odd.Project(env, tb.st); len(got) != 0 {
-		t.Errorf("an unknown role is sent %d frames for a move with a reason", len(got))
-	}
-	for _, v := range []gateway.Viewer{
-		{ParticipantID: qaMRPlayer, Role: identity.RolePlayer},
-		{ParticipantID: qaMRSpec, Role: identity.RoleSpectator, Viewpoint: qaMRShoulder},
-	} {
-		if got := gateway.NewProjector(v).Project(env, nil); len(got) != 0 {
-			t.Errorf("%s with a nil state is sent %d frames, want none", v.Role, len(got))
-		}
-	}
-}
-
-// VTT-222
-func TestQAMoveReasonProjectingToEverySeatLeavesTheEventAndStateUnchanged(t *testing.T) {
-	tb := qaMRNewTable(t)
-	moves := []*vttv1.Envelope{
-		qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), "the floor gives way by the pool"),
-		qaMRMove(qaMRFarTok, qaMRPos(9, 2), qaMRPos(10, 3), "it slides toward the hidden pool"),
-		qaMRMove(qaMRNearTok, qaMRPos(4, 3), qaMRPos(3, 1), ""),
-		qaMRMove(qaMRNearTok, qaMRPos(3, 1), qaMRPos(9, 1), "it is dragged beyond the wall"),
-		qaMRMove(qaMRFarTok, qaMRPos(10, 3), qaMRPos(2, 3), "it climbs out of the pool"),
-	}
-	for _, env := range moves {
-		before := proto.Clone(tb.stamp(env, qaMRAgent, identity.RoleAgent)).(*vttv1.Envelope)
-		tb.append(env, qaMRAgent, identity.RoleAgent)
-		if !proto.Equal(env, before) {
-			t.Errorf("seq %d: the shared event after projecting to six seats is\n%v\nwant\n%v", env.GetSequence(), env, before)
-		}
-	}
-	twin := engine.NewState()
-	for _, env := range tb.log {
-		if err := engine.Apply(twin, proto.Clone(env).(*vttv1.Envelope)); err != nil {
-			t.Fatalf("twin fold: %v", err)
-		}
-	}
-	got, err := json.Marshal(tb.st)
-	if err != nil {
-		t.Fatalf("json.Marshal(state): %v", err)
-	}
-	want, err := json.Marshal(twin)
-	if err != nil {
-		t.Fatalf("json.Marshal(twin): %v", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("the state projected against differs from an unprojected fold of the same log:\n got %s\nwant %s", got, want)
-	}
-}
-
-// SPEC-016, How it works: "every frame it builds is new".
-func TestQAMoveReasonWritingToAPlayersCopyDoesNotReachTheSharedEvent(t *testing.T) {
-	tb := qaMRNewTable(t)
-	env := qaMRMove(qaMRNearTok, qaMRPos(3, 2), qaMRPos(4, 3), "the floor gives way by the pool")
-	got := tb.append(env, qaMRAgent, identity.RoleAgent)
-	before := proto.Clone(env).(*vttv1.Envelope)
-	perched := proto.Clone(got["perched"][0]).(*vttv1.Envelope)
-	cp := got["player"][0]
-	if cp == env || cp.GetTokenMoved() == env.GetTokenMoved() || cp.GetTokenMoved().GetTo() == env.GetTokenMoved().GetTo() {
-		t.Fatalf("the player's copy shares a message with the shared event")
-	}
-	cp.GetTokenMoved().GetTo().X = 11
-	cp.GetTokenMoved().GetFrom().Y = 4
-	cp.GetTokenMoved().Reason = "written by a seat"
-	cp.Sequence = 99
-	if !proto.Equal(env, before) {
-		t.Errorf("writing to the player's copy changed the shared event:\n%v\nwant\n%v", env, before)
-	}
-	if !proto.Equal(got["perched"][0], perched) {
-		t.Errorf("writing to the player's copy changed the spectator's frame:\n%v\nwant\n%v", got["perched"][0], perched)
 	}
 }
 
@@ -690,6 +258,18 @@ func (qc *qaMRConn) eventsAt(seq int64) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	for _, w := range qc.seen {
 		if e := w.frame.GetEvent(); e != nil && e.GetSequence() == seq {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// caused finds the entries one world event caused by its id: a log numbers its
+// entries itself (VTT-321, VTT-371).
+func (qc *qaMRConn) caused(logged *vttv1.Envelope) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, w := range qc.seen {
+		if e := w.frame.GetEvent(); e != nil && e.GetEventId() == logged.GetEventId() {
 			out = append(out, e)
 		}
 	}
@@ -855,11 +435,13 @@ func (l *qaMRLive) move(t *testing.T, issuer *qaMRConn, req, tok string, to *vtt
 
 func qaMRRequireSentWithoutReason(t *testing.T, qc *qaMRConn, seq int64, logged *vttv1.Envelope, reason string) {
 	t.Helper()
-	got := qc.eventsAt(seq)
+	got := qc.caused(logged)
 	if len(got) != 1 {
-		t.Fatalf("%s is sent %d frames at seq %d, want exactly the move", qc.name, len(got), seq)
+		t.Fatalf("%s is sent %d frames for the move at seq %d, want exactly the move", qc.name, len(got), seq)
 	}
-	if want := forwardedOf(logged); !proto.Equal(got[0], want) {
+	want := forwardedOf(logged)
+	want.Sequence = got[0].GetSequence()
+	if !proto.Equal(got[0], want) {
 		t.Errorf("%s is sent\n%v\nwant the logged move with its reason and issuer cleared\n%v", qc.name, got[0], want)
 	}
 	if qc.rawContains(reason) {
@@ -935,11 +517,14 @@ func TestQAMoveReasonOverTheWireAMoveWithNoReasonAppendsNone(t *testing.T) {
 		t.Errorf("the log holds %v, want %v with no reason", logged.GetTokenMoved(), want)
 	}
 	for _, qc := range l.conns {
-		want := logged
+		want, got := logged, qc.eventsAt(seq)
 		if qc == l.player || qc == l.spectator {
-			want = forwardedOf(logged)
+			want, got = forwardedOf(logged), qc.caused(logged)
+			if len(got) == 1 {
+				want.Sequence = got[0].GetSequence()
+			}
 		}
-		if got := qc.eventsAt(seq); len(got) != 1 || !proto.Equal(got[0], want) {
+		if len(got) != 1 || !proto.Equal(got[0], want) {
 			t.Errorf("%s is sent %v at seq %d, want %v", qc.name, got, seq, want)
 		}
 	}
@@ -952,8 +537,8 @@ func TestQAMoveReasonOverTheWireAHiddenMoveReachesNoPlayerOrSpectator(t *testing
 	seq := l.move(t, l.dm, "mv-hidden", qaMRFarTok, qaMRPos(10, 3), proto.String(reason))
 	logged := qaMRLogged(t, l.logThrough(t, l.barrier(t)), seq)
 	for _, qc := range []*qaMRConn{l.player, l.spectator} {
-		if got := qc.eventsAt(seq); len(got) != 0 {
-			t.Errorf("%s is sent %d frames at seq %d for a move it saw neither end of", qc.name, len(got), seq)
+		if got := qc.caused(logged); len(got) != 0 {
+			t.Errorf("%s is sent %d frames for the move at seq %d, which it saw neither end of", qc.name, len(got), seq)
 		}
 		if qc.rawContains(reason) {
 			t.Errorf("%s's wire carries the reason %q", qc.name, reason)
@@ -1010,4 +595,23 @@ func TestQAMoveReasonOverTheWireADMCatchingUpIsSentEveryEventAfterItsCursorUncha
 	if got[0].GetTokenMoved().GetReason() != reason {
 		t.Errorf("dm after cursor is sent reason %q, want %q", got[0].GetTokenMoved().GetReason(), reason)
 	}
+}
+
+// forwardedOf is env as a player or spectator gets it; keep it equal to perceive's.
+func forwardedOf(env *vttv1.Envelope) *vttv1.Envelope {
+	c := proto.Clone(env).(*vttv1.Envelope)
+	c.ParticipantId, c.ActorRole = "", ""
+	if m := c.GetTokenMoved(); m != nil {
+		m.Reason = ""
+	}
+	if r := c.GetResourceChanged(); r != nil {
+		r.Reason = ""
+	}
+	if a := c.GetConditionApplied(); a != nil {
+		a.Source = ""
+	}
+	if r := c.GetConditionRemoved(); r != nil {
+		r.Reason = ""
+	}
+	return c
 }
